@@ -154,28 +154,35 @@ test("serverPathForWorkspace always passes through on non-win32 regardless of en
   );
 });
 
-test("every /workspace/open POST in main.js routes path through serverPathForWorkspace", () => {
-  const mainSource = fs.readFileSync(
-    path.join(__dirname, "..", "src", "main.js"),
-    "utf8",
-  );
-  const lines = mainSource.split("\n");
-  const openCallLines = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes("/workspace/open")) {
-      openCallLines.push(i);
+test("every /workspace/open POST in main.js and auto-open-workspace.cjs routes path through serverPathForWorkspace", () => {
+  const sources = [
+    fs.readFileSync(path.join(__dirname, "..", "src", "main.js"), "utf8"),
+    fs.readFileSync(
+      path.join(__dirname, "..", "src", "auto-open-workspace.cjs"),
+      "utf8",
+    ),
+  ];
+  let totalOpenSites = 0;
+  for (const source of sources) {
+    const lines = source.split("\n");
+    const openCallLines = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].includes("/workspace/open")) {
+        openCallLines.push(i);
+      }
+    }
+    totalOpenSites += openCallLines.length;
+    for (const idx of openCallLines) {
+      const block = lines.slice(Math.max(0, idx - 2), idx + 8).join("\n");
+      if (!block.includes("POST")) continue;
+      assert.match(
+        block,
+        /serverPathForWorkspace\(/,
+        `/workspace/open POST block at line ${idx + 1} missing serverPathForWorkspace`,
+      );
     }
   }
-  assert.ok(openCallLines.length >= 2, `expected at least 2 /workspace/open sites, found ${openCallLines.length}`);
-  for (const idx of openCallLines) {
-    const block = lines.slice(Math.max(0, idx - 2), idx + 8).join("\n");
-    if (!block.includes("POST")) continue;
-    assert.match(
-      block,
-      /serverPathForWorkspace\(/,
-      `/workspace/open POST block at line ${idx + 1} missing serverPathForWorkspace`,
-    );
-  }
+  assert.ok(totalOpenSites >= 2, `expected at least 2 /workspace/open sites, found ${totalOpenSites}`);
 });
 
 test("main.js persists the untranslated workspace path", () => {
