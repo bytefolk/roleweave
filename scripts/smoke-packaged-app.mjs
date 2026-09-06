@@ -414,7 +414,7 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
 
   try {
     const stagedApp = platform === "macos"
-      ? path.join(stagingRoot, "RoleWeave.app")
+      ? path.join(stagingRoot, "RoleWeave Staging.app")
       : path.join(stagingRoot, "RoleWeave Staging");
     assert.equal(stagedApp.includes(" "), true, "clean staging path must exercise spaces");
     await fs.cp(sourceApp, stagedApp, {
