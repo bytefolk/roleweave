@@ -1,13 +1,12 @@
 # RoleWeave brand mark
 
-`roleweave-icon.svg` is the primary application mark. It uses the selected
-Open Herd graphic without the ByteFolk wordmark, so the installed application,
-window, dock, and taskbar all share the same recognizable mark as the
-organization tree.
+`roleweave-icon.svg` is the primary application mark: the purple/blue `R/W`
+monogram shown in the product icon. The canvas is filled edge-to-edge so
+macOS, Windows, and Linux do not introduce a white square around it.
 
 `roleweave-icon-monochrome.svg` is the one-color variant for documents and
-print. `roleweave-monogram.svg` retains the previous R/W product mark as a
-secondary asset; it is not used by the current packaging configuration.
+print. The organization tree has its own compact Open Herd mark, kept
+separate from the RoleWeave application icon.
 
 Raster platform assets are generated from the primary SVG and committed next
 to the source so packaging does not depend on a local graphics tool.
