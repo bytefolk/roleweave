@@ -190,13 +190,22 @@ test("last-workspace path: non-2xx falls through to demo with fallback notice", 
     JSON.stringify({ path: lastDir }),
   );
 
+  const fakeHome = makeTempWorkspace(t);
+  const realHomedir = os.homedir;
+  os.homedir = () => fakeHome;
+  t.after(() => { os.homedir = realHomedir; });
+
   const capture = captureStderr();
   t.after(() => capture.restore());
 
-  const apiRequest = makeApiRequestStub({
-    status: 500,
-    body: { code: "internal_error" },
-  });
+  const calls = [];
+  const apiRequest = async (_pathname, options) => {
+    calls.push({ pathname: _pathname, bodyPath: options?.body?.path });
+    if (options?.body?.path === lastDir) {
+      return { status: 500, body: { code: "internal_error" } };
+    }
+    return { status: 503, body: { code: "service_unavailable" } };
+  };
 
   const result = await openDefaultWorkspace({
     apiRequest,
@@ -205,8 +214,9 @@ test("last-workspace path: non-2xx falls through to demo with fallback notice", 
   });
 
   const stderr = capture.output();
-  assert.match(stderr, /auto-open workspace failed/);
-  assert.match(stderr, /500/);
+  assert.match(stderr, new RegExp(`dir=${lastDir}.*500`, "s"), "last-workspace failure must report 500");
+  assert.match(stderr, /503/, "demo fallback failure must report 503");
+  assert.equal(calls.length, 2, "both last-workspace and demo paths must POST");
   assert.equal(result.fallbackNoticePath, lastDir);
 });
 
