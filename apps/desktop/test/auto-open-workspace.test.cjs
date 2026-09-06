@@ -214,7 +214,7 @@ test("last-workspace path: non-2xx falls through to demo with fallback notice", 
   });
 
   const stderr = capture.output();
-  assert.match(stderr, new RegExp(`dir=${lastDir}.*500`, "s"), "last-workspace failure must report 500");
+  assert.match(stderr, new RegExp(`dir=${lastDir}[^\\n]*500`), "last-workspace failure must report 500");
   assert.match(stderr, /503/, "demo fallback failure must report 503");
   assert.equal(calls.length, 2, "both last-workspace and demo paths must POST");
   assert.equal(result.fallbackNoticePath, lastDir);
