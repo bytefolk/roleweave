@@ -4,12 +4,12 @@ import {
   DOC_PLANE_LIST_SCHEMA_VERSION,
   OrgApiError,
   errorCodes,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type {
   DocPlaneDetailResponse,
   DocPlaneListEntry,
   DocPlaneListResponse,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { sendJson } from "../http.js";
 

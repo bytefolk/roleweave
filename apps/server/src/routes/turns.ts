@@ -5,7 +5,7 @@ import {
   errorCodes,
   turnEngines,
   validatePendingApproval,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type {
   EngineEvent,
   SseEventType,
@@ -13,7 +13,7 @@ import type {
   TurnPendingApproval,
   TurnRecord,
   WorkbenchSession,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { createTurnEnvelope } from "../turns/envelope.js";
@@ -38,7 +38,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Fail-closed boundary validation for the #193 verdict field. The checks live
- * in @org-workbench/shared/pending-approval (#45: single source shared with
+ * in @roleweave/shared/pending-approval (#45: single source shared with
  * the desktop IPC boundary); the engine remains the byte-exact backstop.
  */
 export function assertPendingApproval(raw: unknown): TurnPendingApproval {

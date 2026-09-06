@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ReportsCenter } from "../src/reports/ReportsCenter";
 import { TurnThread } from "../src/turns";
 import type { TurnRecord } from "../src/turns";
-import type { ReportsResponse } from "@org-workbench/shared";
+import type { ReportsResponse } from "@roleweave/shared";
 
 const LONG = "核对冻结契约 turn.* 词表；".repeat(12);
 
@@ -29,10 +29,9 @@ const shortTurn: TurnRecord = {
   output: "已核对",
 };
 
-describe("issue #20 two-line clamp + tooltip", () => {
-  // #73: 下达任务与输出改为时间线卡内的 .owb-tc__task / .owb-tc__out，
-  // 两行截断 + title 全文的契约不变。
-  it("clamps long turn input and output and keeps the full text in title", () => {
+describe("conversation readability", () => {
+  // 下达任务可以压缩为摘要；最终结论必须完整可读，不能用省略号藏掉结果。
+  it("clamps long turn input but keeps the final output fully readable", () => {
     const { container } = render(<TurnThread turns={[longTurn]} />);
     // #248 R2 ④: 下达任务改为操作员气泡（右），截断+title 契约不变。
     const input = container.querySelector(".owb-bubble--operator .owb-clamp-2");
@@ -41,7 +40,8 @@ describe("issue #20 two-line clamp + tooltip", () => {
     expect(input?.className).toContain("owb-clamp-2");
     expect(input?.getAttribute("title")).toBe(LONG);
     expect(output).not.toBeNull();
-    expect(output?.className).toContain("owb-clamp-2");
+    expect(output?.className).not.toContain("owb-clamp-2");
+    expect(output?.textContent).toBe(LONG);
     expect(output?.getAttribute("title")).toBe(LONG);
   });
 
@@ -52,7 +52,7 @@ describe("issue #20 two-line clamp + tooltip", () => {
     expect(input?.textContent).toBe("检查发布");
   });
 
-  it("clamps report card paragraphs and the envelope code with full-text titles", () => {
+  it("keeps report summaries readable without exposing internal envelope ids", () => {
     const digest = `sha256:${"abcdef0123456789".repeat(4)}`;
     const reports: ReportsResponse = {
       schemaVersion: "reports.v1",
@@ -103,10 +103,9 @@ describe("issue #20 two-line clamp + tooltip", () => {
     const escalation = container.querySelector(".owb-report-card.is-escalation p");
     expect(escalation?.className).toContain("owb-clamp-2");
     expect(escalation?.getAttribute("title")).toBe(escalation?.textContent);
-    fireEvent.click(screen.getByRole("button", { name: /回合证据/ }));
-    const code = container.querySelector(".owb-report-card code");
-    expect(code?.className).toContain("owb-clamp-2");
-    expect(code?.getAttribute("title")).toBe(digest);
+    fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
+    expect(container.querySelector(".owb-report-card code")).toBeNull();
+    expect(container.textContent).not.toContain(digest);
     const evidenceP = container.querySelector(".owb-report-card:not(.is-escalation) p");
     expect(evidenceP?.className).toContain("owb-clamp-2");
     expect(evidenceP?.getAttribute("title")).toBe(evidenceP?.textContent);

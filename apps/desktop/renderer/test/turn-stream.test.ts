@@ -9,7 +9,7 @@ import {
   reconcileGroupTimeline,
   settlePendingTurn,
 } from "../src/turns/turnStream";
-import type { GroupTimeline, TurnRecord } from "@org-workbench/shared";
+import type { GroupTimeline, TurnRecord } from "@roleweave/shared";
 
 const pending = { positionId: "repo-owner", engine: "qoder" as const, input: "检查发布" };
 

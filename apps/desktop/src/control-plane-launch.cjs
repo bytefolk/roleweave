@@ -58,36 +58,28 @@ function createControlPlaneChild({ serverEntry, env }) {
   const mode = controlPlaneMode(childEnv);
   if (mode === "wsl") {
     const wslEntry = winToWslPath(serverEntry);
-    return spawn(
+    const child = spawn(
       "wsl.exe",
       ["-e", "bash", "-lc", `node "${wslEntry}"`],
       { env: childEnv, stdio: ["ignore", "pipe", "pipe"] },
     );
+    return child;
   }
-  return spawn(process.execPath, [serverEntry], {
+  const child = spawn(process.execPath, [serverEntry], {
     env: { ...childEnv, ELECTRON_RUN_AS_NODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
+    // On POSIX the control plane owns a process group so stop can reap a
+    // provider/driver child as well. Windows uses ChildProcess#kill below.
+    detached: process.platform !== "win32",
   });
-}
-
-/**
- * Convert a workspace path to the form the control-plane server expects.
- * In WSL mode the server runs inside Linux, so Windows drive-letter paths
- * must be translated to /mnt/<drive>/... before posting. In native mode
- * (or on non-win32 hosts) the path is returned unchanged.
- */
-function serverPathForWorkspace(windowsPath, env) {
-  if (controlPlaneMode(env) === "wsl") {
-    return winToWslPath(windowsPath);
-  }
-  return windowsPath;
+  if (process.platform !== "win32") child.__owbProcessGroupLeader = true;
+  return child;
 }
 
 module.exports = {
   controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,
-  serverPathForWorkspace,
   stripPackagedSmokeControls,
   winToWslPath,
 };

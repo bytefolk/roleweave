@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { OrgApiError, errorCodes } from "@org-workbench/shared";
+import { OrgApiError, errorCodes } from "@roleweave/shared";
 import type {
   AtomicTurnDirectoryHandle,
   AtomicTurnTemporaryHandle,

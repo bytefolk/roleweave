@@ -3,7 +3,9 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("owb", {
   status: () => ipcRenderer.invoke("owb:status"),
+  stopControlPlane: () => ipcRenderer.invoke("owb:control-plane:stop"),
   openWorkspace: () => ipcRenderer.invoke("owb:workspace:open"),
+  createWorkspace: (request) => ipcRenderer.invoke("owb:workspace:create", request),
   workspace: () => ipcRenderer.invoke("owb:workspace:get"),
   orgTree: () => ipcRenderer.invoke("owb:org:tree"),
   orgApply: (manifest) => ipcRenderer.invoke("owb:org:apply", manifest),

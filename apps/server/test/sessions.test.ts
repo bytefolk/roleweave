@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@org-workbench/shared";
+import type { TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@roleweave/shared";
 import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import { SessionStore } from "../src/sessions/store.js";
 import { TurnStore } from "../src/turns/store.js";

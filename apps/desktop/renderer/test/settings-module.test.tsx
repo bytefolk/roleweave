@@ -11,8 +11,8 @@
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { OwbI18nProvider } from "@org-workbench/ui";
-import type { UpdateEvent, UpdateResult, UpdateStatus } from "@org-workbench/shared";
+import { OwbI18nProvider } from "@roleweave/ui";
+import type { UpdateEvent, UpdateResult, UpdateStatus } from "@roleweave/shared";
 import { SettingsModule } from "../src/settings/SettingsModule";
 import { stateMessage, updateAffordances } from "../src/settings/update-copy";
 
@@ -22,6 +22,7 @@ const windowsUnsigned: UpdateStatus = {
   available: true,
   requiresConfirmation: true,
   signed: false,
+  updateVerified: false,
   reason: "this build is unsigned, so a downloaded update could not be verified",
   platform: "win32",
 };
@@ -32,11 +33,12 @@ const macUnavailable: UpdateStatus = {
   available: false,
   requiresConfirmation: false,
   signed: false,
+  updateVerified: false,
   reason: "In-app update needs a Developer ID signed build. Tracked in #135.",
   platform: "darwin",
 };
 
-const windowsSigned: UpdateStatus = { ...windowsUnsigned, signed: true, reason: null };
+const windowsSigned: UpdateStatus = { ...windowsUnsigned, signed: true, updateVerified: true, reason: null };
 
 function result(overrides: Partial<UpdateResult> = {}): UpdateResult {
   return {
@@ -159,11 +161,10 @@ describe("#134 AC-004 平台无通道", () => {
     // 关键是"停用"而不是"不存在"：藏起来等于不解释。
     expect(check).toBeInTheDocument();
     expect(check).toBeDisabled();
-    // 本地化文案给的是用户能读的原因，诊断行保留更新服务自己那句英文。
+    // 只展示用户能读的原因，不把更新服务内部诊断文本带进界面。
     expect(screen.getByText(/Developer ID 签名构建/)).toBeInTheDocument();
-    expect(screen.getByText("更新服务报告")).toBeInTheDocument();
-    expect(screen.getByText(/Developer ID signed build/)).toBeInTheDocument();
-    expect(screen.getAllByText(/#135/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Developer ID signed build/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/#135/)).not.toBeInTheDocument();
   });
 
   it("读不到状态时说读不到，不假装是最新版", async () => {

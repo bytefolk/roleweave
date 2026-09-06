@@ -7,8 +7,8 @@ import {
   WORKBENCH_SESSION_SCHEMA_VERSION,
   errorCodes,
   isPositionId,
-} from "@org-workbench/shared";
-import type { WorkbenchSession, WorkbenchSessionList } from "@org-workbench/shared";
+} from "@roleweave/shared";
+import type { WorkbenchSession, WorkbenchSessionList } from "@roleweave/shared";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 

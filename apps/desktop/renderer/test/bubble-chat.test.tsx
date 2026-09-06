@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { GroupsPanel } from "../src/groups/GroupsPanel";
 import { TurnThread } from "../src/turns";
 import type { OwbBridge } from "../src/owb";
-import type { GroupConversation, TurnRecord as ApiTurnRecord } from "@org-workbench/shared";
+import type { GroupConversation, TurnRecord as ApiTurnRecord } from "@roleweave/shared";
 import type { TurnEngineAvailability, TurnRecord } from "../src/turns/types";
 
 /** Turn rendering structure.
@@ -44,9 +44,50 @@ describe("TurnThread evidence timeline (#73)", () => {
     // #248 R2 ④: 下达任务在操作员气泡（右），输出在岗位气泡（左）。
     expect(item?.querySelector(".owb-bubble--operator")?.textContent).toContain("检查发布门禁");
     expect(card?.querySelector(".owb-tc__out")?.textContent).toContain("门禁已检查。");
-    // 状态行给出可信终态词，settled 回合不再显示 running
-    const statusline = card?.querySelector(".owb-turn__statusline");
-    expect(statusline?.textContent).toContain("可信终态");
+    // 卡头给出简洁终态词，settled 回合不再显示 running
+    expect(card?.querySelector(".owb-turn__status")?.textContent).toContain("已完成");
+  });
+
+  it("shows safe execution progress and keeps the final conclusion fully readable", () => {
+    const { container } = render(
+      <TurnThread
+        turns={[turn({
+          progress: [
+            { kind: "received", at: "2026-08-26T04:00:00.000Z" },
+            { kind: "working", at: "2026-08-26T04:00:10.000Z" },
+            { kind: "completed", at: "2026-08-26T04:01:00.000Z" },
+          ],
+          output: "第一段结论\n第二段结论，不应该被两行省略。",
+        })]}
+      />,
+    );
+    const card = container.querySelector(".owb-tc");
+    expect(card?.querySelector('[aria-label="执行进展"]')).not.toBeNull();
+    expect(card?.querySelectorAll(".owb-turn-progress__step")).toHaveLength(3);
+    expect(card?.querySelector(".owb-turn-progress__step")?.querySelector("time")).toBeNull();
+    expect(card?.querySelector(".owb-turn-progress__header")?.textContent).toContain("执行进展");
+    const progress = card?.querySelector(".owb-turn-progress") as HTMLDetailsElement | null;
+    expect(progress?.open).toBe(false);
+    fireEvent.click(progress?.querySelector("summary") as HTMLElement);
+    expect(progress?.open).toBe(true);
+    expect(card?.querySelector(".owb-tc__out")).toHaveTextContent("第二段结论，不应该被两行省略。");
+    expect(card?.querySelector(".owb-tc__out")?.className).not.toContain("owb-clamp-2");
+    expect(card?.querySelector(".owb-tc__out")?.getAttribute("title")).toContain("第二段结论");
+  });
+
+  it("renders the conclusion as compact structured markdown", () => {
+    const { container } = render(
+      <TurnThread
+        turns={[turn({
+          output: "结论摘要\n\n- **读写代码**：已完成\n- 参考 `README.md`",
+        })]}
+      />,
+    );
+    const output = container.querySelector(".owb-tc__out--markdown");
+    expect(output?.querySelector("strong")?.textContent).toBe("读写代码");
+    expect(output?.querySelector("ul")).not.toBeNull();
+    expect(output?.querySelector("code")?.textContent).toBe("README.md");
+    expect(output?.getAttribute("title")).toContain("**读写代码**");
   });
 
   it("marks running and indeterminate turns with distinct timeline states", () => {
@@ -61,9 +102,9 @@ describe("TurnThread evidence timeline (#73)", () => {
     );
     expect(unsure.querySelector(".owb-turn")?.className).toContain("is-indeterminate");
     // 诚实性：不确定终态不得被升级成成功词
-    const statusline = unsure.querySelector(".owb-turn__statusline");
-    expect(statusline?.textContent).toContain("不确定");
-    expect(statusline?.textContent).not.toContain("可信终态");
+    const status = unsure.querySelector(".owb-turn__status");
+    expect(status?.textContent).toContain("状态未知");
+    expect(status?.textContent).not.toContain("已完成");
   });
 
   it("shows the typing indicator while the employee turn is running", () => {
@@ -73,22 +114,14 @@ describe("TurnThread evidence timeline (#73)", () => {
     expect(typing.textContent).toContain("正在等待岗位完成本回合");
   });
 
-  it("keeps evidence auditable: digest chips shortened by default, expanding reveals full mono values", () => {
+  it("keeps internal evidence ids out of the ordinary conversation", () => {
     const { container } = render(
       <TurnThread turns={[turn({ id: "ev-1", envelopeDigest: "sha256:envelope-full-value", evidenceDigest: "sha256:evidence-full-value" })]} />,
     );
-    const toggle = container.querySelector(".owb-ev--button") as HTMLButtonElement | null;
-    expect(toggle).not.toBeNull();
-    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-    // 折叠态：短摘要展示，全值仍可经 title 取到（证据不丢——审计红线）
-    expect(toggle?.getAttribute("title")).toBe("sha256:envelope-full-value");
-    fireEvent.click(toggle as HTMLButtonElement);
-    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-    const chips = Array.from(container.querySelectorAll(".owb-ev kbd")).map((kbd) => kbd.textContent);
-    expect(chips).toContain("sha256:envelope-full-value");
-    expect(chips).toContain("sha256:evidence-full-value");
-    // turn id 始终作为独立印章 chip 存在
-    expect(container.querySelector('.owb-ev[title="ev-1"]')).not.toBeNull();
+    expect(container.querySelector(".owb-ev")).toBeNull();
+    expect(container.textContent).not.toContain("sha256:envelope-full-value");
+    expect(container.textContent).not.toContain("sha256:evidence-full-value");
+    expect(container.textContent).not.toContain("ev-1");
   });
 
   it("embeds the approval card inside the timeline console card", () => {
@@ -199,8 +232,8 @@ describe("group chat bubbles with member identity (#61)", () => {
     expect(memberRow?.textContent).toContain("发布已检查。");
     const operatorRow = container.querySelector(".owb-bubble-row--operator .owb-bubble--operator");
     expect(operatorRow?.textContent).toContain("各位同步进度");
-    // operator avatar + per-member route note (explicit routing, never broadcast)
+    // Operator identity stays visible; routing details stay in the member selector.
     expect(container.querySelector(".owb-bubble__avatar--operator")).not.toBeNull();
-    expect(container.textContent).toContain("逐成员 spawn 1 回合（显式路由，不广播）");
+    expect(container.textContent).not.toContain("已发送给");
   });
 });

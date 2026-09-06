@@ -40,7 +40,7 @@ function writeLastWorkspacePath(userDataPath, workspacePath) {
 }
 
 function defaultUserDataPath() {
-  return path.join(os.homedir(), ".org-workbench");
+  return path.join(os.homedir(), ".roleweave");
 }
 
 module.exports = {

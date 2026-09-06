@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Alert, Empty, List, Spin, message } from "antd";
 import { Copy, FileCode2, FolderOpen, LoaderCircle } from "lucide-react";
-import { formatDocRefUri } from "@org-workbench/shared/docs";
-import { useT } from "@org-workbench/ui";
-import type { DocsFileEntry, DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
+import { formatDocRefUri } from "@roleweave/shared/docs";
+import { useT } from "@roleweave/ui";
+import type { DocsFileEntry, DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
 import { DocViewer } from "./DocViewer";
 
 /**
@@ -87,11 +87,10 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
     }
   };
 
-  const sizeFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
   const formatSize = (size: number): string => {
-    if (size < 1024) return `${sizeFmt.format(size)} B`;
-    if (size < 1024 * 1024) return `${sizeFmt.format(size / 1024)} KB`;
-    return `${sizeFmt.format(size / (1024 * 1024))} MB`;
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   const fileExtension = (path: string): string => {

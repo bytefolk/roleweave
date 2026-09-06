@@ -1,0 +1,118 @@
+const assert = require("node:assert/strict");
+const { once } = require("node:events");
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const http = require("node:http");
+const os = require("node:os");
+const path = require("node:path");
+const test = require("node:test");
+const {
+  isControlPlaneAlive,
+  parseReadyLine,
+  startControlPlaneProcess,
+  stopControlPlaneProcess,
+} = require("../src/control-plane-lifecycle.cjs");
+
+const token = "a".repeat(64);
+const readyLine = `org-workbench-server ready ${JSON.stringify({ api: "v0", port: 43123, token })}\n`;
+
+test("READY parsing is strict and keeps only the v0 control-plane contract", () => {
+  assert.deepEqual(parseReadyLine(readyLine), { api: "v0", port: 43123, token });
+  assert.equal(parseReadyLine("diagnostic output"), null);
+  for (const payload of [
+    { api: "v1", port: 43123, token },
+    { api: "v0", port: 0, token },
+    { api: "v0", port: 43123, token: "short" },
+    { api: "v0", port: 43123, token, extra: true },
+  ]) {
+    assert.throws(
+      () => parseReadyLine(`org-workbench-server ready ${JSON.stringify(payload)}`),
+      (error) => error.code === "control_plane_ready_invalid",
+    );
+  }
+});
+
+test("control-plane lifecycle starts from READY and stops idempotently", async () => {
+  const child = spawn(process.execPath, ["-e", `process.stdout.write(${JSON.stringify(readyLine)}); setInterval(() => {}, 1000)`], {
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 1000 });
+  assert.equal(handle.state, "ready");
+  assert.equal(handle.port, 43123);
+  assert.equal(isControlPlaneAlive(child), true);
+  const [first, second] = await Promise.all([
+    stopControlPlaneProcess(handle, { termTimeoutMs: 500 }),
+    stopControlPlaneProcess(handle, { termTimeoutMs: 500 }),
+  ]);
+  assert.deepEqual(second, first);
+  assert.equal(first.state, "stopped");
+  assert.equal(isControlPlaneAlive(child), false);
+});
+
+test("READY timeout terminates a child that never announces readiness", async () => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  await assert.rejects(
+    startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 30 }),
+    (error) => error.code === "control_plane_ready_timeout",
+  );
+  await once(child, "close");
+  assert.equal(isControlPlaneAlive(child), false);
+});
+
+test("stop escalates to SIGKILL when the control plane ignores SIGTERM", async () => {
+  const child = spawn(process.execPath, ["-e", `process.on("SIGTERM", () => {}); process.stdout.write(${JSON.stringify(readyLine)}); setInterval(() => {}, 1000)`], {
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 1000 });
+  const stopped = await stopControlPlaneProcess(handle, { termTimeoutMs: 30 });
+  assert.equal(stopped.state, "stopped");
+  assert.equal(stopped.forced, true);
+  assert.equal(isControlPlaneAlive(child), false);
+});
+
+test("a real server completes READY → health → stop and releases its port", async (t) => {
+  const serverEntry = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
+  assert.equal(fs.existsSync(serverEntry), true, "build the server before running the desktop lifecycle E2E");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "owb-lifecycle-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const child = spawn(process.execPath, [serverEntry], {
+    env: {
+      PATH: process.env.PATH ?? "",
+      HOME: home,
+      TMPDIR: home,
+      ORG_WORKBENCH_SERVER_PORT: "0",
+      // Node itself is a deterministic, local probe target. No provider
+      // credential or network access is needed for the control-plane test.
+      ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI: process.execPath,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stderr.resume();
+  const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 3000 });
+  assert.equal(handle.api, "v0");
+  const response = await new Promise((resolve, reject) => {
+    const request = http.get({ host: "127.0.0.1", port: handle.port, path: "/health" }, (res) => {
+      let raw = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { raw += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode, body: JSON.parse(raw) }));
+    });
+    request.setTimeout(2000, () => request.destroy(new Error("health request timed out")));
+    request.on("error", reject);
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.status, "ok");
+  assert.equal(response.body.api, "v0");
+
+  const stopped = await stopControlPlaneProcess(handle, { termTimeoutMs: 1000 });
+  assert.equal(stopped.state, "stopped");
+  assert.equal(isControlPlaneAlive(child), false);
+  await assert.rejects(
+    new Promise((resolve, reject) => {
+      const request = http.get({ host: "127.0.0.1", port: handle.port, path: "/health" }, resolve);
+      request.on("error", reject);
+    }),
+  );
+});

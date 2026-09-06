@@ -10,7 +10,7 @@ import type {
   TurnRunDriver,
   TurnRunRequest,
   TurnRunResult,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import { EventBus } from "../src/bus.js";
 import type { ControlPlaneContext } from "../src/context.js";
 import { createControlPlane } from "../src/server.js";

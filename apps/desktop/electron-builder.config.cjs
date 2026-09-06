@@ -1,8 +1,25 @@
 const { RUNTIME_FILE_SETS } = require("./packaging/runtime-layout.cjs");
+const path = require("node:path");
+
+const ROLEWEAVE_ICONS = path.resolve(__dirname, "..", "..", "branding", "roleweave", "platform-icons");
+
+// Lane A (staging) remains deliberately unsigned. The release workflow opts
+// into this branch only after it has imported an ephemeral Developer ID
+// certificate and validated the Apple notarization credentials.
+const macSignedBuild = process.env.OWB_MAC_SIGNED_BUILD === "true";
+const macSigning = macSignedBuild
+  ? {
+      hardenedRuntime: true,
+      entitlements: "build/entitlements.mac.plist",
+      entitlementsInherit: "build/entitlements.mac.inherit.plist",
+      forceCodeSigning: true,
+      afterSign: "scripts/notarize-macos.cjs",
+    }
+  : { identity: null };
 
 module.exports = {
   appId: "org.fullstack-ai-infra.org-workbench",
-  productName: "Org Workbench",
+  productName: "RoleWeave",
   directories: {
     output: "release/staging",
   },
@@ -22,12 +39,17 @@ module.exports = {
   artifactName: "${name}-${version}-${arch}.${ext}",
   mac: {
     category: "public.app-category.developer-tools",
-    identity: null,
+    icon: path.join(ROLEWEAVE_ICONS, "roleweave.icns"),
+    ...macSigning,
   },
   // Lane A is deterministic unsigned staging even when an operator shell has
   // CSC_LINK/WIN_CSC_LINK. Keep PE metadata editing, but never enter signing.
   win: {
+    icon: path.join(ROLEWEAVE_ICONS, "roleweave.ico"),
     signExecutable: false,
+  },
+  linux: {
+    icon: path.join(ROLEWEAVE_ICONS, "roleweave.png"),
   },
   // No publish provider here, deliberately. A provider makes electron-builder
   // write `app-update.yml` into the packaged resources, and that file would then

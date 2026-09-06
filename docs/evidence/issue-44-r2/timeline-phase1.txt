@@ -1,0 +1,103 @@
+settled: entry button "创建员工" aria=null
+drawer open=true title="创建员工"
+screenshot: drawer-s1-open.png
+form dump: {
+ "labels": [
+  "姓名*",
+  "岗位 ID*",
+  "职责描述*",
+  "上级",
+  "运行模式",
+  "每任务 token 上限*",
+  "每任务迭代上限",
+  "每日 token 上限*",
+  "每日迭代上限"
+ ],
+ "buttons": [
+  "取消",
+  "开始创建"
+ ],
+ "fields": [
+  {
+   "i": 0,
+   "tag": "INPUT",
+   "id": null,
+   "name": null,
+   "placeholder": "员工姓名（≤24 字）",
+   "aria": null,
+   "cls": "ant-input css-viwxw0 ant-input-outlined ui-input css-var-root ant-inpu"
+  },
+  {
+   "i": 1,
+   "tag": "INPUT",
+   "id": null,
+   "name": null,
+   "placeholder": "小写字母、数字与连字符，≤64 位",
+   "aria": null,
+   "cls": "ant-input css-viwxw0 ant-input-outlined ui-input css-var-root ant-inpu"
+  },
+  {
+   "i": 2,
+   "tag": "TEXTAREA",
+   "id": null,
+   "name": null,
+   "placeholder": "≤500 字",
+   "aria": null,
+   "cls": "ant-input css-viwxw0 ant-input-outlined css-var-r0 ant-input-css-var"
+  },
+  {
+   "i": 3,
+   "tag": "INPUT",
+   "id": ":ra:",
+   "name": null,
+   "placeholder": null,
+   "aria": null,
+   "cls": "ant-select-input"
+  },
+  {
+   "i": 4,
+   "tag": "INPUT",
+   "id": ":rc:",
+   "name": null,
+   "placeholder": null,
+   "aria": null,
+   "cls": "ant-select-input"
+  },
+  {
+   "i": 5,
+   "tag": "INPUT",
+   "id": null,
+   "name": null,
+   "placeholder": "正整数",
+   "aria": null,
+   "cls": "ant-input css-viwxw0 ant-input-outlined ui-input css-var-root ant-inpu"
+  },
+  {
+   "i": 6,
+   "tag": "INPUT",
+   "id": null,
+   "name": null,
+   "placeholder": "选填",
+   "aria": null,
+   "cls": "ant-input css-viwxw0 ant-input-outlined ui-input css-var-root ant-inpu"
+  },
+  {
+   "i": 7,
+   "tag": "INPUT",
+   "id": null,
+   "name": null,
+   "placeholder": "正整数",
+   "aria": null,
+   "cls": "ant-input css-viwxw0 ant-input-outlined ui-input css-var-root ant-inpu"
+  },
+  {
+   "i": 8,
+   "tag": "INPUT",
+   "id": null,
+   "name": null,
+   "placeholder": "选填",
+   "aria": null,
+   "cls": "ant-input css-viwxw0 ant-input-outlined ui-input css-var-root ant-inpu"
+  }
+ ]
+}

@@ -7,7 +7,7 @@ import {
   WORKSPACE_MANIFEST_SCHEMA_VERSION,
   WORKSPACE_ORG_SCHEMA_VERSION,
   errorCodes,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type {
   OrganizationFile,
   OrgLayoutFile,
@@ -16,7 +16,7 @@ import type {
   OrgTreeSnapshot,
   OrgTreeVersion,
   WorkspaceManifest,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import { emptyLayout, orderChildren, parentKey, readLayout, reconcileLayout, writeLayoutAtomic } from "./org/layout.js";
 
 export const ORGANIZATION_FILE = "organization.v1alpha1.json";

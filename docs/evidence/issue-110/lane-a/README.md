@@ -272,22 +272,6 @@ Sanitized current-main #111/#119 behavior qualification output:
 {"schemaVersion":"org-workbench-clean-staging-behavior-smoke.v1","ok":true,"platform":"macos","architecture":"arm64","artifact":"release/staging/mac-arm64/Org Workbench.app","stagedOutsideSourceTree":true,"stagedPathHasSpaces":true,"controlPlaneReady":true,"trackedWorkbenchPid":true,"trackedControlPlanePid":true,"externalCredentialsForwarded":false,"liveDescendants":4,"qoderDescendantsObservedAfterReport":0,"knownResidualProcesses":0,"rendererMounted":true,"preloadBridge":true,"loginPathRecovered":true,"nestedMcpResolvedViaRecoveredPath":true,"loginShellEnvironmentImported":false,"qoderReady":true,"turnCompleted":true,"historyReadback":true,"sessionHistoryReadback":true,"stagingCleaned":true}
 ```
 
-### Engine-residual contract: which platforms and modes it covers (#131)
-
-The smoke asserts that no Qoder or Claude Code child outlives the report. That assertion runs in every mode, but the modes do not give it the same weight, and a green leg on its own does not say which one applied. The reports now carry `engineResidualCoverage` so a reader does not have to infer it:
-
-| Mode | Platforms run in CI | Is an engine child guaranteed? | What a pass means |
-| --- | --- | --- | --- |
-| static | macOS arm64, Windows x64 | No | Nothing engine-named survived. The only engine child that can appear is the short-lived health probe, so this catches a probe that failed to exit and nothing stronger. |
-| layout | macOS arm64, Windows x64 | No | Same as static. |
-| behavior | macOS arm64 only (`assert.equal(platform, "macos")` in `smokePackagedApp`) | Yes — it creates the Qoder fixture | The fixture child was actually cleaned up. This is the only mode that exercises the contract against a process guaranteed to exist. |
-
-There is no Windows behavior leg, so on Windows the contract is asserted but never exercised against a guaranteed child. That is recorded rather than closed: standing up the Qoder fixture on Windows is its own scope (#131 non-goals).
-
-What makes the assertion meaningful on every platform regardless of mode is the counter-test, not a run: `residualEngineDescendants` is a pure filter, and `scripts/test/smoke-packaged-app.test.mjs` plants a Qoder-named and a Claude-named child and requires the filter to return them. Removing either matched field turns those subtests red.
-
-The filter matches the executable path as well as the command line. On Windows `Win32_Process.CommandLine` is null whenever the querying user cannot read it and `process-tree.cjs` maps that to `""`, so a command-only filter had a blind spot on the platform where the command line is least reliable. A process with neither field readable is deliberately **not** claimed as an engine child: ownership stays with the identity-bound model below, and asserting it from two empty strings would make the contract fire on anything unreadable.
-
 The process claim is deliberately bounded to verified/bound identities, the current verified root and descendants, and on POSIX the expected detached group while its spawn-origin generation remains unambiguous. Command text and staging paths are diagnostic data only: they never grant signal authority and never support an “owned residual” conclusion. PID and command-line values are not evidence and are not retained.
 
 ## Current-main integration dependency and workflow audit

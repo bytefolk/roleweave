@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isPositionId } from "@org-workbench/shared";
-import type { TurnRecord, WorkbenchSession } from "@org-workbench/shared";
+import { isPositionId } from "@roleweave/shared";
+import type { TurnRecord, WorkbenchSession } from "@roleweave/shared";
 import { isTurnRecord } from "../turns/store.js";
 
 const EXPORT_SCHEMA_VERSION = "context-export-state.v1" as const;

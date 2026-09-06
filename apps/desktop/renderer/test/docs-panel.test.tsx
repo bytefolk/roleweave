@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DocsPanel } from "../src/docs/DocsPanel";
-import type { DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
+import type { DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
 
 const LIST: DocsFileListResponse = {
   schemaVersion: "docs-file-list.v1",

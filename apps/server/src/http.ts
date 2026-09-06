@@ -4,7 +4,7 @@ import {
   API_VERSION_HEADER,
   OrgApiError,
   errorCodes,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 

@@ -1,4 +1,4 @@
-import type { GroupTimeline, TurnRecord } from "@org-workbench/shared";
+import type { GroupTimeline, TurnRecord } from "@roleweave/shared";
 import type { TurnEngine } from "./types";
 
 /**

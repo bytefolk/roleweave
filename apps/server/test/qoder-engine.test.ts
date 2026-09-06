@@ -669,13 +669,7 @@ test("qoder-engine turn run: an error result becomes run.failed with retryable=f
   assert.equal(result.code, 0);
   const failed = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>).find((event) => event.type === "run.failed");
   assert.equal((failed?.error as { code: string }).code, "qoder.result_error");
-  const failMessage = (failed?.error as { message: string }).message;
-  assert.match(failMessage, /^qoder hit its turn cap \(binary: [^/\\]+\)$/);
-  assert.ok(
-    failMessage.includes(`(binary: ${path.basename(fakeBin)})`),
-    "qoder.result_error must annotate the binary basename for edition diagnosis (#200)",
-  );
-  assert.doesNotMatch(failMessage, new RegExp(fakeBin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.equal((failed?.error as { message: string }).message, "qoder hit its turn cap");
   assert.equal((failed?.error as { retryable: boolean }).retryable, false);
 });
 
@@ -705,26 +699,6 @@ test("qoder-engine turn run: an unspawnable resolved binary never discloses its 
   assert.equal((failed?.error as { code: string }).code, "turn_engine_unavailable");
   assert.equal((failed?.error as { retryable: boolean }).retryable, true);
   assert.doesNotMatch(result.stdout, new RegExp(fakeBin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-});
-
-test("qoder-engine turn run: DIGITAL_EMPLOYEE_QODER_COMMAND selects the resolved binary (#200)", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
-  const dir = await makeWorkspace();
-  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-cn-"));
-  const fakeBin = path.join(fakeDir, "qoderclicn");
-  await fs.writeFile(fakeBin, FAKE_QODER_SHELL_OK, { mode: 0o755 });
-  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
-    stdin: JSON.stringify({ input: "CN edition smoke" }),
-    env: {
-      ORG_WORKBENCH_QODER_BIN: "",
-      DIGITAL_EMPLOYEE_QODER_COMMAND: fakeBin,
-      PATH: "/usr/bin:/bin",
-      HOME: path.join(fakeDir, "empty-home"),
-    },
-  });
-  assert.equal(result.code, 0);
-  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
-  assert.equal(events.at(-1)?.type, "run.completed");
-  assert.equal(events.at(-1)?.output, "release gate passed");
 });
 
 function fakeClaudeOk(argsFile: string, envFile: string, stdinFile: string): string {

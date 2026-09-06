@@ -7,8 +7,8 @@ import type {
   TurnRunDriver,
   TurnRunRequest,
   TurnRunResult,
-} from "@org-workbench/shared";
-import { POSITION_ID_PATTERN } from "@org-workbench/shared";
+} from "@roleweave/shared";
+import { POSITION_ID_PATTERN } from "@roleweave/shared";
 import { api, assertPosixMode, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import {
   TurnStore,

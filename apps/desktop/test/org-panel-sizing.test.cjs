@@ -77,6 +77,11 @@ function mediaMatches(params, viewport) {
   const list = params.split(",").map((part) => part.trim());
   return list.some((one) =>
     one
+      // Vite's production minifier removes the whitespace around `and`.
+      // Put it back before tokenizing so combined viewport guards remain
+      // executable in the cascade resolver instead of being treated as an
+      // unknown media feature.
+      .replace(/\)\s*and\s*\(/gi, ") and (")
       .split(/\s+and\s+/i)
       .map((token) => token.trim())
       .every((token) => {
@@ -303,6 +308,101 @@ test("the pair stacks in one column at 980px and below, without unequal-width tr
     "0",
     "grid items keep an automatic min-content floor; without min-width: 0 an equal track pair can be pushed apart by wide content",
   );
+});
+
+test("the stacked Org page has explicit rows and owns its narrow-window scroll (#185)", () => {
+  const rules = stylesheetRules();
+
+  for (const viewport of [VIEWPORTS.stackedAt980, VIEWPORTS.stackedNarrow]) {
+    assert.equal(
+      valueAt(rules, ".owb-main > .owb-org-module", "overflow-y", viewport),
+      "auto",
+      `${viewport.width}px: the stacked Org page must own overflow locally so the shell never clips one row over another`,
+    );
+    assert.deepEqual(
+      trackList(valueAt(rules, ".owb-org-module", "grid-template-rows", viewport)).map(normalizeTrack),
+      ["auto", "auto"],
+      `${viewport.width}px: explicit auto rows are required; implicit grid rows were allowing the chart and conversation to overlap`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-module", "align-content", viewport),
+      "start",
+      `${viewport.width}px: stacked content must begin at the top instead of stretching implicit tracks unpredictably`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-module__left", "flex", viewport),
+      "none",
+      `${viewport.width}px: the chart + position stack must size its own grid row`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-module__left", "min-height", viewport),
+      "max-content",
+      `${viewport.width}px: the first stacked row must keep the chart and position card's content contribution`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-module__left > .owb-position-column", "flex", viewport),
+      "none",
+      `${viewport.width}px: the position card must not collapse its parent row while the conversation row is laid out`,
+    );
+  }
+});
+
+test("the org chart owns its canvas and cannot paint into the conversation row (#186)", () => {
+  const rules = stylesheetRules();
+
+  assert.equal(
+    valueAt(rules, ".owb-org-chart", "position", VIEWPORTS.desktop),
+    "relative",
+    "the chart needs a local positioning context so its transformed stage cannot participate in an unrelated stacking context",
+  );
+  assert.equal(
+    valueAt(rules, ".owb-org-chart", "isolation", VIEWPORTS.desktop),
+    "isolate",
+    "the chart must own an isolated paint context",
+  );
+  assert.equal(
+    valueAt(rules, ".owb-org-chart", "overflow", VIEWPORTS.desktop),
+    "hidden",
+    "the chart panel must clip its canvas to its rounded frame",
+  );
+  assert.equal(
+    valueAt(rules, ".owb-org-chart__body", "contain", VIEWPORTS.desktop),
+    "paint",
+    "the transformed chart stage must be paint-contained by the canvas body",
+  );
+  assert.equal(
+    valueAt(rules, ".owb-org-module > .owb-turn-panel", "position", VIEWPORTS.desktop),
+    "relative",
+    "the conversation row needs a stable layer above any transformed chart pixels",
+  );
+  assert.equal(
+    valueAt(rules, ".owb-org-module > .owb-turn-panel", "z-index", VIEWPORTS.desktop),
+    "1",
+    "the conversation row must win if a stale browser layout briefly overlaps rows",
+  );
+
+  for (const viewport of [VIEWPORTS.stackedAt980, VIEWPORTS.stackedNarrow]) {
+    assert.equal(
+      valueAt(rules, ".owb-org-module__left > .owb-org-chart", "width", viewport),
+      "100%",
+      `${viewport.width}px: the chart must follow the left column instead of sizing that column to the tree's max-content width`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-module__left > .owb-org-chart", "min-width", viewport),
+      "0",
+      `${viewport.width}px: the flex chart item must give up its automatic min-content width`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-chart", "min-height", viewport),
+      "360px",
+      `${viewport.width}px: the stacked chart needs a real canvas height before the conversation row begins`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-chart__body", "min-height", viewport),
+      "312px",
+      `${viewport.width}px: the chart body must provide enough vertical room for the root and child tiers`,
+    );
+  }
 });
 
 // Not an AC: stretching the column made the no-position-selected card show one

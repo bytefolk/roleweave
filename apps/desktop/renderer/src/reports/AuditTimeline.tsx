@@ -18,8 +18,8 @@ import {
   Select,
   Tag,
 } from "antd";
-import { useOwbLocale, useT } from "@org-workbench/ui";
-import type { TurnEngine, TurnTerminalReason } from "@org-workbench/shared";
+import { useOwbLocale, useT } from "@roleweave/ui";
+import type { TurnEngine, TurnTerminalReason } from "@roleweave/shared";
 
 /** Event classes rendered on the timeline. `model.delta` is intentionally excluded. */
 export type AuditTimelineEventType =
@@ -98,6 +98,7 @@ export interface AuditTimelinePage {
 export interface AuditTimelineProps {
   events: AuditTimelineEvent[];
   loading?: boolean;
+  positionNames?: Record<string, string>;
   /** Positions available in the position Select. Falls back to distinct positions in events. */
   positions?: Array<{ id: string; label?: string }>;
   filters?: AuditTimelineFilters;
@@ -224,6 +225,7 @@ export function buildCostDashboardHref(runId: string, positionId?: string): stri
 export function AuditTimeline({
   events,
   loading,
+  positionNames,
   positions,
   filters,
   onFiltersChange,
@@ -259,9 +261,9 @@ export function AuditTimeline({
     for (const event of evidenceOnly) if (event.positionId) seen.add(event.positionId);
     return Array.from(seen).map((id) => {
       const meta = source.find((p) => p.id === id);
-      return { value: id, label: meta?.label ?? id };
+      return { value: id, label: meta?.label ?? positionNames?.[id] ?? t("rep.unknownPosition") };
     });
-  }, [positions, evidenceOnly]);
+  }, [positions, positionNames, evidenceOnly]);
 
   const classOptions: Array<{ value: AuditTimelineEventClass; label: string }> = [
     { value: "turn", label: t("rep.classTurn") },
@@ -346,6 +348,7 @@ export function AuditTimeline({
                 <TimelineGroupHead
                   runId={group.runId}
                   events={group.events}
+                  positionNames={positionNames}
                   onOpenCost={onOpenCostDashboard}
                 />
               ),
@@ -353,7 +356,7 @@ export function AuditTimeline({
                 <ul className="owb-timeline__events" data-testid={`timeline-group-${group.runId}`}>
                   {group.events.map((event) => (
                     <li key={event.id} className="owb-timeline__event">
-                      <TimelineEventRow event={event} onOpenCost={onOpenCostDashboard} />
+                      <TimelineEventRow event={event} positionNames={positionNames} onOpenCost={onOpenCostDashboard} />
                     </li>
                   ))}
                 </ul>
@@ -415,10 +418,12 @@ function groupSignatureClass(events: AuditTimelineEvent[]): "running" | "complet
 function TimelineGroupHead({
   runId,
   events,
+  positionNames,
   onOpenCost,
 }: {
   runId: string;
   events: AuditTimelineEvent[];
+  positionNames?: Record<string, string>;
   onOpenCost?: (runId: string, positionId?: string) => void;
 }) {
   const t = useT();
@@ -450,8 +455,8 @@ function TimelineGroupHead({
       />
       <span className="owb-timeline__group-time">{formatTime(first?.at, localeTag)}</span>
       <strong className="owb-timeline__group-who">
-        {positionId ?? t("rep.classOrg")}
-        {engine ? <em className="owb-timeline__group-eng"> · {engine}</em> : null}
+        {positionId ? (positionNames?.[positionId] ?? t("rep.unknownPosition")) : t("rep.classOrg")}
+        {engine ? <em className="owb-timeline__group-eng"> · {engineLabel(engine)}</em> : null}
       </strong>
       <span className="owb-timeline__group-status" data-status={status}>
         {status === "run.failed"
@@ -484,16 +489,17 @@ function TimelineGroupHead({
           </a>
         </>
       ) : null}
-      <code className="owb-timeline__group-runid">{runId}</code>
     </div>
   );
 }
 
 function TimelineEventRow({
   event,
+  positionNames,
   onOpenCost,
 }: {
   event: AuditTimelineEvent;
+  positionNames?: Record<string, string>;
   onOpenCost?: (runId: string, positionId?: string) => void;
 }) {
   const t = useT();
@@ -520,10 +526,7 @@ function TimelineEventRow({
           aria-hidden="true"
         />
         <time className="owb-tc-head__time">{formatTime(event.at, localeTag)}</time>
-        <span className="owb-timeline__event-type">{typeLabel(event.type)}</span>
-        {event.errorCode ? (
-          <Tag color="red" className="owb-timeline__errcode">{event.errorCode}</Tag>
-        ) : null}
+        <span className="owb-timeline__event-type">{typeLabel(event.type, t)}</span>
         {isBudget ? (
           <>
             <Tag color="red" className="owb-timeline__budget-tag" data-testid={`timeline-event-budget-${event.id}`}>
@@ -549,20 +552,15 @@ function TimelineEventRow({
       {event.task ? (
         <p className="owb-tc__task"><span className="owb-tc__task-key">TASK</span>{event.task}</p>
       ) : null}
-      {(event.envelopeDigest || typeof event.totalTokens === "number") ? (
+      {typeof event.totalTokens === "number" ? (
         <div className="owb-timeline__evidence">
-          {typeof event.totalTokens === "number" ? (
-            <span className="owb-timeline__tokens">{event.totalTokens.toLocaleString()} tokens</span>
-          ) : null}
-          {event.envelopeDigest ? (
-            <code className="owb-timeline__digest" title={event.envelopeDigest}>{event.envelopeDigest}</code>
-          ) : null}
+          <span className="owb-timeline__tokens">{event.totalTokens.toLocaleString()} tokens</span>
         </div>
       ) : null}
       {event.reportingChain && event.reportingChain.length > 0 ? (
         <div className="owb-timeline__chain">
           {event.reportingChain.map((position) => (
-            <span key={position}>{position}</span>
+            <span key={position}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>
           ))}
         </div>
       ) : null}
@@ -570,21 +568,28 @@ function TimelineEventRow({
   );
 }
 
-function typeLabel(type: AuditTimelineEventType): string {
+function typeLabel(type: AuditTimelineEventType, t: ReturnType<typeof useT>): string {
   switch (type) {
-    case "run.started": return "run.started";
-    case "usage": return "usage";
-    case "run.completed": return "run.completed";
-    case "run.failed": return "run.failed";
-    case "turn.indeterminate": return "turn.indeterminate";
-    case "approval.requested": return "approval.requested";
-    case "approval.granted": return "approval.granted";
-    case "approval.denied": return "approval.denied";
-    case "escalation.created": return "escalation.created";
-    case "org.audit": return "org.audit";
-    case "hire.progress": return "hire.progress";
+    case "run.started": return t("rep.eventStarted");
+    case "usage": return t("rep.eventUsage");
+    case "run.completed": return t("rep.eventCompleted");
+    case "run.failed": return t("rep.eventFailed");
+    case "turn.indeterminate": return t("rep.eventUnknown");
+    case "approval.requested": return t("rep.eventApprovalRequested");
+    case "approval.granted": return t("rep.eventApprovalGranted");
+    case "approval.denied": return t("rep.eventApprovalDenied");
+    case "escalation.created": return t("rep.eventEscalation");
+    case "org.audit": return t("rep.eventOrgChange");
+    case "hire.progress": return t("rep.eventHireProgress");
     default: return type;
   }
+}
+
+function engineLabel(engine: string): string {
+  if (engine === "qoder") return "Qoder";
+  if (engine === "claude-code") return "Claude Code";
+  if (engine === "claude-local") return "Claude Local";
+  return engine;
 }
 
 function formatTime(value: string | undefined, localeTag = "zh-CN"): string {

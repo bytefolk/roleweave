@@ -1,4 +1,4 @@
-// org-workbench Electron shell (main process).
+// RoleWeave Electron shell (main process).
 //
 // Security baseline (frozen, docs/api-contract-v0.md §安全基线):
 //   - contextIsolation: true, nodeIntegration: false, sandbox: true
@@ -10,12 +10,14 @@
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+// Keep the development window and the packaged bundle aligned on the public
+// product name. The old IPC/package identifiers below remain compatibility
+// contracts, but users should only see RoleWeave.
+app.setName("RoleWeave");
 const { spawn } = require("node:child_process");
 const {
-  controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,
-  serverPathForWorkspace,
 } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -35,7 +37,7 @@ const {
   startPackagedSmokeLifecycle,
   LAYOUT_MEASURE_SCRIPT,
 } = require("./packaged-smoke.cjs");
-const { startUpdaterService } = require("./updater.cjs");
+const { defaultMacAppPath, startUpdaterService } = require("./updater.cjs");
 const {
   RELEASE_PAGE_URL,
   boundedUpdateResult,
@@ -43,6 +45,12 @@ const {
   confirmedByUser,
   updateStatusPayload,
 } = require("./update-ipc.cjs");
+const {
+  DEFAULT_READY_TIMEOUT_MS,
+  isControlPlaneAlive,
+  startControlPlaneProcess,
+  stopControlPlaneProcess,
+} = require("./control-plane-lifecycle.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
 const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
@@ -81,12 +89,24 @@ const {
   readLastWorkspacePath,
   writeLastWorkspacePath,
 } = require("./last-workspace.cjs");
+const { validateWorkspaceCreateRequest } = require("./workspace-ipc.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
-const READY_TIMEOUT_MS = 15000;
-const READY_PREFIX = "org-workbench-server ready ";
+const ROLEWEAVE_DEV_ICON = path.resolve(
+  __dirname,
+  "..",
+  "..",
+  "..",
+  "branding",
+  "roleweave",
+  "platform-icons",
+  "roleweave.png",
+);
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-let controlPlane = null; // { child, port, token }
+let controlPlane = null; // { child, port, token, state }
+let controlPlaneState = "stopped";
+let controlPlaneStopPromise = null;
 let updaterService = null;
 let controlPlaneError = null;
 let mainWindow = null;
@@ -96,6 +116,7 @@ let trustedRendererUrl = null;
 let eventStreamRequest = null;
 let currentSseStatus = "connecting";
 let pendingFallbackNotice = null;
+let updateCheckTimer = null;
 
 function pinnedEngineCommandDefault() {
   const nodePath = process.execPath;
@@ -114,44 +135,56 @@ function pinnedEngineCommandDefault() {
 }
 
 function startControlPlane() {
-  return new Promise((resolve, reject) => {
-    const child = createControlPlaneChild({
-      serverEntry: SERVER_ENTRY,
-      env: {
-        ...process.env,
-        // Directly runnable: default the pinned engine to the bundled qoder
-        // adapter unless the operator pins a real digital-employee CLI.
-        ...engineRuntimeEnvironment(
-          process.env,
-          pinnedEngineCommandDefault(),
-        ),
-      },
-    });
-    let buffer = "";
-    const timer = setTimeout(() => {
-      reject(new Error("control plane did not become ready within 15s"));
-    }, READY_TIMEOUT_MS);
-    child.stdout.on("data", (chunk) => {
-      buffer += String(chunk);
-      const line = buffer
-        .split("\n")
-        .find((entry) => entry.startsWith(READY_PREFIX));
-      if (line) {
-        try {
-          const info = JSON.parse(line.slice(READY_PREFIX.length));
-          clearTimeout(timer);
-          resolve({ child, port: info.port, token: info.token });
-        } catch {
-          // Malformed ready line; keep waiting until timeout surfaces the issue.
-        }
-      }
-    });
-    child.stderr.on("data", (chunk) => process.stderr.write(chunk));
-    child.on("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`control plane exited early (code ${code})`));
-    });
+  controlPlaneState = "starting";
+  controlPlaneError = null;
+  return startControlPlaneProcess({
+    readyTimeoutMs: DEFAULT_READY_TIMEOUT_MS,
+    createChild: () => {
+      const child = createControlPlaneChild({
+        serverEntry: SERVER_ENTRY,
+        env: {
+          ...process.env,
+          // Directly runnable: default the pinned engine to the bundled qoder
+          // adapter unless the operator pins a real digital-employee CLI.
+          ...engineRuntimeEnvironment(
+            process.env,
+            pinnedEngineCommandDefault(),
+          ),
+        },
+      });
+      child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+      return child;
+    },
+  }).then((handle) => {
+    controlPlaneState = "ready";
+    return handle;
+  }).catch((error) => {
+    controlPlaneState = "failed";
+    controlPlaneError = error;
+    throw error;
   });
+}
+
+function stopControlPlane() {
+  if (controlPlaneStopPromise) return controlPlaneStopPromise;
+  if (!controlPlane) {
+    controlPlaneState = "stopped";
+    return Promise.resolve({ state: "stopped", forced: false, exitCode: null, signalCode: null });
+  }
+  const handle = controlPlane;
+  controlPlaneState = "stopping";
+  controlPlaneStopPromise = stopControlPlaneProcess(handle).then((result) => {
+    if (controlPlane === handle) controlPlane = null;
+    controlPlaneState = "stopped";
+    return result;
+  }).catch((error) => {
+    controlPlaneState = "failed";
+    controlPlaneError = error;
+    throw error;
+  }).finally(() => {
+    controlPlaneStopPromise = null;
+  });
+  return controlPlaneStopPromise;
 }
 
 function apiRequest(pathname, { method = "GET", withAuth = true, body = null } = {}) {
@@ -207,14 +240,24 @@ function copyExampleWorkspace(source, dest) {
   }
 }
 
+function workspaceOverride() {
+  // ROLEWEAVE_* is the public name; ORG_WORKBENCH_* remains a compatibility
+  // alias so existing launch scripts and packaged smoke tests keep working.
+  return process.env.ROLEWEAVE_DEFAULT_WORKSPACE ?? process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE;
+}
+
 function defaultWorkspaceDir() {
-  if (process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE) {
-    return process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE;
-  }
+  const override = workspaceOverride();
+  if (override) return override;
   const source = path.resolve(__dirname, "..", "..", "..", "examples", "oss-maintainer");
   // The example is a source-controlled fixture; the server writes runtime
   // state into the opened workspace, so auto-open uses a copy outside the repo.
-  const runtime = path.join(os.homedir(), ".org-workbench", "demo-workspace");
+  const runtime = path.join(os.homedir(), ".roleweave", "demo-workspace");
+  const legacyRuntime = path.join(os.homedir(), ".org-workbench", "demo-workspace");
+  // Do not strand an existing workspace just because the product was renamed.
+  if (!fs.existsSync(path.join(runtime, "workspace.json")) && fs.existsSync(path.join(legacyRuntime, "workspace.json"))) {
+    return legacyRuntime;
+  }
   if (fs.existsSync(path.join(source, "workspace.json"))) {
     if (!fs.existsSync(path.join(runtime, "workspace.json"))) {
       copyExampleWorkspace(source, runtime);
@@ -225,31 +268,15 @@ function defaultWorkspaceDir() {
 }
 
 async function openDefaultWorkspace() {
-  // ORG_WORKBENCH_DEFAULT_WORKSPACE wins when set — no persistence, no notice.
-  if (process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE) {
-    const dir = process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE;
-    // The existence check stays on the raw path: main runs on the Windows side
-    // of the boundary, only the server sees the translated one.
-    if (!fs.existsSync(path.join(dir, "workspace.json"))) {
-      process.stderr.write(`auto-open skipped: workspace.json not found at ${dir}\n`);
-      return;
-    }
+  // An explicit RoleWeave/legacy override wins — no persistence, no notice.
+  const override = workspaceOverride();
+  if (override) {
+    const dir = override;
+    if (!fs.existsSync(path.join(dir, "workspace.json"))) return;
     try {
-      const res = await apiRequest("/workspace/open", {
-        method: "POST",
-        body: { path: serverPathForWorkspace(dir, process.env) },
-      });
-      if (res.status !== 200) {
-        process.stderr.write(
-          `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
-          + `server responded ${res.status} — ${JSON.stringify(res.body)}\n`,
-        );
-      }
-    } catch (err) {
-      process.stderr.write(
-        `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
-        + `${err.message ?? err}\n`,
-      );
+      await apiRequest("/workspace/open", { method: "POST", body: { path: dir } });
+    } catch {
+      // Auto-open is best-effort.
     }
     return;
   }
@@ -257,53 +284,25 @@ async function openDefaultWorkspace() {
   // Try the persisted last workspace path before the demo copy.
   const lastPath = readLastWorkspacePath(app.getPath("userData"));
   if (lastPath !== null) {
-    // Checked raw on the Windows side; only the POST crosses the boundary.
     if (fs.existsSync(path.join(lastPath, "workspace.json"))) {
       try {
-        const res = await apiRequest("/workspace/open", {
-          method: "POST",
-          body: { path: serverPathForWorkspace(lastPath, process.env) },
-        });
-        if (res.status === 200) return;
-        process.stderr.write(
-          `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${lastPath}]: `
-          + `server responded ${res.status} — ${JSON.stringify(res.body)}\n`,
-        );
-      } catch (err) {
-        process.stderr.write(
-          `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${lastPath}]: `
-          + `${err.message ?? err}\n`,
-        );
+        await apiRequest("/workspace/open", { method: "POST", body: { path: lastPath } });
+        return;
+      } catch {
+        // Open failed — fall through to demo with a notice.
       }
-      // Open failed — fall through to demo with a notice.
     }
-    // Persisted path is missing or invalid; surface a visible notice naming the
-    // path the operator picked, not its translated server-side form.
+    // Persisted path is missing or invalid; surface a visible notice.
     pendingFallbackNotice = lastPath;
   }
 
   // Fall back to the demo workspace.
   const dir = defaultWorkspaceDir();
-  if (!fs.existsSync(path.join(dir, "workspace.json"))) {
-    process.stderr.write(`auto-open skipped: workspace.json not found at ${dir}\n`);
-    return;
-  }
+  if (!fs.existsSync(path.join(dir, "workspace.json"))) return;
   try {
-    const res = await apiRequest("/workspace/open", {
-      method: "POST",
-      body: { path: serverPathForWorkspace(dir, process.env) },
-    });
-    if (res.status !== 200) {
-      process.stderr.write(
-        `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
-        + `server responded ${res.status} — ${JSON.stringify(res.body)}\n`,
-      );
-    }
-  } catch (err) {
-    process.stderr.write(
-      `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
-      + `${err.message ?? err}\n`,
-    );
+    await apiRequest("/workspace/open", { method: "POST", body: { path: dir } });
+  } catch {
+    // Auto-open is best-effort; the empty state with the open button remains the fallback.
   }
 }
 
@@ -371,6 +370,7 @@ ipcMain.handle("owb:status", async () => {
   if (!controlPlane) {
     return {
       running: false,
+      state: controlPlaneState,
       error: controlPlaneError ? String(controlPlaneError.message ?? controlPlaneError) : null,
       nextSteps: [
         "确认已安装 Node >= 22 并已构建（npm run build）",
@@ -379,17 +379,39 @@ ipcMain.handle("owb:status", async () => {
       ],
     };
   }
+  if (controlPlaneState === "stopping") {
+    return { running: false, state: "stopping", port: controlPlane.port, health: null };
+  }
+  if (!isControlPlaneAlive(controlPlane.child)) {
+    controlPlaneState = "failed";
+    return {
+      running: false,
+      state: controlPlaneState,
+      port: controlPlane.port,
+      health: null,
+      error: "control plane process is not alive",
+    };
+  }
   try {
     const health = await apiRequest("/health", { withAuth: false });
-    return { running: true, port: controlPlane.port, health: health.body };
+    controlPlaneState = health.status === 200 && health.body?.status === "ok" && health.body?.api === "v0"
+      ? "ready"
+      : "degraded";
+    return { running: true, state: controlPlaneState, port: controlPlane.port, health: health.body };
   } catch (err) {
-    return { running: true, port: controlPlane.port, health: null, error: String(err.message ?? err) };
+    controlPlaneState = "degraded";
+    return { running: true, state: controlPlaneState, port: controlPlane.port, health: null, error: String(err.message ?? err) };
   }
+});
+
+ipcMain.handle("owb:control-plane:stop", async () => {
+  const result = await stopControlPlane();
+  return { ok: true, ...result };
 });
 
 ipcMain.handle("owb:workspace:open", async () => {
   const options = {
-    title: "打开 org-workbench 工作区",
+    title: "打开 RoleWeave 工作区",
     properties: ["openDirectory"],
   };
   const picked = mainWindow
@@ -397,18 +419,37 @@ ipcMain.handle("owb:workspace:open", async () => {
     : await dialog.showOpenDialog(options);
   if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
   const dir = picked.filePaths[0];
-  const res = await apiRequest("/workspace/open", {
-    method: "POST",
-    body: { path: serverPathForWorkspace(dir, process.env) },
-  });
+  const res = await apiRequest("/workspace/open", { method: "POST", body: { path: dir } });
   if (res.status === 200) {
     try {
-      // Persisted untranslated on purpose: the boot-time reopen checks
-      // fs.existsSync(<path>/workspace.json) from the Windows side, so a
-      // /mnt/c/... value would never resolve there.
       writeLastWorkspacePath(app.getPath("userData"), dir);
     } catch {
       // Persistence is best-effort; the open itself succeeded.
+    }
+  }
+  return res;
+});
+
+ipcMain.handle("owb:workspace:create", async (_event, request) => {
+  const validated = validateWorkspaceCreateRequest(request);
+  if (!validated.ok) return validated.response;
+  const options = {
+    title: "选择项目保存位置",
+    properties: ["openDirectory", "createDirectory"],
+  };
+  const picked = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
+  const res = await apiRequest("/workspace/create", {
+    method: "POST",
+    body: { ...validated.request, parentPath: picked.filePaths[0] },
+  });
+  if (res.status === 201 && res.body?.path) {
+    try {
+      writeLastWorkspacePath(app.getPath("userData"), res.body.path);
+    } catch {
+      // Persistence is best-effort; project creation itself succeeded.
     }
   }
   return res;
@@ -702,9 +743,10 @@ function createWindow() {
     // in a simulated viewport.
     minWidth: 640,
     minHeight: 680,
-    title: "org-workbench",
+    title: "RoleWeave",
     frame: false,
     resizable: true,
+    icon: fs.existsSync(ROLEWEAVE_DEV_ICON) ? ROLEWEAVE_DEV_ICON : undefined,
     // Native window paint color before any CSS loads (avoids a white flash);
     // main process has no access to CSS custom properties, so this literal
     // must be kept in sync with --ui-canvas in antd-skin.css by hand — not
@@ -980,6 +1022,7 @@ app.whenReady().then(async () => {
     await openDefaultWorkspace();
   } catch (err) {
     controlPlaneError = err;
+    controlPlaneState = "failed";
   }
   // The vendored bundle is loaded through the service so a missing or unloadable
   // one degrades to an explained refusal. This used to be a bare require on the
@@ -988,15 +1031,52 @@ app.whenReady().then(async () => {
   updaterService = startUpdaterService({
     loadUpdater: () => require("./vendor/electron-updater.cjs").autoUpdater,
     onState: publishUpdateState,
+    currentVersion: app.getVersion(),
+    arch: process.arch,
+    appPath: process.platform === "darwin" ? defaultMacAppPath() : null,
+    execPath: process.execPath,
+    helperPath: path.join(__dirname, "macos-update-helper.cjs"),
+    parentPid: process.pid,
+    quit: () => app.quit(),
   });
+  if (process.platform === "darwin" && app.dock && fs.existsSync(ROLEWEAVE_DEV_ICON)) {
+    app.dock.setIcon(ROLEWEAVE_DEV_ICON);
+  }
   createWindow();
+  // macOS's free channel checks GitHub automatically and downloads only after
+  // the signed manifest has been verified. A verified download is applied on a
+  // normal app exit by the detached helper, so work is not interrupted by a
+  // surprise restart. Windows keeps its existing explicit UI flow.
+  void updaterService.check({ automatic: true });
+  updateCheckTimer = setInterval(() => {
+    void updaterService?.check({ automatic: true });
+  }, UPDATE_CHECK_INTERVAL_MS);
+  updateCheckTimer.unref?.();
 });
 
 app.on("window-all-closed", () => {
   app.quit();
 });
 
+let quitSequenceStarted = false;
+
+app.on("before-quit", (event) => {
+  // If a verified macOS package was downloaded in the background, replace the
+  // app as part of this normal quit. The service's installing guard prevents a
+  // manual "Install and restart" click from spawning a second helper.
+  void updaterService?.installOnQuit?.();
+  if (quitSequenceStarted || !controlPlane || !isControlPlaneAlive(controlPlane.child)) return;
+  event.preventDefault();
+  quitSequenceStarted = true;
+  void stopControlPlane().then(() => app.quit()).catch(() => {
+    // Keep the window alive and leave the control-plane handle inspectable if
+    // even the bounded SIGKILL/exit wait failed. A quit must not orphan it.
+    quitSequenceStarted = false;
+  });
+});
+
 app.on("quit", () => {
+  if (updateCheckTimer !== null) clearInterval(updateCheckTimer);
   if (eventStreamRequest) eventStreamRequest.destroy();
-  if (controlPlane) controlPlane.child.kill();
+  void stopControlPlane();
 });

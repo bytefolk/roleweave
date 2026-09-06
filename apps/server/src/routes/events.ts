@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { SseEventEnvelope } from "@org-workbench/shared";
-import { API_VERSION, API_VERSION_HEADER } from "@org-workbench/shared";
+import type { SseEventEnvelope } from "@roleweave/shared";
+import { API_VERSION, API_VERSION_HEADER } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 
 const HEARTBEAT_MS = 15_000;

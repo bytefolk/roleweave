@@ -6,16 +6,20 @@ const path = require("node:path");
 const DESKTOP_RUNTIME_FILES = [
   "package.json",
   "src/main.js",
+  "src/macos-github-updater.cjs",
   "src/macos-login-path.cjs",
+  "src/macos-update-helper.cjs",
   "src/preload.js",
   "src/approval-ipc.cjs",
   "src/assets-ipc.cjs",
+  "src/control-plane-lifecycle.cjs",
   "src/control-plane-launch.cjs",
   "src/docs-ipc.cjs",
   "src/drive-ipc.cjs",
   "src/group-ipc.cjs",
   "src/hire-ipc.cjs",
   "src/last-workspace.cjs",
+  "src/workspace-ipc.cjs",
   "src/org-ipc.cjs",
   "src/packaged-behavior-smoke.cjs",
   "src/packaged-smoke.cjs",
@@ -27,6 +31,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/vendor/electron-updater.cjs",
   "src/session-ipc.cjs",
   "src/turn-ipc.cjs",
+  "src/update-trust.cjs",
   "src/updater.cjs",
   "src/update-ipc.cjs",
   "src/window-ipc.cjs",
@@ -38,6 +43,7 @@ const SERVER_RUNTIME_FILES = [
   "bin/qoder-engine.mjs",
   "src/qoder-binary.js",
   "src/claude-binary.js",
+  "dist/src/agent-registry.js",
   "dist/src/assets/store.js",
   "dist/src/auth.js",
   "dist/src/bus.js",
@@ -87,6 +93,7 @@ const SHARED_RUNTIME_FILES = [
   "pending-approval.cjs",
   "position-id.cjs",
   "dist/api.js",
+  "dist/capabilities.js",
   "dist/change-manifest.js",
   "dist/context-sources.js",
   "dist/docs.js",
@@ -103,6 +110,7 @@ const SHARED_RUNTIME_FILES = [
   "dist/sessions.js",
   "dist/turns.js",
   "dist/updates.js",
+  "dist/workflows.js",
 ];
 
 const EXAMPLE_RUNTIME_FILES = [
@@ -153,7 +161,7 @@ const RUNTIME_FILE_SETS = [
   },
   {
     from: "packages/shared",
-    to: "node_modules/@org-workbench/shared",
+    to: "node_modules/@roleweave/shared",
     filter: SHARED_RUNTIME_FILES,
   },
   {
@@ -176,10 +184,10 @@ const APP_RESOURCE_REQUIRED_ENTRIES = [
   "apps/server/dist/src/stable-read.js",
   "apps/server/bin/qoder-engine.mjs",
   "apps/server/src/qoder-binary.js",
-  "node_modules/@org-workbench/shared/package.json",
-  "node_modules/@org-workbench/shared/dist/index.js",
-  "node_modules/@org-workbench/shared/position-id.cjs",
-  "node_modules/@org-workbench/shared/pending-approval.cjs",
+  "node_modules/@roleweave/shared/package.json",
+  "node_modules/@roleweave/shared/dist/index.js",
+  "node_modules/@roleweave/shared/position-id.cjs",
+  "node_modules/@roleweave/shared/pending-approval.cjs",
   "examples/oss-maintainer/workspace.json",
   "examples/oss-maintainer/organization.v1alpha1.json",
 ];
@@ -187,20 +195,20 @@ const APP_RESOURCE_REQUIRED_ENTRIES = [
 const PLATFORM_LAYOUTS = Object.freeze({
   macos: Object.freeze({
     bundleSuffix: ".app",
-    executableRelative: path.join("Contents", "MacOS", "Org Workbench"),
+    executableRelative: path.join("Contents", "MacOS", "RoleWeave"),
     resourcesRelative: path.join("Contents", "Resources", "app"),
     bundleRequiredEntries: Object.freeze([
       path.join("Contents", "Info.plist"),
-      path.join("Contents", "MacOS", "Org Workbench"),
+      path.join("Contents", "MacOS", "RoleWeave"),
     ]),
   }),
   windows: Object.freeze({
     bundleSuffix: "win-unpacked",
-    executableRelative: "Org Workbench.exe",
+    executableRelative: "RoleWeave.exe",
     resourcesRelative: path.join("resources", "app"),
     // Electron's internal default_app.asar name is not a Workbench product
     // contract. Verify only our executable plus the exact resources/app tree.
-    bundleRequiredEntries: Object.freeze(["Org Workbench.exe"]),
+    bundleRequiredEntries: Object.freeze(["RoleWeave.exe"]),
   }),
 });
 

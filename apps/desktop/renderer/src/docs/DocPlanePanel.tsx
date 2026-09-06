@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Input, List, Space, Spin, Tag } from "antd";
-import { useT } from "@org-workbench/ui";
+import { useT } from "@roleweave/ui";
 import type {
   DocPlaneDetailResponse,
   DocPlaneListEntry,
   DocPlaneListResponse,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import { DocViewer } from "./DocViewer";
 
 /**
@@ -122,11 +122,10 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
         </div>
       ) : null}
       {listStatus.kind === "unconfigured" ? (
-        <Alert
-          type="info"
-          message={t("docs.planeUnconfigured")}
-          description={<pre className="owb-doc-plane__config">{t("docs.planeConfigHint")}</pre>}
-        />
+        <div className="owb-doc-plane__unconfigured" role="status">
+          <i aria-hidden="true" />
+          <strong>{t("docs.planeUnconfigured")}</strong>
+        </div>
       ) : null}
       {listStatus.kind === "error" ? (
         <Alert type="error" message={listStatus.message} />

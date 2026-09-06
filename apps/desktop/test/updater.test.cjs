@@ -3,6 +3,8 @@ const test = require("node:test");
 const {
   UPDATE_STATES,
   createUpdaterService,
+  readMacBuildSignature,
+  startUpdaterService,
   updateChannelAvailability,
 } = require("../src/updater.cjs");
 
@@ -39,6 +41,36 @@ test("Windows has an update channel; macOS and Linux say why they do not", () =>
   const unknown = updateChannelAvailability("aix");
   assert.equal(unknown.available, false);
   assert.ok(unknown.reason.length > 0);
+});
+
+test("macOS opens its channel only for a Developer ID signature", () => {
+  const inspect = () => ({
+    status: 0,
+    error: null,
+    signal: null,
+    output: [
+      "Authority=Developer ID Application: Example, Inc. (TEAM123)",
+      "TeamIdentifier=TEAM123",
+    ].join("\n"),
+  });
+  const signed = readMacBuildSignature({ appPath: "/Applications/RoleWeave.app", inspect });
+  assert.deepEqual(signed, { signed: true });
+  assert.deepEqual(updateChannelAvailability("darwin", signed), {
+    available: true,
+    requiresConfirmation: true,
+  });
+
+  const adhoc = readMacBuildSignature({
+    appPath: "/Applications/RoleWeave.app",
+    inspect: () => ({
+      status: 0,
+      error: null,
+      signal: null,
+      output: "Signature=adhoc\nTeamIdentifier=not set\n",
+    }),
+  });
+  assert.equal(adhoc.signed, false);
+  assert.equal(updateChannelAvailability("darwin", adhoc).available, false);
 });
 
 test("an unavailable platform never touches an updater", async () => {
@@ -336,8 +368,6 @@ test("both gates hold independently: confirmation without signing, signing witho
   assert.notEqual(unconfirmed.unsigned, true);
 });
 
-const { startUpdaterService } = require("../src/updater.cjs");
-
 test("an unloadable update component degrades instead of throwing", () => {
   // This wiring used to be a bare require on the line before createWindow(). A
   // missing or corrupt vendored bundle threw out of the whenReady handler, so
@@ -357,9 +387,9 @@ test("an unloadable update component degrades instead of throwing", () => {
   assert.equal(service.state, "unavailable");
 });
 
-test("the loader is not called on a platform with no channel", () => {
-  // macOS has no channel until #135, so there is nothing to load and no reason
-  // to touch a getter that hangs outside Electron.
+test("the loader is not called on macOS when the free channel has no packaged app", () => {
+  // The free macOS service does not touch the native Squirrel.Mac getter. A
+  // source-tree run has no bundle to replace, so it remains unavailable.
   let called = false;
   const service = startUpdaterService({
     loadUpdater: () => { called = true; return {}; },
@@ -367,7 +397,7 @@ test("the loader is not called on a platform with no channel", () => {
   });
   assert.equal(called, false);
   assert.equal(service.availability.available, false);
-  assert.match(service.availability.reason, /Developer ID/);
+  assert.match(service.availability.reason, /source-tree/);
 });
 
 test("a loaded updater still reaches the signed gate", async () => {
@@ -383,4 +413,29 @@ test("a loaded updater still reaches the signed gate", async () => {
   updater.emit("update-available", { version: "0.2.0" });
   const refused = await service.download({ confirmedByUser: true });
   assert.equal(refused.unsigned, true);
+});
+
+test("a signed macOS build loads the updater and can apply with confirmation", async () => {
+  const previous = process.env.OWB_NATIVE_MAC_UPDATES;
+  process.env.OWB_NATIVE_MAC_UPDATES = "true";
+  const updater = fakeUpdater();
+  try {
+    const service = startUpdaterService({
+      loadUpdater: () => updater,
+      platform: "darwin",
+      signature: { signed: true },
+    });
+
+    assert.equal(service.availability.available, true);
+    await service.check();
+    updater.emit("update-available", { version: "0.2.0" });
+    await service.download({ confirmedByUser: true });
+    updater.emit("update-downloaded", { version: "0.2.0" });
+    const installed = await service.install({ confirmedByUser: true });
+    assert.equal(installed.installing, true);
+    assert.deepEqual(updater.calls, ["checkForUpdates", "downloadUpdate", "quitAndInstall"]);
+  } finally {
+    if (previous === undefined) delete process.env.OWB_NATIVE_MAC_UPDATES;
+    else process.env.OWB_NATIVE_MAC_UPDATES = previous;
+  }
 });

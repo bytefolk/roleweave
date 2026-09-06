@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button as AntButton, Input, Select as AntSelect } from "antd";
-import { ArrowUp, Plus, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
-import { useOwbLocale, useT } from "@org-workbench/ui";
+import { ArrowUp, Plus, Search, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
+import { useOwbLocale, useT } from "@roleweave/ui";
 import { PositionAvatar } from "../PositionAvatar";
 import { TypingIndicator } from "../turns/TurnThread";
-import type { GroupConversation, GroupConversationList, GroupTimeline } from "@org-workbench/shared";
+import type { GroupConversation, GroupConversationList, GroupTimeline } from "@roleweave/shared";
 import { EngineSelect, useEngineLabel } from "../turns/TurnPanel";
 import { EngineIcon } from "../turns/engine-icon";
 import { adaptTurnRecord } from "../turns/adapter";
@@ -44,6 +44,12 @@ const GROUP_ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local"];
 const GROUP_RECONCILE_INTERVAL_MS = 1_000;
 const GROUP_RECONCILE_MAX_READS = 180;
 
+function filterPositionOption(input: string, option?: { label?: unknown; value?: unknown }): boolean {
+  return `${String(option?.label ?? "")} ${String(option?.value ?? "")}`
+    .toLocaleLowerCase()
+    .includes(input.toLocaleLowerCase());
+}
+
 /** @mention highlight inside operator bubble text (spec §1/§6). */
 function renderMentionText(input: string) {
   return input.split(/(@[\w-]+)/g).map((part, index) =>
@@ -71,11 +77,6 @@ function timeShort(iso: string): string {
   return at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-/** conversationRef head, mono-stamped in the panel header (设计稿 .g-t span). */
-function shortRef(conversationRef: string): string {
-  return `${conversationRef.slice(0, 4)}…${conversationRef.slice(-3)}`;
-}
-
 
 /**
  * S2 group chat surface (#52, DS-34-001 rev-1 §1.2): explicit @mention
@@ -99,10 +100,11 @@ export function GroupsPanel({
   const t = useT();
   const locale = useOwbLocale();
   const engineLabel = useEngineLabel();
+  const displayPositionName = (id: string): string => positionNames[id] ?? t("org.unknownPosition");
   /** #146：成员名单是数据面（岗位名原文），连接符与「等 N 人」词面随 locale。 */
   const nameSep = locale === "en" ? ", " : "、";
   const groupLabel = (group: GroupConversation): string =>
-    group.members.slice(0, 3).map((id) => positionNames[id] ?? id).join(nameSep) +
+    group.members.slice(0, 3).map(displayPositionName).join(nameSep) +
     (group.members.length > 3 ? ` ${t("grp.more", { count: group.members.length })}` : "");
   const [groups, setGroups] = useState<GroupConversation[]>([]);
   const [groupsError, setGroupsError] = useState<string | null>(null);
@@ -305,8 +307,7 @@ export function GroupsPanel({
     }
   }, [loadGroups, loadTimeline, t]);
 
-  const send = useCallback(async (event: FormEvent) => {
-    event.preventDefault();
+  const send = useCallback(async () => {
     const ref = selectedRefRef.current;
     const trimmed = input.trim();
     if (ref === null || trimmed.length === 0 || mentions.size === 0 || sending) return;
@@ -350,7 +351,7 @@ export function GroupsPanel({
         turn: {
           id: runId,
           positionId: run.positionId,
-          positionName: positionNames[run.positionId] ?? run.positionId,
+          positionName: displayPositionName(run.positionId),
           engine: run.engine,
           input: run.input,
           status: "running" as const,
@@ -361,7 +362,7 @@ export function GroupsPanel({
       }));
     const persisted = timeline?.items ?? [];
     return { persisted, live };
-  }, [liveRuns, positionNames, selectedRef, timeline]);
+  }, [liveRuns, positionNames, selectedRef, t, timeline]);
   const unrenderableOutput = t("turn.unrenderableOutput");
 
   /** Members with an in-flight run in this group — drives the roster LED and
@@ -414,7 +415,7 @@ export function GroupsPanel({
                         key={memberId}
                         colors={positionColors ?? {}}
                         id={memberId}
-                        name={positionNames[memberId] ?? memberId}
+                        name={displayPositionName(memberId)}
                         className="owb-groups__avatar owb-groups__avatar--xs"
                       />
                     ))}
@@ -435,24 +436,32 @@ export function GroupsPanel({
         >
           <summary><Plus aria-hidden="true" size={13} />{t("grp.createCta")}</summary>
           <div className="owb-groups__create-body">
-            {positions.map((position) => (
-              <label key={position.id} className="owb-groups__draft-member">
-                <input
-                  type="checkbox"
-                  checked={draftMembers.has(position.id)}
-                  disabled={creating}
-                  onChange={(event) => {
-                    setDraftMembers((current) => {
-                      const next = new Set(current);
-                      if (event.target.checked) next.add(position.id);
-                      else next.delete(position.id);
-                      return next;
-                    });
-                  }}
-                />
-                {position.name}
-              </label>
-            ))}
+            <div className="owb-groups__create-field">
+              <div className="owb-groups__field-label">
+                <UserRoundPlus aria-hidden="true" size={13} />
+                <span>{t("grp.selectMembers")}</span>
+                <span className="owb-groups__selection-count">
+                  {t("grp.selectedCount", { count: draftMembers.size })}
+                </span>
+              </div>
+              <AntSelect
+                mode="multiple"
+                aria-label={t("grp.createSearchAria")}
+                placeholder={t("grp.createSearchPh")}
+                showSearch
+                optionFilterProp="label"
+                filterOption={filterPositionOption}
+                value={[...draftMembers]}
+                disabled={creating}
+                maxTagCount="responsive"
+                popupMatchSelectWidth={false}
+                onChange={(values) => setDraftMembers(new Set(values as string[]))}
+                options={positions.map((position) => ({
+                  value: position.id,
+                  label: position.name,
+                }))}
+              />
+            </div>
             <AntButton
               size="small"
               type="primary"
@@ -480,7 +489,7 @@ export function GroupsPanel({
                     key={memberId}
                     colors={positionColors ?? {}}
                     id={memberId}
-                    name={positionNames[memberId] ?? memberId}
+                    name={displayPositionName(memberId)}
                     className="owb-groups__avatar"
                   />
                 ))}
@@ -492,30 +501,23 @@ export function GroupsPanel({
               </div>
               <div className="owb-groups__panel-title">
                 <h3>{groupLabel(selectedGroup)}</h3>
-                <span className="owb-groups__panel-ref" translate="no">
-                  conversation {shortRef(selectedGroup.conversationRef)} · {t("grp.memberWord", { count: selectedGroup.members.length })}
-                </span>
+                <span className="owb-groups__panel-ref">{t("grp.memberWord", { count: selectedGroup.members.length })}</span>
               </div>
               <span className="owb-src">
-                <span
-                  className={runningMembers.size > 0 ? "owb-led owb-led--running" : "owb-led"}
-                  aria-hidden="true"
-                />
-                <span className="owb-src__text">
-                  {runningMembers.size > 0
-                    ? t("grp.nRunning", { count: runningMembers.size })
-                    : t("grp.nOnline", { count: selectedGroup.members.length })}
-                </span>
+                {runningMembers.size > 0 ? (
+                  <>
+                    <span className="owb-led owb-led--running" aria-hidden="true" />
+                    <span className="owb-src__text">{t("grp.nRunning", { count: runningMembers.size })}</span>
+                  </>
+                ) : (
+                  <span className="owb-groups__member-count">
+                    {t("grp.nMembers", { count: selectedGroup.members.length })}
+                  </span>
+                )}
               </span>
             </header>
 
             <div className="owb-groups__panel-sub">
-              <div className="owb-session-chip">
-                <span className="owb-session-chip__kind">engine</span>
-                <span className="owb-session-chip__id">
-                  {engineLabel(engine)} · {t("grp.billingNote")}
-                </span>
-              </div>
               <label className="owb-turn-engine">
                 <span className="owb-turn-control__label">Agent Host</span>
                 <EngineSelect
@@ -542,10 +544,10 @@ export function GroupsPanel({
                         <PositionAvatar
                           colors={positionColors ?? {}}
                           id={memberId}
-                          name={positionNames[memberId] ?? memberId}
+                          name={displayPositionName(memberId)}
                           className="owb-groups__avatar owb-groups__avatar--sm"
                         />
-                        <span className="owb-groups__roster-name">{positionNames[memberId] ?? memberId}</span>
+                        <span className="owb-groups__roster-name">{displayPositionName(memberId)}</span>
                       </li>
                     );
                   })}
@@ -557,6 +559,12 @@ export function GroupsPanel({
                       aria-label={t("grp.addMember")}
                       value={undefined}
                       placeholder={t("grp.addMemberPh")}
+                      showSearch
+                      optionFilterProp="label"
+                      filterOption={filterPositionOption}
+                      suffixIcon={<Search aria-hidden="true" size={13} />}
+                      popupMatchSelectWidth={false}
+                      listHeight={240}
                       onChange={(next) => {
                         if (next) void addMember(next);
                       }}
@@ -573,12 +581,6 @@ export function GroupsPanel({
               {displayItems.persisted.map((item) =>
                 item.kind === "user" ? (
                   <div className="owb-bubble-turn" key={item.messageId}>
-                    {item.mentions.length > 0 ? (
-                      <p className="owb-groups__route-note">
-                        {item.mentions.map((memberId) => `@${positionNames[memberId] ?? memberId}`).join(" ")}
-                        {" "}{t("grp.routeNote", { count: item.mentions.length })}
-                      </p>
-                    ) : null}
                     <div className="owb-bubble-row owb-bubble-row--operator">
                       <article className="owb-bubble owb-bubble--operator">
                         <header className="owb-bubble__header">
@@ -599,7 +601,7 @@ export function GroupsPanel({
                   (() => {
                     const turn = adaptTurnRecord(
                       item.turn,
-                      positionNames[item.turn.positionId] ?? item.turn.positionId,
+                      displayPositionName(item.turn.positionId),
                       unrenderableOutput,
                     );
                     return (
@@ -667,29 +669,34 @@ export function GroupsPanel({
               </div>
             </div>
 
-            <form className="owb-turn-composer owb-groups__composer" onSubmit={(event) => void send(event)}>
+            <form
+              className="owb-turn-composer owb-groups__composer"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void send();
+              }}
+            >
               <div className="owb-groups__mention-picker" aria-label={t("grp.mentionAria")}>
-                {selectedGroup.members.map((memberId) => {
-                  const active = mentions.has(memberId);
-                  return (
-                    <button
-                      key={memberId}
-                      type="button"
-                      className={active ? "owb-groups__mention is-active" : "owb-groups__mention"}
-                      aria-pressed={active}
-                      onClick={() => {
-                        setMentions((current) => {
-                          const next = new Set(current);
-                          if (next.has(memberId)) next.delete(memberId);
-                          else next.add(memberId);
-                          return next;
-                        });
-                      }}
-                    >
-                      @{positionNames[memberId] ?? memberId}
-                    </button>
-                  );
-                })}
+                <span className="owb-groups__mention-label">
+                  <UsersRound aria-hidden="true" size={13} />
+                  {t("grp.recipientLabel")}
+                </span>
+                <AntSelect
+                  mode="multiple"
+                  aria-label={t("grp.mentionAria")}
+                  placeholder={t("grp.mentionPh")}
+                  showSearch
+                  optionFilterProp="label"
+                  filterOption={filterPositionOption}
+                  value={[...mentions]}
+                  maxTagCount="responsive"
+                  popupMatchSelectWidth={false}
+                  onChange={(values) => setMentions(new Set(values as string[]))}
+                  options={selectedGroup.members.map((memberId) => ({
+                    value: memberId,
+                    label: `@${displayPositionName(memberId)}`,
+                  }))}
+                />
               </div>
               <div className="owb-turn-composer__surface">
                 <Input.TextArea
@@ -697,10 +704,18 @@ export function GroupsPanel({
                   rows={3}
                   aria-label={t("grp.messageAria")}
                   placeholder={mentions.size > 0
-                    ? t("grp.sendTo", { list: [...mentions].map((id) => `@${positionNames[id] ?? id}`).join(nameSep) })
+                    ? t("grp.sendTo", { list: [...mentions].map((id) => `@${displayPositionName(id)}`).join(nameSep) })
                     : t("grp.routePh")}
                   disabled={sending || !engineAvailability[engine].ready}
                   onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    const native = event.nativeEvent as KeyboardEvent;
+                    if (native.isComposing || native.keyCode === 229) return;
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void send();
+                    }
+                  }}
                 />
                 <AntButton
                   type="primary"

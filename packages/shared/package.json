@@ -1,7 +1,7 @@
 {
-  "name": "@org-workbench/shared",
+  "name": "@roleweave/shared",
   "version": "0.0.0",
-  "description": "Contract types for org-workbench. Mirrors digital-employee contracts; the client never invents semantics.",
+  "description": "Contract types for RoleWeave. Mirrors digital-employee contracts; the client never invents semantics.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -25,6 +25,10 @@
     "./docs": {
       "types": "./dist/docs.d.ts",
       "import": "./dist/docs.js"
+    },
+    "./capabilities": {
+      "types": "./dist/capabilities.d.ts",
+      "import": "./dist/capabilities.js"
     }
   },
   "files": [

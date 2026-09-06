@@ -22,12 +22,12 @@ import {
   OrgApiError,
   errorCodes,
   isPositionId,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type {
   GroupConversation,
   GroupConversationList,
   GroupMessage,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import { assertSessionId } from "../sessions/store.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 

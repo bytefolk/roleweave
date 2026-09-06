@@ -11,13 +11,13 @@ import {
   OrgApiError,
   errorCodes,
   turnEngines,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type {
   GroupTimeline,
   GroupTimelineItem,
   TurnEngine,
   TurnRecord,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { MAX_GROUP_MEMBERS, assertConversationRef } from "../groups/store.js";

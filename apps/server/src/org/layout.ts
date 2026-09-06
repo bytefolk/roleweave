@@ -4,8 +4,8 @@ import path from "node:path";
 import {
   ORG_LAYOUT_ROOT_KEY,
   ORG_LAYOUT_SCHEMA_VERSION,
-} from "@org-workbench/shared";
-import type { OrgLayoutFile, OrgRole } from "@org-workbench/shared";
+} from "@roleweave/shared";
+import type { OrgLayoutFile, OrgRole } from "@roleweave/shared";
 
 export const LAYOUT_FILE = path.join(".digital-employee", "org-layout.v1.json");
 

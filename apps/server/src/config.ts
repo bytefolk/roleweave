@@ -13,6 +13,8 @@ export interface ServerConfig {
   bundledElectronEngine: boolean;
   /** Spawn timeout (ms) for engine org apply / turn run. */
   engineTimeoutMs?: number;
+  /** Workspace-wide daily token allocation ceiling for deterministic hiring. */
+  budgetPoolTokens?: number;
   /** Pinned context provider CLI/stdio adapter command (context main >= f63f57f). */
   contextCliCommand: string;
   serverVersion: string;
@@ -64,6 +66,10 @@ export function resolveServerConfig(
     env.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE === "1" &&
     env.ELECTRON_RUN_AS_NODE === "1";
   const contextCliCommand = env.ORG_WORKBENCH_CONTEXT_CLI ?? "context";
+  const rawBudgetPool = Number(env.ORG_WORKBENCH_BUDGET_POOL_TOKENS ?? "10000000");
+  const budgetPoolTokens = Number.isSafeInteger(rawBudgetPool) && rawBudgetPool > 0
+    ? Math.min(rawBudgetPool, 1_000_000_000)
+    : 10_000_000;
   return {
     host: "127.0.0.1",
     port,
@@ -71,6 +77,7 @@ export function resolveServerConfig(
     cliCommand,
     bundledElectronEngine,
     contextCliCommand,
+    budgetPoolTokens,
     serverVersion: readServerVersion(),
     docPlaneUrl: normalizeUrl(env.ORG_WORKBENCH_DOC_URL),
     docPlaneToken:

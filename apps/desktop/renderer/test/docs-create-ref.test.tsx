@@ -1,12 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { DocsCreateResponse, DocsFileListResponse, DocsResolveResponse } from "@org-workbench/shared";
+import type { DocsCreateResponse, DocsFileListResponse } from "@roleweave/shared";
 import { DocsModule } from "../src/docs/DocsModule";
 import type { OwbBridge } from "../src/owb";
 
-/** #35 S4 creation/reference face: the docs module consumes the additive
- * bridge channels (createPositionDoc/resolveDocRef) and copies frozen
- * doc-ref.v1alpha1 values — no editor, no #36 index/search surface. */
+/** #35 S4 creation face: the docs module creates empty named files and keeps
+ * the frozen doc-ref copy action for internal consumers — no editor. */
 
 const positions = [{ id: "repo-owner", name: "Repo Owner" }];
 
@@ -27,30 +26,18 @@ const createBody: DocsCreateResponse = {
   assetId: "0e2f4a6b-8c0d-4e1f-9a2b-3c4d5e6f7081",
 };
 
-const resolveBody: DocsResolveResponse = {
-  schemaVersion: "docs-resolve.v1",
-  ref: { uri: "owb-doc://repo-owner/SKILL.md" },
-  resolved: {
-    positionId: "repo-owner",
-    path: "SKILL.md",
-    size: 512,
-    modifiedAt: "2026-08-26T00:00:00.000Z",
-  },
-};
-
 function installBridge(overrides: Partial<OwbBridge> = {}) {
   const bridge = {
     positionDocs: vi.fn().mockResolvedValue({ status: 200, body: listBody }),
     positionDocFile: vi.fn().mockResolvedValue({ status: 200, body: null }),
     createPositionDoc: vi.fn().mockResolvedValue({ status: 201, body: createBody }),
-    resolveDocRef: vi.fn().mockResolvedValue({ status: 200, body: resolveBody }),
     ...overrides,
   };
   window.owb = bridge as unknown as OwbBridge;
   return bridge;
 }
 
-describe("DocsModule create + reference face (#35 S4)", () => {
+describe("DocsModule create + copy-reference face (#35 S4)", () => {
   beforeEach(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -115,43 +102,4 @@ describe("DocsModule create + reference face (#35 S4)", () => {
     expect(await screen.findByText("引用已复制")).toBeTruthy();
   });
 
-  it("resolves a pasted doc-ref into a positioned path", async () => {
-    const bridge = installBridge();
-    render(<DocsModule workspaceOpen positions={positions} selectedPositionId="repo-owner" />);
-    await waitFor(() => expect(bridge.positionDocs).toHaveBeenCalled());
-
-    fireEvent.click(screen.getByText("解析引用"));
-    const input = await screen.findByLabelText("粘贴 doc-ref");
-    fireEvent.change(input, { target: { value: '{"uri":"owb-doc://repo-owner/SKILL.md"}' } });
-    fireEvent.click(screen.getByRole("button", { name: /^解\s?析$/ }));
-
-    await waitFor(() =>
-      expect(bridge.resolveDocRef).toHaveBeenCalledWith({ uri: "owb-doc://repo-owner/SKILL.md" }),
-    );
-    expect(await screen.findByText("解析成功：repo-owner/SKILL.md")).toBeTruthy();
-    expect(screen.getByText("大小 512 字节 · 更新于 2026-08-26T00:00:00.000Z")).toBeTruthy();
-  });
-
-  it("accepts a bare uri and surfaces the doc_ref_invalid message", async () => {
-    const bridge = installBridge({
-      resolveDocRef: vi.fn().mockResolvedValue({
-        status: 400,
-        body: { code: "doc_ref_invalid", message: "doc-ref uri must be owb-doc://<positionId>/<path>", retryable: false },
-      }) as unknown as OwbBridge["resolveDocRef"],
-    });
-    render(<DocsModule workspaceOpen positions={positions} selectedPositionId="repo-owner" />);
-    await waitFor(() => expect(bridge.positionDocs).toHaveBeenCalled());
-
-    fireEvent.click(screen.getByText("解析引用"));
-    const input = await screen.findByLabelText("粘贴 doc-ref");
-    fireEvent.change(input, { target: { value: "https://elsewhere/SKILL.md" } });
-    fireEvent.click(screen.getByRole("button", { name: /^解\s?析$/ }));
-
-    await waitFor(() =>
-      expect(bridge.resolveDocRef).toHaveBeenCalledWith({ uri: "https://elsewhere/SKILL.md" }),
-    );
-    expect(
-      await screen.findByText("doc-ref uri must be owb-doc://<positionId>/<path>"),
-    ).toBeTruthy();
-  });
 });

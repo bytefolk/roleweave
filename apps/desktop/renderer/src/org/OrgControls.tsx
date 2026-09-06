@@ -1,18 +1,16 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { Button } from "@fullstack-ai-infra/ui";
-import type { OrgBackupEntry } from "@org-workbench/shared";
-import { useT } from "@org-workbench/ui";
+import type { OrgBackupEntry } from "@roleweave/shared";
+import { useT } from "@roleweave/ui";
 import { ArchiveRestore, Trash2 } from "lucide-react";
 
 export function DismissPositionDialog({
   positionName,
-  positionId,
   descendantCount,
   busy,
   onDismiss,
 }: {
   positionName: string;
-  positionId: string;
   descendantCount: number;
   busy: boolean;
   onDismiss: () => Promise<boolean>;
@@ -38,8 +36,8 @@ export function DismissPositionDialog({
         open={open}
         title={t("dlg.dismissTitle", { name: positionName })}
         description={descendantCount > 0
-          ? t("dlg.dismissDescWithReports", { id: positionId, count: descendantCount })
-          : t("dlg.dismissDesc", { id: positionId })}
+          ? t("dlg.dismissDescWithReports", { count: descendantCount })
+          : t("dlg.dismissDesc")}
         onOpenChange={setOpen}
       >
         <footer className="owb-modal__footer">
@@ -54,10 +52,12 @@ export function DismissPositionDialog({
 export function BackupTray({
   backups,
   busy,
+  positionNames,
   onRestore,
 }: {
   backups: OrgBackupEntry[];
   busy: boolean;
+  positionNames?: Record<string, string>;
   onRestore: (backupId: string) => Promise<boolean>;
 }) {
   const t = useT();
@@ -66,7 +66,7 @@ export function BackupTray({
       <header><ArchiveRestore aria-hidden="true" size={13} /><span>{t("tree.recoveryHead")}</span><strong>{backups.length}</strong></header>
       {backups.length === 0 ? <p>{t("tree.recoveryEmpty")}</p> : backups.map((backup) => (
         <div className="owb-backups__item" key={backup.backupId}>
-          <span><strong>{backup.name}</strong><small>{t("tree.backupOrigin", { id: backup.positionId, target: backup.reportTo ?? t("org.enterpriseRoot") })}</small></span>
+          <span><strong>{backup.name}</strong><small>{t("tree.backupOrigin", { target: backup.reportTo ? positionNames?.[backup.reportTo] ?? t("org.unknownPosition") : t("org.enterpriseRoot") })}</small></span>
           <Button size="sm" variant="secondary" disabled={busy} onClick={() => void onRestore(backup.backupId)}>{t("tree.restore")}</Button>
         </div>
       ))}

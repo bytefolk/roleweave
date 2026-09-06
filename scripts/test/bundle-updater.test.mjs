@@ -26,7 +26,7 @@ test("the manifest names the vendored bundle as one explicit entry", () => {
 
   // The point of bundling is that no third-party node_modules set is needed.
   const thirdParty = RUNTIME_FILE_SETS.filter((set) =>
-    String(set.to).includes("node_modules") && !String(set.to).includes("@org-workbench"));
+    String(set.to).includes("node_modules") && !String(set.to).includes("@roleweave"));
   assert.deepEqual(thirdParty, [], "bundling exists so no third-party node_modules set is required");
 });
 

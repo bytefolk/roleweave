@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ContextSourceSummary, OrgRole } from "@org-workbench/shared";
+import type { ContextSourceSummary, OrgRole } from "@roleweave/shared";
 import { POSITIONS_DIR } from "./workspace-state.js";
 
 const CONTEXT_EXPORT_ROOT = [".digital-employee", "workbench", "context-exports"] as const;
@@ -71,17 +71,40 @@ function nonEmptyEnv(name: string): boolean {
   return (process.env[name] ?? "").trim() !== "";
 }
 
-function resolvePositionPackageDir(workspaceDir: string, role: OrgRole): string {
+/**
+ * Resolve the bound package inside this workspace's positions root.
+ *
+ * Applied organization files normally carry an absolute localReference. The
+ * checked-in example workspace uses `/workspace/...` as a portable absolute
+ * reference, though, so when that reference belongs to a different checkout
+ * we rebase its path suffix after `positions/` onto the opened workspace.
+ * Anything that still cannot be proven to stay inside positions/ falls back
+ * to the legacy flat position path.
+ */
+export function resolvePositionPackageDir(workspaceDir: string, role: OrgRole): string {
   const positionsRoot = path.resolve(workspaceDir, POSITIONS_DIR);
   const rawReference = role.package.localReference;
   const candidate = path.isAbsolute(rawReference)
     ? path.resolve(rawReference)
     : path.resolve(workspaceDir, rawReference);
   const relative = path.relative(positionsRoot, candidate);
-  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
-    return path.join(positionsRoot, role.id);
+  if (relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+    return candidate;
   }
-  return candidate;
+
+  // Portable fixtures may retain an absolute reference rooted at another
+  // checkout. Preserve only the path after a literal `positions` segment.
+  const referenceSegments = path.resolve(rawReference).split(path.sep);
+  const positionsIndex = referenceSegments.lastIndexOf(POSITIONS_DIR);
+  if (positionsIndex >= 0 && positionsIndex < referenceSegments.length - 1) {
+    const rebased = path.resolve(positionsRoot, ...referenceSegments.slice(positionsIndex + 1));
+    const rebasedRelative = path.relative(positionsRoot, rebased);
+    if (rebasedRelative !== "" && !rebasedRelative.startsWith("..") && !path.isAbsolute(rebasedRelative)) {
+      return rebased;
+    }
+  }
+
+  return path.join(positionsRoot, role.id);
 }
 
 function positionRelativePath(workspaceDir: string, positionDir: string): string {

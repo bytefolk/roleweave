@@ -14,7 +14,7 @@
 import { useMemo, useState } from "react";
 import { Alert, Button, List, Segmented, Tag, Tooltip } from "antd";
 import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
-import { useOwbLocale, useT, type OwbT } from "@org-workbench/ui";
+import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import {
   isDecided,
   isPermissionOverreach,
@@ -223,9 +223,6 @@ function ApprovalEmptyState({
       <div className="owb-approval-queue__empty-icon" aria-hidden="true">
         {disconnected ? <Clock3 size={24} /> : <ShieldCheck size={26} />}
       </div>
-      <span className="owb-approval-queue__empty-kicker">
-        {disconnected ? "QUEUE CONNECTION" : "NO ACTION REQUIRED"}
-      </span>
       <h2>{title}</h2>
       <p>{description}</p>
       <div className="owb-approval-queue__rules" aria-label={t("apr.rulesAria")}>
@@ -255,7 +252,7 @@ interface ApprovalCardProps {
 function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
   const t = useT();
   const localeTag = useOwbLocale() === "en" ? "en-US" : "zh-CN";
-  const positionName = decodeEscapedUnicode(item.positionName ?? item.positionId);
+  const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
   const description = decodeEscapedUnicode(item.description);
   const target = item.target ? decodeEscapedUnicode(item.target) : undefined;
   const overreach = isPermissionOverreach(item);
@@ -281,7 +278,7 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
         type="button"
         className="owb-approval-card__row"
         onClick={onOpen}
-        aria-label={t("apr.cardAria", { id: item.approvalId })}
+        aria-label={t("apr.cardAria")}
       >
         <div className="owb-approval-card__head">
           <span className="owb-approval-card__tags">
@@ -303,7 +300,6 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
         </div>
         <div className="owb-approval-card__title">
           <strong>{positionName}</strong>
-          <span className="owb-approval-card__pid">{item.positionId}</span>
         </div>
         <p className="owb-approval-card__description" title={description}>
           {description}
@@ -319,7 +315,6 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
               <span className="owb-approval-card__expires">{t("apr.expires", { at: formatApprovalTime(item.expiresAt, t, localeTag) })}</span>
             </Tooltip>
           ) : null}
-          <span className="owb-approval-card__aid">{item.approvalId}</span>
         </p>
       </button>
     </article>

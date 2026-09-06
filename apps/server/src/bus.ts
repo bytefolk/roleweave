@@ -1,4 +1,4 @@
-import type { SseEventEnvelope, SseEventType } from "@org-workbench/shared";
+import type { SseEventEnvelope, SseEventType } from "@roleweave/shared";
 
 const RING_SIZE = 256;
 

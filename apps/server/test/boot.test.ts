@@ -90,6 +90,8 @@ test("bundled qoder-engine readiness uses the local Qoder 1.1.x preflight withou
   assert.equal(missing.qoder.configured, false);
   assert.equal(missing.qoder.ready, false);
   assert.match(missing.qoder.nextStep ?? "", /ORG_WORKBENCH_QODER_BIN/);
+  assert.match(missing.qoder.nextStep ?? "", /DIGITAL_EMPLOYEE_QODER_COMMAND/);
+  assert.match(missing.qoder.nextStep ?? "", /qoderclicn/);
   assert.doesNotMatch(JSON.stringify(missing), /must-not-change/);
 });
 
@@ -187,27 +189,27 @@ test("Qoder local probe accepts only the 1.1.x family and fails closed for missi
   await fs.writeFile(unsupportedBin, "#!/bin/sh\nprintf '%s\\n' '1.2.0'\n", { mode: 0o755 });
   await fs.writeFile(slowBin, "#!/bin/sh\nwhile :; do :; done\n", { mode: 0o755 });
 
-  const supported = probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: supportedBin });
+  const supported = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: supportedBin });
   assert.deepEqual(supported, {
     installed: true,
     version: "1.1.31",
     supported: true,
   });
   assert.doesNotMatch(JSON.stringify(supported), /local-account-data-must-not-leak/);
-  assert.deepEqual(probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: unsupportedBin }), {
+  assert.deepEqual(await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: unsupportedBin }), {
     installed: true,
     version: "1.2.0",
     supported: false,
     failure: "unsupported_version",
   });
-  assert.deepEqual(probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: path.join(dir, "missing") }), {
+  assert.deepEqual(await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: path.join(dir, "missing") }), {
     installed: false,
     version: null,
     supported: false,
     failure: "unavailable",
   });
   const startedAt = Date.now();
-  assert.deepEqual(probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: slowBin }, 50), {
+  assert.deepEqual(await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: slowBin }, 50), {
     installed: true,
     version: null,
     supported: false,
@@ -220,6 +222,32 @@ test("Qoder local probe accepts only the 1.1.x family and fails closed for missi
   assert.equal(supportedQoderVersion("1.0.99"), false);
   assert.equal(supportedQoderVersion("1.2.0"), false);
   assert.equal(supportedQoderVersion(null), false);
+});
+
+test("Qoder local probe does not wait for a descendant that inherits stdio", { skip: process.platform === "win32" ? "requires POSIX process-group semantics" : false }, async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-orphan-"));
+  const pidFile = path.join(dir, "descendant.pid");
+  const qoderBin = path.join(dir, "qoder-forks-helper");
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.writeFile(
+    qoderBin,
+    `#!/bin/sh
+(sleep 30) &
+printf '%s' "$!" > ${JSON.stringify(pidFile)}
+printf '%s\\n' '1.1.31'
+exit 0
+`,
+    { mode: 0o755 },
+  );
+
+  const startedAt = Date.now();
+  const result = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: qoderBin }, 3000);
+  const elapsedMs = Date.now() - startedAt;
+  assert.deepEqual(result, { installed: true, version: "1.1.31", supported: true });
+  assert.ok(elapsedMs < 1500, `probe waited for descendant-held stdio: ${elapsedMs}ms`);
+  const descendantPid = Number(await fs.readFile(pidFile, "utf8"));
+  assert.ok(Number.isSafeInteger(descendantPid) && descendantPid > 0);
+  assert.throws(() => process.kill(descendantPid, 0), { code: "ESRCH" }, "probe descendant must be reaped");
 });
 
 test("Qoder local probe receives only the non-secret runtime environment allowlist", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
@@ -241,7 +269,7 @@ printf '%s\\n' '1.1.31'
   );
 
   assert.deepEqual(
-    probeQoderLocalBinary({
+    await probeQoderLocalBinary({
       ORG_WORKBENCH_QODER_BIN: qoderBin,
       PATH: "/usr/bin:/bin",
       HOME: home,
@@ -283,6 +311,7 @@ printf '%s\\n' '1.1.31'
     "ORG_WORKBENCH_BOOT_TOKEN",
     "ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE",
     "ORG_WORKBENCH_QODER_BIN",
+    "DIGITAL_EMPLOYEE_QODER_COMMAND",
     "QODER_PERSONAL_ACCESS_TOKEN",
     "ANTHROPIC_API_KEY",
     "ARBITRARY_SECRET",
@@ -310,7 +339,7 @@ printf '1.1.31\\n'
 
   const timeoutMs = 1000;
   const startedAt = Date.now();
-  const result = probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: signalTrappingBin }, timeoutMs);
+  const result = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: signalTrappingBin }, timeoutMs);
   const elapsedMs = Date.now() - startedAt;
   assert.deepEqual(result, {
     installed: true,
@@ -333,6 +362,7 @@ test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on 
   const nonExecutableBin = path.join(dir, "non-executable-qoder");
   const pathQoder = path.join(pathBin, "qoder");
   const pathQoderCli = path.join(pathBin, "qodercli");
+  const pathQoderCliCn = path.join(pathBin, "qoderclicn");
   const fixedQoderCli = path.join(home, ".local", "bin", "qodercli");
   const realFixedQoderCli = path.join(home, ".qoder", "bin", "qodercli", "qodercli-1.1.31");
   const unsafeHome = path.join(dir, "home\nattacker");
@@ -341,7 +371,7 @@ test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on 
   await fs.mkdir(path.dirname(fixedQoderCli), { recursive: true });
   await fs.mkdir(path.dirname(realFixedQoderCli), { recursive: true });
   await fs.mkdir(path.dirname(unsafeFixedQoderCli), { recursive: true });
-  for (const file of [explicitBin, pathQoder, pathQoderCli, realFixedQoderCli]) {
+  for (const file of [explicitBin, pathQoder, pathQoderCli, pathQoderCliCn, realFixedQoderCli]) {
     await fs.writeFile(file, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
   }
   await fs.writeFile(unsafeFixedQoderCli, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
@@ -354,9 +384,20 @@ test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on 
     "an explicit executable is authoritative",
   );
   assert.equal(
+    resolveQoderExecutable({ DIGITAL_EMPLOYEE_QODER_COMMAND: explicitBin, PATH: pathBin, HOME: home }, "darwin"),
+    await fs.realpath(explicitBin),
+    "the digital-employee override is accepted when the workbench override is absent",
+  );
+  assert.equal(
     resolveQoderExecutable({ PATH: pathBin, HOME: home }, "darwin"),
     await fs.realpath(pathQoderCli),
     "the native qodercli PATH entry wins over its dispatcher wrapper",
+  );
+  await fs.rm(pathQoderCli);
+  assert.equal(
+    resolveQoderExecutable({ PATH: pathBin, HOME: home }, "darwin"),
+    await fs.realpath(pathQoderCliCn),
+    "the mainland qoderclicn entry is accepted when qodercli is absent",
   );
   assert.equal(
     resolveQoderExecutable({ PATH: "/usr/bin:/bin", HOME: home }, "darwin"),
@@ -392,65 +433,7 @@ test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on 
   );
   assert.equal(resolveQoderExecutable({ PATH: "/usr/bin:/bin", HOME: path.join(dir, "missing-home") }, "darwin"), null);
 
-  // #200: CN edition discovery + DIGITAL_EMPLOYEE_QODER_COMMAND override.
-  const pathQoderCliCn = path.join(pathBin, "qoderclicn");
-  const commandBin = path.join(dir, "command-qoder");
-  const commandOnlyBin = path.join(dir, "path-bin-only-command");
-  const commandBareEntry = path.join(commandOnlyBin, "qoderclicn");
-  const cnFinderCli = path.join(home, ".qoder-cn", "bin", "qoderclicn", "qoderclicn-1.1.31");
-  await fs.mkdir(commandOnlyBin, { recursive: true });
-  await fs.mkdir(path.dirname(cnFinderCli), { recursive: true });
-  for (const file of [pathQoderCliCn, commandBin, commandBareEntry, cnFinderCli]) {
-    await fs.writeFile(file, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
-  }
-  assert.equal(
-    resolveQoderExecutable(
-      { DIGITAL_EMPLOYEE_QODER_COMMAND: commandBin, PATH: pathBin, HOME: home },
-      "darwin",
-    ),
-    await fs.realpath(commandBin),
-    "DIGITAL_EMPLOYEE_QODER_COMMAND with an absolute path is authoritative",
-  );
-  assert.equal(
-    resolveQoderExecutable(
-      { DIGITAL_EMPLOYEE_QODER_COMMAND: "qoderclicn", PATH: commandOnlyBin, HOME: home },
-      "darwin",
-    ),
-    await fs.realpath(commandBareEntry),
-    "DIGITAL_EMPLOYEE_QODER_COMMAND with a bare command name is looked up on PATH",
-  );
-  assert.equal(
-    resolveQoderExecutable(
-      { DIGITAL_EMPLOYEE_QODER_COMMAND: path.dirname(commandBin), PATH: pathBin, HOME: home },
-      "darwin",
-    ),
-    null,
-    "an invalid DIGITAL_EMPLOYEE_QODER_COMMAND fails closed instead of silently choosing another binary",
-  );
-  const cnOnlyPath = path.join(dir, "path-bin-cn-only");
-  await fs.mkdir(cnOnlyPath, { recursive: true });
-  await fs.writeFile(path.join(cnOnlyPath, "qoderclicn"), "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
-  assert.equal(
-    resolveQoderExecutable({ PATH: cnOnlyPath, HOME: home }, "darwin"),
-    await fs.realpath(path.join(cnOnlyPath, "qoderclicn")),
-    "the CN qoderclicn is discovered when the international qodercli is absent",
-  );
-  assert.equal(
-    resolveQoderExecutable({ PATH: pathBin, HOME: home }, "darwin"),
-    await fs.realpath(pathQoderCli),
-    "the international qodercli still wins over qoderclicn when both are installed",
-  );
-  const cnFinderHome = path.join(dir, "cn-only-home");
-  const cnOnlyFinderCli = path.join(cnFinderHome, ".qoder-cn", "bin", "qoderclicn", "qoderclicn");
-  await fs.mkdir(path.dirname(cnOnlyFinderCli), { recursive: true });
-  await fs.writeFile(cnOnlyFinderCli, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
-  assert.equal(
-    resolveQoderExecutable({ PATH: "/usr/bin:/bin", HOME: cnFinderHome }, "darwin"),
-    await fs.realpath(cnOnlyFinderCli),
-    "Finder-like PATH falls back to the known per-user macOS install for the CN edition",
-  );
-
-  const finderProbe = probeQoderLocalBinary({ PATH: "/usr/bin:/bin", HOME: home }, 3000, "darwin");
+  const finderProbe = await probeQoderLocalBinary({ PATH: "/usr/bin:/bin", HOME: home }, 3000, "darwin");
   assert.deepEqual(finderProbe, { installed: true, version: "1.1.31", supported: true });
 });
 

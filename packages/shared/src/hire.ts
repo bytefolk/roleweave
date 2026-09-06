@@ -13,10 +13,46 @@
  */
 
 import type { PositionBudget, PositionMode } from "./org-tree.js";
+import type { HireMcpGrant, HireSkillGrant } from "./capabilities.js";
 
 export const HIRE_REQUEST_SCHEMA_VERSION = "hire-request.v1alpha1" as const;
 
-/** Shape POST /hire accepts from the renderer (frozen by docs/api-contract-v0.md §2.13). */
+/** Workbench-side permission projection. The package contract still receives
+ * the normal employee policy; this additive declaration keeps the richer
+ * chmod-inspired resource rules available to the Workbench and to generated
+ * packages without pretending that a Unix mode is enough for workspace paths. */
+export const hirePermissionActions = ["read", "create", "update", "delete", "execute"] as const;
+export type HirePermissionAction = (typeof hirePermissionActions)[number];
+export const hirePermissionScopes = ["position", "workspace", "project"] as const;
+export type HirePermissionScope = (typeof hirePermissionScopes)[number];
+
+export interface HirePermissionRule {
+  scope: HirePermissionScope;
+  resource: string;
+  actions: HirePermissionAction[];
+  effect?: "allow" | "deny";
+  approval?: boolean;
+}
+
+export interface HirePermissions {
+  /** Agent/tool capabilities shown in the position card (Read/Grep/Glob...). */
+  tools: string[];
+  /** Explicit resource rules. Default policy is deny; rules are additive. */
+  rules: HirePermissionRule[];
+  /** Additional, platform-registered Skill packages. Binding is not access. */
+  skills?: HireSkillGrant[];
+  /** Platform-registered MCP servers with an explicit tool-level allowlist. */
+  mcpServers?: HireMcpGrant[];
+}
+
+export interface HireMemorySource {
+  kind: "position_docs" | "workspace_docs" | "mem_drive" | "runtime_context";
+  locator: string;
+}
+
+/** Shape POST /hire accepts from the renderer. The upstream envelope remains
+ * frozen; Workbench metadata is additive and is consumed while building the
+ * employee package. */
 export interface HirePositionRequest {
   positionId: string;
   name: string;
@@ -26,6 +62,12 @@ export interface HirePositionRequest {
   mode: PositionMode;
   /** REQ-006 parity: a hire without budget is rejected at every gate. */
   budget: PositionBudget;
+  /** Optional Workbench policy extension; the frozen hire envelope remains unchanged. */
+  permissions?: HirePermissions;
+  /** User-editable semantic role prompt, written into the generated SKILL.md. */
+  prompt?: string;
+  /** Memory bindings are separate from operation permissions. */
+  memorySources?: HireMemorySource[];
   /** Optional ISO 8601 passthrough onto the envelope deadline (upstream-optional). */
   deadline?: string;
 }

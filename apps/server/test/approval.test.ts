@@ -10,8 +10,8 @@ import type {
   TurnRunDriver,
   TurnRunRequest,
   TurnRunResult,
-} from "@org-workbench/shared";
-import { validatePendingApproval } from "@org-workbench/shared";
+} from "@roleweave/shared";
+import { validatePendingApproval } from "@roleweave/shared";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 import { createTurnEnvelope } from "../src/turns/envelope.js";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
@@ -446,7 +446,7 @@ test("shared pendingApproval validator is the single source for both boundaries 
   const accepted = validatePendingApproval(VERDICT);
   assert.deepEqual(accepted, { ok: true, value: VERDICT });
 
-  const cjsSurface = createRequire(import.meta.url)("@org-workbench/shared/pending-approval");
+  const cjsSurface = createRequire(import.meta.url)("@roleweave/shared/pending-approval");
   assert.equal(validatePendingApproval, cjsSurface.validatePendingApproval, "ESM wrapper must re-export the CJS contract function identity");
 
   const deniedWithReason = validatePendingApproval({

@@ -93,9 +93,27 @@ describe("status payload", () => {
       available: true,
       requiresConfirmation: true,
       signed: false,
+      updateVerified: false,
       reason: "this build is unsigned, so a downloaded update could not be verified",
       platform: "win32",
     });
+  });
+
+  it("keeps the free macOS channel open when native code signing is absent", () => {
+    const payload = updateStatusPayload({
+      service: {
+        state: "idle",
+        availability: { available: true, requiresConfirmation: false },
+        build: { signed: false, reason: null },
+        updateVerified: true,
+      },
+      version: "0.1.0",
+      platform: "darwin",
+    });
+    assert.equal(payload.available, true);
+    assert.equal(payload.signed, false);
+    assert.equal(payload.updateVerified, true);
+    assert.equal(payload.reason, null);
   });
 
   it("reports the platform reason where there is no channel", () => {
@@ -110,6 +128,7 @@ describe("status payload", () => {
     });
     assert.equal(payload.available, false);
     assert.equal(payload.state, "unavailable");
+    assert.equal(payload.updateVerified, false);
     // The platform reason wins here: the signing one is not why the pane is closed.
     assert.equal(payload.reason, "In-app update needs a Developer ID signed build.");
   });
@@ -119,6 +138,7 @@ describe("status payload", () => {
     assert.equal(payload.state, "unavailable");
     assert.equal(payload.available, false);
     assert.equal(payload.signed, false);
+    assert.equal(payload.updateVerified, false);
     assert.match(payload.reason, /not running/);
   });
 
@@ -145,6 +165,7 @@ describe("status payload", () => {
       "requiresConfirmation",
       "signed",
       "state",
+      "updateVerified",
       "version",
     ]);
   });

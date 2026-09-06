@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import type { TurnRecord, WorkbenchSession } from "@org-workbench/shared";
+import type { TurnRecord, WorkbenchSession } from "@roleweave/shared";
 import { ContextCliAdapterClient } from "../src/context-export/adapter-cli.js";
 import { ContextExportService, readContextExportState } from "../src/context-export/exporter.js";
 import { splitCommand } from "../src/engine/probe.js";

@@ -1,17 +1,19 @@
 import type { ReactNode } from "react";
 import { Button, Empty, Skeleton } from "antd";
 import { cn } from "@fullstack-ai-infra/ui";
-import { ChartNoAxesColumn, Cloud, Crosshair, FileText, Info, RefreshCw, ShieldCheck, Zap } from "lucide-react";
+import { ChartNoAxesColumn, Cloud, Crosshair, FileText, Info, RefreshCw, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { BudgetBar } from "./budget-bar";
 import { useT, type OwbT } from "./i18n";
 import type { PositionCardData } from "./types";
-import type { ContextSourceSummary } from "@org-workbench/shared";
+import type { ContextSourceSummary } from "@roleweave/shared";
 
 export interface PositionCardProps {
   position: PositionCardData | null;
   loading?: boolean;
   notFound?: boolean;
   onRefresh?: () => void;
+  /** Opens the unified employee-memory surface for a context source. */
+  onContextSourceSelect?: (source: ContextSourceSummary) => void;
   /** Per-task consumption ratio (0..1+) for the budget gauge; null/undefined
    * keeps the gauge in declaration phase — never a fabricated percentage. */
   consumption?: number | null;
@@ -40,6 +42,7 @@ export function PositionCard({
   loading = false,
   notFound = false,
   onRefresh,
+  onContextSourceSelect,
   consumption = null,
   running = false,
   actions,
@@ -109,16 +112,16 @@ export function PositionCard({
   }
 
   const readOnly = position.mode === "read_only";
+  // Documents and drive are selectable memory planes. Runtime context stays
+  // visible as a compact, read-only signal so operators can see what informs
+  // the employee without treating it as a third managed memory store.
   const contextSources = position.contextSources ?? legacyContextSource(position, t);
+  const capabilities = position.capabilities ?? { skills: [], mcpServers: [] };
   return (
     <section className={cn("owb-panel", "ui-org-position-card", className)} aria-label={t("pos.title")}>
       <header className="owb-panel-head">
         <div className="owb-panel-head__main">
           <h2>{position.name}</h2>
-          <p className="owb-panel-head__sub">
-            {position.id}
-            {position.reportTo ? ` — ${t("pos.reportTo", { name: position.reportTo })}` : ` — ${t("pos.owner")}`}
-          </p>
         </div>
         <div className="owb-panel-head__right">
           {actions}
@@ -153,6 +156,16 @@ export function PositionCard({
           />
         </section>
 
+        {capabilities.skills.length > 0 || capabilities.mcpServers.length > 0 ? (
+          <section className="owb-pos-section">
+            <h3><Sparkles aria-hidden="true" size={13} />{t("pos.capabilities")}</h3>
+            <div className="owb-tagrow">
+              {capabilities.skills.map((skill) => <span key={`skill-${skill.id}`} className="owb-tag">Skill · {skill.name}</span>)}
+              {capabilities.mcpServers.map((server) => <span key={`mcp-${server.id}`} className="owb-tag owb-tag--mcp" title={server.tools.join(", ")}>MCP · {server.name} · {server.tools.length} tools</span>)}
+            </div>
+          </section>
+        ) : null}
+
         <section className="owb-pos-section">
           <h3>
             <ShieldCheck aria-hidden="true" size={13} />
@@ -183,7 +196,7 @@ export function PositionCard({
           </h3>
           <div className="owb-context-sources">
             {contextSources.map((source) => (
-              <ContextSourceRow key={source.id} source={source} />
+              <ContextSourceRow key={source.id} source={source} onSelect={onContextSourceSelect} />
             ))}
           </div>
           <p className="owb-context-sources__hint">{t("pos.contextSourcesHint")}</p>
@@ -205,34 +218,56 @@ function legacyContextSource(position: PositionCardData, t: OwbT): ContextSource
   }];
 }
 
-function ContextSourceRow({ source }: { source: ContextSourceSummary }) {
+function ContextSourceRow({
+  source,
+  onSelect,
+}: {
+  source: ContextSourceSummary;
+  onSelect?: (source: ContextSourceSummary) => void;
+}) {
   const t = useT();
   const SourceIcon = source.kind === "workspace_docs"
     ? FileText
     : source.kind === "mem_drive"
       ? Cloud
       : Crosshair;
-  const stateLabel = {
+  const stateLabel = source.kind === "context_provider" && (source.itemCount ?? 0) > 0
+    ? t("pos.srcState.connected")
+    : {
     ready: source.kind === "workspace_docs" ? t("pos.srcState.connected") : t("pos.srcState.configured"),
     empty: t("pos.srcState.empty"),
     not_configured: t("pos.srcState.notConfigured"),
     error: t("pos.srcState.readFailed"),
-  }[source.state];
+      }[source.state];
   const bindingLabel = source.binding === "bound" ? t("pos.binding.bound") : t("pos.binding.available");
   const countLabel = source.itemCount === undefined
     ? ""
     : ` · ${t(source.kind === "workspace_docs" ? "pos.srcCount.docs" : "pos.srcCount.records", { count: source.itemCount })}`;
-  return (
-    <div className="owb-context-source">
+  const content = (
+    <>
       <div className="owb-context-source__head">
         <span className="owb-context-source__icon" aria-hidden="true"><SourceIcon size={13} /></span>
         <div className="owb-context-source__main">
           <strong>{source.name}</strong>
-          <span title={source.locator}>{source.locator}</span>
         </div>
         <span className={`owb-context-source__state is-${source.state}`}>{stateLabel}</span>
       </div>
       <div className="owb-context-source__meta">{bindingLabel}{countLabel}{source.readOnly ? t("pos.srcReadOnlySuffix") : ""}</div>
-    </div>
+    </>
+  );
+  // Runtime context is surfaced for transparency but has no separate page to
+  // open. Keep it a read-only row instead of routing it to the docs surface.
+  if (!onSelect || source.kind === "context_provider") {
+    return <div className="owb-context-source">{content}</div>;
+  }
+  return (
+    <button
+      type="button"
+      className="owb-context-source owb-context-source--interactive"
+      onClick={() => onSelect(source)}
+      aria-label={t("pos.openContextSource", { name: source.name })}
+    >
+      {content}
+    </button>
   );
 }

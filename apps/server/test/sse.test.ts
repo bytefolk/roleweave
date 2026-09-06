@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { OrganizationFile } from "@org-workbench/shared";
+import type { OrganizationFile } from "@roleweave/shared";
 import { FakeDriver, api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 test("events: SSE delivers org.updated; reconnect resumes by version stamp", async () => {

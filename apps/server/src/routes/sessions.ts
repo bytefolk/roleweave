@@ -1,11 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { OrgApiError, errorCodes, turnEngines } from "@org-workbench/shared";
-import type { TurnEngine } from "@org-workbench/shared";
+import { OrgApiError, errorCodes, turnEngines } from "@roleweave/shared";
+import type { TurnEngine } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { assertSessionId } from "../sessions/store.js";
 import { assertPositionExists, assertPendingApproval, executeTurn } from "./turns.js";
-import type { TurnPendingApproval } from "@org-workbench/shared";
+import type { TurnPendingApproval } from "@roleweave/shared";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 

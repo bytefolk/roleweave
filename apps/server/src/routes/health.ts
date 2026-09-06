@@ -1,6 +1,6 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import type { ServerResponse } from "node:http";
-import type { HealthResponse } from "@org-workbench/shared";
+import type { HealthResponse } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { probeEngine } from "../engine/probe.js";
 import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
@@ -27,6 +27,120 @@ export interface QoderLocalBinaryState {
   version: string | null;
   supported: boolean;
   failure?: QoderLocalProbeFailure;
+}
+
+const QODER_VERSION_PROBE_MAX_OUTPUT = 64 * 1024;
+
+interface VersionProbeResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  error?: NodeJS.ErrnoException;
+  timedOut?: boolean;
+}
+
+function killVersionProbe(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
+  if (child.pid === undefined) return;
+  // The probe is detached so a CLI that forks a helper cannot leave the
+  // helper holding the parent's stdio open. Kill the complete disposable
+  // process group on POSIX; fall back to the direct child on Windows.
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // The process may have exited between the timeout and group cleanup.
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // The process may have already exited.
+  }
+}
+
+function boundedAppend(current: string, chunk: Buffer | string): string {
+  const remaining = QODER_VERSION_PROBE_MAX_OUTPUT - Buffer.byteLength(current, "utf8");
+  if (remaining <= 0) return current;
+  const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
+  return current + bytes.subarray(0, remaining).toString("utf8");
+}
+
+/**
+ * Run a local `--version` probe without waiting for descendant-held stdio.
+ * Some Qoder launchers fork a helper before the CLI parent exits. Node's
+ * `spawnSync` waits for pipe closure in that situation and reports a false
+ * timeout even though the command already returned its version.
+ */
+function runVersionProbe(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  timeoutMs: number,
+  shell: boolean,
+): Promise<VersionProbeResult> {
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(command, ["--version"], {
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: process.platform !== "win32",
+        shell,
+        windowsHide: true,
+      });
+    } catch (error) {
+      resolve({ status: null, stdout: "", stderr: "", error: error as NodeJS.ErrnoException });
+      return;
+    }
+
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let reapTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (result: VersionProbeResult): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (reapTimer !== undefined) clearTimeout(reapTimer);
+      // Do not wait for `close`: a descendant may still hold these streams.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      resolve({ ...result, stdout, stderr });
+    };
+    timer = setTimeout(() => {
+      timedOut = true;
+      killVersionProbe(child, "SIGKILL");
+      // Normally the exit event arrives immediately after SIGKILL. Keep a
+      // short fallback so a broken platform launcher cannot extend the probe
+      // indefinitely, while still giving Node time to reap the direct child.
+      reapTimer = setTimeout(() => {
+        finish({ status: null, stdout: "", stderr: "", timedOut: true });
+      }, 100);
+    }, timeoutMs);
+    child.stdout?.on("data", (chunk: Buffer | string) => {
+      stdout = boundedAppend(stdout, chunk);
+    });
+    child.stderr?.on("data", (chunk: Buffer | string) => {
+      stderr = boundedAppend(stderr, chunk);
+    });
+    child.once("error", (error) => {
+      finish({
+        status: null,
+        stdout: "",
+        stderr: "",
+        error: error as NodeJS.ErrnoException,
+        ...(timedOut ? { timedOut: true } : {}),
+      });
+    });
+    // `exit` is intentionally the completion signal. `close` also waits for
+    // every inherited stdio descriptor in the descendant tree to disappear.
+    child.once("exit", (code) => {
+      killVersionProbe(child, "SIGKILL");
+      finish({ status: timedOut ? null : code, stdout: "", stderr: "", ...(timedOut ? { timedOut: true } : {}) });
+    });
+  });
 }
 
 export interface HostHealthInput {
@@ -69,39 +183,21 @@ export function supportedQoderVersion(announced: string | null): boolean {
  * state, read a credential store, or claim that remote model entitlement is
  * valid; a real turn remains the only such evidence.
  */
-export function probeQoderLocalBinary(
+export async function probeQoderLocalBinary(
   env: NodeJS.ProcessEnv,
   timeoutMs = 3000,
   platform: NodeJS.Platform = process.platform,
-): QoderLocalBinaryState {
+): Promise<QoderLocalBinaryState> {
   const command = resolveQoderExecutable(env, platform);
   if (command === null) {
     return { installed: false, version: null, supported: false, failure: "unavailable" };
   }
-  let probe: ReturnType<typeof spawnSync>;
   // Node refuses to exec Windows .bat/.cmd launcher scripts without a shell
   // (CVE-2024-27980 hardening). Route exactly those resolved targets through
   // cmd.exe; every other target keeps the shell-free probe.
   const needsWindowsShell = platform === "win32" && /\.(bat|cmd)$/i.test(command);
-  try {
-    probe = spawnSync(command, ["--version"], {
-      encoding: "utf8",
-      // The version probe is a true Qoder descendant. It needs only process
-      // startup paths/locales, never Electron mode, boot state, provider
-      // credentials, internal markers or arbitrary server environment.
-      env: runtimeExecutableEnvironment(env),
-      timeout: timeoutMs,
-      maxBuffer: 64 * 1024,
-      // SIGTERM is catchable and makes spawnSync wait past its timeout. The
-      // local-only version probe must have a hard process-lifetime bound.
-      killSignal: "SIGKILL",
-      shell: needsWindowsShell,
-      windowsHide: true,
-    });
-  } catch {
-    return { installed: false, version: null, supported: false, failure: "unavailable" };
-  }
-  if ((probe.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT") {
+  const probe = await runVersionProbe(command, runtimeExecutableEnvironment(env), timeoutMs, needsWindowsShell);
+  if (probe.timedOut) {
     return { installed: true, version: null, supported: false, failure: "timed_out" };
   }
   if (probe.error !== undefined || probe.status !== 0) {
@@ -174,7 +270,7 @@ function bundledQoderNextStep(state: QoderLocalBinaryState, engineAvailable: boo
     return "Qoder CLI 版本探测超时；检查本机进程状态，或用 ORG_WORKBENCH_QODER_BIN / DIGITAL_EMPLOYEE_QODER_COMMAND 指定可执行的 qoder/qodercli（国区版：qoderclicn）";
   }
   if (!state.installed || state.failure === "unavailable") {
-    return "安装 Qoder CLI 并确保 qoder 在 PATH 上，或用 ORG_WORKBENCH_QODER_BIN / DIGITAL_EMPLOYEE_QODER_COMMAND 指定 qoder/qodercli 二进制（国区版命令名：qoderclicn / qodercn）";
+    return "安装 Qoder CLI 并确保 qoder/qodercli/qoderclicn 在 PATH 上，或用 ORG_WORKBENCH_QODER_BIN / DIGITAL_EMPLOYEE_QODER_COMMAND 指定可执行文件";
   }
   if (!state.supported) {
     return state.version === null
@@ -259,7 +355,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
   });
   const claudeLocal = probeClaudeLocalBinary(process.env);
   const qoderLocal = isBundledQoderEngine(probe.version)
-    ? probeQoderLocalBinary(process.env)
+    ? await probeQoderLocalBinary(process.env)
     : undefined;
   const ws = ctx.workspace.active;
   const body: HealthResponse = {

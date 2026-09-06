@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Alert, Badge, Empty, Input, Segmented, Skeleton, Statistic, Table, Tag, Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { BudgetBar, useT, zhText } from "@org-workbench/ui";
-import type { BudgetReport, EscalationEntry } from "@org-workbench/shared";
+import { BudgetBar, useT, zhText } from "@roleweave/ui";
+import type { BudgetReport, EscalationEntry } from "@roleweave/shared";
 import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { BudgetDetailDrawer } from "./BudgetDetailDrawer";
 
@@ -87,11 +87,11 @@ export function BudgetDashboard({
         ...budget,
         ratio,
         approaching: ratio !== null && ratio >= 0.8 && ratio <= 1 && budget.state !== "exceeded",
-        displayName: positionNames?.[budget.positionId] ?? budget.positionId,
+        displayName: positionNames?.[budget.positionId] ?? t("rep.unknownPosition"),
         color: positionColors?.[budget.positionId],
       };
     });
-  }, [budgets, positionNames, positionColors]);
+  }, [budgets, positionNames, positionColors, t]);
 
   const summary = useMemo(() => {
     let exceeded = 0;
@@ -148,7 +148,6 @@ export function BudgetDashboard({
             />
             <div>
               <strong>{row.displayName}</strong>
-              <code>{row.positionId}</code>
             </div>
           </div>
         ),
@@ -372,8 +371,7 @@ export function BudgetDashboard({
             {budgetRelatedEscalations.map((entry) => (
               <li key={`${entry.positionId}-${entry.turnId}`}>
                 <Badge status="error" />
-                <strong>{positionNames?.[entry.positionId] ?? entry.positionId}</strong>
-                <code>{entry.code}</code>
+                <strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong>
                 <span className="owb-budget-dash__chain">
                   {t("rep.reportingChain", { chain: entry.reportingChain.join(" → ") || "—" })}
                 </span>

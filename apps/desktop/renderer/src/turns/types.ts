@@ -2,6 +2,21 @@ export type TurnEngine = "qoder" | "claude-code" | "claude-local";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
 
+/** User-safe milestones for the conversation view. This deliberately carries
+ * no model chain-of-thought or raw engine event payloads. */
+export type TurnProgressKind =
+  | "received"
+  | "working"
+  | "awaiting_approval"
+  | "completed"
+  | "failed"
+  | "unknown";
+
+export interface TurnProgressStep {
+  kind: TurnProgressKind;
+  at: string;
+}
+
 export interface PositionMentionOption {
   id: string;
   name: string;
@@ -53,6 +68,8 @@ export interface TurnRecord {
   retryOf?: string;
   /** Present when the turn settled as engine.approval_required. */
   approvalRequest?: TurnApprovalRequest;
+  /** Safe, high-level execution milestones derived from server-owned events. */
+  progress?: TurnProgressStep[];
 }
 
 export interface CreateTurnRequest {

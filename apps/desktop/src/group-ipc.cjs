@@ -1,6 +1,6 @@
 // S2 group-chat IPC validators (#52, DS-34-001 rev-1 §1.2). Main-process
 // fail-closed boundary mirroring the route shapes in routes/groups.ts.
-const { isPositionId } = require("@org-workbench/shared/position-id");
+const { isPositionId } = require("@roleweave/shared/position-id");
 
 const CONVERSATION_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TURN_ENGINES = new Set(["qoder", "claude-code", "claude-local"]);

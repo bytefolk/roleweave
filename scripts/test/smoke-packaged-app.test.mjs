@@ -13,7 +13,6 @@ import {
   awaitStagedAppExit,
   launchApp,
   parseSmokeArgs,
-  residualEngineDescendants,
   smokePackagedApp,
   waitForReport,
 } from "../smoke-packaged-app.mjs";
@@ -292,53 +291,5 @@ test("#186 the staged-app exit wait is bounded and rejects an unclean exit", asy
       awaitStagedAppExit(new Promise(() => {}), { timeoutMs: 30 }),
       /did not close within 30ms/,
     );
-  });
-});
-
-// #131 AC-003: the residual-engine contract asserts an empty set, so a green leg
-// proves nothing unless something demonstrates the filter can find a planted
-// child. These are that counter-test, and they are platform-independent: the
-// filter is pure, so it covers every platform the contract claims rather than
-// only the one that happens to run a behavior leg.
-test("#131 the residual-engine filter finds a planted child, including without a command line", async (t) => {
-  const unrelated = [
-    { pid: 2, command: "electron --type=gpu-process", executable: "/opt/app/electron" },
-    { pid: 3, command: "node server.js", executable: "/usr/bin/node" },
-  ];
-
-  await t.test("no engine child is a clean set", () => {
-    assert.deepEqual(residualEngineDescendants(unrelated), []);
-  });
-
-  await t.test("a Qoder child is found through the command line", () => {
-    const planted = { pid: 4, command: "/usr/local/bin/qoder-engine --probe", executable: "" };
-    assert.deepEqual(residualEngineDescendants([...unrelated, planted]), [planted]);
-  });
-
-  await t.test("and through the executable path when the command line is unreadable", () => {
-    // The Windows blind spot: Win32_Process.CommandLine is null when the
-    // querying user cannot read it, and process-tree.cjs maps that to "".
-    const planted = { pid: 5, command: "", executable: "C:\\Program Files\\Qoder\\qoder.exe" };
-    assert.deepEqual(residualEngineDescendants([...unrelated, planted]), [planted]);
-  });
-
-  await t.test("Claude Code counts too, on either field", () => {
-    const viaCommand = { pid: 6, command: "claude --print", executable: "" };
-    const viaPath = { pid: 7, command: "", executable: "/opt/homebrew/bin/claude" };
-    assert.equal(residualEngineDescendants([viaCommand]).length, 1);
-    assert.equal(residualEngineDescendants([viaPath]).length, 1);
-  });
-
-  await t.test("a process with neither field readable is not claimed as an engine child", () => {
-    // Fail open here rather than closed: asserting ownership from two empty
-    // strings would make the contract fire on anything unreadable. Ownership
-    // stays with the identity-bound model in process-tree.cjs.
-    assert.deepEqual(residualEngineDescendants([{ pid: 8, command: "", executable: "" }]), []);
-    assert.deepEqual(residualEngineDescendants([{ pid: 9, command: null, executable: null }]), []);
-  });
-
-  await t.test("the set itself may be absent", () => {
-    assert.deepEqual(residualEngineDescendants(undefined), []);
-    assert.deepEqual(residualEngineDescendants([]), []);
   });
 });

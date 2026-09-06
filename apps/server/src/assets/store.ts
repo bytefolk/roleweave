@@ -18,8 +18,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { ASSET_RECORD_SCHEMA_VERSION, OrgApiError, errorCodes, parseAssetRecord } from "@org-workbench/shared";
-import type { AssetRecord } from "@org-workbench/shared";
+import { ASSET_RECORD_SCHEMA_VERSION, OrgApiError, errorCodes, parseAssetRecord } from "@roleweave/shared";
+import type { AssetRecord } from "@roleweave/shared";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 
 const ASSETS_ROOT = path.join(".digital-employee", "workbench", "drive", "assets");

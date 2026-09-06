@@ -9,7 +9,7 @@ import type {
   TurnRunRequest,
   TurnRunResult,
   WorkbenchSession,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import { compareReportRecords } from "../src/turns/store.js";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 

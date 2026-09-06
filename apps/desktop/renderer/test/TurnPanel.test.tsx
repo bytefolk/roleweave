@@ -57,8 +57,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     fireEvent.click(screen.getByText("会话设置"));
 
     pickSelectOption("选择对话岗位", "发布负责人");
-    // #73: 面板标题改为设计稿的「本地对话 · <岗位 id>」，仍然唯一标定收件岗位。
-    expect(screen.getByRole("heading", { name: /本地对话 · release-manager/ })).toBeInTheDocument();
+    // 岗位已经在组织树和对话卡头中标明，面板标题只保留模块名称。
+    expect(screen.getByRole("heading", { name: "本地对话" })).toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
     expect(visibleSelectOptions()).toHaveLength(3);
@@ -76,14 +76,15 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     });
   });
 
-  // 提示条写着「⌘↵ 发送」，那它就必须真的能发——文案与行为不许脱节。
-  it("sends with ⌘↵ / Ctrl+↵ as the composer hint advertises", async () => {
+  it("sends with plain Enter and keeps Shift+Enter available for multiline input", async () => {
     const createTurn = vi.fn();
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
+    expect(screen.getByText("当前还没有回合记录，输入任务即可开始")).toBeInTheDocument();
+
     const input = screen.getByLabelText("下达任务");
     fireEvent.change(input, { target: { value: "跑一次发布检查" } });
-    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => {
       expect(createTurn).toHaveBeenCalledWith({
@@ -93,11 +94,15 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       });
     });
 
-    // #167：空闲不再挂提示行（描述语精简）；⌘↵ 行为由 createTurn 断言守住。
+    // #167：空闲不再挂提示行；Enter 行为由 createTurn 断言守住。
     expect(screen.queryByRole("status")).toBeNull();
+
+    fireEvent.change(input, { target: { value: "保留换行" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    expect(createTurn).toHaveBeenCalledTimes(1);
   });
 
-  it("#128 AC-003: ignores ⌘↵ while a Chinese IME is composing (keyCode 229) then sends after composition ends", async () => {
+  it("#128 AC-003: ignores Enter while a Chinese IME is composing (keyCode 229) then sends after composition ends", async () => {
     const createTurn = vi.fn();
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
@@ -106,13 +111,13 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
 
     // Legacy WebKit / Firefox report keyCode 229 while an IME is composing,
     // and modern browsers set nativeEvent.isComposing. Either signal must
-    // suppress the ⌘↵ shortcut so committing a Chinese candidate never
+    // suppress Enter so committing a Chinese candidate never
     // dispatches a turn.
     fireEvent.keyDown(input, { key: "Enter", metaKey: true, keyCode: 229 });
     expect(createTurn).not.toHaveBeenCalled();
 
-    // Composition ended: the very next ⌘↵ must fire.
-    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    // Composition ended: the very next Enter must fire.
+    fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => {
       expect(createTurn).toHaveBeenCalledWith({
         positionId: "repo-owner",
@@ -137,11 +142,9 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    // Previously the empty state read "从一个明确任务开始" while the composer
-    // hint below simultaneously forbade any input — the two lines
-    // contradicted each other. The empty state must now surface the same
-    // concrete precondition as `disabledReason`.
-    expect(screen.queryByText("从一个明确任务开始")).not.toBeInTheDocument();
+    // The conversation area has one stable empty-state message; the composer
+    // still names the concrete blocker beside the disabled input.
+    expect(screen.getByText("选择岗位后输入任务即可开始")).toBeInTheDocument();
     expect(screen.getAllByText("打开工作区后才能开始对话").length).toBeGreaterThan(0);
   });
 
@@ -201,7 +204,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
-  it("renders local status and digest evidence without inventing delegation or recall", () => {
+  it("renders readable states without exposing internal evidence or boundaries", () => {
     render(
       <TurnPanel
         workspaceOpen
@@ -232,19 +235,9 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByText("已完成")).toBeInTheDocument();
     expect(screen.getByText("失败")).toBeInTheDocument();
     expect(screen.getByText("状态未知")).toBeInTheDocument();
-    // 证据默认折叠（气泡规格⑤）：展开后全量 digest 可见（审计红线）
-    fireEvent.click(screen.getByRole("button", { name: /证据/ }));
-    expect(screen.getByTitle("sha256:1234567890abcdefghijklmnopqrstuv")).toBeInTheDocument();
-    expect(screen.getByTitle("sha256:abcdefghijklmnopqrstuvwxyz123456")).toBeInTheDocument();
-    // #73: 边界 chip 改为设计稿的 host / mode / budget 实况三枚；委派链与长期
-    // Context 的「Planned」占位随之退场，但仍不得凭空宣称委派/召回能力。
-    const boundaries = Array.from(document.querySelectorAll(".owb-boundary")).map(
-      (node) => node.textContent?.replace(/\s+/g, " ").trim(),
-    );
-    expect(boundaries).toHaveLength(3);
-    expect(boundaries[0]).toMatch(/^host/);
-    expect(boundaries[1]).toMatch(/^mode/);
-    expect(boundaries[2]).toMatch(/^budget/);
+    expect(screen.queryByText("sha256:1234567890abcdefghijklmnopqrstuv")).not.toBeInTheDocument();
+    expect(screen.queryByText("sha256:abcdefghijklmnopqrstuvwxyz123456")).not.toBeInTheDocument();
+    expect(document.querySelector(".owb-boundary")).toBeNull();
     expect(screen.queryByText(/researcher|worker|已召回|已委派/i)).not.toBeInTheDocument();
   });
 
@@ -284,7 +277,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
         retryOf: "turn-uncertain",
       });
     });
-    expect(screen.getByText("turn-uncertain")).toBeInTheDocument();
+    expect(document.querySelector('[data-turn-id="turn-uncertain"]')).toBeInTheDocument();
   });
 });
 
@@ -331,7 +324,7 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
       />,
     );
 
-    expect(screen.getByText("正在请求控制面中断引擎进程…")).toBeInTheDocument();
+    expect(screen.getByText("正在停止这个任务…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "中断回合" })).toBeDisabled();
     fireEvent.keyDown(window, { key: ".", metaKey: true });
     expect(cancelTurn).not.toHaveBeenCalled();
@@ -378,13 +371,9 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
 
     expect(screen.getByText("回合运行中：点击中断或按 ⌘. 终止该岗位的在途回合")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "发送任务" })).not.toBeInTheDocument();
-    // #73: 状态行统一承载 engine · 耗时 · tokens · 终态词（千分位，tabular-nums），
-    // 在途与已结算回合都走同一行，不再分裂到气泡下 meta。
-    const statusLine = screen.getByText("1,280 tokens").closest("p");
-    expect(statusLine).toHaveClass("owb-turn__statusline");
-    expect(statusLine?.textContent).toContain("running");
-    const settled = screen.getByText("999 tokens").closest("p");
-    expect(settled).toHaveClass("owb-turn__statusline");
-    expect(settled?.textContent).toContain("可信终态");
+    expect(screen.getAllByText("运行中").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
+    expect(screen.queryByText("1,280 tokens")).not.toBeInTheDocument();
+    expect(screen.queryByText("999 tokens")).not.toBeInTheDocument();
   });
 });

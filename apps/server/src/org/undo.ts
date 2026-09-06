@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { MovePositionChange, OrgLayoutFile } from "@org-workbench/shared";
+import type { MovePositionChange, OrgLayoutFile } from "@roleweave/shared";
 
 export const UNDO_FILE = path.join(".digital-employee", "org-undo.v1.json");
 

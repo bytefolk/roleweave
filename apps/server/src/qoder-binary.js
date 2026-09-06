@@ -53,42 +53,29 @@ function findOnPath(name, env, platform) {
  * state. Resolution order is deliberately shared by `/health` and
  * `qoder-engine turn run`:
  *
- * 1. explicit `ORG_WORKBENCH_QODER_BIN` (authoritative; invalid fails closed),
- * 2. explicit `DIGITAL_EMPLOYEE_QODER_COMMAND` (authoritative; digital-employee
- *    contract; invalid fails closed),
- * 3. native `qodercli` (International) then `qoderclicn` (China), then the
- *    `qoder` / `qodercn` / `qoder-cn` dispatchers, from PATH,
- * 4. supported per-user macOS install paths for Finder-launched apps
- *    (International under `~/.qoder/`, China under `~/.qoder-cn/`).
+ * 1. explicit `ORG_WORKBENCH_QODER_BIN`, then
+ *    `DIGITAL_EMPLOYEE_QODER_COMMAND` (invalid explicit values fail closed),
+ * 2. native `qodercli`, `qoderclicn`, then the `qoder` dispatcher, from PATH,
+ * 3. supported per-user macOS install paths for Finder-launched apps.
  *
- * International names come before their China equivalents so that a host with
- * both editions logged in keeps the existing default. Only exact candidate
- * paths are checked; no home-directory scan is performed.
+ * Only exact candidate paths are checked; no home-directory scan is performed.
  *
  * @param {NodeJS.ProcessEnv} env
  * @param {NodeJS.Platform} [platform]
  * @returns {string | null}
  */
 export function resolveQoderExecutable(env, platform = process.platform) {
-  const explicitBin = (env.ORG_WORKBENCH_QODER_BIN ?? "").trim();
-  if (explicitBin.length > 0) {
-    if (explicitBin.includes("\0")) return null;
-    const pathLike = path.isAbsolute(explicitBin) || explicitBin.includes("/") || explicitBin.includes("\\");
-    return pathLike ? executableTarget(path.resolve(explicitBin)) : findOnPath(explicitBin, env, platform);
-  }
-  // #200: honor the digital-employee override (TURN_ENGINE_QODER_COMMAND_ENV
-  // upstream) symmetrically with DIGITAL_EMPLOYEE_CLAUDE_COMMAND. It names a
-  // binary and carries no credential, so it fits the existing allowlist
-  // discipline and lets operators point at the CN edition without a PATH shim.
-  const explicitCommand = (env.DIGITAL_EMPLOYEE_QODER_COMMAND ?? "").trim();
-  if (explicitCommand.length > 0) {
-    if (explicitCommand.includes("\0")) return null;
-    const pathLike =
-      path.isAbsolute(explicitCommand) || explicitCommand.includes("/") || explicitCommand.includes("\\");
-    return pathLike ? executableTarget(path.resolve(explicitCommand)) : findOnPath(explicitCommand, env, platform);
+  const explicit = [
+    env.ORG_WORKBENCH_QODER_BIN,
+    env.DIGITAL_EMPLOYEE_QODER_COMMAND,
+  ].find((value) => typeof value === "string" && value.trim().length > 0)?.trim() ?? "";
+  if (explicit.length > 0) {
+    if (explicit.includes("\0")) return null;
+    const pathLike = path.isAbsolute(explicit) || explicit.includes("/") || explicit.includes("\\");
+    return pathLike ? executableTarget(path.resolve(explicit)) : findOnPath(explicit, env, platform);
   }
 
-  for (const name of ["qodercli", "qoderclicn", "qoder", "qodercn", "qoder-cn"]) {
+  for (const name of ["qodercli", "qoderclicn", "qoder"]) {
     const found = findOnPath(name, env, platform);
     if (found !== null) return found;
   }
@@ -100,15 +87,12 @@ export function resolveQoderExecutable(env, platform = process.platform) {
     // the server's current working directory part of executable discovery.
     if (path.isAbsolute(home) && !/[\0\r\n]/.test(home)) {
       for (const candidate of [
-        // International edition
         path.join(home, ".local", "bin", "qodercli"),
-        path.join(home, ".qoder", "bin", "qodercli", "qodercli"),
-        path.join(home, ".qoder", "entry", "qoder"),
-        // China edition (#200)
         path.join(home, ".local", "bin", "qoderclicn"),
-        path.join(home, ".qoder-cn", "bin", "qoderclicn", "qoderclicn"),
-        path.join(home, ".qoder-cn", "entry", "qodercn"),
-        path.join(home, ".qoder-cn", "entry", "qoder-cn"),
+        path.join(home, ".qoder", "bin", "qodercli", "qodercli"),
+        path.join(home, ".qoder", "bin", "qodercli", "qoderclicn"),
+        path.join(home, ".qoder", "entry", "qoderclicn"),
+        path.join(home, ".qoder", "entry", "qoder"),
       ]) {
         const found = executableTarget(candidate);
         if (found !== null) return found;

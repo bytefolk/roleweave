@@ -1,4 +1,4 @@
-const { isPositionId } = require("@org-workbench/shared/position-id");
+const { isPositionId } = require("@roleweave/shared/position-id");
 const { validatePendingApproval } = require("./approval-ipc.cjs");
 const MAX_INPUT_BYTES = 256 * 1024;
 const TURN_ENGINES = new Set(["qoder", "claude-code", "claude-local"]);

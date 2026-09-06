@@ -89,8 +89,9 @@ function boundedUpdateResult(result) {
  * has a channel at all, whether this build carries a publisher identity, and
  * the reason when it does not.
  *
- * `signed: false` is not an error state. It is why the apply paths are closed,
- * and the pane says so rather than offering an action that will be refused.
+ * `signed: false` only describes native platform signing. `updateVerified`
+ * describes the independent release-signature check used by the free macOS
+ * channel, so an unsigned app can still update safely through that channel.
  */
 function updateStatusPayload({ service, version, platform } = {}) {
   const runningVersion = boundedVersion(version);
@@ -101,6 +102,7 @@ function updateStatusPayload({ service, version, platform } = {}) {
       available: false,
       requiresConfirmation: false,
       signed: false,
+      updateVerified: false,
       reason: "the update service is not running",
       platform: boundedPlatform(platform),
     };
@@ -114,6 +116,7 @@ function updateStatusPayload({ service, version, platform } = {}) {
     available,
     requiresConfirmation: availability.requiresConfirmation === true,
     signed: build.signed === true,
+    updateVerified: service.updateVerified === true,
     // On an available platform the interesting reason is the signing one; on an
     // unavailable platform it is the platform one. Never both, never neither.
     reason: boundedReason(available ? build.reason : availability.reason),

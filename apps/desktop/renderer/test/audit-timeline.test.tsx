@@ -37,9 +37,9 @@ describe("P0 Turn / 审计时间线（AuditTimeline）", () => {
     // 4 个组：run-A / run-B / run-C / audit-1（model.delta 被过滤，不构成新组）
     const groupHeaders = container.querySelectorAll(".ant-collapse-item");
     expect(groupHeaders.length).toBe(4);
-    // 组头显示岗位（writer-1 出现在多个组头）
-    const writers = screen.getAllByText(/writer-1/);
-    expect(writers.length).toBeGreaterThanOrEqual(2);
+    // 没有岗位名称映射时不把内部 ID 泄露到界面。
+    expect(screen.queryByText(/writer-1/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("未命名岗位").length).toBeGreaterThanOrEqual(2);
   });
 
   it("展开一个组后可以看到该组的事件行", () => {
@@ -47,12 +47,12 @@ describe("P0 Turn / 审计时间线（AuditTimeline）", () => {
     const headers = container.querySelectorAll(".ant-collapse-header");
     // 展开 run-A 组（第一个）
     fireEvent.click(headers[0]!);
-    // run-A 组展开后应能看到 run.started / usage / run.completed 三条事件
+    // run-A 组展开后应能看到三条可读事件
     // （model.delta 已被过滤）
     const groupA = screen.getByTestId("timeline-group-run-A");
-    expect(within(groupA).getByText("run.started")).toBeInTheDocument();
-    expect(within(groupA).getByText("usage")).toBeInTheDocument();
-    expect(within(groupA).getByText("run.completed")).toBeInTheDocument();
+    expect(within(groupA).getByText("开始执行")).toBeInTheDocument();
+    expect(within(groupA).getByText("记录用量")).toBeInTheDocument();
+    expect(within(groupA).getByText("执行完成")).toBeInTheDocument();
     expect(within(groupA).queryByText("model.delta")).not.toBeInTheDocument();
   });
 

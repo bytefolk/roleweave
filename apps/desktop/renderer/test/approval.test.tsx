@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { TurnRecord as ApiTurnRecord } from "@org-workbench/shared";
+import type { TurnRecord as ApiTurnRecord } from "@roleweave/shared";
 import { TurnPanel, approvalResumeInput } from "../src/turns";
 import type { CreateTurnRequest, TurnEngine, TurnPanelProps, TurnRecord } from "../src/turns";
 import { adaptTurnRecord } from "../src/turns/adapter";
@@ -149,7 +149,7 @@ describe("TurnPanel approval verdict card", () => {
 
     const card = screen.getByRole("group", { name: "审批请求" });
     expect(card).toHaveTextContent("已裁决 · 命令执行");
-    expect(card).toHaveTextContent("裁决已随新回合发出，同一审批不再接受重复裁决");
+    expect(card).toHaveTextContent("这个审批已处理，不能重复操作");
     expect(screen.queryByRole("button", { name: "批准并继续" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "拒绝" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "拒绝理由（可选）" })).not.toBeInTheDocument();

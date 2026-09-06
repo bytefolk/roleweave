@@ -13,7 +13,7 @@ import {
   OrgApiError,
   errorCodes,
   isPositionId,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type {
   AssetRecord,
   DocsCreateResponse,
@@ -21,18 +21,19 @@ import type {
   DocsFileListResponse,
   DocsFileResponse,
   DocsResolveResponse,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { appendAssetIndex, writeAssetRecord } from "../assets/store.js";
 import type { ControlPlaneContext } from "../context.js";
+import { resolvePositionPackageDir } from "../context-sources.js";
 import { readJsonBody, sendJson } from "../http.js";
-import { POSITIONS_DIR } from "../workspace-state.js";
 
 /**
  * Read-only document file routing (#35 S2, DS-35-001 rev-1 §5).
  *
  * Guards are fail-closed and modeled on the repository storage discipline:
- * reads resolve strictly inside `positions/<id>/`, symlinks are refused,
+ * reads resolve strictly inside the role's bound package under `positions/`,
+ * symlinks are refused,
  * only allowlisted text extensions are served, and oversized files are
  * rejected rather than streamed.
  */
@@ -52,7 +53,7 @@ function requirePositionDir(ctx: ControlPlaneContext, positionId: string): strin
   if (!role) {
     throw new OrgApiError(errorCodes.position_missing, 404, `position not found: ${positionId}`);
   }
-  return path.resolve(ws.dir, POSITIONS_DIR, positionId);
+  return resolvePositionPackageDir(ws.dir, role);
 }
 
 /** Resolve a relative doc path strictly inside the position dir; refuse escapes. */

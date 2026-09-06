@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { BudgetBar } from "@org-workbench/ui";
-import { useOwbLocale, useT, type OwbT } from "@org-workbench/ui";
-import type { AuditEntry, BudgetReport, EvidenceEntry, EscalationEntry, ReportsResponse } from "@org-workbench/shared";
-import { AlertOctagon, ArrowUpRight, ClipboardList, Fingerprint, ShieldCheck } from "lucide-react";
+import { BudgetBar } from "@roleweave/ui";
+import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
+import type { AuditEntry, BudgetReport, EvidenceEntry, EscalationEntry, ReportsResponse } from "@roleweave/shared";
+import { AlertOctagon, ArrowUpRight, ClipboardList } from "lucide-react";
 import { BudgetDashboard } from "./BudgetDashboard";
 import { AuditTimeline, type AuditTimelineEvent } from "./AuditTimeline";
 
@@ -26,8 +26,8 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
   // escalation tab made a healthy workspace look broken and hid the evidence
   // that explains what this module is for.
   const [tabOverride, setTabOverride] = useState<Tab | null>(null);
-  if (loading) return <section className="owb-reports"><p className="owb-muted" role="status">{t("rep.loading")}</p></section>;
-  if (!reports) return <section className="owb-reports"><p className="owb-muted" role="status">{t("rep.unavailable")}</p></section>;
+  if (loading) return <section className="owb-reports"><p className="owb-muted">{t("rep.loading")}</p></section>;
+  if (!reports) return <section className="owb-reports"><p className="owb-muted">{t("rep.unavailable")}</p></section>;
   const tab = tabOverride ?? firstReportTab(reports, timelineEvents.length);
   return (
     <section className="owb-reports" aria-label={t("rep.center")}>
@@ -36,12 +36,8 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
           <h1>{t("rep.center")}</h1>
           <p>{t("rep.lede")}</p>
         </div>
-        <div className="owb-reports__hero-signal" role="note" aria-label={t("rep.heroBoundaryAria")}>
-          <ShieldCheck aria-hidden="true" size={22} />
-          <div><strong>{t("rep.factView")}</strong><small>{t("rep.factViewNote")}</small></div>
-        </div>
       </header>
-      <BudgetDeck budgets={reports.budgets} onViewAll={() => setTabOverride("budgets")} />
+      <BudgetDeck budgets={reports.budgets} positionNames={positionNames} onViewAll={() => setTabOverride("budgets")} />
       <nav className="owb-report-tabs" aria-label={t("rep.streamsAria")}>
         <TabButton active={tab === "budgets"} onClick={() => setTabOverride("budgets")} label={t("rep.tabBudgets")} count={reports.budgets.length} />
         <TabButton active={tab === "escalations"} onClick={() => setTabOverride("escalations")} label={t("rep.tabEscalations")} count={reports.streams.escalations.length} />
@@ -49,7 +45,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
         <TabButton active={tab === "evidence"} onClick={() => setTabOverride("evidence")} label={t("rep.tabEvidence")} count={reports.streams.evidence.length} />
         <TabButton active={tab === "timeline"} onClick={() => setTabOverride("timeline")} label={t("rep.tabTimeline")} count={timelineEvents.length} />
       </nav>
-      <div className="owb-report-stream" role="region" aria-label={t("rep.streamTabpanelAria", { tab: tabLabel(tab, t) })}>
+      <div className="owb-report-stream" role="tabpanel" aria-label={t("rep.streamTabpanelAria", { tab: tabLabel(tab, t) })}>
         {tab === "budgets" ? (
           <BudgetDashboard
             budgets={reports.budgets}
@@ -59,12 +55,13 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
             onOpenTimeline={onOpenTimeline}
           />
         ) : null}
-        {tab === "escalations" ? <Escalations entries={reports.streams.escalations} /> : null}
+        {tab === "escalations" ? <Escalations entries={reports.streams.escalations} positionNames={positionNames} /> : null}
         {tab === "audits" ? <Audits entries={reports.streams.audits} /> : null}
-        {tab === "evidence" ? <Evidence entries={reports.streams.evidence} /> : null}
+        {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} /> : null}
         {tab === "timeline" ? (
           <AuditTimeline
             events={timelineEvents}
+            positionNames={positionNames}
             page={{
               cursor: reports.page.cursor,
               hasMore: reports.page.hasMore,
@@ -95,7 +92,7 @@ function tabLabel(tab: Tab, t: OwbT): string {
   }[tab];
 }
 
-function BudgetDeck({ budgets, onViewAll }: { budgets: BudgetReport[]; onViewAll: () => void }) {
+function BudgetDeck({ budgets, positionNames, onViewAll }: { budgets: BudgetReport[]; positionNames?: Record<string, string>; onViewAll: () => void }) {
   const t = useT();
   return <section className="owb-budget-deck" aria-label={t("rep.budgetSnapshot")}>
     <header className="owb-budget-deck__head">
@@ -106,7 +103,7 @@ function BudgetDeck({ budgets, onViewAll }: { budgets: BudgetReport[]; onViewAll
       const limit = budget.declared.perTask.tokens;
       const ratio = limit && budget.latestTurn ? budget.latestTurn.totalTokens / limit : null;
       return <article key={budget.positionId} data-state={budget.state}>
-        <header><strong>{budget.positionId}</strong><span>{budget.state === "unobserved" ? t("rep.declaredPhase") : budget.state === "exceeded" ? t("rep.stateExceeded") : t("rep.stateWithin")}</span></header>
+        <header><strong>{positionNames?.[budget.positionId] ?? t("rep.unknownPosition")}</strong><span>{budget.state === "unobserved" ? t("rep.declaredPhase") : budget.state === "exceeded" ? t("rep.stateExceeded") : t("rep.stateWithin")}</span></header>
         <BudgetBar declared={{ taskLimit: budget.declared.perTask, dailyLimit: budget.declared.perDay }} consumption={ratio} />
         <small><span>{t("rep.colRecorded")}</span><span>{budget.recorded.totalTokens.toLocaleString()} tokens</span></small>
       </article>;
@@ -156,7 +153,7 @@ function buildTimelineEventsFromReports(reports: ReportsResponse, t: OwbT): Audi
       errorCode: evidence.errorCode,
       envelopeDigest: evidence.envelopeDigest,
       totalTokens: evidence.usage.totalTokens,
-      summary: `${evidence.status} · ${evidence.usage.totalTokens.toLocaleString()} tokens`,
+      summary: `${evidenceStatusLabel(evidence.status, t)} · ${evidence.usage.totalTokens.toLocaleString()} tokens`,
     });
   }
   for (const escalation of reports.streams.escalations) {
@@ -170,7 +167,7 @@ function buildTimelineEventsFromReports(reports: ReportsResponse, t: OwbT): Audi
       errorCode: escalation.code,
       budgetRelated: escalation.budgetRelated,
       reportingChain: escalation.reportingChain,
-      summary: `${escalation.status} · ${escalation.code}`,
+      summary: escalation.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation"),
     });
   }
   reports.streams.audits.forEach((audit, index) => {
@@ -199,13 +196,13 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
 
 function Empty({ text }: { text: string }) { return <p className="owb-report-empty">{text}</p>; }
 
-function Escalations({ entries }: { entries: EscalationEntry[] }) {
+function Escalations({ entries, positionNames }: { entries: EscalationEntry[]; positionNames?: Record<string, string> }) {
   const t = useT();
   const localeTag = useLocaleTag();
   if (entries.length === 0) return <Empty text={t("rep.noEscalations")} />;
   return <ol>{entries.map((entry) => {
-    const summary = `${entry.positionId} · ${entry.status}${entry.budgetRelated ? ` · ${t("rep.budgetRelated")}` : ""}`;
-    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{entry.code}</strong><time>{formatTime(entry.at, localeTag)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{position}</span>)}</div></div></li>;
+    const summary = entry.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation");
+    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time>{formatTime(entry.at, localeTag)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div></div></li>;
   })}</ol>;
 }
 
@@ -224,14 +221,21 @@ function Audits({ entries }: { entries: AuditEntry[] }) {
   })}</ol>;
 }
 
-function Evidence({ entries }: { entries: EvidenceEntry[] }) {
+function Evidence({ entries, positionNames }: { entries: EvidenceEntry[]; positionNames?: Record<string, string> }) {
   const t = useT();
   const localeTag = useLocaleTag();
   if (entries.length === 0) return <Empty text={t("rep.noEvidence")} />;
   return <ol>{entries.map((entry) => {
-    const summary = `${entry.status} · ${entry.usage.totalTokens.toLocaleString()} tokens${entry.errorCode ? ` · ${entry.errorCode}` : ""}`;
-    return <li className="owb-report-card" key={entry.turnId}><Fingerprint aria-hidden="true" size={16} /><div><header><strong>{entry.positionId} · {entry.engine}</strong><time>{formatTime(entry.updatedAt, localeTag)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><code className="owb-clamp-2" title={entry.envelopeDigest}>{entry.envelopeDigest}</code><small>turn {entry.turnId} · conversation {entry.conversationId}</small></div></li>;
+    const summary = `${evidenceStatusLabel(entry.status, t)} · ${entry.usage.totalTokens.toLocaleString()} tokens`;
+    return <li className="owb-report-card" key={entry.turnId}><ClipboardList aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time>{formatTime(entry.updatedAt, localeTag)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p></div></li>;
   })}</ol>;
+}
+
+function evidenceStatusLabel(status: string, t: OwbT): string {
+  if (status === "completed") return t("turn.done");
+  if (status === "failed") return t("turn.failed");
+  if (status === "indeterminate") return t("turn.statusUnknown");
+  return t("turn.statusRunning");
 }
 
 function formatTime(value: string, localeTag = "zh-CN"): string {
@@ -243,5 +247,3 @@ function formatTime(value: string, localeTag = "zh-CN"): string {
 function useLocaleTag(): string {
   return useOwbLocale() === "en" ? "en-US" : "zh-CN";
 }
-// Note: History icon reserved for future timeline-tab-only iconography if needed.
-void History;

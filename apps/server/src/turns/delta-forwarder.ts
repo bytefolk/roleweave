@@ -1,4 +1,4 @@
-import type { EngineEvent } from "@org-workbench/shared";
+import type { EngineEvent } from "@roleweave/shared";
 
 const DEFAULT_RATE_LIMIT_MS = 100;
 const DEFAULT_BUFFER_CAP_BYTES = 64 * 1024;

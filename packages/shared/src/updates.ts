@@ -65,8 +65,10 @@ export interface UpdateStatus {
   /** Whether this platform has an update channel at all. */
   available: boolean;
   requiresConfirmation: boolean;
-  /** Whether this build carries a publisher identity. False closes download and install. */
+  /** Whether this build carries a native platform publisher identity (Apple/Authenticode). */
   signed: boolean;
+  /** Whether the selected update channel has an independent trust check. */
+  updateVerified: boolean;
   reason: string | null;
   platform: UpdatePlatform;
 }

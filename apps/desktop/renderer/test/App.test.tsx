@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { pickSelectOption } from "./select-helper";
+import { pickSelectOption, visibleSelectOptions } from "./select-helper";
 import { App } from "../src/App";
 import type { OwbBridge } from "../src/owb";
-import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession } from "@org-workbench/shared";
+import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
 
 const activeSession: WorkbenchSession = {
   schemaVersion: "workbench-session.v1",
@@ -41,6 +41,7 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
       },
     }),
     openWorkspace: vi.fn().mockResolvedValue({ canceled: true }),
+    createWorkspace: vi.fn().mockResolvedValue({ canceled: true }),
     workspace: vi.fn().mockResolvedValue({ status: 200, body: { open: false } }),
     orgTree: vi.fn().mockResolvedValue({ status: 200, body: null }),
     orgApply: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal" } }),
@@ -90,6 +91,7 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
         available: false,
         requiresConfirmation: false,
         signed: false,
+        updateVerified: false,
         reason: "no packaged resources path; this is a source-tree run",
         platform: "linux",
       }),
@@ -194,9 +196,11 @@ function emptyReports(): ReportsResponse {
 }
 
 async function selectRepoOwner(): Promise<void> {
-  await screen.findByRole("treeitem", { name: /repo-owner/ });
-  fireEvent.click(screen.getByText("repo-owner", { selector: ".ui-org-tree__name, .ui-org-tree__id" }));
-  expect(await screen.findByRole("heading", { name: /本地对话 · repo-owner/ })).toBeInTheDocument();
+  const tree = await screen.findByRole("tree");
+  const row = tree.querySelector('[data-org-node-id="repo-owner"]');
+  expect(row).not.toBeNull();
+  fireEvent.click(row!);
+  expect(await screen.findByRole("heading", { name: "本地对话" })).toBeInTheDocument();
 }
 
 describe("App runtime bridge", () => {
@@ -212,9 +216,40 @@ describe("App runtime bridge", () => {
     });
   });
 
+  it("shows the local workspace path in the topbar context", async () => {
+    openedBridge();
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("/fixture/workspace")).toBeInTheDocument();
+    expect(screen.getAllByTitle("/fixture/workspace").length).toBeGreaterThan(0);
+  });
+
+  it("keeps project switching at the top of the organization sidebar", async () => {
+    const openWorkspace = vi.fn().mockResolvedValue({ canceled: true });
+    openedBridge({ openWorkspace });
+
+    render(<App />);
+
+    const projectEntry = await screen.findByRole("button", { name: "项目入口" });
+    expect(projectEntry).toHaveTextContent("开源业务");
+    expect(projectEntry).not.toHaveTextContent("/fixture/workspace");
+    fireEvent.click(projectEntry);
+
+    const menu = screen.getByRole("menu", { name: "项目入口" });
+    expect(within(menu).getByText("当前项目")).toBeInTheDocument();
+    expect(within(menu).getByText("/fixture/workspace")).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: /打开项目/ })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: /新建项目/ })).toBeInTheDocument();
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /打开项目/ }));
+    expect(openWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu", { name: "项目入口" })).not.toBeInTheDocument();
+  });
+
   it("#128 AC-001: clicking a position in the org tree syncs the conversation-position combobox in the turn panel", async () => {
-    // Regression lock: the wiring is OrgTree.onSelect -> selectPosition ->
-    // setSelectedId -> <PositionMention value={selectedPositionId}>. Pin
+    // Regression lock: the wiring is OrgTree.onSelect -> openConversation ->
+    // selectPosition + ensureActiveSession -> <PositionMention value={selectedPositionId}>. Pin
     // that path so a future refactor cannot silently break the sync (which
     // would restart the AC-002 empty-state contradiction and cascade into
     // MODE/BUDGET/composer/session controls all going idle).
@@ -226,12 +261,10 @@ describe("App runtime bridge", () => {
     const combobox = screen.getByRole("combobox", { name: "选择对话岗位" });
     expect(combobox).toBeEnabled();
 
-    // Once the tree selects a position, the panel's subject chip in the
-    // header ("· repo-owner") plus the subject-scoped copy inside the
-    // panel prove the sync — antd renders the selected label inside the
-    // trigger, but the subject chip is a rendered React child we control.
+    // Once the tree selects a position, the human-readable subject label
+    // inside the panel proves the sync without exposing the routing ID.
     const conversationRegion = screen.getByLabelText("岗位对话");
-    expect(within(conversationRegion).getAllByText(/repo-owner/).length).toBeGreaterThan(0);
+    expect(within(conversationRegion).getAllByText(/代码库负责人/).length).toBeGreaterThan(0);
   });
 
   it("opens a workspace, selects @岗位, loads local history, sends, and reads persisted history back", async () => {
@@ -314,7 +347,7 @@ describe("App runtime bridge", () => {
     fireEvent.change(input, { target: { value: "不要丢失这条任务" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("turn_engine_unavailable: Qoder Host 暂不可用");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Qoder Host 暂不可用");
     expect(input).toHaveValue("不要丢失这条任务");
     expect(createSessionTurn).toHaveBeenCalledTimes(1);
   });
@@ -347,20 +380,19 @@ describe("App runtime bridge", () => {
     render(<App />);
     await selectRepoOwner();
     pickSelectOption("选择 Agent Host", "Qoder");
-    expect((await screen.findAllByText("请先新建或选择一个会话")).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: "新建会话" }));
     await waitFor(() => expect(createSession).toHaveBeenCalledWith({ positionId: "repo-owner" }));
+    expect(screen.queryByText("请先新建或选择一个会话")).not.toBeInTheDocument();
     expect(await screen.findByText("历史结果")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "轮换当前会话" }));
     await waitFor(() => expect(rotateSession).toHaveBeenCalledWith(activeSession.sessionId));
     await waitFor(() => {
       expect(sessionTurnHistory).toHaveBeenCalledWith(successor.sessionId);
-      expect(screen.getByText("从一个明确任务开始")).toBeInTheDocument();
+      expect(screen.getByText("当前还没有回合记录，输入任务即可开始")).toBeInTheDocument();
       expect(screen.queryByText("历史结果")).not.toBeInTheDocument();
     });
 
-    pickSelectOption("选择本地会话", rotated.sessionId.slice(0, 8));
+    pickSelectOption("选择本地会话", "只读 · 第 1 个");
     expect((await screen.findAllByText("历史会话只读；请选择当前会话")).length).toBeGreaterThan(0);
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
@@ -420,17 +452,21 @@ describe("App runtime bridge", () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "群聊" }));
     await screen.findByLabelText("群聊消息");
-    const mention = screen.getByLabelText("选择要 @ 的成员").querySelector("button");
-    expect(mention).not.toBeNull();
-    fireEvent.click(mention!);
+    const recipientSelect = screen.getByRole("combobox", { name: "选择要 @ 的成员" });
+    fireEvent.mouseDown(recipientSelect);
+    await waitFor(() => {
+      const options = visibleSelectOptions();
+      expect(options.length).toBeGreaterThan(0);
+      fireEvent.click(options[0]!);
+    });
     fireEvent.change(screen.getByLabelText("群聊消息"), { target: { value: "保持群状态" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送群消息" }));
+    fireEvent.keyDown(screen.getByLabelText("群聊消息"), { key: "Enter" });
     await waitFor(() => expect(createGroupTurn).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1));
 
     fireEvent.click(screen.getByRole("button", { name: "组织" }));
     await selectRepoOwner();
-    pickSelectOption("选择本地会话", historicalSession.sessionId.slice(0, 8));
+    pickSelectOption("选择本地会话", "只读 · 第 1 个");
     fireEvent.click(screen.getByRole("button", { name: "群聊" }));
     await waitFor(() => expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1));
 
@@ -519,7 +555,7 @@ describe("App runtime bridge", () => {
     expect(await screen.findByText("没有可撤销的组织调整")).toBeInTheDocument();
   });
 
-  it("keeps hire disabled until token budgets are complete, then hires through POST /hire (hire-request.v1alpha1)", async () => {
+  it("prefills token budgets and hires through POST /hire (hire-request.v1alpha1)", async () => {
     const hire = vi.fn().mockResolvedValue({
       status: 200,
       body: { status: "hired", positionId: "docs-writer", version: { seq: 6, updatedAt: "2026-08-26T00:00:00.000Z" } },
@@ -530,24 +566,34 @@ describe("App runtime bridge", () => {
     fireEvent.click(await screen.findByRole("button", { name: "创建员工" }));
     expect(await screen.findByRole("button", { name: "开始创建" })).toBeDisabled();
     fireEvent.change(screen.getByPlaceholderText("员工姓名（≤24 字）"), { target: { value: "文档负责人" } });
-    fireEvent.change(screen.getByPlaceholderText("小写字母、数字与连字符，≤64 位"), { target: { value: "docs-writer" } });
     fireEvent.change(screen.getByPlaceholderText("≤500 字"), { target: { value: "维护文档" } });
-    const [taskTokens, dayTokens] = screen.getAllByPlaceholderText("正整数");
-    fireEvent.change(taskTokens!, { target: { value: "20000" } });
-    expect(screen.getByRole("button", { name: "开始创建" })).toBeDisabled();
-    fireEvent.change(dayTokens!, { target: { value: "200000" } });
+    const taskTokens = screen.getByLabelText("每任务 token 上限*");
+    const dayTokens = screen.getByLabelText("每日 token 上限*");
+    expect(taskTokens).toHaveValue("20000");
+    expect(dayTokens).toHaveValue("200000");
     expect(screen.getByRole("button", { name: "开始创建" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
     await waitFor(() => expect(hire).toHaveBeenCalledWith({
-      positionId: "docs-writer",
+      positionId: expect.stringMatching(/^position-[a-z0-9]+$/),
       name: "文档负责人",
       description: "维护文档",
       reportTo: "repo-owner",
       mode: "approval_required",
-      budget: { perTask: { tokens: 20000 }, perDay: { tokens: 200000 } },
+      budget: {
+        perTask: { tokens: 20000, iterations: 8 },
+        perDay: { tokens: 200000, iterations: 64 },
+      },
+      memorySources: [{ kind: "position_docs", locator: "./knowledge/**" }],
+      permissions: {
+        tools: ["Read", "Grep", "Glob"],
+        rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }],
+        skills: [],
+        mcpServers: [],
+      },
+      prompt: expect.any(String),
     }));
     expect(orgApply).not.toHaveBeenCalled();
-    expect(await screen.findByText("文档负责人 已加入团队（hire-request.v1alpha1 契约面）")).toBeInTheDocument();
+    expect(await screen.findByText("文档负责人 已加入团队")).toBeInTheDocument();
   });
 
   it("requires dismissal confirmation and invokes one-click restore through typed IPC", async () => {
@@ -654,25 +700,26 @@ describe("App runtime bridge", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "上报" }));
     expect(await screen.findByRole("heading", { name: "上报中心" })).toBeInTheDocument();
-    expect(screen.getByText("position_budget_exceeded")).toBeInTheDocument();
+    expect(screen.queryByText("position_budget_exceeded")).not.toBeInTheDocument();
     expect(screen.getByRole("meter", { name: "单任务消耗" })).toHaveAttribute("aria-valuenow", "50");
     expect(screen.getByRole("meter", { name: "单日用量不可用" })).not.toHaveAttribute("aria-valuenow");
     expect(screen.getAllByText("50%")).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: /回合证据/ }));
-    expect(screen.getByText("sha256:evidence")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
+    expect(screen.queryByText("sha256:evidence")).not.toBeInTheDocument();
     expect(screen.queryByText("sensitive raw input")).not.toBeInTheDocument();
     expect(screen.queryByText("sensitive raw output")).not.toBeInTheDocument();
     // #112: a durable session record is opaque to the renderer; once the
     // sanitized evidence reaches reports.v1 it must also populate the derived timeline.
     fireEvent.click(screen.getByRole("button", { name: /时间线/ }));
-    expect(screen.getByLabelText("Turn / 审计时间线")).toBeInTheDocument();
+    expect(screen.getByLabelText("执行时间线")).toBeInTheDocument();
     expect(screen.getByText("共 3 条")).toBeInTheDocument();
-    expect(screen.getByText("turn-1")).toBeInTheDocument();
+    expect(screen.getByTestId("timeline-budget-tag-turn-1")).toBeInTheDocument();
+    expect(screen.queryByText("turn-1")).not.toBeInTheDocument();
   });
 });
 
-describe("App drive module wiring", () => {
-  it("uses the current Workbench mem bridge instead of opening an external client", async () => {
+describe("App employee-memory module wiring", () => {
+  it("uses the current Workbench mem bridge from the unified memory surface", async () => {
     const list = vi.fn().mockResolvedValue({
       status: 200,
       body: {
@@ -697,8 +744,9 @@ describe("App drive module wiring", () => {
     });
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "网盘" }));
-    expect(await screen.findByRole("heading", { name: "统一网盘" })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "记忆" }));
+    expect(await screen.findByRole("heading", { name: "员工记忆" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "打开 统一网盘 记忆来源" }));
     expect(await screen.findByText("会议纪要.md")).toBeInTheDocument();
     expect(list).toHaveBeenCalledWith("");
     expect(screen.queryByText(/Obsidian/)).not.toBeInTheDocument();
@@ -752,11 +800,11 @@ describe("App docs module wiring (#35 S3)", () => {
     render(<App />);
     await selectRepoOwner();
 
-    const docsEntry = screen.getByRole("button", { name: "文档" });
+    const docsEntry = screen.getByRole("button", { name: "记忆" });
     expect(docsEntry).not.toHaveAttribute("aria-current");
     fireEvent.click(docsEntry);
     expect(docsEntry).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("region", { name: "文档模块" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "员工记忆" })).toBeInTheDocument();
     await waitFor(() => expect(positionDocs).toHaveBeenCalledWith("repo-owner"));
 
     fireEvent.click(await screen.findByRole("button", { name: "handbook.md" }));

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import type { OrgTreeSnapshot } from "@org-workbench/shared";
+import type { OrgTreeSnapshot } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 test("workspace: open example, org-tree.v1 snapshot, invalid skeleton rejected", async () => {
@@ -83,5 +83,63 @@ test("workspace: open example, org-tree.v1 snapshot, invalid skeleton rejected",
     assert.equal((invalid.body as { code: string }).code, "workspace_invalid");
   } finally {
     await server.close();
+  }
+});
+
+test("workspace: create a blank project with a generated owner and never overwrite an existing directory", async () => {
+  const server = await startTestServer();
+  const parent = await fs.mkdtemp(path.join(os.tmpdir(), "owb-project-parent-"));
+  try {
+    const created = await api(server.baseUrl, "/workspace/create", {
+      method: "POST",
+      token: server.token,
+      body: {
+        parentPath: parent,
+        projectId: "content-ops",
+        business: "内容运营",
+        description: "把项目目标拆成可执行的员工任务。",
+      },
+    });
+    assert.equal(created.status, 201);
+    const createdBody = created.body as { open: boolean; created: boolean; next: string; path: string; owner: string; business: string };
+    assert.equal(createdBody.open, true);
+    assert.equal(createdBody.created, true);
+    assert.equal(createdBody.next, "create_employee");
+    assert.equal(createdBody.owner, "content-ops-owner");
+    assert.equal(createdBody.business, "内容运营");
+
+    const project = path.join(parent, "content-ops");
+    assert.equal(createdBody.path, path.join(await fs.realpath(parent), "content-ops"));
+    for (const file of [
+      "workspace.json",
+      "organization.v1alpha1.json",
+      "positions/content-ops-owner/employee.json",
+      "positions/content-ops-owner/SKILL.md",
+      "positions/content-ops-owner/budget.json",
+      "context/README.md",
+    ]) {
+      await fs.stat(path.join(project, file));
+    }
+    const owner = JSON.parse(await fs.readFile(path.join(project, "organization.v1alpha1.json"), "utf8")) as { owner: string; roles: Array<{ id: string; reportTo: string | null }> };
+    assert.equal(owner.owner, "content-ops-owner");
+    assert.equal(owner.roles.length, 1);
+    assert.equal(owner.roles[0]?.id, "content-ops-owner");
+    assert.equal(owner.roles[0]?.reportTo, null);
+
+    const conflict = await api(server.baseUrl, "/workspace/create", {
+      method: "POST",
+      token: server.token,
+      body: {
+        parentPath: parent,
+        projectId: "content-ops",
+        business: "另一个项目",
+        description: "不能覆盖已有目录。",
+      },
+    });
+    assert.equal(conflict.status, 409);
+    assert.equal((conflict.body as { code: string }).code, "workspace_exists");
+  } finally {
+    await server.close();
+    await fs.rm(parent, { recursive: true, force: true });
   }
 });

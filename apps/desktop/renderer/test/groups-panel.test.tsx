@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { pickSelectOption } from "./select-helper";
 import { GroupsPanel } from "../src/groups/GroupsPanel";
 import type { OwbBridge } from "../src/owb";
-import type { GroupConversation, GroupTimeline, TurnRecord } from "@org-workbench/shared";
+import type { GroupConversation, GroupTimeline, TurnRecord } from "@roleweave/shared";
 import type { LiveRunState } from "../src/turns/turnStream";
 import type { TurnEngineAvailability } from "../src/turns/types";
 
@@ -33,6 +34,8 @@ function installBridge(
     groups?: GroupConversation[];
     timeline?: ReturnType<typeof vi.fn>;
     createGroup?: () => Promise<{ status: number; body: unknown }>;
+    addGroupMember?: () => Promise<{ status: number; body: unknown }>;
+    createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
   } = {},
 ): OwbBridge {
   const bridge = {
@@ -47,6 +50,8 @@ function installBridge(
         body: { schemaVersion: "group-timeline.v1", conversationRef: group.conversationRef, items: [] },
       }),
     ...(options.createGroup ? { createGroup: vi.fn(options.createGroup) } : {}),
+    ...(options.addGroupMember ? { addGroupMember: vi.fn(options.addGroupMember) } : {}),
+    ...(options.createGroupTurn ? { createGroupTurn: vi.fn(options.createGroupTurn) } : {}),
     onEvent: vi.fn().mockReturnValue(() => {}),
   };
   window.owb = bridge as unknown as OwbBridge;
@@ -60,6 +65,8 @@ function renderPanel(
     liveRuns?: Record<string, LiveRunState>;
     timeline?: ReturnType<typeof vi.fn>;
     createGroup?: () => Promise<{ status: number; body: unknown }>;
+    addGroupMember?: () => Promise<{ status: number; body: unknown }>;
+    createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
     onReconcileTimeline?: (timeline: GroupTimeline) => void;
   } = {},
 ) {
@@ -67,6 +74,8 @@ function renderPanel(
     groups: extra.groups ?? [group],
     timeline: extra.timeline,
     createGroup: extra.createGroup,
+    addGroupMember: extra.addGroupMember,
+    createGroupTurn: extra.createGroupTurn,
   });
   return {
     bridge,
@@ -158,18 +167,92 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(container.querySelectorAll(".owb-groups__roster-item")).toHaveLength(2);
   });
 
+  it("adds an available employee from the roster picker", async () => {
+    const addGroupMember = vi.fn().mockResolvedValue({
+      status: 200,
+      body: { ...group, members: [...group.members, "community-operator"] },
+    });
+    const { bridge } = renderPanel({ addGroupMember });
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "添加员工" })).toBeInTheDocument();
+    });
+
+    pickSelectOption("添加员工", "Community Operator");
+
+    await waitFor(() => {
+      expect(addGroupMember).toHaveBeenCalledWith({
+        conversationRef: group.conversationRef,
+        positionId: "community-operator",
+      });
+    });
+    expect(bridge.addGroupMember).toHaveBeenCalledTimes(1);
+  });
+
   it("org-tree draftSeed prefills the create panel with the seeded member", async () => {
     const { container } = renderPanel({ draftSeed: { members: ["repo-owner"], nonce: 1 } });
     await waitFor(() => {
       const details = container.querySelector("details.owb-groups__create");
       expect(details).toHaveAttribute("open");
     });
-    const seeded = screen.getByLabelText("Repo Owner") as HTMLInputElement;
-    const untouched = screen.getByLabelText("Community Operator") as HTMLInputElement;
-    expect(seeded.checked).toBe(true);
-    expect(untouched.checked).toBe(false);
+    expect(screen.getByRole("combobox", { name: "搜索并选择群成员" })).toBeInTheDocument();
+    expect(screen.getByText("已选 1 人")).toBeInTheDocument();
     // Explicit-action discipline: a single seeded member still cannot create.
     expect(screen.getByRole("button", { name: "创建群聊" })).toBeDisabled();
+  });
+
+  it("creates a group from searchable member selection", async () => {
+    const created: GroupConversation = {
+      ...group,
+      conversationRef: "22222222-3333-4444-8555-666666666666",
+      members: ["repo-owner", "community-operator"],
+    };
+    const createGroup = vi.fn().mockResolvedValue({ status: 201, body: created });
+    const { bridge } = renderPanel({ groups: [], createGroup });
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "搜索并选择群成员" })).toBeInTheDocument();
+    });
+    pickSelectOption("搜索并选择群成员", "Repo Owner");
+    pickSelectOption("搜索并选择群成员", "Community Operator");
+
+    expect(screen.getByRole("button", { name: "创建群聊" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "创建群聊" }));
+
+    await waitFor(() => {
+      expect(bridge.createGroup).toHaveBeenCalledWith({
+        memberPositionIds: ["repo-owner", "community-operator"],
+      });
+    });
+  });
+
+  it("routes a message only to recipients selected in the searchable picker", async () => {
+    const createGroupTurn = vi.fn().mockResolvedValue({
+      status: 202,
+      body: {
+        conversationRef: group.conversationRef,
+        messageId: "message-2",
+        spawns: [{ turnId: "turn-owner-2", positionId: "repo-owner" }],
+      },
+    });
+    const { bridge } = renderPanel({ createGroupTurn });
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "选择要 @ 的成员" })).toBeInTheDocument();
+    });
+
+    pickSelectOption("选择要 @ 的成员", "Repo Owner");
+    fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), {
+      target: { value: "请检查发布说明" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送群消息" }));
+
+    await waitFor(() => {
+      expect(bridge.createGroupTurn).toHaveBeenCalledWith({
+        conversationRef: group.conversationRef,
+        input: "请检查发布说明",
+        engine: "qoder",
+        mentions: ["repo-owner"],
+      });
+    });
   });
 
   // #94 defect 2: this panel's Agent Host column was a *fixed* 150px track, so
@@ -189,7 +272,7 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
   it("ignores a draftSeed whose members are all unknown positions", async () => {
     const { container } = renderPanel({ draftSeed: { members: ["ghost-position"], nonce: 1 } });
     await waitFor(() => {
-      expect(screen.getByText(/Repo Owner/)).toBeInTheDocument();
+      expect(screen.getByLabelText("群成员 2 人")).toBeInTheDocument();
     });
     const details = container.querySelector("details.owb-groups__create");
     expect(details).not.toHaveAttribute("open");
@@ -211,6 +294,8 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
 
     await waitFor(() => expect(timeline.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
     await waitFor(() => expect(screen.getByText("OWNER_DONE")).toBeInTheDocument());
+    expect(screen.queryByText(/已发送给/)).not.toBeInTheDocument();
+    expect(document.querySelector(".owb-bubble--operator")).toHaveTextContent("@Repo Owner 检查");
     expect(onReconcileTimeline).toHaveBeenCalledWith(completedTimeline());
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
     expect(container.querySelectorAll(".is-running")).toHaveLength(0);

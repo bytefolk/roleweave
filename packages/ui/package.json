@@ -1,7 +1,7 @@
 {
-  "name": "@org-workbench/ui",
+  "name": "@roleweave/ui",
   "version": "0.0.0",
-  "description": "Org tree component family for org-workbench (D1: OrgTree/OrgTreeNode/PositionCard/BudgetBar). Consumes @fullstack-ai-infra/ui design-system tokens and patterns.",
+  "description": "RoleWeave org tree component family (D1: OrgTree/OrgTreeNode/PositionCard/BudgetBar). Consumes @fullstack-ai-infra/ui design-system tokens and patterns.",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",

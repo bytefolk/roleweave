@@ -10,7 +10,7 @@
  * Keeping this separate from the component also lets the affordance rules be
  * asserted directly, rather than inferred from which buttons happen to render.
  */
-import type { UpdateEvent, UpdatePlatform, UpdateState, UpdateStatus } from "@org-workbench/shared";
+import type { UpdateEvent, UpdatePlatform, UpdateState, UpdateStatus } from "@roleweave/shared";
 
 export interface UpdateMessage {
   key: string;
@@ -68,7 +68,7 @@ export interface UpdateAffordances {
   canCheck: boolean;
   canDownload: boolean;
   canInstall: boolean;
-  /** The platform has a channel but this build carries no publisher identity. */
+  /** The platform has a channel but this build has no independent update trust root. */
   showUnsignedRefusal: boolean;
   /** The platform has no channel at all. */
   showPlatformNotice: boolean;
@@ -97,9 +97,9 @@ export function updateAffordances(
   const busy = state === "checking" || state === "downloading";
   return {
     canCheck: status.available && !busy,
-    canDownload: status.available && status.signed && state === "available",
-    canInstall: status.available && status.signed && state === "downloaded",
-    showUnsignedRefusal: status.available && !status.signed,
+    canDownload: status.available && status.updateVerified && state === "available",
+    canInstall: status.available && status.updateVerified && state === "downloaded",
+    showUnsignedRefusal: status.available && !status.updateVerified,
     showPlatformNotice: !status.available,
   };
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { EngineEvent } from "@org-workbench/shared";
+import type { EngineEvent } from "@roleweave/shared";
 import { DeltaForwarder } from "../src/turns/delta-forwarder.js";
 
 function makeClock(): { now: () => number; advance: (ms: number) => void } {

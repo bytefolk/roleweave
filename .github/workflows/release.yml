@@ -26,7 +26,6 @@ jobs:
     timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.value }}
-      signed: ${{ steps.signing.outputs.signed }}
     steps:
       - name: Check out org-workbench
         uses: actions/checkout@v6
@@ -102,36 +101,13 @@ jobs:
             false)  echo "::error::release $tag is already published; bump the version instead"; exit 1 ;;
           esac
 
-      # Signed status is derived from the secrets #135 and #136 will introduce, not
-      # from a constant. The gate below then opens on its own when they land,
-      # instead of depending on someone remembering to flip a flag.
-      - name: Determine signing status
-        id: signing
-        shell: bash
-        env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          WINDOWS_SIGNING_TOKEN: ${{ secrets.WINDOWS_SIGNING_TOKEN }}
-        run: |
-          if [ -n "$MACOS_CERTIFICATE" ] && [ -n "$WINDOWS_SIGNING_TOKEN" ]; then
-            echo "signed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::No signing credentials configured. This release stays a draft: macOS artifacts are install-only (Gatekeeper blocks first launch, #135) and the Windows installer draws a SmartScreen prompt (#136). An unsigned build must not reach a published release, because a client updating from one gets no publisher verification -- electron-updater skips signature checks entirely when the installed app carries no publisherName."
-          fi
-
-      # The reference project refuses to publish a non-draft release without
-      # signing, and that is the boundary adopted here. It is also what keeps an
-      # unsigned build from ever discovering an update: GitHub's /releases/latest,
-      # which electron-updater reads, excludes drafts.
-      - name: Refuse a published release while unsigned
-        if: steps.signing.outputs.signed != 'true'
+      # Free distribution mode: keep the public release path usable without an
+      # Apple Developer Program membership. macOS uses the repository's own
+      # Ed25519 update key; Apple signing remains a separate future channel.
+      - name: Declare free GitHub-signed update mode
         shell: bash
         run: |
-          requested_draft="${{ github.event_name == 'workflow_dispatch' && inputs.draft || 'true' }}"
-          if [ "$requested_draft" != "true" ]; then
-            echo "::error::Refusing to publish a non-draft release without signing credentials. Re-run with draft enabled, or land #135 and #136 first."
-            exit 1
-          fi
+          echo "macOS artifacts are unsigned for Gatekeeper, but their update manifest is independently signed for the custom updater."
 
   build:
     name: Build (${{ matrix.label }})
@@ -141,10 +117,12 @@ jobs:
       matrix:
         include:
           - label: macOS-arm64
+            platform: macos
             runs-on: macos-15
             package: package:dist:macos
             verify: verify:dist:macos
           - label: Windows-x64
+            platform: windows
             runs-on: windows-latest
             package: package:dist:windows
             verify: verify:dist:windows
@@ -182,7 +160,20 @@ jobs:
         working-directory: org-workbench
         run: npm ci
 
-      - name: Build unsigned installers
+      - name: Build unsigned macOS installers
+        if: matrix.platform == 'macos'
+        working-directory: org-workbench
+        run: npm run ${{ matrix.package }}
+
+      - name: Sign macOS GitHub update manifest
+        if: matrix.platform == 'macos'
+        working-directory: org-workbench
+        env:
+          OWB_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.OWB_UPDATE_SIGNING_PRIVATE_KEY }}
+        run: node scripts/sign-macos-update.mjs
+
+      - name: Build unsigned Windows installer
+        if: matrix.platform == 'windows'
         working-directory: org-workbench
         run: npm run ${{ matrix.package }}
 
@@ -213,6 +204,7 @@ jobs:
             org-workbench/release/dist/*.exe
             org-workbench/release/dist/*.blockmap
             org-workbench/release/dist/latest*.yml
+            org-workbench/release/dist/latest-mac.json
 
   publish:
     name: Publish release
@@ -254,21 +246,18 @@ jobs:
         run: |
           set -euo pipefail
           tag="v${{ needs.preflight.outputs.version }}"
-          # Whether this release may leave draft at all. Unsigned never does: an
-          # unsigned build behind /releases/latest would be offered to every
-          # client as an update electron-updater cannot verify.
+          # Free distribution mode: tag pushes are public releases; manual
+          # dispatch can keep the release as a draft for review.
           publish=false
-          if [ "${{ needs.preflight.outputs.signed }}" = "true" ]; then
-            if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.draft }}" != "true" ]; then
-              publish=true
-            fi
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.draft }}" != "true" ]; then
+            publish=true
           fi
           echo "publish=${publish}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           gh release create "$tag" \
             --repo "${{ github.repository }}" \
             --title "$tag" \
-            --notes "Unsigned build, install-only on both platforms. In-app update is refused while a build carries no publisher identity: electron-updater skips signature verification entirely without one, so an update could not be checked before it replaced the app. macOS also needs a Developer ID build for Gatekeeper and Squirrel.Mac (#135); the Windows installer draws a SmartScreen prompt until Authenticode signing lands (#136). Install by downloading from this page." \
+            --notes "macOS artifacts are unsigned for Gatekeeper and may require approval on first launch. The app checks GitHub Releases, verifies its independent update signature, downloads updates in the background, and replaces the app on normal exit. Windows remains on the existing update channel." \
             --draft \
             incoming/*
 
@@ -320,8 +309,7 @@ jobs:
           fi
           jq -r '.[] | "\(.name)  \(.size) bytes  \(.digest)"' <<< "$assets"
 
-      # The final step, and only for a signed release. Until #135 and #136 this
-      # is always skipped and the release stays a verified draft.
+      # The final step publishes a public install-only release when requested.
       - name: Publish the release
         if: steps.create.outputs.publish == 'true'
         shell: bash

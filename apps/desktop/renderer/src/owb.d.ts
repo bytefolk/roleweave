@@ -35,7 +35,8 @@ import type {
   UpdateStatus,
   WorkbenchSession,
   WorkbenchSessionList,
-} from "@org-workbench/shared";
+  WorkspaceCreateRequest,
+} from "@roleweave/shared";
 
 interface OwbApiResponse<T = unknown> {
   status: number;
@@ -44,6 +45,7 @@ interface OwbApiResponse<T = unknown> {
 
 interface OwbStatusResponse {
   running: boolean;
+  state?: "starting" | "ready" | "degraded" | "stopping" | "stopped" | "failed";
   port?: number;
   health?: HealthResponse | null;
   error?: string | null;
@@ -52,7 +54,9 @@ interface OwbStatusResponse {
 
 export interface OwbBridge {
   status(): Promise<OwbStatusResponse>;
+  stopControlPlane(): Promise<{ ok: boolean; state: "stopped"; forced: boolean; exitCode: number | null; signalCode: string | null }>;
   openWorkspace(): Promise<OwbApiResponse>;
+  createWorkspace(request: Omit<WorkspaceCreateRequest, "parentPath">): Promise<OwbApiResponse | { canceled: true }>;
   workspace(): Promise<OwbApiResponse>;
   orgTree(): Promise<OwbApiResponse>;
   orgApply(manifest: ChangeManifest): Promise<OwbApiResponse>;

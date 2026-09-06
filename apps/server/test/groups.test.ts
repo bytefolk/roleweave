@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { routes } from "@org-workbench/shared";
+import { routes } from "@roleweave/shared";
 import type {
   GroupConversation,
   GroupTimeline,
@@ -10,7 +10,7 @@ import type {
   TurnRunDriver,
   WorkbenchSession,
   WorkbenchSessionList,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import { api, assertPosixMode, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {

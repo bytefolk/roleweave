@@ -1,4 +1,4 @@
-import type { OrgTreeSnapshot } from "@org-workbench/shared";
+import type { OrgTreeSnapshot } from "@roleweave/shared";
 
 /**
  * Fixture mirrors the engine's org-tree.v1 fixture shape

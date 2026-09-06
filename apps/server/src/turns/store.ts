@@ -7,9 +7,9 @@ import {
   TURN_RECORD_SCHEMA_VERSION,
   errorCodes,
   isPositionId,
-} from "@org-workbench/shared";
-import type { TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@org-workbench/shared";
-import type { EngineEvent, TurnTerminalReason } from "@org-workbench/shared";
+} from "@roleweave/shared";
+import type { TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
+import type { EngineEvent, TurnTerminalReason } from "@roleweave/shared";
 import { assertSessionId, readAuthoritativeSessionIndex } from "../sessions/store.js";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 
