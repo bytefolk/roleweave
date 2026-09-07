@@ -13,6 +13,25 @@ import {
 } from "../src/routes/health.js";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 
+async function assertEventuallyReaped(pid: number, timeoutMs = 1000): Promise<void> {
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return;
+      throw error;
+    }
+    assert.ok(performance.now() < deadline, "probe descendant must be reaped before the deadline");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+test("probe reaping assertion rejects a process that remains alive", async () => {
+  // Signal 0 only observes this test process; the assertion must never kill it.
+  await assert.rejects(assertEventuallyReaped(process.pid, 30), /must be reaped before the deadline/);
+});
+
 test("normal digital-employee Qoder readiness keeps the service-token gate and never returns credential values", () => {
   const secret = "qoder-secret-must-not-leak";
   const health = hostHealth({
@@ -247,7 +266,10 @@ exit 0
   assert.ok(elapsedMs < 1500, `probe waited for descendant-held stdio: ${elapsedMs}ms`);
   const descendantPid = Number(await fs.readFile(pidFile, "utf8"));
   assert.ok(Number.isSafeInteger(descendantPid) && descendantPid > 0);
-  assert.throws(() => process.kill(descendantPid, 0), { code: "ESRCH" }, "probe descendant must be reaped");
+  // SIGKILL delivery and orphan reaping are asynchronous, especially on macOS.
+  // The probe must return promptly (asserted above); separately require actual
+  // PID disappearance within a bounded grace period, not in this exact tick.
+  await assertEventuallyReaped(descendantPid);
 });
 
 test("Qoder local probe receives only the non-secret runtime environment allowlist", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
