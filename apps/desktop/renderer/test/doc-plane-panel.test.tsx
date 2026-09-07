@@ -89,6 +89,8 @@ describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
     await waitFor(() => expect(readDoc).toHaveBeenCalledWith("doc-1"));
 
     expect(await screen.findByRole("heading", { name: "Runbook" })).toBeTruthy();
+    expect(document.querySelector(".owb-doc-plane__list-pane")).toBeTruthy();
+    expect(document.querySelector(".owb-doc-plane__reader-pane")).toBeTruthy();
     expect(screen.getByText("First response steps.")).toBeTruthy();
     expect(screen.getByText("版本 2026-08-27T00:00:00.000Z")).toBeTruthy();
   });

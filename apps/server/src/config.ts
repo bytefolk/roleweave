@@ -19,9 +19,9 @@ export interface ServerConfig {
   contextCliCommand: string;
   serverVersion: string;
   /**
-   * External `bytefolk/doc` origin (#35 R2 MVP). When unset, the doc-plane
-   * proxy fails closed with `doc_plane_unconfigured` so the renderer can
-   * surface the configuration guide. Trailing slashes are stripped.
+   * External `bytefolk/doc` origin (#35 R2 MVP). When the URL or Bearer PAT
+   * is unset, the doc-plane proxy fails closed with `doc_plane_unconfigured`.
+   * Trailing slashes are stripped.
    */
   docPlaneUrl?: string;
   /** Bearer PAT for the external doc plane (bytefolk/doc `doc_pat_...`). */

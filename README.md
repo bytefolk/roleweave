@@ -81,7 +81,14 @@ export CONTEXT_RUNTIME_TOKEN='<redacted-runtime-token>'
 # 可选 mem：统一网盘页面只读取这里配置的 memd，不使用本地演示数据
 export ORG_WORKBENCH_MEM_URL='http://127.0.0.1:8787'
 export ORG_WORKBENCH_MEM_TOKEN='<read-token-from-mem>'
+
+# 可选 bytefolk/doc：组织共享文档页面通过本地控制面代理读取真实 doc 数据
+# token 只放在 server 进程环境里，不进入 renderer、IPC 或仓库文件
+export ORG_WORKBENCH_DOC_URL='http://127.0.0.1:3100'
+export ORG_WORKBENCH_DOC_TOKEN='<doc_pat_with_documents_read_scope>'
 ```
+
+组织共享文档接入 [`bytefolk/doc`](https://github.com/bytefolk/doc) 的只读 v1 API：RoleWeave 在本地控制面保管 Bearer PAT，按游标读取 `/api/v1/documents`，再通过 `/api/v1/documents/{id}` 获取 TipTap 内容并转换为阅读器可显示的 Markdown。未配置 URL 或 token 时明确显示“未配置”，不会用样例资料冒充真实数据；只有显式设置 `ORG_WORKBENCH_DOC_MOCK=1` 才启用内置 mock。
 
 **桌面壳**（需 `npm install` 安装 Electron 后）：`npm run dev:desktop`（自动构建 renderer 再启动）。打开工作区后，可在左侧组织树拖拽调岗、从“招聘岗位”声明预算并新增岗位、在岗位详情确认裁撤、从恢复区显式恢复；选择岗位后先新建/选择本地会话，再发送回合；“轮换当前会话”显式创建空白 successor，旧会话可切回只读查看。切换顶部“上报中心”查看本地证据。恢复和会话轮换都不会自动发生。
 

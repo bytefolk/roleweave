@@ -443,6 +443,8 @@ export const zhCatalog: Record<string, string> = {
   "docs.syncingList": "正在同步文件清单…",
   "docs.emptyHint": "创建一个空文档，作为这个岗位的工作入口。",
   "docs.openingDoc": "正在打开文档…",
+  "docs.readerAria": "文档阅读区",
+  "docs.readerEmpty": "选择左侧文档开始阅读",
 
   // 上报中心 / 预算看板 / 时间线
   "rep.readFail": "上报数据读取失败",

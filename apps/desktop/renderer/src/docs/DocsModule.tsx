@@ -21,8 +21,8 @@ import { DocsPanel } from "./DocsPanel";
  *  - the frozen position-scoped file surface (S2/S4 DocsPanel + creator), and
  *  - the new external doc-plane bridge (R2 MVP) that talks to
  *    `bytefolk/doc` through the shell-owned proxy. The proxy fails closed
- *    when `ORG_WORKBENCH_DOC_URL` is unset, and this module surfaces the
- *    matching configuration hint instead of pretending everything is fine.
+ *    when the doc URL or PAT is unset, and this module surfaces the matching
+ *    unconfigured state instead of pretending everything is fine.
  */
 export interface DocsModuleProps {
   workspaceOpen: boolean;

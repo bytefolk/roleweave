@@ -440,6 +440,8 @@ export const enCatalog: Record<string, string> = {
   "docs.syncingList": "Syncing the file list…",
   "docs.emptyHint": "Create an empty document as this position's working entry point.",
   "docs.openingDoc": "Opening the document…",
+  "docs.readerAria": "Document reader",
+  "docs.readerEmpty": "Select a document on the left to read it",
 
   // Reports center / budget deck / timeline
   "rep.readFail": "Failed to read report data",

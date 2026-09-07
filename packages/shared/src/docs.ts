@@ -251,13 +251,12 @@ export function parseAssetRecord(raw: unknown): { ok: boolean; record?: AssetRec
  * today; the server flattens TipTap JSON into a UTF-8 markdown-ish body so
  * the existing DocViewer renders it unchanged.
  *
- * When the shell has no upstream configured (`ORG_WORKBENCH_DOC_URL`
- * unset), the proxy fails closed with `doc_plane_unconfigured` and the
- * renderer surfaces a configuration guide. Set `ORG_WORKBENCH_DOC_MOCK=1`
- * for an end-to-end mock fixture — TODO(#35 R3): drop the fixture once
- * bytefolk/doc `/api/v1/documents` ships a stable content-fetch endpoint
- * (see docs/API.md §"Read a document" — content is TipTap JSON today, so
- * this proxy flattens it via a best-effort walker).
+ * When the shell has no upstream configured (`ORG_WORKBENCH_DOC_URL` plus
+ * `ORG_WORKBENCH_DOC_TOKEN`), the proxy fails closed with
+ * `doc_plane_unconfigured` and the renderer surfaces a configuration guide.
+ * Set `ORG_WORKBENCH_DOC_MOCK=1` only for a deterministic local fixture.
+ * bytefolk/doc's v1 detail route returns TipTap JSON, so this proxy flattens
+ * it via a best-effort walker for the existing markdown reader.
  */
 
 export const DOC_PLANE_LIST_SCHEMA_VERSION = "doc-plane-list.v1alpha1" as const;
