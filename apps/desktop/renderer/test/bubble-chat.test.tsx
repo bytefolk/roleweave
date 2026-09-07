@@ -181,6 +181,7 @@ describe("group chat bubbles with member identity (#61)", () => {
           qoder: availability,
           "claude-code": availability,
           "claude-local": availability,
+          codex: availability,
         }}
         liveRuns={{}}
         onSelectEngine={() => {}}

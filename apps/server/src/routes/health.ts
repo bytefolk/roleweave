@@ -6,6 +6,7 @@ import { probeEngine } from "../engine/probe.js";
 import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
+import { resolveCodexExecutable } from "../codex-binary.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 
 /** Mirrors digital-employee's claude-local model port (#184): >= 2.1.214, < 2.2.0. */
@@ -18,6 +19,11 @@ export interface ClaudeLocalBinaryState {
   installed: boolean;
   version: string | null;
   supported: boolean;
+}
+
+export interface CodexBinaryState {
+  installed: boolean;
+  version: string | null;
 }
 
 export type QoderLocalProbeFailure = "unavailable" | "timed_out" | "unsupported_version";
@@ -35,6 +41,7 @@ export interface HostHealthInput {
   env: NodeJS.ProcessEnv;
   qoderLocal?: QoderLocalBinaryState;
   claudeLocal?: ClaudeLocalBinaryState;
+  codex?: CodexBinaryState;
 }
 
 function compareParts(parts: readonly [number, number, number], bound: readonly [number, number, number]): number {
@@ -164,6 +171,50 @@ export function probeClaudeLocalBinary(
   return { installed: true, version, supported: supportedClaudeVersion(version) };
 }
 
+/**
+ * Bounded, local-only preflight for the Codex CLI used by the bundled engine.
+ *
+ * Unlike the Claude and Qoder probes there is no supported-version window to
+ * check: the Codex engine (#206) deliberately makes no tier-1 qualification
+ * claim, because its model-visible tool set cannot be emptied. Pinning a range
+ * here would imply a qualification that was never performed, so the probe
+ * reports installation and the announced version only.
+ */
+export function probeCodexBinary(
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 3000,
+  platform: NodeJS.Platform = process.platform,
+): CodexBinaryState {
+  const command = resolveCodexExecutable(env, platform);
+  if (command === null) {
+    return { installed: false, version: null };
+  }
+  let probe: ReturnType<typeof spawnSync>;
+  const needsWindowsShell = platform === "win32" && /\.(bat|cmd)$/i.test(command);
+  try {
+    probe = spawnSync(command, ["--version"], {
+      encoding: "utf8",
+      env: runtimeExecutableEnvironment(env),
+      killSignal: "SIGKILL",
+      timeout: timeoutMs,
+      shell: needsWindowsShell,
+      windowsHide: true,
+    });
+  } catch {
+    return { installed: false, version: null };
+  }
+  if (probe.error !== undefined || probe.status !== 0) {
+    return { installed: false, version: null };
+  }
+  const announced = typeof probe.stdout === "string" && probe.stdout.trim().length > 0
+    ? probe.stdout
+    : typeof probe.stderr === "string"
+      ? probe.stderr
+      : "";
+  const match = /(\d+\.\d+\.\d+)/.exec(announced);
+  return { installed: true, version: match ? match[1]! : null };
+}
+
 function isBundledQoderEngine(version: string | undefined): boolean {
   return typeof version === "string" && /^qoder-engine\s+\d+\.\d+\.\d+$/.test(version.trim());
 }
@@ -190,6 +241,7 @@ export function hostHealth({
   env,
   qoderLocal = { installed: false, version: null, supported: false, failure: "unavailable" },
   claudeLocal = { installed: false, version: null, supported: false },
+  codex = { installed: false, version: null },
 }: HostHealthInput): HealthResponse["hosts"] {
   const bundledQoder = isBundledQoderEngine(engineVersion);
   const qoderServiceTokenConfigured = typeof env.QODER_PERSONAL_ACCESS_TOKEN === "string" && env.QODER_PERSONAL_ACCESS_TOKEN.length > 0;
@@ -197,6 +249,10 @@ export function hostHealth({
   const qoderNextStep = bundledQoderNextStep(qoderLocal, engineAvailable);
   const claudeConfigured = typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.length > 0;
   const claudeLocalConfigured = claudeLocal.installed && claudeLocal.supported;
+  // The Codex engine has no supported-version window to gate on, so readiness
+  // is installation plus an explicit provider credential.
+  const codexProviderConfigured = typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.length > 0;
+  const codexConfigured = codex.installed && codexProviderConfigured;
   const claudeCodeConfigured = bundledQoder
     ? (claudeLocal.installed && claudeLocal.supported && claudeConfigured)
     : claudeConfigured;
@@ -250,6 +306,17 @@ export function hostHealth({
             ? { nextStep: "先安装或配置支持 turn run 的 digital-employee CLI" }
             : {}),
     },
+    codex: {
+      configured: codexConfigured,
+      ready: engineAvailable && codexConfigured,
+      ...(!codex.installed
+        ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
+        : !codexProviderConfigured
+          ? { nextStep: "设置 OPENAI_API_KEY（如需自建或中转端点，另设 OPENAI_BASE_URL）后重启工作台" }
+          : !engineAvailable
+            ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+            : {}),
+    },
   };
 }
 
@@ -258,6 +325,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
     bundledElectronEngine: ctx.config.bundledElectronEngine,
   });
   const claudeLocal = probeClaudeLocalBinary(process.env);
+  const codex = probeCodexBinary(process.env);
   const qoderLocal = isBundledQoderEngine(probe.version)
     ? probeQoderLocalBinary(process.env)
     : undefined;
@@ -278,6 +346,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
       env: process.env,
       ...(qoderLocal !== undefined ? { qoderLocal } : {}),
       claudeLocal,
+      codex,
     }),
     workspace: ws ? { open: true, path: ws.dir } : { open: false },
   };

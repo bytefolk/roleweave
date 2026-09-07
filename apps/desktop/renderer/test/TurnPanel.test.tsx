@@ -14,6 +14,7 @@ const availability: TurnPanelProps["engineAvailability"] = {
   qoder: { configured: true, ready: true },
   "claude-code": { configured: true, ready: true },
   "claude-local": { configured: true, ready: true },
+  codex: { configured: true, ready: true },
 };
 
 function ControlledPanel({ onCreateTurn }: { onCreateTurn: (request: CreateTurnRequest) => void }) {
@@ -49,7 +50,7 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
 }
 
 describe("TurnPanel Issue #5 D3 behavior", () => {
-  it("addresses a position, switches between the three supported Hosts, and creates a turn", async () => {
+  it("addresses a position, switches between the four supported Hosts, and creates a turn", async () => {
     const createTurn = vi.fn();
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
@@ -61,7 +62,13 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByRole("heading", { name: /本地对话 · release-manager/ })).toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
-    expect(visibleSelectOptions()).toHaveLength(3);
+    // #206 added Codex as a fourth selectable Host.
+    expect(visibleSelectOptions().map((option) => option.textContent)).toEqual([
+      "Qoder · Configured",
+      "Claude Code · Configured",
+      "Claude Code · 本地登录 · Configured",
+      "Codex · Configured",
+    ]);
     pickSelectOption("选择 Agent Host", "Claude Code · Configured");
 
     fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "准备发布说明" } });

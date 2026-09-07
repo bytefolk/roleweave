@@ -560,6 +560,7 @@ export const enCatalog: Record<string, string> = {
   "misc.qoderHostUnknown": "Qoder Host configuration state unavailable",
   "misc.claudeHostUnknown": "Claude Code Host configuration state unavailable",
   "misc.claudeLocalHostUnknown": "Claude Code (local login) Host probe state unavailable",
+  "misc.codexHostUnknown": "Codex Host probe state unavailable",
   "misc.workspaceClosedBc": "No workspace open",
   "misc.lastWorkspaceFallback": "The last opened workspace is not accessible; switched to the demo workspace: {path}",
   "prefs.trigger": "Preferences",

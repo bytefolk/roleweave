@@ -7,6 +7,7 @@ import { api, startTestServer } from "./helpers.js";
 import {
   hostHealth,
   probeClaudeLocalBinary,
+  probeCodexBinary,
   probeQoderLocalBinary,
   supportedClaudeVersion,
   supportedQoderVersion,
@@ -128,6 +129,60 @@ test("claude-local Host health is binary+version preflight, never a credential c
   assert.equal(supportedClaudeVersion("2.2.0"), false);
   assert.equal(supportedClaudeVersion(null), false);
   assert.equal(supportedClaudeVersion("no-version-here"), false);
+});
+
+test("codex Host health requires the binary plus an explicit provider credential (#206)", () => {
+  const installed = { installed: true, version: "0.153.4" };
+  const ready = hostHealth({
+    engineAvailable: true,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: installed,
+  });
+  assert.deepEqual(ready.codex, { configured: true, ready: true });
+
+  const noCli = hostHealth({
+    engineAvailable: false,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: installed,
+  });
+  assert.equal(noCli.codex.configured, true);
+  assert.equal(noCli.codex.ready, false);
+
+  const noKey = hostHealth({ engineAvailable: true, env: {}, codex: installed });
+  assert.equal(noKey.codex.configured, false);
+  assert.equal(noKey.codex.ready, false);
+  assert.match(noKey.codex.nextStep ?? "", /OPENAI_API_KEY/);
+  assert.match(noKey.codex.nextStep ?? "", /OPENAI_BASE_URL/);
+
+  const missing = hostHealth({
+    engineAvailable: true,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: { installed: false, version: null },
+  });
+  assert.equal(missing.codex.configured, false);
+  assert.match(missing.codex.nextStep ?? "", /PATH/);
+  assert.match(missing.codex.nextStep ?? "", /DIGITAL_EMPLOYEE_CODEX_COMMAND/);
+
+  // Unlike claude-local there is no supported-version window, because the
+  // Codex engine makes no tier-1 qualification claim. An unknown version must
+  // therefore not by itself block readiness.
+  const unknownVersion = hostHealth({
+    engineAvailable: true,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: { installed: true, version: null },
+  });
+  assert.deepEqual(unknownVersion.codex, { configured: true, ready: true });
+
+  // The health surface never echoes a credential value back.
+  assert.doesNotMatch(JSON.stringify(ready), /service-key/);
+});
+
+test("codex probe reports not-installed when the binary cannot be resolved", () => {
+  assert.deepEqual(probeCodexBinary({ PATH: "" }), { installed: false, version: null });
+  assert.deepEqual(
+    probeCodexBinary({ PATH: "", DIGITAL_EMPLOYEE_CODEX_COMMAND: "/nonexistent/codex" }),
+    { installed: false, version: null },
+  );
 });
 
 test("claude-code Host health in bundled mode requires binary + version + API key", () => {

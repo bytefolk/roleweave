@@ -563,6 +563,7 @@ export const zhCatalog: Record<string, string> = {
   "misc.qoderHostUnknown": "Qoder Host 配置状态不可用",
   "misc.claudeHostUnknown": "Claude Code Host 配置状态不可用",
   "misc.claudeLocalHostUnknown": "Claude Code（本地登录）Host 探测状态不可用",
+  "misc.codexHostUnknown": "Codex Host 探测状态不可用",
   "misc.workspaceClosedBc": "未打开工作区",
   "misc.lastWorkspaceFallback": "上次打开的工作区无法访问，已切换到演示工作区：{path}",
   "prefs.trigger": "偏好设置",

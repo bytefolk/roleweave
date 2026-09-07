@@ -823,6 +823,11 @@ function AppInner({
       ready: health?.hosts?.["claude-local"]?.ready === true,
       reason: health?.hosts?.["claude-local"]?.nextStep ?? t("misc.claudeLocalHostUnknown"),
     },
+    codex: {
+      configured: health?.hosts?.codex?.configured === true,
+      ready: health?.hosts?.codex?.ready === true,
+      reason: health?.hosts?.codex?.nextStep ?? t("misc.codexHostUnknown"),
+    },
   }), [health, t]);
 
   const displayTurns = useMemo(() => {

@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
+import { resolveCodexExecutable } from "../src/codex-binary.js";
 
 const VERSION = "0.2.0";
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
@@ -708,6 +709,8 @@ function turnRun(workspaceDir, positionId) {
       case "claude-code":
       case "claude-local":
         return turnRunClaude(workspaceDir, positionId, input, engineModel);
+      case "codex":
+        return turnRunCodex(workspaceDir, positionId, input);
       default:
         return turnRunQoder(workspaceDir, positionId, input);
     }
@@ -1012,6 +1015,258 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     } else {
       fail("claude.exit_nonzero", stderrTail.trim() || `claude exited with code ${code}`, true);
     }
+  });
+}
+
+const CODEX_CHILD_ENV_KEYS = [
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "ComSpec",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "SHELL",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "CODEX_HOME",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  "OPENAI_MODEL",
+  "DIGITAL_EMPLOYEE_CODEX_COMMAND",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+];
+
+function codexChildEnvironment(source) {
+  const environment = {};
+  for (const key of CODEX_CHILD_ENV_KEYS) {
+    if (source[key] !== undefined) environment[key] = source[key];
+  }
+  return environment;
+}
+
+/**
+ * Accept only an OPENAI_BASE_URL this engine is willing to hand to Codex.
+ * The bundled engine is the sole enforcement point for this engine — there is
+ * no digital-employee adapter behind it to defer to — so the rule is applied
+ * here rather than assumed: HTTPS, or HTTP only for loopback, and never an
+ * embedded credential, fragment, control character, or oversized value.
+ *
+ * @param {string | undefined} value
+ * @returns {string | null | undefined} the URL, `null` when invalid, `undefined` when absent
+ */
+export function validatedCodexBaseUrl(value) {
+  const trimmed = (value ?? "").trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.length > 2048 || /[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  const loopback =
+    parsed.hostname === "localhost" ||
+    parsed.hostname.endsWith(".localhost") ||
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "[::1]";
+  if (
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    (parsed.protocol === "http:" && !loopback) ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    parsed.hash
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
+/** Codex accepts a provider name as a bare config key, so keep it inert. */
+const CODEX_PROVIDER_NAME = "org_workbench";
+
+/**
+ * @param {string | undefined} model
+ * @param {string | undefined} baseUrl
+ * @returns {string[]}
+ */
+export function codexTurnArgs(model, baseUrl) {
+  const args = [
+    "exec",
+    // --ignore-user-config is the Codex analogue of the Claude path's
+    // --setting-sources "": no operator config.toml, plugin, or profile leaks
+    // into a turn, so the provider configuration below is the whole truth.
+    "--ignore-user-config",
+    "--ephemeral",
+    "--skip-git-repo-check",
+    // #206: read-only is the *only* boundary this engine has. Unlike the Qoder
+    // and Claude paths, whose flags genuinely empty the tool table, Codex keeps
+    // `apply_patch` in the model-visible tool set and no configuration surface
+    // removes it (measured on 0.153.4 and 0.154.0-alpha.3; upstream
+    // openai/codex#8161 closed as not planned). Do not weaken this flag, and do
+    // not describe this engine as having an empty tool set.
+    "--sandbox", "read-only",
+    "--json",
+  ];
+  if (model !== undefined && model.length > 0) args.push("--model", model);
+  if (baseUrl !== undefined) {
+    const provider = `{ name = "Org Workbench provider", base_url = "${baseUrl}", env_key = "OPENAI_API_KEY", wire_api = "responses" }`;
+    args.push("-c", `model_provider="${CODEX_PROVIDER_NAME}"`);
+    args.push("-c", `model_providers.${CODEX_PROVIDER_NAME}=${provider}`);
+  }
+  args.push("-c", "analytics.enabled=false");
+  return args;
+}
+
+function turnRunCodex(workspaceDir, positionId, input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+
+  let terminalEmitted = false;
+  const fail = (code, message, retryable) => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
+    emit({
+      type: "run.failed",
+      runId,
+      timestamp: now(),
+      error: { code, message: message.slice(0, 2000), retryable, terminalReason: "engine_internal_error" },
+    });
+    process.exit(0);
+  };
+
+  const codexBin = resolveCodexExecutable(process.env);
+  if (codexBin === null) {
+    fail("codex.binary_unresolved", "cannot resolve an executable Codex CLI; install codex or set DIGITAL_EMPLOYEE_CODEX_COMMAND", false);
+    return;
+  }
+
+  const baseUrl = validatedCodexBaseUrl(process.env.OPENAI_BASE_URL);
+  if (baseUrl === null) {
+    fail("codex.base_url_invalid", "OPENAI_BASE_URL must be HTTPS (or loopback HTTP) without embedded credentials or a fragment", false);
+    return;
+  }
+
+  const args = codexTurnArgs(process.env.OPENAI_MODEL, baseUrl);
+  args.push(`[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n${input || "Execute your position duties for this turn."}`);
+
+  let child;
+  try {
+    const spawnSpec = createQoderSpawnSpec(codexBin, args, codexChildEnvironment(process.env));
+    child = spawn(spawnSpec.command, spawnSpec.args, {
+      ...spawnSpec.options,
+      cwd: workspaceDir,
+      // Codex exec also drains stdin; leaving it closed keeps the turn
+      // non-interactive instead of waiting for further input.
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    fail("codex.spawn_failed", "cannot spawn the resolved Codex CLI", true);
+    return;
+  }
+
+  let buffer = "";
+  let stderrTail = "";
+  let output = "";
+  let errorMessage = "";
+  const seenMessageIds = new Set();
+
+  child.stderr.on("data", (chunk) => {
+    stderrTail = (stderrTail + String(chunk)).slice(-2000);
+  });
+
+  function handleCodexLine(line) {
+    if (terminalEmitted || line.trim().length === 0) return;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+
+    if (event?.type === "item.completed" && event?.item?.type === "agent_message") {
+      // Codex retries a dropped provider stream inside a single exec, and each
+      // attempt replays the whole item. Keying on the item id keeps the turn
+      // output from being emitted once per attempt; observed as six identical
+      // copies before this guard.
+      const id = typeof event.item.id === "string" ? event.item.id : null;
+      if (id !== null && seenMessageIds.has(id)) return;
+      if (id !== null) seenMessageIds.add(id);
+      const text = event.item.text;
+      if (typeof text === "string" && text.length > 0) {
+        output += text;
+        emit({ type: "model.delta", runId, timestamp: now(), text });
+      }
+      return;
+    }
+
+    // A bare `error` event precedes `turn.failed`; keep its message and let the
+    // terminal event decide, so a run still ends on exactly one outcome.
+    if (event?.type === "error" && typeof event.message === "string") {
+      errorMessage = event.message;
+      return;
+    }
+
+    if (event?.type === "turn.failed") {
+      const message = typeof event.error?.message === "string" ? event.error.message : errorMessage;
+      fail("codex.turn_failed", message || stderrTail || "codex reported a failed turn", false);
+      return;
+    }
+
+    if (event?.type === "turn.completed") {
+      terminalEmitted = true;
+      const usage = event?.usage && typeof event.usage === "object"
+        ? {
+            ...(Number.isInteger(event.usage.input_tokens) ? { inputTokens: event.usage.input_tokens } : {}),
+            ...(Number.isInteger(event.usage.output_tokens) ? { outputTokens: event.usage.output_tokens } : {}),
+          }
+        : null;
+      if (usage && Object.keys(usage).length > 0) {
+        emit({ type: "usage", runId, timestamp: now(), ...usage });
+      }
+      emit({ type: "run.completed", runId, timestamp: now(), output, terminalReason: "goal_met" });
+      process.exit(0);
+    }
+  }
+
+  child.stdout.on("data", (chunk) => {
+    buffer += String(chunk);
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      handleCodexLine(buffer.slice(0, newline));
+      buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf("\n");
+    }
+  });
+
+  child.on("error", () => fail(
+    "codex.spawn_failed",
+    "cannot spawn the resolved Codex CLI; install codex or check DIGITAL_EMPLOYEE_CODEX_COMMAND",
+    true,
+  ));
+  // Codex exits 0 even for a failed turn, so a clean exit is not an outcome.
+  // Only the observed terminal event completes a run; anything else is a
+  // failure rather than an empty success.
+  child.on("close", (code) => {
+    if (terminalEmitted) return;
+    fail("codex.no_terminal_event", stderrTail.trim() || `codex exited with code ${code} without a terminal event`, true);
   });
 }
 

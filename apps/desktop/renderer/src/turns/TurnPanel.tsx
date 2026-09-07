@@ -53,6 +53,7 @@ const ENGINE_LABEL: Record<TurnEngine, string> = {
   qoder: "Qoder",
   "claude-code": "Claude Code",
   "claude-local": "Claude Code",
+  codex: "Codex",
 };
 
 /** #146：引擎品牌名保持原文（数据面不迁）；只有 claude-local 的变体修饰词

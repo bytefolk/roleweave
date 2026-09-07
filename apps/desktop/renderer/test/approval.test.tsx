@@ -74,6 +74,7 @@ const availability: TurnPanelProps["engineAvailability"] = {
   qoder: { configured: true, ready: true },
   "claude-code": { configured: true, ready: true },
   "claude-local": { configured: true, ready: true },
+  codex: { configured: true, ready: true },
 };
 
 function VerdictPanel({ turns, onVerdictTurn, decidedApprovalIds }: {

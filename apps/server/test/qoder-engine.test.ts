@@ -934,3 +934,264 @@ test("qoder-engine turn run: default engine model is qoder when DIGITAL_EMPLOYEE
   const qoderArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
   assert.ok(qoderArgs.includes("--agent"), "default engine must spawn Qoder with --agent");
 });
+
+/* ---------------------------------------------------------------------------
+ * Codex engine (#206)
+ *
+ * The event shapes below are the ones the official Codex CLI 0.153.4 actually
+ * emits for `exec --json`, captured against an offline loopback Responses
+ * fixture: `thread.started`, `turn.started`, `item.completed` carrying an
+ * `agent_message` item, and a terminal `turn.completed` / `turn.failed`.
+ * ------------------------------------------------------------------------- */
+
+function fakeCodexOk(argsFile: string, envFile: string): string {
+  return `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)));
+fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));
+const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+write({ type: "thread.started", thread_id: "01a07b57-a650-7e32-8033-7020f9402ba4" });
+write({ type: "turn.started" });
+write({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "release gate passed" } });
+write({ type: "turn.completed", usage: { input_tokens: 11, cached_input_tokens: 0, output_tokens: 7, reasoning_output_tokens: 0 } });
+`;
+}
+
+/** Codex retries a dropped provider stream inside one exec and replays the
+ * whole item; the engine must not emit the turn output once per attempt. */
+const FAKE_CODEX_REPLAYED_ITEM = `#!/usr/bin/env node
+const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+write({ type: "thread.started", thread_id: "t" });
+write({ type: "turn.started" });
+write({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "once" } });
+write({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "once" } });
+write({ type: "item.completed", item: { id: "item_1", type: "agent_message", text: "-twice" } });
+write({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } });
+`;
+
+const FAKE_CODEX_TURN_FAILED = `#!/usr/bin/env node
+const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+write({ type: "thread.started", thread_id: "t" });
+write({ type: "turn.started" });
+write({ type: "error", message: "Missing environment variable: \`OPENAI_API_KEY\`." });
+write({ type: "turn.failed", error: { message: "Missing environment variable: \`OPENAI_API_KEY\`." } });
+`;
+
+/** Codex exits 0 even when a turn never reaches a terminal event. */
+const FAKE_CODEX_NO_TERMINAL = `#!/usr/bin/env node
+const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+write({ type: "thread.started", thread_id: "t" });
+write({ type: "turn.started" });
+process.exit(0);
+`;
+
+async function writeFakeCodex(dir: string, script: string): Promise<string> {
+  const file = path.join(dir, "fake-codex.cjs");
+  await fs.writeFile(file, script);
+  await fs.chmod(file, 0o755);
+  return file;
+}
+
+function codexEvents(stdout: string): Array<Record<string, unknown>> {
+  return stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+const codexSkip = process.platform === "win32"
+  ? "requires POSIX exec of a shebang fixture; the Windows package smoke leg covers the win32 .cmd spawn path"
+  : false;
+
+test("codex turn run: maps Codex JSONL into engine.v1 events and always sandboxes read-only (#206)", { skip: codexSkip }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-"));
+  const argsFile = path.join(fakeDir, "args.json");
+  const envFile = path.join(fakeDir, "env.json");
+  const fakeBin = await writeFakeCodex(fakeDir, fakeCodexOk(argsFile, envFile));
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run the gate" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      OPENAI_API_KEY: "service-key",
+      OPENAI_BASE_URL: "https://relay.example.com/v1",
+      OPENAI_MODEL: "gpt-5.2",
+      QODER_PERSONAL_ACCESS_TOKEN: "unrelated-qoder-token",
+      ANTHROPIC_API_KEY: "unrelated-anthropic-key",
+    },
+  });
+
+  const events = codexEvents(result.stdout);
+  assert.equal(events[0]?.type, "run.started");
+  assert.deepEqual(
+    events.filter((event) => event.type === "model.delta").map((event) => event.text),
+    ["release gate passed"],
+  );
+  const usage = events.find((event) => event.type === "usage");
+  assert.deepEqual(
+    { inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens },
+    { inputTokens: 11, outputTokens: 7 },
+  );
+  const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+  assert.equal(terminal.length, 1, "a run must end on exactly one terminal event");
+  assert.equal(terminal[0]?.type, "run.completed");
+  assert.equal(terminal[0]?.output, "release gate passed");
+
+  const codexArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.equal(codexArgs[0], "exec");
+  // The whole point of #206: tool removal is impossible, so the sandbox and
+  // config-isolation flags are the boundary and must never be dropped.
+  assert.ok(codexArgs.includes("--sandbox"));
+  assert.equal(codexArgs[codexArgs.indexOf("--sandbox") + 1], "read-only");
+  assert.ok(codexArgs.includes("--ignore-user-config"));
+  assert.ok(codexArgs.includes("--ephemeral"));
+  assert.ok(codexArgs.includes("--json"));
+  assert.equal(codexArgs[codexArgs.indexOf("--model") + 1], "gpt-5.2");
+  assert.ok(
+    codexArgs.some((arg) => arg.includes('base_url = "https://relay.example.com/v1"')),
+    "an OpenAI-compatible endpoint must reach Codex as a provider override",
+  );
+  assert.ok(codexArgs.some((arg) => arg.includes('env_key = "OPENAI_API_KEY"')));
+  // Secrets travel in the environment, never in argv.
+  assert.ok(!codexArgs.some((arg) => arg.includes("service-key")));
+
+  const childEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
+  assert.equal(childEnv.OPENAI_API_KEY, "service-key");
+  assert.equal(childEnv.QODER_PERSONAL_ACCESS_TOKEN, undefined);
+  assert.equal(childEnv.ANTHROPIC_API_KEY, undefined);
+});
+
+test("codex turn run: a replayed agent_message is emitted once (#206)", { skip: codexSkip }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-replay-"));
+  const fakeBin = await writeFakeCodex(fakeDir, FAKE_CODEX_REPLAYED_ITEM);
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      OPENAI_API_KEY: "service-key",
+    },
+  });
+
+  const events = codexEvents(result.stdout);
+  assert.deepEqual(
+    events.filter((event) => event.type === "model.delta").map((event) => event.text),
+    ["once", "-twice"],
+  );
+  const terminal = events.filter((event) => event.type === "run.completed");
+  assert.equal(terminal.length, 1);
+  assert.equal(terminal[0]?.output, "once-twice");
+});
+
+test("codex turn run: turn.failed becomes a single run.failed (#206)", { skip: codexSkip }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-fail-"));
+  const fakeBin = await writeFakeCodex(fakeDir, FAKE_CODEX_TURN_FAILED);
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      OPENAI_API_KEY: "service-key",
+    },
+  });
+
+  const events = codexEvents(result.stdout);
+  const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+  assert.equal(terminal.length, 1);
+  assert.equal(terminal[0]?.type, "run.failed");
+  const error = terminal[0]?.error as Record<string, unknown>;
+  assert.equal(error.code, "codex.turn_failed");
+  assert.match(String(error.message), /OPENAI_API_KEY/);
+});
+
+test("codex turn run: a clean exit without a terminal event is a failure, not an empty success (#206)", { skip: codexSkip }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-silent-"));
+  const fakeBin = await writeFakeCodex(fakeDir, FAKE_CODEX_NO_TERMINAL);
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      OPENAI_API_KEY: "service-key",
+    },
+  });
+
+  const events = codexEvents(result.stdout);
+  const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+  assert.equal(terminal.length, 1);
+  assert.equal(terminal[0]?.type, "run.failed");
+  assert.equal((terminal[0]?.error as Record<string, unknown>).code, "codex.no_terminal_event");
+});
+
+test("codex turn run: an unusable OPENAI_BASE_URL fails before Codex is spawned (#206)", async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-url-"));
+  const argsFile = path.join(fakeDir, "args.json");
+  const envFile = path.join(fakeDir, "env.json");
+  const fakeBin = await writeFakeCodex(fakeDir, fakeCodexOk(argsFile, envFile));
+
+  for (const baseUrl of [
+    "http://relay.example.com/v1",
+    "https://user:secret@relay.example.com/v1",
+    "https://relay.example.com/v1#fragment",
+    "not-a-url",
+  ]) {
+    const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+      stdin: JSON.stringify({ input: "run" }),
+      env: {
+        DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+        DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+        OPENAI_API_KEY: "service-key",
+        OPENAI_BASE_URL: baseUrl,
+      },
+    });
+    const events = codexEvents(result.stdout);
+    const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+    assert.equal(terminal.length, 1, `${baseUrl} must produce exactly one terminal event`);
+    assert.equal(terminal[0]?.type, "run.failed", `${baseUrl} must be rejected`);
+    assert.equal(
+      (terminal[0]?.error as Record<string, unknown>).code,
+      "codex.base_url_invalid",
+      `${baseUrl} must be rejected as an invalid base URL`,
+    );
+    // Rejection happens before spawn, so the fixture never records argv.
+    await assert.rejects(() => fs.access(argsFile, fsConstants.F_OK));
+  }
+
+  // A loopback endpoint stays usable for local gateways and offline fixtures.
+  const loopback = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      OPENAI_API_KEY: "service-key",
+      OPENAI_BASE_URL: "http://127.0.0.1:8080/v1",
+    },
+  });
+  assert.equal(codexEvents(loopback.stdout).at(-1)?.type, "run.completed");
+});
+
+test("codex turn run: a missing Codex binary fails closed without disclosing a path (#206)", async () => {
+  const dir = await makeWorkspace();
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: "/nonexistent/codex-binary",
+      OPENAI_API_KEY: "service-key",
+    },
+  });
+
+  const events = codexEvents(result.stdout);
+  const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+  assert.equal(terminal.length, 1);
+  assert.equal(terminal[0]?.type, "run.failed");
+  const error = terminal[0]?.error as Record<string, unknown>;
+  assert.equal(error.code, "codex.binary_unresolved");
+  assert.ok(!String(error.message).includes("/nonexistent/codex-binary"));
+});

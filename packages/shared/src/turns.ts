@@ -13,7 +13,7 @@ export type TurnEnvelopeSchemaVersion =
 export const TURN_RECORD_SCHEMA_VERSION = "turn-record.v1" as const;
 export const TURN_HISTORY_SCHEMA_VERSION = "turn-history.v1" as const;
 
-export const turnEngines = ["qoder", "claude-code", "claude-local"] as const;
+export const turnEngines = ["qoder", "claude-code", "claude-local", "codex"] as const;
 export type TurnEngine = (typeof turnEngines)[number];
 
 export type TurnTerminalReason =
