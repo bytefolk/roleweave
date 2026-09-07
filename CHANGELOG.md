@@ -74,6 +74,7 @@
 
 ### Fixed
 
+- #156：WSL 拓扑下桌面壳向控制面服务端发送工作区路径时，Windows 盘符路径（`C:\...`）现在经 `serverPathForWorkspace` 转换为 `/mnt/c/...` 再 POST 到 `/workspace/open`；native 模式与非 win32 主机原样不动。`main.js` 全部四处 POST（`ORG_WORKBENCH_DEFAULT_WORKSPACE`、#145 的持久化上次工作区、demo 兜底、目录选择器 IPC）都已接线；转换只发生在跨边界的这一处，服务端因此不必解析盘符，仍只接受自身原生绝对路径——`wsl` 模式下跑在 ext4 上、根本没有 Windows 表示的工作区照旧可用（AC-003）。持久化刻意不转换：`last-workspace.json` 存原始 Windows 路径，因为开机重开时的 `fs.existsSync` 在 Windows 侧执行，`/mnt/c/...` 在那里永远解析不到（AC-005 的可执行形式）。`openDefaultWorkspace` 的 `existsSync` 早退与 HTTP 非 200 响应均写 stderr（含当前 mode 与原始 dir），不再静默丢弃（AC-006）。新增源码接线断言：`main.js` 中每处 `/workspace/open` POST 必须经过 `serverPathForWorkspace`，后续再加站点会被同一条测试拦住（AC-004）。
 - 审批中心现在明确说明用途与数据接入状态；未接入回合历史/事件流时不再把空列表误报为“所有回合都在界内运行”，并提供返回组织模块的入口。审批岗位、动作描述与目标中的多层 Unicode 转义也会在展示层恢复为可读中文。
 - #137 组织页主区重构为两列工作区：左列上下堆叠组织图与岗位档案（同宽对齐），右列由本地对话面板独占整列高度，回合流拿回被全宽组织图压掉的纵向空间。`.owb-workspace-grid` 包装层移除，布局单源挂在 `.owb-org-module`（grid 两列 + `__left` flex 列）；组织图在半宽左列内横向溢出改为列内滚动（`overflow-x: auto`），纵向仍自然撑开；980px 单栏堆叠与 720px 竖向压缩断点按新选择器等价重述。`org-panel-sizing` / `panel-parity` 两套 CSS 契约测试同步换选择器，并新增 #137 左列配对断言（chart flex none + 档案卡 flex 1 + 模块级 stretch）。契约面未触碰。
 

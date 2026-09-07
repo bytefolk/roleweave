@@ -76,10 +76,24 @@ function createControlPlaneChild({ serverEntry, env }) {
   return child;
 }
 
+/**
+ * Convert a workspace path to the form the control-plane server expects.
+ * In WSL mode the server runs inside Linux, so Windows drive-letter paths
+ * must be translated to /mnt/<drive>/... before posting. In native mode
+ * (or on non-win32 hosts) the path is returned unchanged.
+ */
+function serverPathForWorkspace(windowsPath, env) {
+  if (controlPlaneMode(env) === "wsl") {
+    return winToWslPath(windowsPath);
+  }
+  return windowsPath;
+}
+
 module.exports = {
   controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,
+  serverPathForWorkspace,
   stripPackagedSmokeControls,
   winToWslPath,
 };

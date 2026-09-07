@@ -16,8 +16,10 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 app.setName("RoleWeave");
 const { spawn } = require("node:child_process");
 const {
+  controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,
+  serverPathForWorkspace,
 } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -272,11 +274,28 @@ async function openDefaultWorkspace() {
   const override = workspaceOverride();
   if (override) {
     const dir = override;
-    if (!fs.existsSync(path.join(dir, "workspace.json"))) return;
+    // The existence check stays on the raw path: main runs on the Windows side
+    // of the boundary, only the server sees the translated one.
+    if (!fs.existsSync(path.join(dir, "workspace.json"))) {
+      process.stderr.write(`auto-open skipped: workspace.json not found at ${dir}\n`);
+      return;
+    }
     try {
-      await apiRequest("/workspace/open", { method: "POST", body: { path: dir } });
-    } catch {
-      // Auto-open is best-effort.
+      const res = await apiRequest("/workspace/open", {
+        method: "POST",
+        body: { path: serverPathForWorkspace(dir, process.env) },
+      });
+      if (res.status !== 200) {
+        process.stderr.write(
+          `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
+          + `server responded ${res.status} — ${JSON.stringify(res.body)}\n`,
+        );
+      }
+    } catch (err) {
+      process.stderr.write(
+        `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
+        + `${err.message ?? err}\n`,
+      );
     }
     return;
   }
@@ -284,25 +303,53 @@ async function openDefaultWorkspace() {
   // Try the persisted last workspace path before the demo copy.
   const lastPath = readLastWorkspacePath(app.getPath("userData"));
   if (lastPath !== null) {
+    // Checked raw on the Windows side; only the POST crosses the boundary.
     if (fs.existsSync(path.join(lastPath, "workspace.json"))) {
       try {
-        await apiRequest("/workspace/open", { method: "POST", body: { path: lastPath } });
-        return;
-      } catch {
-        // Open failed — fall through to demo with a notice.
+        const res = await apiRequest("/workspace/open", {
+          method: "POST",
+          body: { path: serverPathForWorkspace(lastPath, process.env) },
+        });
+        if (res.status === 200) return;
+        process.stderr.write(
+          `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${lastPath}]: `
+          + `server responded ${res.status} — ${JSON.stringify(res.body)}\n`,
+        );
+      } catch (err) {
+        process.stderr.write(
+          `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${lastPath}]: `
+          + `${err.message ?? err}\n`,
+        );
       }
+      // Open failed — fall through to demo with a notice.
     }
-    // Persisted path is missing or invalid; surface a visible notice.
+    // Persisted path is missing or invalid; surface a visible notice naming the
+    // path the operator picked, not its translated server-side form.
     pendingFallbackNotice = lastPath;
   }
 
   // Fall back to the demo workspace.
   const dir = defaultWorkspaceDir();
-  if (!fs.existsSync(path.join(dir, "workspace.json"))) return;
+  if (!fs.existsSync(path.join(dir, "workspace.json"))) {
+    process.stderr.write(`auto-open skipped: workspace.json not found at ${dir}\n`);
+    return;
+  }
   try {
-    await apiRequest("/workspace/open", { method: "POST", body: { path: dir } });
-  } catch {
-    // Auto-open is best-effort; the empty state with the open button remains the fallback.
+    const res = await apiRequest("/workspace/open", {
+      method: "POST",
+      body: { path: serverPathForWorkspace(dir, process.env) },
+    });
+    if (res.status !== 200) {
+      process.stderr.write(
+        `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
+        + `server responded ${res.status} — ${JSON.stringify(res.body)}\n`,
+      );
+    }
+  } catch (err) {
+    process.stderr.write(
+      `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
+      + `${err.message ?? err}\n`,
+    );
   }
 }
 
@@ -419,9 +466,15 @@ ipcMain.handle("owb:workspace:open", async () => {
     : await dialog.showOpenDialog(options);
   if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
   const dir = picked.filePaths[0];
-  const res = await apiRequest("/workspace/open", { method: "POST", body: { path: dir } });
+  const res = await apiRequest("/workspace/open", {
+    method: "POST",
+    body: { path: serverPathForWorkspace(dir, process.env) },
+  });
   if (res.status === 200) {
     try {
+      // Persisted untranslated on purpose: the boot-time reopen checks
+      // fs.existsSync(<path>/workspace.json) from the Windows side, so a
+      // /mnt/c/... value would never resolve there.
       writeLastWorkspacePath(app.getPath("userData"), dir);
     } catch {
       // Persistence is best-effort; the open itself succeeded.

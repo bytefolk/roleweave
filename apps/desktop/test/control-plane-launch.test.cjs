@@ -8,6 +8,7 @@ const {
   controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,
+  serverPathForWorkspace,
   stripPackagedSmokeControls,
   winToWslPath,
 } = require("../src/control-plane-launch.cjs");
@@ -113,4 +114,91 @@ test("control-plane child strips lower and mixed-case smoke controls", async (t)
   const [code] = await once(child, "close");
   assert.equal(code, 0);
   assert.deepEqual(JSON.parse(output), { controls: [], safe: "retained" });
+});
+
+test("serverPathForWorkspace converts Windows paths in WSL mode on win32", () => {
+  if (process.platform !== "win32") {
+    // controlPlaneMode is always native off-win32, so no conversion happens.
+    assert.equal(
+      serverPathForWorkspace("C:\\Users\\me\\.org-workbench\\demo-workspace", { ORG_WORKBENCH_CONTROL_PLANE: "wsl" }),
+      "C:\\Users\\me\\.org-workbench\\demo-workspace",
+    );
+    return;
+  }
+  assert.equal(
+    serverPathForWorkspace("C:\\Users\\me\\.org-workbench\\demo-workspace", { ORG_WORKBENCH_CONTROL_PLANE: "wsl" }),
+    "/mnt/c/Users/me/.org-workbench/demo-workspace",
+  );
+  assert.equal(
+    serverPathForWorkspace("D:/projects/ws", { ORG_WORKBENCH_CONTROL_PLANE: "wsl" }),
+    "/mnt/d/projects/ws",
+  );
+});
+
+test("serverPathForWorkspace passes paths through in native mode", () => {
+  assert.equal(
+    serverPathForWorkspace("C:\\Users\\me\\workspace", {}),
+    "C:\\Users\\me\\workspace",
+  );
+  assert.equal(
+    serverPathForWorkspace("/home/user/workspace", {}),
+    "/home/user/workspace",
+  );
+});
+
+test("serverPathForWorkspace always passes through on non-win32 regardless of env", () => {
+  if (process.platform === "win32") return;
+  assert.equal(
+    serverPathForWorkspace("/home/user/workspace", { ORG_WORKBENCH_CONTROL_PLANE: "wsl" }),
+    "/home/user/workspace",
+  );
+});
+
+test("every /workspace/open POST in main.js routes path through serverPathForWorkspace", () => {
+  const mainSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "main.js"),
+    "utf8",
+  );
+  const lines = mainSource.split("\n");
+  const openCallLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes("/workspace/open")) {
+      openCallLines.push(i);
+    }
+  }
+  assert.ok(openCallLines.length >= 2, `expected at least 2 /workspace/open sites, found ${openCallLines.length}`);
+  for (const idx of openCallLines) {
+    const block = lines.slice(Math.max(0, idx - 2), idx + 8).join("\n");
+    if (!block.includes("POST")) continue;
+    assert.match(
+      block,
+      /serverPathForWorkspace\(/,
+      `/workspace/open POST block at line ${idx + 1} missing serverPathForWorkspace`,
+    );
+  }
+});
+
+test("main.js persists the untranslated workspace path", () => {
+  const mainSource = fs.readFileSync(
+    path.join(__dirname, "..", "src", "main.js"),
+    "utf8",
+  );
+  const lines = mainSource.split("\n");
+  const persistLines = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes("writeLastWorkspacePath(")) {
+      persistLines.push(i);
+    }
+  }
+  assert.ok(persistLines.length >= 1, "expected at least 1 writeLastWorkspacePath call");
+  for (const idx of persistLines) {
+    const block = lines.slice(Math.max(0, idx - 4), idx + 3).join("\n");
+    assert.doesNotMatch(
+      block,
+      /serverPathForWorkspace\(/,
+      `writeLastWorkspacePath at line ${idx + 1} must store the raw path: `
+      + "the boot-time reopen checks fs.existsSync from the Windows side, "
+      + "where a /mnt/c/... value can never resolve",
+    );
+  }
 });
