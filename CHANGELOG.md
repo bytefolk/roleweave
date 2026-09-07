@@ -1,7 +1,20 @@
 # Changelog
 
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
-版本号在首个正式 release 前以里程碑（D0/D1/D2…）标注。
+早期开发记录以里程碑（D0/D1/D2…）标注，安装包发布使用语义化版本。
+
+## [0.1.1] — 待发布
+
+### Changed
+
+- 产品与仓库统一为 RoleWeave / `bytefolk/roleweave`，使用带透明安全边距的 R/W 应用图标。
+- 岗位文档采用左右分栏阅读，组织共享文档对接 `bytefolk/doc` v1 API；访问凭据仅留在服务端。
+- 优化项目切换、员工创建、群聊成员搜索以及记忆来源展示。
+
+### Fixed
+
+- 安装包文件名、GitHub 发布坐标与 macOS 签名更新清单统一使用 `roleweave`，避免更新器寻找旧名称安装包。
+- 保留旧环境变量、工作区数据迁移和应用 ID；旧开发包需手动安装新版一次，不放宽更新信任校验。
 
 ## [Unreleased] — D2 组织操作 + D3 对话控制面 + D4 本地上报
 

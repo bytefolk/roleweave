@@ -4,7 +4,9 @@
 
 RoleWeave 是 [digital-employee](https://github.com/bytefolk/digital-employee) 工作区的组织工作台：Electron 桌面壳 + 本地控制面服务，围绕组织树提供只读视图、目录提案、引擎校验与上报中心。macOS 首版聚焦组织树完整闭环；web/移动端未来同仓复用同一控制面与契约。
 
-> RoleWeave 是原 Org Workbench 的新产品名称。已有 `ORG_WORKBENCH_*` 环境变量、旧工作区目录和更新通道保留兼容；新启动脚本也可以使用 `ROLEWEAVE_DEFAULT_WORKSPACE`。
+> RoleWeave 是原 Org Workbench 的新产品名称，仓库已迁至 [bytefolk/roleweave](https://github.com/bytefolk/roleweave)。已有 `ORG_WORKBENCH_*` 环境变量、旧工作区目录和应用 ID 保留兼容；新启动脚本也可以使用 `ROLEWEAVE_DEFAULT_WORKSPACE`。
+>
+> 从 v0.1.1 起，安装包和更新源统一使用 `roleweave`。旧开发包仍固定校验旧仓库坐标，需在新版发布后从 [Releases](https://github.com/bytefolk/roleweave/releases) 手动安装一次；更新签名校验不会为迁移而放宽。
 
 ## 品牌与打包
 

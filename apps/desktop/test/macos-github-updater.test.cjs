@@ -155,20 +155,20 @@ test("the free channel falls back to the public Atom feed when GitHub API is rat
 test("the Atom fallback accepts only a same-repository release-tag link", () => {
   const feed = [
     "<feed xmlns=\"http://www.w3.org/2005/Atom\">",
-    "<entry><link rel=\"alternate\" type=\"text/html\" href=\"https://github.com/bytefolk/org-workbench/releases/tag/v0.2.0\"/></entry>",
+    "<entry><link rel=\"alternate\" type=\"text/html\" href=\"https://github.com/bytefolk/roleweave/releases/tag/v0.2.0\"/></entry>",
     "</feed>",
   ].join("");
   assert.equal(parseLatestReleaseTagFromAtom(feed), "v0.2.0");
   assert.throws(
-    () => parseLatestReleaseTagFromAtom(feed.replace("bytefolk/org-workbench", "other/repository")),
+    () => parseLatestReleaseTagFromAtom(feed.replace("bytefolk/roleweave", "other/repository")),
     /without a valid release tag/,
   );
 });
 
 test("release asset URLs are fixed to the repository and HTTPS", () => {
   assert.equal(
-    githubReleaseAssetUrl("v0.2.0", "org-workbench-0.2.0-arm64.zip"),
-    "https://github.com/bytefolk/org-workbench/releases/download/v0.2.0/org-workbench-0.2.0-arm64.zip",
+    githubReleaseAssetUrl("v0.2.0", "roleweave-0.2.0-arm64.zip"),
+    "https://github.com/bytefolk/roleweave/releases/download/v0.2.0/roleweave-0.2.0-arm64.zip",
   );
   assert.throws(() => githubReleaseAssetUrl("https://evil.example/v0.2.0", "x.zip"), /tag is invalid/);
   assert.throws(() => githubReleaseAssetUrl("v0.2.0", "../../evil.zip"), /asset name is invalid/);

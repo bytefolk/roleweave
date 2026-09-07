@@ -107,7 +107,7 @@ function requestBuffer(urlValue, { maxBytes, timeoutMs, requestImpl = https.requ
       method: "GET",
       headers: {
         Accept: "application/vnd.github+json",
-        "User-Agent": "org-workbench-updater",
+        "User-Agent": "roleweave-updater",
         "X-GitHub-Api-Version": "2022-11-28",
       },
     }, (response) => {
@@ -217,7 +217,7 @@ function downloadFile(urlValue, destination, { expectedBytes, onProgress = () =>
       }
       const request = requestImpl(url, {
         method: "GET",
-        headers: { "User-Agent": "org-workbench-updater", Accept: "application/octet-stream" },
+        headers: { "User-Agent": "roleweave-updater", Accept: "application/octet-stream" },
       }, (response) => {
         if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           response.resume();

@@ -137,6 +137,33 @@ test("the update feed is declared on the dist commands only, and agrees with pac
   }
 });
 
+test("RoleWeave release metadata, installer filenames and the trusted updater agree", () => {
+  const config = require("../../apps/desktop/electron-builder.config.cjs");
+  const pkg = require("../../package.json");
+  const desktop = require("../../apps/desktop/package.json");
+  const lock = require("../../package-lock.json");
+  const trust = require("../../apps/desktop/src/update-trust.cjs");
+  const { RELEASE_PAGE_URL } = require("../../apps/desktop/src/update-ipc.cjs");
+
+  assert.equal(pkg.name, "roleweave");
+  assert.equal(config.productName, "RoleWeave");
+  assert.equal(pkg.repository.url, `git+https://github.com/${trust.UPDATE_REPOSITORY}.git`);
+  assert.equal(trust.UPDATE_REPOSITORY, "bytefolk/roleweave");
+  assert.equal(RELEASE_PAGE_URL, `https://github.com/${trust.UPDATE_REPOSITORY}/releases`);
+  for (const version of [desktop.version, lock.version, lock.packages[""].version, lock.packages["apps/desktop"].version]) {
+    assert.equal(version, pkg.version);
+  }
+  const zipName = config.artifactName
+    .replace("${name}", pkg.name)
+    .replace("${version}", pkg.version)
+    .replace("${arch}", trust.UPDATE_ARCH)
+    .replace("${ext}", "zip");
+  assert.equal(trust.expectedAssetName(pkg.version), zipName);
+  // Branding does not change install identity or weaken the signature format.
+  assert.equal(config.appId, "org.fullstack-ai-infra.org-workbench");
+  assert.equal(trust.UPDATE_MANIFEST_SCHEMA, "org-workbench-update.v1");
+});
+
 test("every build leg validates its asset set before anything is uploaded", () => {
   const source = workflow();
   const scripts = require("../../package.json").scripts;

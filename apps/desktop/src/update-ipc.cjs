@@ -14,7 +14,7 @@ const { UPDATE_STATES } = require("./updater.cjs");
 /** The changelog target. Fixed here rather than accepted from the renderer:
  * `shell.openExternal` with a caller-supplied URL is an arbitrary-navigation
  * capability, and this surface only ever needs the one page. */
-const RELEASE_PAGE_URL = "https://github.com/bytefolk/org-workbench/releases";
+const RELEASE_PAGE_URL = "https://github.com/bytefolk/roleweave/releases";
 
 /** Platforms the renderer is allowed to know about, for localizing an
  * unavailability reason. Anything else collapses to "other" rather than

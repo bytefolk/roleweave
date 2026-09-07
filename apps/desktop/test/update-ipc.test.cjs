@@ -186,7 +186,7 @@ describe("confirmation forwarding", () => {
 
 describe("changelog target", () => {
   it("is a fixed https release page, not a renderer-supplied URL", () => {
-    assert.equal(RELEASE_PAGE_URL, "https://github.com/bytefolk/org-workbench/releases");
+    assert.equal(RELEASE_PAGE_URL, "https://github.com/bytefolk/roleweave/releases");
     assert.match(RELEASE_PAGE_URL, /^https:\/\//);
   });
 });

@@ -1,10 +1,10 @@
 {
   "name": "roleweave",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bytefolk/org-workbench.git"
+    "url": "git+https://github.com/bytefolk/roleweave.git"
   },
   "description": "RoleWeave — file tree is the org chart. Electron shell + local control plane for digital-employee workspaces.",
   "author": "RoleWeave Contributors",
@@ -39,8 +39,8 @@
     "sign:macos:update": "node scripts/sign-macos-update.mjs",
     "package:staging:macos": "npm run clean:package:staging && npm run build && npm run build:renderer && npm run prepare:updater && npm run prepare:electron:staging && electron-builder --config apps/desktop/electron-builder.config.cjs --mac --arm64 --dir --publish never",
     "package:staging:windows": "npm run clean:package:staging && npm run build && npm run build:renderer && npm run prepare:updater && npm run prepare:electron:staging && electron-builder --config apps/desktop/electron-builder.config.cjs --win --x64 --dir --publish never",
-    "package:dist:macos": "npm run clean:package:staging && npm run build && npm run build:renderer && npm run prepare:updater && npm run prepare:electron:staging && electron-builder --config apps/desktop/electron-builder.config.cjs --mac dmg zip --arm64 --publish never -c.publish.provider=github -c.publish.owner=bytefolk -c.publish.repo=org-workbench -c.directories.output=release/dist",
-    "package:dist:windows": "npm run clean:package:staging && npm run build && npm run build:renderer && npm run prepare:updater && npm run prepare:electron:staging && electron-builder --config apps/desktop/electron-builder.config.cjs --win nsis --x64 --publish never -c.publish.provider=github -c.publish.owner=bytefolk -c.publish.repo=org-workbench -c.directories.output=release/dist",
+    "package:dist:macos": "npm run clean:package:staging && npm run build && npm run build:renderer && npm run prepare:updater && npm run prepare:electron:staging && electron-builder --config apps/desktop/electron-builder.config.cjs --mac dmg zip --arm64 --publish never -c.publish.provider=github -c.publish.owner=bytefolk -c.publish.repo=roleweave -c.directories.output=release/dist",
+    "package:dist:windows": "npm run clean:package:staging && npm run build && npm run build:renderer && npm run prepare:updater && npm run prepare:electron:staging && electron-builder --config apps/desktop/electron-builder.config.cjs --win nsis --x64 --publish never -c.publish.provider=github -c.publish.owner=bytefolk -c.publish.repo=roleweave -c.directories.output=release/dist",
     "package:macos:unsigned": "npm run package:staging:macos && npm run verify:package:macos",
     "package:macos": "npm run package:macos:unsigned",
     "verify:package:macos": "node scripts/verify-packaged-app.mjs macos",
