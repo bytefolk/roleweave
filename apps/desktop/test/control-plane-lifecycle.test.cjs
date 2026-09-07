@@ -15,6 +15,27 @@ const {
 
 const token = "a".repeat(64);
 const readyLine = `org-workbench-server ready ${JSON.stringify({ api: "v0", port: 43123, token })}\n`;
+// Keep fixture data out of executable source; argv is passed without a shell.
+const readyChildScript = `
+if (process.argv[2] === "ignore-term") process.on("SIGTERM", () => {});
+process.stdout.write(process.argv[1]);
+setInterval(() => {}, 1000);
+`;
+
+test("READY fixture treats code-shaped arguments as literal data", async (t) => {
+  const payload = "\"); process.exit(42); // </script>\n'`\\\u2028\u2029";
+  const child = spawn(process.execPath, ["-e", readyChildScript, payload], {
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const closed = once(child, "close");
+  t.after(async () => {
+    child.kill("SIGKILL");
+    await closed;
+  });
+  const [output] = await once(child.stdout, "data");
+  assert.equal(output.toString(), payload);
+  assert.equal(isControlPlaneAlive(child), true);
+});
 
 test("READY parsing is strict and keeps only the v0 control-plane contract", () => {
   assert.deepEqual(parseReadyLine(readyLine), { api: "v0", port: 43123, token });
@@ -33,7 +54,7 @@ test("READY parsing is strict and keeps only the v0 control-plane contract", () 
 });
 
 test("control-plane lifecycle starts from READY and stops idempotently", async () => {
-  const child = spawn(process.execPath, ["-e", `process.stdout.write(${JSON.stringify(readyLine)}); setInterval(() => {}, 1000)`], {
+  const child = spawn(process.execPath, ["-e", readyChildScript, readyLine], {
     stdio: ["ignore", "pipe", "ignore"],
   });
   const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 1000 });
@@ -62,7 +83,7 @@ test("READY timeout terminates a child that never announces readiness", async ()
 });
 
 test("stop escalates to SIGKILL when the control plane ignores SIGTERM", async () => {
-  const child = spawn(process.execPath, ["-e", `process.on("SIGTERM", () => {}); process.stdout.write(${JSON.stringify(readyLine)}); setInterval(() => {}, 1000)`], {
+  const child = spawn(process.execPath, ["-e", readyChildScript, readyLine, "ignore-term"], {
     stdio: ["ignore", "pipe", "ignore"],
   });
   const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 1000 });
