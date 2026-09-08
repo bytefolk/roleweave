@@ -241,7 +241,9 @@ test("a raw platform errno from the shared writer survives the store boundary (#
     });
     // A directory at the message path makes the real rename() in the shared
     // writer fail with a raw errno, which is the shape AC-005 says must stay
-    // distinguishable from a domain failure.
+    // distinguishable from a domain failure. rename() onto an existing
+    // directory reports EISDIR on POSIX and EPERM on win32, so the expected
+    // errno has to follow the host platform.
     await fs.mkdir(path.join(workspace, ".digital-employee", "workbench", "groups", group.conversationRef, "messages", "m1.json"));
     await assert.rejects(
       store.appendMessage(workspace, group.conversationRef, {
@@ -255,7 +257,11 @@ test("a raw platform errno from the shared writer survives the store boundary (#
         assert.equal(error.code, errorCodes.group_storage_failed);
         assert.equal(error.status, 500);
         const cause = error.cause as NodeJS.ErrnoException | undefined;
-        assert.equal(cause?.code, "EISDIR", "AC-005: the errno must survive, not just a fixed message");
+        assert.equal(
+          cause?.code,
+          process.platform === "win32" ? "EPERM" : "EISDIR",
+          "AC-005: the errno must survive, not just a fixed message",
+        );
         assert.equal(cause?.syscall, "rename");
         return true;
       },
