@@ -19,6 +19,10 @@
 
 ## [Unreleased] — D2 组织操作 + D3 对话控制面 + D4 本地上报
 
+### Changed
+
+- Rewrote the README in English with customer onboarding, desktop downloads, AI integration guidance, and source development instructions.
+
 含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
 
 ### Fixed
