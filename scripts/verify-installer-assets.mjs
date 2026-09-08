@@ -128,29 +128,57 @@ function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
+// Open once: metadata checks and bounded reads must refer to the same file.
+// The native macOS release gate also refuses symlinks and non-regular files.
+function readRegularFile(file, label, { maxSize, size }, consume) {
+  let fd;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+  } catch (error) {
+    if (error.code === "ELOOP") throw new Error(`${label} must be a regular file`);
+    throw error;
+  }
+  try {
+    const stat = fs.fstatSync(fd);
+    assert.ok(stat.isFile(), `${label} must be a regular file`);
+    assert.ok(stat.size > 0 && stat.size <= maxSize, `${label} has an invalid size`);
+    if (size !== undefined) assert.equal(stat.size, size, `${label} size does not match the manifest`);
+    const buffer = Buffer.alloc(Math.min(64 * 1024, stat.size + 1));
+    let total = 0;
+    // Read at most the checked length plus one byte to detect growth, without
+    // allowing a concurrently growing file to consume unbounded resources.
+    while (total <= stat.size) {
+      const bytes = fs.readSync(fd, buffer, 0, Math.min(buffer.length, stat.size + 1 - total), null);
+      if (bytes === 0) break;
+      total += bytes;
+      consume(buffer.subarray(0, bytes));
+    }
+    assert.equal(total, stat.size, `${label} size changed during validation`);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** Check the signed manifest against the same trust root shipped in the app. */
 export function verifyMacosUpdateArtifact(root, version, { required = false, publicKeyPem } = {}) {
   const manifestPath = path.join(root, UPDATE_MANIFEST_NAME);
-  let stat;
+  const chunks = [];
   try {
-    stat = fs.lstatSync(manifestPath);
+    readRegularFile(manifestPath, "macOS update manifest", { maxSize: 64 * 1024 }, (chunk) => chunks.push(Buffer.from(chunk)));
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
     assert.equal(required, false, "signed macOS update manifest is required for release");
     return;
   }
-  assert.ok(stat.isFile() && !stat.isSymbolicLink(), "macOS update manifest must be a regular file");
-  assert.ok(stat.size > 0 && stat.size <= 64 * 1024, "macOS update manifest has an invalid size");
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const manifest = JSON.parse(Buffer.concat(chunks).toString("utf8"));
   const result = verifyUpdateManifest(manifest, { publicKeyPem });
   assert.equal(result.ok, true, `invalid macOS update manifest: ${result.reason}`);
   assert.equal(manifest.version, version, "macOS update manifest version does not match the package");
   // assetName is constrained to the exact versioned ZIP by verifyUpdateManifest.
   const assetPath = path.join(root, manifest.assetName);
-  const assetStat = fs.lstatSync(assetPath);
-  assert.ok(assetStat.isFile() && !assetStat.isSymbolicLink(), "macOS update ZIP must be a regular file");
-  assert.equal(assetStat.size, manifest.size, "macOS update ZIP size does not match the manifest");
-  assert.equal(sha256(assetPath), manifest.sha256, "macOS update ZIP hash does not match the manifest");
+  const hash = crypto.createHash("sha256");
+  readRegularFile(assetPath, "macOS update ZIP", { maxSize: manifest.size, size: manifest.size }, (chunk) => hash.update(chunk));
+  assert.equal(hash.digest("hex"), manifest.sha256, "macOS update ZIP hash does not match the manifest");
 }
 
 export function verifyInstallerAssets(platform, root = outputRoot, { requireMacosSignature = false } = {}) {

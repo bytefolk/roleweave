@@ -20,7 +20,8 @@ test("signMacosUpdate writes a manifest whose signature verifies against the mat
   const publicKeyPem = pair.publicKey.export({ format: "pem", type: "spki" }).toString();
   const assetName = trust.expectedAssetName("0.2.0");
   const assetPath = path.join(root, "release", "dist", assetName);
-  fs.writeFileSync(assetPath, "test release asset");
+  const assetContent = "test release asset".repeat(5000);
+  fs.writeFileSync(assetPath, assetContent);
 
   const report = await signMacosUpdate({
     root,
@@ -29,7 +30,7 @@ test("signMacosUpdate writes a manifest whose signature verifies against the mat
   });
   const manifest = JSON.parse(fs.readFileSync(report.manifestPath, "utf8"));
   assert.equal(manifest.assetName, assetName);
-  assert.equal(manifest.size, fs.statSync(assetPath).size);
+  assert.equal(manifest.size, Buffer.byteLength(assetContent));
   assert.deepEqual(
     trust.verifyUpdateManifest(manifest, { publicKeyPem }),
     { ok: true },
@@ -40,6 +41,29 @@ test("signMacosUpdate writes a manifest whose signature verifies against the mat
   assert.doesNotThrow(verify, "signer output must pass the installer release gate");
   assert.throws(() => verifyMacosUpdateArtifact(output, "0.2.1", { publicKeyPem }), /version does not match/);
   assert.throws(() => verifyMacosUpdateArtifact(output, "0.2.0"), /unexpected signing key/);
+
+  // Mutate after the descriptor metadata check, before the first read. Both
+  // growth and truncation must fail rather than parsing a different length.
+  const originalRead = fs.readSync;
+  for (const mutate of [
+    () => fs.appendFileSync(report.manifestPath, " "),
+    () => fs.truncateSync(report.manifestPath, 1),
+  ]) {
+    let firstRead = true;
+    const mock = t.mock.method(fs, "readSync", (fd, ...args) => {
+      if (firstRead) {
+        firstRead = false;
+        mutate();
+      }
+      return originalRead(fd, ...args);
+    });
+    try {
+      assert.throws(verify, /size changed during validation/);
+    } finally {
+      mock.mock.restore();
+      fs.writeFileSync(report.manifestPath, JSON.stringify(manifest));
+    }
+  }
 
   fs.writeFileSync(report.manifestPath, JSON.stringify({ ...manifest, sha256: "0".repeat(64) }));
   assert.throws(verify, /signature does not match/);
@@ -60,9 +84,14 @@ test("signMacosUpdate writes a manifest whose signature verifies against the mat
   assert.throws(verify, /manifest is required/);
   assert.doesNotThrow(() => verifyMacosUpdateArtifact(output, "0.2.0"), "unsigned CI remains supported");
   if (process.platform !== "win32") {
-    fs.writeFileSync(assetPath, "test release asset");
+    fs.writeFileSync(assetPath, assetContent);
     fs.symlinkSync(assetPath, report.manifestPath);
     assert.throws(verify, /must be a regular file/);
+    fs.unlinkSync(report.manifestPath);
+    fs.writeFileSync(report.manifestPath, JSON.stringify(manifest));
+    fs.unlinkSync(assetPath);
+    fs.symlinkSync(report.manifestPath, assetPath);
+    assert.throws(verify, /ZIP must be a regular file/);
   }
 });
 
