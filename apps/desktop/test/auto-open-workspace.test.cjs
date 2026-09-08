@@ -243,3 +243,24 @@ test("last-workspace path: successful open returns no fallback notice", async (t
   assert.equal(capture.output(), "");
   assert.equal(result.fallbackNoticePath, null);
 });
+
+test("WSL mode: override path skips Windows existence check and sends POST (#156 AC-005)", async (t) => {
+  const wslPath = "/mnt/c/some/workspace";
+  const capture = captureStderr();
+  t.after(() => capture.restore());
+
+  const apiRequest = makeApiRequestStub({ status: 200, body: { open: true } });
+
+  await openDefaultWorkspace({
+    apiRequest,
+    env: {
+      ORG_WORKBENCH_DEFAULT_WORKSPACE: wslPath,
+      ORG_WORKBENCH_CONTROL_PLANE: "wsl",
+    },
+    userDataPath: makeTempWorkspace(t),
+  });
+
+  assert.equal(apiRequest.calls.length, 1, "POST should be sent even though Windows cannot stat the WSL path");
+  assert.equal(apiRequest.calls[0].pathname, "/workspace/open");
+  assert.equal(capture.output(), "", "success path should produce no stderr");
+});

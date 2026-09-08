@@ -46,7 +46,11 @@ async function openDefaultWorkspace({ apiRequest, env, userDataPath }) {
   const override = workspaceOverride(env);
   if (override) {
     const dir = override;
-    if (!fs.existsSync(path.join(dir, "workspace.json"))) {
+    // In WSL mode, the override may be a Linux path (e.g., /mnt/c/...) that
+    // Windows cannot stat. Skip the existence check and let the server validate
+    // after serverPathForWorkspace converts the path.
+    const isWsl = (env.ORG_WORKBENCH_CONTROL_PLANE ?? "").toLowerCase() === "wsl";
+    if (!isWsl && !fs.existsSync(path.join(dir, "workspace.json"))) {
       process.stderr.write(`auto-open skipped: workspace.json not found at ${dir}\n`);
       return { fallbackNoticePath: null };
     }
