@@ -39,8 +39,14 @@ const MAX_GROUP_RECORD_BYTES = 16 * 1024;
 const MAX_GROUP_MESSAGE_BYTES = 260 * 1024;
 const REF_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-function storageError(message: string): OrgApiError {
-  return new OrgApiError(errorCodes.group_storage_failed, 500, message);
+function storageError(message: string, cause?: unknown): OrgApiError {
+  return new OrgApiError(
+    errorCodes.group_storage_failed,
+    500,
+    message,
+    false,
+    cause === undefined ? undefined : { cause },
+  );
 }
 
 export function assertConversationRef(value: unknown): string {
@@ -186,7 +192,7 @@ export class GroupStore {
       );
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
-      throw storageError("local group record could not be persisted atomically");
+      throw storageError("local group record could not be persisted atomically", error);
     }
     return group;
   }
@@ -269,7 +275,7 @@ export class GroupStore {
       );
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
-      throw storageError("local group record could not be persisted atomically");
+      throw storageError("local group record could not be persisted atomically", error);
     }
     return updated;
   }
@@ -293,7 +299,7 @@ export class GroupStore {
       );
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
-      throw storageError("local group message could not be persisted atomically");
+      throw storageError("local group message could not be persisted atomically", error);
     }
     return record;
   }

@@ -50,8 +50,14 @@ export interface RotateResult {
   created: boolean;
 }
 
-function sessionError(message: string): OrgApiError {
-  return new OrgApiError(errorCodes.session_storage_failed, 500, message);
+function sessionError(message: string, cause?: unknown): OrgApiError {
+  return new OrgApiError(
+    errorCodes.session_storage_failed,
+    500,
+    message,
+    false,
+    cause === undefined ? undefined : { cause },
+  );
 }
 
 function sessionMissing(): OrgApiError {
@@ -449,7 +455,7 @@ export class SessionStore {
       await atomicWriteJson(positionFile(workspace, positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
-      throw sessionError("local session record could not be persisted atomically");
+      throw sessionError("local session record could not be persisted atomically", error);
     }
     return session;
   }
@@ -529,7 +535,7 @@ export class SessionStore {
         await atomicWriteJson(positionFile(workspace, source.positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
       } catch (error) {
         if (error instanceof OrgApiError) throw error;
-        throw sessionError("local session record could not be persisted atomically");
+        throw sessionError("local session record could not be persisted atomically", error);
       }
       return { session: successor, created: true };
     });
@@ -579,7 +585,7 @@ export class SessionStore {
         await atomicWriteJson(file, record, MAX_WORKSPACE_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
       } catch (error) {
         if (error instanceof OrgApiError) throw error;
-        throw sessionError("local session workspace identity could not be persisted atomically");
+        throw sessionError("local session workspace identity could not be persisted atomically", error);
       }
       return record;
     });

@@ -3,7 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isPositionId } from "@roleweave/shared";
 import type { TurnRecord, WorkbenchSession } from "@roleweave/shared";
-import { isTurnRecord } from "../turns/store.js";
+import type { AtomicTurnWriteOperations } from "../turns/store.js";
+import {
+  atomicWriteJson,
+  isTurnRecord,
+  nodeAtomicTurnWriteOperations,
+} from "../turns/store.js";
 
 const EXPORT_SCHEMA_VERSION = "context-export-state.v1" as const;
 const OCCURRENCE_SCHEMA_VERSION = "context-occurrence.v1" as const;
@@ -85,7 +90,10 @@ interface PreparedExport {
 export class ContextExportService {
   private readonly jobs = new Map<string, Promise<void>>();
 
-  constructor(private readonly adapter: ContextAdapterClient) {}
+  constructor(
+    private readonly adapter: ContextAdapterClient,
+    private readonly atomicWriteOperations: AtomicTurnWriteOperations = nodeAtomicTurnWriteOperations,
+  ) {}
 
   /**
    * Persist a retryable export intent after the trusted terminal turn itself
@@ -108,7 +116,7 @@ export class ContextExportService {
       prepared.state.attempts = existing.attempts;
     }
     if (this.jobs.has(key)) return;
-    await writeContextExportState(workspace, prepared.state);
+    await writeContextExportState(workspace, prepared.state, this.atomicWriteOperations);
     const job = this.run(workspace, prepared)
       .catch(() => {
         // A transient filesystem failure is retried on the next workspace-open.
@@ -138,7 +146,7 @@ export class ContextExportService {
     };
     delete attempting.errorCode;
     try {
-      await writeContextExportState(workspace, attempting);
+      await writeContextExportState(workspace, attempting, this.atomicWriteOperations);
       for (const occurrence of prepared.occurrences) {
         const ingested = await this.adapter.ingest(occurrence);
         if (
@@ -167,14 +175,14 @@ export class ContextExportService {
         ...attempting,
         status: "done",
         updatedAt: new Date().toISOString(),
-      });
+      }, this.atomicWriteOperations);
     } catch {
       await writeContextExportState(workspace, {
         ...attempting,
         status: "failed",
         updatedAt: new Date().toISOString(),
         errorCode: "context_adapter_failed",
-      });
+      }, this.atomicWriteOperations);
     }
   }
 }
@@ -390,43 +398,22 @@ async function prepareExportDirectories(workspace: string, sessionId: string): P
   }
 }
 
-async function writeContextExportState(workspace: string, state: ContextExportState): Promise<void> {
+async function writeContextExportState(
+  workspace: string,
+  state: ContextExportState,
+  operations: AtomicTurnWriteOperations,
+): Promise<void> {
   if (!isContextExportState(state)) throw new ContextExportError("context export state is invalid");
   await prepareExportDirectories(workspace, state.sessionId);
   const file = exportStateFile(workspace, state.sessionId, state.turnId);
-  const payload = `${JSON.stringify(state)}\n`;
-  if (Buffer.byteLength(payload, "utf8") > MAX_EXPORT_STATE_BYTES) {
-    throw new ContextExportError("context export state exceeds its bound");
-  }
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
-  let handle: fs.FileHandle | undefined;
   try {
-    handle = await fs.open(temporary, "wx", 0o600);
-    await handle.writeFile(payload, "utf8");
-    await handle.sync();
-    await handle.close();
-    handle = undefined;
-    await fs.rename(temporary, file);
-    await fs.chmod(file, 0o600);
-    const directory = await fs.open(path.dirname(file), "r");
-    try {
-      try {
-        await directory.sync();
-      } catch (syncError) {
-        // Windows/NTFS rejects fsync on directory handles with EPERM. The
-        // rename above has already committed the data atomically, so on the
-        // affected platform the record is durable. On POSIX the same EPERM
-        // would indicate a real failure and must propagate.
-        if (process.platform !== "win32" || (syncError as NodeJS.ErrnoException).code !== "EPERM") {
-          throw syncError;
-        }
-      }
-    } finally {
-      await directory.close();
-    }
-  } catch {
-    await handle?.close().catch(() => undefined);
-    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    // The writer's only use of this factory is the size violation, so the
+    // argument is dropped to keep this module's own wording.
+    await atomicWriteJson(file, state, MAX_EXPORT_STATE_BYTES, operations, () =>
+      new ContextExportError("context export state exceeds its bound"),
+    );
+  } catch (error) {
+    if (error instanceof ContextExportError) throw error;
     throw new ContextExportError("context export state could not be persisted");
   }
 }

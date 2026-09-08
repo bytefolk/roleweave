@@ -114,8 +114,8 @@ export class OrgApiError extends Error {
   readonly status: number;
   readonly retryable: boolean;
 
-  constructor(code: string, status: number, message: string, retryable = false) {
-    super(message);
+  constructor(code: string, status: number, message: string, retryable = false, options?: ErrorOptions) {
+    super(message, options);
     this.name = "OrgApiError";
     this.code = code;
     this.status = status;

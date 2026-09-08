@@ -68,8 +68,14 @@ interface ConversationMetadata {
   createdAt: string;
 }
 
-function storageError(message: string): OrgApiError {
-  return new OrgApiError(errorCodes.turn_storage_failed, 500, message);
+function storageError(message: string, cause?: unknown): OrgApiError {
+  return new OrgApiError(
+    errorCodes.turn_storage_failed,
+    500,
+    message,
+    false,
+    cause === undefined ? undefined : { cause },
+  );
 }
 
 export function assertPositionId(value: unknown): string {
@@ -142,6 +148,9 @@ export interface AtomicTurnWriteOperations {
   chmod(file: string, mode: number): Promise<void>;
   openDirectory(directory: string): Promise<AtomicTurnDirectoryHandle>;
   removeTemporary(file: string): Promise<void>;
+  // Injecting this lets the win32 branch below run on the POSIX-only check
+  // matrix, which is what issue #155 AC-003 asks for.
+  platform?: NodeJS.Platform;
 }
 
 export const nodeAtomicTurnWriteOperations: AtomicTurnWriteOperations = {
@@ -170,7 +179,7 @@ export async function atomicWriteJson(
   value: unknown,
   maxBytes: number,
   operations: AtomicTurnWriteOperations,
-  makeStorageError: (message: string) => OrgApiError,
+  makeStorageError: (message: string) => Error,
 ): Promise<void> {
   const dir = path.dirname(file);
   const payload = `${JSON.stringify(value)}\n`;
@@ -201,7 +210,7 @@ export async function atomicWriteJson(
         // means the rename directory entry may not survive a subsequent power
         // loss on Windows — POSIX callers lose the "renamed AND fsync-durable"
         // guarantee. On POSIX, EPERM indicates a real failure and propagates.
-        if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
+        if ((operations.platform ?? process.platform) !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
           throw error;
         }
       }
@@ -1242,8 +1251,8 @@ export class TurnStore {
         storageError,
       );
       return metadata;
-    } catch {
-      throw storageError("local session conversation metadata could not be persisted");
+    } catch (error) {
+      throw storageError("local session conversation metadata could not be persisted", error);
     }
   }
 
@@ -1282,8 +1291,8 @@ export class TurnStore {
         storageError,
       );
       return metadata;
-    } catch {
-      throw storageError("local conversation metadata could not be persisted");
+    } catch (error) {
+      throw storageError("local conversation metadata could not be persisted", error);
     }
   }
 
@@ -1297,8 +1306,8 @@ export class TurnStore {
         this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
         storageError,
       );
-    } catch {
-      throw storageError("local turn record could not be persisted atomically");
+    } catch (error) {
+      throw storageError("local turn record could not be persisted atomically", error);
     }
   }
 
@@ -1316,8 +1325,8 @@ export class TurnStore {
         this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
         storageError,
       );
-    } catch {
-      throw storageError("local session turn record could not be persisted atomically");
+    } catch (error) {
+      throw storageError("local session turn record could not be persisted atomically", error);
     }
   }
 
