@@ -249,10 +249,15 @@ export function hostHealth({
   const qoderNextStep = bundledQoderNextStep(qoderLocal, engineAvailable);
   const claudeConfigured = typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.length > 0;
   const claudeLocalConfigured = claudeLocal.installed && claudeLocal.supported;
-  // The Codex engine has no supported-version window to gate on, so readiness
-  // is installation plus an explicit provider credential.
+  // Neither Codex Host has a supported-version window to gate on. The two
+  // differ only in how the provider is reached: `codex` requires an explicit
+  // service credential, while `codex-local` runs on the operator's own Codex
+  // login and must never be gated on — or handed — a credential, exactly as
+  // claude-local is not gated on ANTHROPIC_API_KEY. Login state itself is
+  // asserted by the engine at run time; no credential store is inspected here.
   const codexProviderConfigured = typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.length > 0;
   const codexConfigured = codex.installed && codexProviderConfigured;
+  const codexLocalConfigured = codex.installed;
   const claudeCodeConfigured = bundledQoder
     ? (claudeLocal.installed && claudeLocal.supported && claudeConfigured)
     : claudeConfigured;
@@ -312,10 +317,19 @@ export function hostHealth({
       ...(!codex.installed
         ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
         : !codexProviderConfigured
-          ? { nextStep: "设置 OPENAI_API_KEY（如需自建或中转端点，另设 OPENAI_BASE_URL）后重启工作台" }
+          ? { nextStep: "设置 OPENAI_API_KEY（如需自建或中转端点，另设 OPENAI_BASE_URL）后重启工作台；若要用 Codex 订阅登录，请改选 Codex（本地登录）" }
           : !engineAvailable
             ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
             : {}),
+    },
+    "codex-local": {
+      configured: codexLocalConfigured,
+      ready: engineAvailable && codexLocalConfigured,
+      ...(!codex.installed
+        ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
+        : !engineAvailable
+          ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+          : {}),
     },
   };
 }

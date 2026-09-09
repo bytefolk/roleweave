@@ -8,6 +8,7 @@ const ENGINE_ICON_SRC: Record<TurnEngine, string> = {
   "claude-code": claudeIcon,
   "claude-local": claudeIcon,
   codex: codexIcon,
+  "codex-local": codexIcon,
 };
 
 /** Per-agent-host brand mark (#57): Qoder app mark / Claude starburst.

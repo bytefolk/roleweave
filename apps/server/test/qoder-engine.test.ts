@@ -1045,6 +1045,24 @@ test("codex turn run: maps Codex JSONL into engine.v1 events and always sandboxe
   assert.ok(codexArgs.includes("--ignore-user-config"));
   assert.ok(codexArgs.includes("--ephemeral"));
   assert.ok(codexArgs.includes("--json"));
+  // Every surface Codex lets us switch off stays off. web_search is also a
+  // compatibility requirement: a relay rejected the whole request with
+  // RESPONSES_FEATURE_NOT_SUPPORTED until it was disabled.
+  assert.ok(codexArgs.includes('web_search="disabled"'));
+  assert.ok(codexArgs.includes("tools.experimental_request_user_input.enabled=false"));
+  assert.ok(codexArgs.includes("tools.update_plan.enabled=false"));
+  for (const feature of [
+    "shell_tool",
+    "unified_exec",
+    "apps",
+    "plugins",
+    "skill_search",
+    "multi_agent",
+    "view_image",
+    "workspace_dependencies",
+  ]) {
+    assert.ok(codexArgs.includes(feature), `${feature} must be disabled`);
+  }
   assert.equal(codexArgs[codexArgs.indexOf("--model") + 1], "gpt-5.2");
   assert.ok(
     codexArgs.some((arg) => arg.includes('base_url = "https://relay.example.com/v1"')),
@@ -1194,4 +1212,73 @@ test("codex turn run: a missing Codex binary fails closed without disclosing a p
   const error = terminal[0]?.error as Record<string, unknown>;
   assert.equal(error.code, "codex.binary_unresolved");
   assert.ok(!String(error.message).includes("/nonexistent/codex-binary"));
+});
+
+test("codex-local turn run: the operator's login is used, never a credential or a relay (#206)", { skip: codexSkip }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-local-"));
+  const argsFile = path.join(fakeDir, "args.json");
+  const envFile = path.join(fakeDir, "env.json");
+  const fakeBin = await writeFakeCodex(fakeDir, fakeCodexOk(argsFile, envFile));
+  const codexHome = path.join(fakeDir, "codex-home");
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run the gate" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex-local",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      CODEX_HOME: codexHome,
+      OPENAI_MODEL: "gpt-5.2",
+      // Present in the environment, and all of it must stay out of the child:
+      // a logged-in CLI gets neither a service key nor a relay endpoint.
+      OPENAI_API_KEY: "service-key",
+      OPENAI_BASE_URL: "https://relay.example.com/v1",
+    },
+  });
+
+  const events = codexEvents(result.stdout);
+  const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+  assert.equal(terminal.length, 1);
+  assert.equal(terminal[0]?.type, "run.completed");
+
+  const codexArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  // No provider override at all — Codex keeps its own default provider.
+  assert.ok(!codexArgs.some((arg) => arg.startsWith("model_provider=")));
+  assert.ok(!codexArgs.some((arg) => arg.includes("model_providers.")));
+  assert.ok(!codexArgs.some((arg) => arg.includes("relay.example.com")));
+  // The isolation flags and the model selection still apply.
+  assert.equal(codexArgs[codexArgs.indexOf("--sandbox") + 1], "read-only");
+  assert.ok(codexArgs.includes("--ignore-user-config"));
+  assert.equal(codexArgs[codexArgs.indexOf("--model") + 1], "gpt-5.2");
+
+  const childEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
+  assert.equal(childEnv.OPENAI_API_KEY, undefined, "a logged-in CLI must not receive a service credential");
+  assert.equal(childEnv.OPENAI_BASE_URL, undefined, "a logged-in CLI must not be pointed at a relay");
+  // CODEX_HOME is where Codex keeps the login, so it must cross.
+  assert.equal(childEnv.CODEX_HOME, codexHome);
+  assert.equal(childEnv.OPENAI_MODEL, "gpt-5.2");
+});
+
+test("codex-local turn run: an unusable OPENAI_BASE_URL cannot block the login path (#206)", { skip: codexSkip }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-local-url-"));
+  const argsFile = path.join(fakeDir, "args.json");
+  const envFile = path.join(fakeDir, "env.json");
+  const fakeBin = await writeFakeCodex(fakeDir, fakeCodexOk(argsFile, envFile));
+
+  // The credentialed Host rejects this value; the local Host ignores it
+  // outright, so a relay configured for one cannot break or capture the other.
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex-local",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      OPENAI_BASE_URL: "http://relay.example.com/v1",
+    },
+  });
+
+  const events = codexEvents(result.stdout);
+  assert.equal(events.at(-1)?.type, "run.completed");
+  const childEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
+  assert.equal(childEnv.OPENAI_BASE_URL, undefined);
 });

@@ -177,6 +177,40 @@ test("codex Host health requires the binary plus an explicit provider credential
   assert.doesNotMatch(JSON.stringify(ready), /service-key/);
 });
 
+test("codex-local Host readiness is the binary alone and never sees a credential (#206)", () => {
+  const installed = { installed: true, version: "0.153.4" };
+
+  // No credential anywhere: the credentialed Host stays Idle, the local-login
+  // Host is ready. This is the whole point of splitting them.
+  const noKey = hostHealth({ engineAvailable: true, env: {}, codex: installed });
+  assert.deepEqual(noKey["codex-local"], { configured: true, ready: true });
+  assert.equal(noKey.codex.configured, false);
+  assert.match(noKey.codex.nextStep ?? "", /本地登录/);
+
+  const noCli = hostHealth({ engineAvailable: false, env: {}, codex: installed });
+  assert.equal(noCli["codex-local"].configured, true);
+  assert.equal(noCli["codex-local"].ready, false);
+
+  const missing = hostHealth({
+    engineAvailable: true,
+    env: {},
+    codex: { installed: false, version: null },
+  });
+  assert.equal(missing["codex-local"].configured, false);
+  assert.match(missing["codex-local"].nextStep ?? "", /PATH/);
+  // A local-login Host must never tell an operator to set a service key.
+  assert.doesNotMatch(missing["codex-local"].nextStep ?? "", /OPENAI_API_KEY/);
+
+  // An unrelated key present in the environment must not change its verdict.
+  const withKey = hostHealth({
+    engineAvailable: true,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: installed,
+  });
+  assert.deepEqual(withKey["codex-local"], { configured: true, ready: true });
+  assert.doesNotMatch(JSON.stringify(withKey["codex-local"]), /service-key/);
+});
+
 test("codex probe reports not-installed when the binary cannot be resolved", () => {
   assert.deepEqual(probeCodexBinary({ PATH: "" }), { installed: false, version: null });
   assert.deepEqual(

@@ -82,6 +82,7 @@ function renderPanel(
         "claude-code": readyAvailability,
         "claude-local": readyAvailability,
         codex: readyAvailability,
+        "codex-local": readyAvailability,
       }}
       liveRuns={extra.liveRuns ?? {}}
       onSelectEngine={() => {}}

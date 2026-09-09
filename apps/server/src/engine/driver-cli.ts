@@ -377,6 +377,18 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): No
     if (source.DIGITAL_EMPLOYEE_CODEX_COMMAND !== undefined) {
       environment.DIGITAL_EMPLOYEE_CODEX_COMMAND = source.DIGITAL_EMPLOYEE_CODEX_COMMAND;
     }
+  } else if (engine === "codex-local") {
+    // codex-local runs on the operator's own Codex login, so it must not
+    // receive a service credential — nor OPENAI_BASE_URL, which would point the
+    // logged-in CLI at a relay it holds no key for. CODEX_HOME is where Codex
+    // keeps that login (`--ignore-user-config` skips config.toml but, per its
+    // own help, "auth still uses CODEX_HOME"), and OPENAI_MODEL names a model
+    // rather than carrying a secret.
+    if (source.CODEX_HOME !== undefined) environment.CODEX_HOME = source.CODEX_HOME;
+    if (source.OPENAI_MODEL !== undefined) environment.OPENAI_MODEL = source.OPENAI_MODEL;
+    if (source.DIGITAL_EMPLOYEE_CODEX_COMMAND !== undefined) {
+      environment.DIGITAL_EMPLOYEE_CODEX_COMMAND = source.DIGITAL_EMPLOYEE_CODEX_COMMAND;
+    }
   } else {
     // claude-local runs on the operator's logged-in Claude Code; it must not
     // receive a service credential. DIGITAL_EMPLOYEE_CLAUDE_COMMAND only

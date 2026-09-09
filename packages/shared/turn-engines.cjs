@@ -1,0 +1,24 @@
+// Single source of truth for the selectable turn engine ids.
+//
+// Three boundaries consume this module: the desktop IPC validators
+// (CommonJS directly), the control-plane HTTP routes and the renderer (both
+// via src/turns.ts). Before #206 the IPC layer carried its own hardcoded copy,
+// so adding an engine to the contract left every IPC request for it rejected
+// as turn_engine_unsupported before it could reach a route.
+//
+// The compile-time TurnEngine union still lives in src/turns.ts — TypeScript
+// cannot derive a literal union from a runtime require — so a new engine is
+// added in both places, and turn-engines.test.cjs asserts every id here is
+// accepted by all three IPC validators.
+const TURN_ENGINE_IDS = ["qoder", "claude-code", "claude-local", "codex", "codex-local"];
+
+/** "a, b, or c" — the shape the IPC rejection messages have always used. */
+function turnEngineMessage(ids = TURN_ENGINE_IDS) {
+  if (ids.length <= 2) return ids.join(" or ");
+  return `${ids.slice(0, -1).join(", ")}, or ${ids[ids.length - 1]}`;
+}
+
+module.exports = {
+  TURN_ENGINE_IDS,
+  turnEngineMessage,
+};

@@ -828,6 +828,11 @@ function AppInner({
       ready: health?.hosts?.codex?.ready === true,
       reason: health?.hosts?.codex?.nextStep ?? t("misc.codexHostUnknown"),
     },
+    "codex-local": {
+      configured: health?.hosts?.["codex-local"]?.configured === true,
+      ready: health?.hosts?.["codex-local"]?.ready === true,
+      reason: health?.hosts?.["codex-local"]?.nextStep ?? t("misc.codexLocalHostUnknown"),
+    },
   }), [health, t]);
 
   const displayTurns = useMemo(() => {

@@ -710,7 +710,8 @@ function turnRun(workspaceDir, positionId) {
       case "claude-local":
         return turnRunClaude(workspaceDir, positionId, input, engineModel);
       case "codex":
-        return turnRunCodex(workspaceDir, positionId, input);
+      case "codex-local":
+        return turnRunCodex(workspaceDir, positionId, input, engineModel);
       default:
         return turnRunQoder(workspaceDir, positionId, input);
     }
@@ -1053,9 +1054,21 @@ const CODEX_CHILD_ENV_KEYS = [
   "SSL_CERT_DIR",
 ];
 
-function codexChildEnvironment(source) {
+/**
+ * codex-local runs on the operator's own Codex login, so its allowlist drops
+ * OPENAI_API_KEY and OPENAI_BASE_URL: a logged-in CLI must not be handed a
+ * service credential, nor pointed at a relay it holds no key for. CODEX_HOME
+ * stays because that is where Codex keeps the login — `--ignore-user-config`
+ * skips config.toml but, per Codex's own help, "auth still uses CODEX_HOME".
+ */
+const CODEX_LOCAL_CHILD_ENV_KEYS = CODEX_CHILD_ENV_KEYS.filter(
+  (key) => key !== "OPENAI_API_KEY" && key !== "OPENAI_BASE_URL",
+);
+
+function codexChildEnvironment(source, engineModel) {
+  const keys = engineModel === "codex-local" ? CODEX_LOCAL_CHILD_ENV_KEYS : CODEX_CHILD_ENV_KEYS;
   const environment = {};
-  for (const key of CODEX_CHILD_ENV_KEYS) {
+  for (const key of keys) {
     if (source[key] !== undefined) environment[key] = source[key];
   }
   return environment;
@@ -1124,6 +1137,20 @@ export function codexTurnArgs(model, baseUrl) {
     // not describe this engine as having an empty tool set.
     "--sandbox", "read-only",
     "--json",
+    // Everything Codex *does* let us switch off, we switch off. That is both
+    // the right posture when apply_patch cannot be removed, and a
+    // compatibility requirement: an OpenAI-compatible endpoint that does not
+    // implement a Responses feature rejects the whole request rather than
+    // ignoring it. A relay answered `RESPONSES_FEATURE_NOT_SUPPORTED:
+    // web_search` until web_search was disabled here.
+    "--disable", "shell_tool",
+    "--disable", "unified_exec",
+    "--disable", "apps",
+    "--disable", "plugins",
+    "--disable", "skill_search",
+    "--disable", "multi_agent",
+    "--disable", "view_image",
+    "--disable", "workspace_dependencies",
   ];
   if (model !== undefined && model.length > 0) args.push("--model", model);
   if (baseUrl !== undefined) {
@@ -1132,10 +1159,14 @@ export function codexTurnArgs(model, baseUrl) {
     args.push("-c", `model_providers.${CODEX_PROVIDER_NAME}=${provider}`);
   }
   args.push("-c", "analytics.enabled=false");
+  args.push("-c", 'web_search="disabled"');
+  args.push("-c", "tools.experimental_request_user_input.enabled=false");
+  args.push("-c", "tools.update_plan.enabled=false");
   return args;
 }
 
-function turnRunCodex(workspaceDir, positionId, input) {
+function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
+  const localLogin = engineModel === "codex-local";
   const runId = randomUUID();
   emit({ type: "run.started", runId, timestamp: now() });
 
@@ -1158,10 +1189,16 @@ function turnRunCodex(workspaceDir, positionId, input) {
     return;
   }
 
-  const baseUrl = validatedCodexBaseUrl(process.env.OPENAI_BASE_URL);
-  if (baseUrl === null) {
-    fail("codex.base_url_invalid", "OPENAI_BASE_URL must be HTTPS (or loopback HTTP) without embedded credentials or a fragment", false);
-    return;
+  // In local-login mode Codex keeps its own default provider; an operator
+  // OPENAI_BASE_URL is deliberately ignored rather than validated, so a relay
+  // configured for the credentialed Host cannot silently capture this one.
+  let baseUrl;
+  if (!localLogin) {
+    baseUrl = validatedCodexBaseUrl(process.env.OPENAI_BASE_URL);
+    if (baseUrl === null) {
+      fail("codex.base_url_invalid", "OPENAI_BASE_URL must be HTTPS (or loopback HTTP) without embedded credentials or a fragment", false);
+      return;
+    }
   }
 
   const args = codexTurnArgs(process.env.OPENAI_MODEL, baseUrl);
@@ -1169,7 +1206,7 @@ function turnRunCodex(workspaceDir, positionId, input) {
 
   let child;
   try {
-    const spawnSpec = createQoderSpawnSpec(codexBin, args, codexChildEnvironment(process.env));
+    const spawnSpec = createQoderSpawnSpec(codexBin, args, codexChildEnvironment(process.env, engineModel));
     child = spawn(spawnSpec.command, spawnSpec.args, {
       ...spawnSpec.options,
       cwd: workspaceDir,

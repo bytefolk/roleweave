@@ -70,7 +70,7 @@ export interface TurnStreamEnvelope {
 
 const LIVE_RUNS_CAP = 32;
 const SETTLED_GROUP_RUNS_CAP = 64;
-const GROUP_ENGINES = new Set<TurnEngine>(["qoder", "claude-code", "claude-local", "codex"]);
+const GROUP_ENGINES = new Set<TurnEngine>(["qoder", "claude-code", "claude-local", "codex", "codex-local"]);
 
 function payloadRecord(payload: unknown): Record<string, unknown> | null {
   return payload !== null && typeof payload === "object" && !Array.isArray(payload)

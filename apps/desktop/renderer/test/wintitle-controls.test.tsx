@@ -20,6 +20,7 @@ function installBridge(): void {
           "claude-code": { configured: false, ready: false },
           "claude-local": { configured: false, ready: false },
           codex: { configured: false, ready: false },
+          "codex-local": { configured: false, ready: false },
         },
         workspace: { open: false },
       },

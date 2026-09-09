@@ -91,6 +91,7 @@ const SHARED_RUNTIME_FILES = [
   "package.json",
   "pending-approval.cjs",
   "position-id.cjs",
+  "turn-engines.cjs",
   "dist/api.js",
   "dist/change-manifest.js",
   "dist/context-sources.js",
@@ -185,6 +186,7 @@ const APP_RESOURCE_REQUIRED_ENTRIES = [
   "node_modules/@org-workbench/shared/dist/index.js",
   "node_modules/@org-workbench/shared/position-id.cjs",
   "node_modules/@org-workbench/shared/pending-approval.cjs",
+  "node_modules/@org-workbench/shared/turn-engines.cjs",
   "examples/oss-maintainer/workspace.json",
   "examples/oss-maintainer/organization.v1alpha1.json",
 ];

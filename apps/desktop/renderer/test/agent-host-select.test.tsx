@@ -17,6 +17,7 @@ const availability: Record<TurnEngine, TurnEngineAvailability> = {
   "claude-code": { configured: true, ready: true },
   "claude-local": { configured: false, ready: false },
   codex: { configured: false, ready: false },
+  "codex-local": { configured: false, ready: false },
 };
 
 const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local"];

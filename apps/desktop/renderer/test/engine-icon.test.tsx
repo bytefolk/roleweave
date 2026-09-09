@@ -4,7 +4,7 @@ import { EngineIcon } from "../src/turns/engine-icon";
 import type { TurnEngine } from "../src/turns";
 
 describe("EngineIcon (#57)", () => {
-  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex"];
+  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local"];
 
   it.each(engines)("renders a 14px brand mark for %s", (engine) => {
     const { container } = render(<EngineIcon engine={engine} />);
@@ -29,5 +29,7 @@ describe("EngineIcon (#57)", () => {
     expect(src("codex")).toMatch(/codex/);
     expect(src("codex")).not.toEqual(src("qoder"));
     expect(src("codex")).not.toEqual(src("claude-code"));
+    // The two Codex Hosts share one mark, exactly as the two Claude ones do.
+    expect(src("codex-local")).toBe(src("codex"));
   });
 });
