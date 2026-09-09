@@ -1113,7 +1113,19 @@ export function validatedCodexBaseUrl(value) {
   ) {
     return null;
   }
-  return trimmed;
+  // Rebuild from the parsed components rather than handing back the operator's
+  // raw string. Nothing but a scheme, host, optional port and path can survive,
+  // so the value that reaches Codex's provider block is normalised rather than
+  // merely inspected, and there is no path for an unreviewed character to ride
+  // along into the spawned command line.
+  const port = parsed.port.length > 0 ? `:${parsed.port}` : "";
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  const normalised = `${parsed.protocol}//${parsed.hostname}${port}${pathname}${parsed.search}`;
+  // A quoted TOML string is the only shape this value is ever interpolated
+  // into, so a quote or backslash surviving normalisation would break out of
+  // it. None can, and this asserts that rather than assuming it.
+  if (/["\\]/.test(normalised)) return null;
+  return normalised;
 }
 
 /** Codex accepts a provider name as a bare config key, so keep it inert. */

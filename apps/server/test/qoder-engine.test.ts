@@ -1216,10 +1216,12 @@ test("codex-local turn run: the operator's login is used, never a credential or 
   assert.equal(terminal[0]?.type, "run.completed");
 
   const codexArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
-  // No provider override at all — Codex keeps its own default provider.
+  // No provider override at all — Codex keeps its own default provider. The
+  // invariant is that no provider block is built, which is stronger than
+  // looking for one relay's hostname inside an argument.
   assert.ok(!codexArgs.some((arg) => arg.startsWith("model_provider=")));
   assert.ok(!codexArgs.some((arg) => arg.includes("model_providers.")));
-  assert.ok(!codexArgs.some((arg) => arg.includes("relay.example.com")));
+  assert.ok(!codexArgs.some((arg) => arg.includes("base_url")));
   // The isolation flags and the model selection still apply.
   assert.equal(codexArgs[codexArgs.indexOf("--sandbox") + 1], "read-only");
   assert.ok(codexArgs.includes("--ignore-user-config"));
