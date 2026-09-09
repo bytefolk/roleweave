@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
-import { routes } from "@org-workbench/shared";
+import { routes } from "@roleweave/shared";
 import { FakeDriver, api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 /**

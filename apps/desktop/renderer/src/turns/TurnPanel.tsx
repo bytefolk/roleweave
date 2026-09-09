@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Button as AntButton, Input, Select as AntSelect } from "antd";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Button as AntButton, Input, Switch, Select as AntSelect } from "antd";
 import { ArrowUp, MessagesSquare, Plus, RefreshCw, Square } from "lucide-react";
-import type { WorkbenchSession } from "@org-workbench/shared";
-import { useT } from "@org-workbench/ui";
+import type { WorkbenchSession } from "@roleweave/shared";
+import { useT } from "@roleweave/ui";
 import { PositionMention } from "./PositionMention";
 import { EngineIcon } from "./engine-icon";
 import { TurnThread } from "./TurnThread";
@@ -22,6 +22,7 @@ export interface TurnPanelProps {
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
   turns: TurnRecord[];
   busy?: boolean;
+  employeeBusy?: boolean;
   cancelling?: boolean;
   sessions?: WorkbenchSession[];
   selectedSessionId?: string | null;
@@ -36,17 +37,10 @@ export interface TurnPanelProps {
   /** Approval ids whose verdict was already dispatched this session; their
    * cards settle into a decided state (no duplicate verdicts). */
   decidedApprovalIds?: ReadonlySet<string>;
-  /** SSE stream health for the header badge — honest state only: the badge
-   * goes dim while reconnecting, it never fakes a live stream. */
-  sseConnected?: boolean;
-  /** Selected position's mode / per-task budget for the boundary chips
-   * (设计稿 .boundaries). Both come straight from /positions/:id; absent
-   * means the card has not loaded and the chip shows —, never a guess. */
-  selectedMode?: "read_only" | "approval_required" | null;
-  selectedBudgetLabel?: string | null;
   onSelectSession?: (sessionId: string) => void;
   onCreateSession?: () => void | Promise<void>;
   onRotateSession?: (sessionId: string) => void | Promise<void>;
+  onSetSessionContext?: (sessionId: string, enabled: boolean) => void | Promise<void>;
 }
 
 const ENGINE_LABEL: Record<TurnEngine, string> = {
@@ -157,6 +151,7 @@ export function TurnPanel({
   engineAvailability,
   turns,
   busy = false,
+  employeeBusy = false,
   cancelling = false,
   sessions,
   selectedSessionId = null,
@@ -167,17 +162,24 @@ export function TurnPanel({
   onCancelTurn,
   onVerdictTurn,
   decidedApprovalIds,
-  sseConnected = false,
-  selectedMode = null,
-  selectedBudgetLabel = null,
   onSelectSession,
   onCreateSession,
   onRotateSession,
+  onSetSessionContext,
 }: TurnPanelProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
+  const draftKey = `${selectedPositionId ?? ""}:${selectedSessionId ?? ""}`;
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [sendingKeys, setSendingKeys] = useState<Record<string, boolean>>({});
+  const sendingRef = useRef(new Set<string>());
+  const input = drafts[draftKey] ?? "";
+  const sending = sendingKeys[draftKey] === true;
+  const setInput = (value: string) => setDrafts((current) => ({ ...current, [draftKey]: value }));
+  const setSending = (value: boolean) => {
+    if (value) sendingRef.current.add(draftKey); else sendingRef.current.delete(draftKey);
+    setSendingKeys((current) => ({ ...current, [draftKey]: value }));
+  };
   const selectedPosition = positions.find((position) => position.id === selectedPositionId) ?? null;
   const runningTurn = selectedPositionId !== null && turns.some(
     (turn) => turn.positionId === selectedPositionId && turn.status === "running",
@@ -197,19 +199,23 @@ export function TurnPanel({
   const sessionMode = sessions !== undefined;
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
   const activeSession = sessions?.find((session) => session.status === "active") ?? null;
+  // Never label an older receipt as the latest call when the latest durable
+  // record has no receipt. In-flight overlays are not persisted call facts.
+  const lastContext = turns.filter((turn) => turn.provisional !== true).at(-1)?.threadContext;
 
   const disabledReason = useMemo(() => {
     if (!workspaceOpen) return t("turn.emptyOpenFirst");
     if (positions.length === 0) return t("turn.noPositions");
     if (!selectedPosition) return t("turn.emptyPick");
+    if (sessionMode && sessionBusy) return t("turn.sessionPreparing");
     if (sessionMode && !selectedSession) return t("turn.emptySession");
     if (sessionMode && selectedSession?.status !== "active") return t("turn.sessionReadOnly");
     if (!engineAvailability[engine].ready) {
       return engineAvailability[engine].reason ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
     }
-    if (busy || sending || sessionBusy) return t("turn.updating");
+    if (busy || employeeBusy || sending || sessionBusy) return t("turn.updating");
     return null;
-  }, [busy, engine, engineAvailability, engineLabel, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
+  }, [busy, employeeBusy, engine, engineAvailability, engineLabel, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -218,18 +224,18 @@ export function TurnPanel({
 
   const dispatchTurn = async (): Promise<void> => {
     const trimmed = input.trim();
-    if (!trimmed || disabledReason || !selectedPosition) return;
+    if (!trimmed || disabledReason || !selectedPosition || sendingRef.current.has(draftKey)) return;
     setSending(true);
     try {
       const created = await onCreateTurn({ positionId: selectedPosition.id, engine, input: trimmed });
-      if (created !== false) setInput("");
+      if (created !== false) setDrafts((current) => current[draftKey] === input ? { ...current, [draftKey]: "" } : current);
     } finally {
       setSending(false);
     }
   };
 
   const retry = async (turn: TurnRecord) => {
-    if (busy || sending || !workspaceOpen || !engineAvailability[turn.engine].ready) return;
+    if (busy || employeeBusy || sendingRef.current.has(draftKey) || !workspaceOpen || !engineAvailability[turn.engine].ready) return;
     setSending(true);
     try {
       await onCreateTurn({
@@ -250,31 +256,41 @@ export function TurnPanel({
           <h2>
             <MessagesSquare aria-hidden="true" size={15} />
             {t("turn.title")}
-            {selectedPosition ? (
-              <span className="owb-turn-panel__subject">· {selectedPosition.id}</span>
-            ) : null}
           </h2>
-        </div>
-        <div className="owb-panel-head__right">
-          <span className="owb-badge owb-badge--ai">
-            <span
-              className={sseConnected ? "owb-led owb-led--running" : "owb-led owb-led--off"}
-              aria-hidden="true"
-            />
-            SSE
-          </span>
         </div>
       </header>
 
       <TurnThread
         turns={turns}
-        retrying={busy || sending}
-        emptyPrompt={disabledReason ?? t("turn.emptyStart")}
+        retrying={busy || employeeBusy || sending}
+        // The thread has one stable empty-state message. Concrete blockers
+        // stay next to the input so the conversation area never oscillates
+        // between "create a session" and "start from a clear task".
+        emptyPrompt={selectedPosition ? t("turn.emptySelected") : t("turn.emptyStart")}
         canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
         decidedApprovalIds={decidedApprovalIds}
       />
+
+      {sessionMode && selectedSession ? (
+        <div className="owb-thread-context">
+          <span>{t("turn.contextLabel")}</span>
+          <Switch size="small" aria-label={t("turn.contextToggle")}
+            checked={selectedSession.threadContextEnabled !== false}
+            disabled={busy || employeeBusy || sending || sessionBusy || selectedSession.status !== "active"}
+            onChange={(enabled) => void onSetSessionContext?.(selectedSession.sessionId, enabled)} />
+          <span>{selectedSession.threadContextEnabled === false ? t("turn.contextOff") : t("turn.contextOn")}</span>
+          {lastContext ? (
+            <details>
+              <summary>{t("turn.contextLast", { count: lastContext.sourceTurnCount, bytes: lastContext.contextBytes })}</summary>
+              <p>{t("turn.contextOmitted", { count: lastContext.omittedTurnCount })}</p>
+              <code>{lastContext.contextDigest}</code>
+              <pre>{lastContext.summary || t("turn.contextEmpty")}</pre>
+            </details>
+          ) : <span>{t(turns.length === 0 ? "turn.contextUnused" : "turn.contextUnrecorded")}</span>}
+        </div>
+      ) : null}
 
       <form className="owb-turn-composer" onSubmit={(event) => void submit(event)}>
         <label htmlFor="owb-turn-input">{t("turn.compose")}</label>
@@ -287,16 +303,17 @@ export function TurnPanel({
             disabled={disabledReason !== null}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
-              // ⌘↵ / Ctrl+↵ 发送（提示条声明了这个快捷键，就必须真的能用）。
+              // Enter sends; Shift+Enter keeps the multiline escape hatch.
+              // Meta/Ctrl+Enter remains supported for keyboard muscle memory.
               //
               // #128 AC-003 / #127 AC-003: while a Chinese IME is composing,
               // pressing Enter commits the candidate — never a message. React
               // exposes `nativeEvent.isComposing`; older WebKit/Firefox
               // fall back to `keyCode === 229` while composing. Guard on
-              // both so ⌘↵ during composition is a no-op, not a send.
+              // both so Enter during composition is a no-op, not a send.
               const native = event.nativeEvent as KeyboardEvent;
               if (native.isComposing || native.keyCode === 229) return;
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+              if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 void dispatchTurn();
               }
@@ -359,22 +376,6 @@ export function TurnPanel({
             </label>
           </div>
 
-          {sessionMode && selectedSession ? (
-            <div className="owb-session-row" aria-label={t("turn.currentSession")}>
-              <div className="owb-session-chip">
-                <span
-                  className={selectedSession.status === "active" ? "owb-led owb-led--running" : "owb-led owb-led--off"}
-                  aria-hidden="true"
-                />
-                <span className="owb-session-chip__kind">session</span>
-                <span className="owb-session-chip__id">
-                  {selectedSession.sessionId.slice(0, 8)} · {selectedSession.status === "active" ? "active" : t("turn.sessionKindReadonly")}
-                  {selectedPosition ? ` · ${selectedPosition.id}` : ""}
-                </span>
-              </div>
-            </div>
-          ) : null}
-
           {sessionMode ? (
             <div className="owb-session-controls" aria-label={t("turn.positionSessions")}>
               <label>
@@ -392,14 +393,13 @@ export function TurnPanel({
                     label: t("turn.sessionOption", {
                       kind: session.status === "active" ? t("turn.sessionKindActive") : t("turn.sessionKindReadonly"),
                       index: sessions.length - index,
-                      shortId: session.sessionId.slice(0, 8),
                     }),
                   }))}
                 />
               </label>
               {activeSession ? (
                 <AntButton
-                  disabled={sessionBusy || busy}
+                  disabled={sessionBusy || busy || employeeBusy || sending}
                   onClick={() => void onRotateSession?.(activeSession.sessionId)}
                   icon={<RefreshCw aria-hidden="true" size={13} />}
                 >
@@ -417,30 +417,6 @@ export function TurnPanel({
             </div>
           ) : null}
 
-          {/* 设计稿 .boundaries：host / mode / budget 三枚实况 chip。全部来自
-              /health 与 /positions/:id 的事实，缺失即显示 —，不猜。 */}
-          <div className="owb-turn-panel__boundaries" aria-label={t("turn.boundaries")}>
-            <span className="owb-boundary">
-              <b>host</b>
-              {engineLabel(engine)} — {engineAvailability[engine].ready
-                ? "available"
-                : engineAvailability[engine].configured
-                  ? "blocked"
-                  : "idle"}
-            </span>
-            <span className="owb-boundary">
-              <b>mode</b>
-              {selectedMode === null
-                ? "—"
-                : selectedMode === "read_only"
-                  ? `read_only · ${t("pos.readOnly")}`
-                  : `approval_required · ${t("pos.approval")}`}
-            </span>
-            <span className="owb-boundary">
-              <b>budget</b>
-              {selectedBudgetLabel ?? "—"}
-            </span>
-          </div>
         </div>
       </details>
     </section>

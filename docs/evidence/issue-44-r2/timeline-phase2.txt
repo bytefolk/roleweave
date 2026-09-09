@@ -1,0 +1,9 @@
+settled
+fill: {"ok":true,"count":7,"values":["R2 拒绝演示员","r2-reject-demo","R2 证据补拍专用岗位：演示闸门一拒绝态（S3 失败/拒绝态素材）","20000","","200000",""]}
+clicked 开始创建
+failure rendered: {
+ "live": "引擎可用",
+ "steps": [],
+ "excerpt": "创建员工\n\nhire_request_rejected\n\n创建被拒绝；hire 契约面未产生任何效果，已填内容保留。\n\n修改后重试\n重试"
+}
+screenshot: drawer-s3-rejected.png

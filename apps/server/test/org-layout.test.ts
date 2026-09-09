@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { OrgApplySuccess, OrgTreeSnapshot, OrgUndoSuccess, OrganizationFile } from "@org-workbench/shared";
+import type { OrgApplySuccess, OrgTreeSnapshot, OrgUndoSuccess, OrganizationFile } from "@roleweave/shared";
 import { FakeDriver, api, assertPosixMode, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 const LAYOUT_FILE = path.join(".digital-employee", "org-layout.v1.json");

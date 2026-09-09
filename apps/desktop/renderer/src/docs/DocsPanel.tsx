@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Alert, Empty, List, Spin, message } from "antd";
 import { Copy, FileCode2, FolderOpen, LoaderCircle } from "lucide-react";
-import { formatDocRefUri } from "@org-workbench/shared/docs";
-import { useT } from "@org-workbench/ui";
-import type { DocsFileEntry, DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
+import { formatDocRefUri } from "@roleweave/shared/docs";
+import { useT } from "@roleweave/ui";
+import type { DocsFileEntry, DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
 import { DocViewer } from "./DocViewer";
 
 /**
@@ -87,11 +87,10 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
     }
   };
 
-  const sizeFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
   const formatSize = (size: number): string => {
-    if (size < 1024) return `${sizeFmt.format(size)} B`;
-    if (size < 1024 * 1024) return `${sizeFmt.format(size / 1024)} KB`;
-    return `${sizeFmt.format(size / (1024 * 1024))} MB`;
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   const fileExtension = (path: string): string => {
@@ -124,75 +123,87 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
               {files.length.toString().padStart(2, "0")} <small>FILES</small>
             </span>
           </header>
-          {listing ? (
-            <div className="owb-docs-panel__loading" role="status">
-              <LoaderCircle aria-hidden="true" size={15} />
-              <span>{t("docs.syncingList")}</span>
-              <Spin aria-label={t("docs.listing")} size="small" />
-            </div>
-          ) : null}
-          {listError !== null ? <Alert className="owb-docs-panel__error" type="error" showIcon message={listError} /> : null}
-          {!listing && listError === null ? (
-            <List
-              className="owb-docs-panel__list"
-              size="small"
-              dataSource={files}
-              locale={{
-                emptyText: (
-                  <div className="owb-docs-panel__empty">
-                    <span className="owb-docs-panel__empty-icon" aria-hidden="true">
-                      <FolderOpen size={18} strokeWidth={1.7} />
-                    </span>
-                    <strong>{t("docs.empty")}</strong>
-                    <span>{t("docs.emptyHint")}</span>
-                  </div>
-                ),
-              }}
-              renderItem={(entry) => (
-                <List.Item
-                  key={entry.path}
-                  className="owb-docs-panel__item"
-                >
-                  <div className="owb-docs-panel__item-main">
-                    <span className="owb-docs-panel__file-icon" aria-hidden="true">
-                      <FileCode2 size={17} strokeWidth={1.8} />
-                    </span>
-                    <button
-                      type="button"
-                      className="owb-docs-panel__file"
-                      aria-label={entry.path}
-                      aria-pressed={selected === entry.path}
-                      onClick={() => openFile(entry.path)}
+          <div className="owb-docs-panel__workspace">
+            <div className="owb-docs-panel__list-pane">
+              {listing ? (
+                <div className="owb-docs-panel__loading" role="status">
+                  <LoaderCircle aria-hidden="true" size={15} />
+                  <span>{t("docs.syncingList")}</span>
+                  <Spin aria-label={t("docs.listing")} size="small" />
+                </div>
+              ) : null}
+              {listError !== null ? <Alert className="owb-docs-panel__error" type="error" showIcon message={listError} /> : null}
+              {!listing && listError === null ? (
+                <List
+                  className="owb-docs-panel__list"
+                  size="small"
+                  dataSource={files}
+                  locale={{
+                    emptyText: (
+                      <div className="owb-docs-panel__empty">
+                        <span className="owb-docs-panel__empty-icon" aria-hidden="true">
+                          <FolderOpen size={18} strokeWidth={1.7} />
+                        </span>
+                        <strong>{t("docs.empty")}</strong>
+                        <span>{t("docs.emptyHint")}</span>
+                      </div>
+                    ),
+                  }}
+                  renderItem={(entry) => (
+                    <List.Item
+                      key={entry.path}
+                      className="owb-docs-panel__item"
                     >
-                      {renderFilePath(entry.path)}
-                    </button>
-                  </div>
-                  <div className="owb-docs-panel__item-meta" aria-hidden="true">
-                    <span className="owb-docs-panel__file-type">{fileExtension(entry.path)}</span>
-                    <span>{formatSize(entry.size)}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="owb-docs-panel__copy-ref"
-                    aria-label={t("docs.copyRefAria", { path: entry.path })}
-                    title={t("docs.copyRefAria", { path: entry.path })}
-                    onClick={() => copyRef(entry)}
-                  >
-                    <Copy aria-hidden="true" size={14} strokeWidth={1.9} />
-                    <span>{t("docs.copyRef")}</span>
-                  </button>
-                </List.Item>
-              )}
-            />
-          ) : null}
-          {reading ? (
-            <div className="owb-docs-panel__reading" role="status">
-              <Spin aria-label={t("docs.reading")} size="small" />
-              <span>{t("docs.openingDoc")}</span>
+                      <div className="owb-docs-panel__item-main">
+                        <span className="owb-docs-panel__file-icon" aria-hidden="true">
+                          <FileCode2 size={17} strokeWidth={1.8} />
+                        </span>
+                        <button
+                          type="button"
+                          className="owb-docs-panel__file"
+                          aria-label={entry.path}
+                          aria-pressed={selected === entry.path}
+                          onClick={() => openFile(entry.path)}
+                        >
+                          {renderFilePath(entry.path)}
+                        </button>
+                      </div>
+                      <div className="owb-docs-panel__item-meta" aria-hidden="true">
+                        <span className="owb-docs-panel__file-type">{fileExtension(entry.path)}</span>
+                        <span>{formatSize(entry.size)}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="owb-docs-panel__copy-ref"
+                        aria-label={t("docs.copyRefAria", { path: entry.path })}
+                        title={t("docs.copyRefAria", { path: entry.path })}
+                        onClick={() => copyRef(entry)}
+                      >
+                        <Copy aria-hidden="true" size={14} strokeWidth={1.9} />
+                        <span>{t("docs.copyRef")}</span>
+                      </button>
+                    </List.Item>
+                  )}
+                />
+              ) : null}
             </div>
-          ) : null}
-          {readError !== null ? <Alert className="owb-docs-panel__error" type="error" showIcon message={readError} /> : null}
-          {doc !== null ? <DocViewer source={doc.content} version={doc.version} title={doc.path} /> : null}
+            <div className="owb-docs-panel__reader-pane" aria-label={t("docs.readerAria")}>
+              {reading ? (
+                <div className="owb-docs-panel__reader-state" role="status">
+                  <Spin aria-label={t("docs.reading")} size="small" />
+                  <span>{t("docs.openingDoc")}</span>
+                </div>
+              ) : null}
+              {readError !== null ? <Alert className="owb-docs-panel__error" type="error" showIcon message={readError} /> : null}
+              {doc !== null ? <DocViewer source={doc.content} version={doc.version} title={doc.path} /> : null}
+              {doc === null && !reading && readError === null ? (
+                <div className="owb-docs-panel__reader-empty">
+                  <FileCode2 aria-hidden="true" size={24} strokeWidth={1.6} />
+                  <strong>{t("docs.readerEmpty")}</strong>
+                </div>
+              ) : null}
+            </div>
+          </div>
         </>
       )}
     </section>

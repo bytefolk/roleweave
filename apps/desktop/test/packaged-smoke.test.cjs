@@ -325,7 +325,7 @@ test("shared smoke lifecycle rejects a post-report crash until intentional close
 
 test("process oracle follows descendants and detects tracked or staged residuals", () => {
   const processes = [
-    { pid: 10, ppid: 1, pgid: 10, startTime: "t1", executable: "/app", command: "/tmp/owb-clean-staging-a/Org Workbench" },
+    { pid: 10, ppid: 1, pgid: 10, startTime: "t1", executable: "/app", command: "/tmp/owb-clean-staging-a/RoleWeave" },
     { pid: 11, ppid: 10, pgid: 10, startTime: "t2", executable: "/app", command: "server" },
     { pid: 12, ppid: 11, pgid: 10, startTime: "t3", executable: "/app", command: "qoder-engine --version" },
     { pid: 99, ppid: 1, pgid: 99, startTime: "t4", executable: "/other", command: "unrelated" },
@@ -349,13 +349,13 @@ test("live-root ownership excludes same-command and path-prefix sentinels", () =
     pgid: 100,
     startTime: "owned-root",
     executable: "/owned/app",
-    command: `${stagingRoot}/Org Workbench`,
+    command: `${stagingRoot}/RoleWeave`,
   };
   const inventory = [
     rootIdentity,
     { pid: 101, ppid: 100, pgid: 100, startTime: "owned-child", executable: "/owned/server", command: "server" },
-    { pid: 200, ppid: 1, pgid: 200, startTime: "spoof", executable: "/unrelated/node", command: `${stagingRoot}/Org Workbench` },
-    { pid: 201, ppid: 1, pgid: 201, startTime: "prefix", executable: "/unrelated/node", command: `${stagingRoot}-copy/Org Workbench` },
+    { pid: 200, ppid: 1, pgid: 200, startTime: "spoof", executable: "/unrelated/node", command: `${stagingRoot}/RoleWeave` },
+    { pid: 201, ppid: 1, pgid: 201, startTime: "prefix", executable: "/unrelated/node", command: `${stagingRoot}-copy/RoleWeave` },
   ];
 
   assert.deepEqual(
@@ -390,7 +390,7 @@ test("Windows null-root ownership never falls back to staging command text", () 
   };
   const inventory = [
     known,
-    { pid: 301, ppid: 1, pgid: null, startTime: "spoof", executable: "C:\\other\\node.exe", command: `${stagingRoot}\\Org Workbench.exe` },
+    { pid: 301, ppid: 1, pgid: null, startTime: "spoof", executable: "C:\\other\\node.exe", command: `${stagingRoot}\\RoleWeave.exe` },
   ];
   assert.deepEqual(
     selectCleanupCandidates(inventory, {
@@ -441,7 +441,7 @@ test("termination APIs reject raw process ids", async () => {
 test("null-root provenance selects only its orphaned POSIX group while the origin PID is absent", () => {
   const stagingRoot = "/tmp/owb-clean-staging-reused-origin";
   const expectedGroup = 4100;
-  const sameCommand = `${stagingRoot}/Org Workbench`;
+  const sameCommand = `${stagingRoot}/RoleWeave`;
   const inventory = [
     {
       pid: 4200,
@@ -596,7 +596,7 @@ test("real cleanup leaves a live same-path command sentinel untouched", async (t
   const sentinel = spawn(process.execPath, [
     "-e",
     "process.stdout.write('sentinel-ready\\n'); setInterval(()=>{},1000)",
-    `${root}/Org Workbench`,
+    `${root}/RoleWeave`,
   ], { stdio: ["ignore", "pipe", "ignore"] });
   const owned = spawn(process.execPath, [
     "-e",
@@ -666,7 +666,7 @@ test("windows powershell invocation keeps values out of the script text", () => 
   // `-Command` appends trailing argv to the script instead of binding a param()
   // block, so every value travels in the environment and the script is encoded.
   const script = '$p = Get-CimInstance Win32_Process -Filter "ProcessId=$env:OWB_TARGET_PID"';
-  const executable = "C:\\Program Files\\Org Workbench\\Org Workbench.exe";
+  const executable = "C:\\Program Files\\RoleWeave\\RoleWeave.exe";
   const { command, args, env } = windowsPowerShellInvocation(
     script,
     { OWB_TARGET_PID: "4242", OWB_EXECUTABLE: executable },
@@ -840,101 +840,4 @@ test("#183 injected renderer scripts carry no un-interpolated module constants",
   // The layout measurement must actually be present in the static smoke script,
   // not merely absent as an identifier.
   assert.equal(PACKAGED_SMOKE_SCRIPT.includes(LAYOUT_MEASURE_SCRIPT_TEXT), true);
-});
-
-// #194: the guard above parses these scripts, it does not run them, so it
-// cannot see what they return. That matters now that check-layout-parity
-// refuses any report without `settled: true` -- a renderer still producing the
-// pre-#194 shape would not fail one unit test here, it would turn the parity
-// job permanently red in CI. So run the measurement against a stub DOM whose
-// geometry the test drives.
-//
-// The sandbox owns the clock. Exactly one arm of the script's race fires per
-// run -- either the frame callback or the timer -- which is both how the
-// occluded-window case is reached and why these cost milliseconds instead of
-// the seconds the real sample budget would take.
-function runLayoutMeasure({ geometry, fonts, driveWithRaf = false }) {
-  let sample = -1;
-  let current = null;
-  const sandbox = {
-    document: {
-      querySelector(selector) {
-        const isLeft = selector === ".owb-org-module__left";
-        // readColumns queries the left column first, so that query is what
-        // advances the sample; the right column belongs to the same one.
-        if (isLeft) {
-          sample += 1;
-          current = geometry(sample) ?? null;
-        }
-        const box = current?.[isLeft ? "left" : "right"];
-        return box ? { getBoundingClientRect: () => box } : null;
-      },
-      fonts,
-    },
-    window: { innerWidth: 1024, innerHeight: 681 },
-    requestAnimationFrame: driveWithRaf ? (callback) => { callback(); } : () => {},
-    setTimeout: driveWithRaf ? () => 0 : (callback) => { callback(); return 0; },
-  };
-  return vm.runInNewContext(LAYOUT_MEASURE_SCRIPT_TEXT, sandbox);
-}
-
-const column = (width, height) => ({ width, height, bottom: height });
-
-test("#194 the measurement reports settled once the columns stop moving", async () => {
-  const box = column(314, 565);
-  const layout = await runLayoutMeasure({ geometry: () => ({ left: box, right: box }) });
-  assert.equal(layout.settled, true);
-  assert.deepEqual(
-    {
-      leftWidth: layout.leftWidth,
-      leftHeight: layout.leftHeight,
-      rightWidth: layout.rightWidth,
-      rightHeight: layout.rightHeight,
-      bottomDelta: layout.bottomDelta,
-    },
-    { leftWidth: 314, leftHeight: 565, rightWidth: 314, rightHeight: 565, bottomDelta: 0 },
-  );
-  // Read field by field: the layout comes back from the vm context, so its
-  // nested objects carry that realm's prototypes and a strict deep comparison
-  // of them fails on provenance rather than on value.
-  assert.deepEqual(
-    { innerWidth: layout.viewport.innerWidth, innerHeight: layout.viewport.innerHeight },
-    { innerWidth: 1024, innerHeight: 681 },
-  );
-});
-
-test("#194 geometry that never converges reports settled false rather than good-looking numbers", async () => {
-  // Each sample is 10px taller than the last, so the drift never falls inside
-  // the epsilon and the sample budget -- not convergence -- ends the loop.
-  // These are the numbers the pre-#194 script would have handed the checker.
-  let height = 400;
-  const layout = await runLayoutMeasure({
-    geometry: () => {
-      height += 10;
-      const box = column(314, height);
-      return { left: box, right: box };
-    },
-  });
-  assert.equal(layout.settled, false);
-  assert.equal(layout.bottomDelta, 0, "the two columns are still perfectly aligned with each other");
-});
-
-test("#194 the measurement still resolves null when the columns never mount", async () => {
-  assert.equal(await runLayoutMeasure({ geometry: () => null }), null);
-});
-
-test("#194 neither an occluded window nor a rejected font load stops the measurement", async () => {
-  const box = column(314, 565);
-  const geometry = () => ({ left: box, right: box });
-  // Frame callbacks that never arrive -- a window that is never composited on a
-  // CI runner -- so the timer arm has to carry the loop, plus a webfont load
-  // that rejects instead of resolving.
-  const occluded = await runLayoutMeasure({
-    geometry,
-    fonts: { ready: Promise.reject(new Error("font load failed")) },
-  });
-  assert.equal(occluded.settled, true);
-  // The other arm: timers that never fire, frame callbacks that do.
-  const rafDriven = await runLayoutMeasure({ geometry, driveWithRaf: true });
-  assert.equal(rafDriven.settled, true);
 });

@@ -3,7 +3,9 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("owb", {
   status: () => ipcRenderer.invoke("owb:status"),
+  stopControlPlane: () => ipcRenderer.invoke("owb:control-plane:stop"),
   openWorkspace: () => ipcRenderer.invoke("owb:workspace:open"),
+  createWorkspace: (request) => ipcRenderer.invoke("owb:workspace:create", request),
   workspace: () => ipcRenderer.invoke("owb:workspace:get"),
   orgTree: () => ipcRenderer.invoke("owb:org:tree"),
   orgApply: (manifest) => ipcRenderer.invoke("owb:org:apply", manifest),
@@ -23,11 +25,12 @@ contextBridge.exposeInMainWorld("owb", {
   assetsRead: (assetId) => ipcRenderer.invoke("owb:assets:read", assetId),
   assetsCreate: (request) => ipcRenderer.invoke("owb:assets:create", request),
   createTurn: (request) => ipcRenderer.invoke("owb:turn:create", request),
-  cancelTurn: (positionId) => ipcRenderer.invoke("owb:turn:cancel", { positionId }),
+  cancelTurn: (request) => ipcRenderer.invoke("owb:turn:cancel", typeof request === "string" ? { positionId: request } : request),
   turnHistory: (positionId) => ipcRenderer.invoke("owb:turn:history", positionId),
   createSession: (request) => ipcRenderer.invoke("owb:session:create", request),
   sessions: (positionId) => ipcRenderer.invoke("owb:session:list", positionId),
   session: (sessionId) => ipcRenderer.invoke("owb:session:get", sessionId),
+  sessionSetContext: (request) => ipcRenderer.invoke("owb:session:context", request),
   rotateSession: (sessionId) => ipcRenderer.invoke("owb:session:rotate", sessionId),
   createSessionTurn: (request) => ipcRenderer.invoke("owb:session:turn:create", request),
   sessionTurnHistory: (sessionId) => ipcRenderer.invoke("owb:session:turn:history", sessionId),

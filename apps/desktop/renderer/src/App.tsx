@@ -1,8 +1,8 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button as AntButton, ConfigProvider, theme } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
-import { OwbI18nProvider, useT, type OwbLocale } from "@org-workbench/ui";
+import { OwbI18nProvider, useT, type OwbLocale } from "@roleweave/ui";
 import {
   AppShell,
   ModuleRail,
@@ -10,8 +10,8 @@ import {
   Skeleton,
   Topbar,
 } from "@fullstack-ai-infra/ui";
-import { OrgTree, PositionCard } from "@org-workbench/ui";
-import type { OrgDropPosition, PositionCardData } from "@org-workbench/ui";
+import { OrgTree, PositionCard } from "@roleweave/ui";
+import type { OrgDropPosition, PositionCardData } from "@roleweave/ui";
 import type {
   ChangeManifest,
   GroupTimeline,
@@ -20,14 +20,14 @@ import type {
   OrgBackupsResponse,
   OrgTreeNodeV1,
   OrgTreeSnapshot,
-  PositionMode,
   ReportsResponse,
   TurnHistory,
   WorkbenchSession,
   WorkbenchSessionList,
+  WorkspaceCreateResponse,
   WorkspaceInfoResponse,
-} from "@org-workbench/shared";
-import { Cog, FileChartColumn, FolderTree, HardDrive, Network, Plus, ShieldAlert, UsersRound } from "lucide-react";
+} from "@roleweave/shared";
+import { BrainCircuit, Check, ChevronDown, Cog, FileChartColumn, FolderOpen, FolderPlus, Network, Plus, ShieldAlert, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode } from "./theme-toggle";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
@@ -40,8 +40,6 @@ import {
   approvalResumeInput,
   beginGroupRun,
   beginPendingTurn,
-  cancelPendingTurn,
-  clearPersonalTurnState,
   reconcileGroupTimeline,
   resetStreamSeq,
   settlePendingTurn,
@@ -58,12 +56,12 @@ import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
 import { GroupsPanel } from "./groups/GroupsPanel";
-import { DocsModule } from "./docs/DocsModule";
+import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
 import { decodeEscapedUnicode } from "./display-text";
-import { DriveModule } from "./drive/DriveModule";
 import { SettingsModule } from "./settings/SettingsModule";
+import { ProjectCreateDrawer } from "./project/ProjectCreateDrawer";
 
 interface PositionCardState {
   loading: boolean;
@@ -73,8 +71,8 @@ interface PositionCardState {
 
 /**
  * D1 renderer: AppShell four-zone layout (spec §1) — ModuleRail (org active,
- * drive/docs modules), Topbar (breadcrumbs + engine status + budget
- * summary), Sidebar (--ui-sidebar-wide 288px, OrgTree), main (PositionCard).
+ * memory module), Topbar (workspace location + engine status), Sidebar
+ * (--ui-sidebar-wide 288px, OrgTree), main (PositionCard).
  * Data flows exclusively through the whitelisted preload bridge + SSE
  * (org.updated drives refresh; the UI never polls).
  */
@@ -105,8 +103,9 @@ function AppInner({
   onChangeLocale: (next: OwbLocale) => void;
 }) {
   const [activeModule, setActiveModule] = useState<
-    "org" | "groups" | "reports" | "approvals" | "drive" | "docs" | "settings"
+    "org" | "groups" | "reports" | "approvals" | "docs" | "settings"
   >("org");
+  const [memorySource, setMemorySource] = useState<MemorySource>("docs");
   /**
    * DATA GAP (TODO, v0): v0 has no dedicated `/approvals` stream. The P0
    * queue receives an empty items array here; App will later populate this
@@ -128,20 +127,31 @@ function AppInner({
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
   const [positionColors, setPositionColors] = useState<Record<string, string>>({});
-  /** P0 组织图：mode / title 展示面按岗位 id（来自 refresh 已在做的
-   * /positions/:id 读取，与侧栏树 displayNames 同源；不新增 IPC 调用）。 */
-  const [positionModes, setPositionModes] = useState<Record<string, PositionMode>>({});
-  const [positionTitles, setPositionTitles] = useState<Record<string, string>>({});
   const [turnEngine, setTurnEngine] = useState<TurnEngine>("qoder");
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
-  const [turnBusy, setTurnBusy] = useState(false);
-  const [turnCancelling, setTurnCancelling] = useState(false);
+  const [busyPositions, setBusyPositions] = useState<Record<string, boolean>>({});
+  // Keep execution ownership across navigation: the service does not stop a
+  // task when the operator opens another workspace.
+  const workspaceStreams = useRef(new Map<string, TurnStreamState>());
+  const workspaceBusy = useRef(new Map<string, Record<string, boolean>>());
+  const workspaceCancelling = useRef(new Map<string, Record<string, boolean>>());
+  const cancelOperations = useRef(new Map<string, symbol>());
+  const inFlightPositions = useRef(new Set<string>());
+  const [cancellingPositions, setCancellingPositions] = useState<Record<string, boolean>>({});
+  const turnBusy = selectedId !== null && busyPositions[selectedId] === true;
+  const turnCancelling = selectedId !== null && cancellingPositions[selectedId] === true;
+  const selectedSessions = useRef<Record<string, string>>({});
+  const selectionVersion = useRef(0);
+  const historyRequest = useRef(0);
+  const sessionOperations = useRef(new Map<string, symbol>());
+  const workspacePathRef = useRef(workspaceInfo?.path);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<WorkbenchSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const selectedSessionIdRef = useRef<string | null>(null);
-  const [sessionBusy, setSessionBusy] = useState(false);
+  const [sessionBusyPositions, setSessionBusyPositions] = useState<Record<string, boolean>>({});
+  const sessionBusy = selectedId !== null && sessionBusyPositions[selectedId] === true;
   const [sseState, setSseState] = useState<"connecting" | "connected">("connecting");
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [backups, setBackups] = useState<OrgBackupEntry[]>([]);
@@ -156,13 +166,52 @@ function AppInner({
   const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
+  const [projectCreateOpen, setProjectCreateOpen] = useState(false);
   /** Org-tree group entry (#53): prefilled draft members handed to the
    * GroupsPanel create panel; nonce re-fires repeated entries. */
-  const [groupDraftSeed, setGroupDraftSeed] = useState<{ members: string[]; nonce: number } | null>(null);
+  const groupWorkspaceScope = useMemo(() => Symbol("group-workspace"), [workspaceInfo?.path, workspaceInfo?.open]);
+  const latestGroupWorkspaceScope = useRef(groupWorkspaceScope);
+  latestGroupWorkspaceScope.current = groupWorkspaceScope;
+  const [groupDraftSeed, setGroupDraftSeed] = useState<{ members: string[]; nonce: number; scope: symbol } | null>(null);
   /** 亮/暗跟随 <html data-theme>，antd cssinjs 与 --ui-* skin 同步切换。 */
   const themeMode = useThemeMode();
   /** #146：界面文案唯一入口；数据层文案不经过这里。 */
   const t = useT();
+
+  const updateWorkspaceStream = useCallback((path: string, update: (state: TurnStreamState) => TurnStreamState) => {
+    const next = update(workspaceStreams.current.get(path) ?? EMPTY_TURN_STREAM);
+    workspaceStreams.current.set(path, next);
+    if (workspacePathRef.current === path) setTurnStream(next);
+  }, []);
+
+  const updateWorkspaceBusy = useCallback((path: string, positionId: string, busy: boolean) => {
+    const next = { ...workspaceBusy.current.get(path), [positionId]: busy };
+    workspaceBusy.current.set(path, next);
+    if (workspacePathRef.current === path) setBusyPositions(next);
+  }, []);
+
+  const updateWorkspaceCancelling = useCallback((path: string, positionId: string, cancelling: boolean) => {
+    const next = { ...workspaceCancelling.current.get(path), [positionId]: cancelling };
+    workspaceCancelling.current.set(path, next);
+    if (workspacePathRef.current === path) setCancellingPositions(next);
+  }, []);
+
+  useEffect(() => {
+    if (workspacePathRef.current === workspaceInfo?.path) return;
+    workspacePathRef.current = workspaceInfo?.path;
+    selectionVersion.current += 1;
+    historyRequest.current += 1;
+    selectedSessions.current = {};
+    sessionOperations.current.clear();
+    setBusyPositions(workspaceBusy.current.get(workspaceInfo?.path ?? "") ?? {});
+    setCancellingPositions(workspaceCancelling.current.get(workspaceInfo?.path ?? "") ?? {});
+    setSessionBusyPositions({});
+    setTurnStream(workspaceStreams.current.get(workspaceInfo?.path ?? "") ?? EMPTY_TURN_STREAM);
+    setTurns([]);
+    setSessions([]);
+    selectedSessionIdRef.current = null;
+    setSelectedSessionId(null);
+  }, [workspaceInfo?.path]);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -220,43 +269,36 @@ function AppInner({
         setSnapshot(nextSnapshot);
         const positionIds = flattenPositionIds(nextSnapshot.tree);
         setSelectedId((current) => current && positionIds.includes(current) ? current : null);
-        const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; mode?: PositionMode; title?: string }]> => {
+        const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string }]> => {
           const response = await window.owb.position(id);
           const body = response.body as { position?: PositionCardData };
           const position = response.status === 200 && body.position
             ? normalizePositionForDisplay(body.position)
             : undefined;
           const color = position?.metadata?.color;
-          const title = position?.metadata?.title;
           return [id, {
-            name: position?.name ?? id,
+            name: position?.name ?? t("org.unknownPosition"),
             ...(typeof color === "string" && color.length > 0 ? { color } : {}),
-            ...(position ? { mode: position.mode } : {}),
-            ...(typeof title === "string" && title.length > 0 ? { title } : {}),
+            // The org chart only needs a human name and optional color. Mode,
+            // budget and permissions belong to the selected position record.
           }];
         }));
         const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
         positionNamesRef.current = names;
         setPositionNames(names);
         setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
-        setPositionModes(Object.fromEntries(cardEntries.filter(([, entry]) => entry.mode !== undefined).map(([id, entry]) => [id, entry.mode as PositionMode])));
-        setPositionTitles(Object.fromEntries(cardEntries.filter(([, entry]) => entry.title !== undefined).map(([id, entry]) => [id, entry.title as string])));
         await Promise.all([loadBackups(), loadReports()]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
         setPositionNames({});
         setPositionColors({});
-        setPositionModes({});
-        setPositionTitles({});
       }
     } else {
       setSnapshot(null);
       positionNamesRef.current = {};
       setPositionNames({});
       setPositionColors({});
-      setPositionModes({});
-      setPositionTitles({});
       setSelectedId(null);
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
@@ -271,12 +313,13 @@ function AppInner({
       setReportsError(null);
     }
     setTreeLoading(false);
-  }, [loadBackups, loadReports]);
+  }, [loadBackups, loadReports, t]);
 
   const loadPosition = useCallback(async (id: string) => {
+    const version = selectionVersion.current;
     setCard({ loading: true, data: null, notFound: false });
     const res = await window.owb.position(id);
-    if (selectedIdRef.current !== id) return;
+    if (version !== selectionVersion.current || selectedIdRef.current !== id) return;
     const body = res.body as { position?: PositionCardData; code?: string };
     if (res.status === 404 || body?.code === "position_missing") {
       setCard({ loading: false, data: null, notFound: true });
@@ -289,25 +332,26 @@ function AppInner({
     });
   }, []);
 
-  const loadTurnHistory = useCallback(async (id: string) => {
-    const sessionId = selectedSessionIdRef.current;
+  const loadTurnHistory = useCallback(async (id: string, sessionId = selectedSessionIdRef.current) => {
+    if (selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
+    const requestVersion = ++historyRequest.current;
     if (sessionId === null) {
       setTurns([]);
       return true;
     }
     try {
       const res = await window.owb.sessionTurnHistory(sessionId);
-      if (selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
+      if (requestVersion !== historyRequest.current || selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
       if (res.status !== 200) {
         setTurnError(apiErrorMessage(res.body, t("turn.historyFail")));
         return false;
       }
       const history = res.body as TurnHistory;
-      setTurns(adaptTurnHistory(history, positionNamesRef.current[id] ?? id, t("turn.unrenderableOutput")));
+      setTurns(adaptTurnHistory(history, positionNamesRef.current[id] ?? t("org.unknownPosition"), t("turn.unrenderableOutput")));
       setTurnError(null);
       return true;
     } catch {
-      if (selectedIdRef.current === id && selectedSessionIdRef.current === sessionId) {
+      if (requestVersion === historyRequest.current && selectedIdRef.current === id && selectedSessionIdRef.current === sessionId) {
         setTurnError(t("turn.historyFailOffline"));
       }
       return false;
@@ -315,9 +359,10 @@ function AppInner({
   }, [t]);
 
   const loadSessions = useCallback(async (id: string) => {
+    const version = selectionVersion.current;
     try {
       const res = await window.owb.sessions(id);
-      if (selectedIdRef.current !== id) return false;
+      if (version !== selectionVersion.current || selectedIdRef.current !== id) return false;
       if (res.status !== 200) {
         setSessions([]);
         setSelectedSessionId(null);
@@ -327,19 +372,50 @@ function AppInner({
       }
       const list = res.body as WorkbenchSessionList;
       setSessions(list.sessions);
-      const current = selectedSessionIdRef.current;
+      const current = selectedSessionIdRef.current ?? selectedSessions.current[id];
       const next = current && list.sessions.some((session) => session.sessionId === current)
         ? current
         : list.activeSessionId;
       selectedSessionIdRef.current = next;
+      if (next) selectedSessions.current[id] = next;
       setSelectedSessionId(next);
       setTurnError(null);
       return true;
     } catch {
-      if (selectedIdRef.current === id) setTurnError(t("turn.sessionsFailOffline"));
+      if (version === selectionVersion.current && selectedIdRef.current === id) setTurnError(t("turn.sessionsFailOffline"));
       return false;
     }
   }, [t]);
+
+  /** #248 R2 ② 点人即聊：挂载该岗位的 active 会话，没有就自动创建，输入立即可用。
+   * This is intentionally the single session-loading path for every position
+   * selector. Keeping it in the selection effect avoids a race between the
+   * org tree and the explicit @ selector. */
+  const ensureActiveSession = useCallback(async (positionId: string) => {
+    const version = selectionVersion.current;
+    const operation = Symbol();
+    sessionOperations.current.set(positionId, operation);
+    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
+    setTurnError(null);
+    try {
+      const ok = await loadSessions(positionId);
+      if (ok && selectedSessionIdRef.current === null) {
+        const res = await window.owb.createSession({ positionId });
+        if (selectionVersion.current !== version || selectedIdRef.current !== positionId) return;
+        if (res.status === 201) {
+          const session = res.body as WorkbenchSession;
+          selectedSessions.current[positionId] = session.sessionId;
+          selectedSessionIdRef.current = session.sessionId;
+          setSelectedSessionId(session.sessionId);
+          await loadSessions(positionId);
+        }
+      }
+    } catch {
+      // 会话自动挂载失败不阻断：操作员仍可在「会话设置」里手动新建。
+    } finally {
+      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
+    }
+  }, [loadSessions]);
 
   useEffect(() => {
     if (workspaceInfo?.open !== true || selectedId === null) {
@@ -354,8 +430,8 @@ function AppInner({
     setTurns([]);
     setTurnError(null);
     void loadPosition(selectedId);
-    void loadSessions(selectedId);
-  }, [loadPosition, loadSessions, selectedId, workspaceInfo?.open, workspaceInfo?.path]);
+    void ensureActiveSession(selectedId);
+  }, [ensureActiveSession, loadPosition, selectedId, workspaceInfo?.open, workspaceInfo?.path]);
 
   useEffect(() => {
     if (workspaceInfo?.open === true && selectedId !== null) void loadTurnHistory(selectedId);
@@ -371,7 +447,12 @@ function AppInner({
         return;
       }
       if (typeof envelope?.type === "string" && envelope.type.startsWith("turn.")) {
-        setTurnStream((current) => applyTurnEvent(current, envelope as TurnStreamEnvelope));
+        const payload = (event as { payload?: { workspacePath?: unknown } }).payload;
+        // Legacy unscoped events are safe only while a single owner is known.
+        // The current server always attributes events to the original owner.
+        const owner = typeof payload?.workspacePath === "string" ? payload.workspacePath :
+          workspaceStreams.current.size <= 1 ? workspacePathRef.current : undefined;
+        if (owner !== undefined) updateWorkspaceStream(owner, (current) => applyTurnEvent(current, envelope as TurnStreamEnvelope));
       }
       if (["turn.completed", "turn.failed", "turn.indeterminate"].includes(envelope?.type ?? "")) {
         void loadReports();
@@ -389,7 +470,9 @@ function AppInner({
       setSseState(state);
       // A reconnect restarts the server-side seq space; drop the replay guard
       // so new events are not suppressed by a stale high-water mark.
-      if (state === "connecting") setTurnStream((current) => resetStreamSeq(current));
+      if (state === "connecting") {
+        for (const path of workspaceStreams.current.keys()) updateWorkspaceStream(path, resetStreamSeq);
+      }
     };
     const offSse = window.owb.onSseStatus(applySseStatus);
     void window.owb.sseStatus().then(applySseStatus);
@@ -402,9 +485,13 @@ function AppInner({
       offSse();
       offFallback();
     };
-  }, [loadReports, loadTurnHistory, refresh]);
+  }, [loadReports, loadTurnHistory, refresh, updateWorkspaceStream]);
 
   const selectPosition = useCallback((id: string) => {
+    if (selectedIdRef.current === id) return;
+    selectionVersion.current += 1;
+    historyRequest.current += 1;
+    setSessionBusyPositions((current) => ({ ...current, [id]: true }));
     selectedIdRef.current = id;
     selectedSessionIdRef.current = null;
     setSelectedSessionId(null);
@@ -414,84 +501,71 @@ function AppInner({
   }, []);
 
   const selectSession = useCallback((sessionId: string) => {
+    historyRequest.current += 1;
+    if (selectedIdRef.current) selectedSessions.current[selectedIdRef.current] = sessionId;
     selectedSessionIdRef.current = sessionId;
     setSelectedSessionId(sessionId);
     setTurns([]);
-    setTurnStream((current) => clearPersonalTurnState(current));
     setTurnError(null);
   }, []);
 
   const createSession = useCallback(async () => {
     const positionId = selectedIdRef.current;
     if (positionId === null) return;
-    setSessionBusy(true);
+    const version = selectionVersion.current;
+    const operation = Symbol();
+    sessionOperations.current.set(positionId, operation);
+    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
     setTurnError(null);
     try {
       const res = await window.owb.createSession({ positionId });
+      if (selectionVersion.current !== version || selectedIdRef.current !== positionId) return;
       if (res.status !== 201) {
         setTurnError(apiErrorMessage(res.body, t("turn.createSessionFail")));
         return;
       }
       const session = res.body as WorkbenchSession;
+      selectedSessions.current[positionId] = session.sessionId;
       selectedSessionIdRef.current = session.sessionId;
       setSelectedSessionId(session.sessionId);
       await loadSessions(positionId);
     } catch {
-      setTurnError(t("turn.createSessionFailOffline"));
+      if (selectionVersion.current === version) setTurnError(t("turn.createSessionFailOffline"));
     } finally {
-      setSessionBusy(false);
+      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
     }
   }, [loadSessions, t]);
-
-  /** #248 R2 ② 点人即聊：挂载该岗位的 active 会话，没有就自动创建，输入立即可用。 */
-  const ensureActiveSession = useCallback(async (positionId: string) => {
-    setSessionBusy(true);
-    setTurnError(null);
-    try {
-      const ok = await loadSessions(positionId);
-      if (ok && selectedSessionIdRef.current === null) {
-        const res = await window.owb.createSession({ positionId });
-        if (res.status === 201) {
-          const session = res.body as WorkbenchSession;
-          selectedSessionIdRef.current = session.sessionId;
-          setSelectedSessionId(session.sessionId);
-          await loadSessions(positionId);
-        }
-      }
-    } catch {
-      // 会话自动挂载失败不阻断：操作员仍可在「会话设置」里手动新建。
-    } finally {
-      setSessionBusy(false);
-    }
-  }, [loadSessions]);
 
   /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
   const openConversation = useCallback((positionId: string) => {
     selectPosition(positionId);
-    void ensureActiveSession(positionId);
-  }, [selectPosition, ensureActiveSession]);
+  }, [selectPosition]);
 
   const rotateSession = useCallback(async (sessionId: string) => {
     const positionId = selectedIdRef.current;
     if (positionId === null) return;
-    setSessionBusy(true);
+    const version = selectionVersion.current;
+    const operation = Symbol();
+    sessionOperations.current.set(positionId, operation);
+    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
     setTurnError(null);
     try {
       const res = await window.owb.rotateSession(sessionId);
+      if (selectionVersion.current !== version || selectedIdRef.current !== positionId) return;
       if (res.status !== 200 && res.status !== 201) {
         setTurnError(apiErrorMessage(res.body, t("turn.rotateFail")));
         return;
       }
       const session = res.body as WorkbenchSession;
+      selectedSessions.current[positionId] = session.sessionId;
       selectedSessionIdRef.current = session.sessionId;
       setSelectedSessionId(session.sessionId);
       setTurns([]);
-      setTurnStream((current) => clearPersonalTurnState(current));
       await loadSessions(positionId);
     } catch {
-      setTurnError(t("turn.rotateFailOffline"));
+      if (selectionVersion.current === version) setTurnError(t("turn.rotateFailOffline"));
     } finally {
-      setSessionBusy(false);
+      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
     }
   }, [loadSessions, t]);
 
@@ -501,11 +575,18 @@ function AppInner({
       setTurnError(t("turn.needSession"));
       return false;
     }
-    setTurnBusy(true);
+    const workspacePath = workspacePathRef.current;
+    if (workspacePath === undefined) return false;
+    const requestKey = JSON.stringify([workspacePath, request.positionId]);
+    if (selectedIdRef.current !== request.positionId || inFlightPositions.current.has(requestKey)) return false;
+    inFlightPositions.current.add(requestKey);
+    updateWorkspaceBusy(workspacePath, request.positionId, true);
+    const isSelected = () => workspacePathRef.current === workspacePath && selectedIdRef.current === request.positionId && selectedSessionIdRef.current === sessionId;
     setTurnError(null);
-    setTurnStream((current) =>
+    updateWorkspaceStream(workspacePath, (current) =>
       beginPendingTurn(current, {
         positionId: request.positionId,
+        sessionId,
         engine: request.engine,
         input: request.input,
       }),
@@ -521,35 +602,59 @@ function AppInner({
       });
       if (res.status !== 200) {
         const message = apiErrorMessage(res.body, t("turn.createFail"));
-        setTurnError(message);
-        setTurnStream((current) => cancelPendingTurn(current));
+        if (isSelected()) setTurnError(message);
+        updateWorkspaceStream(workspacePath, (current) => settlePendingTurn(current, { positionId: request.positionId, sessionId, runId: null }));
         return false;
       }
-      if (selectedIdRef.current === request.positionId) {
+      if (isSelected()) {
+        historyRequest.current += 1;
         const returned = adaptTurnRecord(
           res.body,
-          positionNamesRef.current[request.positionId] ?? request.positionId,
+          positionNamesRef.current[request.positionId] ?? t("org.unknownPosition"),
           t("turn.unrenderableOutput"),
         );
         setTurns((current) => replaceTurn(current, returned));
       }
-      const body = res.body as { runId?: unknown };
-      setTurnStream((current) =>
+      const body = res.body as { runId?: unknown; turnId?: unknown };
+      updateWorkspaceStream(workspacePath, (current) =>
         settlePendingTurn(current, {
           runId: typeof body.runId === "string" ? body.runId : null,
+          ...(typeof body.turnId === "string" ? { turnId: body.turnId } : {}),
           positionId: request.positionId,
+          sessionId,
         }),
       );
-      await loadTurnHistory(request.positionId);
+      if (isSelected()) await loadTurnHistory(request.positionId, sessionId);
       return true;
     } catch {
-      setTurnStream((current) => cancelPendingTurn(current));
-      setTurnError(t("turn.createFailOffline"));
+      updateWorkspaceStream(workspacePath, (current) => settlePendingTurn(current, { positionId: request.positionId, sessionId, runId: null }));
+      if (isSelected()) setTurnError(t("turn.createFailOffline"));
       return false;
     } finally {
-      setTurnBusy(false);
+      inFlightPositions.current.delete(requestKey);
+      updateWorkspaceBusy(workspacePath, request.positionId, false);
     }
-  }, [loadTurnHistory, t]);
+  }, [loadTurnHistory, t, updateWorkspaceBusy, updateWorkspaceStream]);
+
+  const setSessionContext = useCallback(async (sessionId: string, enabled: boolean) => {
+    const positionId = selectedIdRef.current;
+    if (positionId === null) return;
+    const version = selectionVersion.current;
+    const operation = Symbol();
+    sessionOperations.current.set(positionId, operation);
+    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
+    try {
+      const res = await window.owb.sessionSetContext({ sessionId, enabled });
+      if (version !== selectionVersion.current || selectedSessionIdRef.current !== sessionId) return;
+      if (res.status !== 200) { setTurnError(apiErrorMessage(res.body, t("turn.contextUpdateFail"))); return; }
+      setSessions((current) => current.map((session) => session.sessionId === sessionId ? res.body as WorkbenchSession : session));
+      setTurnError(null);
+    } catch {
+      if (version === selectionVersion.current) setTurnError(t("turn.contextUpdateFail"));
+    } finally {
+      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
+    }
+  }, [t]);
 
   /** Group spawn (#52): the 202 spawn list carries pre-assigned turnIds; seed
    * one live buffer per mentioned member so SSE deltas aggregate per member. */
@@ -561,7 +666,10 @@ function AppInner({
       input: string,
       engine: TurnEngine,
     ) => {
-      setTurnStream((current) =>
+      if (latestGroupWorkspaceScope.current !== groupWorkspaceScope) return;
+      const path = workspacePathRef.current;
+      if (path === undefined) return;
+      updateWorkspaceStream(path, (current) => latestGroupWorkspaceScope.current !== groupWorkspaceScope ? current :
         spawns.reduce(
           (state, spawn) =>
             beginGroupRun(state, {
@@ -576,30 +684,43 @@ function AppInner({
         ),
       );
     },
-    [],
+    [groupWorkspaceScope, updateWorkspaceStream],
   );
 
   const reconcileGroup = useCallback((timeline: GroupTimeline) => {
-    setTurnStream((current) => reconcileGroupTimeline(current, timeline));
-  }, []);
+    if (latestGroupWorkspaceScope.current !== groupWorkspaceScope) return;
+    const path = workspacePathRef.current;
+    if (path !== undefined) updateWorkspaceStream(path, (current) => latestGroupWorkspaceScope.current === groupWorkspaceScope ? reconcileGroupTimeline(current, timeline) : current);
+  }, [groupWorkspaceScope, updateWorkspaceStream]);
 
   /** Operator cancel (issue #25 Slice A): the control plane settles the turn
    * as indeterminate/turn_cancelled; the in-flight POST readback and the
    * history reload remain the only authorities for the final record. */
   const cancelTurn = useCallback(async (positionId: string) => {
-    setTurnCancelling(true);
+    const workspacePath = workspacePathRef.current;
+    if (workspacePath === undefined) return;
+    const stream = workspaceStreams.current.get(workspacePath);
+    const pending = stream?.pending[positionId];
+    const running = Object.values(stream?.runs ?? {}).find((run) => run.positionId === positionId && run.sessionId === selectedSessionIdRef.current && run.groupRef === undefined);
+    const turnId = pending?.turnId ?? running?.turnId;
+    const key = JSON.stringify([workspacePath, positionId]);
+    const operation = Symbol();
+    cancelOperations.current.set(key, operation);
+    updateWorkspaceCancelling(workspacePath, positionId, true);
+    const isSelected = () => workspacePathRef.current === workspacePath && selectedIdRef.current === positionId;
     setTurnError(null);
     try {
-      const res = await window.owb.cancelTurn(positionId);
-      if (res.status !== 200) {
-        setTurnError(apiErrorMessage(res.body, t("turn.cancelRejected")));
-      }
+      const res = await window.owb.cancelTurn({ positionId, workspacePath, ...(turnId ? { turnId } : {}) });
+      if (res.status !== 200 && isSelected()) setTurnError(apiErrorMessage(res.body, t("turn.cancelRejected")));
     } catch {
-      setTurnError(t("turn.cancelFailOffline"));
+      if (isSelected()) setTurnError(t("turn.cancelFailOffline"));
     } finally {
-      setTurnCancelling(false);
+      if (cancelOperations.current.get(key) === operation) {
+        cancelOperations.current.delete(key);
+        updateWorkspaceCancelling(workspacePath, positionId, false);
+      }
     }
-  }, [t]);
+  }, [t, updateWorkspaceCancelling]);
 
   /** Operator verdict (issue #25 Slice B): the verdict is a new resume turn
    * whose sealed envelope carries pendingApproval; granted defaults scope to
@@ -635,6 +756,18 @@ function AppInner({
     await refresh();
   }, [refresh]);
 
+  const onProjectCreated = useCallback(async (created: WorkspaceCreateResponse) => {
+    setActiveModule("org");
+    await refresh();
+    // A new project starts with the platform-owned root owner selected, so
+    // the next click on “创建员工” already has a concrete parent.
+    if (created.owner) {
+      selectedIdRef.current = created.owner;
+      setSelectedId(created.owner);
+    }
+    setOrgFeedback({ tone: "info", text: t("project.created", { name: created.business ?? "" }) });
+  }, [refresh, t]);
+
   const applyOrg = useCallback(async (manifest: ChangeManifest, successMessage: string) => {
     setOrgBusy(true);
     setOrgFeedback(null);
@@ -663,7 +796,7 @@ function AppInner({
     }
     const source = findNodeById(snapshot.tree, id);
     if (!source) {
-      setOrgFeedback({ tone: "warn", text: t("org.stalePosition", { id }) });
+      setOrgFeedback({ tone: "warn", text: t("org.stalePosition") });
       return false;
     }
     if (source.reportTo === reportTo) {
@@ -674,8 +807,14 @@ function AppInner({
       setOrgFeedback({ tone: "warn", text: t("org.cycleDenied") });
       return false;
     }
-    return applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "move", id, reportTo }] }, t("org.movedTo", { id, target: reportTo ?? t("org.enterpriseRoot") }));
-  }, [applyOrg, snapshot, t]);
+    return applyOrg(
+      { schemaVersion: "change-manifest.v1", changes: [{ op: "move", id, reportTo }] },
+      t("org.movedTo", {
+        name: positionNames[id] ?? t("org.unknownPosition"),
+        target: reportTo ? positionNames[reportTo] ?? t("org.unknownPosition") : t("org.enterpriseRoot"),
+      }),
+    );
+  }, [applyOrg, positionNames, snapshot, t]);
 
   /** #33: hire is the only creation channel; success linkage = refresh + select the new node. */
   const hiredPosition = useCallback(async (positionId: string, name: string) => {
@@ -685,7 +824,7 @@ function AppInner({
   }, [refresh, t]);
 
   const dismissPosition = useCallback(async (id: string) =>
-    applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, t("org.dismissed", { id })), [applyOrg, t]);
+    applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, t("org.dismissed")), [applyOrg, t]);
 
   /** Same-level insertion from an insertion-line drop or ⌘↑/⌘↓ (#32): the
    * reorder op carries the final sibling order; a cross-parent insertion is
@@ -694,7 +833,7 @@ function AppInner({
     if (!snapshot) return false;
     const source = findNodeById(snapshot.tree, drop.id);
     if (!source) {
-      setOrgFeedback({ tone: "warn", text: t("org.stalePosition", { id: drop.id }) });
+      setOrgFeedback({ tone: "warn", text: t("org.stalePosition") });
       return false;
     }
     if (source.reportTo === drop.parentId) {
@@ -707,7 +846,7 @@ function AppInner({
       }
       return applyOrg(
         { schemaVersion: "change-manifest.v1", changes: [{ op: "reorder", parentId: drop.parentId, order: drop.order }] },
-        t("org.reordered", { id: drop.id }),
+        t("org.reordered", { name: positionNames[drop.id] ?? t("org.unknownPosition") }),
       );
     }
     return applyOrg(
@@ -718,9 +857,12 @@ function AppInner({
           { op: "reorder", parentId: drop.parentId, order: drop.order },
         ],
       },
-      t("org.movedTo", { id: drop.id, target: drop.parentId ?? t("org.enterpriseRoot") }),
+      t("org.movedTo", {
+        name: positionNames[drop.id] ?? t("org.unknownPosition"),
+        target: drop.parentId ? positionNames[drop.parentId] ?? t("org.unknownPosition") : t("org.enterpriseRoot"),
+      }),
     );
-  }, [applyOrg, snapshot, t]);
+  }, [applyOrg, positionNames, snapshot, t]);
 
   /** Single-step undo of the last drag adjustment (#32 AC-005). Structural
    * add/delete restores stay with BackupTray; 404 means nothing is undoable. */
@@ -757,8 +899,8 @@ function AppInner({
         setOrgFeedback({ tone: "warn", text: apiErrorMessage(response.body, t("org.restoreRejected")) });
         return false;
       }
-      const body = response.body as { positionId: string; restored: boolean };
-      setOrgFeedback({ tone: "info", text: body.restored ? t("org.restored", { id: body.positionId }) : t("org.alreadyRestored", { id: body.positionId }) });
+      const body = response.body as { restored: boolean };
+      setOrgFeedback({ tone: "info", text: body.restored ? t("org.restored") : t("org.alreadyRestored") });
       await refresh();
       return true;
     } catch {
@@ -775,8 +917,13 @@ function AppInner({
   const selectedPosition = card.data;
   const positions = useMemo<PositionMentionOption[]>(() => {
     if (!snapshot) return [];
-    return flattenPositionIds(snapshot.tree).map((id) => ({ id, name: positionNames[id] ?? id }));
-  }, [positionNames, snapshot]);
+    return flattenPositionIds(snapshot.tree).map((id) => ({ id, name: positionNames[id] ?? t("org.unknownPosition") }));
+  }, [positionNames, snapshot, t]);
+  const hireConversationHostId = treeHireParent ?? snapshot?.owner ?? positions[0]?.id ?? null;
+  const hireBudgetAllocatedTokens = useMemo(
+    () => reports?.budgets.reduce((total, budget) => total + (budget.declared.perDay.tokens ?? 0), 0) ?? 0,
+    [reports],
+  );
   const selectedNode = selectedId && snapshot ? findNodeById(snapshot.tree, selectedId) : null;
   const selectedBudgetReport = selectedId ? reports?.budgets.find((budget) => budget.positionId === selectedId) : null;
   const selectedBudgetRatio = selectedBudgetReport?.latestTurn && selectedBudgetReport.declared.perTask.tokens
@@ -787,26 +934,13 @@ function AppInner({
    * (#73 signature move ②). Observed from the SSE run stream only; a position
    * with no live run is never shown as running. */
   const runningPositionIds = useMemo(() => {
-    const ids = new Set<string>();
+    const ids = new Set(Object.keys(busyPositions).filter((id) => busyPositions[id]));
     for (const run of Object.values(turnStream.runs)) {
       if (run.positionId) ids.add(run.positionId);
     }
     return ids;
-  }, [turnStream.runs]);
+  }, [busyPositions, turnStream.runs]);
 
-  /** Per-position per-task consumption ratios for the tree's micro budget
-   * bars. Only positions with a real latest-turn fact get a ratio; the rest
-   * stay in declaration phase rather than rendering a fabricated 0%. */
-  const budgetRatios = useMemo(() => {
-    const ratios: Record<string, number | null> = {};
-    for (const budget of reports?.budgets ?? []) {
-      const cap = budget.declared.perTask.tokens;
-      ratios[budget.positionId] = budget.latestTurn && cap
-        ? budget.latestTurn.totalTokens / cap
-        : null;
-    }
-    return ratios;
-  }, [reports]);
   const engineAvailability = useMemo(() => ({
     qoder: {
       configured: health?.hosts?.qoder.configured === true,
@@ -840,11 +974,12 @@ function AppInner({
     const live: TurnRecord[] = selectedId === null
       ? []
       : Object.entries(turnStream.runs)
-          .filter(([runId, run]) => run.groupRef === undefined && run.positionId === selectedId && !historyRunIds.has(runId))
+          .filter(([runId, run]) => run.groupRef === undefined && run.positionId === selectedId && run.sessionId === selectedSessionId && !historyRunIds.has(run.engineRunId ?? runId))
           .map(([runId, run]) => ({
             id: `live-${runId}`,
+            provisional: true,
             positionId: run.positionId,
-            positionName: positionNames[run.positionId] ?? run.positionId,
+            positionName: positionNames[run.positionId] ?? t("org.unknownPosition"),
             engine: run.engine,
             input: run.input,
             status: "running" as const,
@@ -852,9 +987,16 @@ function AppInner({
             ...(run.text !== "" ? { output: run.text } : {}),
             ...(run.totalTokens !== null ? { totalTokens: run.totalTokens } : {}),
           }));
+    const pending = selectedId === null ? undefined : turnStream.pending[selectedId];
+    if (pending?.sessionId === selectedSessionId && live.length === 0 &&
+        (pending.runId === null || !historyRunIds.has(pending.runId))) {
+      live.push({ id: `pending-${pending.sessionId}`, provisional: true, positionId: pending.positionId,
+        positionName: positionNames[pending.positionId] ?? t("org.unknownPosition"), engine: pending.engine,
+        input: pending.input, status: "running", createdAt: pending.startedAt });
+    }
     if (live.length === 0) return turns;
     return [...turns, ...live].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [positionNames, selectedId, turnStream.runs, turns]);
+  }, [positionNames, selectedId, selectedSessionId, t, turnStream.pending, turnStream.runs, turns]);
 
   // ADR-0002: Ant Design is the shared design language; token values are antd
   // official palette values, consumed via ConfigProvider — no ad-hoc theming.
@@ -899,7 +1041,7 @@ function AppInner({
       >
         {/* #248 小 UI 单①：左上只保留三个窗口控制钮，删品牌标；头像将来放右上，现在不加。 */}
         <WindowControls />
-        <span className="owb-wintitle__name">org-workbench</span>
+        <span className="owb-wintitle__name">RoleWeave</span>
         <span className="owb-wintitle__spacer" />
         <PrefsMenu locale={locale} onChangeLocale={onChangeLocale} mode={themeMode} />
       </header>
@@ -932,11 +1074,10 @@ function AppInner({
               active: activeModule === "approvals",
               onSelect: () => setActiveModule("approvals"),
             },
-            // mem remains an upstream data plane, but its management surface
-            // is rendered inside Workbench so operators do not need a second
-            // client. DriveModule only consumes the bounded bridge.
-            { id: "drive", label: t("rail.drive"), icon: <HardDrive aria-hidden="true" size={16} />, active: activeModule === "drive", onSelect: () => setActiveModule("drive") },
-            { id: "docs", label: t("rail.docs"), icon: <FolderTree aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => setActiveModule("docs") },
+            // mem and position documents are two sources in one employee-memory
+            // surface. Keep one entry here so the user does not have to choose
+            // between two implementation-owned data planes.
+            { id: "docs", label: t("rail.memory"), icon: <BrainCircuit aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => { setMemorySource("docs"); setActiveModule("docs"); } },
             // #134: the update pane needs room for a version, live progress and
             // a changelog link, so it is a module rather than a third row in
             // the prefs drawer (#174), which stays two quick toggles.
@@ -949,34 +1090,38 @@ function AppInner({
           label={t("tree.dir")}
           header={
             <>
+              <ProjectSwitcher
+                workspace={workspaceInfo}
+                positionCount={snapshot?.positionCount ?? null}
+                disabled={orgBusy}
+                onOpenWorkspace={() => void openWorkspace()}
+                onCreateProject={() => setProjectCreateOpen(true)}
+              />
               <div className="owb-side-head">
+                <div className="owb-side-head__copy">
+                  <strong className="owb-side-head__title">{t("tree.dir")}</strong>
+                </div>
                 {workspaceInfo?.open === true ? (
-                  <>
-                    <AntButton size="small" disabled={orgBusy} onClick={() => void undoLastAdjustment()} title={t("tree.undoTitle")}>{t("tree.undo")}</AntButton>
+                  <div className="owb-side-head__actions">
+                    <AntButton
+                      size="small"
+                      className="owb-side-head__undo"
+                      disabled={orgBusy}
+                      icon={<Undo2 aria-hidden="true" size={12} />}
+                      onClick={() => void undoLastAdjustment()}
+                      title={t("tree.undoTitle")}
+                    >
+                      {t("tree.undo")}
+                    </AntButton>
                     {/* ＋ 走装饰性图标而不是文案前缀，可及名保持「创建员工」。 */}
                     <AntButton size="small" type="primary" disabled={orgBusy} icon={<Plus aria-hidden="true" size={12} />} onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>{t("tree.create")}</AntButton>
-                  </>
+                  </div>
                 ) : null}
               </div>
-              {/* 工作区条（设计稿 .workspace-strip）：名称 + open 状态 + 岗位数 */}
-              {workspaceInfo?.open === true ? (
-                <div className="owb-workspace-strip">
-                  <span className="owb-workspace-strip__name">{workspaceInfo.business ?? t("tree.workspaceFallback")}</span>
-                  <span className="owb-workspace-strip__meta">
-                    <span className="owb-workspace-strip__open" aria-hidden="true">●</span>
-                    {t("tree.open")}
-                    {snapshot ? ` · ${t("tree.positions", { count: snapshot.positionCount })}` : null}
-                  </span>
-                </div>
-              ) : null}
             </>
           }
           footer={
-            workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} onRestore={restorePosition} /> : (
-              <AntButton type="primary" block onClick={() => void openWorkspace()}>
-                {t("tree.openCta")}
-              </AntButton>
-            )
+            workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} positionNames={positionNames} onRestore={restorePosition} /> : null
           }
         >
           {workspaceInfo?.open === true ? (
@@ -997,14 +1142,13 @@ function AppInner({
                   displayNames={positionNames}
                   avatarColors={positionColors}
                   runningIds={runningPositionIds}
-                  budgetRatios={budgetRatios}
                   selectedId={selectedId}
-                  onSelect={selectPosition}
+                  onSelect={openConversation}
                   onMove={(id, reportTo) => void movePosition(id, reportTo)}
                   onDropPosition={(drop) => void reorderPosition(drop)}
                   onHireEntry={(parent) => setTreeHireParent(parent)}
                   onGroupEntry={(positionId) => {
-                    setGroupDraftSeed({ members: [positionId], nonce: Date.now() });
+                    setGroupDraftSeed({ members: [positionId], nonce: Date.now(), scope: groupWorkspaceScope });
                     setActiveModule("groups");
                   }}
                   moveDisabled={orgBusy}
@@ -1018,26 +1162,34 @@ function AppInner({
           )}
           {workspaceInfo?.open === true ? (
             <HireDrawer
+              workspacePath={workspaceInfo.path}
               open={treeHireParent !== undefined}
               positions={positions}
               presetReportTo={treeHireParent ?? null}
+              engine={turnEngine}
+              engineAvailability={engineAvailability}
+              conversationHostId={hireConversationHostId}
+              conversationHostName={hireConversationHostId ? positionNames[hireConversationHostId] : undefined}
+              budgetPoolTokens={workspaceInfo.budgetPoolTokens}
+              budgetAllocatedTokens={hireBudgetAllocatedTokens}
+              onSelectEngine={setTurnEngine}
               onClose={() => setTreeHireParent(undefined)}
               onHired={(positionId, name) => void hiredPosition(positionId, name)}
             />
           ) : null}
+          <ProjectCreateDrawer
+            open={projectCreateOpen}
+            onClose={() => setProjectCreateOpen(false)}
+            onCreated={(created) => void onProjectCreated(created)}
+          />
         </Sidebar>
       }
       topbar={
         <Topbar
-          breadcrumbs={<Breadcrumbs workspace={workspaceInfo} selected={selectedPosition} />}
+          breadcrumbs={<Breadcrumbs workspace={workspaceInfo} />}
           actions={
             <div className="owb-topbar-actions">
-              {/* 设计稿 .mini-budget：岗位 id · 110px 轨道 · 百分比。声明期
-                  （无真实用量事实）显示「声明期」而不是伪造的 0%。 */}
-              {selectedPosition?.budget && selectedId ? (
-                <MiniBudget positionId={selectedId} ratio={selectedBudgetRatio} />
-              ) : null}
-              {/* 设计稿 .src 药丸：状态灯 + 文案，取代 DS 的 SourceStatus 外观，
+              {/* 只保留用户需要知道的引擎可用状态；传输层状态不在顶栏重复展示。
                   诚实映射 /health.engine.available。 */}
               <span className="owb-src" role="status">
                 <span
@@ -1098,11 +1250,12 @@ function AppInner({
           />
         ) : activeModule === "groups" ? (
           <GroupsPanel
+            key={`${workspaceInfo?.open}:${workspaceInfo?.path}`}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
             positionNames={positionNames}
             positionColors={positionColors}
-            draftSeed={groupDraftSeed}
+            draftSeed={groupDraftSeed?.scope === groupWorkspaceScope ? groupDraftSeed : null}
             engine={turnEngine}
             engineAvailability={engineAvailability}
             liveRuns={turnStream.runs}
@@ -1110,15 +1263,15 @@ function AppInner({
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
           />
-        ) : activeModule === "drive" ? (
-          <DriveModule workspaceOpen={workspaceInfo?.open === true} />
         ) : activeModule === "settings" ? (
           <SettingsModule />
         ) : activeModule === "docs" ? (
-          <DocsModule
+          <MemoryModule
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
             selectedPositionId={selectedId}
+            position={card.data}
+            initialSource={memorySource}
           />
         ) : <div className="owb-org-module">
           {/* #137 two-column workspace: the left column stacks the org chart
@@ -1131,8 +1284,6 @@ function AppInner({
             snapshot={snapshot}
             loading={treeLoading}
             displayNames={positionNames}
-            displayTitles={positionTitles}
-            displayModes={positionModes}
             avatarColors={positionColors}
             selectedId={selectedId}
             onSelect={openConversation}
@@ -1145,11 +1296,16 @@ function AppInner({
               consumption={selectedBudgetRatio}
               running={selectedId !== null && runningPositionIds.has(selectedId)}
               onRefresh={() => void refresh()}
-              actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} positionId={selectedId} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
+              onContextSourceSelect={(source) => {
+                setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
+                setActiveModule("docs");
+              }}
+              actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
             />
           </div>
           </div>
           <TurnPanel
+            key={workspaceInfo?.path}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
             selectedPositionId={selectedId}
@@ -1157,22 +1313,21 @@ function AppInner({
             engineAvailability={engineAvailability}
             turns={displayTurns}
             busy={turnBusy}
+            employeeBusy={selectedId !== null && runningPositionIds.has(selectedId)}
             sessions={sessions}
             selectedSessionId={selectedSessionId}
             sessionBusy={sessionBusy}
-            onSelectPosition={selectPosition}
+            onSelectPosition={openConversation}
             onSelectEngine={setTurnEngine}
             onCreateTurn={createTurn}
             onCancelTurn={cancelTurn}
             onVerdictTurn={verdictTurn}
             decidedApprovalIds={decidedApprovals}
-            sseConnected={sseState === "connected"}
-            selectedMode={card.data?.mode ?? null}
-            selectedBudgetLabel={perTaskBudgetLabel(card.data)}
             cancelling={turnCancelling}
             onSelectSession={selectSession}
             onCreateSession={createSession}
             onRotateSession={rotateSession}
+            onSetSessionContext={setSessionContext}
           />
         </div>}
       </div>
@@ -1209,10 +1364,7 @@ function replaceTurn(turns: TurnRecord[], next: TurnRecord): TurnRecord[] {
 function apiErrorMessage(body: unknown, fallback: string): string {
   if (body !== null && typeof body === "object" && !Array.isArray(body)) {
     const message = (body as { message?: unknown }).message;
-    const code = (body as { code?: unknown }).code;
-    if (typeof message === "string" && typeof code === "string") return `${code}: ${message}`;
     if (typeof message === "string") return message;
-    if (typeof code === "string") return `${fallback}: ${code}`;
   }
   return fallback;
 }
@@ -1234,21 +1386,6 @@ function findNodeById(nodes: OrgTreeNodeV1[], id: string): OrgTreeNodeV1 | null 
     const found = findNodeById(node.children, id);
     if (found) return found;
   }
-  return null;
-}
-
-/** Per-task budget label for the boundary chip (设计稿 `40k/task`). Tokens
- * win over iterations because the engine bills tokens; a declaration with
- * neither cap renders — rather than a fabricated number. */
-const BUDGET_COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
-const BUDGET_PLAIN = new Intl.NumberFormat("en-US");
-function perTaskBudgetLabel(position: PositionCardData | null): string | null {
-  const perTask = position?.budget?.perTask;
-  if (!perTask) return null;
-  if (typeof perTask.tokens === "number") {
-    return `${BUDGET_COMPACT.format(perTask.tokens)}/task`;
-  }
-  if (typeof perTask.iterations === "number") return `${BUDGET_PLAIN.format(perTask.iterations)} iters/task`;
   return null;
 }
 
@@ -1341,68 +1478,128 @@ const ANTD_SEED = {
   },
 } as const;
 
-/** Topbar mini budget gauge (设计稿 .mini-budget). Declaration phase keeps
- * the track dim and labels it 声明期 — a position with no turn facts never
- * renders a fabricated percentage. */
-function MiniBudget({ positionId, ratio }: { positionId: string; ratio: number | null }) {
-  const t = useT();
-  const declared = ratio === null;
-  const pct = declared ? 100 : Math.min(Math.max(Math.round(ratio * 100), 0), 100);
-  const over = !declared && ratio > 1;
+function Breadcrumbs({
+  workspace,
+}: {
+  workspace: WorkspaceInfoResponse | null;
+}) {
+  if (workspace?.open !== true || !workspace.path) return null;
   return (
-    <span className="owb-mini-budget">
-      <span className="owb-mini-budget__label">{positionId}</span>
+    <span className="owb-topbar-context">
       <span
-        className="owb-mini-budget__track"
-        role="meter"
-        aria-label={declared ? t("pos.miniBudgetDeclared", { id: positionId }) : t("pos.miniBudgetConsumed", { id: positionId })}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={declared ? undefined : Math.round(ratio * 100)}
+        className="owb-workspace-location"
+        title={workspace.path}
+        aria-label={workspace.path}
       >
-        <i
-          style={{
-            width: `${pct}%`,
-            opacity: declared ? 0.32 : 1,
-            ...(over ? { background: "var(--ui-danger)" } : {}),
-          }}
-        />
-      </span>
-      <span className="owb-mini-budget__label">
-        {declared ? t("rep.declaredPhase") : `${Math.round(ratio * 100)}%`}
+        <FolderOpen aria-hidden="true" size={12} />
+        <span className="owb-workspace-location__path">{workspace.path}</span>
       </span>
     </span>
   );
 }
 
-function Breadcrumbs({
-  workspace,
-  selected,
-}: {
+interface ProjectSwitcherProps {
   workspace: WorkspaceInfoResponse | null;
-  selected: { id: string } | null;
-}) {
+  positionCount: number | null;
+  disabled?: boolean;
+  onOpenWorkspace: () => void;
+  onCreateProject: () => void;
+}
+
+/**
+ * Project context belongs above the organization tree, not in a second global
+ * chrome row. The trigger is intentionally compact, while its menu keeps the
+ * IDE-like open/create actions together with the current workspace context.
+ */
+function ProjectSwitcher({
+  workspace,
+  positionCount,
+  disabled = false,
+  onOpenWorkspace,
+  onCreateProject,
+}: ProjectSwitcherProps) {
   const t = useT();
-  if (workspace?.open !== true) {
-    return <span className="owb-breadcrumb owb-muted">{t("misc.workspaceClosedBc")}</span>;
-  }
-  // 设计稿：business / positions / <id>，末段是 primary 药丸。岗位 id（而不是
-  // 展示名）与树标签、证据里的标识保持一致。
-  const parts: string[] = [workspace.business ?? t("tree.workspaceFallback")];
-  if (selected) parts.push("positions", selected.id);
-  // 设计稿的面包屑用独立的 "/" 分隔元素（首段展示字体、末段 primary 药丸）。
+  const [menuOpen, setMenuOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const open = workspace?.open === true;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && rootRef.current?.contains(target)) return;
+      setMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
+
   return (
-    <span className="owb-breadcrumbs">
-      {parts.map((part, index) => (
-        <Fragment key={`${part}-${index}`}>
-          {index > 0 ? (
-            <span className="owb-breadcrumb-sep" aria-hidden="true">
-              /
-            </span>
-          ) : null}
-          <span className="owb-breadcrumb">{part}</span>
-        </Fragment>
-      ))}
-    </span>
+    <div className="owb-project-switcher" ref={rootRef}>
+      <button
+        type="button"
+        className="owb-project-switcher__trigger"
+        aria-label={t("project.switcherAria")}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        disabled={disabled}
+        onClick={() => setMenuOpen((current) => !current)}
+      >
+        <span className="owb-project-switcher__icon" aria-hidden="true">
+          <FolderOpen size={14} />
+        </span>
+        <span className="owb-project-switcher__copy">
+          <strong>{open ? workspace?.business ?? t("tree.workspaceFallback") : t("project.launcherTitle")}</strong>
+        </span>
+        <ChevronDown className="owb-project-switcher__chevron" aria-hidden="true" size={15} />
+      </button>
+
+      {menuOpen ? (
+        <div className="owb-project-switcher__menu" role="menu" aria-label={t("project.switcherAria")}>
+          {open ? (
+            <section className="owb-project-switcher__current" aria-label={t("project.current")}>
+              <p className="owb-project-switcher__eyebrow">{t("project.current")}</p>
+              <div className="owb-project-switcher__current-row">
+                <span className="owb-project-switcher__current-mark" aria-hidden="true"><Check size={12} /></span>
+                <span className="owb-project-switcher__current-copy">
+                  <strong>{workspace?.business ?? t("tree.workspaceFallback")}</strong>
+                  <small title={workspace?.path}>{workspace?.path ?? t("project.localOnly")}</small>
+                  <span>{positionCount === null ? t("project.positionsUnknown") : t("tree.positions", { count: positionCount })}</span>
+                </span>
+              </div>
+            </section>
+          ) : (
+            <p className="owb-project-switcher__empty">{t("project.noProjectOpen")}</p>
+          )}
+          <div className="owb-project-switcher__actions">
+            <button
+              type="button"
+              role="menuitem"
+              disabled={disabled}
+              onClick={() => { setMenuOpen(false); onOpenWorkspace(); }}
+            >
+              <FolderOpen aria-hidden="true" size={14} />
+              <span><strong>{t("project.openAction")}</strong><small>{t("project.openActionHint")}</small></span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={disabled}
+              onClick={() => { setMenuOpen(false); onCreateProject(); }}
+            >
+              <FolderPlus aria-hidden="true" size={14} />
+              <span><strong>{t("project.newCta")}</strong><small>{t("project.newActionHint")}</small></span>
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }

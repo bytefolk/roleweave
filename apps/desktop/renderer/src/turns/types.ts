@@ -1,6 +1,22 @@
+import type { TurnRecord as ApiTurnRecord } from "@roleweave/shared";
 export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
+
+/** User-safe milestones for the conversation view. This deliberately carries
+ * no model chain-of-thought or raw engine event payloads. */
+export type TurnProgressKind =
+  | "received"
+  | "working"
+  | "awaiting_approval"
+  | "completed"
+  | "failed"
+  | "unknown";
+
+export interface TurnProgressStep {
+  kind: TurnProgressKind;
+  at: string;
+}
 
 export interface PositionMentionOption {
   id: string;
@@ -34,6 +50,8 @@ export interface TurnApprovalRequest {
 }
 
 export interface TurnRecord {
+  /** Renderer-only live/pending projection; never a persisted receipt. */
+  provisional?: boolean;
   id: string;
   positionId: string;
   positionName: string;
@@ -44,6 +62,8 @@ export interface TurnRecord {
   completedAt?: string;
   output?: string;
   error?: string;
+  errorCode?: string;
+  threadContext?: ApiTurnRecord["threadContext"];
   /** Engine runId when the server record carries one; keys live-stream dedupe. */
   runId?: string;
   /** Live engine-reported usage; present only on provisional live rows. */
@@ -53,6 +73,8 @@ export interface TurnRecord {
   retryOf?: string;
   /** Present when the turn settled as engine.approval_required. */
   approvalRequest?: TurnApprovalRequest;
+  /** Safe, high-level execution milestones derived from server-owned events. */
+  progress?: TurnProgressStep[];
 }
 
 export interface CreateTurnRequest {

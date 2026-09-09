@@ -1,8 +1,36 @@
-import { Building2, ChevronRight, Folder, FolderOpen, Plus, UsersRound } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, Plus, UsersRound } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
 import { useT } from "./i18n";
-import { capsText, primaryCap, type OrgTreeNodeV1, type OrgTreeSnapshot } from "./types";
+import { type OrgTreeNodeV1, type OrgTreeSnapshot } from "./types";
+
+/**
+ * ByteFolk “Open Herd” mark, cropped from the supplied organization logo
+ * concept at organization-profile/brand/logo-concepts/bytefolk-concept-c-open-herd-mark.svg.
+ * The wordmark is intentionally omitted here because this is the compact
+ * organization identity slot; the full logo remains the source of truth.
+ */
+function BytefolkOpenHerdMark() {
+  return (
+    <svg
+      className="ui-org-tree__brand-mark"
+      data-brand="bytefolk-open-herd"
+      viewBox="0 0 142 116"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path fill="#1677ff" d="M12 28a8 8 0 0 1 8-8h28v36H12V28Zm8-20h12v14H20Z" />
+      <path fill="#722ed1" d="M56 20h31a9 9 0 0 1 9 9v27H56V20Zm28-12h12v18H84Z" />
+      <path fill="#141414" d="M12 64h36v44H28a16 16 0 0 1-16-16V64Z" />
+      <path fill="#1677ff" d="M56 64h40v10h18a14 14 0 0 1 14 14v6a14 14 0 0 1-14 14H56V64Z" />
+      <rect x="70" y="75" width="10" height="10" rx="3" fill="#fff" />
+      <rect x="99" y="84" width="7" height="10" rx="3" fill="#fff" />
+      <rect x="114" y="84" width="7" height="10" rx="3" fill="#fff" />
+      <rect x="48" y="20" width="8" height="88" fill="#fff" />
+      <rect x="12" y="56" width="84" height="8" fill="#fff" />
+    </svg>
+  );
+}
 
 /** Same-level insertion produced by an edge drop or ⌘-arrow reorder
  * (#32 §1). `order` is the final ordered child-id list of `parentId` with
@@ -28,9 +56,6 @@ export interface OrgTreeProps {
   /** Position ids with a turn in flight (SSE run stream) — the row's status
    * light breathes AI purple. Observed state only, never inferred. */
   runningIds?: ReadonlySet<string>;
-  /** Per-task consumption ratios keyed by position id; absent = declaration
-   * phase, and the micro budget bar degrades to a placeholder track. */
-  budgetRatios?: Record<string, number | null>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   onExpand?: (id: string, expanded: boolean) => void;
@@ -69,8 +94,6 @@ export interface OrgTreeNodeProps {
   /** Live turn in flight for this position (from the SSE run stream): the
    * status light switches to the AI-purple breathing state. Never inferred. */
   running?: boolean;
-  /** Per-task consumption ratio (0..1+); undefined/null = declaration phase. */
-  budgetRatio?: number | null;
   onSelect: () => void;
   onToggle: () => void;
   onFocus: () => void;
@@ -100,7 +123,6 @@ export function OrgTreeNode({
   displayName,
   avatarColor,
   running = false,
-  budgetRatio,
   onSelect,
   onToggle,
   onFocus,
@@ -178,17 +200,9 @@ export function OrgTreeNode({
       >
         {expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
       </span>
-      <span className="ui-org-tree__label" title={node.id}>
-        {displayName && displayName !== node.id ? (
-          <>
-            <span className="ui-org-tree__name">{displayName}</span>
-            <span className="ui-org-tree__id">{node.id}</span>
-          </>
-        ) : (
-          <span className="ui-org-tree__name">{node.id}</span>
-        )}
+      <span className="ui-org-tree__label" title={displayName ?? node.id}>
+        <span className="ui-org-tree__name">{displayName ?? node.id}</span>
       </span>
-      <TreeBudgetSpark budget={node.budget} consumption={budgetRatio} />
       {onGroupEntry || onHireEntry ? (
         <span className="ui-org-tree__actions">
           {onGroupEntry ? (
@@ -220,42 +234,6 @@ export function OrgTreeNode({
         </span>
       ) : null}
     </div>
-  );
-}
-
-/** 42×6px 微型预算条（设计稿 .tr-budget）。声明期（consumption 未知）显示
- * 满轨占位，不谎报百分比；有真实用量时按 <80/80-100/>100 三态取色。 */
-function TreeBudgetSpark({
-  budget,
-  consumption,
-}: {
-  budget: OrgTreeNodeV1["budget"];
-  consumption?: number | null;
-}) {
-  const t = useT();
-  const cap = primaryCap(budget.perTask);
-  const declaredOnly = consumption === null || consumption === undefined || cap === null;
-  const ratio = declaredOnly ? null : consumption;
-  const tier = ratio === null ? "" : ratio > 1 ? "is-over" : ratio >= 0.8 ? "is-warning" : "";
-  // 声明期（还没有真实用量事实）只画空轨道：画成满条会被读成「已用 100%」。
-  // #77 review item 4：>100% 不夹到 100——spec 要求超限超长出界呈现
-  // （116% 出界不截断圆角），夹到 100 会让超限和刚好用满看起来一样。
-  const percent = ratio === null ? null : Math.max(Math.round(ratio * 100), 0);
-  const width = percent === null ? "0%" : `${percent}%`;
-  return (
-    <span
-      className={cn("ui-org-tree__budget", tier)}
-      role="meter"
-      aria-label={declaredOnly ? t("tree.budgetDeclared") : t("tree.budgetConsumed")}
-      aria-valuemin={0}
-      // valuemax 必须 >= valuenow（ARIA 合法性）：正常态定死 100，超限时跟
-      // 实际读数一起涨，不能一边报 120 一边把上限钉在 100。
-      aria-valuemax={percent === null ? 100 : Math.max(100, percent)}
-      aria-valuenow={percent ?? undefined}
-      title={declaredOnly ? t("tree.budgetCap", { caps: capsText(budget.perTask) }) : t("tree.budgetUsed", { pct: percent ?? 0 })}
-    >
-      <i style={{ width }} />
-    </span>
   );
 }
 
@@ -353,9 +331,9 @@ interface FlatNode {
  *
  * Root = the enterprise (snapshot.business, Brand icon); the engine's nested
  * tree[] (reportTo-null owner as first level, children by reporting line)
- * renders beneath it. Labels are position ids — the frozen org-tree.v1 node
- * deliberately carries only id/reportTo/budget/children; display names and
- * modes are served via /positions/:id (position card).
+ * renders beneath it. The frozen org-tree.v1 node deliberately carries only
+ * routing data; display names are served via /positions/:id. Budget and mode
+ * stay in the selected position record instead of repeating in every row.
  *
  * Accessibility: role=tree/treeitem, roving tabindex; ArrowUp/Down/Home/End
  * move, ArrowRight/Left expand/collapse or move to child/parent, Enter
@@ -368,7 +346,6 @@ export function OrgTree({
   displayNames,
   avatarColors,
   runningIds,
-  budgetRatios,
   selectedId,
   onSelect,
   onExpand,
@@ -653,7 +630,6 @@ export function OrgTree({
           displayName={displayNames?.[node.id]}
           avatarColor={avatarColors?.[node.id]}
           running={runningIds?.has(node.id) === true}
-          budgetRatio={budgetRatios?.[node.id] ?? null}
           onSelect={() => onSelect?.(node.id)}
           onToggle={() => toggleNode(node.id)}
           onFocus={() => setFocusedId(node.id)}
@@ -782,8 +758,8 @@ export function OrgTree({
               aria-label={runningIds && runningIds.size > 0 ? t("tree.orgRunning") : t("tree.orgReady")}
               title={runningIds && runningIds.size > 0 ? t("tree.orgRunning") : t("tree.orgReady")}
             />
-            <span className="ui-org-tree__icon" aria-hidden="true">
-              <Building2 size={14} />
+            <span className="ui-org-tree__icon ui-org-tree__icon--brand" aria-hidden="true">
+              <BytefolkOpenHerdMark />
             </span>
             <span className="ui-org-tree__label" title={enterpriseName}>
               <span className="ui-org-tree__name">{enterpriseName}</span>

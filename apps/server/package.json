@@ -1,7 +1,7 @@
 {
-  "name": "@org-workbench/server",
+  "name": "@roleweave/server",
   "version": "0.0.0",
-  "description": "Local control plane for org-workbench. Loopback-only, bearer boot-token, zero third-party runtime dependencies.",
+  "description": "Local control plane for RoleWeave. Loopback-only, bearer boot-token, zero third-party runtime dependencies.",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -10,6 +10,6 @@
     "start": "node dist/src/index.js"
   },
   "dependencies": {
-    "@org-workbench/shared": "*"
+    "@roleweave/shared": "*"
   }
 }

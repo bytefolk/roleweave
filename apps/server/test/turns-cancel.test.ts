@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import test from "node:test";
-import type { TurnRunDriver, TurnRunRequest, TurnRunResult } from "@org-workbench/shared";
+import type { TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 /** Mirrors DigitalEmployeeCliDriver cancel semantics: the turn hangs until

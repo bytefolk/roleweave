@@ -1,4 +1,4 @@
-import { hueForId } from "@org-workbench/ui";
+import { hueForId } from "@roleweave/ui";
 
 /** Shared position avatar (#53 DS-34-001 §1.3, extracted for #61 bubble
  * chat): declared metadata.color wins, then the org tree's deterministic hue

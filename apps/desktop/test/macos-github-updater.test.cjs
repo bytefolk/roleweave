@@ -8,6 +8,7 @@ const test = require("node:test");
 const {
   createMacGithubUpdaterService,
   githubReleaseAssetUrl,
+  parseLatestReleaseTagFromAtom,
 } = require("../src/macos-github-updater.cjs");
 const trust = require("../src/update-trust.cjs");
 
@@ -40,7 +41,7 @@ function testManifestPair({ version = "0.2.0", body = "signed update" } = {}) {
 test("the free channel verifies a signed manifest, downloads the ZIP, and schedules replacement on quit", async (t) => {
   const fixture = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "owb-github-updater-"));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
-  const appPath = path.join(fixture, "Org Workbench.app");
+  const appPath = path.join(fixture, "RoleWeave.app");
   fs.mkdirSync(appPath);
   const { manifest, publicKeyPem, bytes } = testManifestPair();
   const events = [];
@@ -51,7 +52,7 @@ test("the free channel verifies a signed manifest, downloads the ZIP, and schedu
     appPath,
     tempDirectory: fixture,
     helperPath: "/private/helper/macos-update-helper.cjs",
-    execPath: "/private/Org Workbench",
+    execPath: "/private/RoleWeave",
     parentPid: 12345,
     onState: (event) => events.push(event),
     fetchLatestRelease: async () => ({
@@ -106,7 +107,7 @@ test("the free channel rejects tampered release metadata and never downloads it"
   manifest.sha256 = "0".repeat(64);
   const service = createMacGithubUpdaterService({
     currentVersion: "0.1.0",
-    appPath: "/Applications/Org Workbench.app",
+    appPath: "/Applications/RoleWeave.app",
     fetchLatestRelease: async () => ({ tag_name: "v0.2.0", assets: [] }),
     fetchManifest: async () => manifest,
     verifyManifest: (candidate, options) => trust.verifyUpdateManifest(candidate, { ...options, publicKeyPem }),
@@ -117,10 +118,57 @@ test("the free channel rejects tampered release metadata and never downloads it"
   assert.match(result.reason, /signature/);
 });
 
+test("the free channel falls back to the public Atom feed when GitHub API is rate limited", async (t) => {
+  const fixture = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "owb-github-atom-fallback-"));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const appPath = path.join(fixture, "RoleWeave.app");
+  fs.mkdirSync(appPath);
+  const { manifest, publicKeyPem, bytes } = testManifestPair();
+  let fallbackCalls = 0;
+  const service = createMacGithubUpdaterService({
+    currentVersion: "0.1.0",
+    appPath,
+    tempDirectory: fixture,
+    fetchLatestRelease: async () => {
+      const error = new Error("GitHub returned HTTP 403");
+      error.statusCode = 403;
+      throw error;
+    },
+    fetchLatestReleaseFromFallback: async () => {
+      fallbackCalls += 1;
+      return { tag_name: manifest.tag, draft: false, prerelease: false, source: "atom" };
+    },
+    fetchManifest: async () => manifest,
+    verifyManifest: (candidate, options) => trust.verifyUpdateManifest(candidate, { ...options, publicKeyPem }),
+    download: async (_url, destination, options) => {
+      fs.writeFileSync(destination, bytes, { mode: 0o600 });
+      options.onProgress(100);
+      return { bytes: bytes.length };
+    },
+  });
+
+  const result = await service.check({ automatic: true });
+  assert.deepEqual(result, { state: "downloaded", version: "0.2.0" });
+  assert.equal(fallbackCalls, 1);
+});
+
+test("the Atom fallback accepts only a same-repository release-tag link", () => {
+  const feed = [
+    "<feed xmlns=\"http://www.w3.org/2005/Atom\">",
+    "<entry><link rel=\"alternate\" type=\"text/html\" href=\"https://github.com/bytefolk/roleweave/releases/tag/v0.2.0\"/></entry>",
+    "</feed>",
+  ].join("");
+  assert.equal(parseLatestReleaseTagFromAtom(feed), "v0.2.0");
+  assert.throws(
+    () => parseLatestReleaseTagFromAtom(feed.replace("bytefolk/roleweave", "other/repository")),
+    /without a valid release tag/,
+  );
+});
+
 test("release asset URLs are fixed to the repository and HTTPS", () => {
   assert.equal(
-    githubReleaseAssetUrl("v0.2.0", "org-workbench-0.2.0-arm64.zip"),
-    "https://github.com/bytefolk/org-workbench/releases/download/v0.2.0/org-workbench-0.2.0-arm64.zip",
+    githubReleaseAssetUrl("v0.2.0", "roleweave-0.2.0-arm64.zip"),
+    "https://github.com/bytefolk/roleweave/releases/download/v0.2.0/roleweave-0.2.0-arm64.zip",
   );
   assert.throws(() => githubReleaseAssetUrl("https://evil.example/v0.2.0", "x.zip"), /tag is invalid/);
   assert.throws(() => githubReleaseAssetUrl("v0.2.0", "../../evil.zip"), /asset name is invalid/);

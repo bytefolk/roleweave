@@ -22,6 +22,8 @@ export type {
   PositionMentionOption,
   TurnEngine,
   TurnEngineAvailability,
+  TurnProgressKind,
+  TurnProgressStep,
   TurnRecord,
   TurnStatus,
 } from "./types";

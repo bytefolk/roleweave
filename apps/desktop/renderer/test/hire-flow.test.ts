@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createHireDraft,
   initialHireFlow,
+  parseHireProposal,
   reduceHireFlow,
   type HireDraft,
   type HireFlowState,
@@ -21,6 +22,24 @@ const draft = (overrides?: Partial<HireDraft>): HireDraft =>
   });
 
 describe("#33 hire 四态状态机（本地态骨架，不触契约）", () => {
+  it("只接受 Agent 返回的有限结构化草案，不把自然语言当成创建指令", () => {
+    expect(parseHireProposal("先分析一下，再给方案：没有 JSON")).toEqual({});
+    expect(parseHireProposal('```json\n{"name":"文档助手","description":"维护文档","mode":"read_only","tools":["Read","Unknown"],"memorySources":["position_docs","bad"]}\n```')).toEqual({
+      name: "文档助手",
+      description: "维护文档",
+      mode: "read_only",
+      tools: ["Read"],
+      memorySources: ["position_docs"],
+    });
+    expect(parseHireProposal('{"skills":["issue-research","unknown"],"mcpServers":[{"id":"workspace-drive","tools":["read","write"]},{"id":"repository","tools":["search"]}]}')).toEqual({
+      skills: ["issue-research"],
+      mcpServers: [
+        { id: "workspace-drive", tools: ["read"] },
+        { id: "repository", tools: ["search"] },
+      ],
+    });
+  });
+
   it("draft → submitting → succeeded 直通终态", () => {
     let state: HireFlowState = initialHireFlow({ reportTo: "repo-owner" });
     state = reduceHireFlow(state, { type: "edit", draft: draft() });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { OrgApplyFailure, OrganizationFile } from "@org-workbench/shared";
+import type { OrgApplyFailure, OrganizationFile } from "@roleweave/shared";
 import { buildPositionSkeletonFiles } from "../src/org/apply.js";
 import { FakeDriver, api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 

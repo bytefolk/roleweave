@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { OrgChart, orgChartBudgetLabel } from "../src/org/OrgChart";
-import type { OrgTreeSnapshot } from "@org-workbench/shared";
+import { OrgChart, centerOrgChartView, fitOrgChartView } from "../src/org/OrgChart";
+import type { OrgTreeSnapshot } from "@roleweave/shared";
 
 const snapshot: OrgTreeSnapshot = {
   schemaVersion: "org-tree.v1",
@@ -36,28 +36,22 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
     expect(screen.getByText("暂无组织数据")).toBeInTheDocument();
   });
 
-  it("渲染汇报树：角色名 / title / 预算徽标 / mode 与层级分支", () => {
+  it("渲染汇报树：只展示角色名与层级关系", () => {
     const { container } = render(
       <OrgChart
         snapshot={snapshot}
         displayNames={{ "repo-owner": "代码库负责人", "docs-writer": "文档负责人", "release-engineer": "发布工程师" }}
-        displayTitles={{ "docs-writer": "公开文档与发布说明" }}
-        displayModes={{ "repo-owner": "approval_required", "docs-writer": "read_only" }}
       />,
     );
     // 头部位面：岗位数与深度来自应用态快照。
     // #167：描述语精简——头部只留标题，count·depth meta 已移除。
     expect(screen.queryByText("3 岗位 · 深度 2")).toBeNull();
-    // 角色名（展示面注入）与 title 副行；缺 title 回退岗位 id。
+    // 角色名来自展示面；组织图不重复渲染 title、预算和模式。
     expect(screen.getByText("代码库负责人")).toBeInTheDocument();
-    expect(screen.getByText("公开文档与发布说明")).toBeInTheDocument();
-    expect(screen.getAllByText("release-engineer").length).toBeGreaterThan(0);
-    // 预算徽标：40000 tokens → 40k/task；iterations 面 → iter/task；双无声明不渲染。
-    expect(screen.getByText("40k/task")).toBeInTheDocument();
-    expect(screen.getByText("10 iter/task")).toBeInTheDocument();
-    // mode 徽标：只读 / 需审批；未注入 mode 的节点不渲染徽标。
-    expect(screen.getByText("需审批")).toBeInTheDocument();
-    expect(screen.getByText("只读")).toBeInTheDocument();
+    expect(screen.getByText("发布工程师")).toBeInTheDocument();
+    expect(screen.queryByText("release-engineer")).not.toBeInTheDocument();
+    expect(screen.queryByText("40k/task")).not.toBeInTheDocument();
+    expect(screen.queryByText("需审批")).not.toBeInTheDocument();
     // 汇报线走线：3 个节点 → 3 个分支容器（伪元素连接线挂在其上）。
     expect(container.querySelectorAll(".owb-org-chart__branch")).toHaveLength(3);
     expect(container.querySelector(".owb-org-chart__children")).not.toBeNull();
@@ -80,30 +74,11 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
 
   it("展示面缺条目时回退岗位 id，不编造语义", () => {
     const { container } = render(<OrgChart snapshot={snapshot} />);
-    // 无 displayNames：节点主行显示岗位 id。
+    // 无 displayNames：节点主行回退到岗位 id。
     expect(screen.getAllByText("repo-owner").length).toBeGreaterThan(0);
-    // 无 displayModes：不出现 mode 徽标。
-    expect(screen.queryByText("只读")).not.toBeInTheDocument();
-    expect(screen.queryByText("需审批")).not.toBeInTheDocument();
-    // release-engineer 双无预算声明：无预算徽标元素（3 节点只有 2 个徽标）。
-    expect(container.querySelectorAll(".owb-org-chart__budget")).toHaveLength(2);
-  });
-});
-
-describe("orgChartBudgetLabel（预算徽标口径：与 perTaskBudgetLabel 同源）", () => {
-  it("token 优先：>=1k 走 k 记法", () => {
-    expect(orgChartBudgetLabel({ perTask: { tokens: 40000 }, perDay: {} })).toBe("40k/task");
-    expect(orgChartBudgetLabel({ perTask: { tokens: 1500 }, perDay: {} })).toBe("1.5k/task");
-    expect(orgChartBudgetLabel({ perTask: { tokens: 900 }, perDay: {} })).toBe("900/task");
-  });
-
-  it("无 token 声明时用 iterations 面", () => {
-    expect(orgChartBudgetLabel({ perTask: { iterations: 10 }, perDay: {} })).toBe("10 iter/task");
-  });
-
-  it("双无声明返回 null（不渲染，而不是伪造数字）", () => {
-    expect(orgChartBudgetLabel({ perTask: {}, perDay: {} })).toBeNull();
-    expect(orgChartBudgetLabel(null)).toBeNull();
+    // 组织图不承载预算和模式字段。
+    expect(screen.queryByText("40k/task")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".owb-org-chart__budget")).toHaveLength(0);
   });
   it("画布平移：光标按住拖拽即平移组织图，松手退出 pan 态 (#137 review)", () => {
     const { container } = render(<OrgChart snapshot={snapshot} />);
@@ -156,5 +131,53 @@ describe("orgChartBudgetLabel（预算徽标口径：与 perTaskBudgetLabel 同�
     expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("200%");
     for (let i = 0; i < 20; i += 1) fireEvent.wheel(body, { ctrlKey: true, deltaY: 100 });
     expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("50%");
+  });
+});
+
+describe("组织图画布定位", () => {
+  it("默认先把超宽组织图缩放到可见范围并整体居中", () => {
+    const view = fitOrgChartView(
+      { width: 640, height: 360 },
+      900,
+      { x: 0, y: 0, scale: 1 },
+    );
+    expect(view.x).toBeCloseTo(14);
+    expect(view.y).toBe(0);
+    expect(view.scale).toBeCloseTo(0.68);
+  });
+
+  it("组织图过高时同时按画布高度缩放，不能把节点带出画布", () => {
+    const view = fitOrgChartView(
+      { width: 640, height: 360 },
+      900,
+      { x: 0, y: 0, scale: 1 },
+      600,
+    );
+    expect(view.scale).toBeCloseTo((360 - 16) / 600);
+    expect(view.x).toBeCloseTo((640 - 900 * view.scale) / 2);
+    expect(view.y).toBe(0);
+  });
+
+  it("默认以根节点为横向基准居中，不改变组织树的纵向起点", () => {
+    expect(
+      centerOrgChartView(
+        { width: 640, height: 360 },
+        { x: 420, y: 18 },
+        { x: 0, y: 0, scale: 1 },
+        false,
+      ),
+    ).toEqual({ x: -100, y: 0, scale: 1 });
+  });
+
+  it("选中节点时可同时把节点带到可视区中心", () => {
+    const view = centerOrgChartView(
+      { width: 640, height: 360 },
+      { x: 420, y: 220 },
+      { x: 12, y: 4, scale: 1.1 },
+      true,
+    );
+    expect(view.x).toBeCloseTo(-142);
+    expect(view.y).toBe(8);
+    expect(view.scale).toBe(1.1);
   });
 });

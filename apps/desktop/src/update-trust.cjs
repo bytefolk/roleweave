@@ -10,12 +10,12 @@
 const crypto = require("node:crypto");
 
 const UPDATE_MANIFEST_SCHEMA = "org-workbench-update.v1";
-const UPDATE_REPOSITORY = "bytefolk/org-workbench";
+const UPDATE_REPOSITORY = "bytefolk/roleweave";
 const UPDATE_MANIFEST_NAME = "latest-mac.json";
 const UPDATE_PLATFORM = "darwin";
 const UPDATE_ARCH = "arm64";
-const UPDATE_APP_NAME = "Org Workbench";
-const UPDATE_ASSET_PREFIX = "org-workbench";
+const UPDATE_APP_NAME = "RoleWeave";
+const UPDATE_ASSET_PREFIX = "roleweave";
 const MAX_UPDATE_BYTES = 512 * 1024 * 1024;
 
 // Generated once for this repository. This public half is intentionally

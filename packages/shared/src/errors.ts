@@ -17,6 +17,8 @@ export const errorCodes = {
   workspace_invalid: "workspace_invalid",
   /** An endpoint needs an open workspace but none is open. */
   workspace_not_open: "workspace_not_open",
+  /** Project target already exists; create never overwrites local files. */
+  workspace_exists: "workspace_exists",
   /** Change manifest violates change-manifest.v1 shape. */
   manifest_invalid: "manifest_invalid",
   /** A requested organization backup cannot be restored safely. */
@@ -85,7 +87,7 @@ export const errorCodes = {
   asset_not_found: "asset_not_found",
   /** Drive plane request shape is invalid (missing/oversized parameters). */
   drive_request_invalid: "drive_request_invalid",
-  /** MEM_URL is unset; the drive plane serves a mock fixture from the server. */
+  /** MEM_URL is unset; the drive plane cannot read the mem service. */
   drive_not_configured: "drive_not_configured",
   /** The upstream mem service is unreachable or returned a transport error. */
   drive_upstream_unavailable: "drive_upstream_unavailable",
@@ -112,8 +114,8 @@ export class OrgApiError extends Error {
   readonly status: number;
   readonly retryable: boolean;
 
-  constructor(code: string, status: number, message: string, retryable = false) {
-    super(message);
+  constructor(code: string, status: number, message: string, retryable = false, options?: ErrorOptions) {
+    super(message, options);
     this.name = "OrgApiError";
     this.code = code;
     this.status = status;

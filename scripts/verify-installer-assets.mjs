@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
+const require = createRequire(import.meta.url);
+const { UPDATE_MANIFEST_NAME, verifyUpdateManifest } = require("../apps/desktop/src/update-trust.cjs");
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputRoot = path.join(projectRoot, "release", "dist");
 
@@ -39,6 +42,7 @@ const BUILD_BYPRODUCTS = Object.freeze(["builder-debug.yml"]);
  */
 export function isPermittedCompanion(entry, required) {
   if (BUILD_BYPRODUCTS.includes(entry)) return true;
+  if (entry === UPDATE_MANIFEST_NAME && required.some((name) => name.endsWith("-arm64.dmg"))) return true;
   if (/^latest.*\.yml$/.test(entry)) return true;
   return required.some((artifact) => entry === `${artifact}.blockmap`);
 }
@@ -124,7 +128,60 @@ function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
-export function verifyInstallerAssets(platform, root = outputRoot) {
+// Open once: metadata checks and bounded reads must refer to the same file.
+// The native macOS release gate also refuses symlinks and non-regular files.
+function readRegularFile(file, label, { maxSize, size }, consume) {
+  let fd;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+  } catch (error) {
+    if (error.code === "ELOOP") throw new Error(`${label} must be a regular file`);
+    throw error;
+  }
+  try {
+    const stat = fs.fstatSync(fd);
+    assert.ok(stat.isFile(), `${label} must be a regular file`);
+    assert.ok(stat.size > 0 && stat.size <= maxSize, `${label} has an invalid size`);
+    if (size !== undefined) assert.equal(stat.size, size, `${label} size does not match the manifest`);
+    const buffer = Buffer.alloc(Math.min(64 * 1024, stat.size + 1));
+    let total = 0;
+    // Read at most the checked length plus one byte to detect growth, without
+    // allowing a concurrently growing file to consume unbounded resources.
+    while (total <= stat.size) {
+      const bytes = fs.readSync(fd, buffer, 0, Math.min(buffer.length, stat.size + 1 - total), null);
+      if (bytes === 0) break;
+      total += bytes;
+      consume(buffer.subarray(0, bytes));
+    }
+    assert.equal(total, stat.size, `${label} size changed during validation`);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** Check the signed manifest against the same trust root shipped in the app. */
+export function verifyMacosUpdateArtifact(root, version, { required = false, publicKeyPem } = {}) {
+  const manifestPath = path.join(root, UPDATE_MANIFEST_NAME);
+  const chunks = [];
+  try {
+    readRegularFile(manifestPath, "macOS update manifest", { maxSize: 64 * 1024 }, (chunk) => chunks.push(Buffer.from(chunk)));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    assert.equal(required, false, "signed macOS update manifest is required for release");
+    return;
+  }
+  const manifest = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const result = verifyUpdateManifest(manifest, { publicKeyPem });
+  assert.equal(result.ok, true, `invalid macOS update manifest: ${result.reason}`);
+  assert.equal(manifest.version, version, "macOS update manifest version does not match the package");
+  // assetName is constrained to the exact versioned ZIP by verifyUpdateManifest.
+  const assetPath = path.join(root, manifest.assetName);
+  const hash = crypto.createHash("sha256");
+  readRegularFile(assetPath, "macOS update ZIP", { maxSize: manifest.size, size: manifest.size }, (chunk) => hash.update(chunk));
+  assert.equal(hash.digest("hex"), manifest.sha256, "macOS update ZIP hash does not match the manifest");
+}
+
+export function verifyInstallerAssets(platform, root = outputRoot, { requireMacosSignature = false } = {}) {
   const expectedHost = platform === "macos" ? "darwin" : platform === "windows" ? "win32" : null;
   assert.notEqual(expectedHost, null, `unsupported installer platform: ${platform}`);
   assert.equal(
@@ -150,6 +207,12 @@ export function verifyInstallerAssets(platform, root = outputRoot) {
     `installer output carries artifacts this lane does not claim.\n  unexpected: ${unexpected.join(", ")}\n  found:      ${entries.join(", ")}`,
   );
 
+  if (platform === "macos") {
+    verifyMacosUpdateArtifact(canonicalRoot, metadata.version, { required: requireMacosSignature });
+  } else {
+    assert.equal(requireMacosSignature, false, "macOS signature verification requires the macOS lane");
+  }
+
   return {
     schemaVersion: "org-workbench-installer-assets.v1",
     ok: true,
@@ -166,7 +229,11 @@ export function verifyInstallerAssets(platform, root = outputRoot) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const platform = process.argv[2];
   try {
-    console.log(JSON.stringify(verifyInstallerAssets(platform)));
+    const flags = process.argv.slice(3);
+    assert.ok(flags.every((flag) => flag === "--require-macos-signature"), "unknown installer verification option");
+    console.log(JSON.stringify(verifyInstallerAssets(platform, outputRoot, {
+      requireMacosSignature: flags.includes("--require-macos-signature"),
+    })));
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

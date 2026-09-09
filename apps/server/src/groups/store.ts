@@ -22,25 +22,37 @@ import {
   OrgApiError,
   errorCodes,
   isPositionId,
-} from "@org-workbench/shared";
+  turnEngines,
+} from "@roleweave/shared";
 import type {
   GroupConversation,
   GroupConversationList,
   GroupMessage,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import { assertSessionId } from "../sessions/store.js";
-import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
+import { atomicWriteJson, nodeAtomicTurnWriteOperations, parseRfc3339Instant, compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 
 const GROUPS_ROOT = path.join(".digital-employee", "workbench", "groups");
 const MAX_GROUPS = 64;
 export const MAX_GROUP_MEMBERS = 32;
 const MAX_GROUP_MESSAGES = 256;
 const MAX_GROUP_RECORD_BYTES = 16 * 1024;
-const MAX_GROUP_MESSAGE_BYTES = 260 * 1024;
+export const MAX_GROUP_INPUT_BYTES = 256 * 1024;
+// JSON can encode one input byte as six bytes (\u0000). The remaining
+// budget covers 32 bounded member IDs, spawn IDs and acceptance metadata.
+const MAX_GROUP_MESSAGE_BYTES = 6 * MAX_GROUP_INPUT_BYTES + 16 * 1024;
 const REF_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-function storageError(message: string): OrgApiError {
-  return new OrgApiError(errorCodes.group_storage_failed, 500, message);
+export type GroupContextMessage = Pick<GroupMessage, "messageId" | "mentions" | "spawns" | "createdAt">;
+
+function storageError(message: string, cause?: unknown): OrgApiError {
+  return new OrgApiError(
+    errorCodes.group_storage_failed,
+    500,
+    message,
+    false,
+    cause === undefined ? undefined : { cause },
+  );
 }
 
 export function assertConversationRef(value: unknown): string {
@@ -67,9 +79,14 @@ function groupFile(workspace: string, conversationRef: string): string {
   return path.join(groupDir(workspace, conversationRef), "group.json");
 }
 
+function isSafeMessageId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 256 &&
+    !value.includes("/") && !value.includes("\\") && !value.includes("\0");
+}
+
 function messageFile(workspace: string, conversationRef: string, messageId: string): string {
   assertConversationRef(conversationRef);
-  if (!messageId || messageId.length > 256 || messageId.includes("/") || messageId.includes("\\") || messageId.includes("\0")) {
+  if (!isSafeMessageId(messageId)) {
     throw storageError("local group message contains an unsafe messageId");
   }
   const messagesDir = path.resolve(groupDir(workspace, conversationRef), "messages");
@@ -134,8 +151,8 @@ function isGroupConversation(value: unknown): value is GroupConversation {
     typeof record.conversationRef !== "string" ||
     typeof record.sessionId !== "string" ||
     !Array.isArray(record.members) ||
-    typeof record.createdAt !== "string" ||
-    typeof record.updatedAt !== "string"
+    parseRfc3339Instant(record.createdAt) === null ||
+    parseRfc3339Instant(record.updatedAt) === null
   ) return false;
   if (record.members.length < 2 || record.members.length > MAX_GROUP_MEMBERS) return false;
   return record.members.every((member) => isPositionId(member));
@@ -144,19 +161,68 @@ function isGroupConversation(value: unknown): value is GroupConversation {
 function isGroupMessage(value: unknown): value is GroupMessage {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
+  const required = ["schemaVersion", "messageId", "conversationRef", "input", "mentions", "createdAt"];
   return (
-    exactKeys(record, ["schemaVersion", "messageId", "conversationRef", "input", "mentions", "createdAt"]) &&
+    required.every((key) => Object.hasOwn(record, key)) &&
+    Object.keys(record).every((key) => [...required, "mode", "spawns", "engine"].includes(key)) &&
     record.schemaVersion === GROUP_MESSAGE_SCHEMA_VERSION &&
-    typeof record.messageId === "string" &&
+    isSafeMessageId(record.messageId) &&
     typeof record.conversationRef === "string" &&
-    typeof record.input === "string" &&
-    Array.isArray(record.mentions) &&
+    typeof record.input === "string" && Buffer.byteLength(record.input, "utf8") <= MAX_GROUP_INPUT_BYTES &&
+    Array.isArray(record.mentions) && record.mentions.length <= MAX_GROUP_MEMBERS &&
+    new Set(record.mentions).size === record.mentions.length &&
     record.mentions.every((member) => isPositionId(member)) &&
-    typeof record.createdAt === "string"
+    (record.mode === undefined || record.mode === "parallel" || record.mode === "relay") &&
+    (record.engine === undefined || turnEngines.includes(record.engine as typeof turnEngines[number])) &&
+    (record.spawns === undefined || (
+      record.engine !== undefined &&
+      Array.isArray(record.spawns) && record.spawns.length === record.mentions.length &&
+      record.spawns.length <= MAX_GROUP_MEMBERS &&
+      record.spawns.every((spawn, index) => spawn !== null && typeof spawn === "object" &&
+        exactKeys(spawn, ["turnId", "positionId"]) &&
+        typeof spawn.turnId === "string" && spawn.turnId.length <= 128 && REF_PATTERN.test(spawn.turnId) &&
+        spawn.positionId === (record.mentions as string[])[index]) &&
+      new Set(record.spawns.map((spawn) => spawn.turnId)).size === record.spawns.length
+    )) &&
+    parseRfc3339Instant(record.createdAt) !== null
   );
 }
 
 export class GroupStore {
+  private readonly activeDispatches = new Set<string>();
+  private readonly spawnRecoveryLocks = new Map<string, Promise<void>>();
+
+  /** Serialize the complete check/create/finish operation across timeline
+   * polls, releasing failed attempts so a later read can retry persistence. */
+  async withSpawnRecovery<T>(workspace: string, positionId: string, turnId: string, operation: () => Promise<T>): Promise<T> {
+    const key = `${path.resolve(workspace)}\0${positionId}\0${turnId}`;
+    const previous = this.spawnRecoveryLocks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => held);
+    this.spawnRecoveryLocks.set(key, tail);
+    await previous;
+    try { return await operation(); }
+    finally {
+      release();
+      if (this.spawnRecoveryLocks.get(key) === tail) this.spawnRecoveryLocks.delete(key);
+    }
+  }
+
+  beginDispatch(workspace: string, conversationRef: string, messageId: string): () => void {
+    const key = this.dispatchKey(workspace, conversationRef, messageId);
+    this.activeDispatches.add(key);
+    return () => { this.activeDispatches.delete(key); };
+  }
+
+  hasActiveDispatch(workspace: string, conversationRef: string, messageId: string): boolean {
+    return this.activeDispatches.has(this.dispatchKey(workspace, conversationRef, messageId));
+  }
+
+  private dispatchKey(workspace: string, conversationRef: string, messageId: string): string {
+    return `${path.resolve(workspace)}\0${conversationRef}\0${messageId}`;
+  }
+
   async create(input: {
     workspace: string;
     sessionId: string;
@@ -186,7 +252,7 @@ export class GroupStore {
       );
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
-      throw storageError("local group record could not be persisted atomically");
+      throw storageError("local group record could not be persisted atomically", error);
     }
     return group;
   }
@@ -239,7 +305,8 @@ export class GroupStore {
       }
       groups.push(await this.get(workspace, entry.name));
     }
-    groups.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt, "en"));
+    groups.sort((left, right) => compareRfc3339Instants(right.updatedAt, left.updatedAt) ||
+      compareCodeUnitOrdinal(left.conversationRef, right.conversationRef));
     return { schemaVersion: GROUP_LIST_SCHEMA_VERSION, groups };
   }
 
@@ -269,7 +336,7 @@ export class GroupStore {
       );
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
-      throw storageError("local group record could not be persisted atomically");
+      throw storageError("local group record could not be persisted atomically", error);
     }
     return updated;
   }
@@ -283,6 +350,7 @@ export class GroupStore {
       conversationRef,
       ...message,
     };
+    if (!isGroupMessage(record)) throw storageError("local group message is invalid");
     try {
       await atomicWriteJson(
         messageFile(workspace, conversationRef, record.messageId),
@@ -293,12 +361,32 @@ export class GroupStore {
       );
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
-      throw storageError("local group message could not be persisted atomically");
+      throw storageError("local group message could not be persisted atomically", error);
     }
     return record;
   }
 
   async readMessages(workspace: string, conversationRef: string): Promise<GroupMessage[]> {
+    return this.readMessageRecords(workspace, conversationRef, (message) => message);
+  }
+
+  /** Context readers need accepted identities, not a second copy of every
+   * original input per parallel employee. Validate one full record, then
+   * immediately retain only its lightweight references before the next read. */
+  async readContextMessages(workspace: string, conversationRef: string): Promise<GroupContextMessage[]> {
+    return this.readMessageRecords(workspace, conversationRef, (message) => ({
+      messageId: message.messageId,
+      mentions: message.mentions,
+      ...(message.spawns !== undefined ? { spawns: message.spawns } : {}),
+      createdAt: message.createdAt,
+    }));
+  }
+
+  private async readMessageRecords<T extends Pick<GroupMessage, "messageId" | "createdAt">>(
+    workspace: string,
+    conversationRef: string,
+    project: (message: GroupMessage) => T,
+  ): Promise<T[]> {
     assertConversationRef(conversationRef);
     const messagesDir = path.join(groupDir(workspace, conversationRef), "messages");
     let names: string[];
@@ -308,15 +396,18 @@ export class GroupStore {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw storageError("local group messages are unreadable");
     }
-    const messages: GroupMessage[] = [];
+    if (names.length > MAX_GROUP_MESSAGES) throw storageError("local group messages exceed the bounded record count");
+    const messages: T[] = [];
     for (const name of names) {
       const raw = await readJson(path.join(messagesDir, name), MAX_GROUP_MESSAGE_BYTES);
-      if (!isGroupMessage(raw) || raw.conversationRef !== conversationRef) {
+      if (!isGroupMessage(raw) || raw.conversationRef !== conversationRef ||
+          messageFile(workspace, conversationRef, raw.messageId) !== path.resolve(messagesDir, name)) {
         throw storageError("local group messages contain an invalid record");
       }
-      messages.push(raw);
+      messages.push(project(raw));
     }
-    messages.sort((left, right) => left.createdAt.localeCompare(right.createdAt, "en"));
+    messages.sort((left, right) => compareRfc3339Instants(left.createdAt, right.createdAt) ||
+      compareCodeUnitOrdinal(left.messageId, right.messageId));
     return messages;
   }
 

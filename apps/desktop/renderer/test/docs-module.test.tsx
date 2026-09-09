@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
+import type { DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
 import { DocsModule } from "../src/docs/DocsModule";
 import type { OwbBridge } from "../src/owb";
 

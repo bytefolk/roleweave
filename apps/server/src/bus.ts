@@ -1,4 +1,4 @@
-import type { SseEventEnvelope, SseEventType } from "@org-workbench/shared";
+import type { SseEventEnvelope, SseEventType } from "@roleweave/shared";
 
 const RING_SIZE = 256;
 
@@ -28,7 +28,15 @@ export class EventBus {
     };
     this.ring.push(event);
     if (this.ring.length > RING_SIZE) this.ring.shift();
-    for (const listener of this.listeners) listener(event);
+    for (const listener of this.listeners) {
+      try {
+        // A disconnected SSE client must not abort task execution, starve
+        // healthy clients, or create an unhandled async rejection.
+        void Promise.resolve(listener(event)).catch(() => { this.listeners.delete(listener); });
+      } catch {
+        this.listeners.delete(listener);
+      }
+    }
     return event;
   }
 

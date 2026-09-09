@@ -1,10 +1,10 @@
 // IPC boundary gate for POST /hire (#33). Mirrors the server-side first gate
 // at reduced depth: shape only, fail-closed. The control plane remains the
 // authoritative validator for hire-request.v1alpha1 inputs.
-const { isPositionId } = require("@org-workbench/shared/position-id");
+const { isPositionId } = require("@roleweave/shared/position-id");
 
 const MODES = new Set(["read_only", "approval_required"]);
-const KNOWN_KEYS = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "deadline"]);
+const KNOWN_KEYS = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "permissions", "prompt", "memorySources", "deadline"]);
 // Mirrors the control plane's MAX_DESCRIPTION_CHARACTERS (#92), which in turn
 // mirrors digital-employee's 1024-code-unit SKILL.md frontmatter bound.
 const MAX_DESCRIPTION_CHARACTERS = 1024;

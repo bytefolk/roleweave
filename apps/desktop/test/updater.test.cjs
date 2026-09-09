@@ -53,7 +53,7 @@ test("macOS opens its channel only for a Developer ID signature", () => {
       "TeamIdentifier=TEAM123",
     ].join("\n"),
   });
-  const signed = readMacBuildSignature({ appPath: "/Applications/Org Workbench.app", inspect });
+  const signed = readMacBuildSignature({ appPath: "/Applications/RoleWeave.app", inspect });
   assert.deepEqual(signed, { signed: true });
   assert.deepEqual(updateChannelAvailability("darwin", signed), {
     available: true,
@@ -61,7 +61,7 @@ test("macOS opens its channel only for a Developer ID signature", () => {
   });
 
   const adhoc = readMacBuildSignature({
-    appPath: "/Applications/Org Workbench.app",
+    appPath: "/Applications/RoleWeave.app",
     inspect: () => ({
       status: 0,
       error: null,

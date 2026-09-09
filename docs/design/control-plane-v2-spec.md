@@ -26,7 +26,7 @@
 > 的退役裁决不冲突——中性色/圆角本就是照 design-system 的契约值取的，状态色/
 > 字体/动效为本轮新增）。原 #31 冻结值（`--ui-canvas:#f8f7f5`、圆角 4/6/8/12、
 > 动效 120/150/200）已被本轮替换，不再是当前基线；历史脉络见 issue
-> [#31](https://github.com/bytefolk/org-workbench/issues/31)。
+> [#31](https://github.com/bytefolk/roleweave/issues/31)。
 
 以下是现有品牌资产，**必须保留**，任何 AI 接手后不得推翻：
 

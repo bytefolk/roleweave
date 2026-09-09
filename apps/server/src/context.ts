@@ -1,4 +1,4 @@
-import type { HireValidateDriver, OrgApplyDriver, TurnRunDriver } from "@org-workbench/shared";
+import type { HireValidateDriver, OrgApplyDriver, TurnRunDriver } from "@roleweave/shared";
 import type { EventBus } from "./bus.js";
 import type { WorkspaceState } from "./workspace-state.js";
 import type { ServerConfig } from "./config.js";

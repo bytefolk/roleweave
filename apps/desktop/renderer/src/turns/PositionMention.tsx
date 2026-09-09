@@ -1,6 +1,6 @@
 import { Select as AntSelect } from "antd";
 import { AtSign } from "lucide-react";
-import { useT } from "@org-workbench/ui";
+import { useT } from "@roleweave/ui";
 import type { PositionMentionOption } from "./types";
 
 export interface PositionMentionProps {
@@ -33,7 +33,7 @@ export function PositionMention({
           }}
           options={positions.map((position) => ({
             value: position.id,
-            label: `${position.name} · ${position.id}`,
+            label: position.name,
           }))}
         />
       </span>

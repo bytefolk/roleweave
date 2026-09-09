@@ -1,6 +1,6 @@
 import { Card, Tag, Typography } from "antd";
 import ReactMarkdown from "react-markdown";
-import { useT } from "@org-workbench/ui";
+import { useT } from "@roleweave/ui";
 import { splitFrontmatter } from "./frontmatter";
 
 export interface DocViewerProps {

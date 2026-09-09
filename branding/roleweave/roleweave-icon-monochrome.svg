@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RoleWeave monochrome app icon">
+  <title>RoleWeave monochrome app icon — woven roles</title>
+  <desc>A monochrome geometric R and W monogram on a dark rounded app tile, with no outer border.</desc>
+  <g id="icon-artwork" transform="translate(32 32) scale(0.875)">
+  <rect id="icon-canvas" x="0" y="0" width="512" height="512" rx="126" fill="#ffffff" />
+  <rect id="icon-edge" x="8" y="8" width="496" height="496" rx="118" fill="none" stroke="#141414" stroke-width="8" />
+  <path id="role-ribbon" fill="#141414" d="M116 406V106h104c78 0 126 38 126 102 0 46-23 78-66 94l79 104h-87l-66-91h-22v91h-68Zm68-236v89h31c40 0 61-15 61-43 0-30-21-46-61-46h-31Z"/>
+  <path id="weave-ribbon" fill="#ffffff" d="M150 244h43l33 79 33-53 33 53 33-79h43l-53 145h-43l-30-54-30 54h-43Z"/>
+  <circle id="role-node" cx="116" cy="106" r="9" fill="#ffffff" />
+  <circle id="workflow-node" cx="412" cy="264" r="9" fill="#ffffff" />
+  </g>
+</svg>

@@ -1,5 +1,5 @@
 import http from "node:http";
-import { OrgApiError, errorCodes, routes } from "@org-workbench/shared";
+import { OrgApiError, errorCodes, routes } from "@roleweave/shared";
 import { bearerAuthorized } from "./auth.js";
 import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
@@ -23,6 +23,7 @@ import { handlePositionGet } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
 import {
   handleSessionCreate,
+  handleSessionContextPatch,
   handleSessionGet,
   handleSessionList,
   handleSessionRotate,
@@ -30,7 +31,7 @@ import {
   handleSessionTurnPost,
 } from "./routes/sessions.js";
 import { handleTurnCancel, handleTurnHistory, handleTurnPost } from "./routes/turns.js";
-import { handleWorkspaceGet, handleWorkspaceOpen } from "./routes/workspace.js";
+import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceOpen } from "./routes/workspace.js";
 
 /**
  * Loopback-only control-plane HTTP server (frozen v0 contract).
@@ -73,6 +74,10 @@ async function dispatch(
       await handleWorkspaceOpen(ctx, req, res);
       return;
     }
+    if (pathname === routes.workspaceCreate && method === "POST") {
+      await handleWorkspaceCreate(ctx, req, res);
+      return;
+    }
     if (pathname === routes.orgTree && method === "GET") {
       await handleOrgTree(ctx, res);
       return;
@@ -109,7 +114,7 @@ async function dispatch(
       await handleSessionList(ctx, res, url);
       return;
     }
-    const sessionMatch = pathname.match(/^\/sessions\/([^/]+)(?:\/(rotate|turns))?$/);
+    const sessionMatch = pathname.match(/^\/sessions\/([^/]+)(?:\/(rotate|turns|context))?$/);
     if (sessionMatch) {
       let sessionId: string;
       try {
@@ -120,6 +125,10 @@ async function dispatch(
       const operation = sessionMatch[2];
       if (operation === undefined && method === "GET") {
         await handleSessionGet(ctx, res, sessionId);
+        return;
+      }
+      if (operation === "context" && method === "PATCH") {
+        await handleSessionContextPatch(ctx, req, res, sessionId);
         return;
       }
       if (operation === "rotate" && method === "POST") {

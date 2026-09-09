@@ -29,7 +29,15 @@ test("staging config is unpacked-only and cannot sign or publish", () => {
   );
 
   assert.equal(config.appId, "org.fullstack-ai-infra.org-workbench");
-  assert.equal(config.productName, "Org Workbench");
+  assert.equal(config.productName, "RoleWeave");
+  for (const [platform, iconPath] of Object.entries({
+    macos: config.mac.icon,
+    windows: config.win.icon,
+    linux: config.linux.icon,
+  })) {
+    assert.equal(path.isAbsolute(iconPath), true, `${platform} icon path must be absolute`);
+    assert.equal(fs.existsSync(iconPath), true, `${platform} icon asset must exist: ${iconPath}`);
+  }
   assert.equal(config.asar, false);
   assert.equal(config.electronDist, "node_modules/electron/dist");
   assert.equal(config.npmRebuild, false);
@@ -81,6 +89,7 @@ test("runtime manifest is an explicit allowlist for every packaged consumer", ()
     "apps/desktop/src/main.js",
     "apps/desktop/src/macos-login-path.cjs",
     "apps/desktop/src/preload.js",
+    "apps/desktop/src/control-plane-lifecycle.cjs",
     "apps/desktop/src/control-plane-launch.cjs",
     "apps/desktop/src/packaged-behavior-smoke.cjs",
     "apps/desktop/src/packaged-smoke.cjs",
@@ -91,8 +100,8 @@ test("runtime manifest is an explicit allowlist for every packaged consumer", ()
     "apps/server/dist/src/stable-read.js",
     "apps/server/bin/qoder-engine.mjs",
     "apps/server/src/qoder-binary.js",
-    "node_modules/@org-workbench/shared/package.json",
-    "node_modules/@org-workbench/shared/dist/index.js",
+    "node_modules/@roleweave/shared/package.json",
+    "node_modules/@roleweave/shared/dist/index.js",
     "examples/oss-maintainer/workspace.json",
   ]) {
     assert.equal(resources.has(entry), true, `missing runtime entry: ${entry}`);
@@ -156,7 +165,7 @@ test("runtime manifest is an explicit allowlist for every packaged consumer", ()
     "apps/desktop/dist/renderer/assets/index.js.map",
     "apps/server/dist/src/routes/health.test.js",
     "examples/oss-maintainer/credentials.json",
-    "node_modules/@org-workbench/shared/private-key.pem",
+    "node_modules/@roleweave/shared/private-key.pem",
     "scripts/package-helper.mjs",
   ]) {
     assert.equal(isForbiddenRuntimePath(injected), true, `denylist missed ${injected}`);
@@ -166,7 +175,7 @@ test("runtime manifest is an explicit allowlist for every packaged consumer", ()
   }
 
   const { PLATFORM_LAYOUTS } = require("../../apps/desktop/packaging/runtime-layout.cjs");
-  assert.deepEqual(PLATFORM_LAYOUTS.windows.bundleRequiredEntries, ["Org Workbench.exe"]);
+  assert.deepEqual(PLATFORM_LAYOUTS.windows.bundleRequiredEntries, ["RoleWeave.exe"]);
   assert.equal(
     PLATFORM_LAYOUTS.windows.bundleRequiredEntries.some((entry) => /electron\.asar|default_app\.asar/.test(entry)),
     false,

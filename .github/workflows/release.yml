@@ -179,7 +179,7 @@ jobs:
 
       - name: Verify installer asset set
         working-directory: org-workbench
-        run: npm run ${{ matrix.verify }}
+        run: npm run ${{ matrix.verify }} ${{ matrix.platform == 'macos' && '-- --require-macos-signature' || '' }}
 
       # Every leg writes latest*.yml. Uploaded under one name they would
       # overwrite each other and the surviving file would describe one platform

@@ -1,7 +1,7 @@
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { OrgApiError, errorCodes } from "@org-workbench/shared";
+import { OrgApiError, errorCodes } from "@roleweave/shared";
 import type {
   AuditEntry,
   BudgetReport,
@@ -11,7 +11,7 @@ import type {
   ReportUsage,
   ReportsResponse,
   TurnRecord,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { sendJson } from "../http.js";
 import { RUNTIME_DIR } from "../org/apply.js";

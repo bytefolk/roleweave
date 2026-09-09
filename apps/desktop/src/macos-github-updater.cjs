@@ -3,9 +3,10 @@
  *
  * Electron's Squirrel.Mac updater requires an Apple code-signing identity. This
  * service intentionally does not use Squirrel.Mac: it reads a signed manifest
- * from the public GitHub Releases API, downloads the matching ZIP, verifies
- * the asset, and delegates the replacement to a small detached helper. The
- * update signing key is independent of Apple and the private half never ships.
+ * from the public GitHub Releases API (with an Atom-feed fallback), downloads
+ * the matching ZIP, verifies the asset, and delegates the replacement to a
+ * small detached helper. The update signing key is independent of Apple and
+ * the private half never ships.
  */
 
 const crypto = require("node:crypto");
@@ -35,6 +36,11 @@ const UPDATE_STATES = Object.freeze([
   "error",
 ]);
 const API_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
+// GitHub's REST API has a low anonymous per-IP limit. The public Atom feed is
+// served by github.com rather than api.github.com and gives us the published
+// release tag without requiring a token. It is the recovery path when the API
+// responds with a rate-limit 403.
+const RELEASES_ATOM_URL = `https://github.com/${UPDATE_REPOSITORY}/releases.atom`;
 const DOWNLOAD_HOSTS = new Set([
   "github.com",
   "objects.githubusercontent.com",
@@ -56,6 +62,17 @@ const APPLE_SECRET_ENV_NAMES = [
 function normalizedError(error) {
   if (error === null || error === undefined) return "update failed for an unstated reason";
   return String(typeof error === "string" ? error : error.message ?? error).slice(0, 512);
+}
+
+function githubHttpError(statusCode, suffix = "") {
+  const error = new Error(`GitHub returned HTTP ${statusCode ?? "unknown"}${suffix}`);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function isGithubRateLimitError(error) {
+  const statusCode = Number(error?.statusCode);
+  return statusCode === 403 || statusCode === 429 || /GitHub returned HTTP (?:403|429)\b/.test(normalizedError(error));
 }
 
 function githubReleaseAssetUrl(tag, name) {
@@ -90,7 +107,7 @@ function requestBuffer(urlValue, { maxBytes, timeoutMs, requestImpl = https.requ
       method: "GET",
       headers: {
         Accept: "application/vnd.github+json",
-        "User-Agent": "org-workbench-updater",
+        "User-Agent": "roleweave-updater",
         "X-GitHub-Api-Version": "2022-11-28",
       },
     }, (response) => {
@@ -112,7 +129,7 @@ function requestBuffer(urlValue, { maxBytes, timeoutMs, requestImpl = https.requ
         return;
       }
       if (response.statusCode !== 200) {
-        reject(new Error(`GitHub returned HTTP ${response.statusCode ?? "unknown"}`));
+        reject(githubHttpError(response.statusCode));
         response.resume();
         return;
       }
@@ -144,6 +161,50 @@ async function fetchJson(url, options = {}) {
   }
 }
 
+/**
+ * Extract the first published release tag from GitHub's Atom feed. Keep this
+ * parser deliberately narrow: the link must point back to this repository's
+ * GitHub release-tag URL, so feed content cannot redirect the updater to an
+ * arbitrary repository or host.
+ */
+function parseLatestReleaseTagFromAtom(body) {
+  const entry = /<entry\b[\s\S]*?<\/entry>/i.exec(String(body))?.[0];
+  if (entry === undefined) throw new Error("GitHub returned an empty releases feed");
+
+  for (const match of entry.matchAll(/<link\b([^>]*)>/gi)) {
+    const attributes = match[1];
+    if (!/\brel\s*=\s*["']alternate["']/i.test(attributes)) continue;
+    const href = /\bhref\s*=\s*["']([^"']+)["']/i.exec(attributes)?.[1];
+    if (href === undefined) continue;
+    let url;
+    try {
+      url = new URL(href);
+    } catch {
+      continue;
+    }
+    const expectedPrefix = `/${UPDATE_REPOSITORY}/releases/tag/`;
+    if (url.protocol !== "https:" || url.hostname !== "github.com" || !url.pathname.startsWith(expectedPrefix)) continue;
+    const tag = url.pathname.slice(expectedPrefix.length);
+    if (/^v[0-9A-Za-z.+-]+$/.test(tag)) return tag;
+  }
+  throw new Error("GitHub returned a releases feed without a valid release tag");
+}
+
+async function fetchLatestReleaseFromAtom() {
+  const body = await requestBuffer(RELEASES_ATOM_URL, {
+    maxBytes: MAX_MANIFEST_BYTES,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+  });
+  return {
+    tag_name: parseLatestReleaseTagFromAtom(body.toString("utf8")),
+    // Atom only exposes published entries, so drafts are excluded. The signed
+    // manifest remains the authority for the version and artifact details.
+    draft: false,
+    prerelease: false,
+    source: "atom",
+  };
+}
+
 function downloadFile(urlValue, destination, { expectedBytes, onProgress = () => {}, requestImpl = https.request } = {}) {
   return new Promise((resolve, reject) => {
     const follow = (value, redirects) => {
@@ -156,7 +217,7 @@ function downloadFile(urlValue, destination, { expectedBytes, onProgress = () =>
       }
       const request = requestImpl(url, {
         method: "GET",
-        headers: { "User-Agent": "org-workbench-updater", Accept: "application/octet-stream" },
+        headers: { "User-Agent": "roleweave-updater", Accept: "application/octet-stream" },
       }, (response) => {
         if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           response.resume();
@@ -170,7 +231,7 @@ function downloadFile(urlValue, destination, { expectedBytes, onProgress = () =>
         }
         if (response.statusCode !== 200) {
           response.resume();
-          reject(new Error(`GitHub returned HTTP ${response.statusCode ?? "unknown"} for the update`));
+          reject(githubHttpError(response.statusCode, " for the update"));
           return;
         }
         const contentLength = Number(response.headers["content-length"]);
@@ -251,6 +312,7 @@ function createMacGithubUpdaterService({
   quit = null,
   spawnProcess = spawn,
   fetchLatestRelease = () => fetchJson(API_URL, { timeoutMs: REQUEST_TIMEOUT_MS }),
+  fetchLatestReleaseFromFallback = fetchLatestReleaseFromAtom,
   fetchManifest = (url) => fetchJson(url, { timeoutMs: REQUEST_TIMEOUT_MS }),
   download = (url, destination, options) => downloadFile(url, destination, options),
   verifyManifest = verifyUpdateManifest,
@@ -293,7 +355,16 @@ function createMacGithubUpdaterService({
       if (state === "downloading" || state === "downloaded") return { state, version: latest?.version ?? null };
       publish("checking");
       try {
-        const release = await fetchLatestRelease();
+        let release;
+        try {
+          release = await fetchLatestRelease();
+        } catch (error) {
+          if (!isGithubRateLimitError(error)) throw error;
+          // Do not make an anonymous API retry: it would only prolong the
+          // failure window. The Atom feed supplies the tag and the manifest
+          // download below supplies the signed release details.
+          release = await fetchLatestReleaseFromFallback();
+        }
         if (release?.draft === true || release?.prerelease === true) throw new Error("the latest GitHub release is not public");
         const tag = release?.tag_name;
         const manifestUrl = githubReleaseAssetUrl(tag, UPDATE_MANIFEST_NAME);
@@ -301,11 +372,18 @@ function createMacGithubUpdaterService({
         const verification = verifyManifest(manifest, { arch });
         if (!verification.ok) throw new Error(verification.reason);
         if (tag !== manifest.tag) throw new Error("the GitHub release tag does not match its signed manifest");
-        const assets = Array.isArray(release.assets) ? release.assets : [];
-        const asset = assets.find((entry) => entry?.name === manifest.assetName);
-        if (asset === undefined) throw new Error("the signed macOS update asset is missing from the release");
-        if (Number.isSafeInteger(asset.size) && asset.size !== manifest.size) throw new Error("the GitHub asset size does not match its signed manifest");
-        if (typeof asset.digest === "string" && asset.digest !== `sha256:${manifest.sha256}`) throw new Error("the GitHub asset digest does not match its signed manifest");
+        if (release.source === "atom") {
+          // The Atom fallback has no asset inventory. Fetching the signed
+          // manifest from the tag-specific asset URL already proves that the
+          // named asset exists; the ZIP is checked again by size and SHA-256
+          // before it can be installed.
+        } else {
+          const assets = Array.isArray(release.assets) ? release.assets : [];
+          const asset = assets.find((entry) => entry?.name === manifest.assetName);
+          if (asset === undefined) throw new Error("the signed macOS update asset is missing from the release");
+          if (Number.isSafeInteger(asset.size) && asset.size !== manifest.size) throw new Error("the GitHub asset size does not match its signed manifest");
+          if (typeof asset.digest === "string" && asset.digest !== `sha256:${manifest.sha256}`) throw new Error("the GitHub asset digest does not match its signed manifest");
+        }
         const comparison = compareVersions(manifest.version, currentVersion);
         if (comparison === null) throw new Error("the running app version is invalid");
         if (comparison <= 0) {
@@ -390,9 +468,14 @@ function createMacGithubUpdaterService({
 module.exports = {
   API_URL,
   DOWNLOAD_HOSTS,
+  RELEASES_ATOM_URL,
   UPDATE_STATES,
   createMacGithubUpdaterService,
+  fetchLatestReleaseFromAtom,
   githubReleaseAssetUrl,
+  githubHttpError,
+  isGithubRateLimitError,
   normalizedError,
+  parseLatestReleaseTagFromAtom,
   sha256File,
 };

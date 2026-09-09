@@ -4,14 +4,14 @@ import {
   OrgApiError,
   errorCodes,
   isPositionId,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type {
   AuditEntry,
   OrgBackupEntry,
   OrgBackupsResponse,
   OrgRestoreResult,
   OrgRole,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { POSITIONS_DIR, RUNTIME_DIR, scanProposalTree, withOrgMutationLock } from "./apply.js";
 

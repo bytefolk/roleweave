@@ -33,7 +33,7 @@ describe("packaged-only static renderer entry", () => {
       search: `?orgWorkbenchPackagedSmoke=${"a".repeat(64)}`,
     }, BridgeUsingApp));
 
-    expect(screen.getByText("Org Workbench clean-staging renderer")).toHaveAttribute(
+    expect(screen.getByText("RoleWeave clean-staging renderer")).toHaveAttribute(
       "data-org-workbench-packaged-smoke-entry",
       "true",
     );

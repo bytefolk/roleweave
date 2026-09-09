@@ -62,6 +62,28 @@ test("turn driver uses stdin, exact turn argv, and the selected engine environme
   assert.equal(result.events.length, 2);
 });
 
+test("a cancellation delivered at abort registration never starts the engine process", async () => {
+  const directory = await fs.mkdtemp(path.join(FIXTURE_TMPDIR, "owb-cancel-before-spawn-"));
+  const marker = path.join(directory, "side-effect");
+  const entry = path.join(directory, "engine.mjs");
+  await fs.writeFile(entry, `import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(marker)}, "engine was invoked");`, { mode: 0o600 });
+  const published: string[] = [];
+  try {
+    const result = await new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(entry)}`).turnRun({
+      workspace: "/workspace", positionId: "repo-owner", engine: "qoder", envelope: ENVELOPE,
+      setAbort: (abort) => abort(),
+      onEvent: (event) => published.push(event.type),
+    });
+    assert.equal(result.status, "indeterminate");
+    assert.equal(result.code, "turn_cancelled");
+    assert.deepEqual(result.events, []);
+    assert.deepEqual(published, []);
+    await assert.rejects(fs.access(marker), { code: "ENOENT" });
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("run-as-node crosses only the exact packaged bundled-engine boundary", async () => {
   const saved = process.env.ELECTRON_RUN_AS_NODE;
   try {
@@ -124,6 +146,7 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
   const saved = {
     bin: process.env.ORG_WORKBENCH_QODER_BIN,
     permissionMode: process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE,
+    qoderCommand: process.env.DIGITAL_EMPLOYEE_QODER_COMMAND,
     runtime: Object.fromEntries(
       Object.keys(qoderRuntimeEnvironment).map((key) => [key, process.env[key]]),
     ) as NodeJS.ProcessEnv,
@@ -135,6 +158,7 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
       permissionMode: string;
       expectedBin: string | undefined;
       expectedPermissionMode: string | undefined;
+      expectedQoderCommand: string | undefined;
       expectQoderRuntime: boolean;
       label: string;
     }> = [
@@ -142,8 +166,9 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
         engine: "qoder",
         bundled: true,
         permissionMode: "auto",
-        expectedBin: "/opt/qoder/bin/qodercli",
-        expectedPermissionMode: "auto",
+      expectedBin: "/opt/qoder/bin/qodercli",
+      expectedPermissionMode: "auto",
+      expectedQoderCommand: "/opt/qoder-cn/bin/qoderclicn",
         expectQoderRuntime: true,
         label: "bundled adapter receives supported controls",
       },
@@ -151,8 +176,9 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
         engine: "qoder",
         bundled: false,
         permissionMode: "auto",
-        expectedBin: undefined,
-        expectedPermissionMode: undefined,
+      expectedBin: undefined,
+      expectedPermissionMode: undefined,
+      expectedQoderCommand: "/opt/qoder-cn/bin/qoderclicn",
         expectQoderRuntime: true,
         label: "ordinary operator command receives no adapter controls",
       },
@@ -160,8 +186,9 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
         engine: "qoder",
         bundled: true,
         permissionMode: "anything-goes",
-        expectedBin: "/opt/qoder/bin/qodercli",
-        expectedPermissionMode: "anything-goes",
+      expectedBin: "/opt/qoder/bin/qodercli",
+      expectedPermissionMode: "anything-goes",
+      expectedQoderCommand: "/opt/qoder-cn/bin/qoderclicn",
         expectQoderRuntime: true,
         label: "bundled adapter receives invalid input for single-point validation",
       },
@@ -169,8 +196,9 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
         engine: "claude-code",
         bundled: true,
         permissionMode: "auto",
-        expectedBin: undefined,
-        expectedPermissionMode: undefined,
+      expectedBin: undefined,
+      expectedPermissionMode: undefined,
+      expectedQoderCommand: undefined,
         expectQoderRuntime: false,
         label: "a non-Qoder turn receives neither adapter controls nor Qoder runtime",
       },
@@ -178,6 +206,7 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
     for (const testCase of cases) {
       process.env.ORG_WORKBENCH_QODER_BIN = "/opt/qoder/bin/qodercli";
       process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE = testCase.permissionMode;
+      process.env.DIGITAL_EMPLOYEE_QODER_COMMAND = "/opt/qoder-cn/bin/qoderclicn";
       Object.assign(process.env, qoderRuntimeEnvironment);
       const command = await fixtureCli(`
         let input = "";
@@ -185,6 +214,7 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
         for await (const chunk of process.stdin) input += chunk;
         if (process.env.ORG_WORKBENCH_QODER_BIN !== ${JSON.stringify(testCase.expectedBin)}) process.exit(6);
         if (process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE !== ${JSON.stringify(testCase.expectedPermissionMode)}) process.exit(5);
+        if (process.env.DIGITAL_EMPLOYEE_QODER_COMMAND !== ${JSON.stringify(testCase.expectedQoderCommand)}) process.exit(7);
         const expectedRuntime = ${JSON.stringify(qoderRuntimeEnvironment)};
         for (const [key, value] of Object.entries(expectedRuntime)) {
           const expected = ${JSON.stringify(testCase.expectQoderRuntime)} ? value : undefined;
@@ -207,6 +237,8 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
     else process.env.ORG_WORKBENCH_QODER_BIN = saved.bin;
     if (saved.permissionMode === undefined) delete process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE;
     else process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE = saved.permissionMode;
+    if (saved.qoderCommand === undefined) delete process.env.DIGITAL_EMPLOYEE_QODER_COMMAND;
+    else process.env.DIGITAL_EMPLOYEE_QODER_COMMAND = saved.qoderCommand;
     for (const [key, value] of Object.entries(saved.runtime)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;

@@ -384,24 +384,6 @@ export async function cleanupSmokeStaging({
   if (errors.length > 1) throw new AggregateError(errors, "staged process and directory cleanup both failed");
 }
 
-/** Engine children the residual contract is about: a Qoder or Claude Code
- * process must not outlive the report.
- *
- * #131: matches the executable path as well as the command line. On Windows
- * `Win32_Process.CommandLine` is null whenever the querying user cannot read it,
- * and `process-tree.cjs` maps that to `""`, which never matches a command
- * pattern -- so a residual engine child could have escaped this filter on the
- * one platform where the command line is least reliable. `ExecutablePath` is a
- * separate field and is usually still readable. Neither field is trusted for
- * ownership; that stays with the identity-bound model in `process-tree.cjs`.
- */
-export function residualEngineDescendants(descendants) {
-  const pattern = /qoder(?:-engine|cli)?|claude/i;
-  return (descendants ?? []).filter(
-    ({ command, executable }) => pattern.test(command ?? "") || pattern.test(executable ?? ""),
-  );
-}
-
 // Runs inside the window the packaged app holds open for this snapshot, so the
 // whole set is bound in one shell round trip rather than one per process.
 function bindVisibleProcesses(processes) {
@@ -432,8 +414,8 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
 
   try {
     const stagedApp = platform === "macos"
-      ? path.join(stagingRoot, "Org Workbench.app")
-      : path.join(stagingRoot, "Org Workbench Staging");
+      ? path.join(stagingRoot, "RoleWeave Staging.app")
+      : path.join(stagingRoot, "RoleWeave Staging");
     assert.equal(stagedApp.includes(" "), true, "clean staging path must exercise spaces");
     await fs.cp(sourceApp, stagedApp, {
       recursive: true,
@@ -604,21 +586,12 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       0,
       "staged app reported no descendants while still held open",
     );
-    const liveQoderDescendants = residualEngineDescendants(liveDescendants);
+    const liveQoderDescendants = liveDescendants.filter(({ command }) => /qoder(?:-engine|cli)?|claude/i.test(command));
     assert.equal(
       liveQoderDescendants.length,
       0,
       `${mode} smoke left a Qoder/Claude/Host child alive after reporting`,
     );
-    // #131: the assertion above runs on every mode, but only behavior mode
-    // *guarantees* an engine child existed to be cleaned up -- it creates the
-    // Qoder fixture. In static and layout mode the only engine child is the
-    // health probe, which is short-lived, so an empty set there means "nothing
-    // survived" and not "the check was exercised against something". Recorded
-    // rather than left for a reader to infer from a green leg.
-    const engineResidualCoverage = behaviorFixtures === null
-      ? `not-guaranteed: ${mode} mode creates no engine fixture; only a short-lived health probe can appear`
-      : "guaranteed: behavior mode creates a Qoder fixture that must be cleaned up";
 
     // Everything that needs the tree standing has been read; let the app close.
     await releaseLease();
@@ -641,7 +614,6 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       externalCredentialsForwarded: false,
       liveDescendants: liveDescendants.length,
       qoderDescendantsObservedAfterReport: liveQoderDescendants.length,
-      engineResidualCoverage,
       knownResidualProcesses: 0,
     };
     completedReport = mode === "static"

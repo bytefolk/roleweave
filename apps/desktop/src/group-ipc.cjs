@@ -1,9 +1,9 @@
 // S2 group-chat IPC validators (#52, DS-34-001 rev-1 §1.2). Main-process
 // fail-closed boundary mirroring the route shapes in routes/groups.ts.
-const { isPositionId } = require("@org-workbench/shared/position-id");
+const { isPositionId } = require("@roleweave/shared/position-id");
 
 const CONVERSATION_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const { TURN_ENGINE_IDS, turnEngineMessage } = require("@org-workbench/shared/turn-engines");
+const { TURN_ENGINE_IDS, turnEngineMessage } = require("@roleweave/shared/turn-engines");
 const TURN_ENGINES = new Set(TURN_ENGINE_IDS);
 const MAX_INPUT_BYTES = 256 * 1024;
 const MAX_GROUP_MEMBERS = 32;
@@ -60,9 +60,12 @@ function validateGroupAddMemberRequest(value) {
 function validateGroupTurnRequest(value) {
   if (
     value === null || typeof value !== "object" || Array.isArray(value) ||
-    Object.keys(value).sort().join(",") !== "conversationRef,engine,input,mentions"
+    !["conversationRef,engine,input,mentions", "conversationRef,engine,input,mentions,mode"].includes(Object.keys(value).sort().join(","))
   ) {
-    return { ok: false, response: invalid("group_request_invalid", "group turn accepts exactly conversationRef, input, engine, mentions") };
+    return { ok: false, response: invalid("group_request_invalid", "group turn accepts conversationRef, input, engine, mentions and optional mode") };
+  }
+  if (value.mode !== undefined && value.mode !== "parallel" && value.mode !== "relay") {
+    return { ok: false, response: invalid("group_request_invalid", "mode must be parallel or relay") };
   }
   if (!validateConversationRef(value.conversationRef)) {
     return { ok: false, response: invalid("group_request_invalid", "conversationRef is invalid") };
@@ -87,7 +90,7 @@ function validateGroupTurnRequest(value) {
   return {
     ok: true,
     conversationRef: value.conversationRef,
-    request: { input: value.input, engine: value.engine, mentions: value.mentions },
+    request: { input: value.input, engine: value.engine, mentions: value.mentions, ...(value.mode !== undefined ? { mode: value.mode } : {}) },
   };
 }
 

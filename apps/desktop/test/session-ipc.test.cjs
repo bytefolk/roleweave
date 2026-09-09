@@ -32,3 +32,19 @@ test("session IPC constructs only bounded enumerated paths", () => {
   assert.equal(sessionPath(sessionId, "/rotate"), `/sessions/${sessionId}/rotate`);
   assert.equal(sessionPath("../../secret", "/turns"), null);
 });
+
+test("session context IPC permits only the session id and explicit boolean", () => {
+  const { validateSessionContextRequest } = require("../src/session-ipc.cjs");
+  assert.deepEqual(validateSessionContextRequest({ sessionId, enabled: false }), { ok: true, sessionId, request: { enabled: false } });
+  for (const value of [{ sessionId, enabled: "false" }, { sessionId: "../escape", enabled: true }, { sessionId, enabled: true, principal: "admin" }]) {
+    assert.equal(validateSessionContextRequest(value).ok, false);
+  }
+});
+
+test("group dispatch IPC forwards validated explicit modes and preserves recipient order", () => {
+  const { validateGroupTurnRequest } = require("../src/group-ipc.cjs");
+  const value = { conversationRef: "group-one", engine: "qoder", input: "draft then review", mentions: ["writer", "reviewer"], mode: "relay" };
+  assert.deepEqual(validateGroupTurnRequest(value).request, { engine: "qoder", input: "draft then review", mentions: ["writer", "reviewer"], mode: "relay" });
+  assert.equal(validateGroupTurnRequest({ ...value, mode: "automatic" }).ok, false);
+  assert.equal(validateGroupTurnRequest({ ...value, principal: "admin" }).ok, false);
+});

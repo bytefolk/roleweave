@@ -1,6 +1,6 @@
 import { Button, Drawer, Statistic } from "antd";
-import { BudgetBar, useT } from "@org-workbench/ui";
-import type { BudgetReport } from "@org-workbench/shared";
+import { BudgetBar, useT } from "@roleweave/ui";
+import type { BudgetReport } from "@roleweave/shared";
 import { ArrowUpRight } from "lucide-react";
 
 export interface BudgetDetailDrawerProps {
@@ -16,7 +16,7 @@ export interface BudgetDetailDrawerProps {
 export function BudgetDetailDrawer({ open, budget, onClose, onOpenTimeline }: BudgetDetailDrawerProps) {
   const t = useT();
   const title = budget
-    ? t("rep.budgetDetail", { name: budget.displayName ?? budget.positionId })
+    ? t("rep.budgetDetail", { name: budget.displayName ?? t("rep.unknownPosition") })
     : t("rep.budgetDetailPlain");
   const ratio = budget?.ratio
     ?? (budget && budget.latestTurn && budget.declared.perTask.tokens

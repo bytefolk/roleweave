@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { TURN_ENGINE_IDS, turnEngineMessage } = require("@org-workbench/shared/turn-engines");
+const { TURN_ENGINE_IDS, turnEngineMessage } = require("@roleweave/shared/turn-engines");
 const { validateCreateTurnRequest } = require("../src/turn-ipc.cjs");
 const { validateSessionTurnRequest } = require("../src/session-ipc.cjs");
 const { validateGroupTurnRequest } = require("../src/group-ipc.cjs");

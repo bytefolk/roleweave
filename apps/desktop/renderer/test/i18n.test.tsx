@@ -7,7 +7,7 @@ import {
   isOwbLocale,
   useT,
   zhCatalog,
-} from "@org-workbench/ui";
+} from "@roleweave/ui";
 import { PrefsMenu } from "../src/prefs-menu";
 import { seedLocale } from "../src/locale-mode";
 import { useState } from "react";
@@ -121,4 +121,3 @@ describe("#146 i18n gates", () => {
     en.unmount();
   });
 });
-

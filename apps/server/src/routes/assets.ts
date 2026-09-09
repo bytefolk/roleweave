@@ -5,8 +5,8 @@ import {
   OrgApiError,
   errorCodes,
   isPositionId,
-} from "@org-workbench/shared";
-import type { AssetRecord, AssetsCreateRequest, AssetsListResponse } from "@org-workbench/shared";
+} from "@roleweave/shared";
+import type { AssetRecord, AssetsCreateRequest, AssetsListResponse } from "@roleweave/shared";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   appendAssetIndex,

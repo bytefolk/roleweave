@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Input, List, Space, Spin, Tag } from "antd";
-import { useT } from "@org-workbench/ui";
+import { Alert, Button, Empty, Input, List, Space, Spin, Tag } from "antd";
+import { FileText } from "lucide-react";
+import { useT } from "@roleweave/ui";
 import type {
   DocPlaneDetailResponse,
   DocPlaneListEntry,
   DocPlaneListResponse,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import { DocViewer } from "./DocViewer";
 
 /**
@@ -15,8 +16,8 @@ import { DocViewer } from "./DocViewer";
  * The renderer never touches bytefolk/doc directly — the shell owns the
  * origin, the PAT and the CORS boundary. When the shell has no upstream
  * configured the proxy returns `doc_plane_unconfigured` (503) and this
- * panel surfaces the configuration guide inline (env-var reference + one
- * runnable example) instead of a generic error.
+ * panel surfaces the unconfigured state instead of pretending there are
+ * shared documents.
  */
 
 export interface DocPlanePanelProps {
@@ -96,77 +97,88 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
 
   return (
     <section className="owb-doc-plane" aria-label={t("docs.planeAria")}>
-      <Space.Compact style={{ width: "100%", maxWidth: 480 }}>
-        <Input
-          aria-label={t("docs.planeSearchAria")}
-          placeholder={t("docs.planeSearchPlaceholder")}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onPressEnter={() => runList(query.trim())}
-          allowClear
-          onClear={() => {
-            setQuery("");
-            void runList("");
-          }}
-        />
-        <Button onClick={() => runList(query.trim())} loading={listing}>
-          {t("docs.planeSearchAction")}
-        </Button>
-      </Space.Compact>
-      {source !== null ? (
-        <div className="owb-doc-plane__source" role="status">
-          {t("docs.planeSource")}
-          <Tag color={source === "upstream" ? "green" : "gold"}>
-            {source === "upstream" ? t("docs.planeSourceUpstream") : t("docs.planeSourceMock")}
-          </Tag>
+      <div className="owb-doc-plane__workspace">
+        <div className="owb-doc-plane__list-pane">
+          <div className="owb-doc-plane__toolbar">
+            <Space.Compact style={{ width: "100%" }}>
+              <Input
+                aria-label={t("docs.planeSearchAria")}
+                placeholder={t("docs.planeSearchPlaceholder")}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onPressEnter={() => runList(query.trim())}
+                allowClear
+                onClear={() => {
+                  setQuery("");
+                  void runList("");
+                }}
+              />
+              <Button onClick={() => runList(query.trim())} loading={listing}>
+                {t("docs.planeSearchAction")}
+              </Button>
+            </Space.Compact>
+            {source !== null ? (
+              <div className="owb-doc-plane__source" role="status">
+                <span>{t("docs.planeSource")}</span>
+                <Tag color={source === "upstream" ? "green" : "gold"}>
+                  {source === "upstream" ? t("docs.planeSourceUpstream") : t("docs.planeSourceMock")}
+                </Tag>
+              </div>
+            ) : null}
+          </div>
+          {listStatus.kind === "unconfigured" ? (
+            <div className="owb-doc-plane__unconfigured" role="status">
+              <i aria-hidden="true" />
+              <strong>{t("docs.planeUnconfigured")}</strong>
+            </div>
+          ) : null}
+          {listStatus.kind === "error" ? (
+            <Alert type="error" message={listStatus.message} />
+          ) : null}
+          {listing ? <Spin aria-label={t("docs.planeListLoading")} /> : null}
+          {!listing && listStatus.kind === "idle" ? (
+            <List
+              className="owb-doc-plane__list"
+              size="small"
+              dataSource={entries}
+              locale={{ emptyText: t("docs.planeEmpty") }}
+              renderItem={(entry) => (
+                <List.Item
+                  key={entry.id}
+                  actions={
+                    entry.starred
+                      ? [
+                          <Tag key="starred" color="gold">
+                            {t("docs.planeStarred")}
+                          </Tag>,
+                        ]
+                      : []
+                  }
+                >
+                  <button
+                    type="button"
+                    className="owb-doc-plane__entry"
+                    aria-pressed={selectedId === entry.id}
+                    onClick={() => openEntry(entry.id)}
+                  >
+                    <span aria-hidden="true">{entry.icon ?? "📄"}</span> {entry.title}
+                  </button>
+                </List.Item>
+              )}
+            />
+          ) : null}
         </div>
-      ) : null}
-      {listStatus.kind === "unconfigured" ? (
-        <Alert
-          type="info"
-          message={t("docs.planeUnconfigured")}
-          description={<pre className="owb-doc-plane__config">{t("docs.planeConfigHint")}</pre>}
-        />
-      ) : null}
-      {listStatus.kind === "error" ? (
-        <Alert type="error" message={listStatus.message} />
-      ) : null}
-      {listing ? <Spin aria-label={t("docs.planeListLoading")} /> : null}
-      {!listing && listStatus.kind === "idle" ? (
-        <List
-          size="small"
-          dataSource={entries}
-          locale={{ emptyText: t("docs.planeEmpty") }}
-          renderItem={(entry) => (
-            <List.Item
-              key={entry.id}
-              actions={
-                entry.starred
-                  ? [
-                      <Tag key="starred" color="gold">
-                        {t("docs.planeStarred")}
-                      </Tag>,
-                    ]
-                  : []
-              }
-            >
-              <button
-                type="button"
-                className="owb-doc-plane__entry"
-                aria-pressed={selectedId === entry.id}
-                onClick={() => openEntry(entry.id)}
-              >
-                <span aria-hidden="true">{entry.icon ?? "📄"}</span> {entry.title}
-              </button>
-            </List.Item>
-          )}
-        />
-      ) : null}
-      {reading ? <Spin aria-label={t("docs.planeLoading")} /> : null}
-      {readError !== null ? <Alert type="error" message={readError} /> : null}
-      {detail !== null ? (
-        <DocViewer source={detail.content} version={detail.updatedAt} title={detail.title} />
-      ) : null}
+        <div className="owb-doc-plane__reader-pane" aria-label={t("docs.readerAria")}>
+          {reading ? <Spin aria-label={t("docs.planeLoading")} /> : null}
+          {readError !== null ? <Alert type="error" message={readError} /> : null}
+          {detail !== null ? (
+            <DocViewer source={detail.content} version={detail.updatedAt} title={detail.title} />
+          ) : null}
+          {detail === null && !reading && readError === null ? (
+            <Empty image={<FileText aria-hidden="true" size={28} strokeWidth={1.5} />} description={t("docs.readerEmpty")} />
+          ) : null}
+        </div>
+      </div>
     </section>
   );
 }

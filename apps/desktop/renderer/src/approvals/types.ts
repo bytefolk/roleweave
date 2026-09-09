@@ -19,8 +19,8 @@
  *     `streams.approvals` endpoint lands, this file switches its data source
  *     with no UI-shape change.
  */
-import type { TurnApprovalActionKind } from "@org-workbench/shared";
-import { zhText } from "@org-workbench/ui";
+import type { TurnApprovalActionKind } from "@roleweave/shared";
+import { zhText } from "@roleweave/ui";
 
 export type ApprovalCategory = TurnApprovalActionKind;
 

@@ -1,8 +1,8 @@
-const { isPositionId } = require("@org-workbench/shared/position-id");
+const { isPositionId } = require("@roleweave/shared/position-id");
 const { validatePendingApproval } = require("./approval-ipc.cjs");
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const { TURN_ENGINE_IDS, turnEngineMessage } = require("@org-workbench/shared/turn-engines");
+const { TURN_ENGINE_IDS, turnEngineMessage } = require("@roleweave/shared/turn-engines");
 const TURN_ENGINES = new Set(TURN_ENGINE_IDS);
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -60,6 +60,15 @@ function validateSessionTurnRequest(value) {
   };
 }
 
+function validateSessionContextRequest(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).sort().join(",") !== "enabled,sessionId" ||
+      !validateSessionId(value.sessionId) || typeof value.enabled !== "boolean") {
+    return { ok: false, response: invalid("session_request_invalid", "session context accepts exactly sessionId and enabled boolean") };
+  }
+  return { ok: true, sessionId: value.sessionId, request: { enabled: value.enabled } };
+}
+
 function sessionListPath(positionId) {
   return isPositionId(positionId) ? `/sessions?positionId=${encodeURIComponent(positionId)}` : null;
 }
@@ -72,6 +81,7 @@ module.exports = {
   sessionListPath,
   sessionPath,
   validateSessionCreateRequest,
+  validateSessionContextRequest,
   validateSessionId,
   validateSessionTurnRequest,
 };

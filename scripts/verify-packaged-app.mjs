@@ -170,7 +170,7 @@ export function expectedResourceManifest(sourceRoot = projectRoot) {
   addSourceEntries(manifest, "apps/server", "apps/server", SERVER_RUNTIME_FILES, sourceRoot);
   addSourceEntries(
     manifest,
-    "node_modules/@org-workbench/shared",
+    "node_modules/@roleweave/shared",
     "packages/shared",
     SHARED_RUNTIME_FILES,
     sourceRoot,
@@ -233,12 +233,12 @@ function discoverCandidate(platform, canonicalOutputRoot) {
       if (entry.isSymbolicLink()) throw new Error(`staging output contains a linked directory: ${entry.name}`);
       if (!entry.isDirectory()) continue;
       const absolute = path.join(directory, entry.name);
-      if (platform === "macos" && entry.name === "Org Workbench.app") {
+      if (platform === "macos" && entry.name === "RoleWeave.app") {
         found.push(absolute);
       } else if (
         platform === "windows" &&
         entry.name === "win-unpacked" &&
-        fs.existsSync(path.join(absolute, "Org Workbench.exe"))
+        fs.existsSync(path.join(absolute, "RoleWeave.exe"))
       ) {
         found.push(absolute);
       } else {
@@ -286,7 +286,7 @@ export const WINDOWS_SIGNATURE_TARGET_ENV = "VERIFY_SIGNATURE_TARGET";
  * environment rather than argv: with `-Command`, PowerShell appends trailing argv
  * entries to the script text instead of binding them to a `param()` block, so an
  * inline path is parsed as source and breaks on the first space — and the packaged
- * executable is named "Org Workbench.exe".
+ * executable is named "RoleWeave.exe".
  */
 export function windowsSignatureInspection(executable, baseEnv = process.env) {
   // CI runs this step under pwsh 7, which exports its own PSModulePath. Inheriting it
@@ -388,7 +388,7 @@ export function verifyPackagedApp(platform, candidate) {
   if (platform === "macos") {
     const plist = path.join(appPath, "Contents", "Info.plist");
     assert.equal(plistValue(plist, "CFBundleIdentifier"), "org.fullstack-ai-infra.org-workbench");
-    assert.equal(plistValue(plist, "CFBundleExecutable"), "Org Workbench");
+    assert.equal(plistValue(plist, "CFBundleExecutable"), "RoleWeave");
     assert.equal(plistValue(plist, "CFBundleShortVersionString"), sourceMetadata.version);
   }
 

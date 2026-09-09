@@ -9,7 +9,7 @@ import type {
   TurnRunRequest,
   TurnRunResult,
   WorkbenchSession,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import {
   ContextExportService,
   readContextExportState,

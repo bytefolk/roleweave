@@ -10,7 +10,7 @@
  * Keeping this separate from the component also lets the affordance rules be
  * asserted directly, rather than inferred from which buttons happen to render.
  */
-import type { UpdateEvent, UpdatePlatform, UpdateState, UpdateStatus } from "@org-workbench/shared";
+import type { UpdateEvent, UpdatePlatform, UpdateState, UpdateStatus } from "@roleweave/shared";
 
 export interface UpdateMessage {
   key: string;

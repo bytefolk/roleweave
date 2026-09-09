@@ -4,8 +4,8 @@
  * The workbench does not re-implement the mem Memory Plane; it proxies a
  * bounded read/list surface plus an upload stub to a configured `MEM_URL`
  * (bytefolk/mem `memd` HTTP API, `/v1/files`). When `MEM_URL` is unset the
- * server returns a `drive_not_configured` error and the renderer falls back
- * to a mocked fixture so the end-to-end UI path stays exercisable in CI.
+ * server returns a `drive_not_configured` error; the renderer must not replace
+ * that state with local fixture data.
  *
  * Contract is deliberately narrow — one card per object, no ranking or
  * embedding surface — so the workbench never pretends to own the memory
@@ -36,7 +36,7 @@ export interface DriveObjectListResponse {
   schemaVersion: typeof DRIVE_OBJECT_LIST_SCHEMA_VERSION;
   /** Deterministic order: newest `createdAt` first, mem-supplied order preserved. */
   objects: DriveObject[];
-  /** True when the response is a mocked fixture (MEM_URL unset). */
+  /** Kept for wire compatibility; connected responses always set this false. */
   mocked: boolean;
 }
 

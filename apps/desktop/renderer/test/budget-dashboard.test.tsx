@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { BudgetDashboard, budgetPercentText, stateLabel } from "../src/reports/BudgetDashboard";
-import type { BudgetReport, EscalationEntry } from "@org-workbench/shared";
+import type { BudgetReport, EscalationEntry } from "@roleweave/shared";
 
 /** Fixture: three positions covering all three `state` values plus one
  * approaching-cap (>=80%) row, so ordering and filters have real inputs. */
@@ -70,7 +70,7 @@ describe("BudgetDashboard — 摘要/表格/超限/详情", () => {
 
   it("空态：`budgets` 为空时展示 Empty 文案而不是空表", () => {
     render(<BudgetDashboard budgets={[]} />);
-    expect(screen.getByText(/尚无预算事实/)).toBeInTheDocument();
+    expect(screen.getByText(/尚无预算记录/)).toBeInTheDocument();
     expect(document.querySelector("tbody .ant-table-row")).toBeNull();
   });
 
@@ -154,7 +154,7 @@ describe("BudgetDashboard — 摘要/表格/超限/详情", () => {
     );
     const section = screen.getByLabelText("预算相关失败");
     expect(section).toBeInTheDocument();
-    expect(section).toHaveTextContent("engine.position_budget_exceeded");
+    expect(section).not.toHaveTextContent("engine.position_budget_exceeded");
     expect(section).not.toHaveTextContent("engine.doom_loop");
   });
 });

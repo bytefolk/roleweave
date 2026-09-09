@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Empty } from "antd";
-import { AlertTriangle, Check, Clock3, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
-import { useT } from "@org-workbench/ui";
+import { AlertTriangle, Check, ChevronDown, Clock3, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import { useT } from "@roleweave/ui";
 import { useEngineLabel } from "./TurnPanel";
 import { EngineIcon } from "./engine-icon";
-import type { TurnRecord, TurnStatus } from "./types";
+import type { TurnProgressKind, TurnProgressStep, TurnRecord, TurnStatus } from "./types";
 
 export interface TurnThreadProps {
   turns: TurnRecord[];
@@ -31,105 +32,6 @@ function StatusIcon({ status }: { status: TurnStatus }) {
   return <AlertTriangle aria-hidden="true" size={13} />;
 }
 
-function shortDigest(value: string): string {
-  if (value.length <= 24) return value;
-  return `${value.slice(0, 12)}…${value.slice(-8)}`;
-}
-
-function Elapsed({ since }: { since: string }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(timer);
-  }, []);
-  const seconds = Math.max(0, Math.floor((now - new Date(since).getTime()) / 1_000));
-  const minutes = Math.floor(seconds / 60);
-  const padded = String(seconds % 60).padStart(2, "0");
-  return <>{minutes}:{padded}</>;
-}
-
-/** Settled-turn duration (completedAt − createdAt), m:ss. */
-function settledDuration(turn: TurnRecord): string | null {
-  if (turn.status === "running" || !turn.completedAt) return null;
-  const ms = new Date(turn.completedAt).getTime() - new Date(turn.createdAt).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return null;
-  const seconds = Math.floor(ms / 1_000);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-/** Status line — 设计稿 §2·③「回合即证据」: engine badge · 耗时 · tokens ·
- * 终态词，mono + tabular-nums。Running turns tick the elapsed counter; settled
- * turns show the sealed duration and a truthful terminal word (可信终态 vs
- * 不确定/失败) — the indeterminate word is never upgraded to a success. */
-function StatusLine({ turn }: { turn: TurnRecord }) {
-  const t = useT();
-  const engineLabel = useEngineLabel();
-  const running = turn.status === "running";
-  const duration = running ? null : settledDuration(turn);
-  return (
-    <p className="owb-turn__statusline">
-      <span className="owb-turn__statusline-engine">
-        <EngineIcon engine={turn.engine} />
-        {engineLabel(turn.engine)}
-      </span>
-      <span aria-hidden="true">·</span>
-      {running ? <Elapsed since={turn.createdAt} /> : duration ? <span>{duration}</span> : null}
-      {turn.totalTokens !== undefined ? (
-        <>
-          <span aria-hidden="true">·</span>
-          <span>{turn.totalTokens.toLocaleString()} tokens</span>
-        </>
-      ) : null}
-      <span aria-hidden="true">·</span>
-      {turn.status === "completed" ? (
-        <span className="is-ok">● {t("turn.trusted")}</span>
-      ) : turn.status === "running" ? (
-        <span className="is-ok">running</span>
-      ) : turn.status === "indeterminate" ? (
-        <span className="is-bad">▲ {t("turn.untrusted")}</span>
-      ) : (
-        <span className="is-bad">▲ {t("turn.failed")}</span>
-      )}
-    </p>
-  );
-}
-
-/** Evidence stamps — 设计稿 .evidence/.ev: envelope digest + turn id as
- * mono chips. The full digest stays reachable via title/expansion; evidence
- * is never dropped (auditability red line). */
-function EvidenceStamps({ turn }: { turn: TurnRecord }) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const hasDigest = Boolean(turn.envelopeDigest) || Boolean(turn.evidenceDigest);
-  return (
-    <div className="owb-evidence">
-      {turn.envelopeDigest ? (
-        <button
-          type="button"
-          className="owb-ev owb-ev--button"
-          aria-expanded={open}
-          aria-label={open ? t("turn.evCollapse") : t("turn.evExpand")}
-          title={turn.envelopeDigest}
-          onClick={() => setOpen((current) => !current)}
-        >
-          <span className="owb-ev__key">envelope</span>
-          <kbd>{open ? turn.envelopeDigest : shortDigest(turn.envelopeDigest)}</kbd>
-        </button>
-      ) : null}
-      {turn.evidenceDigest ? (
-        <span className="owb-ev" title={turn.evidenceDigest}>
-          <span className="owb-ev__key">evidence</span>
-          <kbd>{open ? turn.evidenceDigest : shortDigest(turn.evidenceDigest)}</kbd>
-        </span>
-      ) : null}
-      <span className="owb-ev" title={turn.id}>
-        <span className="owb-ev__key">turn</span>
-        <kbd>{hasDigest ? turn.id.slice(0, 8) : turn.id}</kbd>
-      </span>
-    </div>
-  );
-}
-
 /** Running bubble typing indicator (#61, spec ②): three 6px dots, 150ms
  * stagger, 1.05s ease-out loop — 处方4 聊天例外（见 ADR-0007）。Screen-reader
  * copy stays intact. */
@@ -144,6 +46,61 @@ export function TypingIndicator() {
       </span>
       {t("turn.waiting")}
     </span>
+  );
+}
+
+function fallbackProgress(turn: TurnRecord): TurnProgressStep[] {
+  const terminalKind: TurnProgressKind =
+    turn.status === "completed"
+      ? "completed"
+      : turn.status === "failed"
+        ? "failed"
+        : turn.status === "indeterminate"
+          ? "unknown"
+          : "working";
+  return [
+    { kind: "received", at: turn.createdAt },
+    { kind: terminalKind, at: turn.completedAt ?? turn.createdAt },
+  ];
+}
+
+function ProgressIcon({ kind }: { kind: TurnProgressKind }) {
+  if (kind === "working") return <Clock3 aria-hidden="true" size={13} />;
+  if (kind === "awaiting_approval") return <ShieldAlert aria-hidden="true" size={13} />;
+  if (kind === "failed" || kind === "unknown") return <AlertTriangle aria-hidden="true" size={13} />;
+  return <Check aria-hidden="true" size={13} />;
+}
+
+function ProgressTrail({ turn }: { turn: TurnRecord }) {
+  const t = useT();
+  const progress = turn.progress ?? fallbackProgress(turn);
+  const labels: Record<TurnProgressKind, string> = {
+    received: t("turn.progressReceived"),
+    working: t("turn.progressWorking"),
+    awaiting_approval: t("turn.progressAwaitingApproval"),
+    completed: t("turn.progressCompleted"),
+    failed: t("turn.progressFailed"),
+    unknown: t("turn.progressUnknown"),
+  };
+  return (
+    <details className="owb-turn-progress" aria-label={t("turn.progressAria")}>
+      <summary className="owb-turn-progress__header" aria-label={t("turn.progressDetails")}>
+        <span className="owb-turn-progress__title">{t("turn.progressTitle")}</span>
+        <ChevronDown className="owb-turn-progress__chevron" aria-hidden="true" size={14} />
+      </summary>
+      <ol className="owb-turn-progress__steps">
+        {progress.map((step, index) => (
+          <li
+            className={`owb-turn-progress__step is-${step.kind}`}
+            key={`${step.kind}-${step.at}-${index}`}
+            title={`${labels[step.kind]} · ${new Date(step.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+          >
+            <span className="owb-turn-progress__icon"><ProgressIcon kind={step.kind} /></span>
+            <span className="owb-turn-progress__copy">{labels[step.kind]}</span>
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
 
@@ -228,10 +185,10 @@ function ApprovalCard({
  * a guide rail with one state dot per turn (lavender settled / AI-purple
  * breathing while running / danger on failure), each carrying a `.owb-tc`
  * console card — head (position · engine · time), the dispatched task, the
- * engine output, a mono status line, evidence stamps, and the approval card.
- * It never infers recall or delegation, and never upgrades an indeterminate
- * terminal state. (Supersedes the #61 bubble layout for this panel; the
- * `.owb-bubble*` classes stay in use by the group-chat timeline.) */
+ * engine output, compact progress labels and the approval card. It never
+ * infers recall or delegation, and never upgrades an indeterminate terminal
+ * state. (Supersedes the #61 bubble layout for this panel; the `.owb-bubble*`
+ * classes stay in use by the group-chat timeline.) */
 export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onRetry, onVerdict, decidedApprovalIds }: TurnThreadProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
@@ -281,7 +238,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
               aria-live={turn.status === "running" ? "polite" : undefined}
             >
               <header className="owb-tc-head">
-                <span className="owb-tc-head__who" title={turn.positionId}>
+                <span className="owb-tc-head__who">
                   {turn.positionName}
                 </span>
                 <span className="owb-tc-head__eng">
@@ -302,16 +259,31 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                 </time>
               </header>
 
+              <ProgressTrail turn={turn} />
+
               {turn.output ? (
-                isProvisional ? (
-                  <pre className="owb-tc__out owb-tc__out--provisional" title={turn.output}>{turn.output}</pre>
-                ) : (
-                  <p className="owb-tc__out owb-clamp-2" title={turn.output}>{turn.output}</p>
-                )
+                <section
+                  className={`owb-turn__conclusion${isProvisional ? " is-provisional" : ""}`}
+                  aria-label={isProvisional ? t("turn.liveOutput") : t("turn.finalConclusion")}
+                >
+                  <header className="owb-turn__conclusion-head">
+                    <span className="owb-turn__conclusion-label">
+                      {isProvisional ? <Clock3 aria-hidden="true" size={13} /> : <Check aria-hidden="true" size={13} />}
+                      {isProvisional ? t("turn.liveOutput") : t("turn.finalConclusion")}
+                    </span>
+                  </header>
+                  {isProvisional ? (
+                    <div className="owb-tc__out owb-tc__out--markdown owb-tc__out--provisional" title={turn.output}>
+                      <ReactMarkdown>{turn.output}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <div className="owb-tc__out owb-tc__out--markdown" title={turn.output}>
+                      <ReactMarkdown>{turn.output}</ReactMarkdown>
+                    </div>
+                  )}
+                </section>
               ) : null}
               {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
-
-              <StatusLine turn={turn} />
 
               {turn.error ? (
                 <div className="owb-bubble__error owb-clamp-2" title={turn.error}>{turn.error}</div>
@@ -322,8 +294,6 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                   {t("turn.untrustedWarning")}
                 </p>
               ) : null}
-
-              <EvidenceStamps turn={turn} />
 
               {turn.approvalRequest !== undefined && onVerdict ? (
                 <ApprovalCard

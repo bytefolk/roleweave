@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { routes, TURN_ENVELOPE_SCHEMA_VERSION, TURN_ENVELOPE_SCHEMA_VERSION_V1ALPHA2 } from "@org-workbench/shared";
-import type { GroupConversation, TurnEnvelope, TurnRecord, TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@org-workbench/shared";
+import { routes, TURN_ENVELOPE_SCHEMA_VERSION, TURN_ENVELOPE_SCHEMA_VERSION_V1ALPHA2 } from "@roleweave/shared";
+import type { GroupConversation, TurnEnvelope, TurnRecord, TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import { createTurnEnvelope, isValidConversationRef } from "../src/turns/envelope.js";
 

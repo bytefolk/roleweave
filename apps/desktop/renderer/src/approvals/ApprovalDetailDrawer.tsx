@@ -9,13 +9,13 @@
  * be re-judged.
  *
  * DATA GAP (TODO, v0):
- *   Evidence list (turn-evidence.v1) is intentionally omitted at P0. Wiring
- *   evidence in requires the v1 bounded-scan path; keep the visual slot but
- *   render a placeholder so the design language does not drift.
+ *   Raw evidence records are intentionally kept out of this human-facing
+ *   drawer for now. The approval decision only needs the request summary and
+ *   the operator's verdict; audit details remain in the run history.
  */
 import { useEffect, useState } from "react";
 import { Alert, Button, Drawer, Input, Space, Tag } from "antd";
-import { useT } from "@org-workbench/ui";
+import { useT } from "@roleweave/ui";
 import {
   isDecided,
   isPermissionOverreach,
@@ -66,7 +66,7 @@ export function ApprovalDetailDrawer({
   const overreach = isPermissionOverreach(item);
   const expired = item.decision.kind === "expired";
   const disabled = decided || expired;
-  const positionName = decodeEscapedUnicode(item.positionName ?? item.positionId);
+  const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
   const description = decodeEscapedUnicode(item.description);
   const target = item.target ? decodeEscapedUnicode(item.target) : undefined;
   const trimmedReason = reason.trim();
@@ -106,7 +106,6 @@ export function ApprovalDetailDrawer({
             <h3 className="owb-approval-drawer__section-title">{t("apr.requestingPosition")}</h3>
             <p className="owb-approval-drawer__position">
               <strong>{positionName}</strong>
-              <span className="owb-approval-drawer__pid">{item.positionId}</span>
             </p>
           </section>
 
@@ -121,14 +120,13 @@ export function ApprovalDetailDrawer({
           </section>
 
           <section>
-            <h3 className="owb-approval-drawer__section-title">{t("apr.deadlineAndId")}</h3>
+            <h3 className="owb-approval-drawer__section-title">{t("apr.deadline")}</h3>
             <p className="owb-approval-drawer__meta-line">
               {item.expiresAt ? (
-                <span>{t("apr.expiresPrefix")}<code>{item.expiresAt}</code></span>
+                <span>{t("apr.expiresPrefix")}{formatApprovalExpiry(item.expiresAt)}</span>
               ) : (
                 <span className="owb-muted">{t("apr.noExpiry")}</span>
               )}
-              <span>{t("apr.idPrefix")}<code>{item.approvalId}</code></span>
             </p>
           </section>
 
@@ -184,13 +182,13 @@ export function ApprovalDetailDrawer({
             </Button>
           </div>
 
-          {/* Evidence slot is a placeholder at P0 (see file-level TODO). */}
-          <section className="owb-approval-drawer__evidence" aria-label={t("apr.evidence")}>
-            <h3 className="owb-approval-drawer__section-title">{t("apr.evidence")}</h3>
-            <p className="owb-muted">{t("apr.evidencePending")}</p>
-          </section>
         </Space>
       </div>
     </Drawer>
   );
+}
+
+function formatApprovalExpiry(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString([], { hour12: false });
 }

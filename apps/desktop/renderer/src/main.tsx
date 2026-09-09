@@ -10,7 +10,7 @@ import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/600.css";
 import "antd/dist/reset.css";
 import "@fullstack-ai-infra/ui/styles.css";
-import "@org-workbench/ui/styles.css";
+import "@roleweave/ui/styles.css";
 import "./antd-skin.css";
 import "./app.css";
 import { App } from "./App";
@@ -40,7 +40,7 @@ export function rendererEntryElement(
     // never triggers health/Qoder/business work while scoring package layout.
     return (
       <main data-org-workbench-packaged-smoke-entry="true">
-        Org Workbench clean-staging renderer
+        RoleWeave clean-staging renderer
       </main>
     );
   }

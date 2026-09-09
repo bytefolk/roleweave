@@ -10,8 +10,8 @@ import type {
   TurnRunDriver,
   TurnRunRequest,
   TurnRunResult,
-} from "@org-workbench/shared";
-import { validatePendingApproval } from "@org-workbench/shared";
+} from "@roleweave/shared";
+import { validatePendingApproval } from "@roleweave/shared";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 import { createTurnEnvelope } from "../src/turns/envelope.js";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
@@ -317,12 +317,15 @@ test("approval events broadcast as turn.approval.* SSE with the validated engine
     const requested = await sse.waitForEvent("turn.approval.requested");
     const requestedPayload = JSON.parse(requested.data) as { payload: Record<string, unknown> };
     assert.deepEqual(requestedPayload.payload, {
+      workspacePath: workspace, turnId: record.turnId, positionId: "repo-owner", engine: "qoder",
       type: "approval.requested",
       runId: "run-1",
       timestamp: "2026-08-24T00:00:01.000Z",
       approvalId: "appr-1",
       action: { kind: "exec", description: "rm -rf build" },
     });
+    const storedRequested = (record.events as Record<string, unknown>[]).find((event) => event.type === "approval.requested");
+    assert.deepEqual(storedRequested, { type: "approval.requested", runId: "run-1", timestamp: "2026-08-24T00:00:01.000Z", approvalId: "appr-1", action: { kind: "exec", description: "rm -rf build" } });
     const failed = await sse.waitForEvent("turn.failed");
     const failedPayload = JSON.parse(failed.data) as { payload: { error?: { code?: string } } };
     assert.equal(failedPayload.payload.error?.code, "engine.approval_required");
@@ -446,7 +449,7 @@ test("shared pendingApproval validator is the single source for both boundaries 
   const accepted = validatePendingApproval(VERDICT);
   assert.deepEqual(accepted, { ok: true, value: VERDICT });
 
-  const cjsSurface = createRequire(import.meta.url)("@org-workbench/shared/pending-approval");
+  const cjsSurface = createRequire(import.meta.url)("@roleweave/shared/pending-approval");
   assert.equal(validatePendingApproval, cjsSurface.validatePendingApproval, "ESM wrapper must re-export the CJS contract function identity");
 
   const deniedWithReason = validatePendingApproval({

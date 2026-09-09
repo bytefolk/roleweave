@@ -3,7 +3,7 @@
  * 触发钮复用 .owb-wintitle__theme 皮肤（含 -webkit-app-region: no-drag）。 */
 import { useEffect, useRef, useState } from "react";
 import { Languages, Palette, Settings2 } from "lucide-react";
-import { useT, type OwbLocale } from "@org-workbench/ui";
+import { useT, type OwbLocale } from "@roleweave/ui";
 import { setThemeMode, type ThemeMode } from "./theme-mode";
 
 export function PrefsMenu({
@@ -18,37 +18,16 @@ export function PrefsMenu({
   const t = useT();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    const items = (): HTMLButtonElement[] =>
-      Array.from(panelRef.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]") ?? []);
-    // 打开时把焦点送进菜单首项，否则键盘用户落在触发钮后面找不到菜单。
-    items()[0]?.focus();
     const onPointerDown = (event: PointerEvent): void => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
     };
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
-        return;
-      }
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        const list = items();
-        if (list.length === 0) return;
-        const index = list.indexOf(document.activeElement as HTMLButtonElement);
-        const next =
-          event.key === "ArrowDown"
-            ? (index + 1) % list.length
-            : (index - 1 + list.length) % list.length;
-        event.preventDefault();
-        list[next]?.focus();
-      }
+      if (event.key === "Escape") setOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -61,7 +40,6 @@ export function PrefsMenu({
   return (
     <div className="owb-prefs" ref={rootRef}>
       <button
-        ref={triggerRef}
         type="button"
         className="owb-wintitle__theme"
         aria-label={t("prefs.trigger")}
@@ -73,7 +51,7 @@ export function PrefsMenu({
         <Settings2 aria-hidden="true" size={14} strokeWidth={1.8} />
       </button>
       {open ? (
-        <div className="owb-prefs__panel" role="menu" aria-label={t("prefs.trigger")} ref={panelRef}>
+        <div className="owb-prefs__panel" role="menu" aria-label={t("prefs.trigger")}>
           <button
             type="button"
             role="menuitem"

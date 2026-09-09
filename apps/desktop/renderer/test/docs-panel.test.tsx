@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DocsPanel } from "../src/docs/DocsPanel";
-import type { DocsFileListResponse, DocsFileResponse } from "@org-workbench/shared";
+import type { DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
 
 const LIST: DocsFileListResponse = {
   schemaVersion: "docs-file-list.v1",
@@ -47,6 +47,8 @@ describe("DocsPanel (#35 S2 file routing surface)", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Repo Owner" })).toBeTruthy();
     });
+    expect(document.querySelector(".owb-docs-panel__list-pane")).toBeTruthy();
+    expect(document.querySelector(".owb-docs-panel__reader-pane")).toBeTruthy();
     expect(screen.getByText("Owns the repository.")).toBeTruthy();
     expect(screen.getByText("版本 2026-08-27T00:00:00.000Z")).toBeTruthy();
   });

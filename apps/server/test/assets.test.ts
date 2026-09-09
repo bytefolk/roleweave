@@ -6,8 +6,8 @@ import {
   ASSET_RECORD_SCHEMA_VERSION,
   ASSETS_LIST_SCHEMA_VERSION,
   routes,
-} from "@org-workbench/shared";
-import type { AssetRecord, AssetsListResponse } from "@org-workbench/shared";
+} from "@roleweave/shared";
+import type { AssetRecord, AssetsListResponse } from "@roleweave/shared";
 import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 const DRIVE = path.join(".digital-employee", "workbench", "drive", "assets");

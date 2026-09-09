@@ -12,8 +12,8 @@ import {
   parseAssetRecord,
   parseDocRef,
   routes,
-} from "@org-workbench/shared";
-import type { DocsCreateResponse, DocsFileListResponse, DocsFileResponse, DocsResolveResponse } from "@org-workbench/shared";
+} from "@roleweave/shared";
+import type { DocsCreateResponse, DocsFileListResponse, DocsFileResponse, DocsResolveResponse } from "@roleweave/shared";
 import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {
@@ -51,6 +51,34 @@ test("docs routing lists position files deterministically and reads them with fi
     assert.ok(doc.content.length > 0, "SKILL.md must not be served empty");
     assert.match(doc.version, /^\d{4}-\d{2}-\d{2}T/, "file-level version is an ISO mtime");
     assert.equal(doc.version, doc.modifiedAt);
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("docs routing follows nested position package bindings (#35 S2)", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, dir);
+
+    const list = await api(server.baseUrl, `${routes.docsList}?position=issue-researcher`, {
+      token: server.token,
+    });
+    assert.equal(list.status, 200);
+    const listed = list.body as DocsFileListResponse;
+    assert.equal(listed.positionId, "issue-researcher");
+    assert.ok(listed.files.some((entry) => entry.path === "SKILL.md"));
+    assert.ok(listed.files.some((entry) => entry.path === "knowledge/README.md"));
+
+    const read = await api(
+      server.baseUrl,
+      `${routes.docsRead}?position=issue-researcher&path=SKILL.md`,
+      { token: server.token },
+    );
+    assert.equal(read.status, 200);
+    assert.equal((read.body as DocsFileResponse).path, "SKILL.md");
   } finally {
     await server.close();
     await fs.rm(dir, { recursive: true, force: true });

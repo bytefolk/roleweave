@@ -34,7 +34,7 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
       />,
     );
     expect(screen.getByText("审批列表还未接入回合数据")).toBeInTheDocument();
-    expect(screen.getByText(/这里的 0 不代表系统已经确认没有审批/)).toBeInTheDocument();
+    expect(screen.getByText("审批数据尚未接入，当前不能据此确认是否有待处理事项。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "返回组织模块" }));
     expect(onNavigateToOrg).toHaveBeenCalledTimes(1);
   });

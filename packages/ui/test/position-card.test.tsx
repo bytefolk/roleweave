@@ -73,13 +73,30 @@ describe("PositionCard (D1 spec §3)", () => {
     expect(screen.getByText("Read")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /上下文来源/ })).toBeInTheDocument();
     expect(screen.getByText("岗位知识库")).toBeInTheDocument();
-    expect(screen.getByText("mem://workspace")).toBeInTheDocument();
-    expect(screen.getByText("context://position/repo-owner")).toBeInTheDocument();
+    expect(screen.getByText("统一网盘")).toBeInTheDocument();
+    expect(screen.queryByText("mem://workspace")).not.toBeInTheDocument();
+    expect(screen.getByText("岗位运行上下文")).toBeInTheDocument();
+    expect(screen.queryByText("context://position/repo-owner")).not.toBeInTheDocument();
     expect(screen.getByText("未配置")).toBeInTheDocument();
+  });
+
+  it("keeps the position header focused on the name, not the reporting line", () => {
+    render(<PositionCard position={{ ...POSITION, reportTo: "community-operator" }} />);
+
+    expect(document.querySelector(".owb-panel-head__sub")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Repo Owner" })).toBeInTheDocument();
   });
 
   it("keeps rendering the legacy scope when the additive source list is absent", () => {
     render(<PositionCard position={{ ...POSITION, contextSources: undefined }} />);
-    expect(screen.getByText("/", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText("岗位上下文")).toBeInTheDocument();
+    expect(screen.queryByText("/", { selector: "span" })).not.toBeInTheDocument();
+  });
+
+  it("opens a source in the unified employee-memory surface", () => {
+    const onContextSourceSelect = vi.fn();
+    render(<PositionCard position={POSITION} onContextSourceSelect={onContextSourceSelect} />);
+    screen.getByRole("button", { name: "查看 岗位知识库 的员工记忆" }).click();
+    expect(onContextSourceSelect).toHaveBeenCalledWith(POSITION.contextSources?.[0]);
   });
 });

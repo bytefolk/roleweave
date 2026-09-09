@@ -29,6 +29,13 @@ const turnEngineContract = createRequire(import.meta.url)("../turn-engines.cjs")
 
 export const turnEngines: readonly TurnEngine[] = turnEngineContract.TURN_ENGINE_IDS;
 
+/** Explicit owner paths select only an already active in-memory reservation. */
+export type CancelTurnRequest = { positionId: string } | {
+  positionId: string;
+  workspacePath: string;
+  turnId?: string;
+};
+
 export type TurnTerminalReason =
   | "goal_met"
   | "invalid_output_exhausted"
@@ -164,6 +171,19 @@ export interface TurnRunDriver {
 
 export type TurnRecordStatus = "running" | "completed" | "failed" | "indeterminate";
 
+/** Evidence of the bounded data actually included in this turn's sealed input. */
+export interface ThreadContextMetadata {
+  schemaVersion: "thread-context.v1";
+  enabled: boolean;
+  sourceTurnCount: number;
+  omittedTurnCount: number;
+  contextBytes: number;
+  contextDigest: string;
+  summary: string;
+  redacted: boolean;
+  truncated: boolean;
+}
+
 export interface TurnRecord {
   schemaVersion: typeof TURN_RECORD_SCHEMA_VERSION;
   conversationId: string;
@@ -188,6 +208,7 @@ export interface TurnRecord {
    * pre-clearing group records stay readable on the timeline; new records
    * are written with conversationRef instead. */
   groupRef?: string;
+  threadContext?: ThreadContextMetadata;
 }
 
 export interface TurnHistory {

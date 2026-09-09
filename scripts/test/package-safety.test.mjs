@@ -155,7 +155,7 @@ test("package cleaner deletes stale output but refuses a symlink escape", (t) =>
 });
 
 test("windows signature inspection keeps the target path out of the PowerShell script text", () => {
-  const executable = "D:\\a\\org-workbench\\release\\staging\\win-unpacked\\Org Workbench.exe";
+  const executable = "D:\\a\\org-workbench\\release\\staging\\win-unpacked\\RoleWeave.exe";
   const { command, args, env } = windowsSignatureInspection(executable, { PATH: "C:\\Windows" });
 
   assert.equal(command, "powershell.exe");
@@ -163,7 +163,7 @@ test("windows signature inspection keeps the target path out of the PowerShell s
   assert.equal(env.PATH, "C:\\Windows");
 
   // A path carried in argv would either be appended to the `-Command` script text
-  // or need shell quoting; both broke on the space in "Org Workbench.exe".
+  // or need shell quoting; both broke on the space in "RoleWeave.exe".
   for (const argument of args) {
     assert.ok(!argument.includes(executable), `argv leaked the target path: ${argument}`);
     assert.ok(!argument.includes("param("), "`-Command` cannot bind a param() block");
@@ -175,7 +175,7 @@ test("windows signature inspection pins the Windows PowerShell module path", () 
   // The CI step runs under pwsh 7, whose PSModulePath omits the Windows PowerShell
   // system modules; inheriting it makes Get-AuthenticodeSignature unresolvable.
   const inherited = "C:\\Program Files\\PowerShell\\7\\Modules";
-  const { env } = windowsSignatureInspection("C:\\app\\Org Workbench.exe", {
+  const { env } = windowsSignatureInspection("C:\\app\\RoleWeave.exe", {
     SystemRoot: "C:\\Windows",
     PSModulePath: inherited,
   });
@@ -192,7 +192,7 @@ test("mac signature classifier accepts only the observed unsealed linker ad-hoc 
     status: 1,
     signal: null,
     error: undefined,
-    stderr: "/staged/Org Workbench.app: code has no resources but signature indicates they must be present\n",
+    stderr: "/staged/RoleWeave.app: code has no resources but signature indicates they must be present\n",
   };
   const details = {
     status: 0,

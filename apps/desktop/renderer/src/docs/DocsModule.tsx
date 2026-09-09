@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Collapse, Empty, Input, Modal, Select, Tabs, message } from "antd";
-import { useT } from "@org-workbench/ui";
-import { FilePlus2, Link2, Plus } from "lucide-react";
+import { Alert, Button, Empty, Input, Modal, Select, Tabs, message } from "antd";
+import { useT } from "@roleweave/ui";
+import { Plus } from "lucide-react";
 import type {
   DocPlaneDetailResponse,
   DocPlaneListResponse,
-  DocRef,
   DocsCreateResponse,
   DocsFileListResponse,
   DocsFileResponse,
-  DocsResolveResponse,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type { PositionMentionOption } from "../turns/types";
 import { DocPlanePanel } from "./DocPlanePanel";
 import type { DocPlaneDetailLoadResult, DocPlaneListLoadResult } from "./DocPlanePanel";
@@ -20,17 +18,18 @@ import { DocsPanel } from "./DocsPanel";
  * Document module surface (#35 S3/S4 + R2, DS-35-001 rev-1 §3/§5/§6):
  * connects the ModuleRail "文档" entry to two document surfaces:
  *
- *  - the frozen position-scoped file surface (S2/S4 DocsPanel + creator +
- *    doc-ref resolver), and
+ *  - the frozen position-scoped file surface (S2/S4 DocsPanel + creator), and
  *  - the new external doc-plane bridge (R2 MVP) that talks to
  *    `bytefolk/doc` through the shell-owned proxy. The proxy fails closed
- *    when `ORG_WORKBENCH_DOC_URL` is unset, and this module surfaces the
- *    matching configuration hint instead of pretending everything is fine.
+ *    when the doc URL or PAT is unset, and this module surfaces the matching
+ *    unconfigured state instead of pretending everything is fine.
  */
 export interface DocsModuleProps {
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
   selectedPositionId: string | null;
+  /** When composed by the employee-memory surface, omit the duplicate page header. */
+  embedded?: boolean;
 }
 
 function apiErrorMessage(body: unknown, fallback: string): string {
@@ -57,13 +56,7 @@ function apiErrorCode(body: unknown): string | null {
   return null;
 }
 
-interface ResolveOutcome {
-  status: "ok" | "error";
-  message?: string;
-  resolved?: DocsResolveResponse["resolved"];
-}
-
-export function DocsModule({ workspaceOpen, positions, selectedPositionId }: DocsModuleProps) {
+export function DocsModule({ workspaceOpen, positions, selectedPositionId, embedded = false }: DocsModuleProps) {
   const t = useT();
   const [positionId, setPositionId] = useState<string | null>(selectedPositionId);
   const [createOpen, setCreateOpen] = useState(false);
@@ -71,9 +64,6 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
-  const [resolveText, setResolveText] = useState("");
-  const [resolving, setResolving] = useState(false);
-  const [resolveOutcome, setResolveOutcome] = useState<ResolveOutcome | null>(null);
 
   useEffect(() => {
     if (selectedPositionId !== null) setPositionId(selectedPositionId);
@@ -150,47 +140,16 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
     }
   };
 
-  const submitResolve = async () => {
-    const text = resolveText.trim();
-    if (text === "") {
-      setResolveOutcome({ status: "error", message: t("docs.pasteRefEmpty") });
-      return;
-    }
-    let ref: DocRef;
-    try {
-      const parsed = JSON.parse(text) as unknown;
-      ref = typeof parsed === "string" ? { uri: parsed } : (parsed as DocRef);
-    } catch {
-      ref = { uri: text };
-    }
-    setResolving(true);
-    setResolveOutcome(null);
-    try {
-      const res = await window.owb.resolveDocRef(ref);
-      if (res.status >= 400 || !res.body) {
-        throw new Error(apiErrorMessage(res.body, t("docs.resolveFail")));
-      }
-      setResolveOutcome({ status: "ok", resolved: res.body.resolved });
-    } catch (error) {
-      setResolveOutcome({
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setResolving(false);
-    }
-  };
-
   if (!workspaceOpen) {
     return (
-      <section className="owb-docs-module" aria-label={t("docs.moduleAria")}>
+      <section className={`owb-docs-module${embedded ? " owb-docs-module--embedded" : ""}`} aria-label={t("docs.moduleAria")}>
         <Empty description={t("tree.notOpened")} />
       </section>
     );
   }
 
   const positionSurface = (
-    <>
+    <div className="owb-docs-module__position-surface">
       <div className="owb-docs-module__picker">
         <div className="owb-docs-module__picker-copy">
           <span>{t("docs.pickerTitle")}</span>
@@ -220,57 +179,16 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
         </Button>
       </div>
       <DocsPanel positionId={positionId} listDocs={listDocs} readDoc={readDoc} reloadToken={reloadToken} />
-      <Collapse
-        className="owb-docs-module__resolve-panel"
-        items={[
-          {
-            key: "resolve-doc-ref",
-            label: (
-              <span className="owb-docs-module__resolve-label">
-                <span className="owb-docs-module__resolve-icon" aria-hidden="true">
-                  <Link2 size={15} strokeWidth={1.8} />
-                </span>
-                <strong>{t("docs.resolve")}</strong>
-              </span>
-            ),
-            children: (
-              <div className="owb-docs-module__resolve">
-                <Input.TextArea
-                  aria-label={t("docs.pasteRefAria")}
-                  name="doc-resolve-ref"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder={t("docs.resolvePh")}
-                  autoSize={{ minRows: 2, maxRows: 4 }}
-                  value={resolveText}
-                  onChange={(event) => setResolveText(event.target.value)}
-                />
-                <Button className="owb-docs-module__resolve-submit" loading={resolving} icon={<FilePlus2 aria-hidden="true" size={14} />} onClick={submitResolve}>
-                  {t("docs.resolveAction")}
-                </Button>
-                {resolveOutcome?.status === "error" ? (
-                  <Alert type="error" message={resolveOutcome.message ?? t("docs.resolveFail")} />
-                ) : null}
-                {resolveOutcome?.status === "ok" && resolveOutcome.resolved ? (
-                  <Alert
-                    type="success"
-                    message={t("docs.resolved", { position: resolveOutcome.resolved.positionId, path: resolveOutcome.resolved.path })}
-                    description={t("docs.resolvedMeta", { size: resolveOutcome.resolved.size, modifiedAt: resolveOutcome.resolved.modifiedAt })}
-                  />
-                ) : null}
-              </div>
-            ),
-          },
-        ]}
-      />
-    </>
+    </div>
   );
 
   return (
-    <section className="owb-docs-module" aria-label={t("docs.moduleAria")}>
-      <header className="owb-docs-module__header">
-        <h1>{t("docs.moduleTitle")}</h1>
-      </header>
+    <section className={`owb-docs-module${embedded ? " owb-docs-module--embedded" : ""}`} aria-label={t("docs.moduleAria")}>
+      {!embedded ? (
+        <header className="owb-docs-module__header">
+          <h1>{t("docs.moduleTitle")}</h1>
+        </header>
+      ) : null}
       <Tabs
         defaultActiveKey="position"
         items={[
@@ -294,10 +212,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId }: Doc
         <p className="owb-docs-module__create-hint">{t("docs.noEditorHint")}</p>
         <Input
           aria-label={t("docs.fileNameAria")}
-          name="doc-create-name"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder={t("docs.createPh")}
+          placeholder="handbook.md"
           value={createName}
           onChange={(event) => setCreateName(event.target.value)}
           onPressEnter={submitCreate}

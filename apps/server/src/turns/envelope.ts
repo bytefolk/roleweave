@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
-import type { TurnEnvelope, TurnPendingApproval } from "@org-workbench/shared";
+import type { TurnEnvelope, TurnPendingApproval } from "@roleweave/shared";
 import {
   TURN_ENVELOPE_SCHEMA_VERSION,
   TURN_ENVELOPE_SCHEMA_VERSION_V1ALPHA2,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 
 function canonicalJson(value: unknown): unknown {
   if (value === null || typeof value !== "object") return value;

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { DocPlaneDetailResponse, DocPlaneListResponse } from "@org-workbench/shared";
+import type { DocPlaneDetailResponse, DocPlaneListResponse } from "@roleweave/shared";
 import {
   DocPlanePanel,
   type DocPlaneDetailLoadResult,
@@ -67,7 +67,7 @@ describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
     expect(readDoc).not.toHaveBeenCalled();
   });
 
-  it("surfaces the configuration guide when the shell reports doc_plane_unconfigured", async () => {
+  it("surfaces a compact unavailable state when the shell reports doc_plane_unconfigured", async () => {
     const listDocs = vi
       .fn()
       .mockResolvedValue({ kind: "unconfigured", message: "尚未配置外部 doc 服务器" } as DocPlaneListLoadResult);
@@ -76,8 +76,7 @@ describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
 
     await waitFor(() => expect(listDocs).toHaveBeenCalled());
     expect(await screen.findByText("尚未配置外部 doc 服务器")).toBeTruthy();
-    // The one-line env-var reference is inlined so users have a runnable example.
-    expect(screen.getByText(/ORG_WORKBENCH_DOC_URL=http:\/\/localhost:3100/)).toBeTruthy();
+    expect(screen.queryByText(/ORG_WORKBENCH_DOC_URL=http:\/\/localhost:3100/)).not.toBeInTheDocument();
   });
 
   it("opens a document detail through the injected reader", async () => {
@@ -90,6 +89,8 @@ describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
     await waitFor(() => expect(readDoc).toHaveBeenCalledWith("doc-1"));
 
     expect(await screen.findByRole("heading", { name: "Runbook" })).toBeTruthy();
+    expect(document.querySelector(".owb-doc-plane__list-pane")).toBeTruthy();
+    expect(document.querySelector(".owb-doc-plane__reader-pane")).toBeTruthy();
     expect(screen.getByText("First response steps.")).toBeTruthy();
     expect(screen.getByText("版本 2026-08-27T00:00:00.000Z")).toBeTruthy();
   });

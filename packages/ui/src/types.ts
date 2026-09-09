@@ -2,9 +2,9 @@
  * (org-tree.v1 frozen minimal shape; workspace-org.v1 roles via /positions/:id);
  * the client never invents semantics. */
 
-import type { ContextSourceSummary } from "@org-workbench/shared";
+import type { ContextSourceSummary } from "@roleweave/shared";
 
-export type { OrgRole, OrgTreeSnapshot, OrgTreeNodeV1 } from "@org-workbench/shared";
+export type { OrgRole, OrgTreeSnapshot, OrgTreeNodeV1 } from "@roleweave/shared";
 
 export interface BudgetCaps {
   tokens?: number;
@@ -22,6 +22,10 @@ export interface PositionCardData {
   /** Additive source inventory; older callers may omit it during migration. */
   contextSources?: ContextSourceSummary[];
   permissions: { toolAllow: string[]; toolDeny: string[] };
+  capabilities?: {
+    skills: Array<{ id: string; name: string }>;
+    mcpServers: Array<{ id: string; name: string; tools: string[] }>;
+  };
   budget: { perTask: BudgetCaps; perDay: BudgetCaps } | null;
   metadata: Record<string, string>;
 }

@@ -190,9 +190,25 @@
   color: var(--ui-primary);
 }
 
-/* 单行名称 + 内联 id（设计稿 .nm / .nm .id）：id 是 .nm 文本流内的内联
-   span，整串作为一个字符串省略号截断——不能做成 flex 兄弟节点，否则
-   flex:none 的 id 会把名字挤没。 */
+/* 企业根使用组织品牌标识；岗位仍使用文件夹图标，避免把“组织”和“岗位”混为一谈。 */
+.ui-org-tree__icon--brand {
+  width: 19px;
+  height: 19px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 36%, var(--ui-border));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ui-foreground) 86%, var(--ui-surface) 14%);
+  overflow: hidden;
+}
+
+.ui-org-tree__brand-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+  flex: none;
+}
+
+/* 单行人类可读名称；内部岗位 id 只用于路由，不在目录中重复展示。 */
 .ui-org-tree__label {
   flex: 1;
   min-width: 0;
@@ -206,37 +222,6 @@
 .ui-org-tree__name {
   font-weight: 500;
 }
-
-.ui-org-tree__id {
-  margin-left: 6px;
-  font-family: var(--ui-font-mono, monospace);
-  font-size: 10.5px;
-  font-weight: 500;
-  color: var(--ui-foreground-subtle);
-}
-
-/* 微型预算条（设计稿 .tr-budget）：42×6px，三态取色。 */
-/* #77 review item 4: overflow 故意不设 hidden——spec 要求 >100% 超长呈现
-   （116% 出界不截断圆角），fill 本身的圆角端帽要能探出轨道边界。<=100% 的
-   正常/预警态里 fill 从不超出轨道，这条属性从来就是可有可无。 */
-.ui-org-tree__budget {
-  flex: none;
-  width: 42px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--ui-surface-inset);
-  opacity: 0.85;
-}
-
-.ui-org-tree__budget > i {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--ui-primary);
-}
-
-.ui-org-tree__budget.is-warning > i { background: var(--ui-warning); }
-.ui-org-tree__budget.is-over > i { background: var(--ui-danger); }
 
 /* hover 浮出动作组（设计稿 .row-actions） */
 .ui-org-tree__actions {

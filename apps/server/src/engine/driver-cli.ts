@@ -10,7 +10,7 @@ import type {
   TurnRunRequest,
   TurnRunResult,
   TurnTerminalReason,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import { splitCommand } from "./probe.js";
 import {
   bundledElectronRunAsNode,
@@ -333,12 +333,6 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): No
       if (source[key] !== undefined) environment[key] = source[key];
     }
     if (source.QODER_PERSONAL_ACCESS_TOKEN !== undefined) environment.QODER_PERSONAL_ACCESS_TOKEN = source.QODER_PERSONAL_ACCESS_TOKEN;
-    // #200: symmetric with DIGITAL_EMPLOYEE_CLAUDE_COMMAND below. The
-    // digital-employee CLI honours this override on its `turn run` path
-    // (upstream TURN_ENGINE_QODER_COMMAND_ENV); it names a binary and carries
-    // no credential, so it fits the existing allowlist discipline. Without
-    // this the CN edition is unreachable when an operator pins
-    // ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI.
     if (source.DIGITAL_EMPLOYEE_QODER_COMMAND !== undefined) {
       environment.DIGITAL_EMPLOYEE_QODER_COMMAND = source.DIGITAL_EMPLOYEE_QODER_COMMAND;
     }
@@ -689,6 +683,14 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         }
       };
 
+      // A position may be cancelled while its context is loading, before the
+      // registry can attach this driver's abort hook. setAbort then delivers
+      // the cancellation synchronously; never spawn an already-cancelled task.
+      if (aborted) {
+        if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
+        finish({ status: "indeterminate", events, diagnostic: "", code: "turn_cancelled" });
+        return;
+      }
       const { bin, prefix } = splitCommand(this.command);
       try {
         child = spawn(

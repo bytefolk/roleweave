@@ -12,8 +12,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Progress } from "antd";
 import { Download, ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
-import { useT } from "@org-workbench/ui";
-import type { UpdateEvent, UpdateStatus } from "@org-workbench/shared";
+import { useT } from "@roleweave/ui";
+import type { UpdateEvent, UpdateStatus } from "@roleweave/shared";
 import {
   stateMessage,
   unavailableMessage,
@@ -30,10 +30,6 @@ export function SettingsModule() {
   const [live, setLive] = useState<UpdateEvent | null>(null);
   /** A refusal returned by download/install, held as a catalog key. */
   const [refusal, setRefusal] = useState<UpdateMessage | null>(null);
-  /** The service's own sentence, shown as labelled diagnostic detail rather
-   * than as the primary message — it is not localized. */
-  const [diagnostic, setDiagnostic] = useState<string | null>(null);
-
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -41,7 +37,6 @@ export function SettingsModule() {
       if (cancelled) return;
       setStatus(next);
       setStatusRead(true);
-      if (next !== null && next.reason !== null) setDiagnostic(next.reason);
     })();
     return () => {
       cancelled = true;
@@ -61,7 +56,6 @@ export function SettingsModule() {
       version: result.version,
       percent: result.percent,
     });
-    setDiagnostic(result.reason);
     // The refusal is not a state: the service leaves the state alone and says
     // it will not apply an update it cannot verify. Rendering it is the whole
     // reason this branch exists — a state-by-state pane would drop it.
@@ -176,12 +170,6 @@ export function SettingsModule() {
           <span className="owb-settings-module__hint">{t("settings.releaseNotesHint")}</span>
         </div>
 
-        {diagnostic !== null ? (
-          <p className="owb-settings-module__diagnostic">
-            <span>{t("settings.diagnostic")}</span>
-            <code>{diagnostic}</code>
-          </p>
-        ) : null}
       </section>
     </section>
   );

@@ -52,7 +52,7 @@
 }
 ```
 
-约束：`engine.available` 为对已配置引擎命令的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。普通 `digital-employee` 的 Qoder model port 保持 service-token 门禁：`configured` 仅表示 `QODER_PERSONAL_ACCESS_TOKEN` 非空。仅当引擎精确宣布 `qoder-engine <semver>` 时，Qoder Host 才使用与 turn adapter 相同的无 shell executable resolver：非空 `ORG_WORKBENCH_QODER_BIN` 是权威覆盖（无效即 fail closed），否则查 PATH 的 `qodercli` / `qoder` 与 macOS 已支持的精确用户安装位置；符号链接的最终目标必须是可执行普通文件。解析出的绝对路径接受有界 `--version` 探针；当前支持 1.1.x，缺失、不可执行、超时、无法解析或版本越界均 fail closed。adapter spawn 同一绝对路径并保持继承 PATH 不变；Finder 登录 PATH 恢复和打包验收由 #110 的 macOS arm64 foundation partial 承接，不是本修复的完成依赖。该探针不读取账号、登录态或凭据存储，`ready` 也只表示本地执行前置满足，不代表远端 provider 接受了账号或具备 entitlement；一次真实回合仍是唯一的运行证据。响应只含布尔值与非敏感 `nextStep`，绝不返回凭据值、绝对 Qoder 路径或原始探针输出。Claude 各 Host 的判定独立，不得成为 bundled Qoder ready 的门槛。客户端必须以 Host 状态控制选择和发送，不得以 `engine.available` 代替 Host ready。
+约束：`engine.available` 为对已配置引擎命令的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。普通 `digital-employee` 的 Qoder model port 保持 service-token 门禁：`configured` 仅表示 `QODER_PERSONAL_ACCESS_TOKEN` 非空。仅当引擎精确宣布 `qoder-engine <semver>` 时，Qoder Host 才使用与 turn adapter 相同的无 shell executable resolver：非空 `ORG_WORKBENCH_QODER_BIN` 优先，其次为 `DIGITAL_EMPLOYEE_QODER_COMMAND`（无效显式覆盖均 fail closed），否则查 PATH 的 `qodercli` / `qoderclicn` / `qoder` 与 macOS 已支持的精确用户安装位置；符号链接的最终目标必须是可执行普通文件。解析出的绝对路径接受有界 `--version` 探针；探针以 CLI 主进程退出为完成条件，不等待后代继承的 stdio，并在超时或异常时清理独立进程组；当前支持 1.1.x，缺失、不可执行、超时、无法解析或版本越界均 fail closed。adapter spawn 同一绝对路径并保持继承 PATH 不变；Finder 登录 PATH 恢复和打包验收由 #110 的 macOS arm64 foundation partial 承接，不是本修复的完成依赖。该探针不读取账号、登录态或凭据存储，`ready` 也只表示本地执行前置满足，不代表远端 provider 接受了账号或具备 entitlement；一次真实回合仍是唯一的运行证据。响应只含布尔值与非敏感 `nextStep`，绝不返回凭据值、绝对 Qoder 路径或原始探针输出。Claude 各 Host 的判定独立，不得成为 bundled Qoder ready 的门槛。客户端必须以 Host 状态控制选择和发送，不得以 `engine.available` 代替 Host ready。
 
 ### 2.2 `GET /workspace` — 当前工作区信息
 
@@ -209,6 +209,10 @@ reorder 语义补充（#32）：兄弟顺序是 org-workbench 自治语义，不
       }
     ],
     "permissions": { "toolAllow": ["Read", "Grep", "Glob"], "toolDeny": [] },
+    "capabilities": {
+      "skills": [{ "id": "issue-research", "name": "Issue 调研" }],
+      "mcpServers": [{ "id": "workspace-drive", "name": "工作区网盘", "tools": ["read"] }]
+    },
     "budget": { "perTask": { "...": "..." }, "perDay": { "...": "..." } },
     "metadata": {}
   }
@@ -223,6 +227,14 @@ reorder 语义补充（#32）：兄弟顺序是 org-workbench 自治语义，不
 `binding=available` 只代表可接入，不代表该岗位已经获得访问授权；`state` 为
 `ready`、`empty`、`not_configured` 或 `error`。旧客户端可以继续使用
 `contextScope`，新客户端应优先渲染 `contextSources`。
+
+招聘请求中的 `permissions` 是 Workbench 的附加策略面，不扩展冻结的
+`hire-request.v1alpha1` envelope。`permissions.skills` 只允许引用平台登记的
+Skill，`permissions.mcpServers` 只允许引用平台登记的 MCP，并为每个服务携带
+工具级 allowlist。绑定本身不授予文件、工作区、项目或网络访问；控制面会将
+`skill://<id>` / `mcp://<id>` 的 `execute` 规则和资源的查/新建/修改/删除规则一并
+写入岗位包 `permissions.json`，同时生成 `skills.json`、`mcp.json`。MCP 工具白名单
+还会落到 `employee.json.policy.mcpTools`，因此运行时可以继续按最小权限收敛。
 
 ### 2.9 `GET /reports` — 上报中心数据（只读，分页）
 
@@ -313,7 +325,7 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 { "positionId": "repo-owner" }
 ```
 
-- 请求只允许 `positionId` 一个字段；该岗位没有正在运行的回合时返回 404 `not_found`（不新增错误码）。
+- 兼容旧请求 `{positionId}`，作用于请求入口时打开的 workspace。新客户端发送 `{positionId, workspacePath}`，取得任务标识后发送 `{positionId, workspacePath, turnId}`；只允许这三种精确字段组合。`workspacePath` 标识原任务所属的工作区，仅用于查找控制面已经登记的活动执行，不读取或打开客户端传入的目录。指定 `turnId` 时必须匹配，携带旧 `turnId` 的取消请求不能中断同一员工的后续任务。未找到匹配的执行时返回 404 `not_found`（不新增错误码）。
 - 命中时控制面终止引擎子进程（SIGTERM，250ms 后 SIGKILL），回合经既有路径落为 `indeterminate`，诊断码 `turn_cancelled`（与 `turn_timeout` 同类的本地诊断码，不属于 `errorCodes` 稳定码表），并复用冻结的 `turn.indeterminate` SSE 词汇广播；不新增 SSE 事件类型。
 - 响应 200：`{ "cancelled": true, "positionId": "<id>" }`。
 - 同一 `POST /turns` 请求语义不变：被中断的回合仍以完整 `turn-record.v1`（status `indeterminate`）作为该请求的 200 响应返回。
@@ -373,7 +385,19 @@ scope 全部由服务端 session 状态派生：`workspaceId=workspaceInstanceId
 
 Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 `context adapter ingest|distill`。子进程只从 env 取得 `CONTEXT_VAULT` / `CONTEXT_RUNTIME_TOKEN`；operator token、boot-token 与 Host 凭据不在 argv、不进入 renderer/preload/IPC/turn record/evidence。相同 occurrence replay 是幂等 no-op；部分成功后重启会重放导出并跳过 provider 已 `done` 的 occurrence。adapter failure 只把本地 export state 置 `failed`；下一次 workspace-open/restart 最多重试导出，不调用 `turnDriver`，不改变已持久的 Host 终态。
 
-`sourceLocator=context://occurrences/<occurrenceId>@1` 只是 source audit reference，不冒充 `context read` 所需的 item-unique `/artifacts/<artifactId>` locator。Workbench 不打开或共享 Context SQLite，也不做 recall/model injection/memory write。
+`sourceLocator=context://occurrences/<occurrenceId>@1` 只是 source audit reference，不冒充 `context read` 所需的 item-unique `/artifacts/<artifactId>` locator。此 exporter 不打开或共享 Context SQLite，也不做 recall/model injection/memory write。#214 的本地 Thread Context 独立读取既有可信回合记录，见下文。
+
+### 本地 Thread Context 与员工协作（#214 R1 / #143 R3 加法）
+
+`PATCH /sessions/:sessionId/context` 接受且仅接受 `{ "enabled": boolean }`，返回更新后的 `workbench-session.v1`。可选字段 `threadContextEnabled` 缺省为 `true`；同一员工存在个人或群组执行时，拒绝轮换会话或修改策略，生命周期变更与执行预留使用同一个互斥边界。旧会话记录仍可读取，不增加第二套 session。
+
+执行前，服务端从当前 session 或当前群的可信已完成回合选择背景与可见答案，把 `thread-context.v1` 历史数据块放入既有密封 `turn-envelope.input`。不修改上游 envelope schema，不传递审批或权限字段。原始用户任务保留在 `turn-record.v1.input`，加法字段 `threadContext` 记录实际摘要、来源数、遗漏数、UTF-8 字节数、digest 和脱敏/截断标记。历史输入和可见答案先完整脱敏，再进行字节截断，群历史与接力投影保留实际脱敏标记。边界为最多 12 个来源、64 KiB context、单字段 8 KiB，context 与本次原始任务合计不超过 256 KiB。
+
+不同员工可并行执行；同一 workspace/position 的重叠执行返回 409 `session_conflict`。取消句柄按 workspace/position 和执行归属管理，旧执行结束不能删除新执行的取消句柄。SSE 控制面包装携带原 `workspacePath`，个人事件还带岗位、引擎、回合和会话归属，供客户端隔离并行流；持久化的原始 engine 事件不增加这些控制面字段。
+
+群 `POST /groups/:conversationRef/turns` 另接受可选 `mode: "parallel" | "relay"`，省略时为 `parallel`；`mentions` 是明确选择的接收人和接力顺序。群消息持久化 mode、engine 及预分配 spawns 后返回 202。 256 KiB 输入与最多 32 个成员的元数据按 JSON 转义后的字节数预留存储空间；原始 HTTP JSON 请求仍受既有 1 MiB 上限约束，超过该传输边界返回 400。并行模式同时启动各成员；接力模式只在前序可信完成后传递有界结果。后续未执行步骤用可读回的 `indeterminate` 记录及 `group_relay_blocked` 标明；不会伪造引擎事件。忙碌员工显示 `group_employee_busy`，切换 workspace 导致的未执行步骤显示 `group_workspace_changed`。重启后已接受但未启动的步骤恢复为 `group_dispatch_interrupted`，不自动重跑。
+
+本节取代下方早期 #52 的顺序派发行为；旧消息仍兼容。完整用户说明、数据边界及回滚注意事项见 [Thread Context 与协作](thread-context-and-collaboration.md)。
 
 ### 2.14 `POST /hire` — 创建员工（#33 加法，hire-request.v1alpha1 契约面）
 
@@ -396,6 +420,8 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 - `positionId` 镜像 digital-employee 岗位 ID 契约（`^[a-z0-9]+(?:-[a-z0-9]+)*$`，≤64）；`reportTo` 为岗位 ID 或 `null`（`null` 解析为企业负责人，`targetParentId=owner`）。
 - `budget.perTask.tokens` / `perDay.tokens` 必填正整数且 ≤1,000,000,000；`iterations` 选填；`mode` 只允许 `read_only` / `approval_required`；`deadline` 选填 ISO 时间。
 - `description` 必填、非空，去除首尾空白后 **≤1024 字符**（按 UTF-16 code unit 计，非字节）。该上限镜像上游 digital-employee `validateSkillFrontmatter` 对 SKILL.md frontmatter `description` 的约束——它比 `employee.json` 自身的 2000 字符上限更严，是真正的瓶颈。控制面在请求闸门按此拒绝，避免 staging 之后才在 `org apply` 阶段撞上 `employee_skill_description_required`（#92）。`name` 仍按 ≤128 **字节** 校验：它只进入 SKILL.md 正文，不受上游 frontmatter 约束。
+
+`permissions.tools`、`permissions.rules`、`permissions.skills`、`permissions.mcpServers` 都是有界数组；Skill / MCP 标识必须来自平台目录，MCP `tools` 必须是该服务登记工具的子集。未知能力或未知 `skill://` / `mcp://` 资源规则在请求闸门直接拒绝。
 
 执行序列（两道静态闸门，全部 fail-closed）：
 

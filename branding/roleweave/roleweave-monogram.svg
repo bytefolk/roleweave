@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RoleWeave woven roles monogram">
+  <title>RoleWeave woven roles monogram</title>
+  <desc>The original geometric R and W monogram retained as a secondary product mark.</desc>
+  <g id="icon-artwork" transform="translate(32 32) scale(0.875)">
+  <rect id="icon-canvas" x="0" y="0" width="512" height="512" rx="126" fill="#141820" />
+  <rect id="icon-edge" x="8" y="8" width="496" height="496" rx="118" fill="none" stroke="#2c3a52" stroke-width="8" />
+  <path id="role-ribbon" fill="#722ed1" d="M116 406V106h104c78 0 126 38 126 102 0 46-23 78-66 94l79 104h-87l-66-91h-22v91h-68Zm68-236v89h31c40 0 61-15 61-43 0-30-21-46-61-46h-31Z"/>
+  <path id="weave-ribbon" fill="#1677ff" d="M150 244h43l33 79 33-53 33 53 33-79h43l-53 145h-43l-30-54-30 54h-43Z"/>
+  <path id="weave-break-left" fill="#141820" d="m213 362 22-34 10 10-22 34Z"/>
+  <path id="weave-break-right" fill="#141820" d="m337 338 10-10 22 34-10 10Z"/>
+  <circle id="role-node" cx="116" cy="106" r="9" fill="#ffffff" />
+  <circle id="workflow-node" cx="412" cy="264" r="9" fill="#ffffff" />
+  </g>
+</svg>

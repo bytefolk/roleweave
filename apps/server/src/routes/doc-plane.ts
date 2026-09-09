@@ -4,12 +4,12 @@ import {
   DOC_PLANE_LIST_SCHEMA_VERSION,
   OrgApiError,
   errorCodes,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type {
   DocPlaneDetailResponse,
   DocPlaneListEntry,
   DocPlaneListResponse,
-} from "@org-workbench/shared";
+} from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { sendJson } from "../http.js";
 
@@ -20,16 +20,15 @@ import { sendJson } from "../http.js";
  * upstream Bearer PAT and any CORS restrictions stay on the shell side. The
  * proxy owns three fail-closed behaviours:
  *
- *  1. When `ORG_WORKBENCH_DOC_URL` is unset the routes short-circuit with
+ *  1. When `ORG_WORKBENCH_DOC_URL` or its Bearer PAT is unset the routes short-circuit with
  *     `doc_plane_unconfigured` (503) so the UI can surface a configuration
  *     guide instead of an opaque network error.
  *  2. When the upstream is reachable but returns a 5xx / times out, the
  *     proxy maps it to `doc_plane_unavailable` (502) — retryable=true.
  *  3. When `ORG_WORKBENCH_DOC_MOCK=1` the proxy short-circuits to a bundled
- *     fixture (source="mock" in the response body). TODO(#35 R3): remove
- *     the fixture once the upstream `/api/v1/documents/:id` content-fetch
- *     surface stabilises (docs/API.md today returns TipTap JSON, which we
- *     flatten to markdown-ish text via the walker below).
+ *     fixture (source="mock" in the response body). The real adapter follows
+ *     bytefolk/doc's documented `/api/v1/documents` list and detail routes;
+ *     detail content is TipTap JSON and is flattened for the local viewer.
  *
  * The proxy never mutates upstream state — it only wraps `GET /api/v1/me`
  * -equivalent list + detail reads.
@@ -66,11 +65,16 @@ const MOCK_CONTENT: Record<string, string> = {
 
 function requireConfigured(ctx: ControlPlaneContext): void {
   if (ctx.config.docPlaneMock) return;
-  if (typeof ctx.config.docPlaneUrl !== "string" || ctx.config.docPlaneUrl.length === 0) {
+  if (
+    typeof ctx.config.docPlaneUrl !== "string" ||
+    ctx.config.docPlaneUrl.length === 0 ||
+    typeof ctx.config.docPlaneToken !== "string" ||
+    ctx.config.docPlaneToken.length === 0
+  ) {
     throw new OrgApiError(
       errorCodes.doc_plane_unconfigured,
       503,
-      "doc plane is not configured (set ORG_WORKBENCH_DOC_URL or ORG_WORKBENCH_DOC_MOCK=1)",
+      "doc plane is not configured (set ORG_WORKBENCH_DOC_URL and ORG_WORKBENCH_DOC_TOKEN, or ORG_WORKBENCH_DOC_MOCK=1)",
       false,
     );
   }
@@ -181,6 +185,23 @@ async function fetchUpstream(
   }
 }
 
+function upstreamFailure(operation: string, status: number): OrgApiError {
+  if (status === 401 || status === 403) {
+    return new OrgApiError(
+      errorCodes.doc_plane_unavailable,
+      502,
+      `upstream doc plane authentication failed while reading ${operation} (check ORG_WORKBENCH_DOC_TOKEN and the documents:read scope)`,
+      false,
+    );
+  }
+  return new OrgApiError(
+    errorCodes.doc_plane_unavailable,
+    502,
+    `upstream doc plane ${operation} failed with status ${status}`,
+    true,
+  );
+}
+
 export async function handleDocPlaneList(
   ctx: ControlPlaneContext,
   res: ServerResponse,
@@ -200,22 +221,27 @@ export async function handleDocPlaneList(
     return;
   }
 
-  const suffix = query.length > 0 ? `?limit=50&query=${encodeURIComponent(query)}` : "?limit=50";
-  const upstream = await fetchUpstream(ctx, `/api/v1/documents${suffix}`);
-  if (upstream.status < 200 || upstream.status >= 300) {
-    throw new OrgApiError(
-      errorCodes.doc_plane_unavailable,
-      502,
-      `upstream doc plane list failed with status ${upstream.status}`,
-      true,
-    );
-  }
-  const container = upstream.body as { data?: unknown } | null;
-  const rawEntries = Array.isArray(container?.data) ? (container!.data as unknown[]) : [];
   const entries: DocPlaneListEntry[] = [];
-  for (const raw of rawEntries) {
-    const coerced = coerceListEntry(raw);
-    if (coerced !== null) entries.push(coerced);
+  let cursor: string | null = null;
+  // The upstream API is cursor based. Keep the UI complete for normal workspaces
+  // while retaining a hard bound if a remote server returns a broken cursor.
+  for (let page = 0; page < 10; page += 1) {
+    const params = new URLSearchParams({ limit: "100" });
+    if (query.length > 0) params.set("query", query);
+    if (cursor !== null) params.set("cursor", cursor);
+    const upstream = await fetchUpstream(ctx, `/api/v1/documents?${params.toString()}`);
+    if (upstream.status < 200 || upstream.status >= 300) {
+      throw upstreamFailure("list", upstream.status);
+    }
+    const container = upstream.body as { data?: unknown; meta?: { nextCursor?: unknown } } | null;
+    const rawEntries = Array.isArray(container?.data) ? (container!.data as unknown[]) : [];
+    for (const raw of rawEntries) {
+      const coerced = coerceListEntry(raw);
+      if (coerced !== null && !entries.some((entry) => entry.id === coerced.id)) entries.push(coerced);
+    }
+    const nextCursor = container?.meta?.nextCursor;
+    if (typeof nextCursor !== "string" || nextCursor.length === 0 || nextCursor === cursor) break;
+    cursor = nextCursor;
   }
   const body: DocPlaneListResponse = {
     schemaVersion: DOC_PLANE_LIST_SCHEMA_VERSION,
@@ -259,12 +285,7 @@ export async function handleDocPlaneDetail(
     throw new OrgApiError(errorCodes.doc_plane_unavailable, 404, `document not found: ${id}`, false);
   }
   if (upstream.status < 200 || upstream.status >= 300) {
-    throw new OrgApiError(
-      errorCodes.doc_plane_unavailable,
-      502,
-      `upstream doc plane detail failed with status ${upstream.status}`,
-      true,
-    );
+    throw upstreamFailure("detail", upstream.status);
   }
   const container = upstream.body as { data?: unknown } | null;
   const raw = container?.data as

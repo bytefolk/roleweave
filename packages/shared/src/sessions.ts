@@ -14,6 +14,8 @@ export interface WorkbenchSession {
   rotatedTo: string | null;
   createdAt: string;
   rotatedAt: string | null;
+  /** Workbench-owned history policy. Absent on legacy records means enabled. */
+  threadContextEnabled?: boolean;
 }
 
 export interface WorkbenchSessionList {

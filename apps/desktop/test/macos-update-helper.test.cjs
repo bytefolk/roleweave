@@ -30,8 +30,8 @@ test("the helper rechecks the ZIP and atomically replaces then relaunches the ap
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const requestDirectory = path.join(fixture, "request");
   const extractionDirectory = path.join(fixture, "extract");
-  const targetAppPath = path.join(fixture, "Org Workbench.app");
-  const sourceAppPath = path.join(fixture, "source", "Org Workbench.app");
+  const targetAppPath = path.join(fixture, "RoleWeave.app");
+  const sourceAppPath = path.join(fixture, "source", "RoleWeave.app");
   const zipPath = path.join(requestDirectory, "org-workbench-0.2.0-arm64.zip");
   fs.mkdirSync(targetAppPath, { recursive: true });
   fs.writeFileSync(path.join(targetAppPath, "version.txt"), "old");
@@ -48,7 +48,7 @@ test("the helper rechecks the ZIP and atomically replaces then relaunches the ap
     targetAppPath,
     zipPath,
     manifest: manifestFor(bytes),
-    appName: "Org Workbench",
+    appName: "RoleWeave",
     arch: "arm64",
   };
   fs.writeFileSync(requestPath, JSON.stringify(request), { mode: 0o600 });
@@ -58,7 +58,7 @@ test("the helper rechecks the ZIP and atomically replaces then relaunches the ap
     const child = new EventEmitter();
     child.stderr = new EventEmitter();
     process.nextTick(() => {
-      if (command === "/usr/bin/ditto") fs.cpSync(sourceAppPath, path.join(args[args.length - 1], "Org Workbench.app"), { recursive: true });
+      if (command === "/usr/bin/ditto") fs.cpSync(sourceAppPath, path.join(args[args.length - 1], "RoleWeave.app"), { recursive: true });
       child.emit("close", 0, null);
     });
     child.unref = () => undefined;

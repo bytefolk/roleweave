@@ -58,16 +58,22 @@ function createControlPlaneChild({ serverEntry, env }) {
   const mode = controlPlaneMode(childEnv);
   if (mode === "wsl") {
     const wslEntry = winToWslPath(serverEntry);
-    return spawn(
+    const child = spawn(
       "wsl.exe",
       ["-e", "bash", "-lc", `node "${wslEntry}"`],
       { env: childEnv, stdio: ["ignore", "pipe", "pipe"] },
     );
+    return child;
   }
-  return spawn(process.execPath, [serverEntry], {
+  const child = spawn(process.execPath, [serverEntry], {
     env: { ...childEnv, ELECTRON_RUN_AS_NODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
+    // On POSIX the control plane owns a process group so stop can reap a
+    // provider/driver child as well. Windows uses ChildProcess#kill below.
+    detached: process.platform !== "win32",
   });
+  if (process.platform !== "win32") child.__owbProcessGroupLeader = true;
+  return child;
 }
 
 /**
