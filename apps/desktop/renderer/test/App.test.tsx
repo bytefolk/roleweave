@@ -938,21 +938,33 @@ it("drops workspace A's late group 202 after switching to B and reloads A on ret
       ref === groupA.conversationRef && aCompleted ? [{ kind: "member", turn: apiTurn({ conversationRef: ref, groupRef: ref, output: "A restored from disk" }) }] : [] } })),
     createGroupTurn: vi.fn(() => new Promise((resolve) => { resolveOldDispatch = resolve; })),
   });
-  render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "群聊" }));
-  await screen.findByLabelText("群聊消息");
+  // Navigation/read fixtures resolve immediately; flush their promise chain
+  // instead of polling the full animated App DOM for each transition.
+  await act(async () => { render(<App />); });
+  const projectEntry = screen.getByRole("button", { name: "项目入口" });
+  const groupEntry = screen.getByRole("button", { name: "群聊" });
+  const organizationEntry = screen.getByRole("button", { name: "组织" });
+  await act(async () => { fireEvent.click(groupEntry); });
+  const composer = screen.getByLabelText("群聊消息");
   pickSelectOption("选择要 @ 的成员", "代码库负责人");
-  fireEvent.change(screen.getByLabelText("群聊消息"), { target: { value: "A pending task" } });
-  fireEvent.click(screen.getByRole("button", { name: "发送群消息" }));
-  await waitFor(() => expect(bridge.createGroupTurn).toHaveBeenCalledTimes(1));
+  fireEvent.change(composer, { target: { value: "A pending task" } });
+  const sendButton = within(composer.closest("form")!).getByRole("button", { name: "发送群消息" });
+  await act(async () => { fireEvent.click(sendButton); });
+  expect(bridge.createGroupTurn).toHaveBeenCalledTimes(1);
   const switchWorkspace = async (next: string) => {
+    const previousLoads = vi.mocked(bridge.groupTimeline).mock.calls.length;
     workspace = next;
-    fireEvent.click(screen.getByRole("button", { name: "项目入口" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /打开项目/ }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${next}`));
+    fireEvent.click(projectEntry);
+    const menu = screen.getByRole("menu", { name: "项目入口" });
+    const openItem = within(menu).getByRole("menuitem", { name: /打开项目/ });
+    await act(async () => { fireEvent.click(openItem); });
+    expect(projectEntry).toHaveTextContent(`Workspace ${next}`);
+    expect(vi.mocked(bridge.groupTimeline).mock.calls.slice(previousLoads)).toContainEqual([
+      next === "A" ? groupA.conversationRef : groupB.conversationRef,
+    ]);
   };
   await switchWorkspace("B");
-  await waitFor(() => expect(bridge.groupTimeline).toHaveBeenCalledWith(groupB.conversationRef));
+  expect(bridge.groupTimeline).toHaveBeenCalledWith(groupB.conversationRef);
   expect(screen.getByLabelText("群聊消息")).toHaveValue("");
   expect(screen.getByLabelText("群聊消息")).toBeEnabled();
   expect(screen.getByRole("button", { name: "发送群消息" })).toBeDisabled();
@@ -960,13 +972,16 @@ it("drops workspace A's late group 202 after switching to B and reloads A on ret
   await act(async () => resolveOldDispatch({ status: 202, body: { conversationRef: groupA.conversationRef, messageId: "old-A", spawns: [{ turnId: "old-A-turn", positionId: "repo-owner" }] } }));
   expect(screen.getByLabelText("群聊消息")).toHaveValue("B clean draft");
   expect(screen.queryByText("A pending task")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "组织" }));
-  await selectRepoOwner();
-  await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
-  fireEvent.click(screen.getByRole("button", { name: "群聊" }));
+  await act(async () => { fireEvent.click(organizationEntry); });
+  const row = screen.getByRole("tree").querySelector('[data-org-node-id="repo-owner"]');
+  expect(row).not.toBeNull();
+  await act(async () => { fireEvent.click(row!); });
+  expect(screen.getByRole("heading", { name: "本地对话" })).toBeInTheDocument();
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  await act(async () => { fireEvent.click(groupEntry); });
   aCompleted = true;
   await switchWorkspace("A");
-  expect(await screen.findByText("A restored from disk")).toBeInTheDocument();
+  expect(screen.getByText("A restored from disk")).toBeInTheDocument();
   expect(screen.getByLabelText("群聊消息")).toHaveValue("");
 });
 
