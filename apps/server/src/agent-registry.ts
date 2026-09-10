@@ -90,7 +90,7 @@ interface HostDefinition {
   readonly capabilities: readonly string[];
 }
 
-const HOST_ORDER = ["qoder", "claude-code", "claude-local"] as const satisfies readonly AgentHostId[];
+const HOST_ORDER = ["qoder", "claude-code", "claude-local", "codex", "codex-local"] as const satisfies readonly AgentHostId[];
 
 /**
  * Capabilities describe the control-plane contract, not provider account
@@ -108,6 +108,14 @@ const HOST_DEFINITIONS: Readonly<Record<AgentHostId, HostDefinition>> = {
   },
   "claude-local": {
     label: "Claude Code（本地登录）",
+    capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],
+  },
+  codex: {
+    label: "Codex",
+    capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],
+  },
+  "codex-local": {
+    label: "Codex（本地登录）",
     capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],
   },
 };

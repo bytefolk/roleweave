@@ -40,7 +40,7 @@ export interface GroupsPanelProps {
   onReconcileTimeline: (timeline: GroupTimeline) => void;
 }
 
-const GROUP_ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local"];
+const GROUP_ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local"];
 const GROUP_RECONCILE_INTERVAL_MS = 1_000;
 const GROUP_RECONCILE_MAX_READS = 180;
 

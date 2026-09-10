@@ -6,6 +6,8 @@ import { probeEngine } from "../engine/probe.js";
 import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
+import { resolveCodexExecutable } from "../codex-binary.js";
+import { createLauncherSpawnSpec } from "../windows-launcher.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 
 /** Mirrors digital-employee's claude-local model port (#184): >= 2.1.214, < 2.2.0. */
@@ -18,6 +20,11 @@ export interface ClaudeLocalBinaryState {
   installed: boolean;
   version: string | null;
   supported: boolean;
+}
+
+export interface CodexBinaryState {
+  installed: boolean;
+  version: string | null;
 }
 
 export type QoderLocalProbeFailure = "unavailable" | "timed_out" | "unsupported_version";
@@ -146,9 +153,12 @@ function runVersionProbe(
 export interface HostHealthInput {
   engineAvailable: boolean;
   engineVersion?: string;
+  /** Desktop-owned adapter boundary; never inferred from CLI version text. */
+  bundledElectronEngine?: boolean;
   env: NodeJS.ProcessEnv;
   qoderLocal?: QoderLocalBinaryState;
   claudeLocal?: ClaudeLocalBinaryState;
+  codex?: CodexBinaryState;
 }
 
 function compareParts(parts: readonly [number, number, number], bound: readonly [number, number, number]): number {
@@ -260,6 +270,68 @@ export function probeClaudeLocalBinary(
   return { installed: true, version, supported: supportedClaudeVersion(version) };
 }
 
+/**
+ * Bounded, local-only preflight for the Codex CLI used by the bundled engine.
+ *
+ * Unlike the Claude and Qoder probes there is no supported-version window to
+ * check: the Codex engine (#206) deliberately makes no tier-1 qualification
+ * claim, because its model-visible tool set cannot be emptied. Pinning a range
+ * here would imply a qualification that was never performed, so the probe
+ * reports installation and the announced version only.
+ */
+export function probeCodexBinary(
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 3000,
+  platform: NodeJS.Platform = process.platform,
+): CodexBinaryState {
+  const command = resolveCodexExecutable(env, platform);
+  if (command === null) {
+    return { installed: false, version: null };
+  }
+  let probe: ReturnType<typeof spawnSync>;
+  // #221 review B4: this probe used to pass `shell: true` for a Windows
+  // launcher, on a path that comes from DIGITAL_EMPLOYEE_CODEX_COMMAND.
+  // resolveCodexExecutable proves the target is an executable regular file but
+  // not that the path is free of cmd metacharacters, so it goes through the
+  // same escaped, shell-free cmd.exe construction #125 established for the turn
+  // paths — the shared module, not a second copy of it.
+  const spec = createLauncherSpawnSpec(
+    command,
+    ["--version"],
+    runtimeExecutableEnvironment(env),
+    platform,
+  );
+  try {
+    probe = spawnSync(spec.command, spec.args, {
+      ...spec.options,
+      encoding: "utf8",
+      killSignal: "SIGKILL",
+      timeout: timeoutMs,
+      windowsHide: true,
+    });
+  } catch {
+    return { installed: false, version: null };
+  }
+  if (probe.error !== undefined || probe.status !== 0) {
+    return { installed: false, version: null };
+  }
+  const announced = typeof probe.stdout === "string" && probe.stdout.trim().length > 0
+    ? probe.stdout
+    : typeof probe.stderr === "string"
+      ? probe.stderr
+      : "";
+  const match = /(\d+\.\d+\.\d+)/.exec(announced);
+  return { installed: true, version: match ? match[1]! : null };
+}
+
+/** Exported for the #221 review B4 regression only. */
+export const __codexVersionProbeSpec = (
+  command: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): { command: string; args: string[]; options: Record<string, unknown> } =>
+  createLauncherSpawnSpec(command, ["--version"], env, platform);
+
 function isBundledQoderEngine(version: string | undefined): boolean {
   return typeof version === "string" && /^qoder-engine\s+\d+\.\d+\.\d+$/.test(version.trim());
 }
@@ -283,9 +355,11 @@ function bundledQoderNextStep(state: QoderLocalBinaryState, engineAvailable: boo
 export function hostHealth({
   engineAvailable,
   engineVersion,
+  bundledElectronEngine = false,
   env,
   qoderLocal = { installed: false, version: null, supported: false, failure: "unavailable" },
   claudeLocal = { installed: false, version: null, supported: false },
+  codex = { installed: false, version: null },
 }: HostHealthInput): HealthResponse["hosts"] {
   const bundledQoder = isBundledQoderEngine(engineVersion);
   const qoderServiceTokenConfigured = typeof env.QODER_PERSONAL_ACCESS_TOKEN === "string" && env.QODER_PERSONAL_ACCESS_TOKEN.length > 0;
@@ -293,6 +367,17 @@ export function hostHealth({
   const qoderNextStep = bundledQoderNextStep(qoderLocal, engineAvailable);
   const claudeConfigured = typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.length > 0;
   const claudeLocalConfigured = claudeLocal.installed && claudeLocal.supported;
+  // Both Codex Hosts require the desktop-owned bundled adapter: the external
+  // digital-employee CLI only probes Codex and has no executable model port.
+  // Neither Codex Host has a supported-version window to gate on. The two
+  // differ only in how the provider is reached: `codex` requires an explicit
+  // service credential, while `codex-local` runs on the operator's own Codex
+  // login and must never be gated on — or handed — a credential, exactly as
+  // claude-local is not gated on ANTHROPIC_API_KEY. Login state itself is
+  // asserted by the engine at run time; no credential store is inspected here.
+  const codexProviderConfigured = typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.length > 0;
+  const codexConfigured = codex.installed && codexProviderConfigured;
+  const codexLocalConfigured = codex.installed;
   const claudeCodeConfigured = bundledQoder
     ? (claudeLocal.installed && claudeLocal.supported && claudeConfigured)
     : claudeConfigured;
@@ -346,6 +431,30 @@ export function hostHealth({
             ? { nextStep: "先安装或配置支持 turn run 的 digital-employee CLI" }
             : {}),
     },
+    codex: {
+      configured: codexConfigured,
+      ready: bundledElectronEngine && engineAvailable && codexConfigured,
+      ...(!bundledElectronEngine
+        ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
+        : !codex.installed
+          ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
+          : !codexProviderConfigured
+            ? { nextStep: "设置 OPENAI_API_KEY（如需自建或中转端点，另设 OPENAI_BASE_URL）后重启工作台；若要用 Codex 订阅登录，请改选 Codex（本地登录）" }
+            : !engineAvailable
+              ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+              : {}),
+    },
+    "codex-local": {
+      configured: codexLocalConfigured,
+      ready: bundledElectronEngine && engineAvailable && codexLocalConfigured,
+      ...(!bundledElectronEngine
+        ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
+        : !codex.installed
+          ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
+          : !engineAvailable
+            ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+            : {}),
+    },
   };
 }
 
@@ -354,6 +463,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
     bundledElectronEngine: ctx.config.bundledElectronEngine,
   });
   const claudeLocal = probeClaudeLocalBinary(process.env);
+  const codex = probeCodexBinary(process.env);
   const qoderLocal = isBundledQoderEngine(probe.version)
     ? await probeQoderLocalBinary(process.env)
     : undefined;
@@ -370,10 +480,12 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
     },
     hosts: hostHealth({
       engineAvailable: probe.available,
+      bundledElectronEngine: ctx.config.bundledElectronEngine,
       ...(probe.version !== undefined ? { engineVersion: probe.version } : {}),
       env: process.env,
       ...(qoderLocal !== undefined ? { qoderLocal } : {}),
       claudeLocal,
+      codex,
     }),
     workspace: ws ? { open: true, path: ws.dir } : { open: false },
   };

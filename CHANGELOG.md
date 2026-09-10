@@ -36,6 +36,9 @@
 
 ## [Unreleased] — D2 组织操作 + D3 对话控制面 + D4 本地上报
 
+### Changed
+
+- #206：RoleWeave 内置引擎新增 Codex 服务凭据与本地登录两种 Agent Host；本地登录不依赖服务 API key。
 - 以 RoleWeave 标识的紫蓝色建立 light / dark 双主题，逐组件统一组织、会话、群聊、招聘、文档、网盘、报表、审批和设置；简化嵌套卡片与装饰标签，改善正文、长路径、超限数值及暗色表单的可读性，保留业务行为。
 - 会话使用可折叠的执行状态行与连续正文：运行时展开公开里程碑并显示真实耗时，结束时默认收起，手动开合不受流式输出刷新影响；审批与错误保持可见，不推断工具次数，缺失的时间不补零。
 
@@ -43,6 +46,7 @@
 
 ### Fixed
 
+- #221 review：Codex 就绪状态要求内置引擎边界；使用外部 digital-employee CLI 时，即使已安装 Codex 并配置凭据，两种 Codex Host 仍显示不可用并说明原因。
 - #135：新增免费 macOS GitHub 自动更新通道：发布 workflow 使用 `OWB_UPDATE_SIGNING_PRIVATE_KEY` 为 ZIP 元数据生成 Ed25519 签名，客户端校验后后台下载，并在正常退出时自动替换、重启；应用本身仍为 unsigned，Gatekeeper/Developer ID 方案保留为后续切换路径。
 
 ### Added

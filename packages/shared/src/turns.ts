@@ -3,6 +3,7 @@
  * digital-employee `turn-envelope.v1` / `engine.v1` source of truth; this
  * package only adds workbench-local persistence records.
  */
+import { createRequire } from "node:module";
 
 export const TURN_ENVELOPE_SCHEMA_VERSION = "turn-envelope.v1" as const;
 /** Upstream de#205 (DE-CONVREF-001): v1alpha2 = v1 + optional conversationRef. */
@@ -13,8 +14,20 @@ export type TurnEnvelopeSchemaVersion =
 export const TURN_RECORD_SCHEMA_VERSION = "turn-record.v1" as const;
 export const TURN_HISTORY_SCHEMA_VERSION = "turn-history.v1" as const;
 
-export const turnEngines = ["qoder", "claude-code", "claude-local"] as const;
-export type TurnEngine = (typeof turnEngines)[number];
+/**
+ * The union is the compile-time contract; a literal union cannot be derived
+ * from a runtime require. The runtime list comes from ../turn-engines.cjs so
+ * the desktop IPC validators cannot drift from the routes and the renderer —
+ * before #206 they carried their own copy, which silently rejected every new
+ * engine at the IPC boundary.
+ */
+export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
+
+const turnEngineContract = createRequire(import.meta.url)("../turn-engines.cjs") as {
+  TURN_ENGINE_IDS: readonly TurnEngine[];
+};
+
+export const turnEngines: readonly TurnEngine[] = turnEngineContract.TURN_ENGINE_IDS;
 
 /** Explicit owner paths select only an already active in-memory reservation. */
 export type CancelTurnRequest = { positionId: string } | {

@@ -3,7 +3,8 @@
 const { isPositionId } = require("@roleweave/shared/position-id");
 
 const CONVERSATION_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const TURN_ENGINES = new Set(["qoder", "claude-code", "claude-local"]);
+const { TURN_ENGINE_IDS, turnEngineMessage } = require("@roleweave/shared/turn-engines");
+const TURN_ENGINES = new Set(TURN_ENGINE_IDS);
 const MAX_INPUT_BYTES = 256 * 1024;
 const MAX_GROUP_MEMBERS = 32;
 
@@ -74,7 +75,7 @@ function validateGroupTurnRequest(value) {
     return { ok: false, response: invalid("group_request_invalid", "input must be non-empty and no larger than 256 KiB") };
   }
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
-    return { ok: false, response: invalid("turn_engine_unsupported", "engine must be qoder, claude-code, or claude-local") };
+    return { ok: false, response: invalid("turn_engine_unsupported", `engine must be ${turnEngineMessage()}`) };
   }
   if (
     !Array.isArray(value.mentions) || value.mentions.length === 0 ||
