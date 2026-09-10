@@ -9,14 +9,19 @@ import type { TurnEngine } from "./types";
  */
 
 export interface PendingTurnRequestState {
+  startedAt: string;
   positionId: string;
+  sessionId?: string;
   engine: TurnEngine;
   input: string;
   /** Bound on the first engine event observed for the in-flight POST. */
   runId: string | null;
+  /** Server-owned execution identity used to cancel exactly this turn. */
+  turnId?: string;
 }
 
 export interface LiveRunState {
+  sessionId?: string;
   /** Stable group dispatch identity. The map key may be re-keyed to runId. */
   turnId?: string;
   messageId?: string;
@@ -36,10 +41,12 @@ export interface LiveRunState {
 export interface TurnStreamState {
   /** Last processed envelope seq; replays at or below it are idempotent no-ops. */
   seq: number;
-  pending: PendingTurnRequestState | null;
+  pending: Record<string, PendingTurnRequestState>;
   runs: Record<string, LiveRunState>;
   /** Bounded exact terminal facts observed before a 202 spawn can be seeded. */
   settledGroupRuns: Record<string, SettledGroupRunState>;
+  /** Recent durable/terminal identities cannot be adopted by the next POST. */
+  settledPersonalTurns: Record<string, true>;
 }
 
 interface GroupRunIdentity {
@@ -56,9 +63,10 @@ interface SettledGroupRunState extends GroupRunIdentity {
 
 export const EMPTY_TURN_STREAM: TurnStreamState = {
   seq: 0,
-  pending: null,
+  pending: {},
   runs: {},
   settledGroupRuns: {},
+  settledPersonalTurns: {},
 };
 
 export interface TurnStreamEnvelope {
@@ -70,6 +78,7 @@ export interface TurnStreamEnvelope {
 
 const LIVE_RUNS_CAP = 32;
 const SETTLED_GROUP_RUNS_CAP = 64;
+const SETTLED_PERSONAL_TURNS_CAP = 64;
 const GROUP_ENGINES = new Set<TurnEngine>(["qoder", "claude-code", "claude-local"]);
 
 function payloadRecord(payload: unknown): Record<string, unknown> | null {
@@ -101,6 +110,48 @@ function groupIdentity(payload: Record<string, unknown> | null): GroupRunIdentit
     engine === null || !GROUP_ENGINES.has(engine as TurnEngine)
   ) return null;
   return { groupRef, messageId, turnId, positionId, engine: engine as TurnEngine };
+}
+
+function matchesPersonalRun(payload: Record<string, unknown> | null, run: LiveRunState): boolean {
+  return stringField(payload, "positionId") === run.positionId &&
+    stringField(payload, "engine") === run.engine &&
+    matchesKnownTurnId(payload, run) &&
+    (run.sessionId === undefined ||
+      (stringField(payload, "sessionId") ?? stringField(payload, "conversationRef")) === run.sessionId);
+}
+
+function matchesKnownTurnId(payload: Record<string, unknown> | null, owner: { turnId?: string }): boolean {
+  const turnId = stringField(payload, "turnId");
+  // Legacy events have no server turn identity; retain their owner checks.
+  return turnId === null || owner.turnId === undefined || turnId === owner.turnId;
+}
+
+function rememberSettledPersonalTurn(state: TurnStreamState, turnId: string | null | undefined): TurnStreamState {
+  if (!turnId || state.settledPersonalTurns[turnId]) return state;
+  const entries = Object.entries({ ...state.settledPersonalTurns, [turnId]: true as const });
+  return { ...state, settledPersonalTurns: Object.fromEntries(entries.slice(-SETTLED_PERSONAL_TURNS_CAP)) };
+}
+
+/** Engine-generated runIds are process-local, so concurrent employees may
+ * reuse one. Resolve the complete owner before reading or updating a buffer. */
+function attributedRun(state: TurnStreamState, payload: Record<string, unknown> | null, runId: string): [string, LiveRunState] | undefined {
+  return Object.entries(state.runs).find(([key, run]) => {
+    if ((run.engineRunId ?? key) !== runId) return false;
+    const identity = liveIdentity(run);
+    if (identity !== null) {
+      const incoming = groupIdentity(payload);
+      return incoming !== null && sameGroupRun(identity, incoming);
+    }
+    return !hasGroupAttribution(payload) && matchesPersonalRun(payload, run);
+  });
+}
+
+function availableRunKey(state: TurnStreamState, runId: string, identity: string[]): string {
+  let key = runId;
+  for (let collision = 0; state.runs[key] !== undefined; collision += 1) {
+    key = JSON.stringify([runId, ...identity, collision]);
+  }
+  return key;
 }
 
 function hasGroupAttribution(payload: Record<string, unknown> | null): boolean {
@@ -146,9 +197,9 @@ function terminalRecord(turn: TurnRecord): boolean {
 
 export function beginPendingTurn(
   state: TurnStreamState,
-  request: { positionId: string; engine: TurnEngine; input: string },
+  request: { positionId: string; sessionId?: string; engine: TurnEngine; input: string },
 ): TurnStreamState {
-  return { ...state, pending: { ...request, runId: null } };
+  return { ...state, pending: { ...state.pending, [request.positionId]: { ...request, runId: null, startedAt: new Date().toISOString() } } };
 }
 
 /**
@@ -241,15 +292,17 @@ export function reconcileGroupTimeline(
 }
 
 /** The in-flight POST failed before any engine attribution; drop the pending marker only. */
-export function cancelPendingTurn(state: TurnStreamState): TurnStreamState {
-  return { ...state, pending: null };
+export function cancelPendingTurn(state: TurnStreamState, positionId: string): TurnStreamState {
+  const pending = { ...state.pending };
+  delete pending[positionId];
+  return { ...state, pending };
 }
 
-/** Session navigation owns only the 1:1 lane; group convergence is global. */
+/** Explicit personal reset. Navigation preserves all lanes and filters the view instead. */
 export function clearPersonalTurnState(state: TurnStreamState): TurnStreamState {
   return {
     ...state,
-    pending: null,
+    pending: {},
     runs: Object.fromEntries(
       Object.entries(state.runs).filter(([, run]) => run.groupRef !== undefined),
     ),
@@ -263,16 +316,21 @@ export function clearPersonalTurnState(state: TurnStreamState): TurnStreamState 
  */
 export function settlePendingTurn(
   state: TurnStreamState,
-  outcome: { runId: string | null; positionId: string },
+  outcome: { runId: string | null; positionId: string; sessionId?: string; turnId?: string },
 ): TurnStreamState {
   const runs: Record<string, LiveRunState> = {};
   for (const [runId, run] of Object.entries(state.runs)) {
-    const superseded = run.groupRef === undefined && (outcome.runId !== null
-      ? runId === outcome.runId
+    const superseded = run.groupRef === undefined && run.positionId === outcome.positionId && (outcome.sessionId === undefined || run.sessionId === outcome.sessionId) && (outcome.runId !== null
+      ? (run.engineRunId ?? runId) === outcome.runId
       : run.positionId === outcome.positionId);
     if (!superseded) runs[runId] = run;
   }
-  return { ...state, pending: null, runs };
+  const pending = state.pending[outcome.positionId];
+  const matchingSession = outcome.sessionId === undefined || pending?.sessionId === outcome.sessionId;
+  return rememberSettledPersonalTurn(
+    { ...(matchingSession ? cancelPendingTurn(state, outcome.positionId) : state), runs },
+    outcome.turnId ?? (matchingSession ? pending?.turnId : undefined),
+  );
 }
 
 export function resetStreamSeq(state: TurnStreamState): TurnStreamState {
@@ -288,14 +346,18 @@ export function applyTurnEvent(
   const nextSeq = seq ?? state.seq;
   const payload = payloadRecord(envelope.payload);
   const runId = stringField(payload, "runId");
+  const personalTurnId = !hasGroupAttribution(payload) && groupIdentity(payload) === null ? stringField(payload, "turnId") : null;
+  if (personalTurnId !== null && state.settledPersonalTurns[personalTurnId]) return { ...state, seq: nextSeq };
 
   switch (envelope.type) {
     case "turn.started":
     case "turn.model.delta": {
       if (runId === null) return { ...state, seq: nextSeq };
-      const existing = state.runs[runId];
+      const entry = attributedRun(state, payload, runId);
+      const existing = entry?.[1];
       const delta = envelope.type === "turn.model.delta" ? (stringField(payload, "text") ?? "") : "";
       if (existing) {
+        if (existing.groupRef === undefined && !matchesPersonalRun(payload, existing)) return { ...state, seq: nextSeq };
         const currentIdentity = liveIdentity(existing);
         if (currentIdentity !== null) {
           const identity = groupIdentity(payload);
@@ -307,7 +369,7 @@ export function applyTurnEvent(
         return {
           ...state,
           seq: nextSeq,
-          runs: { ...state.runs, [runId]: { ...existing, text: existing.text + delta } },
+          runs: { ...state.runs, [entry![0]]: { ...existing, text: existing.text + delta } },
         };
       }
       // Group runs (#52) are seeded by beginGroupRun under the pre-assigned
@@ -330,13 +392,14 @@ export function applyTurnEvent(
           !sameGroupRun(identity, seededIdentity)
         ) return { ...state, seq: nextSeq };
         const runs = { ...state.runs };
-        if (seedId !== null && seedId !== runId) delete runs[seedId];
+        const runKey = availableRunKey(state, runId, [identity.groupRef, identity.turnId, identity.positionId, identity.engine]);
+        if (seedId !== null && seedId !== runKey) delete runs[seedId];
         return {
           ...state,
           seq: nextSeq,
           runs: evictIfOverCap({
             ...runs,
-            [runId]: {
+            [runKey]: {
               ...seeded,
               groupRef: groupingRef,
               engineRunId: runId,
@@ -345,21 +408,30 @@ export function applyTurnEvent(
           }),
         };
       }
-      const pending = state.pending;
+      const positionId = stringField(payload, "positionId");
+      const sessionId = stringField(payload, "sessionId") ?? stringField(payload, "conversationRef");
+      const pending = positionId !== null ? state.pending[positionId] : undefined;
       // A run we cannot attribute to our in-flight POST is left to the
       // authoritative history reload; the renderer never guesses a position.
-      if (pending === null || (pending.runId !== null && pending.runId !== runId)) {
+      if (pending === undefined || (pending.sessionId !== undefined && pending.sessionId !== sessionId) ||
+          stringField(payload, "engine") !== pending.engine ||
+          !matchesKnownTurnId(payload, pending) ||
+          (pending.runId !== null && pending.runId !== runId)) {
         return { ...state, seq: nextSeq };
       }
       const startedAt = stringField(payload, "timestamp") ?? new Date().toISOString();
+      const runKey = availableRunKey(state, runId, [pending.positionId, pending.engine, pending.sessionId ?? ""]);
       return {
         ...state,
         seq: nextSeq,
-        pending: { ...pending, runId },
+        pending: { ...state.pending, [pending.positionId]: { ...pending, runId, ...(stringField(payload, "turnId") ? { turnId: stringField(payload, "turnId")! } : {}) } },
         runs: evictIfOverCap({
           ...state.runs,
-          [runId]: {
+          [runKey]: {
+            engineRunId: runId,
             positionId: pending.positionId,
+            ...(stringField(payload, "turnId") ? { turnId: stringField(payload, "turnId")! } : {}),
+            ...(pending.sessionId !== undefined ? { sessionId: pending.sessionId } : {}),
             engine: pending.engine,
             input: pending.input,
             text: delta,
@@ -371,8 +443,9 @@ export function applyTurnEvent(
     }
     case "turn.usage": {
       if (runId === null) return { ...state, seq: nextSeq };
-      const existing = state.runs[runId];
-      if (existing === undefined) return { ...state, seq: nextSeq };
+      const entry = attributedRun(state, payload, runId);
+      const existing = entry?.[1];
+      if (existing === undefined || (existing.groupRef === undefined && !matchesPersonalRun(payload, existing))) return { ...state, seq: nextSeq };
       const currentIdentity = liveIdentity(existing);
       if (currentIdentity !== null) {
         const identity = groupIdentity(payload);
@@ -385,7 +458,7 @@ export function applyTurnEvent(
       return {
         ...state,
         seq: nextSeq,
-        runs: { ...state.runs, [runId]: { ...existing, totalTokens } },
+        runs: { ...state.runs, [entry![0]]: { ...existing, totalTokens } },
       };
     }
     case "turn.completed":
@@ -410,14 +483,17 @@ export function applyTurnEvent(
       if (hasGroupAttribution(payload)) return { ...state, seq: nextSeq };
       // A group buffer must never fall through to the personal runId path:
       // missing attribution is not evidence that the exact group turn ended.
-      const terminalRun = runId === null ? undefined : state.runs[runId];
+      const terminalEntry = runId === null ? undefined : attributedRun(state, payload, runId);
+      const terminalRun = terminalEntry?.[1];
       if (terminalRun !== undefined && liveIdentity(terminalRun) !== null) {
         return { ...state, seq: nextSeq };
       }
-      if (runId === null || state.runs[runId] === undefined) return { ...state, seq: nextSeq };
+      if (runId === null || terminalRun === undefined || !matchesPersonalRun(payload, terminalRun)) {
+        return rememberSettledPersonalTurn({ ...state, seq: nextSeq }, personalTurnId);
+      }
       const runs = { ...state.runs };
-      delete runs[runId];
-      return { ...state, seq: nextSeq, runs };
+      delete runs[terminalEntry![0]];
+      return rememberSettledPersonalTurn({ ...state, seq: nextSeq, runs }, personalTurnId ?? terminalRun.turnId);
     }
     case "turn.indeterminate": {
       // No runId is carried. Exact group attribution clears only its spawn;
@@ -428,7 +504,8 @@ export function applyTurnEvent(
       if (identity === null && hasGroupAttribution(payload)) {
         return { ...state, seq: nextSeq };
       }
-      const pendingRunId = state.pending?.runId ?? null;
+      const candidates = Object.values(state.pending);
+      const pendingRunId = candidates.length === 1 && candidates[0]?.sessionId === undefined ? candidates[0]?.runId ?? null : null;
       const runs: Record<string, LiveRunState> = {};
       for (const [runId, run] of Object.entries(state.runs)) {
         const currentIdentity = liveIdentity(run);
@@ -437,18 +514,20 @@ export function applyTurnEvent(
           : currentIdentity !== null
             ? false
           : positionId !== null
-            ? run.positionId === positionId
-            : runId === pendingRunId;
+            ? run.positionId === positionId && matchesKnownTurnId(payload, run) &&
+              (stringField(payload, "engine") === null || stringField(payload, "engine") === run.engine) &&
+              (run.sessionId === undefined || (stringField(payload, "sessionId") ?? stringField(payload, "conversationRef")) === run.sessionId)
+            : runId === pendingRunId && matchesKnownTurnId(payload, run);
         if (!scoped) runs[runId] = run;
       }
-      return {
+      return rememberSettledPersonalTurn({
         ...state,
         seq: nextSeq,
         runs,
         ...(identity !== null
           ? { settledGroupRuns: rememberSettledGroupRun(state.settledGroupRuns, identity, nextSeq) }
           : {}),
-      };
+      }, personalTurnId);
     }
     default:
       return { ...state, seq: nextSeq };

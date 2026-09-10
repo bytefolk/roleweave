@@ -8,10 +8,12 @@ import {
   errorCodes,
   isPositionId,
 } from "@roleweave/shared";
-import type { TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
+import type { ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
 import type { EngineEvent, TurnTerminalReason } from "@roleweave/shared";
 import { assertSessionId, readAuthoritativeSessionIndex } from "../sessions/store.js";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
+
+import { isThreadContextMetadata } from "./thread-context.js";
 
 const STATE_ROOT = path.join(".digital-employee", "workbench", "conversations");
 const SESSION_CONVERSATIONS_ROOT = path.join(
@@ -68,8 +70,14 @@ interface ConversationMetadata {
   createdAt: string;
 }
 
-function storageError(message: string): OrgApiError {
-  return new OrgApiError(errorCodes.turn_storage_failed, 500, message);
+function storageError(message: string, cause?: unknown): OrgApiError {
+  return new OrgApiError(
+    errorCodes.turn_storage_failed,
+    500,
+    message,
+    false,
+    cause === undefined ? undefined : { cause },
+  );
 }
 
 export function assertPositionId(value: unknown): string {
@@ -142,6 +150,9 @@ export interface AtomicTurnWriteOperations {
   chmod(file: string, mode: number): Promise<void>;
   openDirectory(directory: string): Promise<AtomicTurnDirectoryHandle>;
   removeTemporary(file: string): Promise<void>;
+  // Injecting this lets the win32 branch below run on the POSIX-only check
+  // matrix, which is what issue #155 AC-003 asks for.
+  platform?: NodeJS.Platform;
 }
 
 export const nodeAtomicTurnWriteOperations: AtomicTurnWriteOperations = {
@@ -170,7 +181,7 @@ export async function atomicWriteJson(
   value: unknown,
   maxBytes: number,
   operations: AtomicTurnWriteOperations,
-  makeStorageError: (message: string) => OrgApiError,
+  makeStorageError: (message: string) => Error,
 ): Promise<void> {
   const dir = path.dirname(file);
   const payload = `${JSON.stringify(value)}\n`;
@@ -201,7 +212,7 @@ export async function atomicWriteJson(
         // means the rename directory entry may not survive a subsequent power
         // loss on Windows — POSIX callers lose the "renamed AND fsync-durable"
         // guarantee. On POSIX, EPERM indicates a real failure and propagates.
-        if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
+        if ((operations.platform ?? process.platform) !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
           throw error;
         }
       }
@@ -377,8 +388,9 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
       "schemaVersion", "conversationId", "turnId", "positionId", "engine", "status",
       "input", "envelopeDigest", "createdAt", "updatedAt", "events",
     ],
-    ["runId", "output", "error", "groupRef", "conversationRef"],
+    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext"],
   )) return false;
+  if (Object.hasOwn(value, "threadContext") && !isThreadContextMetadata(value.threadContext)) return false;
   const createdInstant = parseRfc3339Instant(value.createdAt);
   const updatedInstant = parseRfc3339Instant(value.updatedAt);
   if (
@@ -457,7 +469,7 @@ function isBoundedIdentifier(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 256;
 }
 
-function parseRfc3339Instant(value: unknown): bigint | null {
+export function parseRfc3339Instant(value: unknown): bigint | null {
   if (typeof value !== "string" || value.length > 64) return null;
   const match = RFC3339_INSTANT_PATTERN.exec(value);
   if (match === null) return null;
@@ -504,13 +516,13 @@ function daysFromCivil(year: number, month: number, day: number): number {
   return era * 146_097 + dayOfEra - 719_468;
 }
 
-function compareRfc3339Instants(left: string, right: string): number {
+export function compareRfc3339Instants(left: string, right: string): number {
   const leftInstant = parseRfc3339Instant(left)!;
   const rightInstant = parseRfc3339Instant(right)!;
   return leftInstant < rightInstant ? -1 : leftInstant > rightInstant ? 1 : 0;
 }
 
-function compareCodeUnitOrdinal(left: string, right: string): number {
+export function compareCodeUnitOrdinal(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
@@ -750,6 +762,7 @@ function isValidEventSequence(events: EngineEvent[]): boolean {
 export class TurnStore {
   private metadataLocks = new Map<string, Promise<ConversationMetadata>>();
   private activeTurns = new Set<string>();
+  private readonly recordLocks = new Map<string, Promise<void>>();
 
   constructor(
     private readonly options: {
@@ -764,6 +777,7 @@ export class TurnStore {
     engine: TurnEngine;
     message: string;
     envelopeDigest: string;
+    threadContext?: ThreadContextMetadata;
     now: string;
     /** Additive #52: local group conversationRef for group-spawned turns. */
     groupRef?: string;
@@ -784,6 +798,7 @@ export class TurnStore {
       status: "running",
       input: input.message,
       envelopeDigest: input.envelopeDigest,
+      ...(input.threadContext !== undefined ? { threadContext: input.threadContext } : {}),
       createdAt: input.now,
       updatedAt: input.now,
       events: [],
@@ -802,11 +817,15 @@ export class TurnStore {
   }
 
   async finish(workspace: string, record: TurnRecord): Promise<void> {
-    assertPositionId(record.positionId);
-    turnRecordFile(workspace, record.positionId, record.turnId);
-    await preparePositionDirectories(workspace, record.positionId);
-    await this.writeTurn(workspace, record);
-    this.activeTurns.delete(this.activeTurnKey(workspace, record.positionId, record.turnId));
+    try {
+      assertPositionId(record.positionId);
+      turnRecordFile(workspace, record.positionId, record.turnId);
+      await preparePositionDirectories(workspace, record.positionId);
+      await this.writeTurn(workspace, record);
+    } finally {
+      // Persistence failure is not evidence that execution is still alive.
+      this.activeTurns.delete(this.activeTurnKey(workspace, record.positionId, record.turnId));
+    }
   }
 
   async beginSession(input: {
@@ -817,6 +836,7 @@ export class TurnStore {
     engine: TurnEngine;
     message: string;
     envelopeDigest: string;
+    threadContext?: ThreadContextMetadata;
     now: string;
     /** owb#63: contract-level back-link (= sessionId for session turns). */
     conversationRef?: string;
@@ -841,6 +861,7 @@ export class TurnStore {
       status: "running",
       input: input.message,
       envelopeDigest: input.envelopeDigest,
+      ...(input.threadContext !== undefined ? { threadContext: input.threadContext } : {}),
       createdAt: input.now,
       updatedAt: input.now,
       events: [],
@@ -858,16 +879,63 @@ export class TurnStore {
   }
 
   async finishSession(workspace: string, sessionId: string, record: TurnRecord): Promise<void> {
-    assertPositionId(record.positionId);
-    sessionTurnRecordFile(workspace, sessionId, record.turnId);
-    await prepareSessionDirectories(workspace, sessionId);
-    await this.writeSessionTurn(workspace, sessionId, record);
-    this.activeTurns.delete(this.sessionActiveTurnKey(workspace, sessionId, record.turnId));
+    try {
+      assertPositionId(record.positionId);
+      sessionTurnRecordFile(workspace, sessionId, record.turnId);
+      await prepareSessionDirectories(workspace, sessionId);
+      await this.writeSessionTurn(workspace, sessionId, record);
+    } finally {
+      this.activeTurns.delete(this.sessionActiveTurnKey(workspace, sessionId, record.turnId));
+    }
   }
 
   hasActiveSessionTurns(workspace: string, sessionId: string): boolean {
     const prefix = `${path.resolve(workspace)}\0session:${assertSessionId(sessionId)}\0`;
     return [...this.activeTurns].some((key) => key.startsWith(prefix));
+  }
+
+  /** Read exactly one accepted group step. Unrelated personal/group records
+   * do not participate; the same stable-file and identity checks still apply. */
+  async readPositionTurn(
+    workspace: string,
+    positionId: string,
+    turnId: string,
+    now: string,
+    options: { recoverInterrupted?: boolean } = {},
+  ): Promise<TurnRecord | null> {
+    assertPositionId(positionId);
+    const file = turnRecordFile(workspace, positionId, turnId);
+    await preparePositionDirectories(workspace, positionId);
+    const metadata = await this.ensureConversation(workspace, positionId, now);
+    const key = this.activeTurnKey(workspace, positionId, turnId);
+    const activeAtRead = this.activeTurns.has(key);
+    return this.withRecordLock(file, async () => {
+      let raw: unknown;
+      try {
+        raw = (await readJson(file, MAX_TURN_RECORD_BYTES)).value;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw error;
+      }
+      if (!isTurnRecord(raw) || raw.positionId !== positionId || raw.turnId !== turnId ||
+          raw.conversationId !== metadata.conversationId ||
+          turnRecordFile(workspace, raw.positionId, raw.turnId) !== file) {
+        throw storageError("local turn history contains an invalid record");
+      }
+      if (options.recoverInterrupted === false || raw.status !== "running" || activeAtRead || this.activeTurns.has(key)) return raw;
+      const recovered: TurnRecord = {
+        ...raw, status: "indeterminate",
+        // Recovery on another host (or after a clock correction) must not
+        // create a timestamp that invalidates an otherwise valid record.
+        updatedAt: compareRfc3339Instants(now, raw.updatedAt) < 0 ? raw.updatedAt : now,
+        error: { code: "turn_interrupted", message: "the control plane stopped before the turn reached a trusted terminal", retryable: false },
+      };
+      // Stay under the same record lock for read/recovery; writeTurn would
+      // acquire this lock again and deadlock.
+      await atomicWriteJson(file, recovered, MAX_TURN_RECORD_BYTES,
+        this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations, storageError);
+      return recovered;
+    });
   }
 
   async history(workspace: string, positionId: string, now: string): Promise<TurnHistory> {
@@ -887,10 +955,13 @@ export class TurnStore {
     let historyBytes = 0;
     const turns: TurnRecord[] = [];
     for (const name of names) {
+      // A completion can commit after the read opens its running snapshot.
+      // Such an in-process read is a stale view, never restart evidence.
+      const activeAtRead = new Set(this.activeTurns);
       let raw: unknown;
       try {
         const file = path.join(turnsDir, name);
-        const read = await readJson(file, MAX_TURN_RECORD_BYTES);
+        const read = await this.withRecordLock(file, () => readJson(file, MAX_TURN_RECORD_BYTES));
         historyBytes += read.bytes;
         if (historyBytes > MAX_HISTORY_BYTES) {
           throw storageError("local turn history exceeds the bounded total size");
@@ -909,6 +980,7 @@ export class TurnStore {
       }
       if (
         raw.status === "running" &&
+        !activeAtRead.has(this.activeTurnKey(workspace, raw.positionId, raw.turnId)) &&
         !this.activeTurns.has(this.activeTurnKey(workspace, raw.positionId, raw.turnId))
       ) {
         const recovered: TurnRecord = {
@@ -963,10 +1035,13 @@ export class TurnStore {
     let historyBytes = 0;
     const turns: TurnRecord[] = [];
     for (const name of names) {
+      // A completion can commit after the read opens its running snapshot.
+      // Such an in-process read is a stale view, never restart evidence.
+      const activeAtRead = new Set(this.activeTurns);
       let raw: unknown;
       try {
         const file = path.join(turnsDir, name);
-        const read = await readJson(file, MAX_TURN_RECORD_BYTES);
+        const read = await this.withRecordLock(file, () => readJson(file, MAX_TURN_RECORD_BYTES));
         historyBytes += read.bytes;
         if (historyBytes > MAX_HISTORY_BYTES) {
           throw storageError("local session turn history exceeds the bounded total size");
@@ -985,6 +1060,7 @@ export class TurnStore {
       }
       if (
         raw.status === "running" &&
+        !activeAtRead.has(this.sessionActiveTurnKey(workspace, sessionId, raw.turnId)) &&
         !this.activeTurns.has(this.sessionActiveTurnKey(workspace, sessionId, raw.turnId))
       ) {
         const recovered: TurnRecord = {
@@ -1128,7 +1204,7 @@ export class TurnStore {
             throw storageError("local reports turn directory contains an unsafe record");
           }
           const file = path.join(turnsDir, turnEntry.name);
-          const recordRead = await readJson(file, MAX_TURN_RECORD_BYTES);
+          const recordRead = await this.withRecordLock(file, () => readJson(file, MAX_TURN_RECORD_BYTES));
           chargeStableBytes(recordRead.bytes);
           const raw = recordRead.value;
           if (
@@ -1242,8 +1318,8 @@ export class TurnStore {
         storageError,
       );
       return metadata;
-    } catch {
-      throw storageError("local session conversation metadata could not be persisted");
+    } catch (error) {
+      throw storageError("local session conversation metadata could not be persisted", error);
     }
   }
 
@@ -1282,23 +1358,40 @@ export class TurnStore {
         storageError,
       );
       return metadata;
-    } catch {
-      throw storageError("local conversation metadata could not be persisted");
+    } catch (error) {
+      throw storageError("local conversation metadata could not be persisted", error);
+    }
+  }
+
+  /** Serialize this control plane's atomic replacements with stable reads.
+   * External pathname swaps still fail the unchanged no-follow/inode checks. */
+  private async withRecordLock<T>(file: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.recordLocks.get(file) ?? Promise.resolve();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => held);
+    this.recordLocks.set(file, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.recordLocks.get(file) === tail) this.recordLocks.delete(file);
     }
   }
 
   private async writeTurn(workspace: string, record: TurnRecord): Promise<void> {
     const file = turnRecordFile(workspace, record.positionId, record.turnId);
     try {
-      await atomicWriteJson(
+      await this.withRecordLock(file, () => atomicWriteJson(
         file,
         record,
         MAX_TURN_RECORD_BYTES,
         this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
         storageError,
-      );
-    } catch {
-      throw storageError("local turn record could not be persisted atomically");
+      ));
+    } catch (error) {
+      throw storageError("local turn record could not be persisted atomically", error);
     }
   }
 
@@ -1309,15 +1402,15 @@ export class TurnStore {
   ): Promise<void> {
     const file = sessionTurnRecordFile(workspace, sessionId, record.turnId);
     try {
-      await atomicWriteJson(
+      await this.withRecordLock(file, () => atomicWriteJson(
         file,
         record,
         MAX_TURN_RECORD_BYTES,
         this.options.atomicWriteOperations ?? nodeAtomicTurnWriteOperations,
         storageError,
-      );
-    } catch {
-      throw storageError("local session turn record could not be persisted atomically");
+      ));
+    } catch (error) {
+      throw storageError("local session turn record could not be persisted atomically", error);
     }
   }
 

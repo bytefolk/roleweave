@@ -122,9 +122,10 @@ export function adaptTurnRecord(
     ...(record.status !== "running" ? { completedAt: record.updatedAt } : {}),
     ...(record.output !== undefined ? { output: renderOutput(record.output, unrenderableOutput) } : {}),
     ...(record.runId !== undefined ? { runId: record.runId } : {}),
-    ...(record.error !== undefined ? { error: record.error.message } : {}),
+    ...(record.error !== undefined ? { error: record.error.message, errorCode: record.error.code } : {}),
     ...(pendingApproval !== undefined ? { approvalRequest: pendingApproval } : {}),
     envelopeDigest: record.envelopeDigest,
+    ...(record.threadContext !== undefined ? { threadContext: record.threadContext } : {}),
     ...(progress.length > 0 ? { progress } : {}),
     ...(usage !== undefined ? { totalTokens: usage } : {}),
   };

@@ -61,14 +61,23 @@ function validateCancelRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("cancel request must be an object") };
   }
-  const keys = Object.keys(value);
-  if (keys.length !== 1 || keys[0] !== "positionId") {
-    return { ok: false, response: invalid("cancel request accepts exactly {positionId}") };
+  const keys = Object.keys(value).sort().join(",");
+  if (!["positionId", "positionId,workspacePath", "positionId,turnId,workspacePath"].includes(keys)) {
+    return { ok: false, response: invalid("cancel request accepts positionId and optional workspacePath/turnId owner") };
   }
   if (!validatePositionId(value.positionId)) {
     return { ok: false, response: invalid("positionId is invalid") };
   }
-  return { ok: true, request: { positionId: value.positionId } };
+  if ("workspacePath" in value && (typeof value.workspacePath !== "string" || value.workspacePath.trim().length === 0 || value.workspacePath.includes("\0") || Buffer.byteLength(value.workspacePath, "utf8") > 4096)) {
+    return { ok: false, response: invalid("workspacePath must be a bounded non-empty owner key") };
+  }
+  if ("turnId" in value && (typeof value.turnId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value.turnId))) {
+    return { ok: false, response: invalid("turnId must be a bounded safe identifier") };
+  }
+  return { ok: true, request: { positionId: value.positionId,
+    ...("workspacePath" in value ? { workspacePath: value.workspacePath } : {}),
+    ...("turnId" in value ? { turnId: value.turnId } : {}),
+  } };
 }
 
 module.exports = { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest };

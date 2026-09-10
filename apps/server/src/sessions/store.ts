@@ -50,8 +50,14 @@ export interface RotateResult {
   created: boolean;
 }
 
-function sessionError(message: string): OrgApiError {
-  return new OrgApiError(errorCodes.session_storage_failed, 500, message);
+function sessionError(message: string, cause?: unknown): OrgApiError {
+  return new OrgApiError(
+    errorCodes.session_storage_failed,
+    500,
+    message,
+    false,
+    cause === undefined ? undefined : { cause },
+  );
 }
 
 function sessionMissing(): OrgApiError {
@@ -116,7 +122,12 @@ function isWorkspaceRecord(value: unknown): value is WorkspaceInstanceRecord {
 function isWorkbenchSession(value: unknown): value is WorkbenchSession {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  if (!hasExactKeys(record, [
+  const base = { ...record };
+  if (Object.hasOwn(base, "threadContextEnabled")) {
+    if (typeof base.threadContextEnabled !== "boolean") return false;
+    delete base.threadContextEnabled;
+  }
+  if (!hasExactKeys(base, [
     "schemaVersion", "sessionId", "workspaceInstanceId", "positionId", "principal",
     "status", "rotatedFrom", "rotatedTo", "createdAt", "rotatedAt",
   ])) return false;
@@ -437,6 +448,7 @@ export class SessionStore {
       rotatedTo: null,
       createdAt: now,
       rotatedAt: null,
+      threadContextEnabled: true,
     };
     const state: PositionSessionState = {
       schemaVersion: POSITION_SCHEMA_VERSION,
@@ -449,7 +461,7 @@ export class SessionStore {
       await atomicWriteJson(positionFile(workspace, positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
-      throw sessionError("local session record could not be persisted atomically");
+      throw sessionError("local session record could not be persisted atomically", error);
     }
     return session;
   }
@@ -518,6 +530,7 @@ export class SessionStore {
         rotatedTo: null,
         createdAt: now,
         rotatedAt: null,
+        threadContextEnabled: source.threadContextEnabled !== false,
       };
       const state: PositionSessionState = {
         ...found.state,
@@ -529,9 +542,25 @@ export class SessionStore {
         await atomicWriteJson(positionFile(workspace, source.positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
       } catch (error) {
         if (error instanceof OrgApiError) throw error;
-        throw sessionError("local session record could not be persisted atomically");
+        throw sessionError("local session record could not be persisted atomically", error);
       }
       return { session: successor, created: true };
+    });
+  }
+
+  async setThreadContext(workspace: string, sessionId: string, enabled: boolean): Promise<WorkbenchSession> {
+    assertSessionId(sessionId);
+    return this.exclusive(`session\0${path.resolve(workspace)}\0${sessionId}`, async () => {
+      if ((this.activeTurns.get(this.turnKey(workspace, sessionId)) ?? 0) > 0) {
+        throw sessionConflict("session context policy cannot change during a running turn");
+      }
+      const found = await this.find(workspace, sessionId);
+      if (!found) throw sessionMissing();
+      if (found.session.status !== "active") throw sessionConflict("rotated sessions are read-only");
+      const session: WorkbenchSession = { ...found.session, threadContextEnabled: enabled };
+      const state = { ...found.state, sessions: found.state.sessions.map((candidate) => candidate.sessionId === sessionId ? session : candidate) };
+      await atomicWriteJson(positionFile(workspace, session.positionId), state, MAX_POSITION_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
+      return session;
     });
   }
 
@@ -541,7 +570,8 @@ export class SessionStore {
       const session = await this.get(workspace, sessionId);
       if (session.status !== "active") throw sessionConflict("rotated sessions are read-only");
       const key = this.turnKey(workspace, sessionId);
-      this.activeTurns.set(key, (this.activeTurns.get(key) ?? 0) + 1);
+      if ((this.activeTurns.get(key) ?? 0) > 0) throw sessionConflict("session already has a running turn");
+      this.activeTurns.set(key, 1);
       return session;
     });
   }
@@ -579,7 +609,7 @@ export class SessionStore {
         await atomicWriteJson(file, record, MAX_WORKSPACE_RECORD_BYTES, nodeAtomicTurnWriteOperations, sessionError);
       } catch (error) {
         if (error instanceof OrgApiError) throw error;
-        throw sessionError("local session workspace identity could not be persisted atomically");
+        throw sessionError("local session workspace identity could not be persisted atomically", error);
       }
       return record;
     });

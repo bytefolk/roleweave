@@ -325,7 +325,7 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 { "positionId": "repo-owner" }
 ```
 
-- 请求只允许 `positionId` 一个字段；该岗位没有正在运行的回合时返回 404 `not_found`（不新增错误码）。
+- 兼容旧请求 `{positionId}`，作用于请求入口时打开的 workspace。新客户端发送 `{positionId, workspacePath}`，取得任务标识后发送 `{positionId, workspacePath, turnId}`；只允许这三种精确字段组合。`workspacePath` 标识原任务所属的工作区，仅用于查找控制面已经登记的活动执行，不读取或打开客户端传入的目录。指定 `turnId` 时必须匹配，携带旧 `turnId` 的取消请求不能中断同一员工的后续任务。未找到匹配的执行时返回 404 `not_found`（不新增错误码）。
 - 命中时控制面终止引擎子进程（SIGTERM，250ms 后 SIGKILL），回合经既有路径落为 `indeterminate`，诊断码 `turn_cancelled`（与 `turn_timeout` 同类的本地诊断码，不属于 `errorCodes` 稳定码表），并复用冻结的 `turn.indeterminate` SSE 词汇广播；不新增 SSE 事件类型。
 - 响应 200：`{ "cancelled": true, "positionId": "<id>" }`。
 - 同一 `POST /turns` 请求语义不变：被中断的回合仍以完整 `turn-record.v1`（status `indeterminate`）作为该请求的 200 响应返回。
@@ -385,7 +385,19 @@ scope 全部由服务端 session 状态派生：`workspaceId=workspaceInstanceId
 
 Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 `context adapter ingest|distill`。子进程只从 env 取得 `CONTEXT_VAULT` / `CONTEXT_RUNTIME_TOKEN`；operator token、boot-token 与 Host 凭据不在 argv、不进入 renderer/preload/IPC/turn record/evidence。相同 occurrence replay 是幂等 no-op；部分成功后重启会重放导出并跳过 provider 已 `done` 的 occurrence。adapter failure 只把本地 export state 置 `failed`；下一次 workspace-open/restart 最多重试导出，不调用 `turnDriver`，不改变已持久的 Host 终态。
 
-`sourceLocator=context://occurrences/<occurrenceId>@1` 只是 source audit reference，不冒充 `context read` 所需的 item-unique `/artifacts/<artifactId>` locator。Workbench 不打开或共享 Context SQLite，也不做 recall/model injection/memory write。
+`sourceLocator=context://occurrences/<occurrenceId>@1` 只是 source audit reference，不冒充 `context read` 所需的 item-unique `/artifacts/<artifactId>` locator。此 exporter 不打开或共享 Context SQLite，也不做 recall/model injection/memory write。#214 的本地 Thread Context 独立读取既有可信回合记录，见下文。
+
+### 本地 Thread Context 与员工协作（#214 R1 / #143 R3 加法）
+
+`PATCH /sessions/:sessionId/context` 接受且仅接受 `{ "enabled": boolean }`，返回更新后的 `workbench-session.v1`。可选字段 `threadContextEnabled` 缺省为 `true`；同一员工存在个人或群组执行时，拒绝轮换会话或修改策略，生命周期变更与执行预留使用同一个互斥边界。旧会话记录仍可读取，不增加第二套 session。
+
+执行前，服务端从当前 session 或当前群的可信已完成回合选择背景与可见答案，把 `thread-context.v1` 历史数据块放入既有密封 `turn-envelope.input`。不修改上游 envelope schema，不传递审批或权限字段。原始用户任务保留在 `turn-record.v1.input`，加法字段 `threadContext` 记录实际摘要、来源数、遗漏数、UTF-8 字节数、digest 和脱敏/截断标记。历史输入和可见答案先完整脱敏，再进行字节截断，群历史与接力投影保留实际脱敏标记。边界为最多 12 个来源、64 KiB context、单字段 8 KiB，context 与本次原始任务合计不超过 256 KiB。
+
+不同员工可并行执行；同一 workspace/position 的重叠执行返回 409 `session_conflict`。取消句柄按 workspace/position 和执行归属管理，旧执行结束不能删除新执行的取消句柄。SSE 控制面包装携带原 `workspacePath`，个人事件还带岗位、引擎、回合和会话归属，供客户端隔离并行流；持久化的原始 engine 事件不增加这些控制面字段。
+
+群 `POST /groups/:conversationRef/turns` 另接受可选 `mode: "parallel" | "relay"`，省略时为 `parallel`；`mentions` 是明确选择的接收人和接力顺序。群消息持久化 mode、engine 及预分配 spawns 后返回 202。 256 KiB 输入与最多 32 个成员的元数据按 JSON 转义后的字节数预留存储空间；原始 HTTP JSON 请求仍受既有 1 MiB 上限约束，超过该传输边界返回 400。并行模式同时启动各成员；接力模式只在前序可信完成后传递有界结果。后续未执行步骤用可读回的 `indeterminate` 记录及 `group_relay_blocked` 标明；不会伪造引擎事件。忙碌员工显示 `group_employee_busy`，切换 workspace 导致的未执行步骤显示 `group_workspace_changed`。重启后已接受但未启动的步骤恢复为 `group_dispatch_interrupted`，不自动重跑。
+
+本节取代下方早期 #52 的顺序派发行为；旧消息仍兼容。完整用户说明、数据边界及回滚注意事项见 [Thread Context 与协作](thread-context-and-collaboration.md)。
 
 ### 2.14 `POST /hire` — 创建员工（#33 加法，hire-request.v1alpha1 契约面）
 

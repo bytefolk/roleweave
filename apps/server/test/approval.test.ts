@@ -317,12 +317,15 @@ test("approval events broadcast as turn.approval.* SSE with the validated engine
     const requested = await sse.waitForEvent("turn.approval.requested");
     const requestedPayload = JSON.parse(requested.data) as { payload: Record<string, unknown> };
     assert.deepEqual(requestedPayload.payload, {
+      workspacePath: workspace, turnId: record.turnId, positionId: "repo-owner", engine: "qoder",
       type: "approval.requested",
       runId: "run-1",
       timestamp: "2026-08-24T00:00:01.000Z",
       approvalId: "appr-1",
       action: { kind: "exec", description: "rm -rf build" },
     });
+    const storedRequested = (record.events as Record<string, unknown>[]).find((event) => event.type === "approval.requested");
+    assert.deepEqual(storedRequested, { type: "approval.requested", runId: "run-1", timestamp: "2026-08-24T00:00:01.000Z", approvalId: "appr-1", action: { kind: "exec", description: "rm -rf build" } });
     const failed = await sse.waitForEvent("turn.failed");
     const failedPayload = JSON.parse(failed.data) as { payload: { error?: { code?: string } } };
     assert.equal(failedPayload.payload.error?.code, "engine.approval_required");

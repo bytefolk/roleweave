@@ -2,18 +2,18 @@
   "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace-org.schema.json",
   "schemaVersion": "workspace-org.v1",
   "business": "oss-maintainer",
-  "description": "Open-source maintainer organization: a repo-owner lead with issue research, release engineering, and community operations positions.",
+  "description": "开源维护组织：由仓库负责人统领，下设问题研究、发布工程与社区运营三个岗位。",
   "owner": "repo-owner",
   "roles": [
     {
       "id": "repo-owner",
-      "name": "Repo Owner",
-      "description": "Owns the repository roadmap, review decisions, and final releases.",
+      "name": "仓库负责人",
+      "description": "负责仓库路线图、评审决策和最终发布。",
       "reportTo": null,
       "package": {
         "name": "repo-owner",
         "version": "0.1.0",
-        "digest": "sha256:714cc87cdb57f9a201a13edf517b0affb0ddf67ab5283c85170008a0b1107909",
+        "digest": "sha256:f8a1446c941feab8a0faf4b1b30e2b6ace2fce7ab5f116c2d80e6731ec60a129",
         "localReference": "/workspace/positions/repo-owner"
       },
       "mode": "read_only",
@@ -38,13 +38,13 @@
     },
     {
       "id": "issue-researcher",
-      "name": "Issue Researcher",
-      "description": "Triages issues and produces researched, evidence-backed summaries for the owner.",
+      "name": "问题研究员",
+      "description": "分流 issue，为负责人产出有据可查的调研摘要。",
       "reportTo": "repo-owner",
       "package": {
         "name": "issue-researcher",
         "version": "0.1.0",
-        "digest": "sha256:1c4b68133291c0bb8a519538abe3e1550c235f067e0d16cc1a6d3c3c24468b10",
+        "digest": "sha256:9ed9225666b961b203d95d850cf3d2a438e4d488e294af8d28af9d13cc55c729",
         "localReference": "/workspace/positions/repo-owner/issue-researcher"
       },
       "mode": "read_only",
@@ -69,13 +69,13 @@
     },
     {
       "id": "release-engineer",
-      "name": "Release Engineer",
-      "description": "Prepares release notes, version bumps, and publish checklists for the owner.",
+      "name": "发布工程师",
+      "description": "为负责人准备发布说明、版本号变更和发布检查清单。",
       "reportTo": "repo-owner",
       "package": {
         "name": "release-engineer",
         "version": "0.1.0",
-        "digest": "sha256:009a0cc88c589bc8fc7228f736fca10439b5ddbface4868baa794707909729dd",
+        "digest": "sha256:47f33c22af1c8c5d111c5e93f8e07ecaf83bc3884612d2af9209bb853aef1cdd",
         "localReference": "/workspace/positions/repo-owner/release-engineer"
       },
       "mode": "read_only",
@@ -100,13 +100,13 @@
     },
     {
       "id": "community-operator",
-      "name": "Community Operator",
-      "description": "Summarizes community feedback and keeps contributor documentation current.",
+      "name": "社区运营",
+      "description": "汇总社区反馈，持续维护贡献者文档。",
       "reportTo": "repo-owner",
       "package": {
         "name": "community-operator",
         "version": "0.1.0",
-        "digest": "sha256:1b006a8258e18f648abeb3993dd3bb9ed63ecd2d28e12d97bd42a3235ee5dd67",
+        "digest": "sha256:f020e86e2a3db726acce5edeafc068e63885a624638dd4d1c139a6e059b8e2a1",
         "localReference": "/workspace/positions/repo-owner/community-operator"
       },
       "mode": "read_only",
@@ -130,5 +130,5 @@
       }
     }
   ],
-  "updatedAt": "2026-08-23T13:40:37.536Z"
+  "updatedAt": "2026-09-10T10:44:35.099Z"
 }

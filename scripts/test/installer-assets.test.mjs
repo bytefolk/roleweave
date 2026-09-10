@@ -96,6 +96,15 @@ test("electron-builder's own byproducts are permitted", () => {
   assert.deepEqual(win.unexpected, []);
 });
 
+test("the signed macOS manifest is accepted only by the macOS asset lane", () => {
+  const mac = expectedArtifacts("macos", META);
+  assert.deepEqual(classifyEntries([...mac, "latest-mac.json"], mac).unexpected, []);
+  assert.equal(isPermittedCompanion("latest-mac.json", expectedArtifacts("windows", META)), false);
+  for (const name of ["latest.json", "latest-mac-extra.json", "../latest-mac.json"]) {
+    assert.equal(isPermittedCompanion(name, mac), false);
+  }
+});
+
 test("a wrong-architecture build fails rather than passing on a glob", () => {
   const required = expectedArtifacts("windows", META);
   const { missing, unexpected } = classifyEntries(["org-workbench-0.0.0-ia32.exe"], required);

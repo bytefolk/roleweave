@@ -1,0 +1,781 @@
+/* RoleWeave data components, shared by light and dark.
+ * State labels, errors, provenance and controls remain visible. */
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-memory-module, .owb-docs-module, .owb-drive-module, .owb-reports,
+  .owb-approval-queue, .owb-settings-module
+) {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-memory-module__title h1, .owb-docs-module__header h1,
+  .owb-drive-module__header h1, .owb-reports__hero h1,
+  .owb-approval-queue__title, .owb-settings-module__header h1
+) {
+  margin: 0;
+  font-family: var(--ui-font-sans);
+  font-size: 20px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-reports__hero, .owb-approval-queue__hero) {
+  flex-shrink: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 4px 0 12px;
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-memory-sources__heading h2, .owb-memory-workspace__header h2,
+  .owb-docs-panel__header h2, .owb-drive-module__list-header h2,
+  .owb-drive-module__detail-header h2, .owb-budget-deck__head h2,
+  .owb-budget-dash__escalations h3, .owb-settings-module__pane-header h2
+),
+:is([data-theme="light"], [data-theme="dark"]) :is(.owb-budget-drawer__usage h4, .owb-approval-drawer__section-title) {
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Employee memory: source choices read as controls, not promotional cards. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-module__picker {
+  min-height: 34px;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card {
+  grid-template-columns: 24px minmax(0, 1fr) 16px;
+  gap: 4px 10px;
+  min-height: 72px;
+  border-radius: 6px;
+  border-color: var(--ui-border);
+  padding: 11px 12px;
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card:hover,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card.is-active {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-inset);
+  box-shadow: none;
+  transform: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card .owb-memory-source-card__icon {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card__main {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card__main strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card__facts {
+  gap: 8px;
+  min-height: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card__facts small {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card__status {
+  position: static;
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: normal;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card__status.is-ready {
+  color: var(--ui-success-strong);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card__status.is-error {
+  color: var(--ui-danger-strong);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card__status > i {
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card .owb-memory-source-card__arrow {
+  position: static;
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: center;
+  color: var(--ui-primary);
+  transform: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-workspace {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: var(--ui-surface);
+}
+
+/* Documents and drive: one line for the name, one for secondary facts/actions. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-docs-module__picker, .owb-doc-plane__toolbar, .owb-drive-module__toolbar
+) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 6px 0 10px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-docs-panel, .owb-doc-plane, .owb-drive-module__list, .owb-drive-module__detail
+) {
+  border-radius: 6px;
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-docs-panel__header, .owb-drive-module__list-header, .owb-drive-module__detail-header
+) {
+  padding: 12px;
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__list .ant-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__item-main {
+  grid-column: 1 / -1;
+  gap: 8px;
+  min-width: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__file-icon {
+  width: 20px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__file {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 4px;
+  padding: 3px 4px;
+  font-size: 13px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__file[aria-pressed="true"],
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-plane__entry[aria-pressed="true"],
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-drive-module__object[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-docs-panel__list .ant-list-item:hover, .owb-doc-plane__list .ant-list-item:hover,
+  .owb-drive-module__object:hover
+) {
+  background: var(--ui-surface-inset);
+  transform: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__item-meta {
+  display: inline-flex;
+  min-width: 0;
+  padding-left: 32px;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__file-type {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__copy-ref {
+  min-width: 0;
+  border-color: transparent;
+  padding: 3px 4px;
+  font-size: 12px;
+  color: var(--ui-primary);
+  white-space: nowrap;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-plane__entry {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 13px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-docs-panel__file, .owb-docs-panel__copy-ref, .owb-doc-plane__entry,
+  .owb-drive-module__object, .owb-approval-card__row
+):focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-docs-panel__count, .owb-docs-panel__count small,
+  .owb-docs-panel__file-parent, .owb-docs-module__picker-copy span,
+  .owb-docs-module__create-hint, .owb-drive-module__count,
+  .owb-drive-module__count small, .owb-drive-module__scope,
+  .owb-drive-module__unconfigured, .owb-doc-plane__source
+) {
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-drive-module__scope, .owb-drive-module__unconfigured) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-drive-module__object-icon {
+  border: 0;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-drive-module__object-main strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-drive-module__object-main small, .owb-drive-module__object-main > span) {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-drive-module__detail-header > div {
+  min-width: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-drive-module__detail-header h2 {
+  overflow-wrap: anywhere;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-drive-module__detail-empty {
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-drive-module__detail-body :is(dt, dd) {
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-drive-module__detail-body dd {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* Provenance remains visible but cannot push a long document title out of view. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer .ant-card-head-wrapper {
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer .ant-card-head-title {
+  min-width: 0;
+  flex: 1 1 180px;
+  font-size: 14px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer .ant-card-extra {
+  min-width: 0;
+  max-width: 100%;
+  margin-inline-start: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer .ant-card-extra .ant-tag {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer__meta {
+  margin: 0 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  padding: 0 0 12px;
+  background: transparent;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer__body {
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer__body :is(h1, h2, h3, h4) {
+  font-family: var(--ui-font-sans);
+  letter-spacing: normal;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer__body pre {
+  border-radius: 6px;
+  background: var(--ui-surface-inset);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer__body pre code {
+  font-size: 12px;
+}
+
+/* Reports: summaries and evidence are rows, with state carried by text/icons. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-budget-deck, .owb-report-stream) {
+  border: 0;
+  border-radius: 0;
+  background: var(--ui-surface);
+  padding: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-deck article {
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  padding: 10px 0 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-deck article strong {
+  font-family: var(--ui-font-sans);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) :is(.owb-budget-deck, .owb-budget-dash, .owb-budget-drawer) :is(
+  .ui-org-budget__lane-label, .ui-org-budget__value
+) {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-budget-deck article .ui-org-budget__lane {
+  grid-template-columns: 52px minmax(24px, 1fr) minmax(0, auto);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-budget-deck article > header span, .owb-budget-deck article small,
+  .owb-budget-deck__head p, .owb-budget-deck__link,
+  .owb-budget-dash__daily, .owb-budget-dash__escalations li,
+  .owb-budget-dash__linkbtn, .owb-report-card time, .owb-report-card small
+) {
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-deck__link {
+  border-color: transparent;
+  background: transparent;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-report-stream > ol {
+  gap: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-report-card {
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  padding: 12px 4px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-report-card :is(strong, p) {
+  font-size: 13px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-report-card:not(.is-escalation) > svg {
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-report-card header {
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-report-tabs button {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-report-tabs button span {
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__stat {
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  padding: 8px 0 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__stat .ant-statistic-title,
+:is([data-theme="light"], [data-theme="dark"]) .owb-budget-drawer__stats .ant-statistic-title {
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__stat .ant-statistic-content,
+:is([data-theme="light"], [data-theme="dark"]) .owb-budget-drawer__stats .ant-statistic-content {
+  font-family: var(--ui-font-sans);
+  font-size: 20px;
+  font-weight: 500;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__table {
+  min-width: 0;
+  border-radius: 6px;
+}
+
+/* Antd's unfixed Table renders one .ant-table-content around the table.
+ * Keep the columns readable and let that local surface scroll horizontally;
+ * the surrounding report grid must be allowed to shrink below table width. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__table .ant-table-content {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__table .ant-table-content > table {
+  min-width: 920px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__table .ant-table-tbody > tr[role="button"]:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__table .ant-table-thead > tr > th {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__table .ant-table-tbody > tr.is-exceeded > td {
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__table .ant-table-tbody > tr.is-exceeded > td:first-child {
+  box-shadow: inset 2px 0 0 var(--ui-danger);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__tag {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__escalations {
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  border-radius: 0;
+  padding: 12px 0 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-budget-drawer__stats {
+  padding: 10px 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ui-border);
+  background: transparent;
+}
+
+/* Timeline: preserve grouped disclosure and semantic event dots. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-timeline__toolbar {
+  border: 0;
+  border-radius: 0;
+  padding: 4px 0 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-timeline__groups .ant-collapse-item {
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-timeline__card {
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: var(--ui-surface);
+  box-shadow: none;
+  padding: 10px 4px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-timeline__group-who {
+  color: var(--ui-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-timeline__count, .owb-timeline__group-time, .owb-timeline__group-eng,
+  .owb-timeline__group-status, .owb-timeline__event-type, .owb-timeline__event-head,
+  .owb-timeline__cost-link, .owb-timeline__evidence
+) {
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-timeline__event-head {
+  flex-wrap: wrap;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-timeline__group-head {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-timeline__card .owb-tc__task {
+  font-size: 13px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-timeline__card .owb-tc-head__time {
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-report-chain, .owb-timeline__chain) span {
+  border-style: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-report-chain, .owb-timeline__chain) span + span::before {
+  content: "→";
+  margin-right: 5px;
+  color: var(--ui-foreground-subtle);
+}
+
+/* Approval requests stay clearly labeled, without a stack of colored pills. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-approval-queue__metric, .owb-approval-queue__toolbar,
+  .owb-approval-queue__rules > div
+) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 8px 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-queue__metric-icon {
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-queue__metric-copy strong {
+  font-family: var(--ui-font-sans);
+  font-size: 20px;
+  font-weight: 500;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-approval-queue__state, .owb-approval-queue__count,
+  .owb-approval-queue__filter-label, .owb-approval-queue__metric-copy span,
+  .owb-approval-queue__rules strong, .owb-approval-queue__rules span,
+  .owb-approval-card__expires
+) {
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+  letter-spacing: normal;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-queue__state {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-card {
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-card:hover {
+  background: var(--ui-surface-inset);
+  transform: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-card__row {
+  padding: 12px 4px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-card__description {
+  font-size: 13px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-card__target,
+:is([data-theme="light"], [data-theme="dark"]) .owb-approval-drawer__target code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) :is(
+  .owb-approval-card__tags, .owb-approval-drawer__meta, .owb-doc-plane__source
+) .ant-tag:not(.ant-tag-disabled):is(.ant-tag-outlined, .ant-tag-filled, .ant-tag-solid),
+:is([data-theme="light"], [data-theme="dark"]) .owb-timeline__budget-tag.ant-tag:not(.ant-tag-disabled):is(.ant-tag-outlined, .ant-tag-filled, .ant-tag-solid) {
+  border: 0;
+  border-radius: 0;
+  margin-inline-end: 8px;
+  padding: 0;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Antd preset tags combine color, variant and disabled selectors. Match that
+ * specificity explicitly so late cssinjs preset colors cannot restore pills. */
+:is([data-theme="light"], [data-theme="dark"]) :is(.owb-approval-card__tags, .owb-approval-drawer__meta) .ant-tag-red:not(.ant-tag-disabled):is(.ant-tag-outlined, .ant-tag-filled, .ant-tag-solid),
+:is([data-theme="light"], [data-theme="dark"]) .owb-timeline__budget-tag.ant-tag:not(.ant-tag-disabled):is(.ant-tag-outlined, .ant-tag-filled, .ant-tag-solid) {
+  color: var(--ui-danger-strong);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) :is(.owb-approval-card__tags, .owb-doc-plane__source) .ant-tag-green:not(.ant-tag-disabled):is(.ant-tag-outlined, .ant-tag-filled, .ant-tag-solid) {
+  color: var(--ui-success-strong);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) :is(.owb-approval-card__tags, .owb-doc-plane__source) .ant-tag-gold:not(.ant-tag-disabled):is(.ant-tag-outlined, .ant-tag-filled, .ant-tag-solid) {
+  color: var(--ui-warning-strong);
+}
+
+/* Empty, loading and updater states remain readable without decorative frames. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-approval-queue__empty, .owb-budget-deck__empty,
+  .owb-budget-dash__empty, .owb-report-empty
+) {
+  border: 0;
+  border-radius: 0;
+  background: var(--ui-surface);
+  padding: 28px 16px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-approval-queue__empty-icon, .owb-docs-panel__empty-icon) {
+  border: 0;
+  background: transparent;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-timeline__skeleton, .owb-approval-queue__loading .owb-approval-card.is-skeleton
+) {
+  border-radius: 4px;
+  background: var(--ui-surface-inset);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__alert {
+  animation: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-settings-module__pane {
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  border-radius: 0;
+  padding: 16px 0;
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-settings-module__fact {
+  padding: 4px 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-settings-module__fact dd {
+  min-width: 0;
+}

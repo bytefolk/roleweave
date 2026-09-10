@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { describe, expect, it, vi } from "vitest";
 import { pickSelectOption, visibleSelectOptions } from "./select-helper";
 import { App } from "../src/App";
+import { HireDrawer } from "../src/org/HireDrawer";
 import type { OwbBridge } from "../src/owb";
 import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
 
@@ -74,6 +75,7 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
       body: { schemaVersion: "workbench-session-list.v1", positionId: "repo-owner", activeSessionId: activeSession.sessionId, sessions: [activeSession] },
     }),
     session: vi.fn().mockResolvedValue({ status: 200, body: activeSession }),
+    sessionSetContext: vi.fn().mockResolvedValue({ status: 200, body: activeSession }),
     rotateSession: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal" } }),
     createSessionTurn: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal", message: "unexpected" } }),
     sessionTurnHistory: vi.fn().mockResolvedValue({
@@ -397,7 +399,7 @@ describe("App runtime bridge", () => {
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
-  it("keeps a live group turn across personal session selection and rotation (#114)", async () => {
+  it("keeps a live group turn across personal session selection and blocks rotation until it ends (#114)", async () => {
     const group = {
       schemaVersion: "conversation-group.v1" as const,
       conversationRef: "33333333-3333-4333-8333-333333333333",
@@ -427,7 +429,9 @@ describe("App runtime bridge", () => {
         spawns: [{ turnId: "group-turn-1", positionId: "repo-owner" }],
       },
     });
+    const listeners = new Set<(value: unknown) => void>();
     openedBridge({
+      onEvent: vi.fn((callback) => { listeners.add(callback); return () => { listeners.delete(callback); }; }),
       groups: vi.fn().mockResolvedValue({
         status: 200,
         body: { schemaVersion: "conversation-group-list.v1", groups: [group] },
@@ -471,10 +475,17 @@ describe("App runtime bridge", () => {
     await waitFor(() => expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1));
 
     fireEvent.click(screen.getByRole("button", { name: "组织" }));
-    fireEvent.click(await screen.findByRole("button", { name: "轮换当前会话" }));
-    await waitFor(() => expect(rotateSession).toHaveBeenCalledWith(activeSession.sessionId));
+    const rotate = await screen.findByRole("button", { name: "轮换当前会话" });
+    expect(rotate).toBeDisabled();
+    fireEvent.click(rotate);
+    expect(rotateSession).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "群聊" }));
     await waitFor(() => expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1));
+    act(() => listeners.forEach((listener) => listener({ seq: 1, type: "turn.completed", payload: { workspacePath: "/fixture/workspace", groupRef: group.conversationRef, messageId: "message-1", turnId: "group-turn-1", positionId: "repo-owner", engine: "qoder", runId: "group-run-1" } })));
+    fireEvent.click(screen.getByRole("button", { name: "组织" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "轮换当前会话" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "轮换当前会话" }));
+    await waitFor(() => expect(rotateSession).toHaveBeenCalledWith(activeSession.sessionId));
   });
 
   it("submits a drag move proposal and rejects a self-drop before IPC", async () => {
@@ -656,20 +667,20 @@ describe("App runtime bridge", () => {
     expect(listener).not.toBeNull();
 
     act(() => {
-      listener!({ seq: 1, type: "turn.started", payload: { runId: "run-stream", timestamp: "2026-08-24T05:00:00.000Z", type: "run.started" } });
-      listener!({ seq: 2, type: "turn.model.delta", payload: { runId: "run-stream", timestamp: "2026-08-24T05:00:00.500Z", type: "model.delta", text: "正在分析" } });
-      listener!({ seq: 3, type: "turn.model.delta", payload: { runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
+      listener!({ seq: 1, type: "turn.started", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:00.000Z", type: "run.started" } });
+      listener!({ seq: 2, type: "turn.model.delta", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:00.500Z", type: "model.delta", text: "正在分析" } });
+      listener!({ seq: 3, type: "turn.model.delta", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
     });
     expect(await screen.findByText("正在分析…核对完成")).toBeInTheDocument();
     expect(screen.getByText("运行中")).toBeInTheDocument();
 
     act(() => {
-      listener!({ seq: 3, type: "turn.model.delta", payload: { runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
+      listener!({ seq: 3, type: "turn.model.delta", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
     });
     expect(screen.getAllByText("正在分析…核对完成")).toHaveLength(1);
 
     act(() => {
-      listener!({ seq: 4, type: "turn.completed", payload: { runId: "run-stream", timestamp: "2026-08-24T05:01:00.000Z", type: "run.completed", output: "发布门禁通过", terminalReason: "goal_met" } });
+      listener!({ seq: 4, type: "turn.completed", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:01:00.000Z", type: "run.completed", output: "发布门禁通过", terminalReason: "goal_met" } });
     });
     await act(async () => {
       resolveTurn({ status: 200, body: completed });
@@ -813,4 +824,287 @@ describe("App docs module wiring (#35 S3)", () => {
     expect(screen.getByText("版本 2026-08-27T00:00:00.000Z")).toBeInTheDocument();
     expect(positionDocFile).toHaveBeenCalledWith("repo-owner", "handbook.md");
   });
+});
+
+it("runs A/B/C independently and keeps late responses, streams and cancellation in their own sessions", async () => {
+  const ids = ["repo-owner", "docs-writer", "release-engineer"];
+  const employees = Object.fromEntries(ids.map((id, index) => [id, {
+    ...activeSession, positionId: id, sessionId: `${index + 1}1111111-1111-4111-8111-111111111111`,
+  }]));
+  const tree = { ...snapshot, positionCount: 3, tree: [{ ...snapshot.tree[0]!, children: ids.slice(1).map((id) => ({ id, reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] })) }] };
+  const completed = new Map<string, TurnRecord[]>();
+  const finish = new Map<string, (value: unknown) => void>();
+  let listener: (value: unknown) => void = () => {};
+  const createSessionTurn = vi.fn(({ sessionId }: { sessionId: string }) => new Promise((resolve) => finish.set(sessionId, resolve)));
+  const cancelTurn = vi.fn().mockResolvedValue({ status: 200, body: {} });
+  const bridge = openedBridge({
+    orgTree: vi.fn().mockResolvedValue({ status: 200, body: tree }),
+    position: vi.fn(async (id: string) => ({ status: 200, body: { position: { ...position, id, name: id } } })),
+    sessions: vi.fn(async (id: string) => ({ status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId: id, activeSessionId: employees[id]!.sessionId, sessions: [employees[id]!] } })),
+    sessionTurnHistory: vi.fn(async (sessionId: string) => ({ status: 200, body: history(completed.get(sessionId) ?? []) })),
+    createSessionTurn, cancelTurn,
+    onEvent: vi.fn((callback) => { listener = callback; return () => {}; }),
+  });
+  render(<App />);
+  const choose = async (id: string) => {
+    const treeElement = await screen.findByRole("tree");
+    fireEvent.click(treeElement.querySelector(`[data-org-node-id="${id}"]`)!);
+    await waitFor(() => expect(bridge.sessions).toHaveBeenCalledWith(id));
+  };
+  for (const [index, id] of ids.entries()) {
+    await choose(id);
+    await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: `task-${id}` } });
+    fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+    await waitFor(() => expect(createSessionTurn).toHaveBeenCalledTimes(index + 1));
+  }
+  act(() => ids.forEach((id, index) => listener({ seq: index + 1, type: "turn.model.delta", payload: {
+    positionId: id, sessionId: employees[id]!.sessionId, engine: "qoder", runId: `run-${id}`, text: `live-${id}`,
+  } })));
+  expect(await screen.findByText("live-release-engineer")).toBeInTheDocument();
+  expect(screen.queryByText("live-repo-owner")).not.toBeInTheDocument();
+  const resultA = apiTurn({ turnId: "A", runId: "run-repo-owner", input: "task-repo-owner", output: "A final result" });
+  completed.set(employees[ids[0]!]!.sessionId, [resultA]);
+  await act(async () => finish.get(employees[ids[0]!]!.sessionId)!({ status: 200, body: resultA }));
+  expect(screen.queryByText("A final result")).not.toBeInTheDocument();
+  expect(screen.getByText("live-release-engineer")).toBeInTheDocument();
+  await choose("docs-writer");
+  expect(await screen.findByText("live-docs-writer")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "中断回合" }));
+  await waitFor(() => expect(cancelTurn).toHaveBeenCalledWith({ positionId: "docs-writer", workspacePath: "/fixture/workspace" }));
+  await act(async () => finish.get(employees["docs-writer"]!.sessionId)!({ status: 500, body: { message: "B failed" } }));
+  await choose("repo-owner");
+  expect(await screen.findByText("A final result")).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+  await choose("release-engineer");
+  expect(await screen.findByText("live-release-engineer")).toBeInTheDocument();
+  expect(screen.queryByText("B failed")).not.toBeInTheDocument();
+  await act(async () => finish.get(employees["release-engineer"]!.sessionId)!({ status: 500, body: { message: "C failed" } }));
+});
+
+it("keeps B usable during A's delayed session creation and context toggle, then restores A", async () => {
+  const employeeB = { ...activeSession, positionId: "docs-writer", sessionId: "22222222-2222-4222-8222-222222222222" };
+  const tree = { ...snapshot, positionCount: 2, tree: [{ ...snapshot.tree[0]!, children: [{ id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }] }] };
+  let created = false;
+  let contextEnabled = true;
+  let resolveCreate: (value: unknown) => void = () => {};
+  let resolveContext: (value: unknown) => void = () => {};
+  const bridge = openedBridge({
+    orgTree: vi.fn().mockResolvedValue({ status: 200, body: tree }),
+    position: vi.fn(async (id: string) => ({ status: 200, body: { position: { ...position, id, name: id } } })),
+    sessions: vi.fn(async (id: string) => ({ status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId: id,
+      activeSessionId: id === "docs-writer" ? employeeB.sessionId : created ? activeSession.sessionId : null,
+      sessions: id === "docs-writer" ? [employeeB] : created ? [{ ...activeSession, threadContextEnabled: contextEnabled }] : [] } })),
+    createSession: vi.fn(() => new Promise((resolve) => { resolveCreate = resolve; })),
+    sessionSetContext: vi.fn(() => new Promise((resolve) => { resolveContext = resolve; })),
+  });
+  render(<App />);
+  const choose = async (id: string) => {
+    fireEvent.click((await screen.findByRole("tree")).querySelector(`[data-org-node-id="${id}"]`)!);
+  };
+  await choose("repo-owner");
+  await waitFor(() => expect(bridge.createSession).toHaveBeenCalled());
+  await choose("docs-writer");
+  await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "B stays intact" } });
+  created = true;
+  await act(async () => resolveCreate({ status: 201, body: activeSession }));
+  expect(screen.getByLabelText("下达任务")).toHaveValue("B stays intact");
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  await choose("repo-owner");
+  await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+  fireEvent.click(screen.getByRole("switch", { name: "启用会话上下文" }));
+  await waitFor(() => expect(bridge.sessionSetContext).toHaveBeenCalledWith({ sessionId: activeSession.sessionId, enabled: false }));
+  await choose("docs-writer");
+  await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+  contextEnabled = false;
+  await act(async () => resolveContext({ status: 200, body: { ...activeSession, threadContextEnabled: false } }));
+  expect(screen.getByRole("switch", { name: "启用会话上下文" })).toBeChecked();
+  await choose("repo-owner");
+  await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+  expect(screen.getByRole("switch", { name: "启用会话上下文" })).not.toBeChecked();
+});
+
+it("drops workspace A's late group 202 after switching to B and reloads A on return", async () => {
+  let workspace = "A";
+  let resolveOldDispatch: (value: unknown) => void = () => {};
+  let aCompleted = false;
+  const groupA = { schemaVersion: "conversation-group.v1" as const, conversationRef: "workspace-a-group", sessionId: "group-session-a", members: ["repo-owner"], createdAt: activeSession.createdAt, updatedAt: activeSession.createdAt };
+  const groupB = { ...groupA, conversationRef: "workspace-b-group", sessionId: "group-session-b" };
+  const bridge = openedBridge({
+    workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })),
+    groups: vi.fn(async () => ({ status: 200, body: { schemaVersion: "conversation-group-list.v1", groups: [workspace === "A" ? groupA : groupB] } })),
+    groupTimeline: vi.fn(async (ref: string) => ({ status: 200, body: { schemaVersion: "group-timeline.v1", conversationRef: ref, items:
+      ref === groupA.conversationRef && aCompleted ? [{ kind: "member", turn: apiTurn({ conversationRef: ref, groupRef: ref, output: "A restored from disk" }) }] : [] } })),
+    createGroupTurn: vi.fn(() => new Promise((resolve) => { resolveOldDispatch = resolve; })),
+  });
+  // Navigation/read fixtures resolve immediately; flush their promise chain
+  // instead of polling the full animated App DOM for each transition.
+  await act(async () => { render(<App />); });
+  const projectEntry = screen.getByRole("button", { name: "项目入口" });
+  const groupEntry = screen.getByRole("button", { name: "群聊" });
+  const organizationEntry = screen.getByRole("button", { name: "组织" });
+  await act(async () => { fireEvent.click(groupEntry); });
+  const composer = screen.getByLabelText("群聊消息");
+  pickSelectOption("选择要 @ 的成员", "代码库负责人");
+  fireEvent.change(composer, { target: { value: "A pending task" } });
+  const sendButton = within(composer.closest("form")!).getByRole("button", { name: "发送群消息" });
+  await act(async () => { fireEvent.click(sendButton); });
+  expect(bridge.createGroupTurn).toHaveBeenCalledTimes(1);
+  const switchWorkspace = async (next: string) => {
+    const previousLoads = vi.mocked(bridge.groupTimeline).mock.calls.length;
+    workspace = next;
+    fireEvent.click(projectEntry);
+    const menu = screen.getByRole("menu", { name: "项目入口" });
+    const openItem = within(menu).getByRole("menuitem", { name: /打开项目/ });
+    await act(async () => { fireEvent.click(openItem); });
+    expect(projectEntry).toHaveTextContent(`Workspace ${next}`);
+    expect(vi.mocked(bridge.groupTimeline).mock.calls.slice(previousLoads)).toContainEqual([
+      next === "A" ? groupA.conversationRef : groupB.conversationRef,
+    ]);
+  };
+  await switchWorkspace("B");
+  expect(bridge.groupTimeline).toHaveBeenCalledWith(groupB.conversationRef);
+  expect(screen.getByLabelText("群聊消息")).toHaveValue("");
+  expect(screen.getByLabelText("群聊消息")).toBeEnabled();
+  expect(screen.getByRole("button", { name: "发送群消息" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("群聊消息"), { target: { value: "B clean draft" } });
+  await act(async () => resolveOldDispatch({ status: 202, body: { conversationRef: groupA.conversationRef, messageId: "old-A", spawns: [{ turnId: "old-A-turn", positionId: "repo-owner" }] } }));
+  expect(screen.getByLabelText("群聊消息")).toHaveValue("B clean draft");
+  expect(screen.queryByText("A pending task")).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(organizationEntry); });
+  const row = screen.getByRole("tree").querySelector('[data-org-node-id="repo-owner"]');
+  expect(row).not.toBeNull();
+  await act(async () => { fireEvent.click(row!); });
+  expect(screen.getByRole("heading", { name: "本地对话" })).toBeInTheDocument();
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  await act(async () => { fireEvent.click(groupEntry); });
+  aCompleted = true;
+  await switchWorkspace("A");
+  expect(screen.getByText("A restored from disk")).toBeInTheDocument();
+  expect(screen.getByLabelText("群聊消息")).toHaveValue("");
+});
+
+it("restores the original workspace's running task and cancels its exact owner after navigation", async () => {
+  let workspace = "A";
+  let listener: (value: unknown) => void = () => {};
+  const finish = new Map<string, (value: unknown) => void>();
+  const sessionLoads: Array<[string, string]> = [];
+  const sessions = vi.fn(async (positionId: string) => {
+    sessionLoads.push([workspace, positionId]);
+    return { status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId, activeSessionId: activeSession.sessionId, sessions: [activeSession] } };
+  });
+  const cancelTurn = vi.fn().mockResolvedValue({ status: 200, body: { cancelled: true, positionId: "repo-owner" } });
+  openedBridge({
+    workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })),
+    sessions,
+    createSessionTurn: vi.fn(() => new Promise((resolve) => finish.set(workspace, resolve))),
+    cancelTurn,
+    onEvent: vi.fn((callback) => { listener = callback; return () => {}; }),
+  });
+  // Every navigation/read fixture resolves immediately. Flush that microtask
+  // chain explicitly instead of repeatedly polling the full animated App DOM.
+  await act(async () => { render(<App />); });
+  const projectEntry = screen.getByRole("button", { name: "项目入口" });
+  const row = screen.getByRole("tree").querySelector('[data-org-node-id="repo-owner"]');
+  expect(row).not.toBeNull();
+  await act(async () => { fireEvent.click(row!); });
+  expect(screen.getByRole("heading", { name: "本地对话" })).toBeInTheDocument();
+  const send = async (input: string) => {
+    const composer = screen.getByLabelText("下达任务");
+    expect(composer).toBeEnabled();
+    fireEvent.change(composer, { target: { value: input } });
+    const sendButton = within(composer.closest("form")!).getByRole("button", { name: "发送任务" });
+    await act(async () => { fireEvent.click(sendButton); });
+    expect(finish.has(workspace)).toBe(true);
+  };
+  const navigate = async (next: string) => {
+    const previousLoads = sessionLoads.length;
+    workspace = next;
+    fireEvent.click(projectEntry);
+    const menu = screen.getByRole("menu", { name: "项目入口" });
+    const openItem = within(menu).getByRole("menuitem", { name: /打开项目/ });
+    await act(async () => { fireEvent.click(openItem); });
+    expect(projectEntry).toHaveTextContent(`Workspace ${next}`);
+    expect(sessionLoads.length).toBeGreaterThan(previousLoads);
+    expect(sessionLoads.at(-1)).toEqual([next, "repo-owner"]);
+  };
+  await send("A background task");
+  const event = (seq: number, owner: string, text: string) => ({ seq, type: "turn.model.delta", payload: {
+    workspacePath: `/workspace/${owner}`, positionId: "repo-owner", sessionId: activeSession.sessionId,
+    engine: "qoder", runId: "same-engine-run-id", turnId: owner === "A" ? "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" : "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", text,
+  } });
+  act(() => listener(event(1, "A", "A live output")));
+  expect(screen.getByText("A live output")).toBeInTheDocument();
+  await navigate("B");
+  await send("B independent task");
+  act(() => {
+    listener(event(2, "B", "B live output"));
+    listener(event(3, "A", " continues"));
+  });
+  expect(screen.getByText("B live output")).toBeInTheDocument();
+  expect(screen.queryByText(/A live output/)).not.toBeInTheDocument();
+  await navigate("A");
+  expect(screen.getByText("A live output continues")).toBeInTheDocument();
+  const cancelButton = screen.getByRole("button", { name: "中断回合" });
+  await act(async () => { fireEvent.click(cancelButton); });
+  expect(cancelTurn).toHaveBeenCalledWith({ positionId: "repo-owner", workspacePath: "/workspace/A", turnId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+  await act(async () => finish.get("A")!({ status: 500, body: { message: "A cancelled" } }));
+  await navigate("B");
+  expect(screen.getByText("B live output")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "中断回合" })).toBeEnabled();
+  await act(async () => finish.get("B")!({ status: 500, body: { message: "B completed" } }));
+});
+
+
+it("keeps the hire conversation timeout attached to the workspace where it started", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const cancelTurn = vi.fn().mockResolvedValue({ status: 200, body: { cancelled: true, positionId: "repo-owner" } });
+  let finish: (value: unknown) => void = () => {};
+  openedBridge({ cancelTurn, createTurn: vi.fn(() => new Promise((resolve) => { finish = resolve; })) });
+  const props = { open: true, positions: [{ id: "repo-owner", name: "Owner" }], presetReportTo: null,
+    engine: "qoder" as const, engineAvailability: { qoder: { ready: true, configured: true }, "claude-code": { ready: false, configured: false }, "claude-local": { ready: false, configured: false } },
+    conversationHostId: "repo-owner", onSelectEngine: vi.fn(), onClose: vi.fn(), onHired: vi.fn() };
+  const view = render(<HireDrawer {...props} workspacePath="/workspace/A" />);
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+    view.rerender(<HireDrawer {...props} workspacePath="/workspace/B" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(75_000); });
+    expect(cancelTurn).toHaveBeenCalledExactlyOnceWith({ positionId: "repo-owner", workspacePath: "/workspace/A" });
+    await act(async () => finish({ status: 500, body: {} }));
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it.each(["B", "A"])("ignores A proposal after workspace navigation ends in %s", async (destination) => {
+  let finish: (value: unknown) => void = () => {};
+  openedBridge({ createTurn: vi.fn(() => new Promise((resolve) => { finish = resolve; })) });
+  const props = { open: true, positions: [{ id: "repo-owner", name: "Owner" }], presetReportTo: null,
+    engine: "qoder" as const, engineAvailability: { qoder: { ready: true, configured: true }, "claude-code": { ready: false, configured: false }, "claude-local": { ready: false, configured: false } },
+    conversationHostId: "repo-owner", onSelectEngine: vi.fn(), onClose: vi.fn(), onHired: vi.fn() };
+  const view = render(<HireDrawer {...props} workspacePath="/workspace/A" />);
+  fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+  view.rerender(<HireDrawer {...props} workspacePath="/workspace/B" />);
+  if (destination === "A") view.rerender(<HireDrawer {...props} workspacePath="/workspace/A" />);
+  await act(async () => finish({ status: 200, body: { output: JSON.stringify({ name: "Workspace A Secret", description: "Proposal from the prior workspace" }) } }));
+  expect(screen.queryByDisplayValue("Workspace A Secret")).not.toBeInTheDocument();
+});
+
+it.each(["history", "sessions"])("ignores A %s rejection after opening B with the same session identity", async (kind) => {
+  let workspace = "A";
+  let rejectA: (value: unknown) => void = () => {};
+  const readMock = vi.fn(() => workspace === "A" ? new Promise((_resolve, reject) => { rejectA = reject; }) : Promise.resolve({ status: 200, body: kind === "history" ? history([]) : { schemaVersion: "workbench-session-list.v1", positionId: "repo-owner", activeSessionId: activeSession.sessionId, sessions: [activeSession] } }));
+  openedBridge({ workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })), ...(kind === "history" ? { sessionTurnHistory: readMock } : { sessions: readMock }) });
+  render(<App />);
+  await selectRepoOwner();
+  await waitFor(() => expect(readMock).toHaveBeenCalled());
+  workspace = "B";
+  fireEvent.click(screen.getByRole("button", { name: "项目入口" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: /打开项目/ }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent("Workspace B"));
+  await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+  await act(async () => rejectA(new Error("old A history request failure")));
+  expect(screen.queryByText(kind === "history" ? "本地历史读取失败：本地服务不可用" : "会话列表读取失败：本地服务不可用")).not.toBeInTheDocument();
 });

@@ -36,6 +36,7 @@ const MEMORY_OPTIONS: Array<{ kind: HireMemorySource["kind"]; labelKey: string; 
 
 interface HireDrawerProps {
   open: boolean;
+  workspacePath?: string;
   positions: Array<{ id: string; name: string }>;
   presetReportTo: string | null;
   engine: TurnEngine;
@@ -170,7 +171,7 @@ function CapabilityPicker({ permissions, onToggleSkill, onToggleMcpServer, onTog
   );
 }
 
-export function HireDrawer({ open, positions, presetReportTo, engine, engineAvailability, conversationHostId, conversationHostName, budgetPoolTokens = PLATFORM_BUDGET_POOL, budgetAllocatedTokens = 0, onSelectEngine, onClose, onHired }: HireDrawerProps) {
+export function HireDrawer({ open, workspacePath, positions, presetReportTo, engine, engineAvailability, conversationHostId, conversationHostName, budgetPoolTokens = PLATFORM_BUDGET_POOL, budgetAllocatedTokens = 0, onSelectEngine, onClose, onHired }: HireDrawerProps) {
   const t = useT();
   const [flow, dispatch] = useReducer(reduceHireFlow, undefined, () => initialHireFlow());
   const [name, setName] = useState("");
@@ -193,6 +194,9 @@ export function HireDrawer({ open, positions, presetReportTo, engine, engineAvai
   const stallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const conversationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const conversationRequest = useRef(0);
+  const workspaceScope = useMemo(() => Symbol("hire-workspace"), [workspacePath]);
+  const currentWorkspaceScope = useRef(workspaceScope);
+  currentWorkspaceScope.current = workspaceScope;
   const unsubscribe = useRef<(() => void) | null>(null);
 
   const clearTimers = useCallback(() => { if (stallTimer.current !== null) clearTimeout(stallTimer.current); stallTimer.current = null; unsubscribe.current?.(); unsubscribe.current = null; }, []);
@@ -269,6 +273,7 @@ export function HireDrawer({ open, positions, presetReportTo, engine, engineAvai
     const hostId = conversationHostId ?? positions[0]?.id ?? null;
     if (!hostId || !engineAvailability[engine].ready || prompt.trim().length === 0) return;
     const requestId = ++conversationRequest.current;
+    const isCurrentRequest = () => requestId === conversationRequest.current && currentWorkspaceScope.current === workspaceScope;
     let timedOut = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     setConversationBusy(true); setConversationError(null);
@@ -280,27 +285,27 @@ export function HireDrawer({ open, positions, presetReportTo, engine, engineAvai
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => {
             timedOut = true;
-            void window.owb.cancelTurn(hostId).catch(() => undefined);
+            void window.owb.cancelTurn(workspacePath ? { positionId: hostId, workspacePath } : hostId).catch(() => undefined);
             reject(new Error("agent conversation timed out"));
           }, AGENT_CONVERSATION_TIMEOUT_MS);
           conversationTimer.current = timer;
         }),
       ]);
-      if (requestId !== conversationRequest.current) return;
+      if (!isCurrentRequest()) return;
       if (response.status !== 200) { setConversationError(t("hire.agentConversationFail")); return; }
       const output = proposalText(response.body);
       if (!output) { setConversationError(t("hire.agentNoProposal")); return; }
       setMessages((current) => [...current, { role: "assistant", text: output }]);
       applyProposal(output);
     } catch {
-      if (requestId !== conversationRequest.current) return;
+      if (!isCurrentRequest()) return;
       setConversationError(timedOut ? t("hire.agentConversationTimeout") : t("hire.agentConversationOffline"));
     } finally {
       if (timer !== null) clearTimeout(timer);
       if (conversationTimer.current === timer) conversationTimer.current = null;
       if (requestId === conversationRequest.current) setConversationBusy(false);
     }
-  }, [applyProposal, conversationHostId, engine, engineAvailability, name, positions, prompt, reportTo, t]);
+  }, [applyProposal, conversationHostId, engine, engineAvailability, name, positions, prompt, reportTo, t, workspacePath, workspaceScope]);
 
   const submitRequest = useCallback(async (draft: HireDraft) => {
     dispatch({ type: "edit", draft }); dispatch({ type: "submit" }); setPhaseCopy(t("hire.phaseSubmit")); armStallTimer(draft.id);

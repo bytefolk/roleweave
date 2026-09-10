@@ -3,7 +3,7 @@
   "schemaVersion": "employee-package.v1alpha1",
   "name": "release-engineer",
   "version": "0.1.0",
-  "description": "Prepares release notes, version bumps, and publish checklists for the owner.",
+  "description": "为负责人准备发布说明、版本号变更和发布检查清单。",
   "license": "Apache-2.0",
   "authors": [
     "your-team"

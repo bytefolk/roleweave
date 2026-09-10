@@ -23,6 +23,7 @@ import { handlePositionGet } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
 import {
   handleSessionCreate,
+  handleSessionContextPatch,
   handleSessionGet,
   handleSessionList,
   handleSessionRotate,
@@ -113,7 +114,7 @@ async function dispatch(
       await handleSessionList(ctx, res, url);
       return;
     }
-    const sessionMatch = pathname.match(/^\/sessions\/([^/]+)(?:\/(rotate|turns))?$/);
+    const sessionMatch = pathname.match(/^\/sessions\/([^/]+)(?:\/(rotate|turns|context))?$/);
     if (sessionMatch) {
       let sessionId: string;
       try {
@@ -124,6 +125,10 @@ async function dispatch(
       const operation = sessionMatch[2];
       if (operation === undefined && method === "GET") {
         await handleSessionGet(ctx, res, sessionId);
+        return;
+      }
+      if (operation === "context" && method === "PATCH") {
+        await handleSessionContextPatch(ctx, req, res, sessionId);
         return;
       }
       if (operation === "rotate" && method === "POST") {

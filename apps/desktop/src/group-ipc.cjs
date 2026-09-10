@@ -59,9 +59,12 @@ function validateGroupAddMemberRequest(value) {
 function validateGroupTurnRequest(value) {
   if (
     value === null || typeof value !== "object" || Array.isArray(value) ||
-    Object.keys(value).sort().join(",") !== "conversationRef,engine,input,mentions"
+    !["conversationRef,engine,input,mentions", "conversationRef,engine,input,mentions,mode"].includes(Object.keys(value).sort().join(","))
   ) {
-    return { ok: false, response: invalid("group_request_invalid", "group turn accepts exactly conversationRef, input, engine, mentions") };
+    return { ok: false, response: invalid("group_request_invalid", "group turn accepts conversationRef, input, engine, mentions and optional mode") };
+  }
+  if (value.mode !== undefined && value.mode !== "parallel" && value.mode !== "relay") {
+    return { ok: false, response: invalid("group_request_invalid", "mode must be parallel or relay") };
   }
   if (!validateConversationRef(value.conversationRef)) {
     return { ok: false, response: invalid("group_request_invalid", "conversationRef is invalid") };
@@ -86,7 +89,7 @@ function validateGroupTurnRequest(value) {
   return {
     ok: true,
     conversationRef: value.conversationRef,
-    request: { input: value.input, engine: value.engine, mentions: value.mentions },
+    request: { input: value.input, engine: value.engine, mentions: value.mentions, ...(value.mode !== undefined ? { mode: value.mode } : {}) },
   };
 }
 

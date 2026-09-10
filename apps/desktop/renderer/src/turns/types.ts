@@ -1,3 +1,4 @@
+import type { TurnRecord as ApiTurnRecord } from "@roleweave/shared";
 export type TurnEngine = "qoder" | "claude-code" | "claude-local";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
@@ -49,6 +50,8 @@ export interface TurnApprovalRequest {
 }
 
 export interface TurnRecord {
+  /** Renderer-only live/pending projection; never a persisted receipt. */
+  provisional?: boolean;
   id: string;
   positionId: string;
   positionName: string;
@@ -59,6 +62,8 @@ export interface TurnRecord {
   completedAt?: string;
   output?: string;
   error?: string;
+  errorCode?: string;
+  threadContext?: ApiTurnRecord["threadContext"];
   /** Engine runId when the server record carries one; keys live-stream dedupe. */
   runId?: string;
   /** Live engine-reported usage; present only on provisional live rows. */

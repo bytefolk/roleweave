@@ -55,3 +55,16 @@ test("cancel IPC accepts exactly {positionId} with a bounded position id", () =>
   assert.equal(validateCancelRequest(null).ok, false);
   assert.equal(validateCancelRequest(["repo-owner"]).ok, false);
 });
+
+test("cancel IPC forwards only a bounded explicit owner and optional safe turn identity", () => {
+  const request = { positionId: "repo-owner", workspacePath: "/workspace/A", turnId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" };
+  assert.deepEqual(validateCancelRequest(request), { ok: true, request });
+  assert.equal(validateCancelRequest({ ...request, turnId: "old-turn" }).ok, true);
+  assert.equal(validateCancelRequest({ positionId: request.positionId, workspacePath: request.workspacePath }).ok, true);
+  for (const invalid of [
+    { ...request, workspacePath: "" }, { ...request, workspacePath: " " },
+    { ...request, workspacePath: "a\0b" }, { ...request, workspacePath: "界".repeat(1366) },
+    { ...request, turnId: "../../turn" }, { ...request, turnId: "x".repeat(129) }, { ...request, turnId: undefined },
+    { ...request, command: "not-allowed" }, { positionId: request.positionId, turnId: request.turnId },
+  ]) assert.equal(validateCancelRequest(invalid).ok, false);
+});

@@ -78,7 +78,7 @@ async function openWorkspace(baseUrl: string, token: string, dir: string): Promi
   assert.equal(opened.status, 200);
 }
 
-test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishes raw turn SSE", async () => {
+test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishes attributed turn SSE without changing engine events", async () => {
   const turnDriver = new FakeTurnDriver();
   const server = await startTestServer(undefined, turnDriver);
   const workspace = await copyExampleWorkspace();
@@ -107,6 +107,7 @@ test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishe
     const started = await sse.waitForEvent("turn.started");
     const startedEnvelope = JSON.parse(started.data) as { payload: Record<string, unknown> };
     assert.deepEqual(startedEnvelope.payload, {
+      turnId: record.turnId, positionId: "repo-owner", engine: "qoder", workspacePath: workspace,
       type: "run.started",
       runId: "run-1",
       timestamp: "2026-08-24T00:00:00.000Z",
@@ -114,6 +115,7 @@ test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishe
     const completed = await sse.waitForEvent("turn.completed");
     const completedEnvelope = JSON.parse(completed.data) as { payload: Record<string, unknown> };
     assert.equal(completedEnvelope.payload.type, "run.completed");
+    assert.deepEqual((record.events as Record<string, unknown>[])[0], { type: "run.started", runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" });
 
     const history = await api(
       server.baseUrl,

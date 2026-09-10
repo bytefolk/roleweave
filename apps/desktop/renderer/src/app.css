@@ -8337,3 +8337,10 @@ body,
     justify-content: flex-start;
   }
 }
+
+.owb-thread-context { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; font-size: 12px; color: var(--ui-text-muted); }
+.owb-thread-context details { min-width: 0; max-width: 100%; }
+.owb-thread-context pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+.owb-thread-context code { overflow-wrap: anywhere; }
+.owb-group-dispatch-mode { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.owb-group-dispatch-mode .ant-select { min-width: 170px; }

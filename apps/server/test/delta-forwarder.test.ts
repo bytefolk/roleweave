@@ -154,3 +154,33 @@ test("flushes pending buffer when cap is hit mid-accumulation", () => {
   assert.equal((deltas[0] as { text: string }).text, "ABCD");
   assert.ok(forwarder.isCapped);
 });
+
+test("terminal forwarding closes the forwarder against delayed driver callbacks", () => {
+  const clock = makeClock();
+  const forwarded: EngineEvent[] = [];
+  const forwarder = new DeltaForwarder({ rateLimitMs: 100, onForward: (event) => forwarded.push(event), now: clock.now });
+  forwarder.handle(startedEvent("run-1"));
+  forwarder.handle(deltaEvent("run-1", "trusted buffered text"));
+  forwarder.handle(completedEvent("run-1"));
+  const terminalEvents = [...forwarded];
+  assert.equal(terminalEvents.filter((event) => event.type === "model.delta").length, 1);
+  clock.advance(200);
+  forwarder.handle(deltaEvent("run-1", "late text"));
+  forwarder.handle(usageEvent("run-1", 200));
+  assert.deepEqual(forwarded, terminalEvents, "late callbacks must not revive a closed terminal stream");
+});
+
+test("closing a nonterminal forwarder cancels its timer and rejects later callbacks", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const forwarded: EngineEvent[] = [];
+  const forwarder = new DeltaForwarder({ rateLimitMs: 100, onForward: (event) => forwarded.push(event), now: () => 0 });
+  forwarder.handle(startedEvent("run-1"));
+  forwarder.handle(deltaEvent("run-1", "untrusted buffered text"));
+  forwarder.close();
+  forwarder.close();
+  t.mock.timers.tick(1000);
+  forwarder.handle(deltaEvent("run-1", "late callback"));
+  forwarder.handle(usageEvent("run-1", 500));
+  t.mock.timers.tick(1000);
+  assert.deepEqual(forwarded, [startedEvent("run-1")]);
+});

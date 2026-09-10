@@ -29,6 +29,7 @@ export class DeltaForwarder {
   private forwardedBytes = 0;
   private lastForwardAt = 0;
   private capped = false;
+  private closed = false;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly rateLimitMs: number;
   private readonly bufferCapBytes: number;
@@ -46,6 +47,7 @@ export class DeltaForwarder {
   }
 
   handle(event: EngineEvent): void {
+    if (this.closed) return;
     if (event.type === "model.delta") {
       if (this.runId === null) {
         this.runId = event.runId;
@@ -65,9 +67,12 @@ export class DeltaForwarder {
     }
 
     if (event.type === "run.completed" || event.type === "run.failed") {
-      this.flush();
-      this.onForward(event);
-      this.dispose();
+      try {
+        this.flush();
+        this.onForward(event);
+      } finally {
+        this.close();
+      }
       return;
     }
 
@@ -94,6 +99,7 @@ export class DeltaForwarder {
   }
 
   private flush(): void {
+    if (this.closed) return;
     if (this.flushTimer !== null) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
@@ -111,11 +117,18 @@ export class DeltaForwarder {
     this.bufferedBytes = 0;
   }
 
-  private dispose(): void {
+  /** End stream ownership without forwarding untrusted buffered content.
+   * Safe after a terminal and on cancellation, driver return or failure. */
+  close(): void {
+    this.closed = true;
     if (this.flushTimer !== null) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
+    this.bufferedText = "";
+    this.bufferedBytes = 0;
+    this.runId = null;
+    this.timestamp = null;
   }
 
   /** Exposed for tests — returns whether the buffer cap was hit. */

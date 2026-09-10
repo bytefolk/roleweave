@@ -3,7 +3,7 @@ import { Button as AntButton, Input, Select as AntSelect } from "antd";
 import { ArrowUp, Plus, Search, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
 import { PositionAvatar } from "../PositionAvatar";
-import { TypingIndicator } from "../turns/TurnThread";
+import { ProgressTrail, TypingIndicator } from "../turns/TurnThread";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@roleweave/shared";
 import { EngineSelect, useEngineLabel } from "../turns/TurnPanel";
 import { EngineIcon } from "../turns/engine-icon";
@@ -106,6 +106,18 @@ export function GroupsPanel({
   const groupLabel = (group: GroupConversation): string =>
     group.members.slice(0, 3).map(displayPositionName).join(nameSep) +
     (group.members.length > 3 ? ` ${t("grp.more", { count: group.members.length })}` : "");
+  // Requests belong to one mounted workspace panel. An abandoned request may
+  // finish after unmount (or StrictMode remount); it must not seed App state.
+  const lifecycle = useRef({ mounted: false, generation: 0 });
+  const groupsRequestRef = useRef(0);
+  useEffect(() => {
+    lifecycle.current = { mounted: true, generation: lifecycle.current.generation + 1 };
+    return () => { lifecycle.current.mounted = false; lifecycle.current.generation += 1; };
+  }, []);
+  const captureScope = useCallback(() => {
+    const generation = lifecycle.current.generation;
+    return () => lifecycle.current.mounted && lifecycle.current.generation === generation;
+  }, []);
   const [groups, setGroups] = useState<GroupConversation[]>([]);
   const [groupsError, setGroupsError] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
@@ -117,9 +129,19 @@ export function GroupsPanel({
   const [creating, setCreating] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [draftMembers, setDraftMembers] = useState<ReadonlySet<string>>(new Set());
-  const [input, setInput] = useState("");
-  const [mentions, setMentions] = useState<ReadonlySet<string>>(new Set());
-  const [sending, setSending] = useState(false);
+  const draftKey = selectedRef ?? "";
+  const [drafts, setDrafts] = useState<Record<string, { input: string; mentions: string[]; mode: "parallel" | "relay" }>>({});
+  const emptyDraft = { input: "", mentions: [] as string[], mode: "parallel" as const };
+  const draft = drafts[draftKey] ?? emptyDraft;
+  const input = draft.input;
+  const mentions = useMemo(() => new Set(draft.mentions), [draft.mentions]);
+  const dispatchMode = draft.mode;
+  const setInput = (input: string) => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), input } }));
+  const setMentions = (mentions: ReadonlySet<string>) => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), mentions: [...mentions] } }));
+  const setDispatchMode = (mode: "parallel" | "relay") => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), mode } }));
+  const [sendingGroups, setSendingGroups] = useState<Record<string, boolean>>({});
+  const sendingGroupsRef = useRef(new Set<string>());
+  const sending = sendingGroups[draftKey] === true;
   const [panelError, setPanelError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -127,6 +149,9 @@ export function GroupsPanel({
   }, [selectedRef]);
 
   const loadGroups = useCallback(async () => {
+    const isCurrent = captureScope();
+    if (!isCurrent()) return;
+    const request = ++groupsRequestRef.current;
     if (!workspaceOpen) {
       setGroups([]);
       setSelectedRef(null);
@@ -134,6 +159,7 @@ export function GroupsPanel({
     }
     try {
       const res = await window.owb.groups();
+      if (!isCurrent() || request !== groupsRequestRef.current) return;
       if (res.status !== 200) {
         setGroups([]);
         setGroupsError(apiErrorMessage(res.body, t("grp.listFail")));
@@ -148,11 +174,13 @@ export function GroupsPanel({
           : list.groups[0]?.conversationRef ?? null,
       );
     } catch {
-      setGroupsError(t("grp.listFailOffline"));
+      if (isCurrent() && request === groupsRequestRef.current) setGroupsError(t("grp.listFailOffline"));
     }
-  }, [t, workspaceOpen]);
+  }, [captureScope, t, workspaceOpen]);
 
   const loadTimeline = useCallback(async (conversationRef: string, background = false) => {
+    const isCurrent = captureScope();
+    if (!isCurrent()) return;
     const request = ++timelineRequestRef.current;
     if (!background) {
       foregroundTimelineRequestRef.current = request;
@@ -160,7 +188,7 @@ export function GroupsPanel({
     }
     try {
       const res = await window.owb.groupTimeline(conversationRef);
-      if (selectedRefRef.current !== conversationRef || request !== timelineRequestRef.current) return;
+      if (!isCurrent() || selectedRefRef.current !== conversationRef || request !== timelineRequestRef.current) return;
       if (res.status !== 200) {
         setTimeline(null);
         setPanelError(apiErrorMessage(res.body, t("grp.timelineFail")));
@@ -171,18 +199,18 @@ export function GroupsPanel({
       onReconcileTimeline(next);
       setPanelError(null);
     } catch {
-      if (selectedRefRef.current === conversationRef && request === timelineRequestRef.current) {
+      if (isCurrent() && selectedRefRef.current === conversationRef && request === timelineRequestRef.current) {
         setPanelError(t("grp.timelineFailOffline"));
       }
     } finally {
       if (
-        !background && selectedRefRef.current === conversationRef &&
+        isCurrent() && !background && selectedRefRef.current === conversationRef &&
         request === foregroundTimelineRequestRef.current
       ) {
         setTimelineLoading(false);
       }
     }
-  }, [onReconcileTimeline, t]);
+  }, [captureScope, onReconcileTimeline, t]);
 
   useEffect(() => {
     void loadGroups();
@@ -193,8 +221,6 @@ export function GroupsPanel({
       setTimeline(null);
       return;
     }
-    setMentions(new Set());
-    setInput("");
     void loadTimeline(selectedRef);
   }, [loadTimeline, selectedRef]);
 
@@ -268,12 +294,15 @@ export function GroupsPanel({
   const selectedGroup = groups.find((group) => group.conversationRef === selectedRef) ?? null;
 
   const createGroup = useCallback(async () => {
+    const isCurrent = captureScope();
+    if (!isCurrent()) return;
     const members = [...draftMembers];
     if (members.length < 2 || creating) return;
     setCreating(true);
     setPanelError(null);
     try {
       const res = await window.owb.createGroup({ memberPositionIds: members });
+      if (!isCurrent()) return;
       if (res.status !== 201) {
         setPanelError(apiErrorMessage(res.body, t("grp.createFail")));
         return;
@@ -282,36 +311,42 @@ export function GroupsPanel({
       setDraftMembers(new Set());
       setCreateOpen(false);
       await loadGroups();
-      setSelectedRef(created.conversationRef);
+      if (isCurrent()) setSelectedRef(created.conversationRef);
     } catch {
-      setPanelError(t("grp.createFailOffline"));
+      if (isCurrent()) setPanelError(t("grp.createFailOffline"));
     } finally {
-      setCreating(false);
+      if (isCurrent()) setCreating(false);
     }
-  }, [creating, draftMembers, loadGroups, t]);
+  }, [captureScope, creating, draftMembers, loadGroups, t]);
 
   const addMember = useCallback(async (positionId: string) => {
+    const isCurrent = captureScope();
+    if (!isCurrent()) return;
     const ref = selectedRefRef.current;
     if (ref === null || !positionId) return;
     try {
       const res = await window.owb.addGroupMember({ conversationRef: ref, positionId });
+      if (!isCurrent()) return;
       if (res.status !== 200) {
-        setPanelError(apiErrorMessage(res.body, t("grp.addFail")));
+        if (selectedRefRef.current === ref) setPanelError(apiErrorMessage(res.body, t("grp.addFail")));
         return;
       }
       setPanelError(null);
       await loadGroups();
-      void loadTimeline(ref);
+      if (isCurrent()) void loadTimeline(ref);
     } catch {
-      setPanelError(t("grp.addFailOffline"));
+      if (isCurrent() && selectedRefRef.current === ref) setPanelError(t("grp.addFailOffline"));
     }
-  }, [loadGroups, loadTimeline, t]);
+  }, [captureScope, loadGroups, loadTimeline, t]);
 
   const send = useCallback(async () => {
+    const isCurrent = captureScope();
+    if (!isCurrent()) return;
     const ref = selectedRefRef.current;
     const trimmed = input.trim();
-    if (ref === null || trimmed.length === 0 || mentions.size === 0 || sending) return;
-    setSending(true);
+    if (ref === null || trimmed.length === 0 || mentions.size === 0 || sendingGroupsRef.current.has(ref)) return;
+    sendingGroupsRef.current.add(ref);
+    setSendingGroups((current) => ({ ...current, [ref]: true }));
     setPanelError(null);
     try {
       const res = await window.owb.createGroupTurn({
@@ -319,22 +354,26 @@ export function GroupsPanel({
         input: trimmed,
         engine,
         mentions: [...mentions],
+        mode: dispatchMode,
       });
+      if (!isCurrent()) return;
       if (res.status !== 202) {
-        setPanelError(apiErrorMessage(res.body, t("grp.turnFail")));
+        if (selectedRefRef.current === ref) setPanelError(apiErrorMessage(res.body, t("grp.turnFail")));
         return;
       }
       const body = res.body as { conversationRef: string; messageId: string; spawns: Array<{ turnId: string; positionId: string }> };
       onSpawnRuns(ref, body.messageId, body.spawns, trimmed, engine);
-      setInput("");
-      setMentions(new Set());
+      setDrafts((current) => current[ref]?.input === input ? { ...current, [ref]: { ...current[ref]!, input: "", mentions: [] } } : current);
       void loadTimeline(ref);
     } catch {
-      setPanelError(t("grp.turnFailOffline"));
+      if (isCurrent() && selectedRefRef.current === ref) setPanelError(t("grp.turnFailOffline"));
     } finally {
-      setSending(false);
+      if (isCurrent()) {
+        sendingGroupsRef.current.delete(ref);
+        setSendingGroups((current) => ({ ...current, [ref]: false }));
+      }
     }
-  }, [engine, input, loadTimeline, mentions, onSpawnRuns, sending, t]);
+  }, [captureScope, dispatchMode, engine, input, loadTimeline, mentions, onSpawnRuns, sending, t]);
 
   /** Merge persisted timeline with live SSE buffers for this group. A run
    * whose turnId is already persisted is suppressed — the record wins. */
@@ -445,6 +484,7 @@ export function GroupsPanel({
                 </span>
               </div>
               <AntSelect
+                classNames={{ popup: { root: "owb-conversation-select-popup" } }}
                 mode="multiple"
                 aria-label={t("grp.createSearchAria")}
                 placeholder={t("grp.createSearchPh")}
@@ -556,6 +596,7 @@ export function GroupsPanel({
                   <label className="owb-groups__add-member">
                     <UserRoundPlus aria-hidden="true" size={13} />
                     <AntSelect
+                      classNames={{ popup: { root: "owb-conversation-select-popup" } }}
                       aria-label={t("grp.addMember")}
                       value={undefined}
                       placeholder={t("grp.addMemberPh")}
@@ -594,6 +635,7 @@ export function GroupsPanel({
                           </time>
                         </header>
                         <p className="owb-bubble__text">{renderMentionText(item.input)}</p>
+                        <p className="owb-turn-composer__hint">{t(item.mode === "relay" ? "grp.modeRelay" : "grp.modeParallel")} · {item.mentions.map(displayPositionName).join(item.mode === "relay" ? " → " : nameSep)}</p>
                       </article>
                     </div>
                   </div>
@@ -623,14 +665,15 @@ export function GroupsPanel({
                               {timeShort(turn.createdAt)}
                             </time>
                           </header>
+                          {turn.errorCode !== "group_relay_blocked" ? <ProgressTrail turn={turn} /> : null}
                           {turn.output ? (
                             <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
                           ) : null}
-                          {turn.status === "failed" && turn.error ? (
+                          {(turn.status === "failed" || turn.status === "indeterminate") && turn.error ? (
                             <p className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</p>
                           ) : null}
                           {turn.status === "indeterminate" ? (
-                            <p className="owb-turn__warning owb-clamp-2">{t("grp.untrustedWarning")}</p>
+                            <p className="owb-turn__warning owb-clamp-2">{t(turn.errorCode === "group_relay_blocked" ? "grp.relayBlocked" : "grp.untrustedWarning")}</p>
                           ) : null}
                         </article>
                       </div>
@@ -655,6 +698,7 @@ export function GroupsPanel({
                       </span>
                       <span className="owb-led owb-led--running" aria-label={t("grp.turnInProgress")} />
                     </header>
+                    <ProgressTrail turn={turn} />
                     {turn.output ? (
                       <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
                     ) : (
@@ -682,6 +726,7 @@ export function GroupsPanel({
                   {t("grp.recipientLabel")}
                 </span>
                 <AntSelect
+                  classNames={{ popup: { root: "owb-conversation-select-popup" } }}
                   mode="multiple"
                   aria-label={t("grp.mentionAria")}
                   placeholder={t("grp.mentionPh")}
@@ -698,6 +743,14 @@ export function GroupsPanel({
                   }))}
                 />
               </div>
+              <label className="owb-group-dispatch-mode">
+                <span>{t("grp.dispatchMode")}</span>
+                <AntSelect classNames={{ popup: { root: "owb-conversation-select-popup" } }}
+                  aria-label={t("grp.dispatchMode")} value={dispatchMode} disabled={sending}
+                  onChange={(value) => setDispatchMode(value as "parallel" | "relay")}
+                  options={[{ value: "parallel", label: t("grp.modeParallel") }, { value: "relay", label: t("grp.modeRelay") }]} />
+              </label>
+              {dispatchMode === "relay" ? <p className="owb-turn-composer__hint">{t("grp.relayOrder", { order: [...mentions].map(displayPositionName).join(" → ") })}</p> : null}
               <div className="owb-turn-composer__surface">
                 <Input.TextArea
                   value={input}

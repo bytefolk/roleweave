@@ -62,6 +62,28 @@ test("turn driver uses stdin, exact turn argv, and the selected engine environme
   assert.equal(result.events.length, 2);
 });
 
+test("a cancellation delivered at abort registration never starts the engine process", async () => {
+  const directory = await fs.mkdtemp(path.join(FIXTURE_TMPDIR, "owb-cancel-before-spawn-"));
+  const marker = path.join(directory, "side-effect");
+  const entry = path.join(directory, "engine.mjs");
+  await fs.writeFile(entry, `import fs from "node:fs"; fs.writeFileSync(${JSON.stringify(marker)}, "engine was invoked");`, { mode: 0o600 });
+  const published: string[] = [];
+  try {
+    const result = await new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(entry)}`).turnRun({
+      workspace: "/workspace", positionId: "repo-owner", engine: "qoder", envelope: ENVELOPE,
+      setAbort: (abort) => abort(),
+      onEvent: (event) => published.push(event.type),
+    });
+    assert.equal(result.status, "indeterminate");
+    assert.equal(result.code, "turn_cancelled");
+    assert.deepEqual(result.events, []);
+    assert.deepEqual(published, []);
+    await assert.rejects(fs.access(marker), { code: "ENOENT" });
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("run-as-node crosses only the exact packaged bundled-engine boundary", async () => {
   const saved = process.env.ELECTRON_RUN_AS_NODE;
   try {

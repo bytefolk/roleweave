@@ -97,21 +97,35 @@ test("a real server completes READY → health → stop and releases its port", 
   const serverEntry = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
   assert.equal(fs.existsSync(serverEntry), true, "build the server before running the desktop lifecycle E2E");
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "owb-lifecycle-"));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const child = spawn(process.execPath, [serverEntry], {
     env: {
       PATH: process.env.PATH ?? "",
       HOME: home,
       TMPDIR: home,
       ORG_WORKBENCH_SERVER_PORT: "0",
-      // Node itself is a deterministic, local probe target. No provider
-      // credential or network access is needed for the control-plane test.
+      // Pin every local version probe, not just the engine. Inheriting PATH
+      // otherwise probes the developer's real Claude install under an empty
+      // HOME, making this lifecycle test depend on that CLI's startup time.
       ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI: process.execPath,
+      DIGITAL_EMPLOYEE_CLAUDE_COMMAND: process.execPath,
+      DIGITAL_EMPLOYEE_QODER_COMMAND: process.execPath,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const closed = new Promise((resolve) => child.once("close", resolve));
+  let handle;
+  // Register cleanup before waiting for READY or /health. A failed assertion
+  // must stop the child as well, otherwise node --test can hang indefinitely.
+  t.after(async () => {
+    try {
+      await stopControlPlaneProcess(handle ?? { child }, { termTimeoutMs: 1000 });
+      await closed;
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
   child.stderr.resume();
-  const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 3000 });
+  handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 3000 });
   assert.equal(handle.api, "v0");
   const response = await new Promise((resolve, reject) => {
     const request = http.get({ host: "127.0.0.1", port: handle.port, path: "/health" }, (res) => {
@@ -126,6 +140,7 @@ test("a real server completes READY → health → stop and releases its port", 
   assert.equal(response.status, 200);
   assert.equal(response.body.status, "ok");
   assert.equal(response.body.api, "v0");
+  assert.equal(response.body.hosts["claude-local"].configured, false, "Node's version cannot qualify as a Claude Host");
 
   const stopped = await stopControlPlaneProcess(handle, { termTimeoutMs: 1000 });
   assert.equal(stopped.state, "stopped");

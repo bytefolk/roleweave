@@ -2,10 +2,67 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@roleweave/shared";
+import type { TurnRecord, TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@roleweave/shared";
 import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import { SessionStore } from "../src/sessions/store.js";
 import { TurnStore } from "../src/turns/store.js";
+
+test("a running session rejects context-policy edits and another turn while preserving the first completion", async () => {
+  let signalStarted!: () => void;
+  const started = new Promise<void>((resolve) => { signalStarted = resolve; });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let calls = 0;
+  const driver: TurnRunDriver = {
+    async turnRun(request) {
+      calls += 1;
+      signalStarted();
+      await gate;
+      const timestamp = new Date().toISOString();
+      const events: TurnRunResult["events"] = [
+        { type: "run.started", runId: request.envelope.turnId, timestamp },
+        { type: "run.completed", runId: request.envelope.turnId, timestamp, output: "done", terminalReason: "goal_met" },
+      ];
+      for (const event of events) request.onEvent?.(event);
+      return { status: "trusted", events, diagnostic: "" };
+    },
+  };
+  const workspace = await copyExampleWorkspace();
+  const server = await startTestServer(undefined, driver);
+  let first: Promise<unknown> | undefined;
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const created = await api(server.baseUrl, "/sessions", { method: "POST", token: server.token, body: { positionId: "repo-owner" } });
+    const session = created.body as WorkbenchSession;
+    first = api(server.baseUrl, `/sessions/${session.sessionId}/turns`, { method: "POST", token: server.token, body: { input: "first", engine: "qoder" } });
+    await started;
+    const edited = await api(server.baseUrl, `/sessions/${session.sessionId}/context`, { method: "PATCH", token: server.token, body: { enabled: false } });
+    assert.equal(edited.status, 409);
+    const overlapping = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, { method: "POST", token: server.token, body: { input: "second", engine: "qoder" } });
+    assert.equal(overlapping.status, 409);
+    assert.equal(calls, 1);
+    release();
+    const completed = await first as { status: number; body: TurnRecord };
+    assert.equal(completed.status, 200);
+    assert.equal(completed.body.status, "completed");
+    const event = server.ctx.bus.since(0).find((entry) => entry.type === "turn.completed");
+    assert.ok(event);
+    assert.deepEqual(Object.fromEntries(Object.entries(event.payload as Record<string, unknown>).filter(([key]) => ["positionId", "sessionId", "conversationRef", "turnId", "engine"].includes(key))), {
+      positionId: "repo-owner", sessionId: session.sessionId, conversationRef: session.sessionId, turnId: completed.body.turnId, engine: "qoder",
+    });
+    const updated = await api(server.baseUrl, `/sessions/${session.sessionId}/context`, { method: "PATCH", token: server.token, body: { enabled: false } });
+    assert.equal(updated.status, 200);
+    for (const invalid of [{ enabled: "false" }, { enabled: true, principal: "admin" }, {}]) {
+      assert.equal((await api(server.baseUrl, `/sessions/${session.sessionId}/context`, { method: "PATCH", token: server.token, body: invalid })).status, 400);
+    }
+  } finally {
+    release();
+    await first;
+    await server.ctx.contextExporter.waitForIdle();
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {
   const opened = await api(baseUrl, "/workspace/open", {

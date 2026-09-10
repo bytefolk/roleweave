@@ -377,3 +377,85 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
     expect(screen.queryByText("999 tokens")).not.toBeInTheDocument();
   });
 });
+
+it("preserves each employee/session draft and lets B send while A's promise is pending", async () => {
+  const resolvers: Array<(value: boolean) => void> = [];
+  const create = vi.fn(() => new Promise<boolean>((resolve) => resolvers.push(resolve)));
+  const props = { workspaceOpen: true, positions, engine: "qoder" as const, engineAvailability: availability,
+    turns: [], onSelectPosition: vi.fn(), onSelectEngine: vi.fn(), onCreateTurn: create };
+  const { rerender } = render(<TurnPanel {...props} selectedPositionId="repo-owner" selectedSessionId="session-A" />);
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "A task" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+  rerender(<TurnPanel {...props} selectedPositionId="release-manager" selectedSessionId="session-B" />);
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "B draft" } });
+  resolvers[0]!(true);
+  await waitFor(() => expect(screen.getByLabelText("下达任务")).toHaveValue("B draft"));
+  fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+  rerender(<TurnPanel {...props} selectedPositionId="repo-owner" selectedSessionId="session-other" />);
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "other session draft" } });
+  rerender(<TurnPanel {...props} selectedPositionId="repo-owner" selectedSessionId="session-A" />);
+  expect(screen.getByLabelText("下达任务")).toHaveValue("");
+  resolvers[1]!(false);
+  rerender(<TurnPanel {...props} selectedPositionId="release-manager" selectedSessionId="session-B" />);
+  await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+  expect(screen.getByLabelText("下达任务")).toHaveValue("B draft");
+});
+
+it("shows actual last-call context with a persistent session toggle and an honest initial zero state", async () => {
+  const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "11111111-1111-4111-8111-111111111111", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
+  const toggle = vi.fn();
+  const props = { workspaceOpen: true, positions, selectedPositionId: "repo-owner", selectedSessionId: session.sessionId,
+    sessions: [session], engine: "qoder" as const, engineAvailability: availability,
+    onSelectPosition: vi.fn(), onSelectEngine: vi.fn(), onCreateTurn: vi.fn(), onSetSessionContext: toggle };
+  const { rerender } = render(<TurnPanel {...props} turns={[]} />);
+  expect(screen.getByText("尚未调用 · 0 轮 · 0 字节")).toBeInTheDocument();
+  const metadata = { schemaVersion: "thread-context.v1" as const, enabled: true, sourceTurnCount: 2, omittedTurnCount: 1, contextBytes: 345, contextDigest: "sha256:actual", redacted: true, truncated: false, summary: "User: project background\nAssistant: draft produced" };
+  rerender(<TurnPanel {...props} turns={[turn({ threadContext: metadata })]} />);
+  expect(screen.getByText("上次调用：2 轮 · 345 字节")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("上次调用：2 轮 · 345 字节"));
+  expect(screen.getByText("sha256:actual")).toBeInTheDocument();
+  expect(screen.getByText(/project background/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("switch", { name: "启用会话上下文" }));
+  expect(toggle).toHaveBeenCalledWith(session.sessionId, false);
+  rerender(<TurnPanel {...props} sessions={[{ ...session, threadContextEnabled: false }]} turns={[turn({ threadContext: metadata })]} />);
+  expect(screen.getByRole("switch", { name: "启用会话上下文" })).not.toBeChecked();
+  expect(screen.getByText("上次调用：2 轮 · 345 字节")).toBeInTheDocument();
+});
+
+it("reports unrecorded context for legacy history instead of inventing an empty zero-use session", () => {
+  const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "legacy-session", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
+  render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner" selectedSessionId={session.sessionId}
+    sessions={[session]} engine="qoder" engineAvailability={availability} turns={[turn({})]}
+    onSelectPosition={vi.fn()} onSelectEngine={vi.fn()} onCreateTurn={vi.fn()} />);
+  expect(screen.getByText("历史回合未记录上下文用量")).toBeInTheDocument();
+  expect(screen.queryByText(/尚未调用|0 轮|0 字节/)).not.toBeInTheDocument();
+});
+
+it("does not label an older receipt as the latest call when newer history has no receipt", () => {
+  const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "mixed-history", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
+  const metadata = { schemaVersion: "thread-context.v1" as const, enabled: true, sourceTurnCount: 7, omittedTurnCount: 0, contextBytes: 890, contextDigest: "sha256:older", redacted: false, truncated: false, summary: "old receipt" };
+  const props = { workspaceOpen: true, positions, selectedPositionId: "repo-owner", selectedSessionId: session.sessionId, sessions: [session], engine: "qoder" as const, engineAvailability: availability,
+    onSelectPosition: vi.fn(), onSelectEngine: vi.fn(), onCreateTurn: vi.fn() };
+  const { rerender } = render(<TurnPanel {...props} turns={[turn({ id: "older", threadContext: metadata }), turn({ id: "newer", threadContext: undefined })]} />);
+  expect(screen.getByText("历史回合未记录上下文用量")).toBeInTheDocument();
+  expect(screen.queryByText("上次调用：7 轮 · 890 字节")).not.toBeInTheDocument();
+  rerender(<TurnPanel {...props} turns={[turn({ id: "latest", threadContext: metadata }), turn({ id: "pending-next", status: "running", provisional: true })]} />);
+  expect(screen.getByText("上次调用：7 轮 · 890 字节")).toBeInTheDocument();
+});
+
+it("blocks context changes and rotation while this employee runs in a group", () => {
+  const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "group-busy-session", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
+  const toggle = vi.fn();
+  const rotate = vi.fn();
+  render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner" selectedSessionId={session.sessionId}
+    sessions={[session]} engine="qoder" engineAvailability={availability} turns={[]} employeeBusy
+    onSelectPosition={vi.fn()} onSelectEngine={vi.fn()} onCreateTurn={vi.fn()} onSetSessionContext={toggle} onRotateSession={rotate} />);
+  expect(screen.getByRole("switch", { name: "启用会话上下文" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("switch", { name: "启用会话上下文" }));
+  fireEvent.click(screen.getByText("会话设置"));
+  expect(screen.getByRole("button", { name: "轮换当前会话" })).toBeDisabled();
+  expect(toggle).not.toHaveBeenCalled();
+  expect(rotate).not.toHaveBeenCalled();
+});

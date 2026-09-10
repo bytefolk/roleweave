@@ -656,6 +656,14 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         }
       };
 
+      // A position may be cancelled while its context is loading, before the
+      // registry can attach this driver's abort hook. setAbort then delivers
+      // the cancellation synchronously; never spawn an already-cancelled task.
+      if (aborted) {
+        if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
+        finish({ status: "indeterminate", events, diagnostic: "", code: "turn_cancelled" });
+        return;
+      }
       const { bin, prefix } = splitCommand(this.command);
       try {
         child = spawn(

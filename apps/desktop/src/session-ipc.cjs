@@ -59,6 +59,15 @@ function validateSessionTurnRequest(value) {
   };
 }
 
+function validateSessionContextRequest(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).sort().join(",") !== "enabled,sessionId" ||
+      !validateSessionId(value.sessionId) || typeof value.enabled !== "boolean") {
+    return { ok: false, response: invalid("session_request_invalid", "session context accepts exactly sessionId and enabled boolean") };
+  }
+  return { ok: true, sessionId: value.sessionId, request: { enabled: value.enabled } };
+}
+
 function sessionListPath(positionId) {
   return isPositionId(positionId) ? `/sessions?positionId=${encodeURIComponent(positionId)}` : null;
 }
@@ -71,6 +80,7 @@ module.exports = {
   sessionListPath,
   sessionPath,
   validateSessionCreateRequest,
+  validateSessionContextRequest,
   validateSessionId,
   validateSessionTurnRequest,
 };

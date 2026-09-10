@@ -10,12 +10,17 @@
  * spawn 一条 turn-envelope.v1（复用既有 spawn 面），禁止无目标广播。
  */
 
-import type { TurnRecord } from "./turns.js";
+import type { TurnEngine, TurnRecord } from "./turns.js";
 
 export const GROUP_CONVERSATION_SCHEMA_VERSION = "conversation-group.v1" as const;
 export const GROUP_LIST_SCHEMA_VERSION = "conversation-group-list.v1" as const;
 export const GROUP_MESSAGE_SCHEMA_VERSION = "group-message.v1" as const;
 export const GROUP_TIMELINE_SCHEMA_VERSION = "group-timeline.v1" as const;
+export type GroupExecutionMode = "parallel" | "relay";
+export interface GroupSpawn {
+  turnId: string;
+  positionId: string;
+}
 
 export interface GroupConversation {
   schemaVersion: typeof GROUP_CONVERSATION_SCHEMA_VERSION;
@@ -42,6 +47,12 @@ export interface GroupMessage {
   input: string;
   /** The @mentioned member positionIds that were spawned for this message. */
   mentions: string[];
+  /** Missing in legacy messages means parallel; relay follows mentions order. */
+  mode?: GroupExecutionMode;
+  /** Persisted before acceptance; lets recovery settle work that never started. */
+  spawns?: GroupSpawn[];
+  /** Host chosen for these persisted spawn identities. */
+  engine?: TurnEngine;
   createdAt: string;
 }
 
