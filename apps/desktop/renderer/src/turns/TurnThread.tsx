@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Empty } from "antd";
-import { AlertTriangle, Check, ChevronDown, Clock3, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, LoaderCircle, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useT } from "@roleweave/ui";
 import { useEngineLabel } from "./TurnPanel";
 import { EngineIcon } from "./engine-icon";
-import type { TurnProgressKind, TurnProgressStep, TurnRecord, TurnStatus } from "./types";
+import type { TurnProgressKind, TurnRecord } from "./types";
 
 export interface TurnThreadProps {
   turns: TurnRecord[];
@@ -25,13 +25,6 @@ export interface TurnThreadProps {
   decidedApprovalIds?: ReadonlySet<string>;
 }
 
-function StatusIcon({ status }: { status: TurnStatus }) {
-  if (status === "completed") return <Check aria-hidden="true" size={13} />;
-  if (status === "running") return <Clock3 aria-hidden="true" size={13} />;
-  if (status === "indeterminate") return <ShieldQuestion aria-hidden="true" size={13} />;
-  return <AlertTriangle aria-hidden="true" size={13} />;
-}
-
 /** Running bubble typing indicator (#61, spec ②): three 6px dots, 150ms
  * stagger, 1.05s ease-out loop — 处方4 聊天例外（见 ADR-0007）。Screen-reader
  * copy stays intact. */
@@ -49,9 +42,11 @@ export function TypingIndicator() {
   );
 }
 
-function fallbackProgress(turn: TurnRecord): TurnProgressStep[] {
+function fallbackProgress(turn: TurnRecord): Array<{ kind: TurnProgressKind; at?: string }> {
   const terminalKind: TurnProgressKind =
-    turn.status === "completed"
+    turn.approvalRequest
+      ? "awaiting_approval"
+      : turn.status === "completed"
       ? "completed"
       : turn.status === "failed"
         ? "failed"
@@ -60,47 +55,102 @@ function fallbackProgress(turn: TurnRecord): TurnProgressStep[] {
           : "working";
   return [
     { kind: "received", at: turn.createdAt },
-    { kind: terminalKind, at: turn.completedAt ?? turn.createdAt },
+    { kind: terminalKind, at: turn.completedAt },
   ];
 }
 
-function ProgressIcon({ kind }: { kind: TurnProgressKind }) {
-  if (kind === "working") return <Clock3 aria-hidden="true" size={13} />;
-  if (kind === "awaiting_approval") return <ShieldAlert aria-hidden="true" size={13} />;
-  if (kind === "failed" || kind === "unknown") return <AlertTriangle aria-hidden="true" size={13} />;
-  return <Check aria-hidden="true" size={13} />;
+function ProgressIcon({ kind, active }: { kind: TurnProgressKind; active: boolean }) {
+  if (active) return <LoaderCircle className="owb-turn-progress__spinner" aria-hidden="true" size={12} />;
+  if (kind === "awaiting_approval") return <ShieldAlert aria-hidden="true" size={12} />;
+  if (kind === "failed" || kind === "unknown") return <AlertTriangle aria-hidden="true" size={12} />;
+  return <Check aria-hidden="true" size={12} />;
 }
 
-function ProgressTrail({ turn }: { turn: TurnRecord }) {
+function elapsedSeconds(start: string, end: string | number | undefined): number | null {
+  const from = Date.parse(start);
+  const to = typeof end === "number" ? end : end ? Date.parse(end) : NaN;
+  return Number.isFinite(from) && Number.isFinite(to) && to >= from
+    ? Math.floor((to - from) / 1000)
+    : null;
+}
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${seconds % 60}s`;
+}
+
+/** A live clock only while executing. Missing terminal timestamps stay absent;
+ * a historical response must not acquire a duration from today's clock. */
+function ElapsedTime({ turn }: { turn: TurnRecord }) {
   const t = useT();
-  const progress = turn.progress ?? fallbackProgress(turn);
+  const running = turn.status === "running";
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [running, turn.createdAt]);
+  const terminalStep = turn.progress?.slice().reverse().find((step) =>
+    ["completed", "failed", "unknown", "awaiting_approval"].includes(step.kind));
+  const seconds = elapsedSeconds(turn.createdAt, running ? now : turn.completedAt ?? terminalStep?.at);
+  if (seconds === null) return null;
+  const duration = formatElapsed(seconds);
+  return <time className="owb-turn-progress__elapsed" dateTime={`PT${seconds}S`}
+    role="timer" aria-live="off" aria-label={t("turn.elapsed", { duration })}>· {duration}</time>;
+}
+
+export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRecord; approvalDecided?: boolean }) {
+  const t = useT();
+  const stepsId = useId();
+  const progress = turn.progress?.length ? turn.progress : fallbackProgress(turn);
+  const awaitingApproval = turn.approvalRequest !== undefined;
+  const running = turn.status === "running" && !awaitingApproval;
+  // A user's disclosure choice survives streamed text updates. A new terminal
+  // phase starts collapsed, leaving the final response in the foreground.
+  const phase = `${turn.id}:${turn.status}:${approvalDecided}`;
+  const [choice, setChoice] = useState<{ phase: string; open: boolean } | null>(null);
+  const open = choice?.phase === phase ? choice.open : running;
+  const state = awaitingApproval ? (approvalDecided ? "decided" : "awaiting_approval") : turn.status;
+  const summary = awaitingApproval
+    ? t(approvalDecided ? "apr.decided" : "turn.progressAwaitingApproval")
+    : t({ running: "turn.statusRunning", completed: "turn.done", failed: "turn.failed", indeterminate: "turn.statusUnknown" }[turn.status]);
   const labels: Record<TurnProgressKind, string> = {
     received: t("turn.progressReceived"),
-    working: t("turn.progressWorking"),
+    working: t("turn.progressProcessing"),
     awaiting_approval: t("turn.progressAwaitingApproval"),
     completed: t("turn.progressCompleted"),
     failed: t("turn.progressFailed"),
     unknown: t("turn.progressUnknown"),
   };
   return (
-    <details className="owb-turn-progress" aria-label={t("turn.progressAria")}>
-      <summary className="owb-turn-progress__header" aria-label={t("turn.progressDetails")}>
-        <span className="owb-turn-progress__title">{t("turn.progressTitle")}</span>
-        <ChevronDown className="owb-turn-progress__chevron" aria-hidden="true" size={14} />
-      </summary>
-      <ol className="owb-turn-progress__steps">
-        {progress.map((step, index) => (
-          <li
-            className={`owb-turn-progress__step is-${step.kind}`}
-            key={`${step.kind}-${step.at}-${index}`}
-            title={`${labels[step.kind]} · ${new Date(step.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
-          >
-            <span className="owb-turn-progress__icon"><ProgressIcon kind={step.kind} /></span>
-            <span className="owb-turn-progress__copy">{labels[step.kind]}</span>
-          </li>
-        ))}
+    <div className={`owb-turn-progress is-${state}`} role="group" aria-label={t("turn.progressAria")}>
+      <div className="owb-turn-progress__summary">
+        <button type="button" className="owb-turn-progress__header"
+          aria-label={`${t("turn.progressDetails")} · ${summary}`} aria-expanded={open} aria-controls={stepsId}
+          onClick={() => setChoice({ phase, open: !open })}>
+          <span className="owb-turn-progress__toggle"><ChevronRight className="owb-turn-progress__chevron" aria-hidden="true" size={11} /></span>
+          <span className="owb-turn-progress__title">{summary}</span>
+        </button>
+        <ElapsedTime turn={turn} />
+      </div>
+      <ol id={stepsId} className="owb-turn-progress__steps" hidden={!open}>
+        {progress.map((step, index) => {
+          const active = running && index === progress.length - 1;
+          const offset = elapsedSeconds(turn.createdAt, step.at);
+          return (
+            <li className={`owb-turn-progress__step is-${step.kind}${active ? " is-current" : ""}`}
+              key={`${step.kind}-${step.at}-${index}`} aria-current={active ? "step" : undefined}>
+              <span className="owb-turn-progress__icon"><ProgressIcon kind={step.kind} active={active} /></span>
+              <span className="owb-turn-progress__copy">{labels[step.kind]}</span>
+              {offset !== null ? <time className="owb-turn-progress__at" dateTime={step.at}>{formatElapsed(offset)}</time> : null}
+            </li>
+          );
+        })}
       </ol>
-    </details>
+    </div>
   );
 }
 
@@ -180,24 +230,12 @@ function ApprovalCard({
   );
 }
 
-/** Local, append-only turn history rendered as an evidence timeline
- * (#73 signature move ③「回合即证据」, docs/design/control-plane-v2-preview.html):
- * a guide rail with one state dot per turn (lavender settled / AI-purple
- * breathing while running / danger on failure), each carrying a `.owb-tc`
- * console card — head (position · engine · time), the dispatched task, the
- * engine output, compact progress labels and the approval card. It never
- * infers recall or delegation, and never upgrades an indeterminate terminal
- * state. (Supersedes the #61 bubble layout for this panel; the `.owb-bubble*`
- * classes stay in use by the group-chat timeline.) */
+/** Append-only conversation history with collapsible public milestones.
+ * Output, approvals and errors remain visible independently of the disclosure;
+ * an indeterminate result is never presented as a completed response. */
 export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onRetry, onVerdict, decidedApprovalIds }: TurnThreadProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
-  const statusCopy: Record<TurnStatus, string> = {
-    running: t("turn.statusRunning"),
-    completed: t("turn.done"),
-    failed: t("turn.failed"),
-    indeterminate: t("turn.statusUnknown"),
-  };
   if (turns.length === 0) {
     return (
       <div className="owb-turn-thread owb-turn-thread--empty">
@@ -250,28 +288,18 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                     {t("turn.provisional")}
                   </span>
                 ) : null}
-                <span className="owb-turn__status">
-                  <StatusIcon status={turn.status} />
-                  {statusCopy[turn.status]}
-                </span>
                 <time className="owb-tc-head__time" dateTime={turn.createdAt}>
                   {new Date(turn.createdAt).toLocaleTimeString()}
                 </time>
               </header>
 
-              <ProgressTrail turn={turn} />
+              <ProgressTrail turn={turn} approvalDecided={decidedApprovalIds?.has(turn.approvalRequest?.approvalId ?? "") === true} />
 
               {turn.output ? (
                 <section
                   className={`owb-turn__conclusion${isProvisional ? " is-provisional" : ""}`}
-                  aria-label={isProvisional ? t("turn.liveOutput") : t("turn.finalConclusion")}
+                  aria-label={isProvisional ? t("turn.liveOutput") : turn.status === "completed" ? t("turn.finalConclusion") : t("turn.unconfirmedOutput")}
                 >
-                  <header className="owb-turn__conclusion-head">
-                    <span className="owb-turn__conclusion-label">
-                      {isProvisional ? <Clock3 aria-hidden="true" size={13} /> : <Check aria-hidden="true" size={13} />}
-                      {isProvisional ? t("turn.liveOutput") : t("turn.finalConclusion")}
-                    </span>
-                  </header>
                   {isProvisional ? (
                     <div className="owb-tc__out owb-tc__out--markdown owb-tc__out--provisional" title={turn.output}>
                       <ReactMarkdown>{turn.output}</ReactMarkdown>

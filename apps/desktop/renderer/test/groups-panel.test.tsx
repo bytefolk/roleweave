@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { pickSelectOption } from "./select-helper";
 import { GroupsPanel } from "../src/groups/GroupsPanel";
@@ -293,6 +293,11 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
       onReconcileTimeline,
     });
 
+    const liveProgress = await screen.findByRole("group", { name: "执行进展" });
+    const liveDisclosure = within(liveProgress).getByRole("button");
+    expect(liveDisclosure).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(liveDisclosure);
+    expect(liveDisclosure).toHaveAttribute("aria-expanded", "false");
     await waitFor(() => expect(timeline.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
     await waitFor(() => expect(screen.getByText("OWNER_DONE")).toBeInTheDocument());
     expect(screen.queryByText(/已发送给/)).not.toBeInTheDocument();
@@ -301,6 +306,12 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
     expect(container.querySelectorAll(".is-running")).toHaveLength(0);
     expect(screen.queryByText("working")).not.toBeInTheDocument();
+    const terminalProgress = screen.getByRole("group", { name: "执行进展" });
+    expect(within(terminalProgress).getByRole("button")).toHaveAttribute("aria-expanded", "false");
+    expect(within(terminalProgress).getByRole("button")).toHaveTextContent("已完成");
+    expect(within(terminalProgress).getByRole("timer")).toHaveTextContent("1s");
+    fireEvent.click(within(terminalProgress).getByRole("button"));
+    expect(within(terminalProgress).getByText("回合已完成")).toBeVisible();
   });
 
   it("polls a persisted running turn to terminal when the listener attached after its spawn (#114)", async () => {
@@ -319,6 +330,23 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     await waitFor(() => expect(screen.getByText("OWNER_DONE")).toBeInTheDocument());
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
     expect(container.querySelectorAll(".is-running")).toHaveLength(0);
+  });
+
+  it("preserves a member's process disclosure while new streamed output arrives", async () => {
+    installBridge();
+    const panel = (run: LiveRunState) => (
+      <GroupsPanel workspaceOpen positions={positions} positionNames={positionNames}
+        engine="qoder" engineAvailability={{ qoder: readyAvailability, "claude-code": readyAvailability, "claude-local": readyAvailability }}
+        liveRuns={{ "engine-run-owner": run }} onSelectEngine={() => {}} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
+    );
+    const { rerender } = render(panel(liveOwner));
+    const progress = await screen.findByRole("group", { name: "执行进展" });
+    fireEvent.click(within(progress).getByRole("button"));
+    expect(within(progress).getByRole("button")).toHaveAttribute("aria-expanded", "false");
+    await act(async () => rerender(panel({ ...liveOwner, text: "New public result" })));
+    expect(within(screen.getByRole("group", { name: "执行进展" })).getByRole("button")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("New public result")).toBeVisible();
+    expect(screen.queryByText(/执行工具/)).not.toBeInTheDocument();
   });
 
   it("cancels persisted-running reconciliation when the panel unmounts (#114)", async () => {
@@ -351,6 +379,8 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
 
     await waitFor(() => expect(screen.getByText("1 运行中")).toBeInTheDocument());
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
+    expect(screen.getAllByRole("group", { name: "执行进展" })).toHaveLength(1);
+    expect(within(screen.getByRole("group", { name: "执行进展" })).getByRole("button")).toHaveAttribute("aria-expanded", "true");
   });
 });
 
@@ -413,6 +443,9 @@ it("sends explicit relay in selected order and restores mode, outputs and blocke
   });
   expect(await screen.findByText("first step draft")).toBeInTheDocument();
   expect(screen.getByText("未执行：前序步骤未成功，接力已停止。")).toBeInTheDocument();
+  const blockedReply = screen.getByText("Earlier step failed").closest("article")!;
+  expect(within(blockedReply).queryByRole("group", { name: "执行进展" })).not.toBeInTheDocument();
+  expect(within(blockedReply).queryByRole("timer")).not.toBeInTheDocument();
   expect(screen.getByText(/依次接力 · Release Engineer → Repo Owner/)).toBeInTheDocument();
   pickSelectOption("协作方式", "依次接力");
   pickSelectOption("选择要 @ 的成员", "Release Engineer");

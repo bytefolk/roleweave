@@ -60,3 +60,20 @@ test("--ui-foreground-subtle clears WCAG AA (4.5:1) against every surface, both 
     }
   }
 });
+
+test("solid controls keep readable foregrounds in normal and hover states, both themes", () => {
+  const css = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "antd-skin.css"), "utf8");
+  const darkStart = css.indexOf('[data-theme="dark"]');
+  const blocks = [["light", css.slice(css.indexOf(':root,'), darkStart)], ["dark", css.slice(darkStart)]];
+  for (const [theme, block] of blocks) {
+    for (const [role, hover] of [["primary", "hover"], ["ai", "hover"], ["success", "strong"], ["warning", "strong"], ["danger", "strong"]]) {
+      const foreground = tokenValue(block, `--ui-${role}-foreground`);
+      for (const backgroundToken of [`--ui-${role}`, `--ui-${role}-${hover}`]) {
+        const background = tokenValue(block, backgroundToken);
+        const ratio = contrastRatio(foreground, background);
+        assert.ok(ratio >= AA_NORMAL_TEXT,
+          `${theme} ${role} foreground ${foreground} on ${backgroundToken} ${background} is ${ratio.toFixed(2)}:1, below AA 4.5:1`);
+      }
+    }
+  }
+});
