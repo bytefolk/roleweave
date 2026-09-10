@@ -317,20 +317,23 @@ test("GET /health gates Codex Hosts on the configured bundled engine boundary", 
  */
 test("codex version probe never hands a Windows launcher path to a shell (#221 review B4)", () => {
   // POSIX: the resolved binary is executed directly, no shell involved.
-  assert.deepEqual(
-    __codexVersionProbeSpec("/opt/codex/bin/codex", {}, "linux"),
-    { command: "/opt/codex/bin/codex", args: ["--version"] },
-  );
+  const posix = __codexVersionProbeSpec("/opt/codex/bin/codex", {}, "linux");
+  assert.equal(posix.command, "/opt/codex/bin/codex");
+  assert.deepEqual(posix.args, ["--version"]);
+  assert.equal(posix.options.shell, false);
   // Windows, but not a launcher script: still direct.
-  assert.deepEqual(
-    __codexVersionProbeSpec("C:\\tools\\codex.exe", {}, "win32"),
-    { command: "C:\\tools\\codex.exe", args: ["--version"] },
-  );
+  const exe = __codexVersionProbeSpec("C:\\tools\\codex.exe", {}, "win32");
+  assert.equal(exe.command, "C:\\tools\\codex.exe");
+  assert.equal(exe.options.shell, false);
 
   // A Windows launcher goes through cmd.exe explicitly.
   const launcher = __codexVersionProbeSpec("C:\\tools\\codex.cmd", { ComSpec: "C:\\Windows\\system32\\cmd.exe" }, "win32");
   assert.equal(launcher.command, "C:\\Windows\\system32\\cmd.exe");
   assert.deepEqual(launcher.args.slice(0, 3), ["/d", "/s", "/c"]);
+  assert.equal(launcher.options.shell, false);
+  // Without this Node re-quotes the escaped command line, which is the bug a
+  // hand-written second copy of this construction introduced.
+  assert.equal(launcher.options.windowsVerbatimArguments, true);
 
   // The load-bearing case: cmd metacharacters in an operator-supplied path are
   // caret-escaped, so `&` cannot start a second command.
@@ -339,7 +342,9 @@ test("codex version probe never hands a Windows launcher path to a shell (#221 r
   const commandLine = hostile.args[3] ?? "";
   assert.match(commandLine, /\^&/, "an ampersand in the path must be escaped");
   assert.doesNotMatch(commandLine, /[^^]&/, "no unescaped ampersand may reach cmd.exe");
-  assert.match(commandLine, /codex\.cmd --version/);
+  // The shared construction escapes the argument too, which the hand-written
+  // copy did not: `--version` arrives quoted and caret-escaped.
+  assert.match(commandLine, /codex\.cmd \^"--version\^"/);
 });
 
 test("codex probe reports not-installed when the binary cannot be resolved", () => {

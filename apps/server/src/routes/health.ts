@@ -7,6 +7,7 @@ import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
 import { resolveCodexExecutable } from "../codex-binary.js";
+import { createLauncherSpawnSpec } from "../windows-launcher.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 
 /** Mirrors digital-employee's claude-local model port (#184): >= 2.1.214, < 2.2.0. */
@@ -278,37 +279,6 @@ export function probeClaudeLocalBinary(
  * here would imply a qualification that was never performed, so the probe
  * reports installation and the announced version only.
  */
-/**
- * Windows refuses to exec a `.bat`/`.cmd` launcher without a shell, and #125
- * settled how this repo answers that: an explicitly escaped `cmd.exe`
- * invocation with `shell: false`, so metacharacters stay argv data instead of
- * becoming shell commands. The Codex probe needs the same construction rather
- * than `shell: true` (#221 review B4): `resolveCodexExecutable` proves its
- * target is an executable regular file but not that the path is free of cmd
- * metacharacters, and that path comes from DIGITAL_EMPLOYEE_CODEX_COMMAND.
- *
- * The caret class matches the launcher escaping in qoder-engine's
- * createQoderSpawnSpec. The Qoder and Claude probes below still pass
- * `shell: needsWindowsShell`; that predates this change and is left for a
- * separate follow-up rather than widening this PR.
- */
-const WINDOWS_CMD_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
-
-function versionProbeSpec(
-  command: string,
-  env: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform,
-): { command: string; args: string[] } {
-  if (platform !== "win32" || !/\.(bat|cmd)$/i.test(command)) {
-    return { command, args: ["--version"] };
-  }
-  const escaped = command.replace(WINDOWS_CMD_META_CHARS, "^$1");
-  return {
-    command: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
-    args: ["/d", "/s", "/c", `"${escaped} --version"`],
-  };
-}
-
 export function probeCodexBinary(
   env: NodeJS.ProcessEnv,
   timeoutMs = 3000,
@@ -319,16 +289,24 @@ export function probeCodexBinary(
     return { installed: false, version: null };
   }
   let probe: ReturnType<typeof spawnSync>;
-  const spec = versionProbeSpec(command, env, platform);
+  // #221 review B4: this probe used to pass `shell: true` for a Windows
+  // launcher, on a path that comes from DIGITAL_EMPLOYEE_CODEX_COMMAND.
+  // resolveCodexExecutable proves the target is an executable regular file but
+  // not that the path is free of cmd metacharacters, so it goes through the
+  // same escaped, shell-free cmd.exe construction #125 established for the turn
+  // paths — the shared module, not a second copy of it.
+  const spec = createLauncherSpawnSpec(
+    command,
+    ["--version"],
+    runtimeExecutableEnvironment(env),
+    platform,
+  );
   try {
     probe = spawnSync(spec.command, spec.args, {
+      ...spec.options,
       encoding: "utf8",
-      env: runtimeExecutableEnvironment(env),
       killSignal: "SIGKILL",
       timeout: timeoutMs,
-      // Never a shell: a Windows launcher is reached through the explicit
-      // cmd.exe invocation built above.
-      shell: false,
       windowsHide: true,
     });
   } catch {
@@ -347,7 +325,12 @@ export function probeCodexBinary(
 }
 
 /** Exported for the #221 review B4 regression only. */
-export const __codexVersionProbeSpec = versionProbeSpec;
+export const __codexVersionProbeSpec = (
+  command: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): { command: string; args: string[]; options: Record<string, unknown> } =>
+  createLauncherSpawnSpec(command, ["--version"], env, platform);
 
 function isBundledQoderEngine(version: string | undefined): boolean {
   return typeof version === "string" && /^qoder-engine\s+\d+\.\d+\.\d+$/.test(version.trim());
