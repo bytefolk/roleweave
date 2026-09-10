@@ -9,7 +9,7 @@
 // Shell-service split (ADR-0001): main spawns apps/server as a child process
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme } = require("electron");
 // Keep the development window and the packaged bundle aligned on the public
 // product name. The old IPC/package identifiers below remain compatibility
 // contracts, but users should only see RoleWeave.
@@ -688,7 +688,7 @@ function createWindow() {
     // must be kept in sync with --ui-canvas in antd-skin.css by hand — not
     // an AC-002 "no raw hex in components" violation (there is no component
     // here, just Electron's own pre-paint).
-    backgroundColor: "#f4f1e8",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#14151b" : "#f7f8fb",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

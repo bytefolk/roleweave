@@ -125,6 +125,7 @@ export function EngineSelect({
   const labelOf = useEngineLabel();
   return (
     <AntSelect
+      classNames={{ popup: { root: "owb-conversation-select-popup" } }}
       aria-label={t("turn.pickHost")}
       value={value}
       disabled={disabled}
@@ -375,6 +376,7 @@ export function TurnPanel({
               <label>
                 <span className="owb-turn-control__label">{t("turn.session")}</span>
                 <AntSelect
+                  classNames={{ popup: { root: "owb-conversation-select-popup" } }}
                   aria-label={t("turn.pickSession")}
                   value={selectedSessionId ?? undefined}
                   placeholder={t("turn.noSession")}
