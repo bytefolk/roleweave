@@ -67,7 +67,7 @@ test("update metadata is namespaced per leg and restored before publishing", () 
 test("a release publishes a free GitHub-signed macOS update channel without Apple membership", () => {
   const source = workflow();
 
-  assert.match(source, /independent update signature/);
+  assert.match(source, /independently signed for the custom updater/);
   assert.match(source, /latest-mac\.json/);
   assert.doesNotMatch(source, /mac_signed/);
 
@@ -98,9 +98,12 @@ test("unsigned release mode is explicit and only uses the non-Apple update signi
 
 test("release notes explain the unsigned Gatekeeper limitation and automatic update path", () => {
   const source = workflow();
-  assert.match(source, /--notes "macOS artifacts are unsigned for Gatekeeper/);
-  assert.match(source, /downloads updates in the background/);
-  assert.match(source, /replaces the app on normal exit/);
+  const { version } = require("../../package.json");
+  const notes = fs.readFileSync(path.join(projectRoot, `docs/releases/v${version}.md`), "utf8");
+  assert.match(source, /--notes-file "\$notes"/);
+  assert.match(notes, /not Apple Developer ID-signed or notarized/);
+  assert.match(notes, /downloads updates in the background/);
+  assert.match(notes, /replaces the app on normal exit/);
 });
 
 test("the update feed is declared on the dist commands only, and agrees with package metadata", () => {
