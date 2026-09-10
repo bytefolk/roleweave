@@ -841,3 +841,100 @@ test("#183 injected renderer scripts carry no un-interpolated module constants",
   // not merely absent as an identifier.
   assert.equal(PACKAGED_SMOKE_SCRIPT.includes(LAYOUT_MEASURE_SCRIPT_TEXT), true);
 });
+
+// #194: the guard above parses these scripts, it does not run them, so it
+// cannot see what they return. That matters now that check-layout-parity
+// refuses any report without `settled: true` -- a renderer still producing the
+// pre-#194 shape would not fail one unit test here, it would turn the parity
+// job permanently red in CI. So run the measurement against a stub DOM whose
+// geometry the test drives.
+//
+// The sandbox owns the clock. Exactly one arm of the script's race fires per
+// run -- either the frame callback or the timer -- which is both how the
+// occluded-window case is reached and why these cost milliseconds instead of
+// the seconds the real sample budget would take.
+function runLayoutMeasure({ geometry, fonts, driveWithRaf = false }) {
+  let sample = -1;
+  let current = null;
+  const sandbox = {
+    document: {
+      querySelector(selector) {
+        const isLeft = selector === ".owb-org-module__left";
+        // readColumns queries the left column first, so that query is what
+        // advances the sample; the right column belongs to the same one.
+        if (isLeft) {
+          sample += 1;
+          current = geometry(sample) ?? null;
+        }
+        const box = current?.[isLeft ? "left" : "right"];
+        return box ? { getBoundingClientRect: () => box } : null;
+      },
+      fonts,
+    },
+    window: { innerWidth: 1024, innerHeight: 681 },
+    requestAnimationFrame: driveWithRaf ? (callback) => { callback(); } : () => {},
+    setTimeout: driveWithRaf ? () => 0 : (callback) => { callback(); return 0; },
+  };
+  return vm.runInNewContext(LAYOUT_MEASURE_SCRIPT_TEXT, sandbox);
+}
+
+const column = (width, height) => ({ width, height, bottom: height });
+
+test("#194 the measurement reports settled once the columns stop moving", async () => {
+  const box = column(314, 565);
+  const layout = await runLayoutMeasure({ geometry: () => ({ left: box, right: box }) });
+  assert.equal(layout.settled, true);
+  assert.deepEqual(
+    {
+      leftWidth: layout.leftWidth,
+      leftHeight: layout.leftHeight,
+      rightWidth: layout.rightWidth,
+      rightHeight: layout.rightHeight,
+      bottomDelta: layout.bottomDelta,
+    },
+    { leftWidth: 314, leftHeight: 565, rightWidth: 314, rightHeight: 565, bottomDelta: 0 },
+  );
+  // Read field by field: the layout comes back from the vm context, so its
+  // nested objects carry that realm's prototypes and a strict deep comparison
+  // of them fails on provenance rather than on value.
+  assert.deepEqual(
+    { innerWidth: layout.viewport.innerWidth, innerHeight: layout.viewport.innerHeight },
+    { innerWidth: 1024, innerHeight: 681 },
+  );
+});
+
+test("#194 geometry that never converges reports settled false rather than good-looking numbers", async () => {
+  // Each sample is 10px taller than the last, so the drift never falls inside
+  // the epsilon and the sample budget -- not convergence -- ends the loop.
+  // These are the numbers the pre-#194 script would have handed the checker.
+  let height = 400;
+  const layout = await runLayoutMeasure({
+    geometry: () => {
+      height += 10;
+      const box = column(314, height);
+      return { left: box, right: box };
+    },
+  });
+  assert.equal(layout.settled, false);
+  assert.equal(layout.bottomDelta, 0, "the two columns are still perfectly aligned with each other");
+});
+
+test("#194 the measurement still resolves null when the columns never mount", async () => {
+  assert.equal(await runLayoutMeasure({ geometry: () => null }), null);
+});
+
+test("#194 neither an occluded window nor a rejected font load stops the measurement", async () => {
+  const box = column(314, 565);
+  const geometry = () => ({ left: box, right: box });
+  // Frame callbacks that never arrive -- a window that is never composited on a
+  // CI runner -- so the timer arm has to carry the loop, plus a webfont load
+  // that rejects instead of resolving.
+  const occluded = await runLayoutMeasure({
+    geometry,
+    fonts: { ready: Promise.reject(new Error("font load failed")) },
+  });
+  assert.equal(occluded.settled, true);
+  // The other arm: timers that never fire, frame callbacks that do.
+  const rafDriven = await runLayoutMeasure({ geometry, driveWithRaf: true });
+  assert.equal(rafDriven.settled, true);
+});
