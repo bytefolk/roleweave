@@ -18,6 +18,10 @@ const { pathToFileURL } = require("node:url");
 // so the checker's own thresholds are untouched.
 const LAYOUT_MOUNT_MAX_POLLS = 100;
 const LAYOUT_POLL_MS = 50;
+// Font loading is part of the measurement settle gate, but it is external
+// renderer state. A never-resolving FontFaceSet must not consume the entire
+// smoke run before the bounded sampling budget can begin.
+const LAYOUT_FONT_READY_MAX_WAIT_MS = 250;
 const LAYOUT_SETTLE_MAX_POLLS = 60;
 const LAYOUT_SETTLE_SAMPLES = 3;
 const LAYOUT_SETTLE_EPSILON_PX = 0.5;
@@ -44,6 +48,19 @@ const LAYOUT_MEASURE_SCRIPT = String.raw`(async () => {
     new Promise((resolve) => requestAnimationFrame(() => resolve())),
     sleep(${LAYOUT_POLL_MS}),
   ]);
+  const waitForFonts = async () => {
+    let timeout = null;
+    try {
+      await Promise.race([
+        Promise.resolve(document.fonts?.ready).catch(() => null),
+        new Promise((resolve) => {
+          timeout = setTimeout(resolve, ${LAYOUT_FONT_READY_MAX_WAIT_MS});
+        }),
+      ]);
+    } finally {
+      if (timeout !== null) clearTimeout(timeout);
+    }
+  };
   let columns = null;
   for (let attempt = 0; attempt < ${LAYOUT_MOUNT_MAX_POLLS}; attempt += 1) {
     columns = readColumns();
@@ -52,9 +69,10 @@ const LAYOUT_MEASURE_SCRIPT = String.raw`(async () => {
   }
   if (!columns) return null;
   // #194: a webfont swap reflows the columns after they first appear, so wait
-  // for it instead of racing it. Best-effort: an absent or rejected font
-  // loading promise must not fail an otherwise good measurement.
-  if (document.fonts?.ready) await document.fonts.ready.catch(() => null);
+  // for it instead of racing it. The wait itself is bounded: a FontFaceSet can
+  // remain pending indefinitely, and that must not prevent the fixed sampling
+  // budget below from running. Absent or rejected font loading is best-effort.
+  await waitForFonts();
   let settled = false;
   let previous = null;
   let stable = 0;
