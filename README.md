@@ -22,18 +22,20 @@ Its organizing principle is simple: **the file tree is the org chart.** Roles li
 
 For example, an open-source maintenance team can have a repository owner with three supporting roles: an issue researcher, a community operator, and a release engineer. The repository includes an [example workspace](examples/oss-maintainer) with this structure and role budgets.
 
-The source branch also adds bounded conversation context, independent employee dispatch, and explicit parallel/relay group execution. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. These changes are not part of the v0.1.1 installers linked below.
+The v0.1.2 source includes bounded conversation context, independent employee dispatch, and explicit parallel/relay group execution. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.1.1 installers do not include these features.
+
+Workspace auto-open diagnostics also remain best-effort in the v0.1.2 source: an unavailable stderr stream does not turn a diagnostic write into a failed startup. Existing workspace overrides and fallback behavior are preserved; see the [candidate release notes](docs/releases/v0.1.2.md).
 
 ## Download
 
-RoleWeave is an **early preview**. The v0.1.1 release provides these desktop packages:
+RoleWeave is an **early preview**. This source targets **v0.1.2**. The versioned downloads below become available when the release is published; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
 
 | Platform | Download |
 | --- | --- |
-| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.1.1/roleweave-0.1.1-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.1.1/roleweave-0.1.1-arm64.zip) |
-| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.1.1/roleweave-0.1.1-x64.exe) |
+| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.1.2/roleweave-0.1.2-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.1.2/roleweave-0.1.2-arm64.zip) |
+| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.1.2/roleweave-0.1.2-x64.exe) |
 
-See [all releases](https://github.com/bytefolk/roleweave/releases) for newer versions and release-specific verification notes. Intel Mac and Linux installers are not included in v0.1.1.
+See the [v0.1.2 release notes](docs/releases/v0.1.2.md) for this candidate's changes and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
 
 **Installation notes:** macOS packages are not Apple Developer ID-signed or notarized, and the Windows installer is not Authenticode-signed. Your operating system may show a security prompt on installation or first launch. The macOS update manifest has a separate cryptographic signature; this does not provide Apple code-signing trust. Users of older Org Workbench development builds need to install RoleWeave manually once.
 
@@ -144,10 +146,10 @@ Useful commands from the repository root:
 ## Current limits
 
 - Real Qoder execution has been verified on a macOS machine. Claude Code live execution, full delegation chains, and end-to-end long-term context workflows are not yet part of the verified baseline.
-- macOS has a signed-manifest update mechanism. Windows automatic updates remain pending; use release installers for manual updates.
-- The v0.1.1 release verifies native builds, packaged launch and layout checks, and asset integrity. Installation, uninstallation, and cross-version automatic updates on user machines are not claimed as fully verified end to end.
+- macOS has a signed-manifest update mechanism. Windows can check the existing Electron update channel, but unsigned builds require manual installation; in-app download and install remain disabled without a publisher identity. Publishing a release exposes its metadata to clients checking these channels.
+- Native builds, packaged launch and layout checks, and asset integrity are covered by CI. Installation, uninstallation, and cross-version automatic updates on user machines are not claimed as fully verified end to end.
 
-See the [v0.1.1 release notes](https://github.com/bytefolk/roleweave/releases/tag/v0.1.1) for the published build's exact scope.
+See the [latest published release notes](https://github.com/bytefolk/roleweave/releases/latest) for the downloaded build's exact scope.
 
 ## Contributing and support
 

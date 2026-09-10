@@ -44,8 +44,8 @@ describe("TurnThread evidence timeline (#73)", () => {
     // #248 R2 ④: 下达任务在操作员气泡（右），输出在岗位气泡（左）。
     expect(item?.querySelector(".owb-bubble--operator")?.textContent).toContain("检查发布门禁");
     expect(card?.querySelector(".owb-tc__out")?.textContent).toContain("门禁已检查。");
-    // 卡头给出简洁终态词，settled 回合不再显示 running
-    expect(card?.querySelector(".owb-turn__status")?.textContent).toContain("已完成");
+    // 状态由过程摘要统一呈现，settled 回合不再显示 running。
+    expect(card?.querySelector(".owb-turn-progress__title")?.textContent).toContain("已完成");
   });
 
   it("shows safe execution progress and keeps the final conclusion fully readable", () => {
@@ -64,12 +64,14 @@ describe("TurnThread evidence timeline (#73)", () => {
     const card = container.querySelector(".owb-tc");
     expect(card?.querySelector('[aria-label="执行进展"]')).not.toBeNull();
     expect(card?.querySelectorAll(".owb-turn-progress__step")).toHaveLength(3);
-    expect(card?.querySelector(".owb-turn-progress__step")?.querySelector("time")).toBeNull();
-    expect(card?.querySelector(".owb-turn-progress__header")?.textContent).toContain("执行进展");
-    const progress = card?.querySelector(".owb-turn-progress") as HTMLDetailsElement | null;
-    expect(progress?.open).toBe(false);
-    fireEvent.click(progress?.querySelector("summary") as HTMLElement);
-    expect(progress?.open).toBe(true);
+    expect(card?.querySelector(".owb-turn-progress__step")?.querySelector("time")).toHaveTextContent("0s");
+    expect(card?.querySelector(".owb-turn-progress__header")?.textContent).toContain("已完成");
+    const disclosure = screen.getByRole("button", { name: "查看过程详情 · 已完成" });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    expect(card?.querySelector(".owb-turn-progress__steps")).not.toBeVisible();
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(card?.querySelector(".owb-turn-progress__steps")).toBeVisible();
     expect(card?.querySelector(".owb-tc__out")).toHaveTextContent("第二段结论，不应该被两行省略。");
     expect(card?.querySelector(".owb-tc__out")?.className).not.toContain("owb-clamp-2");
     expect(card?.querySelector(".owb-tc__out")?.getAttribute("title")).toContain("第二段结论");
@@ -102,7 +104,7 @@ describe("TurnThread evidence timeline (#73)", () => {
     );
     expect(unsure.querySelector(".owb-turn")?.className).toContain("is-indeterminate");
     // 诚实性：不确定终态不得被升级成成功词
-    const status = unsure.querySelector(".owb-turn__status");
+    const status = unsure.querySelector(".owb-turn-progress__title");
     expect(status?.textContent).toContain("状态未知");
     expect(status?.textContent).not.toContain("已完成");
   });

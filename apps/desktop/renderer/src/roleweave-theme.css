@@ -1,0 +1,245 @@
+/* RoleWeave workbench surfaces. Shared layout language for light and dark;
+ * semantic colors and brand identity are defined in antd-skin.css. */
+
+:is([data-theme="light"], [data-theme="dark"]) {
+  --owb-nav-hover: var(--ui-navigation-hover);
+  --owb-nav-selected: var(--ui-selection);
+}
+
+/* Neutral shell and content layers with compact navigation. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-wintitle {
+  background: var(--ui-navigation);
+  border-bottom-color: transparent;
+}
+
+/* Window symbols follow the foreground paired with each semantic disc. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-wctl--close > svg { stroke: var(--ui-danger-foreground); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-wctl--min > svg { stroke: var(--ui-warning-foreground); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-wctl--max > svg { stroke: var(--ui-success-foreground); }
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-module-rail {
+  padding-inline: 6px;
+  border-right-color: transparent;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-module-rail__item {
+  min-height: 38px;
+  border-radius: var(--ui-radius-md);
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-module-rail__item:hover,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-org-tree__row:hover {
+  background: var(--owb-nav-hover);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-module-rail__item.is-active,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-org-tree__row.is-selected {
+  background: var(--owb-nav-selected);
+  color: var(--ui-brand);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-module-rail__item.is-active::before {
+  content: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-module-rail__item.is-active .ui-module-rail__icon {
+  transform: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-org-tree__row.is-selected .ui-org-tree__name {
+  color: var(--ui-brand);
+  font-weight: 600;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-org-tree__led:not(.is-running),
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-led:not(.owb-led--running) {
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-project-switcher__trigger, .owb-workspace-strip) {
+  background: transparent;
+  border-color: transparent;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-project-switcher__trigger:hover,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-project-switcher__trigger[aria-expanded="true"] {
+  background: var(--ui-surface);
+  border-color: var(--ui-border);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-project-switcher__icon, .owb-src) {
+  border-color: var(--ui-border);
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.ui-topbar, .owb-main) {
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-breadcrumb:last-child {
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+}
+
+/* Consistent reading surfaces across conversations, documents and reports. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-turn-panel, .owb-turn-thread, .owb-groups__timeline,
+  .owb-docs-panel__reader-pane, .owb-doc-plane__reader-pane,
+  .owb-docs-panel__header, .owb-drive-module__list-header,
+  .owb-drive-module__detail-empty, .owb-memory-workspace__header,
+  .owb-reports__hero, .owb-approval-queue__hero,
+  .owb-settings-module__section, .owb-memory-module__picker
+) {
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-panel, .owb-doc-plane, .owb-docs-panel,
+  .owb-drive-module__list, .owb-drive-module__detail,
+  .owb-memory-source-card, .owb-org-chart
+) {
+  border-color: var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-thread, .owb-groups__timeline) .owb-bubble--operator {
+  border-color: var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-bubble--operator .owb-bubble__meta {
+  color: var(--ui-foreground-subtle);
+  opacity: 1;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-bubble--operator .owb-mention {
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread .owb-bubble--employee.owb-tc {
+  border-color: var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+/* Keep execution and error borders meaningful after neutralizing reply cards. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread .owb-tc.is-running {
+  border-color: var(--ui-ai);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread :is(.owb-tc.is-failed, .owb-tc.is-indeterminate) {
+  border-color: var(--ui-danger);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer {
+  border-top-color: transparent;
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__settings {
+  border-top-color: var(--ui-border);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__settings-summary {
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer textarea {
+  background: var(--ui-surface);
+  border-color: var(--ui-border-strong);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-sm);
+  padding-top: 12px;
+  line-height: 1.6;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer textarea:focus-visible {
+  border-color: var(--ui-focus);
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+/* Small, readable labels; reserve monospace for paths, code and real metrics. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-panel-head h2, .owb-memory-sources__heading h2,
+  .owb-drive-module__list-header h2, .owb-drive-module__detail-header h2,
+  .owb-project-switcher__copy strong, .owb-breadcrumb:first-child
+) {
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-pos-section > h3, .owb-turn-composer > label,
+  .owb-turn-composer__hint, .owb-project-switcher__eyebrow,
+  .owb-badge, .owb-breadcrumb, .owb-groups__field-label
+) {
+  font-family: var(--ui-font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-module__title {
+  padding-left: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
+  .owb-memory-module__title, .owb-memory-source-card,
+  .owb-approval-queue__hero, .owb-reports__hero
+)::before,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-reports__hero::after {
+  content: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card {
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card:hover {
+  background: var(--ui-surface-inset);
+  transform: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card.is-active {
+  background: var(--ui-primary-soft);
+  border-color: var(--ui-primary);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-memory-source-card:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Portaled drawers and menus share the same surface and hairline treatment. */
+:is([data-theme="light"], [data-theme="dark"]) :is(.owb-prefs__panel, .owb-project-switcher__menu) {
+  border-color: var(--ui-border);
+  box-shadow: var(--ui-shadow-md);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-modal__panel {
+  border-color: var(--ui-border);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-agent-picker {
+  background: var(--ui-surface-inset);
+  border-color: var(--ui-border);
+  box-shadow: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-agent-picker::before {
+  content: none;
+}

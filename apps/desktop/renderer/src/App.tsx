@@ -988,8 +988,7 @@ function AppInner({
     return [...turns, ...live].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }, [positionNames, selectedId, selectedSessionId, t, turnStream.pending, turnStream.runs, turns]);
 
-  // ADR-0002: Ant Design is the shared design language; token values are antd
-  // official palette values, consumed via ConfigProvider — no ad-hoc theming.
+  // ADR-0002: Ant Design consumes the same semantic skin as the custom layout.
   // The provider lives here (not in main.tsx) so tests render the same config;
   // autoInsertSpace is off so two-char CJK labels keep exact accessible names.
   return (
@@ -997,16 +996,13 @@ function AppInner({
       locale={locale === "en" ? enUS : zhCN}
       button={{ autoInsertSpace: false }}
       theme={{
-        algorithm: themeMode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        algorithm: ANTD_ALGORITHM[themeMode],
         token: {
-          // #73 Control Plane v2（取代 #31 冻结值）：全应用单一强调色，一次定死
-          // （Linear lavender 纪律样本）；AI 紫 #722ed1 仍仅限 AI affordance，
-          // 不在此列。状态色/描边改用 control-plane 设计稿的哑光调，与
-          // antd-skin.css 的 --ui-* 同步（含暗色阶，见 ANTD_SEED）。
+          // RoleWeave brand tokens stay synchronized in both themes,
+          // including portaled Antd menus, notifications and drawers.
           ...ANTD_SEED[themeMode],
-          // 控件尺寸对齐设计稿：.sel 高 32 / 字号 12 / 圆角 8，.btn-sm 高 26。
-          // antd 默认 14px + 36px 在这套密度里明显偏大（岗位下拉尤其突兀）。
-          fontSize: 12,
+          // Both themes use the same readable typography and control geometry.
+          fontSize: 13,
           borderRadius: 8,
           // 动效三档 120/160/240ms，全 ease-out，禁 >300ms。
           motionDurationFast: "0.12s",
@@ -1017,8 +1013,7 @@ function AppInner({
           controlHeight: 32,
           controlHeightSM: 26,
           controlHeightLG: 36,
-          fontFamily:
-            "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
         },
       }}
     >
@@ -1446,27 +1441,149 @@ function WindowControls() {
 /** antd seed tokens per theme — values mirror antd-skin.css exactly so the
  * cssinjs layer and the CSS custom properties never disagree. */
 const ANTD_SEED = {
-  light: {
-    colorPrimary: "#5E6AD2",
-    colorSuccess: "#3F7D4E",
-    colorWarning: "#A86A0A",
-    colorError: "#C04A3E",
-    colorInfo: "#5E6AD2",
-    colorLink: "#5E6AD2",
-    colorBorder: "#DCD7CA",
-    colorBorderSecondary: "#E5E1D6",
+  "light": {
+    "colorPrimary": "#3e63dd",
+    "colorPrimaryHover": "#3153c4",
+    "colorPrimaryActive": "#3153c4",
+    "colorPrimaryBg": "#edf1ff",
+    "colorPrimaryBgHover": "#edf1ff",
+    "colorPrimaryBorder": "#e2e5ed",
+    "colorPrimaryBorderHover": "#c7cedb",
+    "colorSuccess": "#2e7052",
+    "colorSuccessHover": "#24573f",
+    "colorSuccessActive": "#24573f",
+    "colorSuccessBg": "#edf7f1",
+    "colorSuccessBgHover": "#edf7f1",
+    "colorSuccessBorder": "#e2e5ed",
+    "colorSuccessBorderHover": "#c7cedb",
+    "colorWarning": "#8a5a12",
+    "colorWarningHover": "#75480b",
+    "colorWarningActive": "#75480b",
+    "colorWarningBg": "#fff5e4",
+    "colorWarningBgHover": "#fff5e4",
+    "colorWarningBorder": "#e2e5ed",
+    "colorWarningBorderHover": "#c7cedb",
+    "colorError": "#b83d3d",
+    "colorErrorHover": "#a22f36",
+    "colorErrorActive": "#a22f36",
+    "colorErrorBg": "#fff0f0",
+    "colorErrorBgHover": "#fff0f0",
+    "colorErrorBorder": "#e2e5ed",
+    "colorErrorBorderHover": "#c7cedb",
+    "colorInfo": "#3e63dd",
+    "colorInfoHover": "#3153c4",
+    "colorInfoActive": "#3153c4",
+    "colorInfoBg": "#edf1ff",
+    "colorInfoBgHover": "#edf1ff",
+    "colorInfoBorder": "#e2e5ed",
+    "colorInfoBorderHover": "#c7cedb",
+    "colorErrorBgFilledHover": "#fff0f0",
+    "colorErrorBgActive": "#fff0f0",
+    "colorLink": "#3e63dd",
+    "colorLinkHover": "#3153c4",
+    "colorLinkActive": "#3153c4",
+    "colorBorder": "#e2e5ed",
+    "colorBorderSecondary": "#e2e5ed",
+    "colorBgBase": "#ffffff",
+    "colorBgContainer": "#ffffff",
+    "colorBgElevated": "#ffffff",
+    "colorBgLayout": "#f7f8fb",
+    "colorFillAlter": "#f4f5f8",
+    "controlItemBgHover": "#e8ebf2",
+    "controlItemBgActive": "#f3edfc",
+    "controlItemBgActiveHover": "#f3edfc",
+    "colorText": "#242630",
+    "colorTextSecondary": "#596172",
+    "colorTextTertiary": "#606a7b",
+    "colorTextPlaceholder": "#606a7b",
+    "colorTextDisabled": "#606a7b",
+    "colorBgContainerDisabled": "#f4f5f8",
+    "colorTextLightSolid": "#ffffff",
+    "borderRadiusSM": 6,
+    "borderRadiusLG": 12,
+    "borderRadiusOuter": 16,
+    "boxShadow": "0 4px 16px rgba(20, 21, 27, 0.1)",
+    "boxShadowSecondary": "0 16px 48px rgba(20, 21, 27, 0.14)"
   },
-  dark: {
-    colorPrimary: "#8B93E0",
-    colorSuccess: "#84B77C",
-    colorWarning: "#D3A24F",
-    colorError: "#D98276",
-    colorInfo: "#8B93E0",
-    colorLink: "#8B93E0",
-    colorBorder: "#33372F",
-    colorBorderSecondary: "#2C302A",
-  },
+  "dark": {
+    "colorPrimary": "#86a0ff",
+    "colorPrimaryHover": "#a0b4ff",
+    "colorPrimaryActive": "#a0b4ff",
+    "colorPrimaryBg": "#252e49",
+    "colorPrimaryBgHover": "#252e49",
+    "colorPrimaryBorder": "#343844",
+    "colorPrimaryBorderHover": "#4b5262",
+    "colorSuccess": "#84c7a3",
+    "colorSuccessHover": "#a2dabb",
+    "colorSuccessActive": "#a2dabb",
+    "colorSuccessBg": "#20372c",
+    "colorSuccessBgHover": "#20372c",
+    "colorSuccessBorder": "#343844",
+    "colorSuccessBorderHover": "#4b5262",
+    "colorWarning": "#ddb35d",
+    "colorWarningHover": "#efcc86",
+    "colorWarningActive": "#efcc86",
+    "colorWarningBg": "#352e20",
+    "colorWarningBgHover": "#352e20",
+    "colorWarningBorder": "#343844",
+    "colorWarningBorderHover": "#4b5262",
+    "colorError": "#ef9699",
+    "colorErrorHover": "#ffb1b4",
+    "colorErrorActive": "#ffb1b4",
+    "colorErrorBg": "#3a242b",
+    "colorErrorBgHover": "#3a242b",
+    "colorErrorBorder": "#343844",
+    "colorErrorBorderHover": "#4b5262",
+    "colorInfo": "#86a0ff",
+    "colorInfoHover": "#a0b4ff",
+    "colorInfoActive": "#a0b4ff",
+    "colorInfoBg": "#252e49",
+    "colorInfoBgHover": "#252e49",
+    "colorInfoBorder": "#343844",
+    "colorInfoBorderHover": "#4b5262",
+    "colorErrorBgFilledHover": "#3a242b",
+    "colorErrorBgActive": "#3a242b",
+    "colorLink": "#86a0ff",
+    "colorLinkHover": "#a0b4ff",
+    "colorLinkActive": "#a0b4ff",
+    "colorBorder": "#343844",
+    "colorBorderSecondary": "#343844",
+    "colorBgBase": "#1c1e25",
+    "colorBgContainer": "#1c1e25",
+    "colorBgElevated": "#252831",
+    "colorBgLayout": "#14151b",
+    "colorFillAlter": "#171920",
+    "controlItemBgHover": "#252831",
+    "controlItemBgActive": "#30233f",
+    "controlItemBgActiveHover": "#30233f",
+    "colorText": "#e5e7ed",
+    "colorTextSecondary": "#b1b7c5",
+    "colorTextTertiary": "#969eaf",
+    "colorTextPlaceholder": "#969eaf",
+    "colorTextDisabled": "#969eaf",
+    "colorBgContainerDisabled": "#171920",
+    "colorTextLightSolid": "#14151b",
+    "borderRadiusSM": 6,
+    "borderRadiusLG": 12,
+    "borderRadiusOuter": 16,
+    "boxShadow": "0 4px 20px rgba(0, 0, 0, 0.35)",
+    "boxShadowSecondary": "0 16px 48px rgba(0, 0, 0, 0.4)"
+  }
 } as const;
+
+// Antd's dark algorithm derives a new primary color from its seed. Restore our
+// explicit palette after derivation so native controls and CSS share colors.
+function brandAlgorithm(
+  algorithm: typeof theme.defaultAlgorithm,
+  palette: typeof ANTD_SEED[keyof typeof ANTD_SEED],
+): typeof theme.defaultAlgorithm {
+  return (seed) => ({ ...algorithm(seed), ...palette });
+}
+
+const ANTD_ALGORITHM = {
+  light: brandAlgorithm(theme.defaultAlgorithm, ANTD_SEED.light),
+  dark: brandAlgorithm(theme.darkAlgorithm, ANTD_SEED.dark),
+};
 
 function Breadcrumbs({
   workspace,

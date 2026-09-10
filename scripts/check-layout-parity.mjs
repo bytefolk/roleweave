@@ -13,6 +13,13 @@
  * records the viewport, and why a report without one is refused rather than
  * silently compared.
  *
+ * #194: the renderer also reports whether the measurement settled — whether the
+ * columns stopped moving — rather than sampling them the instant they appeared.
+ * An unsettled report is refused here on the same principle as a viewport-less
+ * one: the numbers in it describe a moment during layout, and two such moments
+ * on two runners are not a layout comparison. Refusing is what makes the settle
+ * gate load-bearing instead of advisory.
+ *
  * Thresholds (declared, reviewable here):
  *  - per-platform bottomDelta (left column bottom vs turn panel bottom) <= 2px,
  *    the two columns must end together;
@@ -22,7 +29,9 @@
  *  - cross-platform chrome overhead delta <= 8px, where overhead is
  *    viewport.innerHeight - column height. Absolute heights are never compared
  *    across platforms.
- * A missing `layout` or `viewport` on either side fails loudly. */
+ * A missing `layout`, `viewport` or `settled: true` on either side fails
+ * loudly. The thresholds above are untouched by #194: the settle gate decides
+ * when to stop waiting, never what counts as parity. */
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -46,6 +55,17 @@ export function readLayout(file) {
   if (!viewport || typeof viewport.innerHeight !== "number" || viewport.innerHeight <= 0) {
     throw new Error(
       `${file}: layout has no usable viewport measurement; a height difference cannot be attributed without it`,
+    );
+  }
+  // #194: refused rather than compared, for the same reason as the viewport
+  // above. A measurement taken before the renderer finished laying out is a
+  // sample of when that runner happened to look, not of the layout, so a pair
+  // of them compares two arbitrary moments. Ordered after the viewport check:
+  // a report carrying neither still reports the viewport, which is the older
+  // and more specific absence.
+  if (layout.settled !== true) {
+    throw new Error(
+      `${file}: layout measurement never settled within its budget; a mid-layout sample cannot be compared across platforms`,
     );
   }
   return layout;

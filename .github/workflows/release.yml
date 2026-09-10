@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.value }}
+      commit: ${{ steps.version.outputs.commit }}
+      notes_sha256: ${{ steps.version.outputs.notes_sha256 }}
     steps:
       - name: Check out org-workbench
         uses: actions/checkout@v6
@@ -38,7 +40,29 @@ jobs:
       - name: Read packaged version
         id: version
         shell: bash
-        run: echo "value=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { createHash } from 'node:crypto';
+          import fs from 'node:fs';
+
+          const commit = execFileSync('git', ['rev-parse', '--verify', 'HEAD^{commit}'], { encoding: 'utf8' }).trim();
+          const read = file => execFileSync('git', ['show', `${commit}:${file}`]);
+          const { version } = JSON.parse(read('package.json').toString('utf8'));
+          if (typeof version !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
+            throw new Error('release notes require a semantic package version');
+          }
+          const file = `docs/releases/v${version}.md`;
+          const notes = read(file);
+          const [title, ...body] = new TextDecoder('utf-8', { fatal: true }).decode(notes).split(/\r?\n/);
+          if (title !== `# RoleWeave ${version}` || !body.join('\n').trim()) {
+            throw new Error(`${file} must start with # RoleWeave ${version} and contain a nonempty body`);
+          }
+          fs.mkdirSync('publication-notes', { recursive: true });
+          fs.writeFileSync('publication-notes/notes.md', notes);
+          const digest = createHash('sha256').update(notes).digest('hex');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `value=${version}\ncommit=${commit}\nnotes_sha256=${digest}\n`);
+          NODE
 
       # A tag that disagrees with the packaged version produces artifacts whose
       # filenames contradict the release they are attached to, and an updater
@@ -109,6 +133,15 @@ jobs:
         run: |
           echo "macOS artifacts are unsigned for Gatekeeper, but their update manifest is independently signed for the custom updater."
 
+      # Separate from release-* installer artifacts: the notes are metadata,
+      # frozen before build and checked again before any draft is created.
+      - name: Upload validated release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-notes
+          path: publication-notes/notes.md
+          if-no-files-found: error
+
   build:
     name: Build (${{ matrix.label }})
     needs: preflight
@@ -133,6 +166,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: org-workbench
+          ref: ${{ needs.preflight.outputs.commit }}
 
       - name: Check out pinned design system
         uses: actions/checkout@v6
@@ -223,6 +257,12 @@ jobs:
           pattern: release-*
           merge-multiple: true
 
+      - name: Download validated release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: publication-notes
+          path: publication-notes
+
       # Restore the per-platform names electron-updater expects. The namespacing
       # existed to survive the upload, not to reach the release.
       - name: Restore update metadata names
@@ -243,8 +283,27 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES_SHA256: ${{ needs.preflight.outputs.notes_sha256 }}
         run: |
           set -euo pipefail
+          notes="publication-notes/notes.md"
+          if [ ! -s "$notes" ]; then
+            echo "::error::validated release notes are missing or empty"
+            exit 1
+          fi
+          node --input-type=module - "$notes" <<'NODE'
+          import { createHash } from 'node:crypto';
+          import fs from 'node:fs';
+
+          const expected = process.env.NOTES_SHA256 ?? '';
+          if (expected.length !== 64 || !/^[0-9a-f]{64}$/i.test(expected)) {
+            throw new Error('release notes digest must be exactly 64 hex characters');
+          }
+          const actual = createHash('sha256').update(fs.readFileSync(process.argv[2])).digest('hex');
+          if (actual !== expected.toLowerCase()) {
+            throw new Error('release notes digest does not match frozen preflight notes');
+          }
+          NODE
           tag="v${{ needs.preflight.outputs.version }}"
           # Free distribution mode: tag pushes are public releases; manual
           # dispatch can keep the release as a draft for review.
@@ -257,7 +316,7 @@ jobs:
           gh release create "$tag" \
             --repo "${{ github.repository }}" \
             --title "$tag" \
-            --notes "macOS artifacts are unsigned for Gatekeeper and may require approval on first launch. The app checks GitHub Releases, verifies its independent update signature, downloads updates in the background, and replaces the app on normal exit. Windows remains on the existing update channel." \
+            --notes-file "$notes" \
             --draft \
             incoming/*
 
