@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import type { HealthResponse } from "@roleweave/shared";
 import { api, startTestServer } from "./helpers.js";
 import {
   hostHealth,
@@ -152,10 +153,11 @@ test("claude-local Host health is binary+version preflight, never a credential c
   assert.equal(supportedClaudeVersion("no-version-here"), false);
 });
 
-test("codex Host health requires the binary plus an explicit provider credential (#206)", () => {
+test("codex Host health in bundled mode requires the binary plus an explicit provider credential (#206)", () => {
   const installed = { installed: true, version: "0.153.4" };
   const ready = hostHealth({
     engineAvailable: true,
+    bundledElectronEngine: true,
     env: { OPENAI_API_KEY: "service-key" },
     codex: installed,
   });
@@ -163,13 +165,14 @@ test("codex Host health requires the binary plus an explicit provider credential
 
   const noCli = hostHealth({
     engineAvailable: false,
+    bundledElectronEngine: true,
     env: { OPENAI_API_KEY: "service-key" },
     codex: installed,
   });
   assert.equal(noCli.codex.configured, true);
   assert.equal(noCli.codex.ready, false);
 
-  const noKey = hostHealth({ engineAvailable: true, env: {}, codex: installed });
+  const noKey = hostHealth({ engineAvailable: true, bundledElectronEngine: true, env: {}, codex: installed });
   assert.equal(noKey.codex.configured, false);
   assert.equal(noKey.codex.ready, false);
   assert.match(noKey.codex.nextStep ?? "", /OPENAI_API_KEY/);
@@ -177,6 +180,7 @@ test("codex Host health requires the binary plus an explicit provider credential
 
   const missing = hostHealth({
     engineAvailable: true,
+    bundledElectronEngine: true,
     env: { OPENAI_API_KEY: "service-key" },
     codex: { installed: false, version: null },
   });
@@ -189,6 +193,7 @@ test("codex Host health requires the binary plus an explicit provider credential
   // therefore not by itself block readiness.
   const unknownVersion = hostHealth({
     engineAvailable: true,
+    bundledElectronEngine: true,
     env: { OPENAI_API_KEY: "service-key" },
     codex: { installed: true, version: null },
   });
@@ -198,22 +203,23 @@ test("codex Host health requires the binary plus an explicit provider credential
   assert.doesNotMatch(JSON.stringify(ready), /service-key/);
 });
 
-test("codex-local Host readiness is the binary alone and never sees a credential (#206)", () => {
+test("codex-local Host readiness in bundled mode is the binary alone and never sees a credential (#206)", () => {
   const installed = { installed: true, version: "0.153.4" };
 
   // No credential anywhere: the credentialed Host stays Idle, the local-login
   // Host is ready. This is the whole point of splitting them.
-  const noKey = hostHealth({ engineAvailable: true, env: {}, codex: installed });
+  const noKey = hostHealth({ engineAvailable: true, bundledElectronEngine: true, env: {}, codex: installed });
   assert.deepEqual(noKey["codex-local"], { configured: true, ready: true });
   assert.equal(noKey.codex.configured, false);
   assert.match(noKey.codex.nextStep ?? "", /本地登录/);
 
-  const noCli = hostHealth({ engineAvailable: false, env: {}, codex: installed });
+  const noCli = hostHealth({ engineAvailable: false, bundledElectronEngine: true, env: {}, codex: installed });
   assert.equal(noCli["codex-local"].configured, true);
   assert.equal(noCli["codex-local"].ready, false);
 
   const missing = hostHealth({
     engineAvailable: true,
+    bundledElectronEngine: true,
     env: {},
     codex: { installed: false, version: null },
   });
@@ -225,11 +231,81 @@ test("codex-local Host readiness is the binary alone and never sees a credential
   // An unrelated key present in the environment must not change its verdict.
   const withKey = hostHealth({
     engineAvailable: true,
+    bundledElectronEngine: true,
     env: { OPENAI_API_KEY: "service-key" },
     codex: installed,
   });
   assert.deepEqual(withKey["codex-local"], { configured: true, ready: true });
   assert.doesNotMatch(JSON.stringify(withKey["codex-local"]), /service-key/);
+});
+
+test("Codex Hosts stay unavailable for an external engine even with a binary and service key", () => {
+  for (const engineVersion of ["digital-employee 0.6.1", "qoder-engine 0.2.0", undefined]) {
+    const health = hostHealth({
+      engineAvailable: true,
+      ...(engineVersion !== undefined ? { engineVersion } : {}),
+      env: { OPENAI_API_KEY: "service-key-must-not-leak" },
+      codex: { installed: true, version: "0.153.4" },
+    });
+    for (const engine of ["codex", "codex-local"] as const) {
+      assert.equal(health[engine].configured, true);
+      assert.equal(health[engine].ready, false, `${engineVersion}: ${engine} needs the bundled boundary`);
+      assert.match(health[engine].nextStep ?? "", /bundled qoder-engine/);
+    }
+    assert.doesNotMatch(health["codex-local"].nextStep ?? "", /OPENAI_API_KEY/);
+    assert.doesNotMatch(JSON.stringify(health), /service-key-must-not-leak/);
+  }
+});
+
+test("GET /health gates Codex Hosts on the configured bundled engine boundary", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-codex-health-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const externalEngine = path.join(dir, "external-engine");
+  const bundledEngine = path.join(dir, "bundled-engine");
+  const codexBin = path.join(dir, "codex");
+  await fs.writeFile(externalEngine, "#!/bin/sh\nprintf '%s\\n' 'digital-employee 0.6.1'\n", { mode: 0o755 });
+  await fs.writeFile(bundledEngine, "#!/bin/sh\nprintf '%s\\n' 'qoder-engine 0.2.0'\n", { mode: 0o755 });
+  await fs.writeFile(codexBin, "#!/bin/sh\nprintf '%s\\n' 'codex-cli 0.153.4 probe-output-must-not-leak'\n", { mode: 0o755 });
+  const overrides = {
+    DIGITAL_EMPLOYEE_CODEX_COMMAND: codexBin,
+    DIGITAL_EMPLOYEE_CLAUDE_COMMAND: path.join(dir, "claude-not-installed"),
+    ORG_WORKBENCH_QODER_BIN: path.join(dir, "qoder-not-installed"),
+    OPENAI_API_KEY: "service-key-must-not-leak",
+  };
+  const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  Object.assign(process.env, overrides);
+  const server = await startTestServer();
+  t.after(() => server.close());
+  for (const command of [externalEngine, bundledEngine]) {
+    server.ctx.config.cliCommand = command;
+    server.ctx.config.bundledElectronEngine = false;
+    const response = await api(server.baseUrl, "/health");
+    assert.equal(response.status, 200);
+    const health = response.body as HealthResponse;
+    assert.equal(health.engine.available, true);
+    for (const engine of ["codex", "codex-local"] as const) {
+      assert.equal(health.hosts[engine].configured, true);
+      assert.equal(health.hosts[engine].ready, false, `${engine} must reject the external engine`);
+      assert.match(health.hosts[engine].nextStep ?? "", /bundled qoder-engine/);
+    }
+    assert.doesNotMatch(JSON.stringify(health), /service-key-must-not-leak|probe-output-must-not-leak/);
+  }
+  server.ctx.config.bundledElectronEngine = true;
+  const bundled = await api(server.baseUrl, "/health");
+  assert.equal(bundled.status, 200);
+  const bundledHealth = bundled.body as HealthResponse;
+  assert.deepEqual(bundledHealth.hosts.codex, { configured: true, ready: true });
+  assert.deepEqual(bundledHealth.hosts["codex-local"], { configured: true, ready: true });
+  delete process.env.OPENAI_API_KEY;
+  const localLogin = (await api(server.baseUrl, "/health")).body as HealthResponse;
+  assert.equal(localLogin.hosts.codex.ready, false);
+  assert.deepEqual(localLogin.hosts["codex-local"], { configured: true, ready: true });
 });
 
 test("codex probe reports not-installed when the binary cannot be resolved", () => {

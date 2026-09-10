@@ -152,6 +152,8 @@ function runVersionProbe(
 export interface HostHealthInput {
   engineAvailable: boolean;
   engineVersion?: string;
+  /** Desktop-owned adapter boundary; never inferred from CLI version text. */
+  bundledElectronEngine?: boolean;
   env: NodeJS.ProcessEnv;
   qoderLocal?: QoderLocalBinaryState;
   claudeLocal?: ClaudeLocalBinaryState;
@@ -334,6 +336,7 @@ function bundledQoderNextStep(state: QoderLocalBinaryState, engineAvailable: boo
 export function hostHealth({
   engineAvailable,
   engineVersion,
+  bundledElectronEngine = false,
   env,
   qoderLocal = { installed: false, version: null, supported: false, failure: "unavailable" },
   claudeLocal = { installed: false, version: null, supported: false },
@@ -345,6 +348,8 @@ export function hostHealth({
   const qoderNextStep = bundledQoderNextStep(qoderLocal, engineAvailable);
   const claudeConfigured = typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.length > 0;
   const claudeLocalConfigured = claudeLocal.installed && claudeLocal.supported;
+  // Both Codex Hosts require the desktop-owned bundled adapter: the external
+  // digital-employee CLI only probes Codex and has no executable model port.
   // Neither Codex Host has a supported-version window to gate on. The two
   // differ only in how the provider is reached: `codex` requires an explicit
   // service credential, while `codex-local` runs on the operator's own Codex
@@ -409,23 +414,27 @@ export function hostHealth({
     },
     codex: {
       configured: codexConfigured,
-      ready: engineAvailable && codexConfigured,
-      ...(!codex.installed
-        ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
-        : !codexProviderConfigured
-          ? { nextStep: "设置 OPENAI_API_KEY（如需自建或中转端点，另设 OPENAI_BASE_URL）后重启工作台；若要用 Codex 订阅登录，请改选 Codex（本地登录）" }
-          : !engineAvailable
-            ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
-            : {}),
+      ready: bundledElectronEngine && engineAvailable && codexConfigured,
+      ...(!bundledElectronEngine
+        ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
+        : !codex.installed
+          ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
+          : !codexProviderConfigured
+            ? { nextStep: "设置 OPENAI_API_KEY（如需自建或中转端点，另设 OPENAI_BASE_URL）后重启工作台；若要用 Codex 订阅登录，请改选 Codex（本地登录）" }
+            : !engineAvailable
+              ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+              : {}),
     },
     "codex-local": {
       configured: codexLocalConfigured,
-      ready: engineAvailable && codexLocalConfigured,
-      ...(!codex.installed
-        ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
-        : !engineAvailable
-          ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
-          : {}),
+      ready: bundledElectronEngine && engineAvailable && codexLocalConfigured,
+      ...(!bundledElectronEngine
+        ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
+        : !codex.installed
+          ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
+          : !engineAvailable
+            ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+            : {}),
     },
   };
 }
@@ -452,6 +461,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
     },
     hosts: hostHealth({
       engineAvailable: probe.available,
+      bundledElectronEngine: ctx.config.bundledElectronEngine,
       ...(probe.version !== undefined ? { engineVersion: probe.version } : {}),
       env: process.env,
       ...(qoderLocal !== undefined ? { qoderLocal } : {}),
