@@ -800,6 +800,37 @@ test("no lease falls back to the previous fixed delay", async (t) => {
   assert.ok(Date.now() - started >= 35, "unleased close should still be delayed");
 });
 
+test("#194 a permanently pending fonts-ready promise cannot block layout sampling", async () => {
+  const rect = { width: 314, height: 565, bottom: 565 };
+  const column = { getBoundingClientRect: () => rect };
+  const never = new Promise(() => {});
+  const context = {
+    clearTimeout,
+    document: {
+      fonts: { ready: never },
+      querySelector: (selector) => (
+        selector === ".owb-org-module__left" || selector === ".owb-org-module > .owb-turn-panel"
+          ? column
+          : null
+      ),
+    },
+    requestAnimationFrame: (callback) => setTimeout(callback, 0),
+    setTimeout,
+    window: { innerWidth: 1024, innerHeight: 681 },
+  };
+  const measurement = vm.runInNewContext(LAYOUT_MEASURE_SCRIPT_TEXT, context);
+  const result = await Promise.race([
+    measurement,
+    new Promise((_resolve, reject) => setTimeout(
+      () => reject(new Error("fonts-ready wait exceeded its layout-measurement bound")),
+      750,
+    )),
+  ]);
+
+  assert.equal(result.settled, true);
+  assert.equal(result.leftHeight, 565);
+});
+
 // #183: the injected renderer scripts are `String.raw` template strings, so a
 // module-scope constant referenced inside one without `${...}` is not a
 // closure reference -- it is source text the page has no binding for. That is
@@ -857,6 +888,7 @@ function runLayoutMeasure({ geometry, fonts, driveWithRaf = false }) {
   let sample = -1;
   let current = null;
   const sandbox = {
+    clearTimeout: () => {},
     document: {
       querySelector(selector) {
         const isLeft = selector === ".owb-org-module__left";
