@@ -278,6 +278,37 @@ export function probeClaudeLocalBinary(
  * here would imply a qualification that was never performed, so the probe
  * reports installation and the announced version only.
  */
+/**
+ * Windows refuses to exec a `.bat`/`.cmd` launcher without a shell, and #125
+ * settled how this repo answers that: an explicitly escaped `cmd.exe`
+ * invocation with `shell: false`, so metacharacters stay argv data instead of
+ * becoming shell commands. The Codex probe needs the same construction rather
+ * than `shell: true` (#221 review B4): `resolveCodexExecutable` proves its
+ * target is an executable regular file but not that the path is free of cmd
+ * metacharacters, and that path comes from DIGITAL_EMPLOYEE_CODEX_COMMAND.
+ *
+ * The caret class matches the launcher escaping in qoder-engine's
+ * createQoderSpawnSpec. The Qoder and Claude probes below still pass
+ * `shell: needsWindowsShell`; that predates this change and is left for a
+ * separate follow-up rather than widening this PR.
+ */
+const WINDOWS_CMD_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
+
+function versionProbeSpec(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): { command: string; args: string[] } {
+  if (platform !== "win32" || !/\.(bat|cmd)$/i.test(command)) {
+    return { command, args: ["--version"] };
+  }
+  const escaped = command.replace(WINDOWS_CMD_META_CHARS, "^$1");
+  return {
+    command: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
+    args: ["/d", "/s", "/c", `"${escaped} --version"`],
+  };
+}
+
 export function probeCodexBinary(
   env: NodeJS.ProcessEnv,
   timeoutMs = 3000,
@@ -288,14 +319,16 @@ export function probeCodexBinary(
     return { installed: false, version: null };
   }
   let probe: ReturnType<typeof spawnSync>;
-  const needsWindowsShell = platform === "win32" && /\.(bat|cmd)$/i.test(command);
+  const spec = versionProbeSpec(command, env, platform);
   try {
-    probe = spawnSync(command, ["--version"], {
+    probe = spawnSync(spec.command, spec.args, {
       encoding: "utf8",
       env: runtimeExecutableEnvironment(env),
       killSignal: "SIGKILL",
       timeout: timeoutMs,
-      shell: needsWindowsShell,
+      // Never a shell: a Windows launcher is reached through the explicit
+      // cmd.exe invocation built above.
+      shell: false,
       windowsHide: true,
     });
   } catch {
@@ -312,6 +345,9 @@ export function probeCodexBinary(
   const match = /(\d+\.\d+\.\d+)/.exec(announced);
   return { installed: true, version: match ? match[1]! : null };
 }
+
+/** Exported for the #221 review B4 regression only. */
+export const __codexVersionProbeSpec = versionProbeSpec;
 
 function isBundledQoderEngine(version: string | undefined): boolean {
   return typeof version === "string" && /^qoder-engine\s+\d+\.\d+\.\d+$/.test(version.trim());

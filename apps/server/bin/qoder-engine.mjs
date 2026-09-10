@@ -1127,6 +1127,20 @@ export function validatedCodexBaseUrl(value) {
   return normalised;
 }
 
+/**
+ * Codex retries a dropped provider stream inside a single exec, emitting one
+ * `error` item per attempt and no terminal event. A transient reconnect does
+ * recover, so the first few are not failures — but the loop can also keep
+ * going, and then the engine emits nothing attributable and driver-cli's
+ * 120s bound eventually kills it and settles the turn as
+ * `indeterminate` / `turn_timeout`. That reason is both wrong and, by this
+ * repo's rules, never retried. These bounds make the engine attribute the
+ * provider error itself, well before the outer bound can mislabel it.
+ */
+const CODEX_MAX_CONSECUTIVE_STREAM_ERRORS = 3;
+/** Held under driver-cli's 120s turn bound so the engine reports first. */
+const CODEX_STALL_TIMEOUT_MS = 90_000;
+
 /** Codex accepts a provider name as a bare config key, so keep it inert. */
 const CODEX_PROVIDER_NAME = "roleweave";
 
@@ -1155,9 +1169,15 @@ export function codexTurnArgs(model, baseUrl) {
     // Reject provider-table fields Codex does not understand. This complements
     // the local URL guard and keeps future configuration drift fail-closed.
     "--strict-config",
-    // --ignore-user-config is the Codex analogue of the Claude path's
-    // --setting-sources "": no operator config.toml, plugin, or profile leaks
-    // into a turn, so the provider configuration below is the whole truth.
+    // Scope check before relying on this: Codex's own help limits the flag to
+    // `$CODEX_HOME/config.toml`. It is NOT the equivalent of the Claude path's
+    // --setting-sources "", and the provider block below is not "the whole
+    // truth" — system-scope configuration is out of its reach. Observed with
+    // this exact flag set: Codex still reported clamping a SessionEnd hook
+    // from /etc/codex/hooks.json, and still warned that it can see every
+    // skill. Those arrive as non-agent_message items and are forwarded to
+    // stderr as diagnostics (see handleCodexLine) rather than dropped, because
+    // they are the only signal an operator gets that such config exists.
     "--ignore-user-config",
     "--ephemeral",
     "--skip-git-repo-check",
@@ -1203,9 +1223,29 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
   emit({ type: "run.started", runId, timestamp: now() });
 
   let terminalEmitted = false;
+  /** Set once the child exists; a terminal must not leave Codex running. */
+  let child;
+  let stallTimer;
+  const stopChild = () => {
+    if (stallTimer !== undefined) clearTimeout(stallTimer);
+    if (child === undefined || child.pid === undefined || child.exitCode !== null) return;
+    // Codex may have descendants of its own, so kill the disposable process
+    // group on POSIX and fall back to the direct child on Windows.
+    try {
+      if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+      else child.kill("SIGKILL");
+    } catch {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // Already gone between the terminal decision and this cleanup.
+      }
+    }
+  };
   const fail = (code, message, retryable) => {
     if (terminalEmitted) return;
     terminalEmitted = true;
+    stopChild();
     emit({
       type: "run.failed",
       runId,
@@ -1242,7 +1282,6 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
   const args = codexTurnArgs(model, baseUrl);
   args.push(`[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n${input || "Execute your position duties for this turn."}`);
 
-  let child;
   try {
     const spawnSpec = createQoderSpawnSpec(codexBin, args, codexChildEnvironment(process.env, engineModel));
     child = spawn(spawnSpec.command, spawnSpec.args, {
@@ -1251,6 +1290,9 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
       // Codex exec also drains stdin; leaving it closed keeps the turn
       // non-interactive instead of waiting for further input.
       stdio: ["ignore", "pipe", "pipe"],
+      // Own the process group so a stalled Codex and any descendant it
+      // spawned can both be killed when the engine decides the outcome.
+      detached: process.platform !== "win32",
     });
   } catch {
     fail("codex.spawn_failed", "cannot spawn the resolved Codex CLI", true);
@@ -1261,7 +1303,28 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
   let stderrTail = "";
   let output = "";
   let errorMessage = "";
+  let consecutiveStreamErrors = 0;
   const seenMessageIds = new Set();
+
+  // Any observed forward progress restarts both bounds: a turn that is still
+  // producing output has not stalled, however long it runs.
+  const noteProgress = () => {
+    consecutiveStreamErrors = 0;
+    if (stallTimer !== undefined) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      fail(
+        "codex.stalled",
+        errorMessage
+          ? `codex produced no terminal event for ${CODEX_STALL_TIMEOUT_MS}ms; last provider error: ${errorMessage}`
+          : `codex produced no terminal event for ${CODEX_STALL_TIMEOUT_MS}ms`,
+        true,
+      );
+    }, CODEX_STALL_TIMEOUT_MS);
+    // The watchdog must not be what keeps the engine alive once every other
+    // handle is gone; a completed turn exits through its own terminal.
+    stallTimer.unref?.();
+  };
+  noteProgress();
 
   child.stderr.on("data", (chunk) => {
     stderrTail = (stderrTail + String(chunk)).slice(-2000);
@@ -1276,6 +1339,25 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
       return;
     }
 
+    // Codex reports system-scope configuration it applied — clamped hooks, skill
+    // visibility warnings — as items that are not agent messages.
+    // `--ignore-user-config` does not prevent any of it, and the engine.v1
+    // event vocabulary has no diagnostic type, so these go to stderr, which
+    // driver-cli already collects as the turn diagnostic. Bounded, and never
+    // added to the turn output: this is operator-facing context, not model
+    // output.
+    if (
+      event?.type === "item.completed" &&
+      typeof event?.item?.type === "string" &&
+      event.item.type !== "agent_message"
+    ) {
+      const detail = typeof event.item.text === "string" ? event.item.text : "";
+      process.stderr.write(
+        `codex item ${event.item.type}: ${detail.slice(0, 512).replace(/\s+/g, " ")}\n`,
+      );
+      return;
+    }
+
     if (event?.type === "item.completed" && event?.item?.type === "agent_message") {
       // Codex retries a dropped provider stream inside a single exec, and each
       // attempt replays the whole item. Keying on the item id keeps the turn
@@ -1287,15 +1369,27 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
       const text = event.item.text;
       if (typeof text === "string" && text.length > 0) {
         output += text;
+        noteProgress();
         emit({ type: "model.delta", runId, timestamp: now(), text });
       }
       return;
     }
 
-    // A bare `error` event precedes `turn.failed`; keep its message and let the
-    // terminal event decide, so a run still ends on exactly one outcome.
+    // A bare `error` event normally precedes `turn.failed`, so the message is
+    // kept and the terminal event decides — that keeps a run ending on exactly
+    // one outcome. But Codex also emits one of these per retry of a dropped
+    // provider stream and may never reach a terminal, so a run of them with no
+    // progress in between is itself the outcome.
     if (event?.type === "error" && typeof event.message === "string") {
       errorMessage = event.message;
+      consecutiveStreamErrors += 1;
+      if (consecutiveStreamErrors >= CODEX_MAX_CONSECUTIVE_STREAM_ERRORS) {
+        fail(
+          "codex.provider_stream_error",
+          `${errorMessage} (${consecutiveStreamErrors} consecutive provider stream errors with no progress)`,
+          true,
+        );
+      }
       return;
     }
 
@@ -1307,6 +1401,7 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
 
     if (event?.type === "turn.completed") {
       terminalEmitted = true;
+      if (stallTimer !== undefined) clearTimeout(stallTimer);
       const usage = event?.usage && typeof event.usage === "object"
         ? {
             ...(Number.isInteger(event.usage.input_tokens) ? { inputTokens: event.usage.input_tokens } : {}),

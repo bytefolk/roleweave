@@ -6,6 +6,7 @@ import test from "node:test";
 import type { HealthResponse } from "@roleweave/shared";
 import { api, startTestServer } from "./helpers.js";
 import {
+  __codexVersionProbeSpec,
   hostHealth,
   probeClaudeLocalBinary,
   probeCodexBinary,
@@ -306,6 +307,39 @@ test("GET /health gates Codex Hosts on the configured bundled engine boundary", 
   const localLogin = (await api(server.baseUrl, "/health")).body as HealthResponse;
   assert.equal(localLogin.hosts.codex.ready, false);
   assert.deepEqual(localLogin.hosts["codex-local"], { configured: true, ready: true });
+});
+
+/**
+ * #221 review B4: the Codex probe used `shell: true` for Windows launchers on a
+ * path derived from DIGITAL_EMPLOYEE_CODEX_COMMAND. #125 already settled that a
+ * launcher goes through an explicitly escaped cmd.exe invocation with
+ * shell: false, so a metacharacter in the path stays argv data.
+ */
+test("codex version probe never hands a Windows launcher path to a shell (#221 review B4)", () => {
+  // POSIX: the resolved binary is executed directly, no shell involved.
+  assert.deepEqual(
+    __codexVersionProbeSpec("/opt/codex/bin/codex", {}, "linux"),
+    { command: "/opt/codex/bin/codex", args: ["--version"] },
+  );
+  // Windows, but not a launcher script: still direct.
+  assert.deepEqual(
+    __codexVersionProbeSpec("C:\\tools\\codex.exe", {}, "win32"),
+    { command: "C:\\tools\\codex.exe", args: ["--version"] },
+  );
+
+  // A Windows launcher goes through cmd.exe explicitly.
+  const launcher = __codexVersionProbeSpec("C:\\tools\\codex.cmd", { ComSpec: "C:\\Windows\\system32\\cmd.exe" }, "win32");
+  assert.equal(launcher.command, "C:\\Windows\\system32\\cmd.exe");
+  assert.deepEqual(launcher.args.slice(0, 3), ["/d", "/s", "/c"]);
+
+  // The load-bearing case: cmd metacharacters in an operator-supplied path are
+  // caret-escaped, so `&` cannot start a second command.
+  const hostile = __codexVersionProbeSpec("C:\\a&calc\\codex.cmd", {}, "win32");
+  assert.equal(hostile.command, "cmd.exe");
+  const commandLine = hostile.args[3] ?? "";
+  assert.match(commandLine, /\^&/, "an ampersand in the path must be escaped");
+  assert.doesNotMatch(commandLine, /[^^]&/, "no unescaped ampersand may reach cmd.exe");
+  assert.match(commandLine, /codex\.cmd --version/);
 });
 
 test("codex probe reports not-installed when the binary cannot be resolved", () => {

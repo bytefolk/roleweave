@@ -1288,3 +1288,140 @@ test("codex-local turn run: an unusable OPENAI_BASE_URL cannot block the login p
   const childEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
   assert.equal(childEnv.OPENAI_BASE_URL, undefined);
 });
+
+/**
+ * #221 review B1: Codex retries a dropped provider stream inside one exec,
+ * emitting an `error` item per attempt and no terminal event. The reviewer
+ * observed 7 of these over 100s with the child still alive. driver-cli's 120s
+ * bound does eventually kill it, but it settles the turn as
+ * `indeterminate` / `turn_timeout` — a reason that is both wrong and never
+ * retried — so the engine has to attribute the provider error itself.
+ */
+const FAKE_CODEX_RECONNECT_LOOP = `#!/usr/bin/env node
+const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+write({ type: "thread.started", thread_id: "t" });
+write({ type: "turn.started" });
+for (let i = 0; i < 7; i += 1) {
+  write({ type: "error", message: "Reconnecting... waiting for network" });
+}
+// Never emits a terminal event, and stays alive exactly as observed.
+setInterval(() => {}, 1000);
+`;
+
+/** A single transient reconnect that recovers must not become a failure. */
+const FAKE_CODEX_RECONNECT_THEN_OK = `#!/usr/bin/env node
+const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+write({ type: "thread.started", thread_id: "t" });
+write({ type: "turn.started" });
+write({ type: "error", message: "Reconnecting... waiting for network" });
+write({ type: "item.completed", item: { id: "item_0", type: "agent_message", text: "recovered" } });
+write({ type: "turn.completed", usage: { input_tokens: 2, output_tokens: 1 } });
+`;
+
+test("codex turn run: a provider reconnect loop fails with the provider message instead of stalling (#221 review B1)", { skip: codexSkip }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-loop-"));
+  const fakeBin = await writeFakeCodex(fakeDir, FAKE_CODEX_RECONNECT_LOOP);
+
+  const startedAt = Date.now();
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      OPENAI_API_KEY: "service-key",
+    },
+  });
+  const elapsed = Date.now() - startedAt;
+
+  const events = codexEvents(result.stdout);
+  const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+  assert.equal(terminal.length, 1, "a stalled provider stream must still end on exactly one terminal event");
+  assert.equal(terminal[0]?.type, "run.failed");
+  const error = terminal[0]?.error as Record<string, unknown>;
+  assert.equal(error.code, "codex.provider_stream_error");
+  // The operator has to see what Codex actually reported, not a bare timeout.
+  assert.match(String(error.message), /Reconnecting/);
+  assert.equal(error.retryable, true, "a dropped provider stream is worth retrying");
+  // The bound is the consecutive-error count, so this resolves immediately
+  // rather than waiting out either the engine stall bound or driver-cli's.
+  assert.ok(elapsed < 30_000, `expected a prompt terminal, took ${elapsed}ms`);
+  // The engine must not leave Codex running behind the terminal.
+  assert.equal(result.code, 0);
+});
+
+test("codex turn run: a transient reconnect that recovers still completes (#221 review B1)", { skip: codexSkip }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-recover-"));
+  const fakeBin = await writeFakeCodex(fakeDir, FAKE_CODEX_RECONNECT_THEN_OK);
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      OPENAI_API_KEY: "service-key",
+    },
+  });
+
+  const events = codexEvents(result.stdout);
+  const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+  assert.equal(terminal.length, 1);
+  assert.equal(terminal[0]?.type, "run.completed", "one reconnect below the bound must not fail the turn");
+  assert.equal(terminal[0]?.output, "recovered");
+});
+
+/**
+ * #221 review B2: `--ignore-user-config` only covers `$CODEX_HOME/config.toml`.
+ * System-scope configuration still applies, and Codex reports it as items that
+ * are not agent messages — previously dropped, so the operator record of the
+ * turn had no trace of it.
+ */
+const FAKE_CODEX_SYSTEM_CONFIG_ITEMS = `#!/usr/bin/env node
+const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+write({ type: "thread.started", thread_id: "t" });
+write({ type: "turn.started" });
+write({ type: "item.completed", item: { id: "i0", type: "hook_clamped", text: "Clamped SessionEnd hook from /etc/codex/hooks.json" } });
+write({ type: "item.completed", item: { id: "i1", type: "warning", text: "Codex can still see every skill" } });
+write({ type: "item.completed", item: { id: "i2", type: "agent_message", text: "done" } });
+write({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } });
+`;
+
+test("codex turn run: system-scope config items reach the diagnostic instead of being dropped (#221 review B2)", { skip: codexSkip }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-sysconfig-"));
+  const fakeBin = await writeFakeCodex(fakeDir, FAKE_CODEX_SYSTEM_CONFIG_ITEMS);
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+    stdin: JSON.stringify({ input: "run" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+      OPENAI_API_KEY: "service-key",
+    },
+  });
+
+  // Operator-facing: both non-agent items are visible in the diagnostic.
+  assert.match(result.stderr, /hook_clamped/);
+  assert.match(result.stderr, /etc\/codex\/hooks\.json/);
+  assert.match(result.stderr, /Codex can still see every skill/);
+
+  const events = codexEvents(result.stdout);
+  // Model-facing: the turn output carries only the agent message. A diagnostic
+  // must never be mistaken for model output, nor break the event contract.
+  assert.deepEqual(
+    events.filter((event) => event.type === "model.delta").map((event) => event.text),
+    ["done"],
+  );
+  const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+  assert.equal(terminal.length, 1);
+  assert.equal(terminal[0]?.type, "run.completed");
+  assert.equal(terminal[0]?.output, "done");
+  // Every stdout line still has to be a valid engine.v1 event.
+  for (const event of events) {
+    assert.ok(
+      ["run.started", "model.delta", "usage", "run.completed", "run.failed"].includes(String(event.type)),
+      `unexpected stdout event type ${String(event.type)}`,
+    );
+  }
+});
