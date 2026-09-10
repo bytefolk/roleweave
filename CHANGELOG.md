@@ -5,9 +5,18 @@
 
 ## [0.1.2] — 2026-09-10
 
+### Changed
+
+- #214：同一会话的后续回合可携带有界、脱敏的可信历史，并展示实际注入摘要、数量、字节数和 digest；上下文开关按会话持久化。
+- #214：不同员工可同时处理任务；群聊支持显式并行和有序接力，前序失败时停止后续执行并保留可查询的状态。
+- Rewrote the README in English with customer onboarding, desktop downloads, AI integration guidance, and source development instructions.
+
 ### Fixed
 
-- #214：发布包含已合入 `main` 的独立员工并发下达，以及群聊并行/接力执行能力；Windows x64 安装包不再停留在不支持该能力的 v0.1.1 构建。
+- #215 review：群历史和接力结果先脱敏后截断；落盘失败释放运行标记，坏历史来源与失败事件订阅者不再连带中断其他成员。
+- #215 review：取消绑定原工作区及已知回合；个人与群组执行共同阻止会话轮换和上下文策略变更，前端按工作区、岗位、引擎隔离事件。
+- #215 review：补足最大群消息的持久化空间，接力只保留有界结果，恢复记录保留原接受时间并保证并发恢复幂等。
+- #155：Windows 目录 fsync 的 EPERM 判断收回唯一的原子写入口（context export 不再自带第二份），裸 errno 通过 `cause` 穿过 groups/assets/sessions/turns 各自的存储错误包装；平台改为可注入后，这批回归在 POSIX runner 上真正执行而不是 skip。
 
 ## [0.1.1] — 2026-09-08
 
@@ -25,22 +34,11 @@
 
 ## [Unreleased] — D2 组织操作 + D3 对话控制面 + D4 本地上报
 
-### Changed
-
-- #214：同一会话的后续回合可携带有界、脱敏的可信历史，并展示实际注入摘要、数量、字节数和 digest；上下文开关按会话持久化。
-- #214：不同员工可同时处理任务；群聊支持显式并行和有序接力，前序失败时停止后续执行并保留可查询的状态。
-- Rewrote the README in English with customer onboarding, desktop downloads, AI integration guidance, and source development instructions.
-
 含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
 
 ### Fixed
 
-- #215 review：群历史和接力结果先脱敏后截断；落盘失败释放运行标记，坏历史来源与失败事件订阅者不再连带中断其他成员。
-- #215 review：取消绑定原工作区及已知回合；个人与群组执行共同阻止会话轮换和上下文策略变更，前端按工作区、岗位、引擎隔离事件。
-- #215 review：补足最大群消息的持久化空间，接力只保留有界结果，恢复记录保留原接受时间并保证并发恢复幂等。
-
 - #135：新增免费 macOS GitHub 自动更新通道：发布 workflow 使用 `OWB_UPDATE_SIGNING_PRIVATE_KEY` 为 ZIP 元数据生成 Ed25519 签名，客户端校验后后台下载，并在正常退出时自动替换、重启；应用本身仍为 unsigned，Gatekeeper/Developer ID 方案保留为后续切换路径。
-- #155：Windows 目录 fsync 的 EPERM 判断收回唯一的原子写入口（context export 不再自带第二份），裸 errno 通过 `cause` 穿过 groups/assets/sessions/turns 各自的存储错误包装；平台改为可注入后，这批回归在 POSIX runner 上真正执行而不是 skip。
 
 ### Added
 ### Added
