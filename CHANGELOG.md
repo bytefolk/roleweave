@@ -30,6 +30,7 @@
 
 ### Fixed
 
+- #170：工作区自动打开的失败诊断保持 best-effort；即使 stderr 不可写也不会把启动变成失败，并补充 main.js 调用边界回归覆盖。
 - #215 review：群历史和接力结果先脱敏后截断；落盘失败释放运行标记，坏历史来源与失败事件订阅者不再连带中断其他成员。
 - #221 review：Codex 就绪状态要求内置引擎边界；使用外部 digital-employee CLI 时，即使已安装 Codex 并配置凭据，两种 Codex Host 仍显示不可用并说明原因。
 - #215 review：取消绑定原工作区及已知回合；个人与群组执行共同阻止会话轮换和上下文策略变更，前端按工作区、岗位、引擎隔离事件。
@@ -41,7 +42,7 @@
 ### Added
 ### Added
 
-- #127 AC-004 跨平台布局一致性证据：新增 layout smoke 模式（macOS arm64 / Windows x64 双平台，全应用渲染两栏组织工作区并由 main 进程度量列矩形写报告），verify.yml 新增 layout-parity job 下载双平台报告比对（per-platform bottomDelta ≤2px、跨平台宽差 ≤4px / 高差 ≤8px，阈值声明在 scripts/check-layout-parity.mjs）。顺带修 #150 打包缺口：doc-plane.js 未登记 SERVER_RUNTIME_FILES 导致打包 server 启动即崩、main CI 红。
+- #127 AC-004 跨平台布局一致性证据：新增 layout smoke 模式（macOS arm64 / Windows x64 双平台，全应用渲染两栏组织工作区并由 main 进程度量列矩形写报告），verify.yml 新增 layout-parity job 下载双平台报告比对（per-platform bottomDelta ≤2px、per-platform 两列高差 ≤2px、跨平台宽差 ≤4px、跨平台 chrome overhead 差 ≤8px，阈值声明在 scripts/check-layout-parity.mjs）。跨平台一项自 #190 起比的是 chrome overhead（`viewport.innerHeight - 列高`）而非绝对列高：runner 给两侧的窗口高度本就不同，比绝对高度量到的是 runner 而不是布局，#190 之前的「高差 ≤8px」写法已随之作废。顺带修 #150 打包缺口：doc-plane.js 未登记 SERVER_RUNTIME_FILES 导致打包 server 启动即崩、main CI 红。
 ### Added
 
 - #146 国际化骨架与全量迁移：`@org-workbench/ui` 新增 `OwbI18nProvider` / `useT` / `zhText` 与 zh-CN/en 双目录（440 key，parity 门强制 key 集合一致）；标题栏新增语言切换钮（恰好两态，持久化，默认 zh-CN，antd ConfigProvider locale 同步切换）；renderer 与 ui 包全部用户可见文案迁入目录，`i18n-cjk-gate` 测试扫描源码字符串字面量内的 CJK 防绕过；数据层（turn 原文、信封、组织文件、裁决输入）不翻译。
@@ -101,6 +102,7 @@
 
 ### Fixed
 
+- #194（Refs #127 AC-004、#190、#180）layout-parity job 在同一份代码上非确定性变红：run 33781690234（`d89ceb5`）macOS 列高 565px、chrome overhead 116px 通过；run 33782374969 第二次尝试（`fbff520`）同一平台量到 515px、overhead 166px，跨平台 overhead 差 50px 而失败；对同一 commit 做完整重跑（第三次尝试）又回到 565px / 116px 通过。`d89ceb5` 与 `fbff520` 共享同一 tree `23443b161487417bd0228852f1f70d66c28597ba`，即渲染层与样式完全相同——变的是量测时机，不是布局。Windows 侧 604px、两侧列宽 314px、`bottomDelta` 0、viewport（mac 1024×681 / win 1024×720）在全部三次采样中恒定，失败那次报告自身仍是 `ok: true`。根因：`LAYOUT_MEASURE_SCRIPT` 只轮询两栏**是否出现**，出现的那一瞬间就量一次；presence 不等于 settled geometry，webfont swap 会在两栏首次出现之后再次回流列高，而脚本既没有 `await document.fonts.ready`，也没有 rAF 或任何收敛条件，于是量到的是 runner 那一刻恰好看到的中间态。修复分两半：① 量测端在挂载轮询之后先 best-effort 等 `document.fonts.ready`（reject 不得让一次本来正常的量测失败），再按最多 60 个采样点取样，直到连续 3 次采样间五个字段的最大漂移 ≤0.5px 才判定 settled，并把 `settled` 写进报告；每次迭代用 `requestAnimationFrame` 与 50ms 定时器**互相 race**，因此 CI runner 上一个被遮挡、始终没有合成的窗口不会把脚本挂到预算之外。② 校验端 `readLayout` 拒绝 `settled !== true` 的报告——与 #190 拒绝无 viewport 同理，refused 而非 compared：一份没收敛的量测是"那个 runner 何时看了一眼"的样本，两份这样的样本比的是两个任意时刻。该检查排在 viewport 检查之后，因此两者都缺的报告仍然报更旧、更具体的那条缺失。**四条阈值（bottomDelta ≤2px、两列高差 ≤2px、跨平台宽差 ≤4px、跨平台 chrome overhead 差 ≤8px）未被触碰**：settle 预算只决定何时停止等待，从不决定什么算一致；0.5px epsilon 落在全部四条阈值之内，遮蔽不了真实失配，并有专门用例锁定"已 settled 但确实失配的报告照旧失败"。`schemaVersion` 保持 `org-workbench-layout-smoke.v1` 不变（#190 新增的 viewport 也是在 `.v1` 下成为必需字段的，且无代码校验该串）。排障坑：对 layout-parity 用 `gh run rerun --failed` 是 no-op——它只会重新下载同一批缓存 artifact，只有完整重跑 workflow 才会重新量测，本次诊断因此白跑了两次。测试：校验端新增 5 例（拒绝未收敛、拒绝 #194 之前的旧报告而非默认其已收敛、错误信息点名未收敛的那一侧、两者皆缺时的检查次序、settle 门不遮蔽真实失配），量测端新增 4 例——在 vm 里以 stub DOM **实际执行**注入脚本，因为 #183 那道守卫只解析脚本不运行它，此前没有任何测试能证明渲染端真的产出 `settled`；一个仍返回 #194 之前形状的渲染端不会让任何单元测试失败，只会让 parity job 在 CI 上永久变红。两半都做了 mutation 验证（把渲染端改成恒报 settled、把校验端的拒绝短路，各自只有预期的用例失败）。同时修正本文件 #127 AC-004 条目中自 #190 起就已作废的「跨平台高差 ≤8px」表述。
 - #156：WSL 拓扑下桌面壳向控制面服务端发送工作区路径时，Windows 盘符路径（`C:\...`）现在经 `serverPathForWorkspace` 转换为 `/mnt/c/...` 再 POST 到 `/workspace/open`；native 模式与非 win32 主机原样不动。`main.js` 全部四处 POST（`ORG_WORKBENCH_DEFAULT_WORKSPACE`、#145 的持久化上次工作区、demo 兜底、目录选择器 IPC）都已接线；转换只发生在跨边界的这一处，服务端因此不必解析盘符，仍只接受自身原生绝对路径——`wsl` 模式下跑在 ext4 上、根本没有 Windows 表示的工作区照旧可用（AC-003）。持久化刻意不转换：`last-workspace.json` 存原始 Windows 路径，因为开机重开时的 `fs.existsSync` 在 Windows 侧执行，`/mnt/c/...` 在那里永远解析不到（AC-005 的可执行形式）。`openDefaultWorkspace` 的 `existsSync` 早退与 HTTP 非 200 响应均写 stderr（含当前 mode 与原始 dir），不再静默丢弃（AC-006）。新增源码接线断言：`main.js` 中每处 `/workspace/open` POST 必须经过 `serverPathForWorkspace`，后续再加站点会被同一条测试拦住（AC-004）。
 - 审批中心现在明确说明用途与数据接入状态；未接入回合历史/事件流时不再把空列表误报为“所有回合都在界内运行”，并提供返回组织模块的入口。审批岗位、动作描述与目标中的多层 Unicode 转义也会在展示层恢复为可读中文。
 - #137 组织页主区重构为两列工作区：左列上下堆叠组织图与岗位档案（同宽对齐），右列由本地对话面板独占整列高度，回合流拿回被全宽组织图压掉的纵向空间。`.owb-workspace-grid` 包装层移除，布局单源挂在 `.owb-org-module`（grid 两列 + `__left` flex 列）；组织图在半宽左列内横向溢出改为列内滚动（`overflow-x: auto`），纵向仍自然撑开；980px 单栏堆叠与 720px 竖向压缩断点按新选择器等价重述。`org-panel-sizing` / `panel-parity` 两套 CSS 契约测试同步换选择器，并新增 #137 左列配对断言（chart flex none + 档案卡 flex 1 + 模块级 stretch）。契约面未触碰。

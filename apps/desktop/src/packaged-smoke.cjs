@@ -7,28 +7,81 @@ const { pathToFileURL } = require("node:url");
 // static smoke report and the dedicated cross-platform layout smoke. Bounded
 // wait for the module to mount; resolves null when absent so the parity job
 // fails loudly instead of silently.
+//
+// #194: presence is not settled geometry. The mount poll only proves the two
+// columns exist, and measuring the instant they appear sampled the renderer
+// mid-layout: on an identical tree (fbff520 and d89ceb5 share tree 23443b1)
+// the mac column height came back 515px instead of 565px, which moved the
+// per-platform overhead from 116px to 166px and turned the parity job red on
+// code that had already passed. The settle budget below is a wait, not a
+// tolerance — it decides when to stop watching, never what counts as parity,
+// so the checker's own thresholds are untouched.
+const LAYOUT_MOUNT_MAX_POLLS = 100;
+const LAYOUT_POLL_MS = 50;
+const LAYOUT_SETTLE_MAX_POLLS = 60;
+const LAYOUT_SETTLE_SAMPLES = 3;
+const LAYOUT_SETTLE_EPSILON_PX = 0.5;
+
 const LAYOUT_MEASURE_SCRIPT = String.raw`(async () => {
   const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (
-      document.querySelector(".owb-org-module__left") &&
-      document.querySelector(".owb-org-module > .owb-turn-panel")
-    ) break;
-    await sleep(50);
+  const readColumns = () => {
+    const left = document.querySelector(".owb-org-module__left")?.getBoundingClientRect();
+    const right = document.querySelector(".owb-org-module > .owb-turn-panel")?.getBoundingClientRect();
+    return left && right ? { left, right } : null;
+  };
+  const measure = (columns) => ({
+    leftWidth: columns.left.width,
+    leftHeight: columns.left.height,
+    rightWidth: columns.right.width,
+    rightHeight: columns.right.height,
+    bottomDelta: Math.abs(columns.left.bottom - columns.right.bottom),
+  });
+  const drift = (a, b) => Math.max(...Object.keys(a).map((key) => Math.abs(a[key] - b[key])));
+  // Raced against a timer so a frame callback that never fires — an occluded or
+  // never-composited window on a CI runner — cannot hang the script past the
+  // sample budget. Either way one iteration costs at most one poll interval.
+  const nextSample = () => Promise.race([
+    new Promise((resolve) => requestAnimationFrame(() => resolve())),
+    sleep(${LAYOUT_POLL_MS}),
+  ]);
+  let columns = null;
+  for (let attempt = 0; attempt < ${LAYOUT_MOUNT_MAX_POLLS}; attempt += 1) {
+    columns = readColumns();
+    if (columns) break;
+    await sleep(${LAYOUT_POLL_MS});
   }
-  const left = document.querySelector(".owb-org-module__left")?.getBoundingClientRect();
-  const right = document.querySelector(".owb-org-module > .owb-turn-panel")?.getBoundingClientRect();
-  if (!left || !right) return null;
+  if (!columns) return null;
+  // #194: a webfont swap reflows the columns after they first appear, so wait
+  // for it instead of racing it. Best-effort: an absent or rejected font
+  // loading promise must not fail an otherwise good measurement.
+  if (document.fonts?.ready) await document.fonts.ready.catch(() => null);
+  let settled = false;
+  let previous = null;
+  let stable = 0;
+  let layout = null;
+  for (let attempt = 0; attempt < ${LAYOUT_SETTLE_MAX_POLLS}; attempt += 1) {
+    columns = readColumns();
+    if (!columns) return null;
+    layout = measure(columns);
+    if (previous !== null) {
+      stable = drift(previous, layout) <= ${LAYOUT_SETTLE_EPSILON_PX} ? stable + 1 : 0;
+      if (stable >= ${LAYOUT_SETTLE_SAMPLES}) {
+        settled = true;
+        break;
+      }
+    }
+    previous = layout;
+    await nextSample();
+  }
   return {
-    leftWidth: left.width,
-    leftHeight: left.height,
-    rightWidth: right.width,
-    rightHeight: right.height,
-    bottomDelta: Math.abs(left.bottom - right.bottom),
+    ...layout,
     // #190: without the viewport a height difference cannot be attributed. The
     // runners do not give the app the same window height, so comparing absolute
     // column heights across platforms measures the runner, not the layout.
     viewport: { innerWidth: window.innerWidth, innerHeight: window.innerHeight },
+    // #194: false means the sample budget was exhausted, so these numbers are a
+    // mid-layout sample and must not be compared across platforms.
+    settled,
   };
 })()`;
 

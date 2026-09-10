@@ -13,6 +13,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/approval-ipc.cjs",
   "src/assets-ipc.cjs",
   "src/control-plane-lifecycle.cjs",
+  "src/auto-open-workspace.cjs",
   "src/control-plane-launch.cjs",
   "src/docs-ipc.cjs",
   "src/drive-ipc.cjs",
