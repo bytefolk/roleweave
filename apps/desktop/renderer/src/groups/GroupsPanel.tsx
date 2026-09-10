@@ -3,7 +3,7 @@ import { Button as AntButton, Input, Select as AntSelect } from "antd";
 import { ArrowUp, Plus, Search, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
 import { PositionAvatar } from "../PositionAvatar";
-import { TypingIndicator } from "../turns/TurnThread";
+import { ProgressTrail, TypingIndicator } from "../turns/TurnThread";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@roleweave/shared";
 import { EngineSelect, useEngineLabel } from "../turns/TurnPanel";
 import { EngineIcon } from "../turns/engine-icon";
@@ -484,6 +484,7 @@ export function GroupsPanel({
                 </span>
               </div>
               <AntSelect
+                classNames={{ popup: { root: "owb-conversation-select-popup" } }}
                 mode="multiple"
                 aria-label={t("grp.createSearchAria")}
                 placeholder={t("grp.createSearchPh")}
@@ -595,6 +596,7 @@ export function GroupsPanel({
                   <label className="owb-groups__add-member">
                     <UserRoundPlus aria-hidden="true" size={13} />
                     <AntSelect
+                      classNames={{ popup: { root: "owb-conversation-select-popup" } }}
                       aria-label={t("grp.addMember")}
                       value={undefined}
                       placeholder={t("grp.addMemberPh")}
@@ -663,6 +665,7 @@ export function GroupsPanel({
                               {timeShort(turn.createdAt)}
                             </time>
                           </header>
+                          {turn.errorCode !== "group_relay_blocked" ? <ProgressTrail turn={turn} /> : null}
                           {turn.output ? (
                             <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
                           ) : null}
@@ -695,6 +698,7 @@ export function GroupsPanel({
                       </span>
                       <span className="owb-led owb-led--running" aria-label={t("grp.turnInProgress")} />
                     </header>
+                    <ProgressTrail turn={turn} />
                     {turn.output ? (
                       <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
                     ) : (
@@ -722,6 +726,7 @@ export function GroupsPanel({
                   {t("grp.recipientLabel")}
                 </span>
                 <AntSelect
+                  classNames={{ popup: { root: "owb-conversation-select-popup" } }}
                   mode="multiple"
                   aria-label={t("grp.mentionAria")}
                   placeholder={t("grp.mentionPh")}
@@ -740,7 +745,8 @@ export function GroupsPanel({
               </div>
               <label className="owb-group-dispatch-mode">
                 <span>{t("grp.dispatchMode")}</span>
-                <AntSelect aria-label={t("grp.dispatchMode")} value={dispatchMode} disabled={sending}
+                <AntSelect classNames={{ popup: { root: "owb-conversation-select-popup" } }}
+                  aria-label={t("grp.dispatchMode")} value={dispatchMode} disabled={sending}
                   onChange={(value) => setDispatchMode(value as "parallel" | "relay")}
                   options={[{ value: "parallel", label: t("grp.modeParallel") }, { value: "relay", label: t("grp.modeRelay") }]} />
               </label>

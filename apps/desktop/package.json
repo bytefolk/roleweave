@@ -1,6 +1,6 @@
 {
   "name": "@roleweave/desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Electron shell for RoleWeave. Spawns the local control plane and renders the org tree via a whitelisted IPC bridge.",
   "license": "Apache-2.0",
   "private": true,

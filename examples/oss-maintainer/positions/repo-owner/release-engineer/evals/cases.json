@@ -4,14 +4,14 @@
     {
       "id": "approved-knowledge-only",
       "input": {
-        "message": "What may this position answer from?"
+        "message": "本岗位可以依据什么作答？"
       },
       "expectedOutput": {
         "status": "answered",
-        "answer": "Approved knowledge declared by the employee package.",
+        "answer": "员工包中声明的已批准知识。",
         "citations": [
           {
-            "label": "Approved knowledge",
+            "label": "已批准知识",
             "uri": "./knowledge/README.md"
           }
         ]

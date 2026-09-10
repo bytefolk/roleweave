@@ -24,6 +24,7 @@ export function PositionMention({
       <span className="owb-position-mention__field">
         <AtSign aria-hidden="true" size={14} />
         <AntSelect
+          classNames={{ popup: { root: "owb-conversation-select-popup" } }}
           aria-label={t("turn.pickPositionAria")}
           value={value ?? undefined}
           placeholder={t("turn.pickPositionPh")}
