@@ -291,7 +291,19 @@ jobs:
             echo "::error::validated release notes are missing or empty"
             exit 1
           fi
-          printf '%s  %s\n' "$NOTES_SHA256" "$notes" | sha256sum -c -
+          node --input-type=module - "$notes" <<'NODE'
+          import { createHash } from 'node:crypto';
+          import fs from 'node:fs';
+
+          const expected = process.env.NOTES_SHA256 ?? '';
+          if (expected.length !== 64 || !/^[0-9a-f]{64}$/i.test(expected)) {
+            throw new Error('release notes digest must be exactly 64 hex characters');
+          }
+          const actual = createHash('sha256').update(fs.readFileSync(process.argv[2])).digest('hex');
+          if (actual !== expected.toLowerCase()) {
+            throw new Error('release notes digest does not match frozen preflight notes');
+          }
+          NODE
           tag="v${{ needs.preflight.outputs.version }}"
           # Free distribution mode: tag pushes are public releases; manual
           # dispatch can keep the release as a draft for review.

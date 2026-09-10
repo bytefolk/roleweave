@@ -40,6 +40,11 @@ function fixture(t, content = notes, notesVersion = version) {
   git("add", ".");
   git("commit", "-qm", "fixture release source");
   fs.mkdirSync(path.join(dir, "bin"));
+  // Reproduce runners without coreutils even when the developer has it installed.
+  // A fallback to another external digest utility must not hide the dependency.
+  for (const command of ["sha256sum", "shasum", "coreutils"]) {
+    fs.writeFileSync(path.join(dir, "bin", command), `#!/bin/sh\necho '${command}: command not found (fixture)' >&2\nexit 127\n`, { mode: 0o755 });
+  }
   fs.mkdirSync(path.join(dir, "incoming"));
   const assets = [`roleweave-${version}-x64.exe`, "latest.yml"];
   for (const asset of assets) fs.writeFileSync(path.join(dir, "incoming", asset), "fixture asset");
@@ -98,8 +103,11 @@ function create(f, prepared, event = "push", draft = "true") {
   return run(f, "Create the release as a draft", { "github.event_name": event, "inputs.draft": draft }, { NOTES_SHA256: prepared.notes_sha256 ?? "" });
 }
 
-test("#227 actual create command uses exact frozen notes without evaluating shell text or uploading them", t => {
+test("#227 actual create command uses exact frozen notes without external digest utilities, evaluating shell text or uploading them", t => {
   const f = fixture(t);
+  for (const command of ["sha256sum", "shasum", "coreutils"]) {
+    assert.equal(spawnSync(path.join(f.dir, "bin", command)).status, 127);
+  }
   const prepared = prepare(f);
   const result = create(f, prepared);
   assert.equal(result.status, 0, result.stderr);
@@ -143,10 +151,44 @@ for (const [label, replacement] of [["missing", null], ["empty", ""], ["wrong-ve
     const file = path.join(f.dir, "publication-notes/notes.md");
     if (replacement === null) fs.rmSync(file, { force: true });
     else { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, replacement); }
-    assert.notEqual(create(f, prepared).status, 0);
+    const result = create(f, prepared);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr + result.stdout, replacement === null || replacement === ""
+      ? /validated release notes are missing or empty/
+      : /release notes digest does not match frozen preflight notes/);
     assert.equal(f.calls().length, 0);
   });
 }
+
+for (const [label, digest, error] of [
+  ["empty", () => "", /must be exactly 64 hex characters/],
+  ["non-hex", () => "g".repeat(64), /must be exactly 64 hex characters/],
+  ["short", value => value.slice(1), /must be exactly 64 hex characters/],
+  ["long", value => value + "0", /must be exactly 64 hex characters/],
+  ["leading whitespace", value => " " + value, /must be exactly 64 hex characters/],
+  ["trailing newline", value => value + "\n", /must be exactly 64 hex characters/],
+  ["shell text", () => "$(touch notes-executed)", /must be exactly 64 hex characters/],
+  ["wrong hash", () => "0".repeat(64), /does not match frozen preflight notes/],
+]) {
+  test(`#227 ${label} expected digest is refused before gh without external digest utilities`, t => {
+    const f = fixture(t);
+    const prepared = prepare(f);
+    const result = create(f, { ...prepared, notes_sha256: digest(prepared.notes_sha256) });
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, error);
+    assert.equal(f.calls().length, 0);
+    assert.equal(outputs(f).publish, undefined);
+    assert.equal(fs.existsSync(path.join(f.dir, "notes-executed")), false);
+  });
+}
+
+test("#227 uppercase hex expected digest binds the same frozen notes", t => {
+  const f = fixture(t);
+  const prepared = prepare(f);
+  const result = create(f, { ...prepared, notes_sha256: prepared.notes_sha256.toUpperCase() });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.calls()[0].notes, notes);
+});
 
 for (const [event, draft, publishes] of [["push", "true", true], ["workflow_dispatch", "true", false], ["workflow_dispatch", "false", true]]) {
   test(`#227 ${event} draft=${draft} retains inventory-before-publication semantics`, t => {
