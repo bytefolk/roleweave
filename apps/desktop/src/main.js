@@ -16,14 +16,12 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 app.setName("RoleWeave");
 const { spawn } = require("node:child_process");
 const {
-  controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,
   serverPathForWorkspace,
 } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
 const http = require("node:http");
-const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
@@ -89,10 +87,10 @@ const {
   validateGroupTurnRequest,
 } = require("./group-ipc.cjs");
 const {
-  readLastWorkspacePath,
   writeLastWorkspacePath,
 } = require("./last-workspace.cjs");
 const { validateWorkspaceCreateRequest } = require("./workspace-ipc.cjs");
+const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const ROLEWEAVE_DEV_ICON = path.resolve(
@@ -230,128 +228,6 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null } =
     if (payload !== null) req.write(payload);
     req.end();
   });
-}
-
-function copyExampleWorkspace(source, dest) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
-    if (entry.name === ".digital-employee") continue;
-    const from = path.join(source, entry.name);
-    const to = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyExampleWorkspace(from, to);
-    else if (entry.isFile()) fs.copyFileSync(from, to);
-  }
-}
-
-function workspaceOverride() {
-  // ROLEWEAVE_* is the public name; ORG_WORKBENCH_* remains a compatibility
-  // alias so existing launch scripts and packaged smoke tests keep working.
-  return process.env.ROLEWEAVE_DEFAULT_WORKSPACE ?? process.env.ORG_WORKBENCH_DEFAULT_WORKSPACE;
-}
-
-function defaultWorkspaceDir() {
-  const override = workspaceOverride();
-  if (override) return override;
-  const source = path.resolve(__dirname, "..", "..", "..", "examples", "oss-maintainer");
-  // The example is a source-controlled fixture; the server writes runtime
-  // state into the opened workspace, so auto-open uses a copy outside the repo.
-  const runtime = path.join(os.homedir(), ".roleweave", "demo-workspace");
-  const legacyRuntime = path.join(os.homedir(), ".org-workbench", "demo-workspace");
-  // Do not strand an existing workspace just because the product was renamed.
-  if (!fs.existsSync(path.join(runtime, "workspace.json")) && fs.existsSync(path.join(legacyRuntime, "workspace.json"))) {
-    return legacyRuntime;
-  }
-  if (fs.existsSync(path.join(source, "workspace.json"))) {
-    if (!fs.existsSync(path.join(runtime, "workspace.json"))) {
-      copyExampleWorkspace(source, runtime);
-    }
-    return runtime;
-  }
-  return source;
-}
-
-async function openDefaultWorkspace() {
-  // An explicit RoleWeave/legacy override wins — no persistence, no notice.
-  const override = workspaceOverride();
-  if (override) {
-    const dir = override;
-    // The existence check stays on the raw path: main runs on the Windows side
-    // of the boundary, only the server sees the translated one.
-    if (!fs.existsSync(path.join(dir, "workspace.json"))) {
-      process.stderr.write(`auto-open skipped: workspace.json not found at ${dir}\n`);
-      return;
-    }
-    try {
-      const res = await apiRequest("/workspace/open", {
-        method: "POST",
-        body: { path: serverPathForWorkspace(dir, process.env) },
-      });
-      if (res.status !== 200) {
-        process.stderr.write(
-          `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
-          + `server responded ${res.status} — ${JSON.stringify(res.body)}\n`,
-        );
-      }
-    } catch (err) {
-      process.stderr.write(
-        `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
-        + `${err.message ?? err}\n`,
-      );
-    }
-    return;
-  }
-
-  // Try the persisted last workspace path before the demo copy.
-  const lastPath = readLastWorkspacePath(app.getPath("userData"));
-  if (lastPath !== null) {
-    // Checked raw on the Windows side; only the POST crosses the boundary.
-    if (fs.existsSync(path.join(lastPath, "workspace.json"))) {
-      try {
-        const res = await apiRequest("/workspace/open", {
-          method: "POST",
-          body: { path: serverPathForWorkspace(lastPath, process.env) },
-        });
-        if (res.status === 200) return;
-        process.stderr.write(
-          `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${lastPath}]: `
-          + `server responded ${res.status} — ${JSON.stringify(res.body)}\n`,
-        );
-      } catch (err) {
-        process.stderr.write(
-          `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${lastPath}]: `
-          + `${err.message ?? err}\n`,
-        );
-      }
-      // Open failed — fall through to demo with a notice.
-    }
-    // Persisted path is missing or invalid; surface a visible notice naming the
-    // path the operator picked, not its translated server-side form.
-    pendingFallbackNotice = lastPath;
-  }
-
-  // Fall back to the demo workspace.
-  const dir = defaultWorkspaceDir();
-  if (!fs.existsSync(path.join(dir, "workspace.json"))) {
-    process.stderr.write(`auto-open skipped: workspace.json not found at ${dir}\n`);
-    return;
-  }
-  try {
-    const res = await apiRequest("/workspace/open", {
-      method: "POST",
-      body: { path: serverPathForWorkspace(dir, process.env) },
-    });
-    if (res.status !== 200) {
-      process.stderr.write(
-        `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
-        + `server responded ${res.status} — ${JSON.stringify(res.body)}\n`,
-      );
-    }
-  } catch (err) {
-    process.stderr.write(
-      `auto-open workspace failed [mode=${controlPlaneMode(process.env)}, dir=${dir}]: `
-      + `${err.message ?? err}\n`,
-    );
-  }
 }
 
 function startEventStream() {
@@ -1079,7 +955,14 @@ app.whenReady().then(async () => {
   try {
     controlPlane = await startControlPlane();
     startEventStream();
-    await openDefaultWorkspace();
+    const autoOpenResult = await openDefaultWorkspace({
+      apiRequest,
+      env: process.env,
+      userDataPath: app.getPath("userData"),
+    });
+    if (autoOpenResult.fallbackNoticePath !== null) {
+      pendingFallbackNotice = autoOpenResult.fallbackNoticePath;
+    }
   } catch (err) {
     controlPlaneError = err;
     controlPlaneState = "failed";
