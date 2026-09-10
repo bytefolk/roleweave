@@ -1016,6 +1016,7 @@ test("codex turn run: maps Codex JSONL into engine.v1 events and always sandboxe
   // config-isolation flags are the boundary and must never be dropped.
   assert.ok(codexArgs.includes("--sandbox"));
   assert.equal(codexArgs[codexArgs.indexOf("--sandbox") + 1], "read-only");
+  assert.ok(codexArgs.includes("--strict-config"));
   assert.ok(codexArgs.includes("--ignore-user-config"));
   assert.ok(codexArgs.includes("--ephemeral"));
   assert.ok(codexArgs.includes("--json"));
@@ -1131,6 +1132,9 @@ test("codex turn run: an unusable OPENAI_BASE_URL fails before Codex is spawned 
     "http://relay.example.com/v1",
     "https://user:secret@relay.example.com/v1",
     "https://relay.example.com/v1#fragment",
+    'https://a",foo="b',
+    "https://a?x=\\y",
+    "https://rel\tay.example.com/v1",
     "not-a-url",
   ]) {
     const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
@@ -1166,6 +1170,32 @@ test("codex turn run: an unusable OPENAI_BASE_URL fails before Codex is spawned 
     },
   });
   assert.equal(codexEvents(loopback.stdout).at(-1)?.type, "run.completed");
+});
+
+test("codex turn run: an unusable OPENAI_MODEL fails before Codex is spawned (#206)", async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-codex-model-"));
+  const argsFile = path.join(fakeDir, "args.json");
+  const envFile = path.join(fakeDir, "env.json");
+  const fakeBin = await writeFakeCodex(fakeDir, fakeCodexOk(argsFile, envFile));
+
+  for (const model of ["-x", "gpt-5.2\n-c", `gpt-${"x".repeat(257)}`]) {
+    const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+      stdin: JSON.stringify({ input: "run" }),
+      env: {
+        DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex",
+        DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin,
+        OPENAI_API_KEY: "service-key",
+        OPENAI_MODEL: model,
+      },
+    });
+    const events = codexEvents(result.stdout);
+    const terminal = events.filter((event) => event.type === "run.completed" || event.type === "run.failed");
+    assert.equal(terminal.length, 1, `${JSON.stringify(model)} must produce one terminal event`);
+    assert.equal(terminal[0]?.type, "run.failed");
+    assert.equal((terminal[0]?.error as Record<string, unknown>).code, "codex.model_invalid");
+    await assert.rejects(() => fs.access(argsFile, fsConstants.F_OK));
+  }
 });
 
 test("codex turn run: a missing Codex binary fails closed without disclosing a path (#206)", async () => {

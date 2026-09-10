@@ -1113,23 +1113,36 @@ export function validatedCodexBaseUrl(value) {
   ) {
     return null;
   }
-  // Rebuild from the parsed components rather than handing back the operator's
-  // raw string. Nothing but a scheme, host, optional port and path can survive,
-  // so the value that reaches Codex's provider block is normalised rather than
-  // merely inspected, and there is no path for an unreviewed character to ride
-  // along into the spawned command line.
+  // Rebuild from parsed scheme, host, optional port, path and query components
+  // rather than handing the operator's raw string to Codex. This normalises the
+  // value before it enters either the TOML provider block or, on Windows, the
+  // escaped command line used to launch an npm shim.
   const port = parsed.port.length > 0 ? `:${parsed.port}` : "";
   const pathname = parsed.pathname.replace(/\/+$/, "");
   const normalised = `${parsed.protocol}//${parsed.hostname}${port}${pathname}${parsed.search}`;
-  // A quoted TOML string is the only shape this value is ever interpolated
-  // into, so a quote or backslash surviving normalisation would break out of
-  // it. None can, and this asserts that rather than assuming it.
+  // A quote or backslash surviving URL normalisation could break out of the
+  // quoted TOML string. Reject either explicitly; regression fixtures exercise
+  // this guard so it cannot be removed as apparently redundant.
   if (/["\\]/.test(normalised)) return null;
   return normalised;
 }
 
 /** Codex accepts a provider name as a bare config key, so keep it inert. */
-const CODEX_PROVIDER_NAME = "org_workbench";
+const CODEX_PROVIDER_NAME = "roleweave";
+
+/**
+ * Keep the operator-selected model an inert value for Codex's `--model`
+ * argument. A leading option marker, control character or unbounded value must
+ * fail before spawn rather than turning into an opaque CLI parsing failure.
+ *
+ * @param {string | undefined} value
+ * @returns {string | null | undefined}
+ */
+export function validatedCodexModel(value) {
+  if (value === undefined || value.length === 0) return undefined;
+  if (value.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value)) return null;
+  return value;
+}
 
 /**
  * @param {string | undefined} model
@@ -1139,6 +1152,9 @@ const CODEX_PROVIDER_NAME = "org_workbench";
 export function codexTurnArgs(model, baseUrl) {
   const args = [
     "exec",
+    // Reject provider-table fields Codex does not understand. This complements
+    // the local URL guard and keeps future configuration drift fail-closed.
+    "--strict-config",
     // --ignore-user-config is the Codex analogue of the Claude path's
     // --setting-sources "": no operator config.toml, plugin, or profile leaks
     // into a turn, so the provider configuration below is the whole truth.
@@ -1170,7 +1186,7 @@ export function codexTurnArgs(model, baseUrl) {
   ];
   if (model !== undefined && model.length > 0) args.push("--model", model);
   if (baseUrl !== undefined) {
-    const provider = `{ name = "Org Workbench provider", base_url = "${baseUrl}", env_key = "OPENAI_API_KEY", wire_api = "responses" }`;
+    const provider = `{ name = "RoleWeave provider", base_url = "${baseUrl}", env_key = "OPENAI_API_KEY", wire_api = "responses" }`;
     args.push("-c", `model_provider="${CODEX_PROVIDER_NAME}"`);
     args.push("-c", `model_providers.${CODEX_PROVIDER_NAME}=${provider}`);
   }
@@ -1217,7 +1233,13 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
     }
   }
 
-  const args = codexTurnArgs(process.env.OPENAI_MODEL, baseUrl);
+  const model = validatedCodexModel(process.env.OPENAI_MODEL);
+  if (model === null) {
+    fail("codex.model_invalid", "OPENAI_MODEL must be a bounded model identifier", false);
+    return;
+  }
+
+  const args = codexTurnArgs(model, baseUrl);
   args.push(`[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n${input || "Execute your position duties for this turn."}`);
 
   let child;
