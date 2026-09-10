@@ -31,6 +31,24 @@ test("controlPlaneMode: native off-win32, wsl only on explicit opt-in", () => {
   assert.equal(controlPlaneMode({ ORG_WORKBENCH_CONTROL_PLANE: "native" }), "native");
 });
 
+test("controlPlaneMode: win32 honors ROLEWEAVE_CONTROL_PLANE_MODE alias and legacy name", (t) => {
+  // Mock the platform so the win32 opt-in branch runs on linux/mac CI too.
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { ...descriptor, value: "win32" });
+  t.after(() => Object.defineProperty(process, "platform", descriptor));
+
+  assert.equal(controlPlaneMode({}), "native");
+  assert.equal(controlPlaneMode({ ROLEWEAVE_CONTROL_PLANE_MODE: "wsl" }), "wsl");
+  assert.equal(controlPlaneMode({ ROLEWEAVE_CONTROL_PLANE_MODE: "WSL" }), "wsl");
+  assert.equal(controlPlaneMode({ ROLEWEAVE_CONTROL_PLANE_MODE: "native" }), "native");
+  assert.equal(controlPlaneMode({ ORG_WORKBENCH_CONTROL_PLANE: "wsl" }), "wsl");
+  // The RoleWeave name wins when both are set, mirroring workspaceOverride.
+  assert.equal(
+    controlPlaneMode({ ROLEWEAVE_CONTROL_PLANE_MODE: "wsl", ORG_WORKBENCH_CONTROL_PLANE: "native" }),
+    "wsl",
+  );
+});
+
 test("engine runtime marks only the desktop default as the bundled Electron engine", () => {
   assert.deepEqual(engineRuntimeEnvironment({}, '"/Applications/RoleWeave" "qoder-engine.mjs"'), {
     ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI: '"/Applications/RoleWeave" "qoder-engine.mjs"',

@@ -435,3 +435,26 @@ for (const alias of ["ROLEWEAVE_DEFAULT_WORKSPACE", "ORG_WORKBENCH_DEFAULT_WORKS
     }
   }
 }
+
+test("WSL override: win32 ROLEWEAVE_CONTROL_PLANE_MODE=wsl alias activates the #224 guard", async (t) => {
+  const fixture = autoOpenFixture(t, "win32");
+  const apiRequest = makeApiRequestStub({ status: 200, body: { open: true } });
+
+  const result = await fixture.openDefaultWorkspace({
+    apiRequest,
+    env: {
+      ROLEWEAVE_DEFAULT_WORKSPACE: "C:\\projects\\workspace",
+      ROLEWEAVE_CONTROL_PLANE_MODE: "wsl",
+    },
+    userDataPath: "/unused/user-data",
+    writeStderr: fixture.writeStderr,
+  });
+
+  assert.deepEqual(result, { fallbackNoticePath: null });
+  assert.deepEqual(fixture.checkedPaths, [], "the alias must skip the Windows-side existsSync");
+  assert.deepEqual(apiRequest.calls, [{
+    pathname: "/workspace/open",
+    options: { method: "POST", body: { path: "/mnt/c/projects/workspace" } },
+  }]);
+  assert.deepEqual(fixture.messages, [], "success must stay silent");
+});

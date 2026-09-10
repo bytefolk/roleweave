@@ -22,13 +22,16 @@ function winToWslPath(p) {
  * Decide where the control plane runs.
  * - non-win32: always native (the shell and server share the environment).
  * - win32: "wsl" only when the operator opts in via
- *   ORG_WORKBENCH_CONTROL_PLANE=wsl (the WSL-agent topology: engine + control
- *   plane live in WSL, the Windows shell connects over WSL2 localhost
- *   forwarding). Default stays native (Windows-native engine, #225).
+ *   ROLEWEAVE_CONTROL_PLANE_MODE=wsl (or the legacy ORG_WORKBENCH_CONTROL_PLANE=wsl)
+ *   — the WSL-agent topology: engine + control plane live in WSL, the Windows
+ *   shell connects over WSL2 localhost forwarding. The RoleWeave name wins when
+ *   both are set, mirroring workspaceOverride. Default stays native
+ *   (Windows-native engine, #225).
  */
 function controlPlaneMode(env) {
   if (process.platform !== "win32") return "native";
-  return (env.ORG_WORKBENCH_CONTROL_PLANE ?? "").toLowerCase() === "wsl" ? "wsl" : "native";
+  const mode = env.ROLEWEAVE_CONTROL_PLANE_MODE ?? env.ORG_WORKBENCH_CONTROL_PLANE ?? "";
+  return mode.toLowerCase() === "wsl" ? "wsl" : "native";
 }
 
 function asciiUppercase(value) {

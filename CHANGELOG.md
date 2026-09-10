@@ -48,6 +48,7 @@
 
 - #221 review：Codex 就绪状态要求内置引擎边界；使用外部 digital-employee CLI 时，即使已安装 Codex 并配置凭据，两种 Codex Host 仍显示不可用并说明原因。
 - #156：工作区覆盖路径仅在 Windows WSL 控制面模式下跳过本地存在性检查，由控制面在路径边界转换后校验；模式判断与路由、诊断统一，Linux/macOS 即使设置 `ORG_WORKBENCH_CONTROL_PLANE=wsl` 仍保留原生校验。
+- #224：控制面模式开关同时接受 RoleWeave 命名 `ROLEWEAVE_CONTROL_PLANE_MODE`（RoleWeave 名优先，与 `ROLEWEAVE_DEFAULT_WORKSPACE` 一致），保留 `ORG_WORKBENCH_CONTROL_PLANE` 兼容旧部署；避免按新品牌名设置时被静默忽略而退回原生模式、使 #156 的 WSL 路径修复在真实 Windows 主机上失效。
 - #135：新增免费 macOS GitHub 自动更新通道：发布 workflow 使用 `OWB_UPDATE_SIGNING_PRIVATE_KEY` 为 ZIP 元数据生成 Ed25519 签名，客户端校验后后台下载，并在正常退出时自动替换、重启；应用本身仍为 unsigned，Gatekeeper/Developer ID 方案保留为后续切换路径。
 
 ### Added
