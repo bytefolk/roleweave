@@ -3,7 +3,7 @@
   "schemaVersion": "employee-package.v1alpha1",
   "name": "community-operator",
   "version": "0.1.0",
-  "description": "Summarizes community feedback and keeps contributor documentation current.",
+  "description": "汇总社区反馈，持续维护贡献者文档。",
   "license": "Apache-2.0",
   "authors": [
     "your-team"

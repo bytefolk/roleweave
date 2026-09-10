@@ -3,7 +3,7 @@
   "schemaVersion": "employee-package.v1alpha1",
   "name": "repo-owner",
   "version": "0.1.0",
-  "description": "Owns the repository roadmap, review decisions, and final releases.",
+  "description": "负责仓库路线图、评审决策和最终发布。",
   "license": "Apache-2.0",
   "authors": [
     "your-team"

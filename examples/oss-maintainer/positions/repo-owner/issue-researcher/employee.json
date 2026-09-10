@@ -3,7 +3,7 @@
   "schemaVersion": "employee-package.v1alpha1",
   "name": "issue-researcher",
   "version": "0.1.0",
-  "description": "Triages issues and produces researched, evidence-backed summaries for the owner.",
+  "description": "分流 issue，为负责人产出有据可查的调研摘要。",
   "license": "Apache-2.0",
   "authors": [
     "your-team"
