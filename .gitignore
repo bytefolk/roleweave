@@ -1,0 +1,5 @@
+node_modules/
+# render-check writes section screenshots into the working directory
+hero.png
+runtime.png
+ladder.png

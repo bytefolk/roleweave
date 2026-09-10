@@ -1,0 +1,75 @@
+name: site-verify
+
+on:
+  pull_request:
+  push:
+    branches: [gh-pages]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # npm ci honours package-lock.json, so the toolchain version is pinned
+      # rather than resolved at run time.
+      - name: Install pinned toolchain
+        run: npm ci
+
+      - name: Report resolved versions
+        run: |
+          node -v
+          node -e "console.log('playwright-core', require('playwright-core/package.json').version)"
+
+      - name: Cache browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install browser
+        run: npx --no-install playwright-core install --with-deps chromium
+
+      # Pure arithmetic over the stylesheet's own tokens; no browser needed.
+      - name: Contrast audit
+        run: npm run verify:contrast
+
+      # Renders index.html, screenshots hero/runtime/ladder, asserts 9/9 reveal
+      # blocks and the tab switcher, and fails closed on page errors.
+      - name: Render check
+        run: npm run verify:render
+
+      # Guards the guard: proves the render check still exits non-zero when the
+      # page errors, so a green run above cannot be a silent no-op.
+      - name: Render check fails closed
+        run: |
+          if npm run verify:failclose; then
+            echo "::error::render-check exited 0 on a page with injected errors; it is no longer failing closed"
+            exit 1
+          fi
+          echo "fail-close verified: injected errors produced a non-zero exit"
+
+      - name: Upload section screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: section-screenshots
+          path: |
+            hero.png
+            runtime.png
+            ladder.png
+          if-no-files-found: warn
+          retention-days: 14

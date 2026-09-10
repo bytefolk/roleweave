@@ -1,0 +1,25 @@
+{
+  "name": "@bytefolk/roleweave-site",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Static marketing site for RoleWeave. No build step; this manifest only pins the verification toolchain.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bytefolk/roleweave.git",
+    "directory": "."
+  },
+  "scripts": {
+    "verify": "npm run verify:contrast && npm run verify:render",
+    "verify:contrast": "node scripts/contrast-check.js index.html",
+    "verify:render": "node scripts/render-check.js \"$PWD/index.html\"",
+    "verify:failclose": "node scripts/render-check.js \"$PWD/index.html\" --self-test-failclose",
+    "browser": "playwright-core install chromium"
+  },
+  "devDependencies": {
+    "playwright-core": "1.62.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
