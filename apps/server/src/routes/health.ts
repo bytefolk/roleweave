@@ -6,7 +6,7 @@ import { probeEngine } from "../engine/probe.js";
 import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
-import { resolveCodexExecutable } from "../codex-binary.js";
+import { resolveCodexExecutable, validatedCodexModel } from "../codex-binary.js";
 import { createLauncherSpawnSpec } from "../windows-launcher.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 
@@ -376,8 +376,28 @@ export function hostHealth({
   // claude-local is not gated on ANTHROPIC_API_KEY. Login state itself is
   // asserted by the engine at run time; no credential store is inspected here.
   const codexProviderConfigured = typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.length > 0;
-  const codexConfigured = codex.installed && codexProviderConfigured;
-  const codexLocalConfigured = codex.installed;
+  // Both Codex Hosts spawn with --ignore-user-config, so the operator's
+  // config.toml model is not read and OPENAI_MODEL is the only pin the control
+  // plane has. Unset is a legitimate state, not a misconfiguration: Codex then
+  // chooses for itself and reports the choice nowhere the control plane can
+  // read, so no model is claimed rather than one being inferred.
+  //
+  // #238 review: this shares the engine's validator rather than mirroring it.
+  // A preflight stricter than the enforcement point would call a working
+  // OPENAI_MODEL illegal, and no suite on either side could see the drift.
+  const codexModel = validatedCodexModel(env.OPENAI_MODEL);
+  const codexModelUsable = codexModel !== null;
+  // #238 review: `modelPinnable` is a property of the Host, not of readiness,
+  // so it is stated even when the binary or credential is missing. It is what
+  // lets a client render the model row only where a knob exists, instead of
+  // carrying its own list of which engines have one.
+  const codexModelHealth = {
+    modelPinnable: true,
+    ...(typeof codexModel === "string" ? { model: codexModel } : {}),
+  };
+  const codexModelNextStep = "OPENAI_MODEL 不是合法的模型标识（首字符为字母或数字，其余限 A-Z a-z 0-9 . _ : / -，长度 ≤ 256）；请更正或清空后重启工作台";
+  const codexConfigured = codex.installed && codexProviderConfigured && codexModelUsable;
+  const codexLocalConfigured = codex.installed && codexModelUsable;
   const claudeCodeConfigured = bundledQoder
     ? (claudeLocal.installed && claudeLocal.supported && claudeConfigured)
     : claudeConfigured;
@@ -434,26 +454,32 @@ export function hostHealth({
     codex: {
       configured: codexConfigured,
       ready: bundledElectronEngine && engineAvailable && codexConfigured,
+      ...codexModelHealth,
       ...(!bundledElectronEngine
         ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
         : !codex.installed
           ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
           : !codexProviderConfigured
             ? { nextStep: "设置 OPENAI_API_KEY（如需自建或中转端点，另设 OPENAI_BASE_URL）后重启工作台；若要用 Codex 订阅登录，请改选 Codex（本地登录）" }
-            : !engineAvailable
-              ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
-              : {}),
+            : !codexModelUsable
+              ? { nextStep: codexModelNextStep }
+              : !engineAvailable
+                ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+                : {}),
     },
     "codex-local": {
       configured: codexLocalConfigured,
       ready: bundledElectronEngine && engineAvailable && codexLocalConfigured,
+      ...codexModelHealth,
       ...(!bundledElectronEngine
         ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
         : !codex.installed
           ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
-          : !engineAvailable
-            ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
-            : {}),
+          : !codexModelUsable
+            ? { nextStep: codexModelNextStep }
+            : !engineAvailable
+              ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+              : {}),
     },
   };
 }

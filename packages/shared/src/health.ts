@@ -13,6 +13,21 @@ export interface TurnHostHealth {
   ready: boolean;
   /** Actionable, non-sensitive explanation when the Host cannot accept a turn. */
   nextStep?: string;
+  /**
+   * Whether this Host exposes an LLM-model knob at all. Absent means it does
+   * not, so `model` being absent is a missing capability rather than an unset
+   * preference. Without this, one `undefined` carried both meanings and a
+   * client could only tell them apart by hardcoding engine ids — a copy of the
+   * engine contract, which is exactly what #239 was.
+   */
+  modelPinnable?: boolean;
+  /**
+   * The LLM model the control plane will pin for this Host. Absent means the
+   * control plane pins none and the Host's own CLI decides — it is never an
+   * inferred name, because no Host reports the model it resolved for itself.
+   * Only meaningful where `modelPinnable` is true.
+   */
+  model?: string;
 }
 
 export interface HealthResponse {

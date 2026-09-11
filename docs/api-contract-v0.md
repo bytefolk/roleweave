@@ -46,13 +46,19 @@
   "hosts": {
     "qoder": { "configured": false, "ready": false, "nextStep": "设置 QODER_PERSONAL_ACCESS_TOKEN 后重启工作台" },
     "claude-code": { "configured": false, "ready": false, "nextStep": "设置 ANTHROPIC_API_KEY 后重启工作台" },
-    "claude-local": { "configured": false, "ready": false, "nextStep": "安装 Claude Code 并确保 claude 在 PATH 上…" }
+    "claude-local": { "configured": false, "ready": false, "nextStep": "安装 Claude Code 并确保 claude 在 PATH 上…" },
+    "codex": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 OPENAI_API_KEY…" },
+    "codex-local": { "configured": true, "ready": true, "modelPinnable": true, "model": "gpt-5.6-sol" }
   },
   "workspace": { "open": false }
 }
 ```
 
 约束：`engine.available` 为对已配置引擎命令的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。普通 `digital-employee` 的 Qoder model port 保持 service-token 门禁：`configured` 仅表示 `QODER_PERSONAL_ACCESS_TOKEN` 非空。仅当引擎精确宣布 `qoder-engine <semver>` 时，Qoder Host 才使用与 turn adapter 相同的无 shell executable resolver：非空 `ORG_WORKBENCH_QODER_BIN` 优先，其次为 `DIGITAL_EMPLOYEE_QODER_COMMAND`（无效显式覆盖均 fail closed），否则查 PATH 的 `qodercli` / `qoderclicn` / `qoder` 与 macOS 已支持的精确用户安装位置；符号链接的最终目标必须是可执行普通文件。解析出的绝对路径接受有界 `--version` 探针；探针以 CLI 主进程退出为完成条件，不等待后代继承的 stdio，并在超时或异常时清理独立进程组；当前支持 1.1.x，缺失、不可执行、超时、无法解析或版本越界均 fail closed。adapter spawn 同一绝对路径并保持继承 PATH 不变；Finder 登录 PATH 恢复和打包验收由 #110 的 macOS arm64 foundation partial 承接，不是本修复的完成依赖。该探针不读取账号、登录态或凭据存储，`ready` 也只表示本地执行前置满足，不代表远端 provider 接受了账号或具备 entitlement；一次真实回合仍是唯一的运行证据。响应只含布尔值与非敏感 `nextStep`，绝不返回凭据值、绝对 Qoder 路径或原始探针输出。Claude 各 Host 的判定独立，不得成为 bundled Qoder ready 的门槛。客户端必须以 Host 状态控制选择和发送，不得以 `engine.available` 代替 Host ready。
+
+可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，只有两个 Codex Host 传 `true`，其余三个不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
+
+可选的 `hosts[].model` 表示控制面会为该 Host 固定的 LLM 模型，只有两个 Codex Host 有这个旋钮，取值来自 `OPENAI_MODEL`。只有 `modelPinnable` 为 `true` 时该字段才有意义：在无旋钮的 Host 上，`model` 缺失代表能力不存在，而不是未设置偏好。字段缺失即控制面不固定模型：引擎不会传 `--model`，由 Host 自己的 CLI 决定，而 Codex CLI 不向调用方报告它选中的模型（`--json` 事件流无此字段，`codex debug models` 也不标注默认项），因此缺失时必须如实呈现为"未指定"，不得推断出一个名字。Codex 回合一律带 `--ignore-user-config`，操作员 `~/.codex/config.toml` 里的 `model` 不参与决策，不能据此展示。`OPENAI_MODEL` 若不是合法模型标识（首字符为字母或数字，其余限 `A-Z a-z 0-9 . _ : / -`，长度 ≤ 256），引擎会在 spawn 前失败，故两个 Codex Host 一律 fail closed（`configured` 与 `ready` 均为 false 并给出 `nextStep`），且该值绝不回显为 `model`。
 
 ### 2.2 `GET /workspace` — 当前工作区信息
 

@@ -8,7 +8,7 @@ import type {
   TurnRunRequest,
   TurnRunResult,
 } from "@roleweave/shared";
-import { POSITION_ID_PATTERN } from "@roleweave/shared";
+import { POSITION_ID_PATTERN, turnEngines } from "@roleweave/shared";
 import { api, assertPosixMode, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import {
   TurnStore,
@@ -156,7 +156,7 @@ test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishe
   }
 });
 
-test("POST /turns only accepts qoder and claude-code and remains bearer protected", async () => {
+test("POST /turns remains bearer protected", async () => {
   const turnDriver = new FakeTurnDriver();
   const server = await startTestServer(undefined, turnDriver);
   const workspace = await copyExampleWorkspace();
@@ -167,33 +167,49 @@ test("POST /turns only accepts qoder and claude-code and remains bearer protecte
       body: { positionId: "repo-owner", input: "hello", engine: "qoder" },
     });
     assert.equal(unauthenticated.status, 401);
+    assert.equal(turnDriver.calls.length, 0);
+  } finally {
+    await server.close();
+  }
+});
 
-    for (const engine of ["deterministic", "claude", "openai"]) {
+// #240 review: this was named "only accepts qoder and claude-code", which had
+// been wrong since #206 and was worse than merely stale -- it is the name a
+// contributor greps while about to add a sixth engine, and it told them the
+// route still carried a whitelist of its own. It also bundled bearer auth
+// under a name describing neither half, so a failure pointed at the wrong one.
+// Driving `turnEngines` rather than naming engines keeps it true by
+// construction, the same rule the fix in this PR applies to persistence.
+test("POST /turns accepts every engine in the shared contract and rejects the rest", async () => {
+  const turnDriver = new FakeTurnDriver();
+  const server = await startTestServer(undefined, turnDriver);
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+
+    for (const engine of ["deterministic", "claude", "openai", "codex-remote"]) {
       const rejected = await api(server.baseUrl, "/turns", {
         method: "POST",
         token: server.token,
         body: { positionId: "repo-owner", input: "hello", engine },
       });
-      assert.equal(rejected.status, 400);
+      assert.equal(rejected.status, 400, `${engine} must be rejected`);
       assert.equal((rejected.body as { code: string }).code, "turn_engine_unsupported");
     }
-    assert.equal(turnDriver.calls.length, 0);
+    assert.equal(turnDriver.calls.length, 0, "a rejected engine must never reach the driver");
 
-    const accepted = await api(server.baseUrl, "/turns", {
-      method: "POST",
-      token: server.token,
-      body: { positionId: "repo-owner", input: "hello", engine: "claude-code" },
-    });
-    assert.equal(accepted.status, 200);
-    assert.equal((accepted.body as { engine: TurnEngine }).engine, "claude-code");
-
-    const acceptedLocal = await api(server.baseUrl, "/turns", {
-      method: "POST",
-      token: server.token,
-      body: { positionId: "repo-owner", input: "hello", engine: "claude-local" },
-    });
-    assert.equal(acceptedLocal.status, 200);
-    assert.equal((acceptedLocal.body as { engine: TurnEngine }).engine, "claude-local");
+    // Guards against the contract going empty and silently emptying this loop.
+    assert.ok(turnEngines.length > 0);
+    for (const engine of turnEngines) {
+      const accepted = await api(server.baseUrl, "/turns", {
+        method: "POST",
+        token: server.token,
+        body: { positionId: "repo-owner", input: "hello", engine },
+      });
+      assert.equal(accepted.status, 200, `${engine} must be accepted`);
+      assert.equal((accepted.body as { engine: TurnEngine }).engine, engine);
+    }
+    assert.equal(turnDriver.calls.length, turnEngines.length);
   } finally {
     await server.close();
   }
@@ -343,6 +359,47 @@ test("legacy history rejects date-only and non-canonical persisted record timest
     }
   } finally {
     await server.close();
+  }
+});
+
+test("every engine in the shared contract survives turn-record persistence (#239)", () => {
+  // Persistence is the fourth consumer of turn-engines.cjs. When it carried
+  // its own list, a Codex turn was accepted by the route, written, and then
+  // rejected on read-back — so the conversation's history and /reports stayed
+  // broken for as long as the record existed. Driving the whole contract
+  // through the validator is what makes a sixth engine fail here instead.
+  const record = {
+    schemaVersion: "turn-record.v1",
+    conversationId: "engine-contract-conversation",
+    turnId: "engine-contract-turn",
+    positionId: "repo-owner",
+    status: "completed",
+    input: "which model answered",
+    envelopeDigest: `sha256:${"a".repeat(64)}`,
+    createdAt: "2026-09-11T00:00:00.000Z",
+    updatedAt: "2026-09-11T00:00:01.000Z",
+    runId: "engine-contract-run",
+    output: "done",
+    events: [
+      { type: "run.started", runId: "engine-contract-run", timestamp: "2026-09-11T00:00:00.000000001Z" },
+      {
+        type: "run.completed",
+        runId: "engine-contract-run",
+        timestamp: "2026-09-11T00:00:00.000000002Z",
+        output: "done",
+        terminalReason: "goal_met",
+      },
+    ],
+  };
+
+  assert.ok(turnEngines.length > 0);
+  for (const engine of turnEngines) {
+    assert.equal(isTurnRecord({ ...record, engine }), true, `${engine} must round-trip through persistence`);
+  }
+
+  // The validator must not have become permissive in the process.
+  for (const engine of ["", "codex ", "CODEX", "gpt-6-astra", 42, null, undefined]) {
+    assert.equal(isTurnRecord({ ...record, engine }), false, `${String(engine)} must stay rejected`);
   }
 });
 

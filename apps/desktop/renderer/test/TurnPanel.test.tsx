@@ -455,6 +455,33 @@ it("does not label an older receipt as the latest call when newer history has no
   expect(screen.getByText("上次调用：7 轮 · 890 字节")).toBeInTheDocument();
 });
 
+it("names the pinned model under the Agent Host, and says who decides when none is pinned (#236)", () => {
+  const props = { workspaceOpen: true, positions, selectedPositionId: "repo-owner", turns: [],
+    onSelectPosition: vi.fn(), onSelectEngine: vi.fn(), onCreateTurn: vi.fn() };
+  // Only a Host the contract marks pinnable gets the row at all.
+  const pinnable: TurnPanelProps["engineAvailability"] = {
+    ...availability,
+    codex: { configured: true, ready: true, modelPinnable: true },
+    "codex-local": { configured: true, ready: true, modelPinnable: true, model: "gpt-5.6-sol" },
+  };
+  const { rerender } = render(<TurnPanel {...props} engine="codex-local" engineAvailability={pinnable} />);
+  fireEvent.click(screen.getByText("会话设置"));
+  expect(screen.getByText("模型：gpt-5.6-sol")).toBeInTheDocument();
+
+  // Pinnable but nothing pinned: the row must attribute the choice to the Host
+  // rather than show a blank, a literal "undefined", or a guessed model name.
+  rerender(<TurnPanel {...props} engine="codex" engineAvailability={pinnable} />);
+  expect(screen.getByText("模型：由 Codex 自行决定")).toBeInTheDocument();
+  expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+
+  // #238 review: a Host with no model knob gets no row. Saying "chosen by
+  // Qoder" would advertise an option that does not exist, and the Codex-only
+  // tooltip would explain OPENAI_MODEL to someone who cannot use it.
+  rerender(<TurnPanel {...props} engine="qoder" engineAvailability={pinnable} />);
+  expect(screen.queryByText(/^模型：/)).not.toBeInTheDocument();
+  expect(screen.queryByText("模型：gpt-5.6-sol")).not.toBeInTheDocument();
+});
+
 it("blocks context changes and rotation while this employee runs in a group", () => {
   const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "group-busy-session", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
   const toggle = vi.fn();

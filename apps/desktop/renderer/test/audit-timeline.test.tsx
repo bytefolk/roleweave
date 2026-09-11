@@ -42,6 +42,27 @@ describe("P0 Turn / 审计时间线（AuditTimeline）", () => {
     expect(screen.getAllByText("未命名岗位").length).toBeGreaterThanOrEqual(2);
   });
 
+  // #240 review: the timeline carried its own third engine-label map, typed
+  // `engine: string` with a `return engine` fallback, so a Codex turn rendered
+  // as the bare id `codex-local` and claude-local read "Claude Local" here but
+  // "Claude Code · 本地登录" in the conversation panel. The bare id was only
+  // reachable once /reports stopped failing closed on Codex records, which is
+  // what this PR fixes. It now shares useEngineLabel().
+  it("引擎标签与对话面板同源：Codex 不显示裸 id，claude-local 措辞一致", () => {
+    const events: AuditTimelineEvent[] = [
+      makeEvent({ id: "X:start", runId: "run-X", at: "2026-09-11T09:00:00.000Z", positionId: "writer-1", engine: "codex-local", type: "run.started" }),
+      makeEvent({ id: "Y:start", runId: "run-Y", at: "2026-09-11T09:01:00.000Z", positionId: "writer-1", engine: "codex", type: "run.started" }),
+      makeEvent({ id: "Z:start", runId: "run-Z", at: "2026-09-11T09:02:00.000Z", positionId: "writer-1", engine: "claude-local", type: "run.started" }),
+    ];
+    render(<AuditTimeline events={events} />);
+    expect(screen.getByText("· Codex · 本地登录")).toBeInTheDocument();
+    expect(screen.getByText("· Codex")).toBeInTheDocument();
+    expect(screen.getByText("· Claude Code · 本地登录")).toBeInTheDocument();
+    // The old map's fallback and its divergent wording must both be gone.
+    expect(screen.queryByText(/codex-local/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Claude Local/)).not.toBeInTheDocument();
+  });
+
   it("展开一个组后可以看到该组的事件行", () => {
     const { container } = render(<AuditTimeline events={sample} />);
     const headers = container.querySelectorAll(".ant-collapse-header");

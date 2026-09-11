@@ -197,6 +197,8 @@ export function TurnPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [cancelling, onCancelTurn, runningTurn, selectedPosition]);
 
+  const modelPinnable = engineAvailability[engine].modelPinnable === true;
+  const pinnedModel = engineAvailability[engine].model;
   const sessionMode = sessions !== undefined;
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
   const activeSession = sessions?.find((session) => session.status === "active") ?? null;
@@ -374,6 +376,20 @@ export function TurnPanel({
                 disabled={!workspaceOpen}
                 onChange={onSelectEngine}
               />
+              {/* #236: no Host CLI reports the model it resolved for itself, so
+                  state what the control plane pins and say plainly when it pins
+                  nothing — an inferred name would be a guess presented as fact.
+                  #238 review: only for a Host that has the knob. Saying "its CLI
+                  decides" for one that has none advertises an option nobody has,
+                  which is the same dishonesty as inferring a name. Which Hosts
+                  those are comes from the contract, never from an id list here. */}
+              {modelPinnable ? (
+                <span className="owb-turn-engine__model" title={t("turn.modelHintCodex")}>
+                  {pinnedModel === undefined
+                    ? t("turn.modelUnpinned", { engine: engineLabel(engine) })
+                    : t("turn.modelPinned", { model: pinnedModel })}
+                </span>
+              ) : null}
             </label>
           </div>
 

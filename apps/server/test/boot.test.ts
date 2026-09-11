@@ -162,7 +162,7 @@ test("codex Host health in bundled mode requires the binary plus an explicit pro
     env: { OPENAI_API_KEY: "service-key" },
     codex: installed,
   });
-  assert.deepEqual(ready.codex, { configured: true, ready: true });
+  assert.deepEqual(ready.codex, { configured: true, modelPinnable: true, ready: true });
 
   const noCli = hostHealth({
     engineAvailable: false,
@@ -198,7 +198,7 @@ test("codex Host health in bundled mode requires the binary plus an explicit pro
     env: { OPENAI_API_KEY: "service-key" },
     codex: { installed: true, version: null },
   });
-  assert.deepEqual(unknownVersion.codex, { configured: true, ready: true });
+  assert.deepEqual(unknownVersion.codex, { configured: true, modelPinnable: true, ready: true });
 
   // The health surface never echoes a credential value back.
   assert.doesNotMatch(JSON.stringify(ready), /service-key/);
@@ -210,7 +210,7 @@ test("codex-local Host readiness in bundled mode is the binary alone and never s
   // No credential anywhere: the credentialed Host stays Idle, the local-login
   // Host is ready. This is the whole point of splitting them.
   const noKey = hostHealth({ engineAvailable: true, bundledElectronEngine: true, env: {}, codex: installed });
-  assert.deepEqual(noKey["codex-local"], { configured: true, ready: true });
+  assert.deepEqual(noKey["codex-local"], { configured: true, modelPinnable: true, ready: true });
   assert.equal(noKey.codex.configured, false);
   assert.match(noKey.codex.nextStep ?? "", /本地登录/);
 
@@ -236,8 +236,99 @@ test("codex-local Host readiness in bundled mode is the binary alone and never s
     env: { OPENAI_API_KEY: "service-key" },
     codex: installed,
   });
-  assert.deepEqual(withKey["codex-local"], { configured: true, ready: true });
+  assert.deepEqual(withKey["codex-local"], { configured: true, modelPinnable: true, ready: true });
   assert.doesNotMatch(JSON.stringify(withKey["codex-local"]), /service-key/);
+});
+
+test("Codex Host health reports the pinned model, and claims none when OPENAI_MODEL is unset (#236)", () => {
+  const installed = { installed: true, version: "0.154.0" };
+  const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
+
+  const pinned = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: "gpt-5.6-sol" } });
+  assert.equal(pinned.codex.model, "gpt-5.6-sol");
+  assert.equal(pinned["codex-local"].model, "gpt-5.6-sol");
+  assert.equal(pinned.codex.ready, true);
+  assert.equal(pinned["codex-local"].ready, true);
+
+  // Unset and empty are the same state: the control plane passes no --model and
+  // Codex chooses for itself. Absent must stay absent — an inferred default
+  // would be a guess, and Codex reports its own choice to no caller.
+  for (const env of [{}, { OPENAI_MODEL: "" }]) {
+    const unpinned = hostHealth({ ...base, env });
+    assert.equal("model" in unpinned.codex, false);
+    assert.equal("model" in unpinned["codex-local"], false);
+    assert.equal(unpinned["codex-local"].ready, true);
+    // Still pinnable — the knob exists, the operator simply used none of it.
+    assert.equal(unpinned.codex.modelPinnable, true);
+    assert.equal(unpinned["codex-local"].modelPinnable, true);
+  }
+
+  // #238 review: "pinnable but unpinned" and "has no knob at all" must not both
+  // be a bare missing `model`, or a client can only separate them by carrying
+  // its own engine list. `modelPinnable` is the Host's property, so it holds
+  // whether or not a model is pinned.
+  assert.equal(pinned.codex.modelPinnable, true);
+  assert.equal(pinned["codex-local"].modelPinnable, true);
+
+  // No other Host has an LLM-model knob, so none of them may claim one.
+  const others = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.2.0",
+    bundledElectronEngine: true,
+    env: { OPENAI_MODEL: "gpt-5.6-sol", ANTHROPIC_API_KEY: "k", QODER_PERSONAL_ACCESS_TOKEN: "t" },
+    codex: installed,
+    qoderLocal: { installed: true, version: "1.1.0", supported: true },
+    claudeLocal: { installed: true, version: "2.1.214", supported: true },
+  });
+  for (const host of ["qoder", "claude-code", "claude-local"] as const) {
+    assert.equal("model" in others[host], false);
+    // The distinguishing half: absent `modelPinnable` is what tells a client
+    // this Host has no knob, rather than one left unset.
+    assert.equal("modelPinnable" in others[host], false, `${host} must not claim a model knob`);
+  }
+});
+
+test("an OPENAI_MODEL the engine would reject blocks the Codex Hosts instead of being displayed (#236)", () => {
+  const installed = { installed: true, version: "0.154.0" };
+  const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
+
+  // Each of these fails the shared `validatedCodexModel`, so every turn would
+  // die before spawn. Preflight is the place to say so.
+  for (const value of [
+    "--sandbox", "gpt 5", "gpt\n5", "-gpt-5", "x".repeat(257),
+    "gpt 5", "gpt@1", "gpt+1", "gpt;1", "'gpt'", "模型",
+  ]) {
+    const rejected = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: value } });
+    for (const host of ["codex", "codex-local"] as const) {
+      assert.equal("model" in rejected[host], false, `${value} must not be echoed as a model`);
+      assert.equal(rejected[host].configured, false, `${value} must not read as configured`);
+      assert.equal(rejected[host].ready, false, `${value} must not read as ready`);
+      assert.match(rejected[host].nextStep ?? "", /OPENAI_MODEL/);
+    }
+    // The local-login Host must still never point at a service credential.
+    assert.doesNotMatch(rejected["codex-local"].nextStep ?? "", /OPENAI_API_KEY/);
+  }
+});
+
+test("preflight never calls a legal OPENAI_MODEL illegal (#238 review)", () => {
+  const installed = { installed: true, version: "0.154.0" };
+  const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
+
+  // The direction the original two-copy design could not see. Health shared no
+  // implementation with the engine, so narrowing health's character class —
+  // dropping `:` was the measured mutation — left every suite green while an
+  // operator running `gpt-5:prod` was told their working config was illegal
+  // and both Hosts went unavailable. `codex-binary.js` now owns the only
+  // implementation, and these shapes pin the accepting side of it.
+  for (const value of ["gpt-5.6-sol", "gpt-5:prod", "o3", "a", "ns/model-1.2_3", "x".repeat(256)]) {
+    const accepted = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: value } });
+    for (const host of ["codex", "codex-local"] as const) {
+      assert.equal(accepted[host].model, value, `${value} is legal and must be reported verbatim`);
+      assert.equal(accepted[host].configured, true, `${value} must not block the Host`);
+      assert.equal(accepted[host].ready, true, `${value} must not block the Host`);
+      assert.equal(accepted[host].nextStep, undefined, `${value} must not produce a next step`);
+    }
+  }
 });
 
 test("Codex Hosts stay unavailable for an external engine even with a binary and service key", () => {
@@ -301,12 +392,12 @@ test("GET /health gates Codex Hosts on the configured bundled engine boundary", 
   const bundled = await api(server.baseUrl, "/health");
   assert.equal(bundled.status, 200);
   const bundledHealth = bundled.body as HealthResponse;
-  assert.deepEqual(bundledHealth.hosts.codex, { configured: true, ready: true });
-  assert.deepEqual(bundledHealth.hosts["codex-local"], { configured: true, ready: true });
+  assert.deepEqual(bundledHealth.hosts.codex, { configured: true, modelPinnable: true, ready: true });
+  assert.deepEqual(bundledHealth.hosts["codex-local"], { configured: true, modelPinnable: true, ready: true });
   delete process.env.OPENAI_API_KEY;
   const localLogin = (await api(server.baseUrl, "/health")).body as HealthResponse;
   assert.equal(localLogin.hosts.codex.ready, false);
-  assert.deepEqual(localLogin.hosts["codex-local"], { configured: true, ready: true });
+  assert.deepEqual(localLogin.hosts["codex-local"], { configured: true, modelPinnable: true, ready: true });
 });
 
 /**
