@@ -8,7 +8,7 @@ import type {
   TurnRunRequest,
   TurnRunResult,
 } from "@roleweave/shared";
-import { POSITION_ID_PATTERN } from "@roleweave/shared";
+import { POSITION_ID_PATTERN, turnEngines } from "@roleweave/shared";
 import { api, assertPosixMode, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import {
   TurnStore,
@@ -343,6 +343,47 @@ test("legacy history rejects date-only and non-canonical persisted record timest
     }
   } finally {
     await server.close();
+  }
+});
+
+test("every engine in the shared contract survives turn-record persistence (#239)", () => {
+  // Persistence is the fourth consumer of turn-engines.cjs. When it carried
+  // its own list, a Codex turn was accepted by the route, written, and then
+  // rejected on read-back — so the conversation's history and /reports stayed
+  // broken for as long as the record existed. Driving the whole contract
+  // through the validator is what makes a sixth engine fail here instead.
+  const record = {
+    schemaVersion: "turn-record.v1",
+    conversationId: "engine-contract-conversation",
+    turnId: "engine-contract-turn",
+    positionId: "repo-owner",
+    status: "completed",
+    input: "which model answered",
+    envelopeDigest: `sha256:${"a".repeat(64)}`,
+    createdAt: "2026-09-11T00:00:00.000Z",
+    updatedAt: "2026-09-11T00:00:01.000Z",
+    runId: "engine-contract-run",
+    output: "done",
+    events: [
+      { type: "run.started", runId: "engine-contract-run", timestamp: "2026-09-11T00:00:00.000000001Z" },
+      {
+        type: "run.completed",
+        runId: "engine-contract-run",
+        timestamp: "2026-09-11T00:00:00.000000002Z",
+        output: "done",
+        terminalReason: "goal_met",
+      },
+    ],
+  };
+
+  assert.ok(turnEngines.length > 0);
+  for (const engine of turnEngines) {
+    assert.equal(isTurnRecord({ ...record, engine }), true, `${engine} must round-trip through persistence`);
+  }
+
+  // The validator must not have become permissive in the process.
+  for (const engine of ["", "codex ", "CODEX", "gpt-6-astra", 42, null, undefined]) {
+    assert.equal(isTurnRecord({ ...record, engine }), false, `${String(engine)} must stay rejected`);
   }
 });
 

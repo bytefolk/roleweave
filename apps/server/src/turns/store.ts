@@ -7,6 +7,7 @@ import {
   TURN_RECORD_SCHEMA_VERSION,
   errorCodes,
   isPositionId,
+  turnEngines,
 } from "@roleweave/shared";
 import type { ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
 import type { EngineEvent, TurnTerminalReason } from "@roleweave/shared";
@@ -399,7 +400,12 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
     !isBoundedTurnId(value.turnId) ||
     value.turnId.includes("/") || value.turnId.includes("\\") || value.turnId.includes("\0") ||
     !isPositionId(value.positionId) ||
-    (value.engine !== "qoder" && value.engine !== "claude-code" && value.engine !== "claude-local") ||
+    // #239: persistence is the fourth consumer of the engine contract. Its own
+    // copy of the list went stale when #206 added the Codex Hosts, so a Codex
+    // turn was accepted by the route, written, and then rejected on read-back —
+    // which took the conversation's history and the whole report centre down
+    // with it, permanently, because the record stays on disk.
+    !turnEngines.includes(value.engine as TurnEngine) ||
     !["running", "completed", "failed", "indeterminate"].includes(String(value.status)) ||
     typeof value.input !== "string" || Buffer.byteLength(value.input, "utf8") > MAX_INPUT_BYTES ||
     typeof value.envelopeDigest !== "string" ||
