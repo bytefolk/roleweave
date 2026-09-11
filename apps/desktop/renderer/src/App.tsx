@@ -946,26 +946,31 @@ function AppInner({
       configured: health?.hosts?.qoder.configured === true,
       ready: health?.hosts?.qoder.ready === true,
       reason: health?.hosts?.qoder.nextStep ?? t("misc.qoderHostUnknown"),
+      model: health?.hosts?.qoder.model,
     },
     "claude-code": {
       configured: health?.hosts?.["claude-code"].configured === true,
       ready: health?.hosts?.["claude-code"].ready === true,
       reason: health?.hosts?.["claude-code"].nextStep ?? t("misc.claudeHostUnknown"),
+      model: health?.hosts?.["claude-code"].model,
     },
     "claude-local": {
       configured: health?.hosts?.["claude-local"]?.configured === true,
       ready: health?.hosts?.["claude-local"]?.ready === true,
       reason: health?.hosts?.["claude-local"]?.nextStep ?? t("misc.claudeLocalHostUnknown"),
+      model: health?.hosts?.["claude-local"]?.model,
     },
     codex: {
       configured: health?.hosts?.codex?.configured === true,
       ready: health?.hosts?.codex?.ready === true,
       reason: health?.hosts?.codex?.nextStep ?? t("misc.codexHostUnknown"),
+      model: health?.hosts?.codex?.model,
     },
     "codex-local": {
       configured: health?.hosts?.["codex-local"]?.configured === true,
       ready: health?.hosts?.["codex-local"]?.ready === true,
       reason: health?.hosts?.["codex-local"]?.nextStep ?? t("misc.codexLocalHostUnknown"),
+      model: health?.hosts?.["codex-local"]?.model,
     },
   }), [health, t]);
 

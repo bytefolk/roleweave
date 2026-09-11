@@ -197,6 +197,7 @@ export function TurnPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [cancelling, onCancelTurn, runningTurn, selectedPosition]);
 
+  const pinnedModel = engineAvailability[engine].model;
   const sessionMode = sessions !== undefined;
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
   const activeSession = sessions?.find((session) => session.status === "active") ?? null;
@@ -374,6 +375,14 @@ export function TurnPanel({
                 disabled={!workspaceOpen}
                 onChange={onSelectEngine}
               />
+              {/* #236: no Host CLI reports the model it resolved for itself, so
+                  state what the control plane pins and say plainly when it pins
+                  nothing — an inferred name would be a guess presented as fact. */}
+              <span className="owb-turn-engine__model" title={t("turn.modelHint")}>
+                {pinnedModel === undefined
+                  ? t("turn.modelUnpinned", { engine: engineLabel(engine) })
+                  : t("turn.modelPinned", { model: pinnedModel })}
+              </span>
             </label>
           </div>
 

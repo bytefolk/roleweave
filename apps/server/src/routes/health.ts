@@ -27,6 +27,22 @@ export interface CodexBinaryState {
   version: string | null;
 }
 
+/**
+ * Mirrors `validatedCodexModel` in the bundled engine, which is the enforcement
+ * point: an OPENAI_MODEL outside this shape fails the turn before spawn. Health
+ * applies it as a preflight so a guaranteed-failing Host is not reported ready,
+ * and so an unbounded env value never reaches the renderer as a model name.
+ */
+const CODEX_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
+const CODEX_MODEL_MAX_LENGTH = 256;
+
+/** `undefined` when unset, `null` when set to something the engine will reject. */
+function configuredCodexModel(value: string | undefined): string | null | undefined {
+  if (value === undefined || value.length === 0) return undefined;
+  if (value.length > CODEX_MODEL_MAX_LENGTH || !CODEX_MODEL_PATTERN.test(value)) return null;
+  return value;
+}
+
 export type QoderLocalProbeFailure = "unavailable" | "timed_out" | "unsupported_version";
 
 export interface QoderLocalBinaryState {
@@ -376,8 +392,17 @@ export function hostHealth({
   // claude-local is not gated on ANTHROPIC_API_KEY. Login state itself is
   // asserted by the engine at run time; no credential store is inspected here.
   const codexProviderConfigured = typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.length > 0;
-  const codexConfigured = codex.installed && codexProviderConfigured;
-  const codexLocalConfigured = codex.installed;
+  // Both Codex Hosts spawn with --ignore-user-config, so the operator's
+  // config.toml model is not read and OPENAI_MODEL is the only pin the control
+  // plane has. Unset is a legitimate state, not a misconfiguration: Codex then
+  // chooses for itself and reports the choice nowhere the control plane can
+  // read, so no model is claimed rather than one being inferred.
+  const codexModel = configuredCodexModel(env.OPENAI_MODEL);
+  const codexModelUsable = codexModel !== null;
+  const codexModelHealth = typeof codexModel === "string" ? { model: codexModel } : {};
+  const codexModelNextStep = "OPENAI_MODEL 不是合法的模型标识（首字符为字母或数字，其余限 A-Z a-z 0-9 . _ : / -，长度 ≤ 256）；请更正或清空后重启工作台";
+  const codexConfigured = codex.installed && codexProviderConfigured && codexModelUsable;
+  const codexLocalConfigured = codex.installed && codexModelUsable;
   const claudeCodeConfigured = bundledQoder
     ? (claudeLocal.installed && claudeLocal.supported && claudeConfigured)
     : claudeConfigured;
@@ -434,26 +459,32 @@ export function hostHealth({
     codex: {
       configured: codexConfigured,
       ready: bundledElectronEngine && engineAvailable && codexConfigured,
+      ...codexModelHealth,
       ...(!bundledElectronEngine
         ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
         : !codex.installed
           ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
           : !codexProviderConfigured
             ? { nextStep: "设置 OPENAI_API_KEY（如需自建或中转端点，另设 OPENAI_BASE_URL）后重启工作台；若要用 Codex 订阅登录，请改选 Codex（本地登录）" }
-            : !engineAvailable
-              ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
-              : {}),
+            : !codexModelUsable
+              ? { nextStep: codexModelNextStep }
+              : !engineAvailable
+                ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+                : {}),
     },
     "codex-local": {
       configured: codexLocalConfigured,
       ready: bundledElectronEngine && engineAvailable && codexLocalConfigured,
+      ...codexModelHealth,
       ...(!bundledElectronEngine
         ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
         : !codex.installed
           ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
-          : !engineAvailable
-            ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
-            : {}),
+          : !codexModelUsable
+            ? { nextStep: codexModelNextStep }
+            : !engineAvailable
+              ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
+              : {}),
     },
   };
 }

@@ -27,6 +27,8 @@ export interface TurnEngineAvailability {
   configured: boolean;
   ready: boolean;
   reason?: string;
+  /** Model the control plane pins for this Host; absent means its CLI decides. */
+  model?: string;
 }
 
 /** Renderer projection of the #193 verdict field (engine shape verbatim). */

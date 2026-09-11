@@ -13,6 +13,12 @@ export interface TurnHostHealth {
   ready: boolean;
   /** Actionable, non-sensitive explanation when the Host cannot accept a turn. */
   nextStep?: string;
+  /**
+   * The LLM model the control plane will pin for this Host. Absent means the
+   * control plane pins none and the Host's own CLI decides — it is never an
+   * inferred name, because no Host reports the model it resolved for itself.
+   */
+  model?: string;
 }
 
 export interface HealthResponse {

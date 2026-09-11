@@ -780,6 +780,16 @@
   gap: 5px;
 }
 
+/* #236: model line under the Agent Host trigger. A model slug can be longer
+   than the ~220px column, so it wraps instead of being clipped to a prefix
+   that reads like a different model. */
+.owb-turn-engine__model {
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .owb-position-mention__field {
   position: relative;
   display: flex;

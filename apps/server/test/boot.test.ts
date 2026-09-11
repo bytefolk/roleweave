@@ -240,6 +240,60 @@ test("codex-local Host readiness in bundled mode is the binary alone and never s
   assert.doesNotMatch(JSON.stringify(withKey["codex-local"]), /service-key/);
 });
 
+test("Codex Host health reports the pinned model, and claims none when OPENAI_MODEL is unset (#236)", () => {
+  const installed = { installed: true, version: "0.154.0" };
+  const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
+
+  const pinned = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: "gpt-5.6-sol" } });
+  assert.equal(pinned.codex.model, "gpt-5.6-sol");
+  assert.equal(pinned["codex-local"].model, "gpt-5.6-sol");
+  assert.equal(pinned.codex.ready, true);
+  assert.equal(pinned["codex-local"].ready, true);
+
+  // Unset and empty are the same state: the control plane passes no --model and
+  // Codex chooses for itself. Absent must stay absent — an inferred default
+  // would be a guess, and Codex reports its own choice to no caller.
+  for (const env of [{}, { OPENAI_MODEL: "" }]) {
+    const unpinned = hostHealth({ ...base, env });
+    assert.equal("model" in unpinned.codex, false);
+    assert.equal("model" in unpinned["codex-local"], false);
+    assert.equal(unpinned["codex-local"].ready, true);
+  }
+
+  // No other Host has an LLM-model knob, so none of them may claim one.
+  const others = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.2.0",
+    bundledElectronEngine: true,
+    env: { OPENAI_MODEL: "gpt-5.6-sol", ANTHROPIC_API_KEY: "k", QODER_PERSONAL_ACCESS_TOKEN: "t" },
+    codex: installed,
+    qoderLocal: { installed: true, version: "1.1.0", supported: true },
+    claudeLocal: { installed: true, version: "2.1.214", supported: true },
+  });
+  for (const host of ["qoder", "claude-code", "claude-local"] as const) {
+    assert.equal("model" in others[host], false);
+  }
+});
+
+test("an OPENAI_MODEL the engine would reject blocks the Codex Hosts instead of being displayed (#236)", () => {
+  const installed = { installed: true, version: "0.154.0" };
+  const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
+
+  // Each of these fails `validatedCodexModel` in the bundled engine, so every
+  // turn would die before spawn. Preflight is the place to say so.
+  for (const value of ["--sandbox", "gpt 5", "gpt\n5", "-gpt-5", "x".repeat(257)]) {
+    const rejected = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: value } });
+    for (const host of ["codex", "codex-local"] as const) {
+      assert.equal("model" in rejected[host], false, `${value} must not be echoed as a model`);
+      assert.equal(rejected[host].configured, false, `${value} must not read as configured`);
+      assert.equal(rejected[host].ready, false, `${value} must not read as ready`);
+      assert.match(rejected[host].nextStep ?? "", /OPENAI_MODEL/);
+    }
+    // The local-login Host must still never point at a service credential.
+    assert.doesNotMatch(rejected["codex-local"].nextStep ?? "", /OPENAI_API_KEY/);
+  }
+});
+
 test("Codex Hosts stay unavailable for an external engine even with a binary and service key", () => {
   for (const engineVersion of ["digital-employee 0.6.1", "qoder-engine 0.2.0", undefined]) {
     const health = hostHealth({

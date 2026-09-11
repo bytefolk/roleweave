@@ -455,6 +455,30 @@ it("does not label an older receipt as the latest call when newer history has no
   expect(screen.getByText("上次调用：7 轮 · 890 字节")).toBeInTheDocument();
 });
 
+it("names the pinned model under the Agent Host, and says who decides when none is pinned (#236)", () => {
+  const props = { workspaceOpen: true, positions, selectedPositionId: "repo-owner", turns: [],
+    onSelectPosition: vi.fn(), onSelectEngine: vi.fn(), onCreateTurn: vi.fn() };
+  const pinned: TurnPanelProps["engineAvailability"] = {
+    ...availability,
+    "codex-local": { configured: true, ready: true, model: "gpt-5.6-sol" },
+  };
+  const { rerender } = render(<TurnPanel {...props} engine="codex-local" engineAvailability={pinned} />);
+  fireEvent.click(screen.getByText("会话设置"));
+  expect(screen.getByText("模型：gpt-5.6-sol")).toBeInTheDocument();
+
+  // Nothing pinned: the row must attribute the choice to the Host rather than
+  // show a blank, a literal "undefined", or a guessed model name.
+  rerender(<TurnPanel {...props} engine="codex-local" engineAvailability={availability} />);
+  expect(screen.getByText("模型：由 Codex · 本地登录 自行决定")).toBeInTheDocument();
+  expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+
+  // The row follows the selected Host, so a model pinned for one Host is never
+  // shown while another is selected.
+  rerender(<TurnPanel {...props} engine="qoder" engineAvailability={pinned} />);
+  expect(screen.queryByText("模型：gpt-5.6-sol")).not.toBeInTheDocument();
+  expect(screen.getByText("模型：由 Qoder 自行决定")).toBeInTheDocument();
+});
+
 it("blocks context changes and rotation while this employee runs in a group", () => {
   const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "group-busy-session", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
   const toggle = vi.fn();
