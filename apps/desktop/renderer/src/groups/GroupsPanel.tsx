@@ -98,7 +98,7 @@ export function _clearExpandedBubbleTurns(): void {
  * component. The markdown body is only rendered once expanded. */
 function ExpandableOutput({ text, className, ariaLabel, turnId }: { text: string; className: string; ariaLabel: string; turnId: string }) {
   const [rendered, setRendered] = useState(() => expandedBubbleTurns.has(turnId));
-  const onToggle = useCallback((e: React.ToggleEvent<HTMLDetailsElement>) => {
+  const onToggle = useCallback((e: React.SyntheticEvent<HTMLDetailsElement>) => {
     if (e.currentTarget.open) {
       expandedBubbleTurns.add(turnId);
       if (!rendered) setRendered(true);
