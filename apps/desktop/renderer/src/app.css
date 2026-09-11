@@ -4176,23 +4176,56 @@ body,
 .owb-org-module {
   display: grid;
   height: auto;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(280px, var(--owb-org-left-width, 1fr)) 10px minmax(280px, 1fr);
   align-items: stretch;
 }
 
-/* minmax(0, …) 只保证轨道等宽。栅格项的自动最小尺寸是 min-content，轨道比
-   它窄时内容会顶出轨道，所以项自己放弃这个下限。 */
-.owb-org-module > * {
+/* Split Pane is renderer-local until a second real module needs the same
+   contract. Panes opt out of intrinsic minimum sizes, while the grid tracks
+   retain their readable desktop lower bound. */
+.owb-org-module__pane {
   min-width: 0;
   min-height: 0;
 }
 
-.owb-org-module > .owb-turn-panel {
+.owb-org-module__pane--right > .owb-turn-panel {
   position: relative;
   z-index: 1;
   height: auto;
   min-height: 0;
+}
+
+.owb-org-module__splitter {
+  position: relative;
+  z-index: 2;
+  width: 10px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.owb-org-module__splitter::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--ui-border);
+  content: "";
+  transition: background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-org-module__splitter:hover::before,
+.owb-org-module[data-dragging="true"] .owb-org-module__splitter::before {
+  background: var(--ui-primary);
+}
+
+.owb-org-module__splitter:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -1px;
 }
 
 /* #127 + #120 合并口径：左栏必须与对话面板等高且卡片真正吃掉列高。
@@ -4918,9 +4951,14 @@ body,
   }
 
   .owb-org-module {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
     align-content: start;
+  }
+
+  .owb-org-module__splitter {
+    display: none;
   }
 
   /* The desktop Org grid is height-filling. Once it becomes one column, its

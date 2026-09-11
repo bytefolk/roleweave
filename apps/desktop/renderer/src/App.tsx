@@ -56,6 +56,7 @@ import type {
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
+import { OrgWorkspaceSplit } from "./org/OrgWorkspaceSplit";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
@@ -1265,38 +1266,43 @@ function AppInner({
             position={card.data}
             initialSource={memorySource}
           />
-        ) : <div className="owb-org-module">
-          {/* #137 two-column workspace: the left column stacks the org chart
-              and the position-record card (aligned, one column); the right
-              column is owned solely by the conversation panel so the turn
-              stream gets the full module height. */}
-          <div className="owb-org-module__left">
-          {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
-          <OrgChart
-            snapshot={snapshot}
-            loading={treeLoading}
-            displayNames={positionNames}
-            avatarColors={positionColors}
-            selectedId={selectedId}
-            onSelect={openConversation}
-          />
-          <div className="owb-position-column">
-            <PositionCard
-              position={card.data}
-              loading={card.loading}
-              notFound={card.notFound}
-              consumption={selectedBudgetRatio}
-              running={selectedId !== null && runningPositionIds.has(selectedId)}
-              onRefresh={() => void refresh()}
-              onContextSourceSelect={(source) => {
-                setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
-                setActiveModule("docs");
-              }}
-              actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
-            />
-          </div>
-          </div>
-          <TurnPanel
+        ) : <OrgWorkspaceSplit
+          ariaLabel={t("tree.splitPane")}
+          resetTitle={t("tree.splitPaneReset")}
+          valueText={(value) => t("tree.splitPaneValue", { value })}
+          left={
+            <div className="owb-org-module__left">
+              {/* #137 two-column workspace: the left column stacks the org chart
+                  and the position-record card (aligned, one column); the right
+                  column is owned solely by the conversation panel so the turn
+                  stream gets the full module height. */}
+              {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
+              <OrgChart
+                snapshot={snapshot}
+                loading={treeLoading}
+                displayNames={positionNames}
+                avatarColors={positionColors}
+                selectedId={selectedId}
+                onSelect={openConversation}
+              />
+              <div className="owb-position-column">
+                <PositionCard
+                  position={card.data}
+                  loading={card.loading}
+                  notFound={card.notFound}
+                  consumption={selectedBudgetRatio}
+                  running={selectedId !== null && runningPositionIds.has(selectedId)}
+                  onRefresh={() => void refresh()}
+                  onContextSourceSelect={(source) => {
+                    setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
+                    setActiveModule("docs");
+                  }}
+                  actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
+                />
+              </div>
+            </div>
+          }
+          right={<TurnPanel
             key={workspaceInfo?.path}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
@@ -1320,8 +1326,8 @@ function AppInner({
             onCreateSession={createSession}
             onRotateSession={rotateSession}
             onSetSessionContext={setSessionContext}
-          />
-        </div>}
+          />}
+        />}
       </div>
     </AppShell>
     </div>

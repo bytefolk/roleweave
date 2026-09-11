@@ -208,6 +208,9 @@ export const enCatalog: Record<string, string> = {
   "tree.zoomPinch": "trackpad pinch also works",
   "tree.zoomInTitle": "Zoom in (trackpad pinch also works)",
   "tree.zoomOutTitle": "Zoom out (trackpad pinch also works)",
+  "tree.splitPane": "Resize organization workspace panels",
+  "tree.splitPaneReset": "Drag to resize; double-click or press 0 to reset",
+  "tree.splitPaneValue": "Left panel {value}%",
 
   // Project setup
   "project.newCta": "New project",
