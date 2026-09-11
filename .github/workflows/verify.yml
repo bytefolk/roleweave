@@ -163,6 +163,10 @@ jobs:
         working-directory: org-workbench
         run: npm ci
 
+      - name: WSL control-plane acceptance on real Windows (#224)
+        working-directory: org-workbench
+        run: npm run test:wsl-acceptance:windows
+
       - name: Stage unsigned Windows app
         working-directory: org-workbench
         run: npm run package:staging:windows

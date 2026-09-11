@@ -26,6 +26,7 @@
     "test:ui": "vitest run --config packages/ui/vitest.config.ts",
     "test:renderer": "node scripts/run-renderer-tests.mjs",
     "test:desktop-main": "npm run build:renderer && node --test --test-timeout=120000 \"apps/desktop/test/*.test.cjs\"",
+    "test:wsl-acceptance:windows": "node --test --test-timeout=60000 \"apps/desktop/test/wsl-acceptance-windows.cjs\"",
     "test:context-e3": "node --test --test-timeout=120000 apps/server/dist/test/context-exporter-e3.test.js",
     "security:check": "npm audit --audit-level=high",
     "doctor": "node scripts/dev.mjs doctor",
