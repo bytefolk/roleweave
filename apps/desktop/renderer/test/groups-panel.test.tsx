@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { pickSelectOption } from "./select-helper";
-import { GroupsPanel } from "../src/groups/GroupsPanel";
+import { GroupsPanel, _clearExpandedBubbleTurns } from "../src/groups/GroupsPanel";
 import type { OwbBridge } from "../src/owb";
 import type { GroupConversation, GroupTimeline, TurnRecord } from "@roleweave/shared";
 import type { LiveRunState } from "../src/turns/turnStream";
@@ -152,6 +152,8 @@ function completedTimeline(): GroupTimeline {
     ],
   };
 }
+
+beforeEach(() => _clearExpandedBubbleTurns());
 
 describe("GroupsPanel collaboration visuals (#53)", () => {
   it("renders the member avatar stack in the group header and the member roster sidebar", async () => {
@@ -389,6 +391,38 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
     expect(screen.getAllByRole("group", { name: "执行进展" })).toHaveLength(1);
     expect(within(screen.getByRole("group", { name: "执行进展" })).getByRole("button")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  // #237: expanded group message stays expanded across a timeline reload.
+  it("keeps an expanded group output open after a timeline reconcile (#237)", async () => {
+    const longOutput = "line one\nline two\nline three\nline four\nline five";
+    const turn = { ...completedTurn(), output: longOutput };
+    const timelineBody: GroupTimeline = {
+      schemaVersion: "group-timeline.v1",
+      conversationRef: group.conversationRef,
+      items: [
+        completedTimeline().items[0]!,
+        { kind: "member", turn },
+      ],
+    };
+    const timeline = vi.fn()
+      .mockResolvedValue({ status: 200, body: timelineBody });
+    const { container } = renderPanel({
+      liveRuns: { "engine-run-owner": liveOwner },
+      timeline,
+    });
+
+    await waitFor(() => expect(container.querySelector("details.owb-bubble__expand")).not.toBeNull(), { timeout: 3000 });
+    const persistedDetails = container.querySelectorAll("details.owb-bubble__expand")[0] as HTMLDetailsElement;
+    expect(persistedDetails).not.toHaveAttribute("open");
+
+    persistedDetails.open = true;
+    fireEvent(persistedDetails, new Event("toggle"));
+    await waitFor(() => expect(persistedDetails.querySelector(".owb-tc__out--markdown")).not.toBeNull());
+
+    await waitFor(() => expect(timeline.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 3000 });
+    expect(persistedDetails).toHaveAttribute("open");
+    expect(persistedDetails.querySelector(".owb-tc__out--markdown")).not.toBeNull();
   });
 });
 

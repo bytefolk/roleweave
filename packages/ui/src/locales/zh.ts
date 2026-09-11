@@ -414,6 +414,8 @@ export const zhCatalog: Record<string, string> = {
   "grp.send": "发送群消息",
   "grp.hintRoute": "先选择要通知的成员，再发送消息",
   "grp.hintMentions": "消息将发送给 {count} 名已选择的成员",
+  "grp.expandOutput": "展开完整输出",
+  "grp.expandError": "展开错误详情",
 
   // 文档
   "docs.listFail": "文档列表读取失败",

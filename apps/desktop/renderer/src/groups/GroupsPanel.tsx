@@ -8,6 +8,7 @@ import type { GroupConversation, GroupConversationList, GroupTimeline } from "@r
 import { EngineSelect, useEngineLabel } from "../turns/TurnPanel";
 import { EngineIcon } from "../turns/engine-icon";
 import { adaptTurnRecord } from "../turns/adapter";
+import ReactMarkdown from "react-markdown";
 import type { LiveRunState } from "../turns/turnStream";
 import type { PositionMentionOption, TurnEngine, TurnEngineAvailability } from "../turns/types";
 
@@ -84,6 +85,35 @@ function timeShort(iso: string): string {
  * conversationRef is a workbench-local uuid (缺口① transition debt; cleared
  * when v1alpha2 conversation refs land).
  */
+const expandedBubbleTurns = new Set<string>();
+
+/** Test-only: clear the module-level expanded-state Set between tests. */
+export function _clearExpandedBubbleTurns(): void {
+  expandedBubbleTurns.clear();
+}
+
+/** #237: group bubble output expander. Uncontrolled `<details>` whose
+ * initial `open` is driven by a module-level Set keyed by turn id, so
+ * the expanded state survives parent re-renders that re-create this
+ * component. The markdown body is only rendered once expanded. */
+function ExpandableOutput({ text, className, ariaLabel, turnId }: { text: string; className: string; ariaLabel: string; turnId: string }) {
+  const [rendered, setRendered] = useState(() => expandedBubbleTurns.has(turnId));
+  const onToggle = useCallback((e: React.SyntheticEvent<HTMLDetailsElement>) => {
+    if (e.currentTarget.open) {
+      expandedBubbleTurns.add(turnId);
+      if (!rendered) setRendered(true);
+    } else {
+      expandedBubbleTurns.delete(turnId);
+    }
+  }, [turnId, rendered]);
+  return (
+    <details className="owb-bubble__expand" aria-label={ariaLabel} open={expandedBubbleTurns.has(turnId)} onToggle={onToggle}>
+      <summary className={`${className} owb-clamp-2`} title={text}>{text}</summary>
+      {rendered ? <div className="owb-tc__out--markdown"><ReactMarkdown>{text}</ReactMarkdown></div> : null}
+    </details>
+  );
+}
+
 export function GroupsPanel({
   workspaceOpen,
   positions,
@@ -667,10 +697,10 @@ export function GroupsPanel({
                           </header>
                           {turn.errorCode !== "group_relay_blocked" ? <ProgressTrail turn={turn} /> : null}
                           {turn.output ? (
-                            <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
+                            <ExpandableOutput text={turn.output} className="owb-turn__output" ariaLabel={t("grp.expandOutput")} turnId={`${turn.id}-out`} />
                           ) : null}
                           {(turn.status === "failed" || turn.status === "indeterminate") && turn.error ? (
-                            <p className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</p>
+                            <ExpandableOutput text={turn.error} className="owb-turn__error" ariaLabel={t("grp.expandError")} turnId={`${turn.id}-err`} />
                           ) : null}
                           {turn.status === "indeterminate" ? (
                             <p className="owb-turn__warning owb-clamp-2">{t(turn.errorCode === "group_relay_blocked" ? "grp.relayBlocked" : "grp.untrustedWarning")}</p>
@@ -700,7 +730,7 @@ export function GroupsPanel({
                     </header>
                     <ProgressTrail turn={turn} />
                     {turn.output ? (
-                      <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
+                      <ExpandableOutput text={turn.output} className="owb-turn__output" ariaLabel={t("grp.expandOutput")} turnId={`live-${key}-out`} />
                     ) : (
                       <TypingIndicator />
                     )}
