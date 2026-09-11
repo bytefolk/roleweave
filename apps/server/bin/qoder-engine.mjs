@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
-import { resolveCodexExecutable } from "../src/codex-binary.js";
+import { resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
 import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
 
 const VERSION = "0.2.0";
@@ -1089,20 +1089,6 @@ const CODEX_STALL_TIMEOUT_MS = 90_000;
 
 /** Codex accepts a provider name as a bare config key, so keep it inert. */
 const CODEX_PROVIDER_NAME = "roleweave";
-
-/**
- * Keep the operator-selected model an inert value for Codex's `--model`
- * argument. A leading option marker, control character or unbounded value must
- * fail before spawn rather than turning into an opaque CLI parsing failure.
- *
- * @param {string | undefined} value
- * @returns {string | null | undefined}
- */
-export function validatedCodexModel(value) {
-  if (value === undefined || value.length === 0) return undefined;
-  if (value.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value)) return null;
-  return value;
-}
 
 /**
  * @param {string | undefined} model

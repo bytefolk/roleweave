@@ -6,7 +6,7 @@ import { probeEngine } from "../engine/probe.js";
 import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
-import { resolveCodexExecutable } from "../codex-binary.js";
+import { resolveCodexExecutable, validatedCodexModel } from "../codex-binary.js";
 import { createLauncherSpawnSpec } from "../windows-launcher.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 
@@ -25,22 +25,6 @@ export interface ClaudeLocalBinaryState {
 export interface CodexBinaryState {
   installed: boolean;
   version: string | null;
-}
-
-/**
- * Mirrors `validatedCodexModel` in the bundled engine, which is the enforcement
- * point: an OPENAI_MODEL outside this shape fails the turn before spawn. Health
- * applies it as a preflight so a guaranteed-failing Host is not reported ready,
- * and so an unbounded env value never reaches the renderer as a model name.
- */
-const CODEX_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
-const CODEX_MODEL_MAX_LENGTH = 256;
-
-/** `undefined` when unset, `null` when set to something the engine will reject. */
-function configuredCodexModel(value: string | undefined): string | null | undefined {
-  if (value === undefined || value.length === 0) return undefined;
-  if (value.length > CODEX_MODEL_MAX_LENGTH || !CODEX_MODEL_PATTERN.test(value)) return null;
-  return value;
 }
 
 export type QoderLocalProbeFailure = "unavailable" | "timed_out" | "unsupported_version";
@@ -397,7 +381,11 @@ export function hostHealth({
   // plane has. Unset is a legitimate state, not a misconfiguration: Codex then
   // chooses for itself and reports the choice nowhere the control plane can
   // read, so no model is claimed rather than one being inferred.
-  const codexModel = configuredCodexModel(env.OPENAI_MODEL);
+  //
+  // #238 review: this shares the engine's validator rather than mirroring it.
+  // A preflight stricter than the enforcement point would call a working
+  // OPENAI_MODEL illegal, and no suite on either side could see the drift.
+  const codexModel = validatedCodexModel(env.OPENAI_MODEL);
   const codexModelUsable = codexModel !== null;
   const codexModelHealth = typeof codexModel === "string" ? { model: codexModel } : {};
   const codexModelNextStep = "OPENAI_MODEL 不是合法的模型标识（首字符为字母或数字，其余限 A-Z a-z 0-9 . _ : / -，长度 ≤ 256）；请更正或清空后重启工作台";

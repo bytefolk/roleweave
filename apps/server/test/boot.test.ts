@@ -279,9 +279,12 @@ test("an OPENAI_MODEL the engine would reject blocks the Codex Hosts instead of 
   const installed = { installed: true, version: "0.154.0" };
   const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
 
-  // Each of these fails `validatedCodexModel` in the bundled engine, so every
-  // turn would die before spawn. Preflight is the place to say so.
-  for (const value of ["--sandbox", "gpt 5", "gpt\n5", "-gpt-5", "x".repeat(257)]) {
+  // Each of these fails the shared `validatedCodexModel`, so every turn would
+  // die before spawn. Preflight is the place to say so.
+  for (const value of [
+    "--sandbox", "gpt 5", "gpt\n5", "-gpt-5", "x".repeat(257),
+    "gpt 5", "gpt@1", "gpt+1", "gpt;1", "'gpt'", "模型",
+  ]) {
     const rejected = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: value } });
     for (const host of ["codex", "codex-local"] as const) {
       assert.equal("model" in rejected[host], false, `${value} must not be echoed as a model`);
@@ -291,6 +294,27 @@ test("an OPENAI_MODEL the engine would reject blocks the Codex Hosts instead of 
     }
     // The local-login Host must still never point at a service credential.
     assert.doesNotMatch(rejected["codex-local"].nextStep ?? "", /OPENAI_API_KEY/);
+  }
+});
+
+test("preflight never calls a legal OPENAI_MODEL illegal (#238 review)", () => {
+  const installed = { installed: true, version: "0.154.0" };
+  const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
+
+  // The direction the original two-copy design could not see. Health shared no
+  // implementation with the engine, so narrowing health's character class —
+  // dropping `:` was the measured mutation — left every suite green while an
+  // operator running `gpt-5:prod` was told their working config was illegal
+  // and both Hosts went unavailable. `codex-binary.js` now owns the only
+  // implementation, and these shapes pin the accepting side of it.
+  for (const value of ["gpt-5.6-sol", "gpt-5:prod", "o3", "a", "ns/model-1.2_3", "x".repeat(256)]) {
+    const accepted = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: value } });
+    for (const host of ["codex", "codex-local"] as const) {
+      assert.equal(accepted[host].model, value, `${value} is legal and must be reported verbatim`);
+      assert.equal(accepted[host].configured, true, `${value} must not block the Host`);
+      assert.equal(accepted[host].ready, true, `${value} must not block the Host`);
+      assert.equal(accepted[host].nextStep, undefined, `${value} must not produce a next step`);
+    }
   }
 });
 
