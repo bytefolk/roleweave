@@ -411,6 +411,8 @@ export const enCatalog: Record<string, string> = {
   "grp.send": "Send group message",
   "grp.hintRoute": "Choose who should receive the message, then send",
   "grp.hintMentions": "The message will be sent to {count} selected members",
+  "grp.expandOutput": "Expand full output",
+  "grp.expandError": "Expand error details",
 
   // Docs
   "docs.listFail": "Failed to read the document list",

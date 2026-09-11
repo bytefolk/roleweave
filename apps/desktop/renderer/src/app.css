@@ -1153,6 +1153,19 @@
   overflow-wrap: anywhere;
 }
 
+/* #237: group bubble expandable — summary shows the clamped preview,
+   expanded body renders full markdown. `open` is DOM state, survives reconcile. */
+.owb-bubble__expand {
+  margin: 0;
+}
+.owb-bubble__expand > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.owb-bubble__expand > summary::-webkit-details-marker {
+  display: none;
+}
+
 .owb-turn__status {
   display: inline-flex;
   align-items: center;
