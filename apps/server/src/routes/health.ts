@@ -387,7 +387,14 @@ export function hostHealth({
   // OPENAI_MODEL illegal, and no suite on either side could see the drift.
   const codexModel = validatedCodexModel(env.OPENAI_MODEL);
   const codexModelUsable = codexModel !== null;
-  const codexModelHealth = typeof codexModel === "string" ? { model: codexModel } : {};
+  // #238 review: `modelPinnable` is a property of the Host, not of readiness,
+  // so it is stated even when the binary or credential is missing. It is what
+  // lets a client render the model row only where a knob exists, instead of
+  // carrying its own list of which engines have one.
+  const codexModelHealth = {
+    modelPinnable: true,
+    ...(typeof codexModel === "string" ? { model: codexModel } : {}),
+  };
   const codexModelNextStep = "OPENAI_MODEL 不是合法的模型标识（首字符为字母或数字，其余限 A-Z a-z 0-9 . _ : / -，长度 ≤ 256）；请更正或清空后重启工作台";
   const codexConfigured = codex.installed && codexProviderConfigured && codexModelUsable;
   const codexLocalConfigured = codex.installed && codexModelUsable;

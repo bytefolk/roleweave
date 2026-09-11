@@ -57,7 +57,7 @@ export const enCatalog: Record<string, string> = {
   "turn.sessionSettings": "Session settings",
   "turn.modelPinned": "Model: {model}",
   "turn.modelUnpinned": "Model: chosen by {engine}",
-  "turn.modelHint": "RoleWeave passes --model only when a model is pinned. Codex reads OPENAI_MODEL; with none set the Codex CLI picks for itself and does not read ~/.codex/config.toml.",
+  "turn.modelHintCodex": "RoleWeave passes --model only when a model is pinned. Codex reads OPENAI_MODEL; with none set the Codex CLI picks for itself and does not read ~/.codex/config.toml.",
   "turn.compose": "Assign a task",
   "turn.composePlaceholder": "Pick a position first…",
   "turn.composeTo": "Assign to @{name}…",

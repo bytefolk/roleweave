@@ -60,7 +60,7 @@ export const zhCatalog: Record<string, string> = {
   "turn.sessionSettings": "会话设置",
   "turn.modelPinned": "模型：{model}",
   "turn.modelUnpinned": "模型：由 {engine} 自行决定",
-  "turn.modelHint": "RoleWeave 只在显式指定模型时才传 --model。Codex 读取 OPENAI_MODEL；未设置时由 Codex CLI 自行选择，且不会读取 ~/.codex/config.toml。",
+  "turn.modelHintCodex": "RoleWeave 只在显式指定模型时才传 --model。Codex 读取 OPENAI_MODEL；未设置时由 Codex CLI 自行选择，且不会读取 ~/.codex/config.toml。",
   "turn.compose": "下达任务",
   "turn.composePlaceholder": "先选择一个岗位…",
   "turn.composeTo": "向 @{name} 下达任务…",
