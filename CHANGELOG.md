@@ -46,6 +46,7 @@
 
 ### Fixed
 
+- #240 review：报表中心的审计时间线改用与对话面板同一个引擎标签来源。它此前自带第三份标签映射（签名 `engine: string` + `return engine` 兜底），Codex 回合会显示成裸 id `codex-local`，`claude-local` 也与对话面板措辞不一致；这个缺陷在 #239 修复前不可达，因为 `/reports` 遇到 Codex 记录会直接硬报错。
 - #239：Codex 回合不再在写盘后变成不可读记录。回合记录校验器仍保留 #206 之前的三引擎硬编码白名单，导致 `codex` / `codex-local` 的回合被路由接受并落盘、却在回读时判为非法，使该会话历史和整个报表中心永久报错（`local session turn history contains an invalid record` / `local reports data is invalid`）。校验器改为走 `turnEngines` 契约；已落盘的记录无需修复，本身合法。
 - #221 review：Codex 就绪状态要求内置引擎边界；使用外部 digital-employee CLI 时，即使已安装 Codex 并配置凭据，两种 Codex Host 仍显示不可用并说明原因。
 - #135：新增免费 macOS GitHub 自动更新通道：发布 workflow 使用 `OWB_UPDATE_SIGNING_PRIVATE_KEY` 为 ZIP 元数据生成 Ed25519 签名，客户端校验后后台下载，并在正常退出时自动替换、重启；应用本身仍为 unsigned，Gatekeeper/Developer ID 方案保留为后续切换路径。
