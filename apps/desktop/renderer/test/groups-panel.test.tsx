@@ -90,6 +90,8 @@ function renderPanel(
         qoder: readyAvailability,
         "claude-code": readyAvailability,
         "claude-local": readyAvailability,
+        codex: readyAvailability,
+        "codex-local": readyAvailability,
       }}
       liveRuns={extra.liveRuns ?? {}}
       onSelectEngine={() => {}}
@@ -336,7 +338,13 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     installBridge();
     const panel = (run: LiveRunState) => (
       <GroupsPanel workspaceOpen positions={positions} positionNames={positionNames}
-        engine="qoder" engineAvailability={{ qoder: readyAvailability, "claude-code": readyAvailability, "claude-local": readyAvailability }}
+        engine="qoder" engineAvailability={{
+          qoder: readyAvailability,
+          "claude-code": readyAvailability,
+          "claude-local": readyAvailability,
+          codex: readyAvailability,
+          "codex-local": readyAvailability,
+        }}
         liveRuns={{ "engine-run-owner": run }} onSelectEngine={() => {}} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
     );
     const { rerender } = render(panel(liveOwner));

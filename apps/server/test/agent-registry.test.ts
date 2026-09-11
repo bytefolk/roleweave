@@ -14,21 +14,25 @@ function health(overrides: Record<string, unknown> = {}) {
       qoder: { configured: true, ready: true },
       "claude-code": { configured: true, ready: true },
       "claude-local": { configured: true, ready: true },
+      codex: { configured: true, ready: true },
+      "codex-local": { configured: true, ready: true },
     },
     localProbe: {
       qoder: { installed: true, supported: true, version: "qodercli 1.1.31" },
       "claude-code": { installed: true, supported: true, version: "Claude Code 2.1.223" },
       "claude-local": { installed: true, supported: true, version: "2.1.223" },
+      codex: { installed: true, supported: true, version: "2.1.223" },
+      "codex-local": { installed: true, supported: true, version: "2.1.223" },
     },
     ...overrides,
   };
 }
 
-test("registers qoder, claude-code, and claude-local from a health snapshot", () => {
+test("registers every contracted Host from a health snapshot", () => {
   const hosts = listRegisteredAgentHosts(health());
 
-  assert.deepEqual(hosts.map((host) => host.id), ["qoder", "claude-code", "claude-local"]);
-  assert.deepEqual(hosts.map((host) => host.label), ["Qoder", "Claude Code", "Claude Code（本地登录）"]);
+  assert.deepEqual(hosts.map((host) => host.id), ["qoder", "claude-code", "claude-local", "codex", "codex-local"]);
+  assert.deepEqual(hosts.map((host) => host.label), ["Qoder", "Claude Code", "Claude Code（本地登录）", "Codex", "Codex（本地登录）"]);
   for (const host of hosts) {
     assert.equal(host.engine, host.id);
     assert.equal(host.availability.status, "available");
@@ -39,7 +43,7 @@ test("registers qoder, claude-code, and claude-local from a health snapshot", ()
     assert.ok(host.capabilities.includes("turns"));
     assert.ok(host.capabilities.includes("streaming"));
   }
-  assert.deepEqual(hosts.map((host) => host.version), ["1.1.31", "2.1.223", "2.1.223"]);
+  assert.deepEqual(hosts.map((host) => host.version), ["1.1.31", "2.1.223", "2.1.223", "2.1.223", "2.1.223"]);
 });
 
 test("fails closed for missing or malformed health input", () => {
@@ -72,15 +76,27 @@ test("keeps unavailable hosts visible but never marks them selectable", () => {
         ready: false,
         nextStep: "安装 Claude Code 并确保 claude 在 PATH 上",
       },
+      codex: {
+        configured: true,
+        ready: false,
+        nextStep: "安装 Claude Code 并确保 claude 在 PATH 上",
+      },
+      "codex-local": {
+        configured: true,
+        ready: false,
+        nextStep: "安装 Claude Code 并确保 claude 在 PATH 上",
+      },
     },
     localProbe: {
       qoder: { installed: false, supported: false, version: null, failure: "unavailable" },
       "claude-code": { installed: true, supported: true, version: "2.1.223" },
       "claude-local": { installed: true, supported: true, version: "2.1.223" },
+      codex: { installed: true, supported: true, version: "2.1.223" },
+      "codex-local": { installed: true, supported: true, version: "2.1.223" },
     },
   }));
 
-  assert.equal(hosts.length, 3);
+  assert.equal(hosts.length, 5);
   assert.equal(hosts[0]?.availability.status, "unavailable");
   assert.equal(hosts[0]?.availability.configured, false);
   assert.equal(hosts[0]?.availability.ready, false);
@@ -99,6 +115,8 @@ test("engine availability is only a pipeline gate, not provider entitlement", ()
       qoder: { configured: true, ready: true },
       "claude-code": { configured: true, ready: true },
       "claude-local": { configured: true, ready: true },
+      codex: { configured: true, ready: true },
+      "codex-local": { configured: true, ready: true },
     },
   });
   const hosts = listRegisteredAgentHosts(input);
@@ -132,16 +150,30 @@ test("redacts paths, credentials, and raw probe output from version and reason",
         version: "stderr /tmp/claude 2.1.223 private-key=secret",
         nextStep: "claude binary at /tmp/claude private-key=secret",
       },
+      codex: {
+        configured: true,
+        ready: false,
+        version: "stderr /tmp/claude 2.1.223 private-key=secret",
+        nextStep: "claude binary at /tmp/claude private-key=secret",
+      },
+      "codex-local": {
+        configured: true,
+        ready: false,
+        version: "stderr /tmp/claude 2.1.223 private-key=secret",
+        nextStep: "claude binary at /tmp/claude private-key=secret",
+      },
     },
     localProbe: {
       qoder: { installed: true, supported: false, version: "qodercli 1.2.0 private-token=qoder-secret", failure: "unsupported_version" },
       "claude-code": { installed: true, supported: false, version: "Claude Code 2.2.0 apiKey=anthropic-secret", failure: "unsupported_version" },
       "claude-local": { installed: true, supported: false, version: "/tmp/claude 2.2.0 secret", failure: "unsupported_version" },
+      codex: { installed: true, supported: false, version: "/tmp/claude 2.2.0 secret", failure: "unsupported_version" },
+      "codex-local": { installed: true, supported: false, version: "/tmp/claude 2.2.0 secret", failure: "unsupported_version" },
     },
   }));
   const serialized = JSON.stringify(hosts);
 
-  assert.deepEqual(hosts.map((host) => host.version), ["1.2.0", "2.2.0", "2.2.0"]);
+  assert.deepEqual(hosts.map((host) => host.version), ["1.2.0", "2.2.0", "2.2.0", "2.2.0", "2.2.0"]);
   assert.doesNotMatch(serialized, /Users\/alice|\/tmp\/claude|qoder-secret|anthropic-secret|private-key|apiKey/iu);
   assert.equal(hosts[0]?.reason, "本地主机版本不受支持");
   assert.equal(hosts[1]?.reason, "本地主机版本不受支持");
@@ -154,6 +186,8 @@ test("selects only a ready host and exposes stable error codes", () => {
       qoder: { configured: true, ready: true },
       "claude-code": { configured: false, ready: false },
       "claude-local": { configured: true, ready: false },
+      codex: { configured: true, ready: false },
+      "codex-local": { configured: true, ready: false },
     },
   }));
 
@@ -202,16 +236,20 @@ test("maps timeout and unsupported local probes without probing again", () => {
       qoder: { configured: true, ready: false },
       "claude-code": { configured: true, ready: false },
       "claude-local": { configured: true, ready: false },
+      codex: { configured: true, ready: false },
+      "codex-local": { configured: true, ready: false },
     },
     localProbe: {
       qoder: { installed: true, supported: false, version: "1.1.99", failure: "timed_out" },
       "claude-code": { installed: true, supported: false, version: "2.2.0", failure: "unsupported_version" },
       "claude-local": { installed: false, supported: false, version: null, failure: "unavailable" },
+      codex: { installed: false, supported: false, version: null, failure: "unavailable" },
+      "codex-local": { installed: false, supported: false, version: null, failure: "unavailable" },
     },
   }));
 
-  assert.deepEqual(hosts.map((host) => host.availability.localProbe), ["timed_out", "unsupported_version", "unavailable"]);
-  assert.deepEqual(hosts.map((host) => host.reason), ["本地版本探测超时", "本地主机版本不受支持", "未检测到可用的本地主机"]);
+  assert.deepEqual(hosts.map((host) => host.availability.localProbe), ["timed_out", "unsupported_version", "unavailable", "unavailable", "unavailable"]);
+  assert.deepEqual(hosts.map((host) => host.reason), ["本地版本探测超时", "本地主机版本不受支持", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机"]);
 });
 
 test("fails closed when an explicitly supplied local probe is malformed", () => {
@@ -220,6 +258,8 @@ test("fails closed when an explicitly supplied local probe is malformed", () => 
       qoder: { installed: "true", supported: true, version: "1.1.31" },
       "claude-code": { installed: true, supported: true, version: "2.1.223" },
       "claude-local": { installed: true, supported: true, version: "2.1.223" },
+      codex: { installed: true, supported: true, version: "2.1.223" },
+      "codex-local": { installed: true, supported: true, version: "2.1.223" },
     },
   }));
 

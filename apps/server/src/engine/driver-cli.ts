@@ -356,6 +356,33 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): No
     // value fails closed on the engine side as `claude_base_url_invalid` via
     // probe / preflight / run. A duplicate implementation here would drift.
     if (source.ANTHROPIC_BASE_URL !== undefined) environment.ANTHROPIC_BASE_URL = source.ANTHROPIC_BASE_URL;
+  } else if (engine === "codex") {
+    // #206: the Codex engine owns its provider configuration explicitly — it
+    // spawns with --ignore-user-config, so nothing here is read from the
+    // operator's config.toml. The provider trio mirrors digital-employee's
+    // qwen-code host rather than inventing a new naming surface, which is what
+    // lets an operator point Codex at an OpenAI-compatible endpoint.
+    if (source.OPENAI_API_KEY !== undefined) environment.OPENAI_API_KEY = source.OPENAI_API_KEY;
+    if (source.OPENAI_BASE_URL !== undefined) environment.OPENAI_BASE_URL = source.OPENAI_BASE_URL;
+    if (source.OPENAI_MODEL !== undefined) environment.OPENAI_MODEL = source.OPENAI_MODEL;
+    // CODEX_HOME locates the operator's own credential store; it names a
+    // directory and carries no credential itself.
+    if (source.CODEX_HOME !== undefined) environment.CODEX_HOME = source.CODEX_HOME;
+    if (source.DIGITAL_EMPLOYEE_CODEX_COMMAND !== undefined) {
+      environment.DIGITAL_EMPLOYEE_CODEX_COMMAND = source.DIGITAL_EMPLOYEE_CODEX_COMMAND;
+    }
+  } else if (engine === "codex-local") {
+    // codex-local runs on the operator's own Codex login, so it must not
+    // receive a service credential — nor OPENAI_BASE_URL, which would point the
+    // logged-in CLI at a relay it holds no key for. CODEX_HOME is where Codex
+    // keeps that login (`--ignore-user-config` skips config.toml but, per its
+    // own help, "auth still uses CODEX_HOME"), and OPENAI_MODEL names a model
+    // rather than carrying a secret.
+    if (source.CODEX_HOME !== undefined) environment.CODEX_HOME = source.CODEX_HOME;
+    if (source.OPENAI_MODEL !== undefined) environment.OPENAI_MODEL = source.OPENAI_MODEL;
+    if (source.DIGITAL_EMPLOYEE_CODEX_COMMAND !== undefined) {
+      environment.DIGITAL_EMPLOYEE_CODEX_COMMAND = source.DIGITAL_EMPLOYEE_CODEX_COMMAND;
+    }
   } else {
     // claude-local runs on the operator's logged-in Claude Code; it must not
     // receive a service credential. DIGITAL_EMPLOYEE_CLAUDE_COMMAND only

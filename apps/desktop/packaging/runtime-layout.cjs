@@ -44,11 +44,14 @@ const SERVER_RUNTIME_FILES = [
   "bin/qoder-engine.mjs",
   "src/qoder-binary.js",
   "src/claude-binary.js",
+  "src/codex-binary.js",
+  "src/windows-launcher.js",
   "dist/src/agent-registry.js",
   "dist/src/assets/store.js",
   "dist/src/auth.js",
   "dist/src/bus.js",
   "dist/src/claude-binary.js",
+  "dist/src/codex-binary.js",
   "dist/src/config.js",
   "dist/src/context-export/adapter-cli.js",
   "dist/src/context-export/exporter.js",
@@ -87,6 +90,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/turns/running.js",
   "dist/src/turns/store.js",
   "dist/src/turns/thread-context.js",
+  "dist/src/windows-launcher.js",
   "dist/src/workspace-state.js",
 ];
 
@@ -94,6 +98,7 @@ const SHARED_RUNTIME_FILES = [
   "package.json",
   "pending-approval.cjs",
   "position-id.cjs",
+  "turn-engines.cjs",
   "dist/api.js",
   "dist/capabilities.js",
   "dist/change-manifest.js",
@@ -190,6 +195,7 @@ const APP_RESOURCE_REQUIRED_ENTRIES = [
   "node_modules/@roleweave/shared/dist/index.js",
   "node_modules/@roleweave/shared/position-id.cjs",
   "node_modules/@roleweave/shared/pending-approval.cjs",
+  "node_modules/@roleweave/shared/turn-engines.cjs",
   "examples/oss-maintainer/workspace.json",
   "examples/oss-maintainer/organization.v1alpha1.json",
 ];

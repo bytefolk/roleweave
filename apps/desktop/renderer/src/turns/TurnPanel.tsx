@@ -47,6 +47,8 @@ const ENGINE_LABEL: Record<TurnEngine, string> = {
   qoder: "Qoder",
   "claude-code": "Claude Code",
   "claude-local": "Claude Code",
+  codex: "Codex",
+  "codex-local": "Codex",
 };
 
 /** #146：引擎品牌名保持原文（数据面不迁）；只有 claude-local 的变体修饰词
@@ -55,7 +57,11 @@ export function useEngineLabel(): (engine: TurnEngine) => string {
   const t = useT();
   return useCallback(
     (engine: TurnEngine) =>
-      engine === "claude-local" ? `Claude Code · ${t("turn.claudeLocalSuffix")}` : ENGINE_LABEL[engine],
+      engine === "claude-local"
+        ? `Claude Code · ${t("turn.claudeLocalSuffix")}`
+        : engine === "codex-local"
+          ? `Codex · ${t("turn.codexLocalSuffix")}`
+          : ENGINE_LABEL[engine],
     [t],
   );
 }

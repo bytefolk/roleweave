@@ -17,6 +17,9 @@
       "import": "./dist/position-id.js",
       "require": "./position-id.cjs"
     },
+    "./turn-engines": {
+      "require": "./turn-engines.cjs"
+    },
     "./pending-approval": {
       "types": "./dist/pending-approval.d.ts",
       "import": "./dist/pending-approval.js",
@@ -34,6 +37,7 @@
   "files": [
     "dist",
     "position-id.cjs",
+    "turn-engines.cjs",
     "pending-approval.cjs"
   ]
 }

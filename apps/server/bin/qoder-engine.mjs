@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
+import { resolveCodexExecutable } from "../src/codex-binary.js";
+import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
 
 const VERSION = "0.2.0";
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
@@ -167,51 +169,12 @@ function isClaudeVersionSupported(parts) {
   return false;
 }
 
-/*
- * The Windows CMD escaping below is adapted from cross-spawn 7.0.6
- * (MIT; Copyright (c) 2018 Made With MOXY Lda <hello@moxy.studio>):
- * https://github.com/moxystudio/node-cross-spawn
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions: the
- * above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED
- * "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
- * NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
- * PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
- * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- * qoder-engine is a standalone packaged entrypoint, so the escaping stays
- * local instead of adding a third-party runtime dependency just for .cmd/.bat
- * launchers.
- */
-const WINDOWS_CMD_META_CHARS = /([()\][%!^"`<>&|;, *?])/g;
-const WINDOWS_CMD_SHIM_PATTERN = /node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i;
-
-function escapeWindowsCommand(value) {
-  return String(value).replace(WINDOWS_CMD_META_CHARS, "^$1");
-}
-
-function escapeWindowsArgument(value, doubleEscapeMetaChars = false) {
-  let argument = String(value);
-  argument = argument.replace(/(?=(\\+?)?)\1"/g, "$1$1\\\"");
-  argument = argument.replace(/(?=(\\+?)?)\1$/g, "$1$1");
-  argument = `"${argument}"`;
-  argument = argument.replace(WINDOWS_CMD_META_CHARS, "^$1");
-  if (doubleEscapeMetaChars) argument = argument.replace(WINDOWS_CMD_META_CHARS, "^$1");
-  return argument;
-}
-
 /**
- * Build a child_process.spawn spec without passing raw user input to Node's
- * shell option. Windows batch launchers still require cmd.exe, so the entire
- * command line is escaped and handed to cmd.exe as one verbatim /c argument.
+ * Windows launcher handling lives in ../src/windows-launcher.js so the version
+ * probe in routes/health.ts uses the identical construction (#221 review B4);
+ * a second hand-written copy there had already dropped
+ * windowsVerbatimArguments. Re-exported under the original name because tests
+ * and the turn paths address it that way.
  *
  * @param {string} command
  * @param {string[]} args
@@ -220,23 +183,7 @@ function escapeWindowsArgument(value, doubleEscapeMetaChars = false) {
  * @returns {{ command: string, args: string[], options: Record<string, unknown> }}
  */
 export function createQoderSpawnSpec(command, args, env, platform = process.platform) {
-  const needsWindowsShell = platform === "win32" && /\.(bat|cmd)$/i.test(command);
-  if (!needsWindowsShell) {
-    return { command, args, options: { env, shell: false } };
-  }
-
-  const commandText = escapeWindowsCommand(command);
-  const doubleEscapeMetaChars = WINDOWS_CMD_SHIM_PATTERN.test(command);
-  const shellCommand = [commandText, ...args.map((arg) => escapeWindowsArgument(arg, doubleEscapeMetaChars))].join(" ");
-  return {
-    command: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
-    args: ["/d", "/s", "/c", `"${shellCommand}"`],
-    options: {
-      env,
-      shell: false,
-      windowsVerbatimArguments: true,
-    },
-  };
+  return createLauncherSpawnSpec(command, args, env, platform);
 }
 const HIRE_REQUEST_SCHEMA_VERSION = "hire-request.v1alpha1";
 const HIRE_REQUEST_MAX_BYTES = 256 * 1024;
@@ -717,6 +664,9 @@ function turnRun(workspaceDir, positionId) {
       case "claude-code":
       case "claude-local":
         return turnRunClaude(workspaceDir, positionId, input, engineModel);
+      case "codex":
+      case "codex-local":
+        return turnRunCodex(workspaceDir, positionId, input, engineModel);
       default:
         return turnRunQoder(workspaceDir, positionId, input);
     }
@@ -1016,6 +966,423 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     } else {
       fail("claude.exit_nonzero", stderrTail.trim() || `claude exited with code ${code}`, true);
     }
+  });
+}
+
+const CODEX_CHILD_ENV_KEYS = [
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "ComSpec",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "SHELL",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "CODEX_HOME",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  "OPENAI_MODEL",
+  "DIGITAL_EMPLOYEE_CODEX_COMMAND",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+];
+
+/**
+ * codex-local runs on the operator's own Codex login, so its allowlist drops
+ * OPENAI_API_KEY and OPENAI_BASE_URL: a logged-in CLI must not be handed a
+ * service credential, nor pointed at a relay it holds no key for. CODEX_HOME
+ * stays because that is where Codex keeps the login — `--ignore-user-config`
+ * skips config.toml but, per Codex's own help, "auth still uses CODEX_HOME".
+ */
+const CODEX_LOCAL_CHILD_ENV_KEYS = CODEX_CHILD_ENV_KEYS.filter(
+  (key) => key !== "OPENAI_API_KEY" && key !== "OPENAI_BASE_URL",
+);
+
+function codexChildEnvironment(source, engineModel) {
+  const keys = engineModel === "codex-local" ? CODEX_LOCAL_CHILD_ENV_KEYS : CODEX_CHILD_ENV_KEYS;
+  const environment = {};
+  for (const key of keys) {
+    if (source[key] !== undefined) environment[key] = source[key];
+  }
+  return environment;
+}
+
+/**
+ * Accept only an OPENAI_BASE_URL this engine is willing to hand to Codex.
+ * The bundled engine is the sole enforcement point for this engine — there is
+ * no digital-employee adapter behind it to defer to — so the rule is applied
+ * here rather than assumed: HTTPS, or HTTP only for loopback, and never an
+ * embedded credential, fragment, control character, or oversized value.
+ *
+ * @param {string | undefined} value
+ * @returns {string | null | undefined} the URL, `null` when invalid, `undefined` when absent
+ */
+export function validatedCodexBaseUrl(value) {
+  const trimmed = (value ?? "").trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.length > 2048 || /[\u0000-\u001f\u007f]/.test(trimmed)) return null;
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  const loopback =
+    parsed.hostname === "localhost" ||
+    parsed.hostname.endsWith(".localhost") ||
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "[::1]";
+  if (
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    (parsed.protocol === "http:" && !loopback) ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    parsed.hash
+  ) {
+    return null;
+  }
+  // Rebuild from parsed scheme, host, optional port, path and query components
+  // rather than handing the operator's raw string to Codex. This normalises the
+  // value before it enters either the TOML provider block or, on Windows, the
+  // escaped command line used to launch an npm shim.
+  const port = parsed.port.length > 0 ? `:${parsed.port}` : "";
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  const normalised = `${parsed.protocol}//${parsed.hostname}${port}${pathname}${parsed.search}`;
+  // A quote or backslash surviving URL normalisation could break out of the
+  // quoted TOML string. Reject either explicitly; regression fixtures exercise
+  // this guard so it cannot be removed as apparently redundant.
+  if (/["\\]/.test(normalised)) return null;
+  return normalised;
+}
+
+/**
+ * Codex retries a dropped provider stream inside a single exec, emitting one
+ * `error` item per attempt and no terminal event. A transient reconnect does
+ * recover, so the first few are not failures — but the loop can also keep
+ * going, and then the engine emits nothing attributable and driver-cli's
+ * 120s bound eventually kills it and settles the turn as
+ * `indeterminate` / `turn_timeout`. That reason is both wrong and, by this
+ * repo's rules, never retried. These bounds make the engine attribute the
+ * provider error itself, well before the outer bound can mislabel it.
+ */
+const CODEX_MAX_CONSECUTIVE_STREAM_ERRORS = 3;
+/** Held under driver-cli's 120s turn bound so the engine reports first. */
+const CODEX_STALL_TIMEOUT_MS = 90_000;
+
+/** Codex accepts a provider name as a bare config key, so keep it inert. */
+const CODEX_PROVIDER_NAME = "roleweave";
+
+/**
+ * Keep the operator-selected model an inert value for Codex's `--model`
+ * argument. A leading option marker, control character or unbounded value must
+ * fail before spawn rather than turning into an opaque CLI parsing failure.
+ *
+ * @param {string | undefined} value
+ * @returns {string | null | undefined}
+ */
+export function validatedCodexModel(value) {
+  if (value === undefined || value.length === 0) return undefined;
+  if (value.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value)) return null;
+  return value;
+}
+
+/**
+ * @param {string | undefined} model
+ * @param {string | undefined} baseUrl
+ * @returns {string[]}
+ */
+export function codexTurnArgs(model, baseUrl) {
+  const args = [
+    "exec",
+    // Reject provider-table fields Codex does not understand. This complements
+    // the local URL guard and keeps future configuration drift fail-closed.
+    "--strict-config",
+    // Scope check before relying on this: Codex's own help limits the flag to
+    // `$CODEX_HOME/config.toml`. It is NOT the equivalent of the Claude path's
+    // --setting-sources "", and the provider block below is not "the whole
+    // truth" — system-scope configuration is out of its reach. Observed with
+    // this exact flag set: Codex still reported clamping a SessionEnd hook
+    // from /etc/codex/hooks.json, and still warned that it can see every
+    // skill. Those arrive as non-agent_message items and are forwarded to
+    // stderr as diagnostics (see handleCodexLine) rather than dropped, because
+    // they are the only signal an operator gets that such config exists.
+    "--ignore-user-config",
+    "--ephemeral",
+    "--skip-git-repo-check",
+    // #206: read-only is the *only* boundary this engine has. Unlike the Qoder
+    // and Claude paths, whose flags genuinely empty the tool table, Codex keeps
+    // `apply_patch` in the model-visible tool set and no configuration surface
+    // removes it (measured on 0.153.4 and 0.154.0-alpha.3; upstream
+    // openai/codex#8161 closed as not planned). Do not weaken this flag, and do
+    // not describe this engine as having an empty tool set.
+    "--sandbox", "read-only",
+    "--json",
+    // Everything Codex *does* let us switch off, we switch off. That is both
+    // the right posture when apply_patch cannot be removed, and a
+    // compatibility requirement: an OpenAI-compatible endpoint that does not
+    // implement a Responses feature rejects the whole request rather than
+    // ignoring it. A relay answered `RESPONSES_FEATURE_NOT_SUPPORTED:
+    // web_search` until web_search was disabled here.
+    "--disable", "shell_tool",
+    "--disable", "unified_exec",
+    "--disable", "apps",
+    "--disable", "plugins",
+    "--disable", "skill_search",
+    "--disable", "multi_agent",
+    "--disable", "view_image",
+    "--disable", "workspace_dependencies",
+  ];
+  if (model !== undefined && model.length > 0) args.push("--model", model);
+  if (baseUrl !== undefined) {
+    const provider = `{ name = "RoleWeave provider", base_url = "${baseUrl}", env_key = "OPENAI_API_KEY", wire_api = "responses" }`;
+    args.push("-c", `model_provider="${CODEX_PROVIDER_NAME}"`);
+    args.push("-c", `model_providers.${CODEX_PROVIDER_NAME}=${provider}`);
+  }
+  args.push("-c", "analytics.enabled=false");
+  args.push("-c", 'web_search="disabled"');
+  args.push("-c", "tools.experimental_request_user_input.enabled=false");
+  args.push("-c", "tools.update_plan.enabled=false");
+  return args;
+}
+
+function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
+  const localLogin = engineModel === "codex-local";
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+
+  let terminalEmitted = false;
+  /** Set once the child exists; a terminal must not leave Codex running. */
+  let child;
+  let stallTimer;
+  const stopChild = () => {
+    if (stallTimer !== undefined) clearTimeout(stallTimer);
+    if (child === undefined || child.pid === undefined || child.exitCode !== null) return;
+    // Codex may have descendants of its own, so kill the disposable process
+    // group on POSIX and fall back to the direct child on Windows.
+    try {
+      if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+      else child.kill("SIGKILL");
+    } catch {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // Already gone between the terminal decision and this cleanup.
+      }
+    }
+  };
+  const fail = (code, message, retryable) => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
+    stopChild();
+    emit({
+      type: "run.failed",
+      runId,
+      timestamp: now(),
+      error: { code, message: message.slice(0, 2000), retryable, terminalReason: "engine_internal_error" },
+    });
+    process.exit(0);
+  };
+
+  const codexBin = resolveCodexExecutable(process.env);
+  if (codexBin === null) {
+    fail("codex.binary_unresolved", "cannot resolve an executable Codex CLI; install codex or set DIGITAL_EMPLOYEE_CODEX_COMMAND", false);
+    return;
+  }
+
+  // In local-login mode Codex keeps its own default provider; an operator
+  // OPENAI_BASE_URL is deliberately ignored rather than validated, so a relay
+  // configured for the credentialed Host cannot silently capture this one.
+  let baseUrl;
+  if (!localLogin) {
+    baseUrl = validatedCodexBaseUrl(process.env.OPENAI_BASE_URL);
+    if (baseUrl === null) {
+      fail("codex.base_url_invalid", "OPENAI_BASE_URL must be HTTPS (or loopback HTTP) without embedded credentials or a fragment", false);
+      return;
+    }
+  }
+
+  const model = validatedCodexModel(process.env.OPENAI_MODEL);
+  if (model === null) {
+    fail("codex.model_invalid", "OPENAI_MODEL must be a bounded model identifier", false);
+    return;
+  }
+
+  const args = codexTurnArgs(model, baseUrl);
+  args.push(`[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n${input || "Execute your position duties for this turn."}`);
+
+  try {
+    const spawnSpec = createQoderSpawnSpec(codexBin, args, codexChildEnvironment(process.env, engineModel));
+    child = spawn(spawnSpec.command, spawnSpec.args, {
+      ...spawnSpec.options,
+      cwd: workspaceDir,
+      // Codex exec also drains stdin; leaving it closed keeps the turn
+      // non-interactive instead of waiting for further input.
+      stdio: ["ignore", "pipe", "pipe"],
+      // Own the process group so a stalled Codex and any descendant it
+      // spawned can both be killed when the engine decides the outcome.
+      detached: process.platform !== "win32",
+    });
+  } catch {
+    fail("codex.spawn_failed", "cannot spawn the resolved Codex CLI", true);
+    return;
+  }
+
+  let buffer = "";
+  let stderrTail = "";
+  let output = "";
+  let errorMessage = "";
+  let consecutiveStreamErrors = 0;
+  const seenMessageIds = new Set();
+
+  // Any observed forward progress restarts both bounds: a turn that is still
+  // producing output has not stalled, however long it runs.
+  const noteProgress = () => {
+    consecutiveStreamErrors = 0;
+    if (stallTimer !== undefined) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      fail(
+        "codex.stalled",
+        errorMessage
+          ? `codex produced no terminal event for ${CODEX_STALL_TIMEOUT_MS}ms; last provider error: ${errorMessage}`
+          : `codex produced no terminal event for ${CODEX_STALL_TIMEOUT_MS}ms`,
+        true,
+      );
+    }, CODEX_STALL_TIMEOUT_MS);
+    // The watchdog must not be what keeps the engine alive once every other
+    // handle is gone; a completed turn exits through its own terminal.
+    stallTimer.unref?.();
+  };
+  noteProgress();
+
+  child.stderr.on("data", (chunk) => {
+    stderrTail = (stderrTail + String(chunk)).slice(-2000);
+  });
+
+  function handleCodexLine(line) {
+    if (terminalEmitted || line.trim().length === 0) return;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+
+    // Codex reports system-scope configuration it applied — clamped hooks, skill
+    // visibility warnings — as items that are not agent messages.
+    // `--ignore-user-config` does not prevent any of it, and the engine.v1
+    // event vocabulary has no diagnostic type, so these go to stderr, which
+    // driver-cli already collects as the turn diagnostic. Bounded, and never
+    // added to the turn output: this is operator-facing context, not model
+    // output.
+    if (
+      event?.type === "item.completed" &&
+      typeof event?.item?.type === "string" &&
+      event.item.type !== "agent_message"
+    ) {
+      const detail = typeof event.item.text === "string" ? event.item.text : "";
+      process.stderr.write(
+        `codex item ${event.item.type}: ${detail.slice(0, 512).replace(/\s+/g, " ")}\n`,
+      );
+      return;
+    }
+
+    if (event?.type === "item.completed" && event?.item?.type === "agent_message") {
+      // Codex retries a dropped provider stream inside a single exec, and each
+      // attempt replays the whole item. Keying on the item id keeps the turn
+      // output from being emitted once per attempt; observed as six identical
+      // copies before this guard.
+      const id = typeof event.item.id === "string" ? event.item.id : null;
+      if (id !== null && seenMessageIds.has(id)) return;
+      if (id !== null) seenMessageIds.add(id);
+      const text = event.item.text;
+      if (typeof text === "string" && text.length > 0) {
+        output += text;
+        noteProgress();
+        emit({ type: "model.delta", runId, timestamp: now(), text });
+      }
+      return;
+    }
+
+    // A bare `error` event normally precedes `turn.failed`, so the message is
+    // kept and the terminal event decides — that keeps a run ending on exactly
+    // one outcome. But Codex also emits one of these per retry of a dropped
+    // provider stream and may never reach a terminal, so a run of them with no
+    // progress in between is itself the outcome.
+    if (event?.type === "error" && typeof event.message === "string") {
+      errorMessage = event.message;
+      consecutiveStreamErrors += 1;
+      if (consecutiveStreamErrors >= CODEX_MAX_CONSECUTIVE_STREAM_ERRORS) {
+        fail(
+          "codex.provider_stream_error",
+          `${errorMessage} (${consecutiveStreamErrors} consecutive provider stream errors with no progress)`,
+          true,
+        );
+      }
+      return;
+    }
+
+    if (event?.type === "turn.failed") {
+      const message = typeof event.error?.message === "string" ? event.error.message : errorMessage;
+      fail("codex.turn_failed", message || stderrTail || "codex reported a failed turn", false);
+      return;
+    }
+
+    if (event?.type === "turn.completed") {
+      terminalEmitted = true;
+      if (stallTimer !== undefined) clearTimeout(stallTimer);
+      const usage = event?.usage && typeof event.usage === "object"
+        ? {
+            ...(Number.isInteger(event.usage.input_tokens) ? { inputTokens: event.usage.input_tokens } : {}),
+            ...(Number.isInteger(event.usage.output_tokens) ? { outputTokens: event.usage.output_tokens } : {}),
+          }
+        : null;
+      if (usage && Object.keys(usage).length > 0) {
+        emit({ type: "usage", runId, timestamp: now(), ...usage });
+      }
+      emit({ type: "run.completed", runId, timestamp: now(), output, terminalReason: "goal_met" });
+      process.exit(0);
+    }
+  }
+
+  child.stdout.on("data", (chunk) => {
+    buffer += String(chunk);
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      handleCodexLine(buffer.slice(0, newline));
+      buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf("\n");
+    }
+  });
+
+  child.on("error", () => fail(
+    "codex.spawn_failed",
+    "cannot spawn the resolved Codex CLI; install codex or check DIGITAL_EMPLOYEE_CODEX_COMMAND",
+    true,
+  ));
+  // Codex exits 0 even for a failed turn, so a clean exit is not an outcome.
+  // Only the observed terminal event completes a run; anything else is a
+  // failure rather than an empty success.
+  child.on("close", (code) => {
+    if (terminalEmitted) return;
+    fail("codex.no_terminal_event", stderrTail.trim() || `codex exited with code ${code} without a terminal event`, true);
   });
 }
 

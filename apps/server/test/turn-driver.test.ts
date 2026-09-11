@@ -321,6 +321,56 @@ test("claude-local turn env forwards the binary override and never a service cre
   }
 });
 
+test("codex-local turn env forwards login state and drops relay credentials at the driver boundary", async () => {
+  const saved = {
+    command: process.env.DIGITAL_EMPLOYEE_CODEX_COMMAND,
+    codexHome: process.env.CODEX_HOME,
+    model: process.env.OPENAI_MODEL,
+    apiKey: process.env.OPENAI_API_KEY,
+    baseUrl: process.env.OPENAI_BASE_URL,
+  };
+  process.env.DIGITAL_EMPLOYEE_CODEX_COMMAND = "/opt/codex/bin/codex";
+  process.env.CODEX_HOME = "/opt/codex/home";
+  process.env.OPENAI_MODEL = "gpt-5.2";
+  process.env.OPENAI_API_KEY = "sk-must-not-leak";
+  process.env.OPENAI_BASE_URL = "https://relay.example.com/v1";
+  try {
+    const command = await fixtureCli(`
+      let input = "";
+      process.stdin.setEncoding("utf8");
+      for await (const chunk of process.stdin) input += chunk;
+      if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== "codex-local") process.exit(8);
+      if (process.env.OPENAI_API_KEY !== undefined) process.exit(7);
+      if (process.env.OPENAI_BASE_URL !== undefined) process.exit(6);
+      if (process.env.DIGITAL_EMPLOYEE_CODEX_COMMAND !== "/opt/codex/bin/codex") process.exit(5);
+      if (process.env.CODEX_HOME !== "/opt/codex/home") process.exit(4);
+      if (process.env.OPENAI_MODEL !== "gpt-5.2") process.exit(3);
+      const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+      console.log(JSON.stringify({ ...base, type: "run.started" }));
+      console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+    `);
+    const result = await new DigitalEmployeeCliDriver(command).turnRun({
+      workspace: "/workspace",
+      positionId: "repo-owner",
+      engine: "codex-local",
+      envelope: ENVELOPE,
+    });
+    assert.equal(result.status, "trusted");
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      const environmentKey = {
+        command: "DIGITAL_EMPLOYEE_CODEX_COMMAND",
+        codexHome: "CODEX_HOME",
+        model: "OPENAI_MODEL",
+        apiKey: "OPENAI_API_KEY",
+        baseUrl: "OPENAI_BASE_URL",
+      }[key]!;
+      if (value === undefined) delete process.env[environmentKey];
+      else process.env[environmentKey] = value;
+    }
+  }
+});
+
 test("claude-code turn env forwards ANTHROPIC_BASE_URL when set (#81)", async () => {
   const saved = {
     baseUrl: process.env.ANTHROPIC_BASE_URL,

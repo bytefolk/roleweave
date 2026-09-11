@@ -3,10 +3,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import type { HealthResponse } from "@roleweave/shared";
 import { api, startTestServer } from "./helpers.js";
 import {
+  __codexVersionProbeSpec,
   hostHealth,
   probeClaudeLocalBinary,
+  probeCodexBinary,
   probeQoderLocalBinary,
   supportedClaudeVersion,
   supportedQoderVersion,
@@ -149,6 +152,207 @@ test("claude-local Host health is binary+version preflight, never a credential c
   assert.equal(supportedClaudeVersion("2.2.0"), false);
   assert.equal(supportedClaudeVersion(null), false);
   assert.equal(supportedClaudeVersion("no-version-here"), false);
+});
+
+test("codex Host health in bundled mode requires the binary plus an explicit provider credential (#206)", () => {
+  const installed = { installed: true, version: "0.153.4" };
+  const ready = hostHealth({
+    engineAvailable: true,
+    bundledElectronEngine: true,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: installed,
+  });
+  assert.deepEqual(ready.codex, { configured: true, ready: true });
+
+  const noCli = hostHealth({
+    engineAvailable: false,
+    bundledElectronEngine: true,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: installed,
+  });
+  assert.equal(noCli.codex.configured, true);
+  assert.equal(noCli.codex.ready, false);
+
+  const noKey = hostHealth({ engineAvailable: true, bundledElectronEngine: true, env: {}, codex: installed });
+  assert.equal(noKey.codex.configured, false);
+  assert.equal(noKey.codex.ready, false);
+  assert.match(noKey.codex.nextStep ?? "", /OPENAI_API_KEY/);
+  assert.match(noKey.codex.nextStep ?? "", /OPENAI_BASE_URL/);
+
+  const missing = hostHealth({
+    engineAvailable: true,
+    bundledElectronEngine: true,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: { installed: false, version: null },
+  });
+  assert.equal(missing.codex.configured, false);
+  assert.match(missing.codex.nextStep ?? "", /PATH/);
+  assert.match(missing.codex.nextStep ?? "", /DIGITAL_EMPLOYEE_CODEX_COMMAND/);
+
+  // Unlike claude-local there is no supported-version window, because the
+  // Codex engine makes no tier-1 qualification claim. An unknown version must
+  // therefore not by itself block readiness.
+  const unknownVersion = hostHealth({
+    engineAvailable: true,
+    bundledElectronEngine: true,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: { installed: true, version: null },
+  });
+  assert.deepEqual(unknownVersion.codex, { configured: true, ready: true });
+
+  // The health surface never echoes a credential value back.
+  assert.doesNotMatch(JSON.stringify(ready), /service-key/);
+});
+
+test("codex-local Host readiness in bundled mode is the binary alone and never sees a credential (#206)", () => {
+  const installed = { installed: true, version: "0.153.4" };
+
+  // No credential anywhere: the credentialed Host stays Idle, the local-login
+  // Host is ready. This is the whole point of splitting them.
+  const noKey = hostHealth({ engineAvailable: true, bundledElectronEngine: true, env: {}, codex: installed });
+  assert.deepEqual(noKey["codex-local"], { configured: true, ready: true });
+  assert.equal(noKey.codex.configured, false);
+  assert.match(noKey.codex.nextStep ?? "", /本地登录/);
+
+  const noCli = hostHealth({ engineAvailable: false, bundledElectronEngine: true, env: {}, codex: installed });
+  assert.equal(noCli["codex-local"].configured, true);
+  assert.equal(noCli["codex-local"].ready, false);
+
+  const missing = hostHealth({
+    engineAvailable: true,
+    bundledElectronEngine: true,
+    env: {},
+    codex: { installed: false, version: null },
+  });
+  assert.equal(missing["codex-local"].configured, false);
+  assert.match(missing["codex-local"].nextStep ?? "", /PATH/);
+  // A local-login Host must never tell an operator to set a service key.
+  assert.doesNotMatch(missing["codex-local"].nextStep ?? "", /OPENAI_API_KEY/);
+
+  // An unrelated key present in the environment must not change its verdict.
+  const withKey = hostHealth({
+    engineAvailable: true,
+    bundledElectronEngine: true,
+    env: { OPENAI_API_KEY: "service-key" },
+    codex: installed,
+  });
+  assert.deepEqual(withKey["codex-local"], { configured: true, ready: true });
+  assert.doesNotMatch(JSON.stringify(withKey["codex-local"]), /service-key/);
+});
+
+test("Codex Hosts stay unavailable for an external engine even with a binary and service key", () => {
+  for (const engineVersion of ["digital-employee 0.6.1", "qoder-engine 0.2.0", undefined]) {
+    const health = hostHealth({
+      engineAvailable: true,
+      ...(engineVersion !== undefined ? { engineVersion } : {}),
+      env: { OPENAI_API_KEY: "service-key-must-not-leak" },
+      codex: { installed: true, version: "0.153.4" },
+    });
+    for (const engine of ["codex", "codex-local"] as const) {
+      assert.equal(health[engine].configured, true);
+      assert.equal(health[engine].ready, false, `${engineVersion}: ${engine} needs the bundled boundary`);
+      assert.match(health[engine].nextStep ?? "", /bundled qoder-engine/);
+    }
+    assert.doesNotMatch(health["codex-local"].nextStep ?? "", /OPENAI_API_KEY/);
+    assert.doesNotMatch(JSON.stringify(health), /service-key-must-not-leak/);
+  }
+});
+
+test("GET /health gates Codex Hosts on the configured bundled engine boundary", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-codex-health-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const externalEngine = path.join(dir, "external-engine");
+  const bundledEngine = path.join(dir, "bundled-engine");
+  const codexBin = path.join(dir, "codex");
+  await fs.writeFile(externalEngine, "#!/bin/sh\nprintf '%s\\n' 'digital-employee 0.6.1'\n", { mode: 0o755 });
+  await fs.writeFile(bundledEngine, "#!/bin/sh\nprintf '%s\\n' 'qoder-engine 0.2.0'\n", { mode: 0o755 });
+  await fs.writeFile(codexBin, "#!/bin/sh\nprintf '%s\\n' 'codex-cli 0.153.4 probe-output-must-not-leak'\n", { mode: 0o755 });
+  const overrides = {
+    DIGITAL_EMPLOYEE_CODEX_COMMAND: codexBin,
+    DIGITAL_EMPLOYEE_CLAUDE_COMMAND: path.join(dir, "claude-not-installed"),
+    ORG_WORKBENCH_QODER_BIN: path.join(dir, "qoder-not-installed"),
+    OPENAI_API_KEY: "service-key-must-not-leak",
+  };
+  const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  Object.assign(process.env, overrides);
+  const server = await startTestServer();
+  t.after(() => server.close());
+  for (const command of [externalEngine, bundledEngine]) {
+    server.ctx.config.cliCommand = command;
+    server.ctx.config.bundledElectronEngine = false;
+    const response = await api(server.baseUrl, "/health");
+    assert.equal(response.status, 200);
+    const health = response.body as HealthResponse;
+    assert.equal(health.engine.available, true);
+    for (const engine of ["codex", "codex-local"] as const) {
+      assert.equal(health.hosts[engine].configured, true);
+      assert.equal(health.hosts[engine].ready, false, `${engine} must reject the external engine`);
+      assert.match(health.hosts[engine].nextStep ?? "", /bundled qoder-engine/);
+    }
+    assert.doesNotMatch(JSON.stringify(health), /service-key-must-not-leak|probe-output-must-not-leak/);
+  }
+  server.ctx.config.bundledElectronEngine = true;
+  const bundled = await api(server.baseUrl, "/health");
+  assert.equal(bundled.status, 200);
+  const bundledHealth = bundled.body as HealthResponse;
+  assert.deepEqual(bundledHealth.hosts.codex, { configured: true, ready: true });
+  assert.deepEqual(bundledHealth.hosts["codex-local"], { configured: true, ready: true });
+  delete process.env.OPENAI_API_KEY;
+  const localLogin = (await api(server.baseUrl, "/health")).body as HealthResponse;
+  assert.equal(localLogin.hosts.codex.ready, false);
+  assert.deepEqual(localLogin.hosts["codex-local"], { configured: true, ready: true });
+});
+
+/**
+ * #221 review B4: the Codex probe used `shell: true` for Windows launchers on a
+ * path derived from DIGITAL_EMPLOYEE_CODEX_COMMAND. #125 already settled that a
+ * launcher goes through an explicitly escaped cmd.exe invocation with
+ * shell: false, so a metacharacter in the path stays argv data.
+ */
+test("codex version probe never hands a Windows launcher path to a shell (#221 review B4)", () => {
+  // POSIX: the resolved binary is executed directly, no shell involved.
+  const posix = __codexVersionProbeSpec("/opt/codex/bin/codex", {}, "linux");
+  assert.equal(posix.command, "/opt/codex/bin/codex");
+  assert.deepEqual(posix.args, ["--version"]);
+  assert.equal(posix.options.shell, false);
+  // Windows, but not a launcher script: still direct.
+  const exe = __codexVersionProbeSpec("C:\\tools\\codex.exe", {}, "win32");
+  assert.equal(exe.command, "C:\\tools\\codex.exe");
+  assert.equal(exe.options.shell, false);
+
+  // A Windows launcher goes through cmd.exe explicitly.
+  const launcher = __codexVersionProbeSpec("C:\\tools\\codex.cmd", { ComSpec: "C:\\Windows\\system32\\cmd.exe" }, "win32");
+  assert.equal(launcher.command, "C:\\Windows\\system32\\cmd.exe");
+  assert.deepEqual(launcher.args.slice(0, 3), ["/d", "/s", "/c"]);
+  assert.equal(launcher.options.shell, false);
+  // Without this Node re-quotes the escaped command line, which is the bug a
+  // hand-written second copy of this construction introduced.
+  assert.equal(launcher.options.windowsVerbatimArguments, true);
+
+  // The load-bearing case: cmd metacharacters in an operator-supplied path are
+  // caret-escaped, so `&` cannot start a second command.
+  const hostile = __codexVersionProbeSpec("C:\\a&calc\\codex.cmd", {}, "win32");
+  assert.equal(hostile.command, "cmd.exe");
+  const commandLine = hostile.args[3] ?? "";
+  assert.match(commandLine, /\^&/, "an ampersand in the path must be escaped");
+  assert.doesNotMatch(commandLine, /[^^]&/, "no unescaped ampersand may reach cmd.exe");
+  // The shared construction escapes the argument too, which the hand-written
+  // copy did not: `--version` arrives quoted and caret-escaped.
+  assert.match(commandLine, /codex\.cmd \^"--version\^"/);
+});
+
+test("codex probe reports not-installed when the binary cannot be resolved", () => {
+  assert.deepEqual(probeCodexBinary({ PATH: "" }), { installed: false, version: null });
+  assert.deepEqual(
+    probeCodexBinary({ PATH: "", DIGITAL_EMPLOYEE_CODEX_COMMAND: "/nonexistent/codex" }),
+    { installed: false, version: null },
+  );
 });
 
 test("claude-code Host health in bundled mode requires binary + version + API key", () => {

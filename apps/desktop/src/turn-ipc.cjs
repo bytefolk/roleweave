@@ -1,7 +1,8 @@
 const { isPositionId } = require("@roleweave/shared/position-id");
 const { validatePendingApproval } = require("./approval-ipc.cjs");
 const MAX_INPUT_BYTES = 256 * 1024;
-const TURN_ENGINES = new Set(["qoder", "claude-code", "claude-local"]);
+const { TURN_ENGINE_IDS, turnEngineMessage } = require("@roleweave/shared/turn-engines");
+const TURN_ENGINES = new Set(TURN_ENGINE_IDS);
 
 function invalid(message) {
   return { status: 400, body: { code: "turn_request_invalid", message, retryable: false } };
@@ -33,7 +34,7 @@ function validateCreateTurnRequest(value) {
     return { ok: false, response: invalid("input must be non-empty and no larger than 256 KiB") };
   }
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
-    return { ok: false, response: invalid("engine must be qoder, claude-code, or claude-local") };
+    return { ok: false, response: invalid(`engine must be ${turnEngineMessage()}`) };
   }
   let pendingApproval;
   if (value.pendingApproval !== undefined) {
