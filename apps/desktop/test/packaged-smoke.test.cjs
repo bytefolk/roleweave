@@ -809,7 +809,7 @@ test("#194 a permanently pending fonts-ready promise cannot block layout samplin
     document: {
       fonts: { ready: never },
       querySelector: (selector) => (
-        selector === ".owb-org-module__left" || selector === ".owb-org-module > .owb-turn-panel"
+        selector === ".owb-org-module__left" || selector === ".owb-org-module__pane--right > .owb-turn-panel"
           ? column
           : null
       ),

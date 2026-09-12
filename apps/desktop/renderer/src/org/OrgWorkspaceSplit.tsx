@@ -65,7 +65,7 @@ export function OrgWorkspaceSplit({ ariaLabel, left, resetTitle, right, valueTex
       ref={hostRef}
       className="owb-org-module"
       data-dragging={dragging ? "true" : undefined}
-      style={{ "--owb-org-left-width": `${ratio * 100}%` } as CSSProperties}
+      style={ratio === DEFAULT_RATIO ? undefined : ({ "--owb-org-left-width": `${ratio * 100}%` } as CSSProperties)}
     >
       <div className="owb-org-module__pane owb-org-module__pane--left">{left}</div>
       <div

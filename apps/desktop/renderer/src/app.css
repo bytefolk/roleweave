@@ -4188,10 +4188,17 @@ body,
   min-height: 0;
 }
 
+/* The panes are the grid items, so they alone receive the module's stretch.
+   Pass that height through to the column inside each pane; in stacked mode
+   the pane is content-sized, so 100% resolves to auto there. */
+.owb-org-module__pane--left > .owb-org-module__left {
+  height: 100%;
+}
+
 .owb-org-module__pane--right > .owb-turn-panel {
   position: relative;
   z-index: 1;
-  height: auto;
+  height: 100%;
   min-height: 0;
 }
 
@@ -4975,15 +4982,15 @@ body,
     overscroll-behavior: contain;
   }
 
-  .owb-org-module__left {
+  .owb-org-module__pane--left,
+  .owb-org-module__pane--right {
     flex: none;
-    height: auto;
   }
 
   /* 单栏堆叠时给两栏各自可用的最小高度；选择器特异性必须对齐前面的
-     `.owb-org-module > .owb-turn-panel { min-height: 0 }`，否则被压掉。 */
+     `.owb-org-module__pane--right > .owb-turn-panel { min-height: 0 }`，否则被压掉。 */
   .owb-org-module__left > .owb-position-column,
-  .owb-org-module > .owb-turn-panel {
+  .owb-org-module__pane--right > .owb-turn-panel {
     flex: none;
     min-height: 380px;
   }
@@ -5029,7 +5036,7 @@ body,
 /* 竖向压缩（窗口被压扁）：面板不再抢固定最小高度，交给滚动。 */
 @media (max-height: 720px) {
   .owb-org-module__left > .owb-position-column,
-  .owb-org-module > .owb-turn-panel {
+  .owb-org-module__pane--right > .owb-turn-panel {
     min-height: 0;
   }
 
