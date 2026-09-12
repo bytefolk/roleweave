@@ -2,9 +2,10 @@
  * 菜单形态）。账号、组织等条目等登录体系落地后再加，现在不摆空入口。
  * 触发钮复用 .owb-wintitle__theme 皮肤（含 -webkit-app-region: no-drag）。 */
 import { useEffect, useRef, useState } from "react";
-import { Languages, Palette, Settings2 } from "lucide-react";
+import { Languages, Palette, Settings2, SwatchBook } from "lucide-react";
 import { useT, type OwbLocale } from "@roleweave/ui";
 import { setThemeMode, type ThemeMode } from "./theme-mode";
+import { ThemeSettings } from "./theme-settings";
 
 export function PrefsMenu({
   locale,
@@ -17,6 +18,7 @@ export function PrefsMenu({
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [themeSettingsOpen, setThemeSettingsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -77,7 +79,19 @@ export function PrefsMenu({
               {mode === "dark" ? t("prefs.themeDark") : t("prefs.themeLight")}
             </span>
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="owb-prefs__item"
+            onClick={() => { setOpen(false); setThemeSettingsOpen(true); }}
+          >
+            <SwatchBook aria-hidden="true" size={14} strokeWidth={1.8} />
+            <span>{t("theme.title")}</span>
+          </button>
         </div>
+      ) : null}
+      {themeSettingsOpen ? (
+        <ThemeSettings onClose={() => setThemeSettingsOpen(false)} />
       ) : null}
     </div>
   );

@@ -13,12 +13,12 @@ import "@fullstack-ai-infra/ui/styles.css";
 import "@roleweave/ui/styles.css";
 import "./antd-skin.css";
 import "./app.css";
-import "./roleweave-theme.css";
 import "./roleweave-components.css";
 import "./roleweave-conversation.css";
 import "./roleweave-data.css";
 import { App } from "./App";
 import { initThemeMode } from "./theme-mode";
+import { ThemeProvider } from "./theme-context";
 
 export const PACKAGED_SMOKE_QUERY_KEY = "orgWorkbenchPackagedSmoke";
 const PACKAGED_SMOKE_NONCE = /^[a-f0-9]{64}$/;
@@ -50,7 +50,9 @@ export function rendererEntryElement(
   }
   return (
     <React.StrictMode>
-      <AppComponent />
+      <ThemeProvider>
+        <AppComponent />
+      </ThemeProvider>
     </React.StrictMode>
   );
 }
