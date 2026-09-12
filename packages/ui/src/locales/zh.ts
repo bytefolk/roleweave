@@ -716,7 +716,7 @@ export const zhCatalog: Record<string, string> = {
   "misc.codexHostUnknown": "Codex 当前不可用",
   "misc.codexLocalHostUnknown": "Codex（本地登录）当前不可用",
   "misc.workspaceClosedBc": "未打开工作区",
-  "misc.lastWorkspaceFallback": "上次打开的工作区无法访问，已切换到演示工作区：{path}",
+  "misc.lastWorkspaceFallback": "上次打开的工作区无法访问：{path}。请重新打开或新建项目。",
   "prefs.trigger": "偏好设置",
   "prefs.language": "语言",
   "prefs.theme": "主题",

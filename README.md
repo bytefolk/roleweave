@@ -24,7 +24,7 @@ For example, an open-source maintenance team can have a repository owner with th
 
 The v0.1.2 source includes bounded conversation context, independent employee dispatch, and explicit parallel/relay group execution. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.1.1 installers do not include these features.
 
-Workspace auto-open diagnostics also remain best-effort in the v0.1.2 source: an unavailable stderr stream does not turn a diagnostic write into a failed startup. Existing workspace overrides and fallback behavior are preserved; see the [candidate release notes](docs/releases/v0.1.2.md).
+Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior is a post-v0.1.2 change and is not included in the v0.1.2 installers.
 
 ## Download
 

@@ -713,7 +713,7 @@ export const enCatalog: Record<string, string> = {
   "misc.codexHostUnknown": "Codex is currently unavailable",
   "misc.codexLocalHostUnknown": "Codex (local login) is currently unavailable",
   "misc.workspaceClosedBc": "No workspace open",
-  "misc.lastWorkspaceFallback": "The last opened workspace is not accessible; switched to the demo workspace: {path}",
+  "misc.lastWorkspaceFallback": "The last opened workspace is not accessible: {path}. Open a workspace or create a project.",
   "prefs.trigger": "Preferences",
   "prefs.language": "Language",
   "prefs.theme": "Theme",
