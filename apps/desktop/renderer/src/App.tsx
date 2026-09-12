@@ -28,7 +28,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { BrainCircuit, Check, ChevronDown, Cog, FileChartColumn, FolderOpen, FolderPlus, Network, Plus, ShieldAlert, Undo2, UsersRound } from "lucide-react";
+import { BrainCircuit, Check, ChevronDown, ChevronRight, Cog, FileChartColumn, FolderOpen, FolderPlus, Network, Plus, ShieldAlert, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
@@ -1181,7 +1181,11 @@ function AppInner({
       }
       topbar={
         <Topbar
-          breadcrumbs={<Breadcrumbs workspace={workspaceInfo} />}
+          breadcrumbs={<Breadcrumbs
+            workspace={workspaceInfo}
+            moduleLabel={t("rail.org")}
+            positionName={activeModule === "org" ? selectedPosition?.name ?? null : null}
+          />}
           actions={
             <div className="owb-topbar-actions">
               {/* 只保留用户需要知道的引擎可用状态；传输层状态不在顶栏重复展示。
@@ -1469,21 +1473,25 @@ function WindowControls() {
 
 function Breadcrumbs({
   workspace,
+  moduleLabel,
+  positionName,
 }: {
   workspace: WorkspaceInfoResponse | null;
+  moduleLabel: string;
+  positionName: string | null;
 }) {
   if (workspace?.open !== true || !workspace.path) return null;
+  const projectName = workspace.path.split(/[\\/]/).filter(Boolean).at(-1) ?? workspace.path;
   return (
-    <span className="owb-topbar-context">
-      <span
-        className="owb-workspace-location"
-        title={workspace.path}
-        aria-label={workspace.path}
-      >
-        <FolderOpen aria-hidden="true" size={12} />
-        <span className="owb-workspace-location__path">{workspace.path}</span>
-      </span>
-    </span>
+    <nav className="owb-topbar-context owb-breadcrumbs" aria-label="Breadcrumb">
+      <span className="owb-breadcrumb" title={workspace.path}>{projectName}</span>
+      <ChevronRight className="owb-breadcrumb-sep" aria-hidden="true" size={13} />
+      <span className="owb-breadcrumb">{moduleLabel}</span>
+      {positionName ? <>
+        <ChevronRight className="owb-breadcrumb-sep" aria-hidden="true" size={13} />
+        <span className="owb-breadcrumb">{positionName}</span>
+      </> : null}
+    </nav>
   );
 }
 

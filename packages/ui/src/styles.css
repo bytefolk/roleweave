@@ -525,6 +525,23 @@
   font-size: var(--ui-text-xs, 12px);
 }
 
+.owb-pos-relation {
+  gap: var(--ui-space-2, 8px);
+  padding-left: 4px;
+}
+
+.owb-pos-relation__avatar {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: var(--ui-radius-sm, 6px);
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
+  font-size: 9px;
+  font-weight: 700;
+}
+
 button.owb-pos-relation {
   cursor: pointer;
 }

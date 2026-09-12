@@ -246,10 +246,11 @@ function RelationChip({
   relation: { id: string; name: string };
   onSelect?: (positionId: string) => void;
 }) {
-  if (!onSelect) return <span className="owb-pos-relation">{relation.name}</span>;
+  const content = <><span className="owb-pos-relation__avatar" aria-hidden="true">{relation.name.trim().charAt(0).toUpperCase()}</span>{relation.name}</>;
+  if (!onSelect) return <span className="owb-pos-relation">{content}</span>;
   return (
     <button type="button" className="owb-pos-relation" onClick={() => onSelect(relation.id)}>
-      {relation.name}
+      {content}
     </button>
   );
 }
