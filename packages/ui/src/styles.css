@@ -494,29 +494,43 @@
   margin: var(--ui-space-1, 4px) 0 0;
 }
 
-.owb-pos-reporting {
+.owb-pos-lineage {
+  gap: var(--ui-space-2, 8px);
+}
+
+.owb-pos-lineage__row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--ui-space-2, 8px);
-  margin-top: var(--ui-space-3, 12px);
-  color: var(--ui-foreground-muted);
+}
+
+.owb-pos-lineage__label {
+  min-width: 52px;
+  color: var(--ui-foreground-subtle);
   font-size: var(--ui-text-xs, 12px);
 }
 
-.owb-pos-reporting > svg {
-  flex: none;
-  color: var(--ui-foreground-subtle);
+.owb-pos-relation,
+.owb-pos-lineage__flat {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px var(--ui-space-3, 12px);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-full, 999px);
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  font: inherit;
+  font-size: var(--ui-text-xs, 12px);
 }
 
-.owb-pos-reporting__count {
-  margin-left: auto;
-  padding: 2px var(--ui-space-2, 8px);
-  border-radius: var(--ui-radius-full, 999px);
-  background: var(--ui-surface-raised);
-  color: var(--ui-foreground);
-  font-family: var(--ui-font-mono, ui-monospace, monospace);
-  font-size: 10px;
-  white-space: nowrap;
+button.owb-pos-relation {
+  cursor: pointer;
+}
+
+button.owb-pos-relation:hover {
+  border-color: var(--ui-primary);
 }
 
 .ui-org-position-card__section {

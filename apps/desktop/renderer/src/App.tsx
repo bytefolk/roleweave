@@ -56,7 +56,6 @@ import type {
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
-import { OrgWorkspaceSplit } from "./org/OrgWorkspaceSplit";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
@@ -1269,12 +1268,7 @@ function AppInner({
             position={card.data}
             initialSource={memorySource}
           />
-        ) : <OrgWorkspaceSplit
-          ariaLabel={t("tree.splitPane")}
-          className={orgFocusMode ? "is-focus-mode" : undefined}
-          resetTitle={t("tree.splitPaneReset")}
-          valueText={(value) => t("tree.splitPaneValue", { value })}
-          left={
+        ) : <div className={`owb-org-module${orgFocusMode ? " is-focus-mode" : ""}`}>
             <div className="owb-org-module__left">
               {/* #137 two-column workspace: the left column stacks the org chart
                   and the position-record card (aligned, one column); the right
@@ -1304,7 +1298,16 @@ function AppInner({
                       ? positionNames[selectedPosition.reportTo] ?? selectedPosition.reportTo
                       : undefined,
                     directReportCount: selectedNode?.children.length,
+                    reportTo: selectedPosition.reportTo ? {
+                      id: selectedPosition.reportTo,
+                      name: positionNames[selectedPosition.reportTo] ?? selectedPosition.reportTo,
+                    } : undefined,
+                    directReports: selectedNode?.children.map((child) => ({
+                      id: child.id,
+                      name: positionNames[child.id] ?? child.id,
+                    })),
                   } : undefined}
+                  onSelectRelation={openConversation}
                   onRefresh={() => void refresh()}
                   onContextSourceSelect={(source) => {
                     setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
@@ -1314,8 +1317,7 @@ function AppInner({
                 />
               </div>
             </div>
-          }
-          right={<TurnPanel
+          <TurnPanel
             key={workspaceInfo?.path}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
@@ -1325,6 +1327,7 @@ function AppInner({
             turns={displayTurns}
             busy={turnBusy}
             employeeBusy={selectedId !== null && runningPositionIds.has(selectedId)}
+            positionMode={selectedPosition?.mode}
             sessions={sessions}
             selectedSessionId={selectedSessionId}
             sessionBusy={sessionBusy}
@@ -1339,8 +1342,8 @@ function AppInner({
             onCreateSession={createSession}
             onRotateSession={rotateSession}
             onSetSessionContext={setSessionContext}
-          />}
-        />}
+          />
+        </div>}
       </div>
     </AppShell>
     </div>

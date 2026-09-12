@@ -8488,3 +8488,287 @@ body,
 .owb-thread-context code { overflow-wrap: anywhere; }
 .owb-group-dispatch-mode { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .owb-group-dispatch-mode .ant-select { min-width: 170px; }
+
+/* ========================================================================
+ * Organization module v3 — the HTML reference is the structural target.
+ * Keep the implementation on semantic tokens so profile/theme selection
+ * remains a product capability rather than a hard-coded warm-paper skin.
+ * ======================================================================== */
+.owb-org-module {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+}
+
+.owb-org-module.is-focus-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.owb-org-module.is-focus-mode > .owb-turn-panel,
+.owb-org-module.is-focus-mode .owb-position-column {
+  display: none;
+}
+
+.owb-org-module.is-focus-mode .owb-org-module__left,
+.owb-org-module.is-focus-mode .owb-org-chart {
+  height: 100%;
+}
+
+.owb-org-module.is-focus-mode .owb-org-chart {
+  flex: 1;
+}
+
+.owb-org-module.is-focus-mode .owb-org-chart__body {
+  height: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+.owb-org-module__left > .owb-org-chart {
+  flex: none;
+}
+
+.owb-org-chart__head {
+  gap: 8px;
+  padding: 8px 12px 8px 10px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.owb-org-chart__stats {
+  margin-left: 4px;
+  gap: 8px;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+}
+
+.owb-org-chart__running {
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  color: var(--ui-ai-strong, var(--ui-ai));
+}
+
+.owb-org-chart__body {
+  height: clamp(220px, 30vh, 320px);
+  min-height: 0;
+  padding: 4px 14px 14px;
+  background-image: radial-gradient(color-mix(in srgb, var(--ui-border-strong) 70%, transparent) 1px, transparent 1px);
+  background-size: 16px 16px;
+  background-position: -1px -1px;
+}
+
+.owb-org-chart__stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  min-width: 0;
+  width: max-content;
+  padding: 12px;
+}
+
+.owb-org-chart__roots {
+  min-width: 0;
+}
+
+.owb-org-chart__branch {
+  padding: 18px 8px 0;
+}
+
+.owb-org-chart__children {
+  gap: 18px;
+  padding-top: 18px;
+}
+
+.owb-org-chart__branch::before,
+.owb-org-chart__branch::after {
+  height: 18px;
+}
+
+.owb-org-chart__children::before {
+  height: 18px;
+}
+
+.owb-org-chart__card {
+  display: grid;
+  gap: 7px;
+  width: 176px;
+  padding: 9px 10px;
+  box-shadow: none;
+}
+
+.owb-org-chart__card.is-selected {
+  box-shadow: 0 0 0 1px var(--ui-primary);
+}
+
+.owb-org-chart__card-head {
+  gap: 7px;
+}
+
+.owb-org-chart__avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.owb-org-chart__led {
+  margin-right: -2px;
+}
+
+.owb-org-chart__id {
+  overflow: hidden;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-org-chart__card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.owb-org-chart__state,
+.owb-org-chart__reports {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+}
+
+.owb-org-chart__state.is-running {
+  color: var(--ui-ai-strong, var(--ui-ai));
+}
+
+.owb-org-chart__reports {
+  margin-left: auto;
+}
+
+.owb-org-chart__budget {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 3px 6px;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 9.5px;
+}
+
+.owb-org-chart__budget strong {
+  overflow: hidden;
+  color: var(--ui-foreground-muted);
+  font-weight: 600;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-org-chart__budget i {
+  grid-column: 1 / -1;
+  display: block;
+  height: 3px;
+  border-radius: var(--ui-radius-full, 999px);
+  background: var(--ui-border-strong);
+}
+
+.owb-turn-panel__header {
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.owb-panel-head__sub {
+  margin-top: 4px;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+}
+
+.owb-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.owb-turn-composer {
+  padding: 12px 16px 14px;
+}
+
+.owb-turn-composer__surface {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-raised);
+}
+
+.owb-turn-composer__surface:focus-within {
+  border-color: var(--ui-primary);
+  box-shadow: 0 0 0 3px var(--ui-primary-soft);
+}
+
+.owb-turn-composer textarea {
+  min-height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.owb-turn-composer__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.owb-turn-composer__shortcut {
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  color: var(--ui-foreground-subtle);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-turn-composer__surface button {
+  position: static;
+  width: auto;
+  height: 28px;
+  min-width: 0;
+  padding: 0 10px;
+  border-radius: var(--ui-radius-sm);
+}
+
+@media (max-width: 1180px) {
+  .owb-org-module {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: auto;
+  }
+
+  .owb-org-chart__body {
+    height: 220px;
+  }
+}
+
+@media (max-width: 680px) {
+  .owb-org-chart__stats {
+    display: none;
+  }
+
+  .owb-turn-composer__shortcut {
+    display: none;
+  }
+}
