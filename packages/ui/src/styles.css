@@ -494,6 +494,31 @@
   margin: var(--ui-space-1, 4px) 0 0;
 }
 
+.owb-pos-reporting {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-2, 8px);
+  margin-top: var(--ui-space-3, 12px);
+  color: var(--ui-foreground-muted);
+  font-size: var(--ui-text-xs, 12px);
+}
+
+.owb-pos-reporting > svg {
+  flex: none;
+  color: var(--ui-foreground-subtle);
+}
+
+.owb-pos-reporting__count {
+  margin-left: auto;
+  padding: 2px var(--ui-space-2, 8px);
+  border-radius: var(--ui-radius-full, 999px);
+  background: var(--ui-surface-raised);
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .ui-org-position-card__section {
   margin-top: var(--ui-space-4, 16px);
 }

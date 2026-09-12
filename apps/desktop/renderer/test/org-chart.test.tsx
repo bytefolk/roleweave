@@ -44,8 +44,8 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
       />,
     );
     // 头部位面：岗位数与深度来自应用态快照。
-    // #167：描述语精简——头部只留标题，count·depth meta 已移除。
-    expect(screen.queryByText("3 岗位 · 深度 2")).toBeNull();
+    // 摘要来自冻结快照；运行态只来自调用方传入的真实 live-run 集合。
+    expect(screen.getByText("3 岗位 · 深度 2")).toBeInTheDocument();
     // 角色名来自展示面；组织图不重复渲染 title、预算和模式。
     expect(screen.getByText("代码库负责人")).toBeInTheDocument();
     expect(screen.getByText("发布工程师")).toBeInTheDocument();
@@ -55,6 +55,21 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
     // 汇报线走线：3 个节点 → 3 个分支容器（伪元素连接线挂在其上）。
     expect(container.querySelectorAll(".owb-org-chart__branch")).toHaveLength(3);
     expect(container.querySelector(".owb-org-chart__children")).not.toBeNull();
+  });
+
+  it("显示真实运行摘要，并把适配/专注控制交给工作台", () => {
+    const onFocusModeChange = vi.fn();
+    render(
+      <OrgChart
+        snapshot={snapshot}
+        runningIds={new Set(["docs-writer"])}
+        onFocusModeChange={onFocusModeChange}
+      />,
+    );
+    expect(screen.getByText("1 运行中")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "适配组织图视图" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "专注查看组织图" }));
+    expect(onFocusModeChange).toHaveBeenCalledWith(true);
   });
 
   it("点击节点触发 onSelect；选中节点带高亮态与按压语义", () => {

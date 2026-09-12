@@ -260,6 +260,18 @@ export function TurnPanel({
             <MessagesSquare aria-hidden="true" size={15} />
             {t("turn.title")}
           </h2>
+          {selectedPosition ? (
+            <p className="owb-turn-panel__position" data-position-id={selectedPosition.id}>
+              <span>{t("turn.position")}</span>
+              <strong>@{selectedPosition.name}</strong>
+              <span
+                className={`owb-led owb-turn-panel__position-led${employeeBusy ? " owb-led--running" : ""}`}
+                role="img"
+                aria-label={employeeBusy ? t("pos.running") : t("pos.ready")}
+                title={employeeBusy ? t("pos.running") : t("pos.ready")}
+              />
+            </p>
+          ) : null}
         </div>
       </header>
 
