@@ -3,6 +3,12 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 早期开发记录以里程碑（D0/D1/D2…）标注，安装包发布使用语义化版本。
 
+## [Unreleased]
+
+### Fixed
+
+- #221 review：Codex 就绪状态要求内置引擎边界；使用外部 digital-employee CLI 时，即使已安装 Codex 并配置凭据，两种 Codex Host 仍显示不可用并说明原因。
+
 ## [0.1.2] — 2026-09-10
 
 ### Changed
@@ -19,6 +25,7 @@
 - #215 review：取消绑定原工作区及已知回合；个人与群组执行共同阻止会话轮换和上下文策略变更，前端按工作区、岗位、引擎隔离事件。
 - #215 review：补足最大群消息的持久化空间，接力只保留有界结果，恢复记录保留原接受时间并保证并发恢复幂等。
 - #155：Windows 目录 fsync 的 EPERM 判断收回唯一的原子写入口（context export 不再自带第二份），裸 errno 通过 `cause` 穿过 groups/assets/sessions/turns 各自的存储错误包装；平台改为可注入后，这批回归在 POSIX runner 上真正执行而不是 skip。
+- #224：控制面模式开关同时接受 RoleWeave 命名 `ROLEWEAVE_CONTROL_PLANE_MODE`（RoleWeave 名优先，与 `ROLEWEAVE_DEFAULT_WORKSPACE` 一致），保留 `ORG_WORKBENCH_CONTROL_PLANE` 兼容旧部署；避免按新品牌名设置时被静默忽略而退回原生模式、使 #156 的 WSL 路径修复在真实 Windows 主机上失效。
 
 ## [0.1.1] — 2026-09-08
 
@@ -33,32 +40,17 @@
 - 修复 macOS 发布时误拒绝签名更新清单的问题，发布前校验清单签名、版本及 ZIP 大小和哈希。
 - 安装包文件名、GitHub 发布坐标与 macOS 签名更新清单统一使用 `roleweave`，避免更新器寻找旧名称安装包。
 - 保留旧环境变量、工作区数据迁移和应用 ID；旧开发包需手动安装新版一次，不放宽更新信任校验。
+- #135：新增免费 macOS GitHub 自动更新通道：发布 workflow 使用 `OWB_UPDATE_SIGNING_PRIVATE_KEY` 为 ZIP 元数据生成 Ed25519 签名，客户端校验后后台下载，并在正常退出时自动替换、重启；应用本身仍为 unsigned，Gatekeeper/Developer ID 方案保留为后续切换路径。
 
-## [Unreleased] — D2 组织操作 + D3 对话控制面 + D4 本地上报
+## [0.1.0] — 2026-09-03
 
-### Changed
-
-- #206：RoleWeave 内置引擎新增 Codex 服务凭据与本地登录两种 Agent Host；本地登录不依赖服务 API key。
-- #236：Agent Host 下方显示本次回合将使用的模型（仅对存在模型旋钮的 Host 展示，由 `/health` 新增的可选 `modelPinnable` 下发，客户端不自带引擎清单）。`/health` 的 Host 状态新增可选 `model`（取自 `OPENAI_MODEL`）；未指定时如实显示"由 Host 自行决定"而不推断名字——Codex CLI 不向调用方报告它选中的模型。Codex 回合一律带 `--ignore-user-config`，`~/.codex/config.toml` 的 `model` 不生效。`OPENAI_MODEL` 非法时两个 Codex Host 在前置检查即 fail closed 并给出可执行提示，不再等到 spawn 前失败。
-- 以 RoleWeave 标识的紫蓝色建立 light / dark 双主题，逐组件统一组织、会话、群聊、招聘、文档、网盘、报表、审批和设置；简化嵌套卡片与装饰标签，改善正文、长路径、超限数值及暗色表单的可读性，保留业务行为。
-- 会话使用可折叠的执行状态行与连续正文：运行时展开公开里程碑并显示真实耗时，结束时默认收起，手动开合不受流式输出刷新影响；审批与错误保持可见，不推断工具次数，缺失的时间不补零。
+初始公开版本，包含 D0–D4 全部开发切片的审查合并。
 
 含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
 
-### Fixed
-
-- #240 review：报表中心的审计时间线改用与对话面板同一个引擎标签来源。它此前自带第三份标签映射（签名 `engine: string` + `return engine` 兜底），Codex 回合会显示成裸 id `codex-local`，`claude-local` 也与对话面板措辞不一致；这个缺陷在 #239 修复前不可达，因为 `/reports` 遇到 Codex 记录会直接硬报错。
-- #239：Codex 回合不再在写盘后变成不可读记录。回合记录校验器仍保留 #206 之前的三引擎硬编码白名单，导致 `codex` / `codex-local` 的回合被路由接受并落盘、却在回读时判为非法，使该会话历史和整个报表中心永久报错（`local session turn history contains an invalid record` / `local reports data is invalid`）。校验器改为走 `turnEngines` 契约；已落盘的记录无需修复，本身合法。
-- #221 review：Codex 就绪状态要求内置引擎边界；使用外部 digital-employee CLI 时，即使已安装 Codex 并配置凭据，两种 Codex Host 仍显示不可用并说明原因。
-- #156：工作区覆盖路径仅在 Windows WSL 控制面模式下跳过本地存在性检查，由控制面在路径边界转换后校验；模式判断与路由、诊断统一，Linux/macOS 即使设置 `ORG_WORKBENCH_CONTROL_PLANE=wsl` 仍保留原生校验。
-- #224：控制面模式开关同时接受 RoleWeave 命名 `ROLEWEAVE_CONTROL_PLANE_MODE`（RoleWeave 名优先，与 `ROLEWEAVE_DEFAULT_WORKSPACE` 一致），保留 `ORG_WORKBENCH_CONTROL_PLANE` 兼容旧部署；避免按新品牌名设置时被静默忽略而退回原生模式、使 #156 的 WSL 路径修复在真实 Windows 主机上失效。
-- #135：新增免费 macOS GitHub 自动更新通道：发布 workflow 使用 `OWB_UPDATE_SIGNING_PRIVATE_KEY` 为 ZIP 元数据生成 Ed25519 签名，客户端校验后后台下载，并在正常退出时自动替换、重启；应用本身仍为 unsigned，Gatekeeper/Developer ID 方案保留为后续切换路径。
-
-### Added
 ### Added
 
 - #127 AC-004 跨平台布局一致性证据：新增 layout smoke 模式（macOS arm64 / Windows x64 双平台，全应用渲染两栏组织工作区并由 main 进程度量列矩形写报告），verify.yml 新增 layout-parity job 下载双平台报告比对（per-platform bottomDelta ≤2px、per-platform 两列高差 ≤2px、跨平台宽差 ≤4px、跨平台 chrome overhead 差 ≤8px，阈值声明在 scripts/check-layout-parity.mjs）。跨平台一项自 #190 起比的是 chrome overhead（`viewport.innerHeight - 列高`）而非绝对列高：runner 给两侧的窗口高度本就不同，比绝对高度量到的是 runner 而不是布局，#190 之前的「高差 ≤8px」写法已随之作废。顺带修 #150 打包缺口：doc-plane.js 未登记 SERVER_RUNTIME_FILES 导致打包 server 启动即崩、main CI 红。
-### Added
 
 - #146 国际化骨架与全量迁移：`@org-workbench/ui` 新增 `OwbI18nProvider` / `useT` / `zhText` 与 zh-CN/en 双目录（440 key，parity 门强制 key 集合一致）；标题栏新增语言切换钮（恰好两态，持久化，默认 zh-CN，antd ConfigProvider locale 同步切换）；renderer 与 ui 包全部用户可见文案迁入目录，`i18n-cjk-gate` 测试扫描源码字符串字面量内的 CJK 防绕过；数据层（turn 原文、信封、组织文件、裁决输入）不翻译。
 
