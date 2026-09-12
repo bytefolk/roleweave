@@ -30,6 +30,7 @@ import type {
   GroupMessage,
 } from "@roleweave/shared";
 import { assertSessionId } from "../sessions/store.js";
+import { PerKeyLock } from "../per-key-lock.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations, parseRfc3339Instant, compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 
 const GROUPS_ROOT = path.join(".digital-employee", "workbench", "groups");
@@ -190,23 +191,13 @@ function isGroupMessage(value: unknown): value is GroupMessage {
 
 export class GroupStore {
   private readonly activeDispatches = new Set<string>();
-  private readonly spawnRecoveryLocks = new Map<string, Promise<void>>();
+  private readonly spawnRecoveryLocks = new PerKeyLock();
 
   /** Serialize the complete check/create/finish operation across timeline
    * polls, releasing failed attempts so a later read can retry persistence. */
   async withSpawnRecovery<T>(workspace: string, positionId: string, turnId: string, operation: () => Promise<T>): Promise<T> {
     const key = `${path.resolve(workspace)}\0${positionId}\0${turnId}`;
-    const previous = this.spawnRecoveryLocks.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => held);
-    this.spawnRecoveryLocks.set(key, tail);
-    await previous;
-    try { return await operation(); }
-    finally {
-      release();
-      if (this.spawnRecoveryLocks.get(key) === tail) this.spawnRecoveryLocks.delete(key);
-    }
+    return this.spawnRecoveryLocks.run(key, operation);
   }
 
   beginDispatch(workspace: string, conversationRef: string, messageId: string): () => void {
