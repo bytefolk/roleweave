@@ -780,14 +780,18 @@
   gap: 5px;
 }
 
-/* #236: model line under the Agent Host trigger. A model slug can be longer
-   than the ~220px column, so it wraps instead of being clipped to a prefix
-   that reads like a different model. */
+/* #236: model line under the Agent Host trigger. #245: overflow-wrap: anywhere
+   could break a long slug at an arbitrary point (e.g., "ns/model-1." + "2_3"),
+   which reads like a different model. Ellipsis truncation keeps the visible
+   prefix honest; the full slug is in the title attribute. */
 .owb-turn-engine__model {
   color: var(--ui-foreground-muted);
   font-size: 11px;
   line-height: 1.4;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .owb-position-mention__field {
