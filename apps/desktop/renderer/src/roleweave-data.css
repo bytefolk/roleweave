@@ -3,7 +3,7 @@
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
   .owb-memory-module, .owb-docs-module, .owb-drive-module, .owb-reports,
-  .owb-approval-queue, .owb-settings-module
+  .owb-approval-queue, .owb-settings-module, .owb-goals-module
 ) {
   font-size: 13px;
   line-height: 1.55;
@@ -778,4 +778,280 @@
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-settings-module__fact dd {
   min-width: 0;
+}
+
+/* Goals: list + detail layout with health dots and status badges. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-module-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 12px;
+  flex-wrap: wrap;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-module-header__count {
+  font-family: var(--ui-font-sans);
+  font-size: 12px;
+  color: var(--ui-foreground-muted);
+  margin-inline-start: auto;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 0 16px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-list__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--ui-border);
+  font-size: 13px;
+  min-width: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-list__item:last-child {
+  border-bottom: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-list__item--active {
+  background: var(--ui-surface-inset);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-list__item:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-list__title {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-detail {
+  overflow-y: auto;
+  min-width: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-detail__content {
+  padding: 0 4px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-detail__content h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-detail__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-detail__head h2 {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-detail__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-detail__desc {
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 0 0 16px;
+  overflow-wrap: anywhere;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-detail__content ul {
+  margin: 4px 0 16px;
+  padding-left: 20px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-detail__content li {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-activity {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-activity li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--ui-border);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-activity li:last-child {
+  border-bottom: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-activity time {
+  color: var(--ui-foreground-muted);
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-activity__kind {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-error {
+  border: 0;
+  border-radius: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--ui-danger-strong);
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-goals-empty, .owb-goals-loading) {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--ui-foreground-muted);
+  font-size: 13px;
+}
+
+/* Health dots */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-health-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-health-dot::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-health--ok::before { background: var(--ui-success-strong); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-health--warn::before { background: var(--ui-warning-strong); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-health--bad::before { background: var(--ui-danger-strong); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-health--unknown::before { background: var(--ui-foreground-subtle); }
+
+/* Goal create dialog */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 0 0 8px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__hero h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__hero p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-primary);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__criteria {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__criteria > span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__criteria-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__error {
+  color: var(--ui-danger-strong);
+  font-size: 12px;
+  margin: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goal-create__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-border);
 }

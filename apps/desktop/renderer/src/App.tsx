@@ -28,7 +28,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { BrainCircuit, Check, ChevronDown, Cog, FileChartColumn, FolderOpen, FolderPlus, Network, Plus, ShieldAlert, Undo2, UsersRound } from "lucide-react";
+import { BrainCircuit, Check, ChevronDown, Cog, FileChartColumn, FolderOpen, FolderPlus, Network, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
@@ -63,6 +63,7 @@ import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
+import { GoalsModule } from "./goals/GoalsModule";
 import { ProjectCreateDrawer } from "./project/ProjectCreateDrawer";
 
 interface PositionCardState {
@@ -105,7 +106,7 @@ function AppInner({
   onChangeLocale: (next: OwbLocale) => void;
 }) {
   const [activeModule, setActiveModule] = useState<
-    "org" | "groups" | "reports" | "approvals" | "docs" | "settings"
+    "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "settings"
   >("org");
   const [memorySource, setMemorySource] = useState<MemorySource>("docs");
   /**
@@ -1074,6 +1075,7 @@ function AppInner({
             // #134: the update pane needs room for a version, live progress and
             // a changelog link, so it is a module rather than a third row in
             // the prefs drawer (#174), which stays two quick toggles.
+            { id: "goals", label: t("rail.goals"), icon: <Target aria-hidden="true" size={16} />, active: activeModule === "goals", onSelect: () => setActiveModule("goals") },
             { id: "settings", label: t("rail.settings"), icon: <Cog aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
           ]}
         />
@@ -1256,6 +1258,8 @@ function AppInner({
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
           />
+        ) : activeModule === "goals" ? (
+          <GoalsModule workspaceOpen={workspaceInfo?.open === true} />
         ) : activeModule === "settings" ? (
           <SettingsModule />
         ) : activeModule === "docs" ? (

@@ -6,6 +6,7 @@ import type { TurnStore } from "./turns/store.js";
 import type { RunningTurnRegistry } from "./turns/running.js";
 import type { SessionStore } from "./sessions/store.js";
 import type { GroupStore } from "./groups/store.js";
+import type { GoalStore } from "./goals/store.js";
 import type { ContextExportService } from "./context-export/exporter.js";
 
 export interface ControlPlaneContext {
@@ -26,6 +27,8 @@ export interface ControlPlaneContext {
   sessionStore: SessionStore;
   /** #52 S2 workspace-local group conversations (roster + conversationRef local mapping). */
   groupStore: GroupStore;
+  /** #222 workspace-local user-owned goal persistence. */
+  goalStore: GoalStore;
   /** Server-owned durable turn exporter; never exposed to renderer/IPC. */
   contextExporter: ContextExportService;
 }
