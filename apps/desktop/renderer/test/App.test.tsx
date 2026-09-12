@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { pickSelectOption, visibleSelectOptions } from "./select-helper";
 import { App } from "../src/App";
 import { HireDrawer } from "../src/org/HireDrawer";
 import type { OwbBridge } from "../src/owb";
 import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
+
+beforeEach(() => window.localStorage.removeItem("owb-turn-engine"));
 
 const activeSession: WorkbenchSession = {
   schemaVersion: "workbench-session.v1",
@@ -208,6 +210,36 @@ async function selectRepoOwner(): Promise<void> {
 }
 
 describe("App runtime bridge", () => {
+  it("starts with a ready local-login host and remembers a manual Agent Host choice", async () => {
+    openedBridge();
+    const first = render(<App />);
+    await selectRepoOwner();
+    const picker = () => screen.getByRole("combobox", { name: "选择 Agent Host" }).closest(".ant-select");
+    expect(picker()).toHaveTextContent("Codex · 本地登录");
+    expect(window.localStorage.getItem("owb-turn-engine")).toBeNull();
+
+    pickSelectOption("选择 Agent Host", "Claude Code · 本地登录");
+    expect(window.localStorage.getItem("owb-turn-engine")).toBe("claude-local");
+    first.unmount();
+
+    openedBridge();
+    render(<App />);
+    await selectRepoOwner();
+    expect(picker()).toHaveTextContent("Claude Code · 本地登录");
+  });
+
+  it("keeps a remembered unavailable host visible instead of silently selecting a ready one", async () => {
+    window.localStorage.setItem("owb-turn-engine", "claude-code");
+    openedBridge();
+    render(<App />);
+    await selectRepoOwner();
+    const picker = screen.getByRole("combobox", { name: "选择 Agent Host" }).closest(".ant-select");
+    expect(picker).toHaveTextContent("Claude Code");
+    expect(picker).not.toHaveTextContent("本地登录");
+    expect(screen.getByLabelText("下达任务")).toBeDisabled();
+    expect(screen.getAllByText("设置 ANTHROPIC_API_KEY 后重启工作台").length).toBeGreaterThan(0);
+  });
+
   it("renders the real engine health shape and reads the current SSE status", async () => {
     installBridge();
 
@@ -460,6 +492,7 @@ describe("App runtime bridge", () => {
     const { container } = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "群聊" }));
     await screen.findByLabelText("群聊消息");
+    pickSelectOption("选择 Agent Host", "Qoder");
     const recipientSelect = screen.getByRole("combobox", { name: "选择要 @ 的成员" });
     fireEvent.mouseDown(recipientSelect);
     await waitFor(() => {
@@ -858,6 +891,7 @@ it("runs A/B/C independently and keeps late responses, streams and cancellation 
   for (const [index, id] of ids.entries()) {
     await choose(id);
     await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+    if (index === 0) pickSelectOption("选择 Agent Host", "Qoder");
     fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: `task-${id}` } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
     await waitFor(() => expect(createSessionTurn).toHaveBeenCalledTimes(index + 1));
@@ -1014,6 +1048,7 @@ it("restores the original workspace's running task and cancels its exact owner a
   expect(row).not.toBeNull();
   await act(async () => { fireEvent.click(row!); });
   expect(screen.getByRole("heading", { name: "本地对话" })).toBeInTheDocument();
+  pickSelectOption("选择 Agent Host", "Qoder");
   const send = async (input: string) => {
     const composer = screen.getByLabelText("下达任务");
     expect(composer).toBeEnabled();

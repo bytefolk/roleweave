@@ -49,6 +49,7 @@ interface OwbApiResponse<T = unknown> {
 
 interface OwbStatusResponse {
   running: boolean;
+  runtime?: { mode: "native" | "wsl"; distro: string | null };
   state?: "starting" | "ready" | "degraded" | "stopping" | "stopped" | "failed";
   port?: number;
   health?: HealthResponse | null;

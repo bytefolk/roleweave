@@ -61,7 +61,7 @@ async function openDefaultWorkspace({
 
   const lastPath = readLastWorkspacePath(userDataPath);
   if (lastPath !== null) {
-    if (fs.existsSync(path.join(lastPath, "workspace.json"))) {
+    if (controlPlaneMode(env) === "wsl" || fs.existsSync(path.join(lastPath, "workspace.json"))) {
       try {
         const res = await apiRequest("/workspace/open", {
           method: "POST",

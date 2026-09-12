@@ -16,9 +16,9 @@ const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme } = require("ele
 app.setName("RoleWeave");
 const { spawn } = require("node:child_process");
 const {
+  controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,
-  serverPathForWorkspace,
 } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -91,10 +91,8 @@ const {
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
 } = require("./goal-ipc.cjs");
-const {
-  writeLastWorkspacePath,
-} = require("./last-workspace.cjs");
-const { validateWorkspaceCreateRequest } = require("./workspace-ipc.cjs");
+const { openWorkspaceWithPicker, createWorkspaceWithPicker } = require("./workspace-ipc.cjs");
+const { runtimeEnvironment, runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
@@ -123,6 +121,7 @@ let eventStreamRequest = null;
 let currentSseStatus = "connecting";
 let pendingFallbackNotice = null;
 let updateCheckTimer = null;
+let desktopEnv = { ...process.env };
 
 function pinnedEngineCommandDefault() {
   const nodePath = process.execPath;
@@ -144,16 +143,17 @@ function startControlPlane() {
   controlPlaneState = "starting";
   controlPlaneError = null;
   return startControlPlaneProcess({
-    readyTimeoutMs: DEFAULT_READY_TIMEOUT_MS,
+    // A stopped WSL distribution needs time to boot before Node can announce readiness.
+    readyTimeoutMs: controlPlaneMode(desktopEnv) === "wsl" ? 45000 : DEFAULT_READY_TIMEOUT_MS,
     createChild: () => {
       const child = createControlPlaneChild({
         serverEntry: SERVER_ENTRY,
         env: {
-          ...process.env,
+          ...desktopEnv,
           // Directly runnable: default the pinned engine to the bundled qoder
           // adapter unless the operator pins a real digital-employee CLI.
           ...engineRuntimeEnvironment(
-            process.env,
+            desktopEnv,
             pinnedEngineCommandDefault(),
           ),
         },
@@ -296,12 +296,18 @@ function broadcastSseStatus(state) {
 
 // Whitelisted IPC bridge — enumerated, typed, no generic channel.
 ipcMain.handle("owb:status", async () => {
+  const runtime = runtimeDescription(desktopEnv);
   if (!controlPlane) {
     return {
       running: false,
+      runtime,
       state: controlPlaneState,
       error: controlPlaneError ? String(controlPlaneError.message ?? controlPlaneError) : null,
-      nextSteps: [
+      nextSteps: runtime.mode === "wsl" ? [
+        `确认 Windows 的 WSL 可以打开所选发行版：${runtime.distro ?? "默认发行版"}`,
+        "确认该发行版中已安装 Linux Node.js 22 或以上版本",
+        "完全退出 RoleWeave 后重新打开",
+      ] : [
         "确认已安装 Node >= 22 并已构建（npm run build）",
         "手动启动控制面排障：npm run dev:server，然后重新打开应用",
         "若引擎不可用，设置 ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI 指向钉版 digital-employee CLI",
@@ -309,12 +315,13 @@ ipcMain.handle("owb:status", async () => {
     };
   }
   if (controlPlaneState === "stopping") {
-    return { running: false, state: "stopping", port: controlPlane.port, health: null };
+    return { running: false, runtime, state: "stopping", port: controlPlane.port, health: null };
   }
   if (!isControlPlaneAlive(controlPlane.child)) {
     controlPlaneState = "failed";
     return {
       running: false,
+      runtime,
       state: controlPlaneState,
       port: controlPlane.port,
       health: null,
@@ -326,10 +333,10 @@ ipcMain.handle("owb:status", async () => {
     controlPlaneState = health.status === 200 && health.body?.status === "ok" && health.body?.api === "v0"
       ? "ready"
       : "degraded";
-    return { running: true, state: controlPlaneState, port: controlPlane.port, health: health.body };
+    return { running: true, runtime, state: controlPlaneState, port: controlPlane.port, health: health.body };
   } catch (err) {
     controlPlaneState = "degraded";
-    return { running: true, state: controlPlaneState, port: controlPlane.port, health: null, error: String(err.message ?? err) };
+    return { running: true, runtime, state: controlPlaneState, port: controlPlane.port, health: null, error: String(err.message ?? err) };
   }
 });
 
@@ -338,57 +345,19 @@ ipcMain.handle("owb:control-plane:stop", async () => {
   return { ok: true, ...result };
 });
 
-ipcMain.handle("owb:workspace:open", async () => {
-  const options = {
-    title: "打开 RoleWeave 工作区",
-    properties: ["openDirectory"],
-  };
-  const picked = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, options)
-    : await dialog.showOpenDialog(options);
-  if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
-  const dir = picked.filePaths[0];
-  const res = await apiRequest("/workspace/open", {
-    method: "POST",
-    body: { path: serverPathForWorkspace(dir, process.env) },
-  });
-  if (res.status === 200) {
-    try {
-      // Persisted untranslated on purpose: the boot-time reopen checks
-      // fs.existsSync(<path>/workspace.json) from the Windows side, so a
-      // /mnt/c/... value would never resolve there.
-      writeLastWorkspacePath(app.getPath("userData"), dir);
-    } catch {
-      // Persistence is best-effort; the open itself succeeded.
-    }
-  }
-  return res;
-});
+function pickWorkspaceDirectory(options) {
+  return mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options);
+}
 
-ipcMain.handle("owb:workspace:create", async (_event, request) => {
-  const validated = validateWorkspaceCreateRequest(request);
-  if (!validated.ok) return validated.response;
-  const options = {
-    title: "选择项目保存位置",
-    properties: ["openDirectory", "createDirectory"],
-  };
-  const picked = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, options)
-    : await dialog.showOpenDialog(options);
-  if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
-  const res = await apiRequest("/workspace/create", {
-    method: "POST",
-    body: { ...validated.request, parentPath: picked.filePaths[0] },
-  });
-  if (res.status === 201 && res.body?.path) {
-    try {
-      writeLastWorkspacePath(app.getPath("userData"), res.body.path);
-    } catch {
-      // Persistence is best-effort; project creation itself succeeded.
-    }
-  }
-  return res;
-});
+ipcMain.handle("owb:workspace:open", async () => openWorkspaceWithPicker({
+  pickDirectory: pickWorkspaceDirectory, apiRequest, env: desktopEnv,
+  userDataPath: app.getPath("userData"),
+}));
+
+ipcMain.handle("owb:workspace:create", async (_event, request) => createWorkspaceWithPicker({
+  request, pickDirectory: pickWorkspaceDirectory, apiRequest, env: desktopEnv,
+  userDataPath: app.getPath("userData"),
+}));
 
 ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
 
@@ -997,11 +966,12 @@ app.whenReady().then(async () => {
   // turn Qoder/MCP children) is spawned; all other inherited env is unchanged.
   process.env.PATH = await recoverMacGuiPath();
   try {
+    desktopEnv = runtimeEnvironment(process.env, app.getPath("userData"));
     controlPlane = await startControlPlane();
     startEventStream();
     const autoOpenResult = await openDefaultWorkspace({
       apiRequest,
-      env: process.env,
+      env: desktopEnv,
       userDataPath: app.getPath("userData"),
     });
     if (autoOpenResult.fallbackNoticePath !== null) {

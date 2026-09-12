@@ -25,6 +25,7 @@ export function SettingsModule() {
   const t = useT();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [statusRead, setStatusRead] = useState(false);
+  const [runtime, setRuntime] = useState<Awaited<ReturnType<typeof window.owb.status>>["runtime"]>();
   /** The newest live state event. Null until the service reports one, in which
    * case the opening status from the shell is what the pane shows. */
   const [live, setLive] = useState<UpdateEvent | null>(null);
@@ -32,6 +33,9 @@ export function SettingsModule() {
   const [refusal, setRefusal] = useState<UpdateMessage | null>(null);
   useEffect(() => {
     let cancelled = false;
+    void window.owb.status().then((next) => {
+      if (!cancelled) setRuntime(next.runtime);
+    }).catch(() => undefined);
     void (async () => {
       const next = await window.owb.update.status();
       if (cancelled) return;
@@ -86,6 +90,16 @@ export function SettingsModule() {
       <header className="owb-settings-module__header">
         <h1>{t("settings.title")}</h1>
       </header>
+
+      {runtime ? (
+        <section className="owb-settings-module__pane" aria-label={t("settings.runtimeTitle")}>
+          <header className="owb-settings-module__pane-header">
+            <h2>{t("settings.runtimeTitle")}</h2>
+          </header>
+          <p>{runtime.mode === "wsl" ? `WSL · ${runtime.distro ?? t("settings.runtimeDefaultDistro")}` : t("settings.runtimeNative")}</p>
+          <p className="owb-settings-module__hint">{t("settings.runtimeHint")}</p>
+        </section>
+      ) : null}
 
       <section className="owb-settings-module__pane" aria-label={t("settings.updateTitle")}>
         <header className="owb-settings-module__pane-header">

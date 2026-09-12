@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { resolveServerConfig } from "../src/config.js";
 import { probeEngine, splitCommand } from "../src/engine/probe.js";
+import { hostHealth } from "../src/routes/health.js";
 
 // #78 REQ-001 — splitCommand must survive absolute paths containing spaces
 // (Windows default installs under `C:\Program Files\...`, macOS OneDrive
@@ -56,6 +58,59 @@ test("server config freezes the bundled boundary only for both exact internal si
     { ELECTRON_RUN_AS_NODE: "1" },
   ]) {
     assert.equal(resolveServerConfig(env, []).bundledElectronEngine, false);
+  }
+});
+
+test("Linux Node bundled adapter is ready without an Electron runtime flag", { skip: process.platform !== "linux" }, async () => {
+  const adapter = fileURLToPath(new URL("../../bin/qoder-engine.mjs", import.meta.url));
+  const env = {
+    ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE: "1",
+    ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI: `"${process.execPath}" "${adapter}"`,
+  };
+  const config = resolveServerConfig(env, []);
+  assert.equal(config.bundledElectronEngine, true);
+  const probe = await probeEngine(config.cliCommand, 5000, {
+    bundledElectronEngine: config.bundledElectronEngine,
+    sourceEnvironment: env,
+  });
+  assert.deepEqual(probe, { available: true, version: "qoder-engine 0.2.0" });
+  const hosts = hostHealth({
+    env,
+    engineAvailable: probe.available,
+    engineVersion: probe.version,
+    bundledElectronEngine: config.bundledElectronEngine,
+    codex: { installed: true, version: "0.147.0" },
+  });
+  assert.equal(hosts["codex-local"].ready, true);
+});
+
+test("a Node marker cannot qualify an external engine, other runtime, or injected Node options", () => {
+  const adapter = fileURLToPath(new URL("../../bin/qoder-engine.mjs", import.meta.url));
+  for (const command of [
+    "digital-employee",
+    `"${process.execPath}" "${fileURLToPath(import.meta.url)}"`,
+    `"${process.execPath}" --import arbitrary-hook "${adapter}"`,
+    `"${process.execPath}" "${adapter}" extra`,
+    `"/missing/node" "${adapter}"`,
+    `node "${adapter}"`,
+  ]) {
+    const env = {
+      ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE: "1",
+      ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI: command,
+    };
+    const config = resolveServerConfig(env, []);
+    assert.equal(config.bundledElectronEngine, false, command);
+    assert.equal(hostHealth({
+      env, engineAvailable: true, engineVersion: "qoder-engine 0.2.0",
+      bundledElectronEngine: config.bundledElectronEngine,
+      codex: { installed: true, version: "0.147.0" },
+    })["codex-local"].ready, false, command);
+  }
+  for (const marker of [undefined, "0", "true"]) {
+    assert.equal(resolveServerConfig({
+      ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE: marker,
+      ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI: `"${process.execPath}" "${adapter}"`,
+    }, []).bundledElectronEngine, false);
   }
 });
 
@@ -118,6 +173,7 @@ process.stdout.write("digital-employee 1.2.3\\n");
     ELECTRON_RUN_AS_NODE: "1",
     ORG_WORKBENCH_BOOT_TOKEN: "server-only-secret",
     ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE: "1",
+    ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE: "1",
     OWB_OPERATOR_SETTING: "must-not-cross",
     QODER_PERSONAL_ACCESS_TOKEN: "provider-secret",
     CONTEXT_RUNTIME_TOKEN: "context-secret",
@@ -138,6 +194,7 @@ process.stdout.write("digital-employee 1.2.3\\n");
   for (const record of records) {
     assert.equal("ELECTRON_RUN_AS_NODE" in record.environment, false);
     assert.equal("ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE" in record.environment, false);
+    assert.equal("ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE" in record.environment, false);
     assert.equal("ORG_WORKBENCH_BOOT_TOKEN" in record.environment, false);
     assert.equal("OWB_OPERATOR_SETTING" in record.environment, false);
     assert.equal("QODER_PERSONAL_ACCESS_TOKEN" in record.environment, false);
@@ -157,6 +214,7 @@ process.stdout.write("digital-employee 1.2.3\\n");
   for (const record of records) {
     assert.equal(record.environment.ELECTRON_RUN_AS_NODE, "1");
     assert.equal("ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE" in record.environment, false);
+    assert.equal("ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE" in record.environment, false);
     assert.equal("ORG_WORKBENCH_BOOT_TOKEN" in record.environment, false);
     assert.equal("OWB_OPERATOR_SETTING" in record.environment, false);
     assert.equal("QODER_PERSONAL_ACCESS_TOKEN" in record.environment, false);

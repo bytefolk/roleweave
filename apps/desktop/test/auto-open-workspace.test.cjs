@@ -425,6 +425,22 @@ test("explicit workspace override takes precedence over the remembered workspace
   }]);
 });
 
+test("WSL reopens a remembered Linux path without asking the Windows filesystem to stat it", async (t) => {
+  const userDataPath = makeTempWorkspace(t);
+  const lastPath = "/home/tester/projects/saved-team";
+  fs.writeFileSync(path.join(userDataPath, "last-workspace.json"), JSON.stringify({ path: lastPath }));
+  const fixture = autoOpenFixture(t, "win32", []);
+  const apiRequest = makeApiRequestStub();
+  const result = await fixture.openDefaultWorkspace({
+    apiRequest, userDataPath,
+    env: { ROLEWEAVE_CONTROL_PLANE_MODE: "wsl", ROLEWEAVE_WSL_DISTRO: "Ubuntu" },
+    writeStderr: fixture.writeStderr,
+  });
+  assert.deepEqual(result, { fallbackNoticePath: null });
+  assert.deepEqual(fixture.checkedPaths, []);
+  assert.deepEqual(apiRequest.calls, [{ pathname: "/workspace/open", options: { method: "POST", body: { path: lastPath } } }]);
+});
+
 for (const alias of ["ROLEWEAVE_DEFAULT_WORKSPACE", "ORG_WORKBENCH_DEFAULT_WORKSPACE"]) {
   for (const { platform, controlPlane } of [
     { platform: "linux", controlPlane: "wsl" },
