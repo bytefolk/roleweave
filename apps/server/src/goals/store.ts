@@ -166,7 +166,7 @@ const HEALTH_SEVERITY: Record<GoalHealthStatus, number> = {
 
 export function computeHealthFromTurns(goal: Goal, turns: readonly TurnRecord[]): GoalHealthStatus {
   if (goal.branches.length === 0) return goal.health;
-  let worst: GoalHealthStatus = "unknown";
+  let worst: GoalHealthStatus | null = null;
   for (const branch of goal.branches) {
     const bound = turns.filter((t) => t.goalId === goal.goalId && t.branchId === branch.branchId);
     if (bound.length === 0) continue;
@@ -177,11 +177,11 @@ export function computeHealthFromTurns(goal: Goal, turns: readonly TurnRecord[])
         break;
       }
     }
-    if (HEALTH_SEVERITY[branchHealth] < HEALTH_SEVERITY[worst]) {
+    if (worst === null || HEALTH_SEVERITY[branchHealth] < HEALTH_SEVERITY[worst]) {
       worst = branchHealth;
     }
   }
-  return worst;
+  return worst ?? "unknown";
 }
 
 export class GoalStore {

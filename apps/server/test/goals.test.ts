@@ -124,7 +124,7 @@ test("goal status transitions enforce the allowed graph", async () => {
     const illegal = await api(server.baseUrl, `${routes.goals}/${goalId}`, {
       method: "PATCH",
       token: server.token,
-      body: { status: "done" },
+      body: { status: "completed" },
     });
     assert.equal(illegal.status, 409);
 
@@ -135,12 +135,19 @@ test("goal status transitions enforce the allowed graph", async () => {
     });
     assert.equal(valid.status, 200);
 
-    const reopened = await api(server.baseUrl, `${routes.goals}/${goalId}`, {
+    const completed = await api(server.baseUrl, `${routes.goals}/${goalId}`, {
       method: "PATCH",
       token: server.token,
-      body: { status: "open" },
+      body: { status: "completed" },
     });
-    assert.equal(reopened.status, 409);
+    assert.equal(completed.status, 200);
+
+    const illegalReopen = await api(server.baseUrl, `${routes.goals}/${goalId}`, {
+      method: "PATCH",
+      token: server.token,
+      body: { status: "in_progress" },
+    });
+    assert.equal(illegalReopen.status, 409);
   } finally {
     await server.close();
   }
@@ -157,7 +164,7 @@ test("goal get returns 404 for missing or unsafe IDs", async () => {
     assert.equal((missing.body as { code: string }).code, "goal_missing");
 
     const unsafe = await api(server.baseUrl, `${routes.goals}/..%2Fescape`, { token: server.token });
-    assert.equal(unsafe.status, 400);
+    assert.equal(unsafe.status, 404);
   } finally {
     await server.close();
   }
@@ -171,6 +178,7 @@ test("goal health auto-computes from bound turn records", async () => {
 
     const { goalId } = await createGoal(server.baseUrl, server.token, {
       title: "Health test",
+      description: "Test health auto-computation",
       acceptanceCriteria: ["c1"],
     });
 
@@ -193,13 +201,15 @@ test("goal health auto-computes from bound turn records", async () => {
       schemaVersion: "turn-record.v1",
       turnId: "test-turn-001",
       positionId: "repo-owner",
-      sessionId: "test-session",
+      conversationId: "test-conversation",
       input: "test input",
       engine: "qoder",
       status: "completed",
+      envelopeDigest: "sha256-fake",
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      events: [],
       goalId,
-      branchId: undefined,
     };
 
     // Write the turn record directly via the store's begin/complete cycle is complex;
@@ -216,7 +226,7 @@ test("goal health auto-computes from bound turn records", async () => {
     // Create a goal with branches to test branch-based health
     const branchedGoal: Goal = {
       ...goal,
-      branches: [{ branchId: "main", title: "main branch" }],
+      branches: [{ branchId: "main", title: "main branch", status: "open", createdAt: goal.createdAt, updatedAt: goal.createdAt }],
     };
 
     // Completed turn on the branch → on_track
@@ -244,26 +254,41 @@ test("goal SSE events fire on create, update, and delete", async () => {
 
     const { goalId } = await createGoal(server.baseUrl, server.token);
     const created = await sse.waitForEvent("goal.created");
-    const createdPayload = JSON.parse(created.data) as { goalId: string };
+    const createdPayload = (JSON.parse(created.data) as { payload: { goalId: string } }).payload;
     assert.equal(createdPayload.goalId, goalId);
 
+    const beforeUpdate = sse.events.length;
     await api(server.baseUrl, `${routes.goals}/${goalId}`, {
       method: "PATCH",
       token: server.token,
       body: { title: "Updated title" },
     });
     const updated = await sse.waitForEvent("goal.updated");
-    const updatedPayload = JSON.parse(updated.data) as { goalId: string };
+    const updatedPayload = (JSON.parse(updated.data) as { payload: { goalId: string } }).payload;
     assert.equal(updatedPayload.goalId, goalId);
+    assert.ok(sse.events.length > beforeUpdate, "update event must be new");
 
+    const beforeDelete = sse.events.length;
     await api(server.baseUrl, `${routes.goals}/${goalId}`, {
       method: "DELETE",
       token: server.token,
     });
-    const deleted = await sse.waitForEvent("goal.updated", 5000);
-    const deletedPayload = JSON.parse(deleted.data) as { goalId: string; deleted: boolean };
-    assert.equal(deletedPayload.goalId, goalId);
-    assert.equal(deletedPayload.deleted, true);
+    // Wait for a new goal.updated event after the delete
+    let deletedPayload: { goalId: string; deleted: boolean } | undefined;
+    for (let i = 0; i < 50 && !deletedPayload; i += 1) {
+      const newEvents = sse.events.slice(beforeDelete);
+      const found = newEvents.find((e) => e.event === "goal.updated");
+      if (found) {
+        const parsed = JSON.parse(found.data) as { payload: { goalId: string; deleted?: boolean } };
+        if (parsed.payload.deleted === true) {
+          deletedPayload = parsed.payload as { goalId: string; deleted: boolean };
+        }
+      }
+      if (!deletedPayload) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.ok(deletedPayload, "delete event with deleted:true must arrive");
+    assert.equal(deletedPayload!.goalId, goalId);
+    assert.equal(deletedPayload!.deleted, true);
   } finally {
     sse.close();
     await server.close();
