@@ -87,15 +87,23 @@ describe("PositionCard (D1 spec §3)", () => {
     expect(screen.getByRole("heading", { name: "Repo Owner" })).toBeInTheDocument();
   });
 
-  it("renders organization relationships only from an application-resolved summary", () => {
+  it("renders navigable organization relationships only from an application-resolved summary", () => {
+    const onSelectRelation = vi.fn();
     render(
       <PositionCard
         position={{ ...POSITION, reportTo: "community-operator" }}
-        organization={{ reportToName: "Community Operator", directReportCount: 2 }}
+        organization={{
+          reportToName: "Community Operator",
+          directReportCount: 2,
+          reportTo: { id: "community-operator", name: "Community Operator" },
+          directReports: [{ id: "docs-curator", name: "Docs Curator" }],
+        }}
+        onSelectRelation={onSelectRelation}
       />,
     );
-    expect(screen.getByText("汇报给 Community Operator")).toBeInTheDocument();
-    expect(screen.getByText("管理 2 个直属岗位")).toBeInTheDocument();
+    screen.getByRole("button", { name: "Community Operator" }).click();
+    expect(onSelectRelation).toHaveBeenCalledWith("community-operator");
+    expect(screen.getByRole("button", { name: "Docs Curator" })).toBeInTheDocument();
   });
 
   it("keeps rendering the legacy scope when the additive source list is absent", () => {

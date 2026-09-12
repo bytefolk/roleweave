@@ -23,6 +23,7 @@ export interface TurnPanelProps {
   turns: TurnRecord[];
   busy?: boolean;
   employeeBusy?: boolean;
+  positionMode?: "read_only" | "approval_required";
   cancelling?: boolean;
   sessions?: WorkbenchSession[];
   selectedSessionId?: string | null;
@@ -153,6 +154,7 @@ export function TurnPanel({
   turns,
   busy = false,
   employeeBusy = false,
+  positionMode,
   cancelling = false,
   sessions,
   selectedSessionId = null,
@@ -261,18 +263,16 @@ export function TurnPanel({
             {t("turn.title")}
           </h2>
           {selectedPosition ? (
-            <p className="owb-turn-panel__position" data-position-id={selectedPosition.id}>
-              <span>{t("turn.position")}</span>
-              <strong>@{selectedPosition.name}</strong>
-              <span
-                className={`owb-led owb-turn-panel__position-led${employeeBusy ? " owb-led--running" : ""}`}
-                role="img"
-                aria-label={employeeBusy ? t("pos.running") : t("pos.ready")}
-                title={employeeBusy ? t("pos.running") : t("pos.ready")}
-              />
+            <p className="owb-panel-head__sub" data-position-id={selectedPosition.id}>
+              {t("turn.position")} <b>@{selectedPosition.name}</b> · {t("turn.localTrace")}
             </p>
           ) : null}
         </div>
+        {employeeBusy ? (
+          <div className="owb-panel-head__right">
+            <span className="owb-badge owb-badge--ai"><span className="owb-led owb-led--running" aria-hidden="true" />{t("turn.live")}</span>
+          </div>
+        ) : null}
       </header>
 
       <TurnThread
@@ -308,7 +308,7 @@ export function TurnPanel({
       ) : null}
 
       <form className="owb-turn-composer" onSubmit={(event) => void submit(event)}>
-        <label htmlFor="owb-turn-input">{t("turn.compose")}</label>
+        <label className="owb-sr-only" htmlFor="owb-turn-input">{t("turn.compose")}</label>
         <div className="owb-turn-composer__surface">
           <Input.TextArea
             id="owb-turn-input"
@@ -334,26 +334,38 @@ export function TurnPanel({
               }
             }}
           />
-          {runningTurn ? (
-            <AntButton
-              danger
-              disabled={cancelling || !selectedPosition}
-              aria-label={t("turn.interrupt")}
-              title={t("turn.interruptTitle")}
-              icon={<Square aria-hidden="true" size={15} />}
-              onClick={() => {
-                if (selectedPosition) void onCancelTurn?.(selectedPosition.id);
-              }}
-            />
-          ) : (
-            <AntButton
-              type="primary"
-              htmlType="submit"
-              disabled={disabledReason !== null || input.trim().length === 0}
-              aria-label={t("turn.send")}
-              icon={<ArrowUp aria-hidden="true" size={15} />}
-            />
-          )}
+          <div className="owb-turn-composer__actions">
+            {selectedPosition && positionMode ? (
+              <span className={`owb-badge ${positionMode === "read_only" ? "owb-badge--read" : "owb-badge--approval"}`}>
+                {positionMode === "read_only" ? t("pos.readOnly") : t("pos.approval")}
+              </span>
+            ) : <span />}
+            <span className="owb-turn-composer__shortcut">{t("turn.hint")}</span>
+            {runningTurn ? (
+              <AntButton
+                danger
+                disabled={cancelling || !selectedPosition}
+                aria-label={t("turn.interrupt")}
+                title={t("turn.interruptTitle")}
+                icon={<Square aria-hidden="true" size={14} />}
+                onClick={() => {
+                  if (selectedPosition) void onCancelTurn?.(selectedPosition.id);
+                }}
+              >
+                {t("turn.interrupt")}
+              </AntButton>
+            ) : (
+              <AntButton
+                type="primary"
+                htmlType="submit"
+                disabled={disabledReason !== null || input.trim().length === 0}
+                aria-label={t("turn.send")}
+                icon={<ArrowUp aria-hidden="true" size={14} />}
+              >
+                {t("turn.send")}
+              </AntButton>
+            )}
+          </div>
         </div>
         {/* #167：空闲不挂提示行；运行态/禁用原因保留（有用反馈）。 */}
         {runningTurn || disabledReason ? (

@@ -12,7 +12,7 @@
 import type React from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Empty, Skeleton } from "antd";
-import { Maximize2, Minimize2, Scan, ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, Minimize2, Scan, UsersRound, ZoomIn, ZoomOut } from "lucide-react";
 import type {
   OrgTreeNodeV1,
   OrgTreeSnapshot,
@@ -105,6 +105,11 @@ function ChartNode({
   const name = displayNames?.[node.id] ?? node.id;
   const selected = selectedId === node.id;
   const running = runningIds?.has(node.id) === true;
+  const perTask = node.budget.perTask.tokens !== undefined
+    ? t("tree.chartBudgetTokens", { value: node.budget.perTask.tokens.toLocaleString() })
+    : node.budget.perTask.iterations !== undefined
+      ? t("tree.chartBudgetIterations", { value: node.budget.perTask.iterations })
+      : t("tree.chartBudgetNone");
   return (
     <div className="owb-org-chart__branch">
       <button
@@ -125,7 +130,17 @@ function ChartNode({
           />
           <span className="owb-org-chart__card-text">
             <span className="owb-org-chart__name">{name}</span>
+            <span className="owb-org-chart__id">{node.id}</span>
           </span>
+        </span>
+        <span className="owb-org-chart__card-meta">
+          <span className={`owb-org-chart__state${running ? " is-running" : ""}`}>{running ? t("tree.chartRunningLabel") : t("tree.chartReadyLabel")}</span>
+          <span className="owb-org-chart__reports"><UsersRound aria-hidden="true" size={11} />{t("tree.chartDirectReports", { count: node.children.length })}</span>
+        </span>
+        <span className="owb-org-chart__budget">
+          <span>{t("tree.chartPerTask")}</span>
+          <strong>{perTask}</strong>
+          <i aria-hidden="true" />
         </span>
       </button>
       {node.children.length > 0 ? (
