@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
 const { EventEmitter } = require("node:events");
 const { PassThrough } = require("node:stream");
 const vm = require("node:vm");
@@ -286,10 +286,11 @@ test("WSL launch has fixed shell source, literal argv paths, and credentials onl
     },
   });
   assert.equal(spec.command, "wsl.exe");
-  assert.deepEqual(spec.args.slice(0, 5), ["--distribution", "Ubuntu-22.04", "--exec", "bash", "-lc"]);
-  assert.deepEqual(spec.args.slice(-3), ["roleweave-wsl", "/home/me/node $(literal)/bin/node", "/mnt/d/RoleWeave $() `literal`/apps/desktop/src/wsl-bootstrap.cjs"]);
+  assert.deepEqual(spec.args.slice(0, 5), ["--distribution", "Ubuntu-22.04", "--exec", "/bin/sh", "-c"]);
+  assert.deepEqual(spec.args.slice(-2), ["/home/me/node $(literal)/bin/node", "/mnt/d/RoleWeave $() `literal`/apps/desktop/src/wsl-bootstrap.cjs"]);
   assert.ok(!spec.args.join(" ").includes("dummy-secret"));
   assert.ok(!spec.args[5].includes("/mnt/d"), "user paths must never be inserted into shell source");
+  assert.ok(!spec.args[7].includes("/mnt/d"), "the inner Node script must also stay fixed");
   const config = parseConfiguration(spec.input);
   assert.equal(config.engineCommand, null, "the Windows bundled Electron command must be discarded");
   assert.equal(config.serverEntry, "/mnt/d/RoleWeave $() `literal`/apps/server/dist/src/index.js");
@@ -435,8 +436,8 @@ test("fixed WSL shell accepts literal special-character runtime paths and fails 
   const bootstrapEntry = path.join(literalDir, "bootstrap.cjs");
   fs.writeFileSync(bootstrapEntry, 'console.log("LITERAL_PATH_OK")');
   const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", bootstrapEntry, env: { ROLEWEAVE_WSL_NODE: nodePath } });
-  const script = spec.args[3]; // No distribution: --exec bash -lc <script> ...
-  const child = spawn("/bin/bash", ["-c", script, ...spec.args.slice(4)], { stdio: ["ignore", "pipe", "pipe"] });
+  const script = spec.args[5]; // Inner Node script remains a separate positional argument.
+  const child = spawn("/bin/bash", ["-c", script, "roleweave-wsl", ...spec.args.slice(6)], { stdio: ["ignore", "pipe", "pipe"] });
   const output = waitForLine(child.stdout);
   const closed = once(child, "close");
   assert.equal(await output, "LITERAL_PATH_OK");
@@ -456,11 +457,47 @@ test("WSL Node fallback uses a local nvm installation when login PATH has no Nod
   const bootstrapEntry = path.join(root, "bootstrap.cjs");
   fs.writeFileSync(bootstrapEntry, 'console.log("NVM_FALLBACK_OK")');
   const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", bootstrapEntry, env: {} });
-  const child = spawn("/bin/bash", ["-c", spec.args[3], ...spec.args.slice(4)], {
+  const child = spawn("/bin/bash", ["-c", spec.args[5], "roleweave-wsl", ...spec.args.slice(6)], {
     env: { HOME: root, PATH: "/no-node-path" }, stdio: ["ignore", "pipe", "pipe"],
   });
   const output = waitForLine(child.stdout);
   const closed = once(child, "close");
   assert.equal(await output, "NVM_FALLBACK_OK");
   assert.equal((await closed)[0], 0);
+});
+
+test("WSL wrapper selects the account's bash or zsh login shell and preserves literal argv", { skip: process.platform !== "linux" }, (t) => {
+  const root = testRoot(t);
+  const getent = path.join(root, "getent");
+  fs.writeFileSync(getent, '#!/bin/sh\nprintf "fixture:x:1000:1000::/home/fixture:%s\\n" "$ROLEWEAVE_TEST_SHELL"\n', { mode: 0o700 });
+  for (const name of ["bash", "zsh"]) {
+    const loginShell = path.join(root, name);
+    fs.writeFileSync(loginShell, '#!/bin/sh\nprintf "%s|%s|%s|%s\\n" "$1" "$3" "$4" "$5"\n', { mode: 0o700 });
+    const spec = wslLaunchSpec({
+      serverEntry: "/app/server/dist/src/index.js",
+      bootstrapEntry: "/app/literal $(no-command) `no-command`/bootstrap.cjs",
+      env: { ROLEWEAVE_WSL_NODE: "/home/me/node $(no-command)/bin/node" },
+    });
+    const result = spawnSync(spec.args[1], spec.args.slice(2), {
+      env: { PATH: `${root}:/usr/bin:/bin`, ROLEWEAVE_TEST_SHELL: loginShell },
+      encoding: "utf8", timeout: 5000,
+    });
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout.trim(), "-lc|roleweave-wsl|/home/me/node $(no-command)/bin/node|/app/literal $(no-command) `no-command`/bootstrap.cjs");
+    assert.equal(result.stderr, "");
+  }
+});
+
+test("WSL wrapper explains its bash-login fallback for an unsupported account shell", { skip: process.platform !== "linux" }, (t) => {
+  const root = testRoot(t);
+  fs.writeFileSync(path.join(root, "getent"), '#!/bin/sh\nprintf "fixture:x:1000:1000::/home/fixture:/usr/bin/fish\\n"\n', { mode: 0o700 });
+  const bootstrapEntry = path.join(root, "bootstrap.cjs");
+  fs.writeFileSync(bootstrapEntry, 'console.log("BASH_FALLBACK_OK")');
+  const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", bootstrapEntry, env: { ROLEWEAVE_WSL_NODE: process.execPath } });
+  const result = spawnSync(spec.args[1], spec.args.slice(2), {
+    env: { HOME: root, PATH: `${root}:/usr/bin:/bin` }, encoding: "utf8", timeout: 5000,
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout.trim(), "BASH_FALLBACK_OK");
+  assert.match(result.stderr, /using bash login configuration/);
 });

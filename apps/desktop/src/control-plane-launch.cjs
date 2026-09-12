@@ -77,6 +77,23 @@ fi
 exec "$roleweave_node" "$2"
 `;
 
+// WSL's default account may use zsh. Starting bash directly would silently
+// miss that account's login configuration, including its proxy CA settings.
+// Resolve the account inside Linux rather than trusting Windows SHELL/HOME.
+const WSL_LOGIN_SHELL_SCRIPT = `
+roleweave_account="$(getent passwd "$(id -u)" 2>/dev/null || true)"
+roleweave_login_shell="\${roleweave_account##*:}"
+case "$roleweave_login_shell" in
+  /*/bash|/*/zsh)
+    if [ -x "$roleweave_login_shell" ]; then
+      exec "$roleweave_login_shell" -lc "$1" roleweave-wsl "$2" "$3"
+    fi
+    ;;
+esac
+printf '%s\\n' 'RoleWeave: the WSL account login shell is unavailable or unsupported; using bash login configuration. Configure PATH, proxy and certificates there if needed.' >&2
+exec /bin/bash -lc "$1" roleweave-wsl "$2" "$3"
+`;
+
 function wslLaunchSpec({ serverEntry, env, bootstrapEntry = path.join(__dirname, "wsl-bootstrap.cjs") }) {
   const distro = wslDistribution(env);
   const nodePath = env.ROLEWEAVE_WSL_NODE ?? "";
@@ -103,7 +120,7 @@ function wslLaunchSpec({ serverEntry, env, bootstrapEntry = path.join(__dirname,
   if (Buffer.byteLength(input) > MAX_CONFIG_BYTES) throw wslError("wsl_config_invalid", "WSL launch configuration is too large");
   return {
     command: "wsl.exe",
-    args: [...(distro ? ["--distribution", distro] : []), "--exec", "bash", "-lc", WSL_NODE_LAUNCH_SCRIPT, "roleweave-wsl", nodePath, linuxBootstrap],
+    args: [...(distro ? ["--distribution", distro] : []), "--exec", "/bin/sh", "-c", WSL_LOGIN_SHELL_SCRIPT, "roleweave-wsl-login", WSL_NODE_LAUNCH_SCRIPT, nodePath, linuxBootstrap],
     // No implicit Windows-to-Linux overrides; the bounded stdin payload below
     // is the only bridge for RoleWeave settings. In particular Windows PATH,
     // HOME, proxy URLs, certificate paths and Node loader flags stay out.

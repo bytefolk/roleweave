@@ -63,7 +63,7 @@ To make WSL the default on one machine, place `runtime-settings.json` in RoleWea
 }
 ```
 
-Use your actual distribution and Linux home directory. An optional `nodePath` pins an absolute Linux Node executable; otherwise the launcher checks the WSL login PATH and local nvm installation. Explicit launch-environment overrides take precedence over this machine preference. Machines without the file keep the native backend.
+Use your actual distribution and Linux home directory. An optional `nodePath` pins an absolute Linux Node executable; otherwise the launcher checks the WSL login PATH and local nvm installation. The launcher uses the Linux account's Bash or Zsh login configuration; other shells fall back to Bash with an explicit diagnostic. Explicit launch-environment overrides take precedence over this machine preference. Machines without the file keep the native backend.
 
 After fully restarting RoleWeave, project pickers start in the selected WSL home. Both `\\wsl.localhost\<distribution>\...` and `\\wsl$\<distribution>\...` are supported; another distribution is rejected. Windows drive paths still map to `/mnt/<drive>/...`. The backend uses the WSL user's CLI installations, login files, proxy and certificate settings.
 
