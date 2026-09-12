@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button, Empty, Skeleton } from "antd";
 import { cn } from "@fullstack-ai-infra/ui";
-import { ChartNoAxesColumn, Cloud, Crosshair, FileText, Info, RefreshCw, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { ChartNoAxesColumn, Cloud, Crosshair, FileText, GitBranch, Info, RefreshCw, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { BudgetBar } from "./budget-bar";
 import { useT, type OwbT } from "./i18n";
 import type { PositionCardData } from "./types";
@@ -19,6 +19,13 @@ export interface PositionCardProps {
   consumption?: number | null;
   /** Live turn in flight for this position: header status light breathes. */
   running?: boolean;
+  /** Organization relationships resolved by the application from its tree.
+   * The position endpoint owns `reportTo`; a friendly manager name and direct
+   * report count require the current org snapshot and must never be guessed. */
+  organization?: {
+    reportToName?: string;
+    directReportCount?: number;
+  };
   /** #137 review: operator actions (e.g. the dismiss dialog) render inside
    * the card header's right cluster instead of floating outside the card. */
   actions?: ReactNode;
@@ -45,6 +52,7 @@ export function PositionCard({
   onContextSourceSelect,
   consumption = null,
   running = false,
+  organization,
   actions,
   className,
 }: PositionCardProps) {
@@ -140,6 +148,18 @@ export function PositionCard({
 
       <div className="owb-pos-body">
         <p className="owb-pos-desc">{position.description}</p>
+
+        <div className="owb-pos-reporting" aria-label={t("pos.organization")}>
+          <GitBranch aria-hidden="true" size={13} />
+          <span>
+            {position.reportTo
+              ? t("pos.reportTo", { name: organization?.reportToName ?? position.reportTo })
+              : t("pos.owner")}
+          </span>
+          {organization?.directReportCount !== undefined ? (
+            <span className="owb-pos-reporting__count">{t("pos.directReports", { count: organization.directReportCount })}</span>
+          ) : null}
+        </div>
 
         <section className="owb-pos-section">
           <h3>

@@ -87,6 +87,17 @@ describe("PositionCard (D1 spec §3)", () => {
     expect(screen.getByRole("heading", { name: "Repo Owner" })).toBeInTheDocument();
   });
 
+  it("renders organization relationships only from an application-resolved summary", () => {
+    render(
+      <PositionCard
+        position={{ ...POSITION, reportTo: "community-operator" }}
+        organization={{ reportToName: "Community Operator", directReportCount: 2 }}
+      />,
+    );
+    expect(screen.getByText("汇报给 Community Operator")).toBeInTheDocument();
+    expect(screen.getByText("管理 2 个直属岗位")).toBeInTheDocument();
+  });
+
   it("keeps rendering the legacy scope when the additive source list is absent", () => {
     render(<PositionCard position={{ ...POSITION, contextSources: undefined }} />);
     expect(screen.getByText("岗位上下文")).toBeInTheDocument();

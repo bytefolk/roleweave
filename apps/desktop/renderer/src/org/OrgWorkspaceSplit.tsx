@@ -13,6 +13,7 @@ interface PaneBounds {
 
 export interface OrgWorkspaceSplitProps {
   ariaLabel: string;
+  className?: string;
   left: ReactNode;
   resetTitle: string;
   right: ReactNode;
@@ -31,7 +32,7 @@ function clamp(value: number, min: number, max: number): number {
  * resized window always gets a sensible balanced starting point and no
  * machine-specific width leaks into project data.
  */
-export function OrgWorkspaceSplit({ ariaLabel, left, resetTitle, right, valueText }: OrgWorkspaceSplitProps) {
+export function OrgWorkspaceSplit({ ariaLabel, className, left, resetTitle, right, valueText }: OrgWorkspaceSplitProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [ratio, setRatio] = useState(DEFAULT_RATIO);
   const [dragging, setDragging] = useState(false);
@@ -63,7 +64,7 @@ export function OrgWorkspaceSplit({ ariaLabel, left, resetTitle, right, valueTex
   return (
     <div
       ref={hostRef}
-      className="owb-org-module"
+      className={`owb-org-module${className ? ` ${className}` : ""}`}
       data-dragging={dragging ? "true" : undefined}
       style={ratio === DEFAULT_RATIO ? undefined : ({ "--owb-org-left-width": `${ratio * 100}%` } as CSSProperties)}
     >

@@ -12,7 +12,7 @@
 import type React from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Empty, Skeleton } from "antd";
-import { ZoomIn, ZoomOut } from "lucide-react";
+import { Maximize2, Minimize2, Scan, ZoomIn, ZoomOut } from "lucide-react";
 import type {
   OrgTreeNodeV1,
   OrgTreeSnapshot,
@@ -74,6 +74,11 @@ export interface OrgChartProps {
   displayNames?: Record<string, string>;
   /** 头像底色按岗位 id（metadata.color），与侧栏树/群聊同色。 */
   avatarColors?: Record<string, string>;
+  /** 真实运行中的岗位 id；只用于图上的即时状态提示。 */
+  runningIds?: ReadonlySet<string>;
+  /** 专注模式由工作台拥有，避免图组件擅自隐藏其他产品区域。 */
+  focusMode?: boolean;
+  onFocusModeChange?: (focused: boolean) => void;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   className?: string;
@@ -83,6 +88,7 @@ interface ChartNodeProps {
   node: OrgTreeNodeV1;
   displayNames?: Record<string, string>;
   avatarColors?: Record<string, string>;
+  runningIds?: ReadonlySet<string>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 }
@@ -91,12 +97,14 @@ function ChartNode({
   node,
   displayNames,
   avatarColors,
+  runningIds,
   selectedId,
   onSelect,
 }: ChartNodeProps) {
   const t = useT();
   const name = displayNames?.[node.id] ?? node.id;
   const selected = selectedId === node.id;
+  const running = runningIds?.has(node.id) === true;
   return (
     <div className="owb-org-chart__branch">
       <button
@@ -108,6 +116,7 @@ function ChartNode({
         onClick={() => onSelect?.(node.id)}
       >
         <span className="owb-org-chart__card-head">
+          <span className={`owb-led owb-org-chart__led${running ? " owb-led--running" : ""}`} aria-hidden="true" />
           <PositionAvatar
             colors={avatarColors}
             id={node.id}
@@ -127,6 +136,7 @@ function ChartNode({
               node={child}
               displayNames={displayNames}
               avatarColors={avatarColors}
+              runningIds={runningIds}
               selectedId={selectedId}
               onSelect={onSelect}
             />
@@ -144,12 +154,16 @@ export function OrgChart({
   loading = false,
   displayNames,
   avatarColors,
+  runningIds,
+  focusMode = false,
+  onFocusModeChange,
   selectedId,
   onSelect,
   className,
 }: OrgChartProps) {
   const t = useT();
   const empty = snapshot === null || snapshot.tree.length === 0;
+  const runningCount = runningIds?.size ?? 0;
   const [collapsed, setCollapsed] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -326,6 +340,12 @@ export function OrgChart({
         </button>
         <span className="owb-org-chart__head-title">{t("tree.chart")}</span>
         {snapshot && !empty ? (
+          <span className="owb-org-chart__stats" aria-label={t("tree.chartMeta", { count: snapshot.positionCount, depth: snapshot.depth })}>
+            {t("tree.chartMeta", { count: snapshot.positionCount, depth: snapshot.depth })}
+            {runningCount > 0 ? <span className="owb-org-chart__running">{t("tree.chartRunning", { count: runningCount })}</span> : null}
+          </span>
+        ) : null}
+        {snapshot && !empty ? (
           <span className="owb-org-chart__zoom">
             <button
               type="button"
@@ -356,6 +376,27 @@ export function OrgChart({
             >
               <ZoomIn aria-hidden="true" size={13} />
             </button>
+            <button
+              type="button"
+              className="owb-org-chart__toggle"
+              aria-label={t("tree.chartFit")}
+              title={t("tree.chartFit")}
+              onClick={() => centerOnTarget(selectedId ?? snapshot.tree[0]?.id ?? null, selectedId !== null && selectedId !== undefined, true)}
+            >
+              <Scan aria-hidden="true" size={13} />
+            </button>
+            {onFocusModeChange ? (
+              <button
+                type="button"
+                className={`owb-org-chart__toggle${focusMode ? " is-active" : ""}`}
+                aria-pressed={focusMode}
+                aria-label={focusMode ? t("tree.chartExitFocus") : t("tree.chartFocus")}
+                title={focusMode ? t("tree.chartExitFocus") : t("tree.chartFocus")}
+                onClick={() => onFocusModeChange(!focusMode)}
+              >
+                {focusMode ? <Minimize2 aria-hidden="true" size={13} /> : <Maximize2 aria-hidden="true" size={13} />}
+              </button>
+            ) : null}
           </span>
         ) : null}
       </header>
@@ -387,6 +428,7 @@ export function OrgChart({
                   node={root}
                   displayNames={displayNames}
                   avatarColors={avatarColors}
+                  runningIds={runningIds}
                   selectedId={selectedId}
                   onSelect={onSelect}
                 />

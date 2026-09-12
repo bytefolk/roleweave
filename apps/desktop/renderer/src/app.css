@@ -12,6 +12,35 @@
   font-family: var(--owb-font-display);
 }
 
+.owb-turn-panel__position {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+}
+
+.owb-turn-panel__position > span:first-child {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.owb-turn-panel__position strong {
+  color: var(--ui-foreground);
+  font-weight: 600;
+}
+
+.owb-turn-panel__position-led {
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+}
+
 /* 处方4 动效应用面：自定义交互元素 hover/焦点 120ms ease-out；
    antd 组件动效经 ConfigProvider motion token 收敛到同一三档体系。 */
 .owb-modal__close,
@@ -4202,6 +4231,32 @@ body,
   min-height: 0;
 }
 
+/* Focus is a viewing aid, not a second route: retain the selected tree state
+   while giving the organization canvas the whole work area. */
+.owb-org-module.is-focus-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.owb-org-module.is-focus-mode .owb-org-module__splitter,
+.owb-org-module.is-focus-mode .owb-org-module__pane--right,
+.owb-org-module.is-focus-mode .owb-position-column {
+  display: none;
+}
+
+.owb-org-module.is-focus-mode .owb-org-module__left,
+.owb-org-module.is-focus-mode .owb-org-chart {
+  height: 100%;
+}
+
+.owb-org-module.is-focus-mode .owb-org-chart {
+  flex: 1;
+}
+
+.owb-org-module.is-focus-mode .owb-org-chart__body {
+  flex: 1;
+  min-height: 420px;
+}
+
 .owb-org-module__splitter {
   position: relative;
   z-index: 2;
@@ -5166,6 +5221,28 @@ body,
   font-weight: 700;
 }
 
+/* Metadata is intentionally derived from the frozen snapshot and live run
+   stream. It makes the graph legible at a glance without duplicating role
+   semantics that only the position-record endpoint owns. */
+.owb-org-chart__stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.owb-org-chart__running {
+  padding: 2px 6px;
+  border-radius: var(--ui-radius-full, 999px);
+  background: var(--ui-ai-soft);
+  color: var(--ui-ai);
+  font-size: 10px;
+  font-weight: 600;
+}
+
 /* 不设固定高度上限——组织图按实际深度自然撑开，深层组织不再被硬顶掉根节点；
  * 选中岗位变化时会自动滚动定位（见 OrgChart.tsx 的 scrollIntoView 效果）。
  * 想省空间就用头部折叠按钮，而不是靠系统偷偷裁掉内容。
@@ -5177,6 +5254,7 @@ body,
   position: relative;
   padding: 4px 14px 14px;
   cursor: grab;
+  min-height: 224px;
 }
 
 .owb-org-chart__body.is-panning {
@@ -5190,6 +5268,11 @@ body,
   display: inline-flex;
   align-items: center;
   gap: 2px;
+}
+
+.owb-org-chart__toggle.is-active {
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
 }
 
 .owb-org-chart__zoom .owb-org-chart__toggle[disabled] {
@@ -5365,6 +5448,12 @@ body,
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.owb-org-chart__led {
+  width: 6px;
+  height: 6px;
+  margin-right: -3px;
 }
 
 .owb-org-chart__avatar {
