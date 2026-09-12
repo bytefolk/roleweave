@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Empty } from "antd";
 import { AlertTriangle, Check, ChevronRight, LoaderCircle, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -23,6 +23,9 @@ export interface TurnThreadProps {
    * into a decided state so the operator cannot submit duplicate or
    * contradictory verdicts after a history reload. */
   decidedApprovalIds?: ReadonlySet<string>;
+  /** #234: stable key (positionId:sessionId) so the thread can save and
+   * restore the scroll viewport when the operator switches employees. */
+  scrollKey?: string;
 }
 
 /** Running bubble typing indicator (#61, spec ②): three 6px dots, 150ms
@@ -233,12 +236,41 @@ function ApprovalCard({
 /** Append-only conversation history with collapsible public milestones.
  * Output, approvals and errors remain visible independently of the disclosure;
  * an indeterminate result is never presented as a completed response. */
-export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onRetry, onVerdict, decidedApprovalIds }: TurnThreadProps) {
+export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onRetry, onVerdict, decidedApprovalIds, scrollKey }: TurnThreadProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
-  if (turns.length === 0) {
-    return (
-      <div className="owb-turn-thread owb-turn-thread--empty">
+  const threadRef = useRef<HTMLOListElement>(null);
+  const scrollCacheRef = useRef<Record<string, number>>({});
+  const lastScrollTopRef = useRef(0);
+  const prevScrollKeyRef = useRef<string | undefined>(scrollKey);
+
+  useEffect(() => {
+    const node = threadRef.current;
+    if (!node) return;
+    const onScroll = () => { lastScrollTopRef.current = node.scrollTop; };
+    node.addEventListener("scroll", onScroll, { passive: true });
+    return () => node.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useLayoutEffect(() => {
+    const prev = prevScrollKeyRef.current;
+    const node = threadRef.current;
+    if (prev && prev !== scrollKey && node) {
+      scrollCacheRef.current[prev] = node.scrollTop;
+    }
+    prevScrollKeyRef.current = scrollKey;
+    if (scrollKey && node && scrollCacheRef.current[scrollKey] !== undefined) {
+      node.scrollTop = scrollCacheRef.current[scrollKey];
+      lastScrollTopRef.current = scrollCacheRef.current[scrollKey];
+    } else if (node) {
+      node.scrollTop = 0;
+      lastScrollTopRef.current = 0;
+    }
+  }, [scrollKey]);
+
+  return (
+    <>
+      <div className="owb-turn-thread owb-turn-thread--empty" hidden={turns.length > 0}>
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
@@ -246,12 +278,8 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
           }
         />
       </div>
-    );
-  }
-
-  return (
-    <ol className="owb-turn-thread" role="log" aria-live="polite" aria-label={t("turn.threadAria")}>
-      {turns.map((turn) => {
+      <ol ref={threadRef} className={`owb-turn-thread${turns.length === 0 ? " owb-turn-thread--empty" : ""}`} role="log" aria-live="polite" aria-label={t("turn.threadAria")} hidden={turns.length === 0}>
+        {turns.map((turn) => {
         const retryable = turn.status === "failed" || turn.status === "indeterminate";
         const stateClass =
           turn.status === "running"
@@ -351,5 +379,6 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
         );
       })}
     </ol>
+    </>
   );
 }

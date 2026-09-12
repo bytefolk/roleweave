@@ -274,6 +274,7 @@ export function TurnPanel({
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
         decidedApprovalIds={decidedApprovalIds}
+        scrollKey={`${selectedPositionId ?? ""}:${selectedSessionId ?? ""}`}
       />
 
       {sessionMode && selectedSession ? (

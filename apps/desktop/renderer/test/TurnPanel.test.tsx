@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { pickSelectOption, visibleSelectOptions } from "./select-helper";
-import { TurnPanel } from "../src/turns";
+import { TurnPanel, TurnThread } from "../src/turns";
 import type { CreateTurnRequest, TurnEngine, TurnPanelProps, TurnRecord } from "../src/turns";
 
 const positions = [
@@ -495,4 +495,56 @@ it("blocks context changes and rotation while this employee runs in a group", ()
   expect(screen.getByRole("button", { name: "轮换当前会话" })).toBeDisabled();
   expect(toggle).not.toHaveBeenCalled();
   expect(rotate).not.toHaveBeenCalled();
+});
+
+describe("TurnThread #234 — preserve conversation viewport on employee switch", () => {
+  function makeTurns(count: number, positionId: string): TurnRecord[] {
+    return Array.from({ length: count }, (_, i) =>
+      turn({
+        id: `${positionId}-turn-${i}`,
+        positionId,
+        positionName: positionId,
+        input: `task ${i}`,
+        output: `output ${i}`,
+      }),
+    );
+  }
+
+  it("restores the prior viewport when switching A → B → A", () => {
+    const turnsA = makeTurns(5, "pos-A");
+    const turnsB = makeTurns(3, "pos-B");
+    const { rerender } = render(
+      <TurnThread turns={turnsA} scrollKey="pos-A:sess-1" />,
+    );
+
+    const ol = document.querySelector("ol.owb-turn-thread") as HTMLOListElement;
+    expect(ol).not.toBeNull();
+    ol.scrollTop = 420;
+    ol.dispatchEvent(new Event("scroll"));
+
+    rerender(<TurnThread turns={[]} scrollKey="pos-B:sess-1" />);
+    rerender(<TurnThread turns={turnsB} scrollKey="pos-B:sess-1" />);
+
+    rerender(<TurnThread turns={[]} scrollKey="pos-A:sess-1" />);
+    rerender(<TurnThread turns={turnsA} scrollKey="pos-A:sess-1" />);
+    const olAfterRestore = document.querySelector("ol.owb-turn-thread") as HTMLOListElement;
+    expect(olAfterRestore.scrollTop).toBe(420);
+  });
+
+  it("starts at the default position for an employee with no stored viewport", () => {
+    const turnsA = makeTurns(3, "pos-A");
+    const turnsC = makeTurns(2, "pos-C");
+    const { rerender } = render(
+      <TurnThread turns={turnsA} scrollKey="pos-A:sess-1" />,
+    );
+
+    const ol = document.querySelector("ol.owb-turn-thread") as HTMLOListElement;
+    ol.scrollTop = 300;
+    ol.dispatchEvent(new Event("scroll"));
+
+    rerender(<TurnThread turns={[]} scrollKey="pos-C:sess-1" />);
+    rerender(<TurnThread turns={turnsC} scrollKey="pos-C:sess-1" />);
+    const olC = document.querySelector("ol.owb-turn-thread") as HTMLOListElement;
+    expect(olC.scrollTop).toBe(0);
+  });
 });
