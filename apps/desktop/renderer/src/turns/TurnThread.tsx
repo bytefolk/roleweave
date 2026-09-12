@@ -250,26 +250,27 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
     const onScroll = () => { lastScrollTopRef.current = node.scrollTop; };
     node.addEventListener("scroll", onScroll, { passive: true });
     return () => node.removeEventListener("scroll", onScroll);
-  }, [turns.length > 0]);
+  }, []);
 
   useLayoutEffect(() => {
     const prev = prevScrollKeyRef.current;
-    if (prev && prev !== scrollKey) {
-      scrollCacheRef.current[prev] = lastScrollTopRef.current;
+    const node = threadRef.current;
+    if (prev && prev !== scrollKey && node) {
+      scrollCacheRef.current[prev] = node.scrollTop;
     }
     prevScrollKeyRef.current = scrollKey;
-    const node = threadRef.current;
     if (scrollKey && node && scrollCacheRef.current[scrollKey] !== undefined) {
       node.scrollTop = scrollCacheRef.current[scrollKey];
       lastScrollTopRef.current = scrollCacheRef.current[scrollKey];
-    } else {
+    } else if (node) {
+      node.scrollTop = 0;
       lastScrollTopRef.current = 0;
     }
-  }, [scrollKey, turns]);
+  }, [scrollKey]);
 
-  if (turns.length === 0) {
-    return (
-      <div className="owb-turn-thread owb-turn-thread--empty">
+  return (
+    <>
+      <div className="owb-turn-thread owb-turn-thread--empty" hidden={turns.length > 0}>
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
@@ -277,12 +278,8 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
           }
         />
       </div>
-    );
-  }
-
-  return (
-    <ol ref={threadRef} className="owb-turn-thread" role="log" aria-live="polite" aria-label={t("turn.threadAria")}>
-      {turns.map((turn) => {
+      <ol ref={threadRef} className={`owb-turn-thread${turns.length === 0 ? " owb-turn-thread--empty" : ""}`} role="log" aria-live="polite" aria-label={t("turn.threadAria")} hidden={turns.length === 0}>
+        {turns.map((turn) => {
         const retryable = turn.status === "failed" || turn.status === "indeterminate";
         const stateClass =
           turn.status === "running"
@@ -382,5 +379,6 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
         );
       })}
     </ol>
+    </>
   );
 }
