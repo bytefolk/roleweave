@@ -384,7 +384,9 @@ export function TurnPanel({
                   which is the same dishonesty as inferring a name. Which Hosts
                   those are comes from the contract, never from an id list here. */}
               {modelPinnable ? (
-                <span className="owb-turn-engine__model" title={t("turn.modelHintCodex")}>
+                <span className="owb-turn-engine__model" title={pinnedModel === undefined
+                    ? t("turn.modelUnpinned", { engine: engineLabel(engine) })
+                    : t("turn.modelPinned", { model: pinnedModel })}>
                   {pinnedModel === undefined
                     ? t("turn.modelUnpinned", { engine: engineLabel(engine) })
                     : t("turn.modelPinned", { model: pinnedModel })}
