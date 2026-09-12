@@ -30,7 +30,7 @@ const LAYOUT_MEASURE_SCRIPT = String.raw`(async () => {
   const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
   const readColumns = () => {
     const left = document.querySelector(".owb-org-module__left")?.getBoundingClientRect();
-    const right = document.querySelector(".owb-org-module > .owb-turn-panel")?.getBoundingClientRect();
+    const right = document.querySelector(".owb-org-module__pane--right > .owb-turn-panel")?.getBoundingClientRect();
     return left && right ? { left, right } : null;
   };
   const measure = (columns) => ({

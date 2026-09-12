@@ -66,10 +66,10 @@ test("#127 AC-001: `.owb-org-module` is defined exactly once at the top level an
   assert.equal(firstDecl(rules[0], "align-items"), "stretch");
 });
 
-test("#127 AC-001: `.owb-org-module > .owb-turn-panel` is defined exactly once at the top level and lets the turn panel grow (no viewport-driven height)", () => {
-  const rules = topLevelRuleBlocksMatching(".owb-org-module > .owb-turn-panel");
+test("#127 AC-001: `.owb-org-module__pane--right > .owb-turn-panel` is defined exactly once at the top level and lets the turn panel grow (no viewport-driven height)", () => {
+  const rules = topLevelRuleBlocksMatching(".owb-org-module__pane--right > .owb-turn-panel");
   assert.equal(rules.length, 1, "turn-panel-in-grid rule must be single-sourced at the top level");
-  assert.equal(firstDecl(rules[0], "height"), "auto");
+  assert.equal(firstDecl(rules[0], "height"), "100%");
   assert.equal(firstDecl(rules[0], "min-height"), "0");
 });
 
@@ -99,7 +99,7 @@ test("#127 AC-002: single-column stacking (≤980px) preserves the min-height fl
       const selectors = rule.selectors.map((sel) => sel.trim());
       if (
         selectors.includes(".owb-org-module__left > .owb-position-column") &&
-        selectors.includes(".owb-org-module > .owb-turn-panel")
+        selectors.includes(".owb-org-module__pane--right > .owb-turn-panel")
       ) {
         stackingRules.push(rule);
       }
@@ -118,7 +118,7 @@ test("#127 AC-002: vertical-tight viewport (≤720px height) drops the min-heigh
       const selectors = rule.selectors.map((sel) => sel.trim());
       if (
         selectors.includes(".owb-org-module__left > .owb-position-column") &&
-        selectors.includes(".owb-org-module > .owb-turn-panel")
+        selectors.includes(".owb-org-module__pane--right > .owb-turn-panel")
       ) {
         dropRules.push(rule);
       }

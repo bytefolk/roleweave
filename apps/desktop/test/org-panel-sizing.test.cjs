@@ -168,27 +168,34 @@ function flexGrows(value) {
   return !(Number.isNaN(Number(first)) ? false : Number(first) <= 0);
 }
 
-test("position region and conversation panel are equal width on desktop (#120 AC-001)", () => {
+test("position region and conversation panel are equal width on desktop until resized (#120 AC-001, #249 split pane)", () => {
   const rules = stylesheetRules();
 
   for (const viewport of [VIEWPORTS.desktop, VIEWPORTS.desktopEdge]) {
     assert.equal(
       valueAt(rules, ".owb-org-module", "display", viewport),
       "grid",
-      `${viewport.width}px: without display: grid the two children stack as blocks, so every track assertion below describes a layout that never renders`,
+      `${viewport.width}px: without display: grid the panes stack as blocks, so every track assertion below describes a layout that never renders`,
     );
 
     const tracks = trackList(valueAt(rules, ".owb-org-module", "grid-template-columns", viewport));
-    assert.equal(tracks.length, 2, `${viewport.width}px must keep the two-column pair`);
-    const [left, right] = tracks.map(normalizeTrack);
+    assert.equal(
+      tracks.length,
+      3,
+      `${viewport.width}px: the split pane is left track, fixed splitter track, right track`,
+    );
+    const [left, splitter, right] = tracks.map(normalizeTrack);
+    assert.equal(splitter, "10px", `${viewport.width}px: the splitter track must stay a fixed 10px`);
     assert.equal(
       left,
-      right,
-      `${viewport.width}px tracks "${left}" / "${right}" are not equal — the old 0.92fr/1.14fr asymmetry`,
+      "minmax(280px,var(--owb-org-left-width,1fr))",
+      `${viewport.width}px: the left track keeps the readable floor and defaults to an equal 1fr share until the splitter sets --owb-org-left-width`,
     );
-    for (const track of [left, right]) {
-      assert.match(track, /fr/, `${viewport.width}px track "${track}" is not flexible, so the pair cannot stay equal as the window resizes`);
-    }
+    assert.equal(
+      right,
+      "minmax(280px,1fr)",
+      `${viewport.width}px tracks "${left}" / "${right}" — the right track keeps the readable floor and the equal 1fr share, so the old 0.92fr/1.14fr asymmetry cannot return`,
+    );
   }
 });
 
@@ -294,23 +301,32 @@ test("the pair stacks in one column at 980px and below, without unequal-width tr
   const rules = stylesheetRules();
 
   for (const viewport of [VIEWPORTS.stackedAt980, VIEWPORTS.stackedNarrow]) {
-    const tracks = trackList(valueAt(rules, ".owb-org-module", "grid-template-columns", viewport));
     assert.equal(
-      tracks.length,
-      1,
-      `${viewport.width}px must stack to a single column, got "${tracks.join(" ")}"`,
+      valueAt(rules, ".owb-org-module", "display", viewport),
+      "flex",
+      `${viewport.width}px must leave the desktop grid and stack as a single column`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-module", "flex-direction", viewport),
+      "column",
+      `${viewport.width}px: stacked means top-to-bottom, never side-by-side tracks`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-module__splitter", "display", viewport),
+      "none",
+      `${viewport.width}px: the splitter has no role once the panes stack`,
     );
   }
 
-  const minWidth = valueAt(rules, ".owb-org-module > *", "min-width", VIEWPORTS.desktop);
+  const minWidth = valueAt(rules, ".owb-org-module__pane", "min-width", VIEWPORTS.desktop);
   assert.equal(
     minWidth,
     "0",
-    "grid items keep an automatic min-content floor; without min-width: 0 an equal track pair can be pushed apart by wide content",
+    "panes keep an automatic min-content floor; without min-width: 0 wide content can push the tracks apart",
   );
 });
 
-test("the stacked Org page has explicit rows and owns its narrow-window scroll (#185)", () => {
+test("the stacked Org page sizes its rows explicitly and owns its narrow-window scroll (#185)", () => {
   const rules = stylesheetRules();
 
   for (const viewport of [VIEWPORTS.stackedAt980, VIEWPORTS.stackedNarrow]) {
@@ -319,20 +335,20 @@ test("the stacked Org page has explicit rows and owns its narrow-window scroll (
       "auto",
       `${viewport.width}px: the stacked Org page must own overflow locally so the shell never clips one row over another`,
     );
-    assert.deepEqual(
-      trackList(valueAt(rules, ".owb-org-module", "grid-template-rows", viewport)).map(normalizeTrack),
-      ["auto", "auto"],
-      `${viewport.width}px: explicit auto rows are required; implicit grid rows were allowing the chart and conversation to overlap`,
+    assert.equal(
+      valueAt(rules, ".owb-org-module__pane--left", "flex", viewport),
+      "none",
+      `${viewport.width}px: the panes are the stacked flex items now; the left stack must size its own row instead of shrinking under vertical pressure`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-org-module__pane--right", "flex", viewport),
+      "none",
+      `${viewport.width}px: the conversation row must keep its floor instead of shrinking under vertical pressure`,
     );
     assert.equal(
       valueAt(rules, ".owb-org-module", "align-content", viewport),
       "start",
-      `${viewport.width}px: stacked content must begin at the top instead of stretching implicit tracks unpredictably`,
-    );
-    assert.equal(
-      valueAt(rules, ".owb-org-module__left", "flex", viewport),
-      "none",
-      `${viewport.width}px: the chart + position stack must size its own grid row`,
+      `${viewport.width}px: stacked content must begin at the top instead of spreading unpredictably`,
     );
     assert.equal(
       valueAt(rules, ".owb-org-module__left", "min-height", viewport),
@@ -342,7 +358,7 @@ test("the stacked Org page has explicit rows and owns its narrow-window scroll (
     assert.equal(
       valueAt(rules, ".owb-org-module__left > .owb-position-column", "flex", viewport),
       "none",
-      `${viewport.width}px: the position card must not collapse its parent row while the conversation row is laid out`,
+      `${viewport.width}px: the position card must not collapse its row while the conversation row is laid out`,
     );
   }
 });
@@ -371,12 +387,12 @@ test("the org chart owns its canvas and cannot paint into the conversation row (
     "the transformed chart stage must be paint-contained by the canvas body",
   );
   assert.equal(
-    valueAt(rules, ".owb-org-module > .owb-turn-panel", "position", VIEWPORTS.desktop),
+    valueAt(rules, ".owb-org-module__pane--right > .owb-turn-panel", "position", VIEWPORTS.desktop),
     "relative",
     "the conversation row needs a stable layer above any transformed chart pixels",
   );
   assert.equal(
-    valueAt(rules, ".owb-org-module > .owb-turn-panel", "z-index", VIEWPORTS.desktop),
+    valueAt(rules, ".owb-org-module__pane--right > .owb-turn-panel", "z-index", VIEWPORTS.desktop),
     "1",
     "the conversation row must win if a stale browser layout briefly overlaps rows",
   );
