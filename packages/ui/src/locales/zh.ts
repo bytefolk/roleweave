@@ -211,6 +211,9 @@ export const zhCatalog: Record<string, string> = {
   "tree.zoomPinch": "触控板捏合同样可用",
   "tree.zoomInTitle": "放大（触控板捏合同样可用）",
   "tree.zoomOutTitle": "缩小（触控板捏合同样可用）",
+  "tree.splitPane": "调整组织工作区面板宽度",
+  "tree.splitPaneReset": "拖拽调整宽度；双击或按 0 复位",
+  "tree.splitPaneValue": "左侧面板 {value}%",
 
   // 项目立项
   "project.newCta": "新建项目",
