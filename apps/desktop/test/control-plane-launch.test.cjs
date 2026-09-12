@@ -354,12 +354,15 @@ test("Linux environment preserves local CLI login, proxy, and CA settings while 
   assert.equal(env.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE, "1");
   assert.equal(env.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE, "0");
   assert.equal(env.ELECTRON_RUN_AS_NODE, undefined);
-  assert.equal(env.PATH, "/home/me/Node 24/bin:/usr/bin:/bin");
+  assert.equal(env.PATH, "/home/me/Node 24/bin:/home/me/.local/bin:/usr/bin:/bin");
   for (const key of ["HOME", "CODEX_HOME", "DIGITAL_EMPLOYEE_CODEX_COMMAND", "HTTPS_PROXY", "NODE_EXTRA_CA_CERTS"]) assert.equal(env[key], source[key]);
   assert.equal(env.ORG_WORKBENCH_PACKAGED_SMOKE_ROOT, undefined);
   const external = serverEnvironment({ ...config, engineCommand: "/opt/engine --local" }, source, "/usr/bin/node");
   assert.equal(external.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI, "/opt/engine --local");
   assert.equal(external.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE, "0");
+  assert.equal(external.DIGITAL_EMPLOYEE_CODEX_COMMAND, source.DIGITAL_EMPLOYEE_CODEX_COMMAND, "explicit Host commands retain precedence over PATH discovery");
+  assert.equal(serverEnvironment(config, { PATH: "/usr/bin:/bin" }, "/opt/node/bin/node").PATH, "/opt/node/bin:/usr/bin:/bin");
+  assert.equal(serverEnvironment(config, { HOME: "C:\\Users\\me", PATH: "/usr/bin:/bin" }, "/opt/node/bin/node").PATH, "/opt/node/bin:/usr/bin:/bin", "Windows HOME must never become a Linux CLI search directory");
   assert.throws(() => parseConfiguration(JSON.stringify({ ...config, environment: { HOME: "C:\\Users" } })), /environment is invalid/);
 });
 
@@ -383,6 +386,28 @@ function testRoot(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
 }
+
+test("Linux Node reuses only an existing readable user CA bundle and preserves explicit Node CA settings", (t) => {
+  const root = testRoot(t);
+  const caFile = path.join(root, "user-ca.pem");
+  fs.writeFileSync(caFile, "fixture existing user CA file\n");
+  const config = { version: 1, serverEntry: "/app/server/dist/src/index.js", engineCommand: null, environment: {} };
+  const source = { HOME: "/home/me", PATH: "/usr/bin", SSL_CERT_FILE: caFile };
+  assert.equal(serverEnvironment(config, source, "/usr/bin/node").NODE_EXTRA_CA_CERTS, caFile);
+  assert.equal(source.NODE_EXTRA_CA_CERTS, undefined, "the source user environment stays unchanged");
+  for (const explicit of ["/custom/node-ca.pem", ""]) {
+    assert.equal(serverEnvironment(config, { ...source, NODE_EXTRA_CA_CERTS: explicit }, "/usr/bin/node").NODE_EXTRA_CA_CERTS, explicit);
+  }
+  for (const unavailable of [path.join(root, "missing.pem"), root]) {
+    assert.equal(serverEnvironment(config, { ...source, SSL_CERT_FILE: unavailable }, "/usr/bin/node").NODE_EXTRA_CA_CERTS, undefined);
+  }
+  const access = fs.accessSync;
+  t.mock.method(fs, "accessSync", (file, mode) => {
+    if (file === caFile) throw Object.assign(new Error("unreadable fixture"), { code: "EACCES" });
+    return access(file, mode);
+  });
+  assert.equal(serverEnvironment(config, source, "/usr/bin/node").NODE_EXTRA_CA_CERTS, undefined);
+});
 
 function runningProcess(pid) {
   try {

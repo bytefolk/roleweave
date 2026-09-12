@@ -51,8 +51,23 @@ function serverEnvironment(config, source = process.env, nodePath = process.exec
     ? `${quoteCommandArgument(nodePath)} ${quoteCommandArgument(path.posix.resolve(path.posix.dirname(config.serverEntry), "../../bin/qoder-engine.mjs"))}`
     : config.engineCommand;
   // CLI shims commonly use /usr/bin/env node. Pin them to the same Linux
-  // installation as the server without importing the Windows command search path.
-  environment.PATH = `${path.posix.dirname(nodePath)}:${source.PATH ?? "/usr/local/bin:/usr/bin:/bin"}`;
+  // installation as the server, then include the standard per-user CLI
+  // directory even when a noninteractive login shell omits it from PATH.
+  const userBin = typeof source.HOME === "string" && path.posix.isAbsolute(source.HOME) && !source.HOME.startsWith("//")
+    ? [path.posix.join(source.HOME, ".local", "bin")]
+    : [];
+  environment.PATH = [path.posix.dirname(nodePath), ...userBin, source.PATH ?? "/usr/local/bin:/usr/bin:/bin"].join(":");
+  // Node does not normally consult SSL_CERT_FILE. Reuse a readable CA bundle
+  // that this Linux user already configured, without overriding a Node-specific
+  // choice or changing any trust settings outside the child environment.
+  if (source.NODE_EXTRA_CA_CERTS === undefined && typeof source.SSL_CERT_FILE === "string") {
+    try {
+      if (fs.statSync(source.SSL_CERT_FILE).isFile()) {
+        fs.accessSync(source.SSL_CERT_FILE, fs.constants.R_OK);
+        environment.NODE_EXTRA_CA_CERTS = source.SSL_CERT_FILE;
+      }
+    } catch { /* Missing/unreadable user CA is not a new Node configuration. */ }
+  }
   return environment;
 }
 
