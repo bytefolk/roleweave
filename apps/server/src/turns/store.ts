@@ -389,7 +389,7 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
       "schemaVersion", "conversationId", "turnId", "positionId", "engine", "status",
       "input", "envelopeDigest", "createdAt", "updatedAt", "events",
     ],
-    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext"],
+    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "goalId", "branchId"],
   )) return false;
   if (Object.hasOwn(value, "threadContext") && !isThreadContextMetadata(value.threadContext)) return false;
   const createdInstant = parseRfc3339Instant(value.createdAt);
@@ -433,6 +433,9 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
       value.conversationRef.length === 0 ||
       value.conversationRef.length > 256)
   ) return false;
+  // Additive #222: goal binding is optional but bounded.
+  if (Object.hasOwn(value, "goalId") && (typeof value.goalId !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(value.goalId))) return false;
+  if (Object.hasOwn(value, "branchId") && (typeof value.branchId !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(value.branchId))) return false;
   if (events.length > 0 && value.runId !== events[0]!.runId) return false;
   if (events.length === 0 && hasRunId) return false;
   const recordError = hasError ? validateRecordError(value.error) : null;
@@ -789,6 +792,9 @@ export class TurnStore {
     groupRef?: string;
     /** owb#63: contract-level back-link carried by the v1alpha2 envelope. */
     conversationRef?: string;
+    /** Additive #222: optional goal binding. */
+    goalId?: string;
+    branchId?: string;
   }): Promise<TurnRecord> {
     assertPositionId(input.positionId);
     turnRecordFile(input.workspace, input.positionId, input.turnId);
@@ -810,6 +816,8 @@ export class TurnStore {
       events: [],
       ...(input.groupRef !== undefined ? { groupRef: input.groupRef } : {}),
       ...(input.conversationRef !== undefined ? { conversationRef: input.conversationRef } : {}),
+      ...(input.goalId !== undefined ? { goalId: input.goalId } : {}),
+      ...(input.branchId !== undefined ? { branchId: input.branchId } : {}),
     };
     const activeKey = this.activeTurnKey(input.workspace, input.positionId, input.turnId);
     this.activeTurns.add(activeKey);
@@ -846,6 +854,9 @@ export class TurnStore {
     now: string;
     /** owb#63: contract-level back-link (= sessionId for session turns). */
     conversationRef?: string;
+    /** Additive #222: optional goal binding. */
+    goalId?: string;
+    branchId?: string;
   }): Promise<TurnRecord> {
     const sessionId = assertSessionId(input.sessionId);
     assertPositionId(input.positionId);
@@ -872,6 +883,8 @@ export class TurnStore {
       updatedAt: input.now,
       events: [],
       ...(input.conversationRef !== undefined ? { conversationRef: input.conversationRef } : {}),
+      ...(input.goalId !== undefined ? { goalId: input.goalId } : {}),
+      ...(input.branchId !== undefined ? { branchId: input.branchId } : {}),
     };
     const activeKey = this.sessionActiveTurnKey(input.workspace, sessionId, input.turnId);
     this.activeTurns.add(activeKey);

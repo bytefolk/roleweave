@@ -59,6 +59,9 @@
   font-weight: 400;
 }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-badge--approval { color: var(--ui-warning-strong); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-badge--info { background: var(--ui-primary-soft, rgba(59, 130, 246, 0.12)); color: var(--ui-primary, #3b82f6); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-badge--warn { background: var(--ui-warning-soft); color: var(--ui-warning-strong); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-badge--ok { background: var(--ui-success-soft); color: var(--ui-success-strong); }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-badge > .lucide-zap { display: none; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-pos-body { gap: 20px; padding: 4px 18px 20px; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-pos-desc { font-size: 13px; line-height: 1.7; }

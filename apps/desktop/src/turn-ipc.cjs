@@ -16,11 +16,11 @@ function validateCreateTurnRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("turn request must be an object") };
   }
-  const keys = Object.keys(value).sort();
-  if (keys.join(",") !== "engine,input,positionId" && keys.join(",") !== "engine,input,pendingApproval,positionId") {
+  const allowedKeys = new Set(["positionId", "input", "engine", "pendingApproval", "goalId", "branchId"]);
+  if (Object.keys(value).some((k) => !allowedKeys.has(k))) {
     return {
       ok: false,
-      response: invalid("turn request accepts exactly positionId, input, engine, and optional pendingApproval"),
+      response: invalid("turn request accepts positionId, input, engine, and optional pendingApproval, goalId, branchId"),
     };
   }
   if (!validatePositionId(value.positionId)) {
@@ -36,6 +36,13 @@ function validateCreateTurnRequest(value) {
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
     return { ok: false, response: invalid(`engine must be ${turnEngineMessage()}`) };
   }
+  const GOAL_ID = /^[a-zA-Z0-9_-]{1,64}$/;
+  if (value.goalId !== undefined && (typeof value.goalId !== "string" || !GOAL_ID.test(value.goalId))) {
+    return { ok: false, response: invalid("goalId must be a bounded alphanumeric string") };
+  }
+  if (value.branchId !== undefined && (typeof value.branchId !== "string" || !GOAL_ID.test(value.branchId))) {
+    return { ok: false, response: invalid("branchId must be a bounded alphanumeric string") };
+  }
   let pendingApproval;
   if (value.pendingApproval !== undefined) {
     const checked = validatePendingApproval(value.pendingApproval);
@@ -49,6 +56,8 @@ function validateCreateTurnRequest(value) {
       input: value.input,
       engine: value.engine,
       ...(pendingApproval !== undefined ? { pendingApproval } : {}),
+      ...(value.goalId !== undefined ? { goalId: value.goalId } : {}),
+      ...(value.branchId !== undefined ? { branchId: value.branchId } : {}),
     },
   };
 }

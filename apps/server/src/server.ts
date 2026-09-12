@@ -16,6 +16,13 @@ import {
   handleGroupTimeline,
   handleGroupTurnPost,
 } from "./routes/groups.js";
+import {
+  handleGoalCreate,
+  handleGoalDelete,
+  handleGoalGet,
+  handleGoalList,
+  handleGoalUpdate,
+} from "./routes/goals.js";
 import { handleHealth } from "./routes/health.js";
 import { handleHirePost } from "./routes/hire.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
@@ -248,6 +255,41 @@ async function dispatch(
     }
     if (pathname === routes.driveUpload && method === "POST") {
       await handleDriveUpload(res);
+      return;
+    }
+    if (pathname === routes.goals && method === "POST") {
+      await handleGoalCreate(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.goals && method === "GET") {
+      await handleGoalList(ctx, res);
+      return;
+    }
+    const goalMatch = pathname.match(/^\/goals\/([^/]+)$/);
+    if (goalMatch) {
+      let goalId: string;
+      try {
+        goalId = decodeURIComponent(goalMatch[1]!);
+      } catch {
+        throw new OrgApiError(errorCodes.goal_request_invalid, 400, "malformed goal id");
+      }
+      if (method === "GET") {
+        await handleGoalGet(ctx, res, goalId);
+        return;
+      }
+      if (method === "PATCH") {
+        await handleGoalUpdate(ctx, req, res, goalId);
+        return;
+      }
+      if (method === "DELETE") {
+        await handleGoalDelete(ctx, res, goalId);
+        return;
+      }
+      sendJson(
+        res,
+        405,
+        new OrgApiError(errorCodes.method_not_allowed, 405, `method ${method} not allowed`).toBody(),
+      );
       return;
     }
     if (pathname === routes.events && method === "GET") {
