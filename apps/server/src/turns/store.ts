@@ -12,6 +12,7 @@ import {
 import type { ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
 import type { EngineEvent, TurnTerminalReason } from "@roleweave/shared";
 import { assertSessionId, readAuthoritativeSessionIndex } from "../sessions/store.js";
+import { PerKeyLock } from "../per-key-lock.js";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 
 import { isThreadContextMetadata } from "./thread-context.js";
@@ -768,7 +769,7 @@ function isValidEventSequence(events: EngineEvent[]): boolean {
 export class TurnStore {
   private metadataLocks = new Map<string, Promise<ConversationMetadata>>();
   private activeTurns = new Set<string>();
-  private readonly recordLocks = new Map<string, Promise<void>>();
+  private readonly recordLocks = new PerKeyLock();
 
   constructor(
     private readonly options: {
@@ -915,7 +916,7 @@ export class TurnStore {
     const metadata = await this.ensureConversation(workspace, positionId, now);
     const key = this.activeTurnKey(workspace, positionId, turnId);
     const activeAtRead = this.activeTurns.has(key);
-    return this.withRecordLock(file, async () => {
+    return this.recordLocks.run(file, async () => {
       let raw: unknown;
       try {
         raw = (await readJson(file, MAX_TURN_RECORD_BYTES)).value;
@@ -967,7 +968,7 @@ export class TurnStore {
       let raw: unknown;
       try {
         const file = path.join(turnsDir, name);
-        const read = await this.withRecordLock(file, () => readJson(file, MAX_TURN_RECORD_BYTES));
+        const read = await this.recordLocks.run(file, () => readJson(file, MAX_TURN_RECORD_BYTES));
         historyBytes += read.bytes;
         if (historyBytes > MAX_HISTORY_BYTES) {
           throw storageError("local turn history exceeds the bounded total size");
@@ -1047,7 +1048,7 @@ export class TurnStore {
       let raw: unknown;
       try {
         const file = path.join(turnsDir, name);
-        const read = await this.withRecordLock(file, () => readJson(file, MAX_TURN_RECORD_BYTES));
+        const read = await this.recordLocks.run(file, () => readJson(file, MAX_TURN_RECORD_BYTES));
         historyBytes += read.bytes;
         if (historyBytes > MAX_HISTORY_BYTES) {
           throw storageError("local session turn history exceeds the bounded total size");
@@ -1210,7 +1211,7 @@ export class TurnStore {
             throw storageError("local reports turn directory contains an unsafe record");
           }
           const file = path.join(turnsDir, turnEntry.name);
-          const recordRead = await this.withRecordLock(file, () => readJson(file, MAX_TURN_RECORD_BYTES));
+          const recordRead = await this.recordLocks.run(file, () => readJson(file, MAX_TURN_RECORD_BYTES));
           chargeStableBytes(recordRead.bytes);
           const raw = recordRead.value;
           if (
@@ -1369,27 +1370,10 @@ export class TurnStore {
     }
   }
 
-  /** Serialize this control plane's atomic replacements with stable reads.
-   * External pathname swaps still fail the unchanged no-follow/inode checks. */
-  private async withRecordLock<T>(file: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.recordLocks.get(file) ?? Promise.resolve();
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => held);
-    this.recordLocks.set(file, tail);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.recordLocks.get(file) === tail) this.recordLocks.delete(file);
-    }
-  }
-
   private async writeTurn(workspace: string, record: TurnRecord): Promise<void> {
     const file = turnRecordFile(workspace, record.positionId, record.turnId);
     try {
-      await this.withRecordLock(file, () => atomicWriteJson(
+      await this.recordLocks.run(file, () => atomicWriteJson(
         file,
         record,
         MAX_TURN_RECORD_BYTES,
@@ -1408,7 +1392,7 @@ export class TurnStore {
   ): Promise<void> {
     const file = sessionTurnRecordFile(workspace, sessionId, record.turnId);
     try {
-      await this.withRecordLock(file, () => atomicWriteJson(
+      await this.recordLocks.run(file, () => atomicWriteJson(
         file,
         record,
         MAX_TURN_RECORD_BYTES,
