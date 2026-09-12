@@ -491,6 +491,42 @@ test("WSL Node fallback uses a local nvm installation when login PATH has no Nod
   assert.equal((await closed)[0], 0);
 });
 
+test("WSL Node fallback checks nvm's successfully selected default before using an installed newer version", { skip: process.platform !== "linux" }, (t) => {
+  const root = testRoot(t);
+  const oldBin = path.join(root, "old-node", "bin");
+  const newBin = path.join(root, "new-node", "bin");
+  const nvmDir = path.join(root, ".nvm");
+  for (const directory of [oldBin, newBin, nvmDir]) fs.mkdirSync(directory, { recursive: true });
+  // Simulate a runnable Node whose version fails the launcher's >=22 probe.
+  const oldNode = path.join(oldBin, "node");
+  fs.writeFileSync(oldNode, "#!/bin/sh\nexit 1\n", { mode: 0o700 });
+  fs.symlinkSync(process.execPath, path.join(newBin, "node"));
+  fs.writeFileSync(path.join(nvmDir, "nvm.sh"), [
+    "nvm() {",
+    '  case "$3" in',
+    '    default) export PATH="$HOME/old-node/bin" ;;',
+    '    node) export PATH="$HOME/new-node/bin" ;;',
+    "    *) return 1 ;;",
+    "  esac",
+    '  printf "%s\\n" "$3" >> "$HOME/nvm-use.log"',
+    "  return 0",
+    "}",
+  ].join("\n"));
+  const bootstrapEntry = path.join(root, "bootstrap.cjs");
+  fs.writeFileSync(bootstrapEntry, 'console.log("NEWER_NVM_NODE_OK")');
+  const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", bootstrapEntry, env: {} });
+  const options = { env: { HOME: root, PATH: oldBin }, encoding: "utf8", timeout: 5000 };
+  const result = spawnSync("/bin/bash", ["-c", spec.args[5], "roleweave-wsl", ...spec.args.slice(6)], options);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "NEWER_NVM_NODE_OK");
+  assert.equal(fs.readFileSync(path.join(root, "nvm-use.log"), "utf8"), "default\nnode\n");
+
+  const pinned = spawnSync("/bin/bash", ["-c", spec.args[5], "roleweave-wsl", oldNode, bootstrapEntry], options);
+  assert.equal(pinned.status, 126, "an explicit unsupported Node must not silently change runtimes");
+  assert.equal(pinned.stdout, "");
+  assert.equal(fs.readFileSync(path.join(root, "nvm-use.log"), "utf8"), "default\nnode\n", "an explicit pin never enters nvm discovery");
+});
+
 test("WSL wrapper selects the account's bash or zsh login shell and preserves literal argv", { skip: process.platform !== "linux" }, (t) => {
   const root = testRoot(t);
   const getent = path.join(root, "getent");

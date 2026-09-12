@@ -65,8 +65,12 @@ else
     roleweave_nvm="\${NVM_DIR:-$HOME/.nvm}/nvm.sh"
     if [ -s "$roleweave_nvm" ]; then
       . "$roleweave_nvm" --no-use >/dev/null 2>&1
-      nvm use --silent default >/dev/null 2>&1 || nvm use --silent node >/dev/null 2>&1 || true
+      nvm use --silent default >/dev/null 2>&1 || true
       roleweave_node="$(command -v node 2>/dev/null || true)"
+      if ! roleweave_node_usable "$roleweave_node"; then
+        nvm use --silent node >/dev/null 2>&1 || true
+        roleweave_node="$(command -v node 2>/dev/null || true)"
+      fi
     fi
   fi
   if ! roleweave_node_usable "$roleweave_node"; then
