@@ -9,6 +9,7 @@ import { EngineSelect, useEngineLabel } from "../turns/TurnPanel";
 import { EngineIcon } from "../turns/engine-icon";
 import { adaptTurnRecord } from "../turns/adapter";
 import type { LiveRunState } from "../turns/turnStream";
+import ReactMarkdown from "react-markdown";
 import type { PositionMentionOption, TurnEngine, TurnEngineAvailability } from "../turns/types";
 
 export interface GroupsPanelProps {
@@ -667,10 +668,20 @@ export function GroupsPanel({
                           </header>
                           {turn.errorCode !== "group_relay_blocked" ? <ProgressTrail turn={turn} /> : null}
                           {turn.output ? (
-                            <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
+                            <details className="owb-bubble__expand" aria-label={t("grp.expandOutput")}>
+                              <summary className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</summary>
+                              <div className="owb-bubble__expand-body owb-tc__out owb-tc__out--markdown">
+                                <ReactMarkdown>{turn.output}</ReactMarkdown>
+                              </div>
+                            </details>
                           ) : null}
                           {(turn.status === "failed" || turn.status === "indeterminate") && turn.error ? (
-                            <p className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</p>
+                            <details className="owb-bubble__expand" aria-label={t("grp.expandOutput")}>
+                              <summary className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</summary>
+                              <div className="owb-bubble__expand-body owb-tc__out owb-tc__out--markdown">
+                                <ReactMarkdown>{turn.error}</ReactMarkdown>
+                              </div>
+                            </details>
                           ) : null}
                           {turn.status === "indeterminate" ? (
                             <p className="owb-turn__warning owb-clamp-2">{t(turn.errorCode === "group_relay_blocked" ? "grp.relayBlocked" : "grp.untrustedWarning")}</p>
@@ -700,7 +711,12 @@ export function GroupsPanel({
                     </header>
                     <ProgressTrail turn={turn} />
                     {turn.output ? (
-                      <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
+                      <details className="owb-bubble__expand" aria-label={t("grp.expandOutput")}>
+                        <summary className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</summary>
+                        <div className="owb-bubble__expand-body owb-tc__out owb-tc__out--markdown">
+                          <ReactMarkdown>{turn.output}</ReactMarkdown>
+                        </div>
+                      </details>
                     ) : (
                       <TypingIndicator />
                     )}

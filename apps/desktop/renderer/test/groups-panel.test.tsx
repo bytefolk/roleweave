@@ -301,7 +301,7 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     fireEvent.click(liveDisclosure);
     expect(liveDisclosure).toHaveAttribute("aria-expanded", "false");
     await waitFor(() => expect(timeline.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
-    await waitFor(() => expect(screen.getByText("OWNER_DONE")).toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector(".owb-bubble__expand > summary")).toHaveTextContent("OWNER_DONE"));
     expect(screen.queryByText(/已发送给/)).not.toBeInTheDocument();
     expect(document.querySelector(".owb-bubble--operator")).toHaveTextContent("@Repo Owner 检查");
     expect(onReconcileTimeline).toHaveBeenCalledWith(completedTimeline());
@@ -329,7 +329,7 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
 
     await waitFor(() => expect(screen.getByText("1 运行中")).toBeInTheDocument());
     await waitFor(() => expect(timeline.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
-    await waitFor(() => expect(screen.getByText("OWNER_DONE")).toBeInTheDocument());
+    await waitFor(() => expect(document.querySelector(".owb-bubble__expand > summary")).toHaveTextContent("OWNER_DONE"));
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
     expect(container.querySelectorAll(".is-running")).toHaveLength(0);
   });
@@ -347,13 +347,13 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
         }}
         liveRuns={{ "engine-run-owner": run }} onSelectEngine={() => {}} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
     );
-    const { rerender } = render(panel(liveOwner));
+    const { rerender, container } = render(panel(liveOwner));
     const progress = await screen.findByRole("group", { name: "执行进展" });
     fireEvent.click(within(progress).getByRole("button"));
     expect(within(progress).getByRole("button")).toHaveAttribute("aria-expanded", "false");
     await act(async () => rerender(panel({ ...liveOwner, text: "New public result" })));
     expect(within(screen.getByRole("group", { name: "执行进展" })).getByRole("button")).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByText("New public result")).toBeVisible();
+    expect(document.querySelector(".owb-bubble__expand > summary")).toHaveTextContent("New public result");
     expect(screen.queryByText(/执行工具/)).not.toBeInTheDocument();
   });
 
@@ -389,6 +389,43 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
     expect(screen.getAllByRole("group", { name: "执行进展" })).toHaveLength(1);
     expect(within(screen.getByRole("group", { name: "执行进展" })).getByRole("button")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps an expanded group message open across a timeline reload (#237)", async () => {
+    const longOutput = "Line one.\nLine two.\nLine three.\nLine four.";
+    const turnWithLongOutput = { ...completedTurn(), output: longOutput };
+    const timelineBody: GroupTimeline = {
+      ...completedTimeline(),
+      items: [completedTimeline().items[0]!, { kind: "member", turn: turnWithLongOutput }],
+    };
+    installBridge({
+      timeline: vi.fn().mockResolvedValue({ status: 200, body: timelineBody }),
+    });
+    const panel = (
+      <GroupsPanel workspaceOpen positions={positions} positionNames={positionNames}
+        engine="qoder" engineAvailability={{
+          qoder: readyAvailability,
+          "claude-code": readyAvailability,
+          "claude-local": readyAvailability,
+          codex: readyAvailability,
+          "codex-local": readyAvailability,
+        }}
+        liveRuns={{}} onSelectEngine={() => {}} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
+    );
+    const { rerender } = render(panel);
+
+    await waitFor(() => expect(document.querySelector(".owb-bubble__expand")).not.toBeNull(), { timeout: 3000 });
+    const details = document.querySelector(".owb-bubble__expand") as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+
+    fireEvent.click(details.querySelector("summary")!);
+    expect(details.open).toBe(true);
+
+    await act(async () => { rerender(panel); });
+    const afterRerender = document.querySelector(".owb-bubble__expand") as HTMLDetailsElement;
+    expect(afterRerender).not.toBeNull();
+    expect(afterRerender.open).toBe(true);
+    expect(afterRerender.querySelector(".owb-tc__out--markdown")).not.toBeNull();
   });
 });
 
@@ -445,13 +482,13 @@ it("sends explicit relay in selected order and restores mode, outputs and blocke
     { kind: "member", turn: { ...completedTurn(), output: "first step draft" } },
     { kind: "member", turn: { ...completedTurn(), turnId: "blocked", positionId: "release-engineer", status: "indeterminate", output: undefined, error: { code: "group_relay_blocked", message: "Earlier step failed", retryable: false } } },
   ] };
-  const { bridge } = renderPanel({
+  const { bridge, container } = renderPanel({
     timeline: vi.fn().mockResolvedValue({ status: 200, body: timeline }),
     createGroupTurn: vi.fn().mockResolvedValue({ status: 202, body: { conversationRef: group.conversationRef, messageId: "relay-new", spawns: [] } }),
   });
-  expect(await screen.findByText("first step draft")).toBeInTheDocument();
+  await waitFor(() => expect(document.querySelector(".owb-bubble__expand > summary")).toHaveTextContent("first step draft"));
   expect(screen.getByText("未执行：前序步骤未成功，接力已停止。")).toBeInTheDocument();
-  const blockedReply = screen.getByText("Earlier step failed").closest("article")!;
+  const blockedReply = container.querySelector(".owb-turn__error")!.closest("article")!;
   expect(within(blockedReply).queryByRole("group", { name: "执行进展" })).not.toBeInTheDocument();
   expect(within(blockedReply).queryByRole("timer")).not.toBeInTheDocument();
   expect(screen.getByText(/依次接力 · Release Engineer → Repo Owner/)).toBeInTheDocument();
