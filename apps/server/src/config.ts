@@ -1,5 +1,8 @@
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createBootToken } from "./auth.js";
+import { splitCommand } from "./engine/probe.js";
 
 export interface ServerConfig {
   /** Loopback only, always. The control plane never binds another interface. */
@@ -9,7 +12,7 @@ export interface ServerConfig {
   token: string;
   /** Pinned digital-employee CLI command consumed via spawn. */
   cliCommand: string;
-  /** Desktop-owned Electron adapter boundary; never inferred from CLI text. */
+  /** Desktop-owned bundled adapter boundary (legacy name retained for callers). */
   bundledElectronEngine: boolean;
   /** Spawn timeout (ms) for engine org apply / turn run. */
   engineTimeoutMs?: number;
@@ -47,6 +50,22 @@ function truthy(raw: string | undefined): boolean {
   return trimmed === "1" || trimmed === "true" || trimmed === "yes" || trimmed === "on";
 }
 
+/** A WSL Node launcher must opt in and name this package's adapter exactly.
+ * An external command cannot gain Codex support from an inherited marker. */
+function isBundledNodeEngine(env: NodeJS.ProcessEnv, command: string): boolean {
+  if (process.platform !== "linux" || process.versions.electron !== undefined ||
+      env.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE !== "1") return false;
+  const { bin, prefix } = splitCommand(command);
+  if (!path.isAbsolute(bin) || prefix.length !== 1 || !path.isAbsolute(prefix[0]!)) return false;
+  try {
+    const adapter = fileURLToPath(new URL("../../bin/qoder-engine.mjs", import.meta.url));
+    return fs.realpathSync(bin) === fs.realpathSync(process.execPath) &&
+      fs.realpathSync(prefix[0]!) === fs.realpathSync(adapter);
+  } catch {
+    return false;
+  }
+}
+
 export function resolveServerConfig(
   env: NodeJS.ProcessEnv,
   argv: string[],
@@ -63,8 +82,8 @@ export function resolveServerConfig(
     typeof envToken === "string" && envToken.length >= 16 ? envToken : createBootToken();
   const cliCommand = env.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI ?? "digital-employee";
   const bundledElectronEngine =
-    env.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE === "1" &&
-    env.ELECTRON_RUN_AS_NODE === "1";
+    (env.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE === "1" &&
+      env.ELECTRON_RUN_AS_NODE === "1") || isBundledNodeEngine(env, cliCommand);
   const contextCliCommand = env.ORG_WORKBENCH_CONTEXT_CLI ?? "context";
   const rawBudgetPool = Number(env.ORG_WORKBENCH_BUDGET_POOL_TOKENS ?? "10000000");
   const budgetPoolTokens = Number.isSafeInteger(rawBudgetPool) && rawBudgetPool > 0

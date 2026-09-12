@@ -38,6 +38,9 @@
 
 ### Changed
 
+- 首次启动不再自动复制或打开演示工作区，用户从空工作区新建或打开项目；仍恢复有效的上次工作区并保留显式路径覆盖。上次工作区无法访问时留空并提示重新打开，已有演示和用户文件保持原样。
+- Windows 可通过本机运行环境偏好默认连接指定 WSL 发行版；项目选择器从其 Linux home 开始，Agent Host 选择会被记住，设置展示项目与 Agent 所用环境。
+- WSL 后台使用 Linux Node 与内置 adapter，保留 Linux CLI 的登录、代理与证书配置，并在桌面退出时清理其子进程；支持两种 WSL UNC 路径并拒绝跨发行版选择。
 - #206：RoleWeave 内置引擎新增 Codex 服务凭据与本地登录两种 Agent Host；本地登录不依赖服务 API key。
 - #236：Agent Host 下方显示本次回合将使用的模型（仅对存在模型旋钮的 Host 展示，由 `/health` 新增的可选 `modelPinnable` 下发，客户端不自带引擎清单）。`/health` 的 Host 状态新增可选 `model`（取自 `OPENAI_MODEL`）；未指定时如实显示"由 Host 自行决定"而不推断名字——Codex CLI 不向调用方报告它选中的模型。Codex 回合一律带 `--ignore-user-config`，`~/.codex/config.toml` 的 `model` 不生效。`OPENAI_MODEL` 非法时两个 Codex Host 在前置检查即 fail closed 并给出可执行提示，不再等到 spawn 前失败。
 - 以 RoleWeave 标识的紫蓝色建立 light / dark 双主题，逐组件统一组织、会话、群聊、招聘、文档、网盘、报表、审批和设置；简化嵌套卡片与装饰标签，改善正文、长路径、超限数值及暗色表单的可读性，保留业务行为。
@@ -48,6 +51,8 @@
 ### Fixed
 
 - #240 review：报表中心的审计时间线改用与对话面板同一个引擎标签来源。它此前自带第三份标签映射（签名 `engine: string` + `return engine` 兜底），Codex 回合会显示成裸 id `codex-local`，`claude-local` 也与对话面板措辞不一致；这个缺陷在 #239 修复前不可达，因为 `/reports` 遇到 Codex 记录会直接硬报错。
+- 新建项目接受界面传入的三字段请求，父目录只由原生选择器提供；打开与创建共用 WSL 路径转换，恢复 Linux 工作区时不再依赖 Windows 的存在性检查。
+- 本地 Claude Host 复用用户 OAuth 登录时不再使用禁用该登录的 bare/空设置来源选项；保留工具限制并禁用 hooks。
 - #239：Codex 回合不再在写盘后变成不可读记录。回合记录校验器仍保留 #206 之前的三引擎硬编码白名单，导致 `codex` / `codex-local` 的回合被路由接受并落盘、却在回读时判为非法，使该会话历史和整个报表中心永久报错（`local session turn history contains an invalid record` / `local reports data is invalid`）。校验器改为走 `turnEngines` 契约；已落盘的记录无需修复，本身合法。
 - #221 review：Codex 就绪状态要求内置引擎边界；使用外部 digital-employee CLI 时，即使已安装 Codex 并配置凭据，两种 Codex Host 仍显示不可用并说明原因。
 - #156：工作区覆盖路径仅在 Windows WSL 控制面模式下跳过本地存在性检查，由控制面在路径边界转换后校验；模式判断与路由、诊断统一，Linux/macOS 即使设置 `ORG_WORKBENCH_CONTROL_PLANE=wsl` 仍保留原生校验。

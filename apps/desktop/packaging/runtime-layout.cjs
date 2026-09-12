@@ -15,6 +15,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/control-plane-lifecycle.cjs",
   "src/auto-open-workspace.cjs",
   "src/control-plane-launch.cjs",
+  "src/wsl-bootstrap.cjs",
   "src/docs-ipc.cjs",
   "src/drive-ipc.cjs",
   "src/goal-ipc.cjs",
@@ -26,6 +27,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/packaged-behavior-smoke.cjs",
   "src/packaged-smoke.cjs",
   "src/runtime-paths.cjs",
+  "src/runtime-settings.cjs",
   // The app's only third-party runtime dependency, bundled to one file by
   // scripts/bundle-updater.mjs. Shipping electron-updater as a package would add
   // 16 packages and 325 files to a tree that asserts 189 files byte-exact, and

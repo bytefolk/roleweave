@@ -24,7 +24,7 @@ For example, an open-source maintenance team can have a repository owner with th
 
 The v0.1.2 source includes bounded conversation context, independent employee dispatch, and explicit parallel/relay group execution. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.1.1 installers do not include these features.
 
-Workspace auto-open diagnostics also remain best-effort in the v0.1.2 source: an unavailable stderr stream does not turn a diagnostic write into a failed startup. Existing workspace overrides and fallback behavior are preserved; see the [candidate release notes](docs/releases/v0.1.2.md).
+Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior is a post-v0.1.2 change and is not included in the v0.1.2 installers.
 
 ## Download
 
@@ -48,6 +48,26 @@ See the [v0.1.2 release notes](docs/releases/v0.1.2.md) for this candidate's cha
 5. **Send a small first task.** Select the role's conversation and send a prompt such as: “Summarize your role instructions and suggest a first task.” Review the recorded result and return to its history when needed.
 
 If the host is unavailable, follow the engine status guidance. For a custom Qoder installation, the server-side `ORG_WORKBENCH_QODER_BIN` environment variable can point to its executable. Restart the app after changing its launch environment.
+
+### Windows with local WSL Agents
+
+The current source can keep the Windows interface while running the project backend and Agents in a local WSL distribution. This is a post-v0.1.2 change. Linux Node.js 22 or newer and the chosen Agent CLI must already be installed in that distribution.
+
+To make WSL the default on one machine, place `runtime-settings.json` in RoleWeave's Electron user-data directory (normally `%APPDATA%\RoleWeave`):
+
+```json
+{
+  "mode": "wsl",
+  "distro": "Ubuntu-22.04",
+  "homePath": "/home/your-user"
+}
+```
+
+Use your actual distribution and Linux home directory. An optional `nodePath` pins an absolute Linux Node executable; otherwise the launcher checks the WSL login PATH and local nvm installation. The launcher uses the Linux account's Bash or Zsh login configuration; other shells fall back to Bash with an explicit diagnostic. Explicit launch-environment overrides take precedence over this machine preference. Machines without the file keep the native backend.
+
+After fully restarting RoleWeave, project pickers start in the selected WSL home. Both `\\wsl.localhost\<distribution>\...` and `\\wsl$\<distribution>\...` are supported; another distribution is rejected. Windows drive paths still map to `/mnt/<drive>/...`. The backend uses the WSL user's CLI installations, login files, proxy and certificate settings.
+
+Choose an Agent Host in the conversation. An explicit choice is remembered even if that Host later becomes unavailable. With no saved choice, the first ready health response prefers a locally logged-in Host type (Codex-local, then Claude-local); readiness checks CLI prerequisites, not account validity or a model request. Settings shows which environment supplies the project and Agents. Closing the desktop also closes its WSL backend.
 
 ## How workspaces work
 

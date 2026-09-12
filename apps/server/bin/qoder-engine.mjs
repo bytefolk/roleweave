@@ -843,8 +843,12 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
 
   const safeInput = (input || "Execute your position duties for this turn.").replace(/@/g, "\\u0040");
   const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n`;
+  const localLogin = engineModel === "claude-local";
   const args = [
-    "--bare",
+    // --bare and an empty settings-source list both suppress the user's OAuth
+    // login. Local mode reads only user settings, with hooks explicitly off;
+    // project/local settings, tools and session persistence remain disabled.
+    ...(localLogin ? [] : ["--bare"]),
     "--print",
     "--input-format", "text",
     "--output-format", "stream-json",
@@ -852,7 +856,8 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     "--include-partial-messages",
     "--permission-mode", "dontAsk",
     "--tools", "",
-    "--setting-sources", "",
+    "--setting-sources", localLogin ? "user" : "",
+    ...(localLogin ? ["--settings", '{"disableAllHooks":true}'] : []),
     "--strict-mcp-config",
     "--disable-slash-commands",
     "--no-chrome",

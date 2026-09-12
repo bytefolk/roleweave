@@ -32,6 +32,7 @@ import { BrainCircuit, Check, ChevronDown, Cog, FileChartColumn, FolderOpen, Fol
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
+import { useTurnEngine } from "./use-turn-engine";
 import {
   EMPTY_TURN_STREAM,
   TurnPanel,
@@ -130,7 +131,7 @@ function AppInner({
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
   const [positionColors, setPositionColors] = useState<Record<string, string>>({});
-  const [turnEngine, setTurnEngine] = useState<TurnEngine>("qoder");
+  const [turnEngine, selectTurnEngine] = useTurnEngine(health);
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
   const [busyPositions, setBusyPositions] = useState<Record<string, boolean>>({});
@@ -1167,7 +1168,7 @@ function AppInner({
               conversationHostName={hireConversationHostId ? positionNames[hireConversationHostId] : undefined}
               budgetPoolTokens={workspaceInfo.budgetPoolTokens}
               budgetAllocatedTokens={hireBudgetAllocatedTokens}
-              onSelectEngine={setTurnEngine}
+              onSelectEngine={selectTurnEngine}
               onClose={() => setTreeHireParent(undefined)}
               onHired={(positionId, name) => void hiredPosition(positionId, name)}
             />
@@ -1254,7 +1255,7 @@ function AppInner({
             engine={turnEngine}
             engineAvailability={engineAvailability}
             liveRuns={turnStream.runs}
-            onSelectEngine={setTurnEngine}
+            onSelectEngine={selectTurnEngine}
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
           />
@@ -1320,7 +1321,7 @@ function AppInner({
             selectedSessionId={selectedSessionId}
             sessionBusy={sessionBusy}
             onSelectPosition={openConversation}
-            onSelectEngine={setTurnEngine}
+            onSelectEngine={selectTurnEngine}
             onCreateTurn={createTurn}
             onCancelTurn={cancelTurn}
             onVerdictTurn={verdictTurn}

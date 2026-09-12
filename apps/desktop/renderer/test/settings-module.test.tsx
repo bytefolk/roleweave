@@ -59,6 +59,7 @@ function installBridge(status: UpdateStatus | null, results: Partial<UpdateResul
   const queue = [...results];
   const next = () => result(queue.shift() ?? {});
   const bridge = {
+    status: vi.fn().mockResolvedValue({ running: true, runtime: { mode: "wsl", distro: "Ubuntu-22.04" } }),
     update: {
       status: vi.fn().mockResolvedValue(status),
       check: vi.fn().mockImplementation(async () => next()),
@@ -80,6 +81,13 @@ function installBridge(status: UpdateStatus | null, results: Partial<UpdateResul
     },
   };
 }
+
+it("shows the configured runtime without treating it as a successful Agent login", async () => {
+  installBridge(windowsUnsigned);
+  render(<SettingsModule />);
+  expect(await screen.findByText("WSL · Ubuntu-22.04")).toBeInTheDocument();
+  expect(screen.getByText("项目与 Agent 运行环境")).toBeInTheDocument();
+});
 
 describe("#134 更新面板：八个状态", () => {
   const cases: Array<[UpdateEvent["state"], Partial<UpdateEvent>, string | RegExp]> = [

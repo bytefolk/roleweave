@@ -298,7 +298,14 @@ function parseEngineEvent(line: string): EngineEvent {
 
 function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): NodeJS.ProcessEnv {
   const source = process.env;
-  const allowed = ["PATH", "HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "SHELL"] as const;
+  // Local Hosts share the WSL login environment's runtime and network settings.
+  // Provider credentials and adapter controls remain scoped below.
+  const allowed = [
+    "PATH", "HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "SHELL",
+    "LOGNAME", "TMP", "TEMP", "LC_CTYPE", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+  ] as const;
   const environment: NodeJS.ProcessEnv = {
     DIGITAL_EMPLOYEE_ENGINE_MODEL: engine,
   };
@@ -312,26 +319,6 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): No
   const runAsNode = bundledElectronRunAsNode(source, bundledElectronEngine);
   if (runAsNode !== undefined) environment.ELECTRON_RUN_AS_NODE = runAsNode;
   if (engine === "qoder") {
-    const qoderRuntimeKeys = [
-      "LOGNAME",
-      "TMP",
-      "TEMP",
-      "LC_CTYPE",
-      "XDG_CONFIG_HOME",
-      "XDG_CACHE_HOME",
-      "HTTP_PROXY",
-      "HTTPS_PROXY",
-      "NO_PROXY",
-      "http_proxy",
-      "https_proxy",
-      "no_proxy",
-      "NODE_EXTRA_CA_CERTS",
-      "SSL_CERT_FILE",
-      "SSL_CERT_DIR",
-    ] as const;
-    for (const key of qoderRuntimeKeys) {
-      if (source[key] !== undefined) environment[key] = source[key];
-    }
     if (source.QODER_PERSONAL_ACCESS_TOKEN !== undefined) environment.QODER_PERSONAL_ACCESS_TOKEN = source.QODER_PERSONAL_ACCESS_TOKEN;
     if (source.DIGITAL_EMPLOYEE_QODER_COMMAND !== undefined) {
       environment.DIGITAL_EMPLOYEE_QODER_COMMAND = source.DIGITAL_EMPLOYEE_QODER_COMMAND;
