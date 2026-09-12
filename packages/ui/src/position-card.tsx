@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button, Empty, Skeleton } from "antd";
 import { cn } from "@fullstack-ai-infra/ui";
-import { ChartNoAxesColumn, Cloud, Crosshair, FileText, Info, RefreshCw, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { ChartNoAxesColumn, Cloud, Crosshair, FileText, GitBranch, Info, RefreshCw, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { BudgetBar } from "./budget-bar";
 import { useT, type OwbT } from "./i18n";
 import type { PositionCardData } from "./types";
@@ -19,6 +19,17 @@ export interface PositionCardProps {
   consumption?: number | null;
   /** Live turn in flight for this position: header status light breathes. */
   running?: boolean;
+  /** Organization relationships resolved by the application from its tree.
+   * The position endpoint owns `reportTo`; a friendly manager name and direct
+   * report count require the current org snapshot and must never be guessed. */
+  organization?: {
+    reportToName?: string;
+    directReportCount?: number;
+    reportTo?: { id: string; name: string };
+    directReports?: Array<{ id: string; name: string }>;
+  };
+  /** Relationship chips are navigation affordances owned by the workbench. */
+  onSelectRelation?: (positionId: string) => void;
   /** #137 review: operator actions (e.g. the dismiss dialog) render inside
    * the card header's right cluster instead of floating outside the card. */
   actions?: ReactNode;
@@ -45,6 +56,8 @@ export function PositionCard({
   onContextSourceSelect,
   consumption = null,
   running = false,
+  organization,
+  onSelectRelation,
   actions,
   className,
 }: PositionCardProps) {
@@ -141,6 +154,26 @@ export function PositionCard({
       <div className="owb-pos-body">
         <p className="owb-pos-desc">{position.description}</p>
 
+        <section className="owb-pos-section owb-pos-lineage" aria-label={t("pos.organization")}>
+          <h3><GitBranch aria-hidden="true" size={13} />{t("pos.organization")}</h3>
+          <div className="owb-pos-lineage__row">
+            <span className="owb-pos-lineage__label">{t("pos.reportsToLabel")}</span>
+            {organization?.reportTo ? (
+              <RelationChip relation={organization.reportTo} onSelect={onSelectRelation} />
+            ) : (
+              <span className="owb-pos-lineage__flat">{t("pos.owner")}</span>
+            )}
+          </div>
+          {organization?.directReports !== undefined ? (
+            <div className="owb-pos-lineage__row">
+              <span className="owb-pos-lineage__label">{t("pos.directReportsLabel")}</span>
+              {organization.directReports.length > 0 ? organization.directReports.map((relation) => (
+                <RelationChip key={relation.id} relation={relation} onSelect={onSelectRelation} />
+              )) : <span className="owb-pos-lineage__flat">{t("pos.noDirectReports")}</span>}
+            </div>
+          ) : null}
+        </section>
+
         <section className="owb-pos-section">
           <h3>
             <ChartNoAxesColumn aria-hidden="true" size={13} />
@@ -203,6 +236,21 @@ export function PositionCard({
         </section>
       </div>
     </section>
+  );
+}
+
+function RelationChip({
+  relation,
+  onSelect,
+}: {
+  relation: { id: string; name: string };
+  onSelect?: (positionId: string) => void;
+}) {
+  if (!onSelect) return <span className="owb-pos-relation">{relation.name}</span>;
+  return (
+    <button type="button" className="owb-pos-relation" onClick={() => onSelect(relation.id)}>
+      {relation.name}
+    </button>
   );
 }
 

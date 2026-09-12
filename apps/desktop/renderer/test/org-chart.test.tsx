@@ -36,7 +36,7 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
     expect(screen.getByText("暂无组织数据")).toBeInTheDocument();
   });
 
-  it("渲染汇报树：只展示角色名与层级关系", () => {
+  it("渲染汇报树：展示角色名、岗位 id 与真实组织快照元数据", () => {
     const { container } = render(
       <OrgChart
         snapshot={snapshot}
@@ -44,17 +44,32 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
       />,
     );
     // 头部位面：岗位数与深度来自应用态快照。
-    // #167：描述语精简——头部只留标题，count·depth meta 已移除。
-    expect(screen.queryByText("3 岗位 · 深度 2")).toBeNull();
-    // 角色名来自展示面；组织图不重复渲染 title、预算和模式。
+    // 摘要来自冻结快照；运行态只来自调用方传入的真实 live-run 集合。
+    expect(screen.getByText("3 岗位 · 深度 2")).toBeInTheDocument();
+    // 角色名来自展示面；岗位 id、预算和直属数量来自冻结组织快照。
     expect(screen.getByText("代码库负责人")).toBeInTheDocument();
     expect(screen.getByText("发布工程师")).toBeInTheDocument();
-    expect(screen.queryByText("release-engineer")).not.toBeInTheDocument();
-    expect(screen.queryByText("40k/task")).not.toBeInTheDocument();
+    expect(screen.getByText("release-engineer")).toBeInTheDocument();
+    expect(screen.getByText("40,000 tokens")).toBeInTheDocument();
     expect(screen.queryByText("需审批")).not.toBeInTheDocument();
     // 汇报线走线：3 个节点 → 3 个分支容器（伪元素连接线挂在其上）。
     expect(container.querySelectorAll(".owb-org-chart__branch")).toHaveLength(3);
     expect(container.querySelector(".owb-org-chart__children")).not.toBeNull();
+  });
+
+  it("显示真实运行摘要，并把适配/专注控制交给工作台", () => {
+    const onFocusModeChange = vi.fn();
+    render(
+      <OrgChart
+        snapshot={snapshot}
+        runningIds={new Set(["docs-writer"])}
+        onFocusModeChange={onFocusModeChange}
+      />,
+    );
+    expect(screen.getByText("1 运行中")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "适配组织图视图" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "专注查看组织图" }));
+    expect(onFocusModeChange).toHaveBeenCalledWith(true);
   });
 
   it("点击节点触发 onSelect；选中节点带高亮态与按压语义", () => {
@@ -72,13 +87,13 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
     expect(onSelect).toHaveBeenCalledWith("docs-writer");
   });
 
-  it("展示面缺条目时回退岗位 id，不编造语义", () => {
+  it("展示面缺条目时回退岗位 id，预算仍只取组织快照的声明", () => {
     const { container } = render(<OrgChart snapshot={snapshot} />);
     // 无 displayNames：节点主行回退到岗位 id。
     expect(screen.getAllByText("repo-owner").length).toBeGreaterThan(0);
-    // 组织图不承载预算和模式字段。
+    // 组织图不承载运行模式字段；但会显示树快照中已有的预算声明。
     expect(screen.queryByText("40k/task")).not.toBeInTheDocument();
-    expect(container.querySelectorAll(".owb-org-chart__budget")).toHaveLength(0);
+    expect(container.querySelectorAll(".owb-org-chart__budget")).toHaveLength(3);
   });
   it("画布平移：光标按住拖拽即平移组织图，松手退出 pan 态 (#137 review)", () => {
     const { container } = render(<OrgChart snapshot={snapshot} />);

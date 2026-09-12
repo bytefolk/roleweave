@@ -56,7 +56,6 @@ import type {
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
-import { OrgWorkspaceSplit } from "./org/OrgWorkspaceSplit";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
@@ -121,6 +120,9 @@ function AppInner({
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
   const [treeLoading, setTreeLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Purely local viewing mode: it does not alter workspace data or a user's
+  // persisted preferences, and can therefore safely reset with the app.
+  const [orgFocusMode, setOrgFocusMode] = useState(false);
   const selectedIdRef = useRef<string | null>(null);
   const [card, setCard] = useState<PositionCardState>({
     loading: false,
@@ -1270,11 +1272,7 @@ function AppInner({
             position={card.data}
             initialSource={memorySource}
           />
-        ) : <OrgWorkspaceSplit
-          ariaLabel={t("tree.splitPane")}
-          resetTitle={t("tree.splitPaneReset")}
-          valueText={(value) => t("tree.splitPaneValue", { value })}
-          left={
+        ) : <div className={`owb-org-module${orgFocusMode ? " is-focus-mode" : ""}`}>
             <div className="owb-org-module__left">
               {/* #137 two-column workspace: the left column stacks the org chart
                   and the position-record card (aligned, one column); the right
@@ -1286,6 +1284,9 @@ function AppInner({
                 loading={treeLoading}
                 displayNames={positionNames}
                 avatarColors={positionColors}
+                runningIds={runningPositionIds}
+                focusMode={orgFocusMode}
+                onFocusModeChange={setOrgFocusMode}
                 selectedId={selectedId}
                 onSelect={openConversation}
               />
@@ -1296,6 +1297,21 @@ function AppInner({
                   notFound={card.notFound}
                   consumption={selectedBudgetRatio}
                   running={selectedId !== null && runningPositionIds.has(selectedId)}
+                  organization={selectedPosition ? {
+                    reportToName: selectedPosition.reportTo
+                      ? positionNames[selectedPosition.reportTo] ?? selectedPosition.reportTo
+                      : undefined,
+                    directReportCount: selectedNode?.children.length,
+                    reportTo: selectedPosition.reportTo ? {
+                      id: selectedPosition.reportTo,
+                      name: positionNames[selectedPosition.reportTo] ?? selectedPosition.reportTo,
+                    } : undefined,
+                    directReports: selectedNode?.children.map((child) => ({
+                      id: child.id,
+                      name: positionNames[child.id] ?? child.id,
+                    })),
+                  } : undefined}
+                  onSelectRelation={openConversation}
                   onRefresh={() => void refresh()}
                   onContextSourceSelect={(source) => {
                     setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
@@ -1305,8 +1321,7 @@ function AppInner({
                 />
               </div>
             </div>
-          }
-          right={<TurnPanel
+          <TurnPanel
             key={workspaceInfo?.path}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
@@ -1316,6 +1331,7 @@ function AppInner({
             turns={displayTurns}
             busy={turnBusy}
             employeeBusy={selectedId !== null && runningPositionIds.has(selectedId)}
+            positionMode={selectedPosition?.mode}
             sessions={sessions}
             selectedSessionId={selectedSessionId}
             sessionBusy={sessionBusy}
@@ -1330,8 +1346,8 @@ function AppInner({
             onCreateSession={createSession}
             onRotateSession={rotateSession}
             onSetSessionContext={setSessionContext}
-          />}
-        />}
+          />
+        </div>}
       </div>
     </AppShell>
     </div>
