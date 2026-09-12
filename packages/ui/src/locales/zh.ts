@@ -717,10 +717,13 @@ export const zhCatalog: Record<string, string> = {
   "prefs.trigger": "偏好设置",
   "prefs.language": "语言",
   "prefs.theme": "主题",
+  "prefs.palette": "配色",
   "prefs.langZh": "中文",
   "prefs.langEn": "英文",
   "prefs.themeDark": "深色",
   "prefs.themeLight": "浅色",
+  "prefs.paletteMint": "薄荷",
+  "prefs.paletteDefault": "Ant 蓝",
   // #134 设置面与更新面板
   "rail.settings": "设置",
   "settings.title": "设置",

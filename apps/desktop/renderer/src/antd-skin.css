@@ -1,145 +1,22 @@
-/* RoleWeave brand tokens, shared by Ant Design and custom components.
- * Purple #732FD1 and blue #5179FF come from the supplied RoleWeave / ByteFolk
- * marks. Interactive steps adjust luminance for readable light/dark controls.
- * Keep matching Antd values in App.tsx synchronized with these semantic roles.
+/* Compatibility aliases for RoleWeave-owned component CSS.
+ *
+ * Values deliberately come from @fullstack-ai-infra/ui's generated semantic
+ * tokens. The selected profile now drives both these aliases and Ant Design's
+ * ConfigProvider through DSProvider; do not add palette values here.
  */
 
 :root,
-[data-theme="light"] {
-  color-scheme: light;
-  --ui-canvas: #f7f8fb;
-  --ui-canvas-subtle: #f1f3f7;
-  --ui-navigation: #f1f3f7;
-  --ui-navigation-hover: #e8ebf2;
-  --ui-surface: #ffffff;
-  --ui-surface-raised: #ffffff;
-  --ui-surface-inset: #f4f5f8;
-  --ui-foreground: #242630;
-  --ui-foreground-muted: #596172;
-  --ui-foreground-subtle: #606a7b;
-  --ui-border: #e2e5ed;
-  --ui-border-strong: #c7cedb;
-  --ui-primary: #3e63dd;
-  --ui-primary-hover: #3153c4;
-  --ui-primary-foreground: #ffffff;
-  --ui-primary-soft: #edf1ff;
-  --ui-brand: #732fd1;
-  --ui-brand-soft: #f3edfc;
-  --ui-brand-blue: #5179ff;
-  --ui-ai: #732fd1;
-  --ui-ai-strong: #6124b8;
-  --ui-ai-hover: #6124b8;
-  --ui-ai-foreground: #ffffff;
-  --ui-ai-soft: #f3edfc;
-  --ui-info: #3e63dd;
-  --ui-info-soft: #edf1ff;
-  --ui-success: #2e7052;
-  --ui-success-strong: #24573f;
-  --ui-success-soft: #edf7f1;
-  --ui-success-foreground: #ffffff;
-  --ui-warning: #8a5a12;
-  --ui-warning-strong: #75480b;
-  --ui-warning-soft: #fff5e4;
-  --ui-warning-foreground: #ffffff;
-  --ui-danger: #b83d3d;
-  --ui-danger-strong: #a22f36;
-  --ui-danger-soft: #fff0f0;
-  --ui-danger-foreground: #ffffff;
-  --ui-overlay: rgba(20, 21, 27, 0.35);
-  --ui-focus: #732fd1;
-  --ui-selection: #f3edfc;
+[data-theme] {
+  --ui-brand: var(--ui-primary);
+  --ui-brand-soft: var(--ui-primary-soft);
+  --ui-brand-blue: var(--ui-info);
+  --ui-success-foreground: var(--ui-primary-foreground);
+  --ui-warning-foreground: var(--ui-primary-foreground);
+  --ui-danger-foreground: var(--ui-primary-foreground);
 
-  --ui-radius-sm: 6px;
-  --ui-radius-md: 8px;
-  --ui-radius-lg: 12px;
-  --ui-radius-xl: 16px;
-  --ui-shadow-sm: 0 1px 2px 0 rgba(20, 21, 27, 0.03);
-  --ui-shadow-md: 0 4px 16px 0 rgba(20, 21, 27, 0.07), 0 1px 4px 0 rgba(20, 21, 27, 0.03);
-  --ui-shadow-lg: 0 16px 48px 0 rgba(20, 21, 27, 0.14);
-  --ui-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --owb-font-display: var(--ui-font-sans);
-  --ui-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-
-  --owb-duration-fast: 120ms;
-  --owb-duration-mid: 160ms;
-  --owb-duration-slow: 240ms;
-  --owb-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --ui-duration-fast: 120ms;
-  --ui-duration-normal: 160ms;
-  --ui-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-[data-theme="dark"] {
-  color-scheme: dark;
-  --ui-canvas: #14151b;
-  --ui-canvas-subtle: #181a20;
-  --ui-navigation: #181a20;
-  --ui-navigation-hover: #252831;
-  --ui-surface: #1c1e25;
-  --ui-surface-raised: #252831;
-  --ui-surface-inset: #171920;
-  --ui-foreground: #e5e7ed;
-  --ui-foreground-muted: #b1b7c5;
-  --ui-foreground-subtle: #969eaf;
-  --ui-border: #343844;
-  --ui-border-strong: #4b5262;
-  --ui-primary: #86a0ff;
-  --ui-primary-hover: #a0b4ff;
-  --ui-primary-foreground: #14151b;
-  --ui-primary-soft: #252e49;
-  --ui-brand: #bb93f6;
-  --ui-brand-soft: #30233f;
-  --ui-brand-blue: #86a0ff;
-  --ui-ai: #bb93f6;
-  --ui-ai-strong: #cdaeff;
-  --ui-ai-hover: #cdaeff;
-  --ui-ai-foreground: #1b1526;
-  --ui-ai-soft: #30233f;
-  --ui-info: #86a0ff;
-  --ui-info-soft: #252e49;
-  --ui-success: #84c7a3;
-  --ui-success-strong: #a2dabb;
-  --ui-success-soft: #20372c;
-  --ui-success-foreground: #14151b;
-  --ui-warning: #ddb35d;
-  --ui-warning-strong: #efcc86;
-  --ui-warning-soft: #352e20;
-  --ui-warning-foreground: #14151b;
-  --ui-danger: #ef9699;
-  --ui-danger-strong: #ffb1b4;
-  --ui-danger-soft: #3a242b;
-  --ui-danger-foreground: #14151b;
-  --ui-overlay: rgba(0, 0, 0, 0.65);
-  --ui-focus: #bb93f6;
-  --ui-selection: #30233f;
-
-  --ui-radius-sm: 6px;
-  --ui-radius-md: 8px;
-  --ui-radius-lg: 12px;
-  --ui-radius-xl: 16px;
-  --ui-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
-  --ui-shadow-md: 0 4px 20px 0 rgba(0, 0, 0, 0.28), 0 1px 4px 0 rgba(0, 0, 0, 0.2);
-  --ui-shadow-lg: 0 16px 48px 0 rgba(0, 0, 0, 0.4);
-  --ui-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  --owb-font-display: var(--ui-font-sans);
-  --ui-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-
-  --owb-duration-fast: 120ms;
-  --owb-duration-mid: 160ms;
-  --owb-duration-slow: 240ms;
-  --owb-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --ui-duration-fast: 120ms;
-  --ui-duration-normal: 160ms;
-  --ui-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :root,
-  [data-theme] {
-    --owb-duration-fast: 0ms;
-    --owb-duration-mid: 0ms;
-    --owb-duration-slow: 0ms;
-    --ui-duration-fast: 0ms;
-    --ui-duration-normal: 0ms;
-  }
+  --owb-duration-fast: var(--ui-duration-fast);
+  --owb-duration-mid: var(--ui-duration-normal);
+  --owb-duration-slow: var(--ui-duration-normal);
+  --owb-ease-out: var(--ui-ease);
 }

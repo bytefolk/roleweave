@@ -714,10 +714,13 @@ export const enCatalog: Record<string, string> = {
   "prefs.trigger": "Preferences",
   "prefs.language": "Language",
   "prefs.theme": "Theme",
+  "prefs.palette": "Palette",
   "prefs.langZh": "Chinese",
   "prefs.langEn": "English",
   "prefs.themeDark": "Dark",
   "prefs.themeLight": "Light",
+  "prefs.paletteMint": "Mint",
+  "prefs.paletteDefault": "Ant Blue",
   // #134 settings surface + update pane
   "rail.settings": "Settings",
   "settings.title": "Settings",
