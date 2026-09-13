@@ -1,9 +1,32 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { ProjectCreateDrawer } from "../src/project/ProjectCreateDrawer";
+import { ProjectWorkspaceDialog } from "../src/project/ProjectWorkspaceDialog";
 import type { OwbBridge } from "../src/owb";
 
-describe("ProjectCreateDrawer", () => {
+describe("ProjectWorkspaceDialog", () => {
+  it("offers the native existing-workspace picker before entering creation", () => {
+    const onClose = vi.fn();
+    const onOpenWorkspace = vi.fn();
+
+    render(
+      <ProjectWorkspaceDialog
+        open
+        workspace={{ open: true, path: "/tmp/content-ops", business: "内容运营" }}
+        positionCount={3}
+        onClose={onClose}
+        onOpenWorkspace={onOpenWorkspace}
+        onCreated={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "选择工作区" })).toBeInTheDocument();
+    expect(screen.getByText("内容运营")).toBeInTheDocument();
+    expect(screen.getByText("/tmp/content-ops")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /打开项目/ }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onOpenWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it("generates a safe project id and submits the project contract", async () => {
     const createWorkspace = vi.fn().mockResolvedValue({
       status: 201,
@@ -19,7 +42,17 @@ describe("ProjectCreateDrawer", () => {
     window.owb = { createWorkspace } as unknown as OwbBridge;
     const onCreated = vi.fn();
 
-    render(<ProjectCreateDrawer open onClose={() => {}} onCreated={onCreated} />);
+    render(
+      <ProjectWorkspaceDialog
+        open
+        workspace={null}
+        positionCount={null}
+        onClose={() => {}}
+        onOpenWorkspace={() => {}}
+        onCreated={onCreated}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /新建项目/ }));
     fireEvent.change(screen.getByRole("textbox", { name: "项目名称*" }), {
       target: { value: "内容运营" },
     });

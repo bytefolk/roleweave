@@ -229,7 +229,7 @@ describe("App runtime bridge", () => {
     expect(screen.getAllByTitle("/fixture/workspace").length).toBeGreaterThan(0);
   });
 
-  it("keeps project switching at the top of the organization sidebar", async () => {
+  it("opens a centered workspace chooser from the organization sidebar", async () => {
     const openWorkspace = vi.fn().mockResolvedValue({ canceled: true });
     openedBridge({ openWorkspace });
 
@@ -240,15 +240,14 @@ describe("App runtime bridge", () => {
     expect(projectEntry).not.toHaveTextContent("/fixture/workspace");
     fireEvent.click(projectEntry);
 
-    const menu = screen.getByRole("menu", { name: "项目入口" });
-    expect(within(menu).getByText("当前项目")).toBeInTheDocument();
-    expect(within(menu).getByText("/fixture/workspace")).toBeInTheDocument();
-    expect(within(menu).getByRole("menuitem", { name: /打开项目/ })).toBeInTheDocument();
-    expect(within(menu).getByRole("menuitem", { name: /新建项目/ })).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "选择工作区" });
+    expect(within(dialog).getByText("/fixture/workspace")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /打开项目/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /新建项目/ })).toBeInTheDocument();
 
-    fireEvent.click(within(menu).getByRole("menuitem", { name: /打开项目/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ }));
     expect(openWorkspace).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("menu", { name: "项目入口" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "选择工作区" })).not.toBeInTheDocument();
   });
 
   it("#128 AC-001: clicking a position in the org tree syncs the conversation-position combobox in the turn panel", async () => {

@@ -214,7 +214,12 @@ export const enCatalog: Record<string, string> = {
 
   // Project setup
   "project.newCta": "New project",
+  "project.chooseTitle": "Choose a workspace",
+  "project.chooseDescription": "Open an existing local workspace or create a new one.",
+  "project.actionsAria": "Workspace actions",
+  "project.back": "Back",
   "project.createTitle": "New local project",
+  "project.createDescription": "Add the basics, then choose where to save it.",
   "project.step": "Project setup",
   "project.heroTitle": "Set the project boundary before adding employees",
   "project.heroDescription": "The project is created in a local folder you choose. Workbench starts with a project owner, then takes you straight to creating employees.",

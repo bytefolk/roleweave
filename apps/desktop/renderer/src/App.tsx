@@ -28,7 +28,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { BrainCircuit, Check, ChevronDown, Cog, FileChartColumn, FolderOpen, FolderPlus, Network, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
+import { BrainCircuit, Cog, FileChartColumn, FolderOpen, Network, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
@@ -64,14 +64,14 @@ import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
-import { ProjectCreateDrawer } from "./project/ProjectCreateDrawer";
+import { ProjectSwitcher } from "./project/ProjectSwitcher";
+import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
 
 interface PositionCardState {
   loading: boolean;
   data: PositionCardData | null;
   notFound: boolean;
 }
-
 /**
  * D1 renderer: AppShell four-zone layout (spec §1) — ModuleRail (org active,
  * memory module), Topbar (workspace location + engine status), Sidebar
@@ -97,7 +97,6 @@ function AppRoot() {
     </OwbI18nProvider>
   );
 }
-
 function AppInner({
   locale,
   onChangeLocale,
@@ -169,7 +168,7 @@ function AppInner({
   const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
-  const [projectCreateOpen, setProjectCreateOpen] = useState(false);
+  const [projectHubOpen, setProjectHubOpen] = useState(false);
   /** Org-tree group entry (#53): prefilled draft members handed to the
    * GroupsPanel create panel; nonce re-fires repeated entries. */
   const groupWorkspaceScope = useMemo(() => Symbol("group-workspace"), [workspaceInfo?.path, workspaceInfo?.open]);
@@ -1087,10 +1086,9 @@ function AppInner({
             <>
               <ProjectSwitcher
                 workspace={workspaceInfo}
-                positionCount={snapshot?.positionCount ?? null}
                 disabled={orgBusy}
-                onOpenWorkspace={() => void openWorkspace()}
-                onCreateProject={() => setProjectCreateOpen(true)}
+                dialogOpen={projectHubOpen}
+                onOpen={() => setProjectHubOpen(true)}
               />
               <div className="owb-side-head">
                 <div className="owb-side-head__copy">
@@ -1172,9 +1170,13 @@ function AppInner({
               onHired={(positionId, name) => void hiredPosition(positionId, name)}
             />
           ) : null}
-          <ProjectCreateDrawer
-            open={projectCreateOpen}
-            onClose={() => setProjectCreateOpen(false)}
+          <ProjectWorkspaceDialog
+            open={projectHubOpen}
+            workspace={workspaceInfo}
+            positionCount={snapshot?.positionCount ?? null}
+            disabled={orgBusy}
+            onClose={() => setProjectHubOpen(false)}
+            onOpenWorkspace={() => void openWorkspace()}
             onCreated={(created) => void onProjectCreated(created)}
           />
         </Sidebar>
@@ -1472,111 +1474,5 @@ function Breadcrumbs({
         <span className="owb-workspace-location__path">{workspace.path}</span>
       </span>
     </span>
-  );
-}
-
-interface ProjectSwitcherProps {
-  workspace: WorkspaceInfoResponse | null;
-  positionCount: number | null;
-  disabled?: boolean;
-  onOpenWorkspace: () => void;
-  onCreateProject: () => void;
-}
-
-/**
- * Project context belongs above the organization tree, not in a second global
- * chrome row. The trigger is intentionally compact, while its menu keeps the
- * IDE-like open/create actions together with the current workspace context.
- */
-function ProjectSwitcher({
-  workspace,
-  positionCount,
-  disabled = false,
-  onOpenWorkspace,
-  onCreateProject,
-}: ProjectSwitcherProps) {
-  const t = useT();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const open = workspace?.open === true;
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Node && rootRef.current?.contains(target)) return;
-      setMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [menuOpen]);
-
-  return (
-    <div className="owb-project-switcher" ref={rootRef}>
-      <button
-        type="button"
-        className="owb-project-switcher__trigger"
-        aria-label={t("project.switcherAria")}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        disabled={disabled}
-        onClick={() => setMenuOpen((current) => !current)}
-      >
-        <span className="owb-project-switcher__icon" aria-hidden="true">
-          <FolderOpen size={14} />
-        </span>
-        <span className="owb-project-switcher__copy">
-          <strong>{open ? workspace?.business ?? t("tree.workspaceFallback") : t("project.launcherTitle")}</strong>
-        </span>
-        <ChevronDown className="owb-project-switcher__chevron" aria-hidden="true" size={15} />
-      </button>
-
-      {menuOpen ? (
-        <div className="owb-project-switcher__menu" role="menu" aria-label={t("project.switcherAria")}>
-          {open ? (
-            <section className="owb-project-switcher__current" aria-label={t("project.current")}>
-              <p className="owb-project-switcher__eyebrow">{t("project.current")}</p>
-              <div className="owb-project-switcher__current-row">
-                <span className="owb-project-switcher__current-mark" aria-hidden="true"><Check size={12} /></span>
-                <span className="owb-project-switcher__current-copy">
-                  <strong>{workspace?.business ?? t("tree.workspaceFallback")}</strong>
-                  <small title={workspace?.path}>{workspace?.path ?? t("project.localOnly")}</small>
-                  <span>{positionCount === null ? t("project.positionsUnknown") : t("tree.positions", { count: positionCount })}</span>
-                </span>
-              </div>
-            </section>
-          ) : (
-            <p className="owb-project-switcher__empty">{t("project.noProjectOpen")}</p>
-          )}
-          <div className="owb-project-switcher__actions">
-            <button
-              type="button"
-              role="menuitem"
-              disabled={disabled}
-              onClick={() => { setMenuOpen(false); onOpenWorkspace(); }}
-            >
-              <FolderOpen aria-hidden="true" size={14} />
-              <span><strong>{t("project.openAction")}</strong><small>{t("project.openActionHint")}</small></span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={disabled}
-              onClick={() => { setMenuOpen(false); onCreateProject(); }}
-            >
-              <FolderPlus aria-hidden="true" size={14} />
-              <span><strong>{t("project.newCta")}</strong><small>{t("project.newActionHint")}</small></span>
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </div>
   );
 }

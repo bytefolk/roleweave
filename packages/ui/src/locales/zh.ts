@@ -217,7 +217,12 @@ export const zhCatalog: Record<string, string> = {
 
   // 项目立项
   "project.newCta": "新建项目",
+  "project.chooseTitle": "选择工作区",
+  "project.chooseDescription": "打开已有的本地工作区，或创建一个新的本地工作区。",
+  "project.actionsAria": "工作区操作",
+  "project.back": "返回",
   "project.createTitle": "新建本地项目",
+  "project.createDescription": "填写基本信息后，再选择保存位置。",
   "project.step": "项目立项",
   "project.heroTitle": "先建立项目边界，再配置数字员工",
   "project.heroDescription": "项目会落在你选择的本地目录中。系统先生成一个项目负责人，接下来就可以从“创建员工”开始搭建组织。",
