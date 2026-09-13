@@ -162,7 +162,8 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     });
     const stack = screen.getByLabelText("群成员 2 人");
     expect(stack.querySelectorAll(".owb-groups__avatar")).toHaveLength(2);
-    expect(stack.querySelector('[title="Repo Owner"]')).toHaveStyle({ background: "#5e6ad2" });
+    expect(stack.querySelector('[title="Repo Owner"] img')).not.toBeNull();
+    expect(stack.querySelector('[title="Repo Owner"]')).not.toHaveAttribute("style");
     const roster = container.querySelector(".owb-groups__roster-items");
     expect(roster).toHaveTextContent("Repo Owner");
     expect(roster).toHaveTextContent("Release Engineer");

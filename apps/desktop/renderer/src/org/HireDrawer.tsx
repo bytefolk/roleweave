@@ -137,7 +137,7 @@ function CapabilityPicker({ permissions, onToggleSkill, onToggleMcpServer, onTog
     <section className="owb-hire-capability-panel" aria-label={t("hire.capabilityTitle")}>
       <div className="owb-hire-capability-panel__head">
         <div>
-          <p className="owb-hire-eyebrow">03 · 能力装配</p>
+          <p className="owb-hire-eyebrow">{t("hire.capabilityStep")}</p>
           <h3>{t("hire.capabilityTitle")}</h3>
           <p>{t("hire.capabilityHint")}</p>
         </div>
@@ -352,7 +352,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const toggleMemory = (kind: HireMemorySource["kind"]) => setMemorySources((current) => { if (current.some((source) => source.kind === kind)) return current.filter((source) => source.kind !== kind); const option = MEMORY_OPTIONS.find((item) => item.kind === kind)!; return [...current, { kind, locator: option.locator }]; });
   const chooseAvatarFile = (file: File | undefined) => {
     if (!file || !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 512 * 1024) {
-      if (file) void messageApi.warning("请选择 PNG、JPG 或 WebP 格式，且不超过 512 KB。");
+      if (file) void messageApi.warning(t("avatar.fileWarning"));
       return;
     }
     const reader = new FileReader();
@@ -362,7 +362,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const generateAvatar = useCallback(async () => {
     const brief = [name.trim(), description.trim()].filter(Boolean).join(" · ");
     if (brief.length < 2) {
-      void messageApi.warning("先填写员工名称或职责，再生成头像。");
+      void messageApi.warning(t("avatar.missingBrief"));
       return;
     }
     setAvatarGenerating(true);
@@ -374,13 +374,13 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
         throw new Error("avatar generation failed");
       }
       setAvatar(imageDataUrl);
-      void messageApi.success("已生成透明头像。");
+      void messageApi.success(t("avatar.generated"));
     } catch {
-      setAvatarError("生成失败。请检查本地 AI 图片服务配置，或直接上传头像。");
+      setAvatarError(t("avatar.generationFailed"));
     } finally {
       setAvatarGenerating(false);
     }
-  }, [description, messageApi, name]);
+  }, [description, messageApi, name, t]);
 
   return (
     <Drawer className="owb-hire-drawer-shell" title={t("hire.createTitle")} width="min(760px, calc(100vw - 24px))" open={open} onClose={() => { if (flow.phase !== "draft" && flow.phase !== "failed") return; clearTimers(); onClose(); }} destroyOnHidden>
@@ -416,13 +416,13 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
                 <label><span>{t("hire.reportTo")}</span><Select value={reportTo ?? ""} onChange={(value: string) => setReportTo(value === "" ? null : value)} options={[{ value: "", label: t("hire.ownerRoot") }, ...positions.map((position) => ({ value: position.id, label: t("hire.reportOption", { name: position.name }) }))]} /></label>
                 <label className="owb-hire-basic-grid__wide"><span>{t("hire.desc")}</span><Input.TextArea value={description} maxLength={1_024} autoSize={{ minRows: 2, maxRows: 5 }} onChange={(event) => setDescription(event.target.value)} placeholder={t("hire.descPh")} /></label>
               </div>
-              <section className="owb-hire-avatar-picker" aria-label="员工头像">
-                <div><strong>员工头像</strong><p>AI 生成、上传或选择预设。</p>{avatarError ? <p className="owb-hire-avatar-picker__error">{avatarError}</p> : null}</div>
+              <section className="owb-hire-avatar-picker" aria-label={t("avatar.title")}>
+                <div><strong>{t("avatar.title")}</strong><p>{t("avatar.description")}</p>{avatarError ? <p className="owb-hire-avatar-picker__error">{avatarError}</p> : null}</div>
                 <div className="owb-hire-avatar-picker__choices">
-                  <button type="button" className={avatar === undefined ? "is-selected" : ""} onClick={() => setAvatar(undefined)} aria-label="自动生成头像"><img src={avatarSrcFor(positionId)} alt="" /><span>自动</span></button>
-                  <button type="button" className="owb-hire-avatar-picker__generate" onClick={() => void generateAvatar()} disabled={avatarGenerating} aria-label="AI 生成透明头像"><Sparkles aria-hidden="true" size={15} /><span>{avatarGenerating ? "生成中" : "AI"}</span></button>
-                  {AVATAR_PRESETS.map((preset) => <button type="button" className={avatar === preset.id ? "is-selected" : ""} key={preset.id} onClick={() => setAvatar(preset.id)} aria-label={`选择${preset.label}头像`}><img src={preset.src} alt="" /></button>)}
-                  <label className="owb-hire-avatar-picker__upload"><span>上传</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => chooseAvatarFile(event.target.files?.[0])} /></label>
+                  <button type="button" className={avatar === undefined ? "is-selected" : ""} onClick={() => setAvatar(undefined)} aria-label={t("avatar.autoAria")}><img src={avatarSrcFor(positionId)} alt="" /><span>{t("avatar.auto")}</span></button>
+                  <button type="button" className="owb-hire-avatar-picker__generate" onClick={() => void generateAvatar()} disabled={avatarGenerating} aria-label={t("avatar.generateAria")}><Sparkles aria-hidden="true" size={15} /><span>{avatarGenerating ? t("avatar.generating") : "AI"}</span></button>
+                  {AVATAR_PRESETS.map((preset) => <button type="button" className={avatar === preset.id ? "is-selected" : ""} key={preset.id} onClick={() => setAvatar(preset.id)} aria-label={t("avatar.selectPreset", { name: t(preset.labelKey) })}><img src={preset.src} alt="" /></button>)}
+                  <label className="owb-hire-avatar-picker__upload"><span>{t("avatar.upload")}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => chooseAvatarFile(event.target.files?.[0])} /></label>
                 </div>
               </section>
               <div className="owb-hire-summary-row">

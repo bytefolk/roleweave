@@ -5,10 +5,10 @@ import releaseEngineer from "./assets/avatars/release-engineer-v2.png";
 import operationsLead from "./assets/avatars/operations-lead-v2.png";
 
 export const AVATAR_PRESETS = [
-  { id: "community-operator", label: "社区运营", src: communityOperator },
-  { id: "researcher", label: "问题研究", src: researcher },
-  { id: "release-engineer", label: "发布工程", src: releaseEngineer },
-  { id: "operations-lead", label: "运营负责人", src: operationsLead },
+  { id: "community-operator", labelKey: "avatar.presetCommunity", src: communityOperator },
+  { id: "researcher", labelKey: "avatar.presetResearcher", src: researcher },
+  { id: "release-engineer", labelKey: "avatar.presetReleaseEngineer", src: releaseEngineer },
+  { id: "operations-lead", labelKey: "avatar.presetOperationsLead", src: operationsLead },
 ] as const;
 
 export type AvatarValue = string | undefined;

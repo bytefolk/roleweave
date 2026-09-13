@@ -382,6 +382,7 @@ export const zhCatalog: Record<string, string> = {
   "hire.waitingProposal": "等待 Agent 提案",
   "hire.idAutoNote": "岗位 ID 由平台根据姓名自动生成。",
   "hire.capabilityTitle": "附加能力与授权",
+  "hire.capabilityStep": "03 · 能力装配",
   "hire.capabilityHint": "先绑定平台能力，再按最小权限开放调用；绑定不会自动获得文件或网络权限。",
   "hire.capabilityCount": "项已选",
   "hire.skillsTitle": "Skills",
@@ -420,6 +421,24 @@ export const zhCatalog: Record<string, string> = {
   "hire.budgetExceeded": "每日预算不能超过预算池剩余 {remaining} tokens",
   "hire.taskBudgetExceeded": "每任务预算不能超过每日预算",
   "hire.finalGate": "提交后平台会校验并创建岗位",
+
+  // 员工头像
+  "avatar.title": "员工头像",
+  "avatar.description": "AI 生成、上传或选择预设。",
+  "avatar.auto": "自动",
+  "avatar.autoAria": "使用自动头像",
+  "avatar.generateAria": "用 AI 生成透明头像",
+  "avatar.generating": "生成中",
+  "avatar.upload": "上传",
+  "avatar.fileWarning": "请选择 PNG、JPG 或 WebP 格式，且不超过 512 KB。",
+  "avatar.missingBrief": "先填写员工名称或职责，再生成头像。",
+  "avatar.generated": "已生成透明头像。",
+  "avatar.generationFailed": "生成失败。请检查本地 AI 图片服务配置，或直接上传头像。",
+  "avatar.selectPreset": "选择{name}头像",
+  "avatar.presetCommunity": "社区运营",
+  "avatar.presetResearcher": "问题研究",
+  "avatar.presetReleaseEngineer": "发布工程",
+  "avatar.presetOperationsLead": "运营负责人",
 
   // 群聊
   "grp.more": "等 {count} 人",

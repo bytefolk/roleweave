@@ -82,7 +82,7 @@ export function EmployeeSettings({ id, positions, targets, isOwner, descendantCo
       if (res.status !== 200 || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/png;base64,")) throw new Error();
       onAvatarChange(imageDataUrl);
     } catch {
-      setAvatarError("生成失败。请检查本地 AI 图片服务配置，或直接上传头像。");
+      setAvatarError(t("avatar.generationFailed"));
     } finally {
       setAvatarGenerating(false);
     }
@@ -91,11 +91,11 @@ export function EmployeeSettings({ id, positions, targets, isOwner, descendantCo
     {error ? <Alert type="error" title={t("manage.failed")} /> : null}
     {loading ? <Spin /> : data ? <>
       <div className="owb-management-identity"><PositionAvatar id={id} name={data.name} avatars={{ [id]: avatar }} /><div><h2>{data.name}</h2><p>{data.description}</p></div></div>
-      <section className="owb-management-avatar"><h3>员工头像</h3><p>AI 生成、上传或选择预设。</p>{avatarError ? <p className="owb-management-avatar__error">{avatarError}</p> : null}
+      <section className="owb-management-avatar"><h3>{t("avatar.title")}</h3><p>{t("avatar.description")}</p>{avatarError ? <p className="owb-management-avatar__error">{avatarError}</p> : null}
         <div className="owb-management-avatar__choices">
-          <button type="button" className="owb-management-avatar__generate" onClick={() => void generateAvatar()} disabled={avatarGenerating} aria-label="AI 生成透明头像"><Sparkles size={16} /><span>{avatarGenerating ? "生成中" : "AI"}</span></button>
-          {AVATAR_PRESETS.map((preset) => <button key={preset.id} type="button" className={avatar === preset.id ? "is-selected" : undefined} onClick={() => onAvatarChange(preset.id)} aria-label={`选择${preset.label}头像`}><img src={preset.src} alt="" /></button>)}
-          <label className="owb-management-avatar__upload"><span>上传</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => chooseAvatarFile(event.target.files?.[0])} /></label>
+          <button type="button" className="owb-management-avatar__generate" onClick={() => void generateAvatar()} disabled={avatarGenerating} aria-label={t("avatar.generateAria")}><Sparkles size={16} /><span>{avatarGenerating ? t("avatar.generating") : "AI"}</span></button>
+          {AVATAR_PRESETS.map((preset) => <button key={preset.id} type="button" className={avatar === preset.id ? "is-selected" : undefined} onClick={() => onAvatarChange(preset.id)} aria-label={t("avatar.selectPreset", { name: t(preset.labelKey) })}><img src={preset.src} alt="" /></button>)}
+          <label className="owb-management-avatar__upload"><span>{t("avatar.upload")}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => chooseAvatarFile(event.target.files?.[0])} /></label>
         </div>
       </section>
       <section><h3>{t("manage.model")}</h3><p className="owb-muted">{engine}</p>

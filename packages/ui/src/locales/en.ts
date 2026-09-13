@@ -379,6 +379,7 @@ export const enCatalog: Record<string, string> = {
   "hire.waitingProposal": "Waiting for proposal",
   "hire.idAutoNote": "The platform generates the position ID from the name.",
   "hire.capabilityTitle": "Additional capabilities",
+  "hire.capabilityStep": "03 · Capability setup",
   "hire.capabilityHint": "Bind platform capabilities first, then grant the minimum invocation access; binding never grants file or network access by itself.",
   "hire.capabilityCount": "selected",
   "hire.skillsTitle": "Skills",
@@ -417,6 +418,24 @@ export const enCatalog: Record<string, string> = {
   "hire.budgetExceeded": "Daily budget cannot exceed the remaining pool of {remaining} tokens",
   "hire.taskBudgetExceeded": "Per-task budget cannot exceed the daily budget",
   "hire.finalGate": "The platform validates and creates the role after submit",
+
+  // Employee avatars
+  "avatar.title": "Employee avatar",
+  "avatar.description": "Generate with AI, upload, or choose a preset.",
+  "avatar.auto": "Auto",
+  "avatar.autoAria": "Use the automatic avatar",
+  "avatar.generateAria": "Generate a transparent avatar with AI",
+  "avatar.generating": "Generating",
+  "avatar.upload": "Upload",
+  "avatar.fileWarning": "Choose a PNG, JPG, or WebP image no larger than 512 KB.",
+  "avatar.missingBrief": "Add an employee name or responsibilities before generating an avatar.",
+  "avatar.generated": "Transparent avatar generated.",
+  "avatar.generationFailed": "Generation failed. Check the local AI image configuration or upload an avatar.",
+  "avatar.selectPreset": "Choose the {name} avatar",
+  "avatar.presetCommunity": "community operator",
+  "avatar.presetResearcher": "researcher",
+  "avatar.presetReleaseEngineer": "release engineer",
+  "avatar.presetOperationsLead": "operations lead",
 
   // Groups
   "grp.more": "({count} members)",
