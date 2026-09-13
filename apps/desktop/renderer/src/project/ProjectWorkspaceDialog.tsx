@@ -4,11 +4,13 @@ import { ArrowLeft, Check, FolderOpen, FolderPlus } from "lucide-react";
 import type { WorkspaceCreateResponse, WorkspaceInfoResponse } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
 import { ProjectCreateForm } from "./ProjectCreateForm";
+import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
 
 interface ProjectWorkspaceDialogProps {
   open: boolean;
   workspace: WorkspaceInfoResponse | null;
   positionCount: number | null;
+  engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
   disabled?: boolean;
   onClose: () => void;
   onOpenWorkspace: () => void;
@@ -66,6 +68,7 @@ export function ProjectWorkspaceDialog({
   open,
   workspace,
   positionCount,
+  engineAvailability,
   disabled = false,
   onClose,
   onOpenWorkspace,
@@ -122,6 +125,7 @@ export function ProjectWorkspaceDialog({
           </button>
           <p className="owb-project-dialog__description">{t("project.createDescription")}</p>
           <ProjectCreateForm
+            engineAvailability={engineAvailability}
             onCancel={() => setPage("choose")}
             onCreated={(created) => {
               onCreated(created);

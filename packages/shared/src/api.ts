@@ -22,6 +22,8 @@ export const routes = {
   orgRestore: "/org/restore",
   orgUndo: "/org/undo",
   hire: "/hire",
+  /** One local-proxy image generation request for an employee portrait. */
+  avatarGenerate: "/avatar/generate",
   positions: "/positions",
   reports: "/reports",
   sessions: "/sessions",

@@ -719,6 +719,7 @@ function turnRunQoder(workspaceDir, positionId, input) {
       "-w", workspaceDir,
       "--agent", positionId,
       "--permission-mode", permissionMode,
+      ...(process.env.ROLEWEAVE_TURN_MODEL ? ["--model", process.env.ROLEWEAVE_TURN_MODEL] : []),
       input || `Execute your position duties for this turn.`,
     ];
     let child;
@@ -858,6 +859,7 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     "--no-chrome",
     "--no-session-persistence",
     "--max-turns", "1",
+    ...(process.env.ROLEWEAVE_TURN_MODEL ? ["--model", process.env.ROLEWEAVE_TURN_MODEL] : []),
   ];
 
   let child;
@@ -1205,7 +1207,7 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
     }
   }
 
-  const model = validatedCodexModel(process.env.OPENAI_MODEL);
+  const model = validatedCodexModel(process.env.ROLEWEAVE_TURN_MODEL ?? process.env.OPENAI_MODEL);
   if (model === null) {
     fail("codex.model_invalid", "OPENAI_MODEL must be a bounded model identifier", false);
     return;

@@ -1,16 +1,19 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Empty, Select } from "antd";
-import { ArrowUpRight, Cloud, FileText, UserRound } from "lucide-react";
+import { Button, Empty, Select } from "antd";
+import { ArrowUpRight, Cloud, FileText, History, Library, UserRound } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type { PositionCardData } from "@roleweave/ui";
 import type { ContextSourceSummary } from "@roleweave/shared";
 import type { PositionMentionOption } from "../turns/types";
 import { DocsModule } from "../docs/DocsModule";
 import { DriveModule } from "../drive/DriveModule";
+import { SessionMemory } from "./SessionMemory";
 
-export type MemorySource = "docs" | "drive";
+export type MemorySource = "docs" | "shared" | "sessions" | "drive";
 
 export interface MemoryModuleProps {
+  onCollaborate?: () => void;
+  onContinue?: (positionId: string, sessionId: string) => void;
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
   selectedPositionId: string | null;
@@ -23,6 +26,8 @@ function sourceKind(source: MemorySource): ContextSourceSummary["kind"] {
 }
 
 function sourceTitle(source: MemorySource, t: ReturnType<typeof useT>): string {
+  if (source === "shared") return t("memory.shared");
+  if (source === "sessions") return t("memory.sessions");
   if (source === "docs") return t("memory.docsTitle");
   return t("memory.driveTitle");
 }
@@ -47,7 +52,7 @@ function SourceCard({
   onSelect: () => void;
 }) {
   const t = useT();
-  const Icon = source === "docs" ? FileText : Cloud;
+  const Icon = source === "docs" ? FileText : source === "shared" ? Library : source === "sessions" ? History : Cloud;
   const count = summary?.itemCount === undefined
     ? null
     : t("memory.count", { count: summary.itemCount });
@@ -69,7 +74,7 @@ function SourceCard({
       </span>
       <span className={`owb-memory-source-card__status is-${summary?.state ?? "unknown"}`}>
         <i aria-hidden="true" />
-        {sourceStatus(summary, t)}
+        {source === "shared" ? t("memory.teamScope") : source === "sessions" ? t("memory.sessionScope") : sourceStatus(summary, t)}
       </span>
       <ArrowUpRight aria-hidden="true" size={15} className="owb-memory-source-card__arrow" />
     </button>
@@ -82,6 +87,8 @@ export function MemoryModule({
   selectedPositionId,
   position,
   initialSource = "docs",
+  onCollaborate,
+  onContinue,
 }: MemoryModuleProps) {
   const t = useT();
   const moduleRef = useRef<HTMLElement>(null);
@@ -92,11 +99,12 @@ export function MemoryModule({
   const [activeSource, setActiveSource] = useState<MemorySource>(initialSource);
 
   useEffect(() => {
-    if (selectedPositionId !== null) setPositionId(selectedPositionId);
+    setPositionId(selectedPositionId);
   }, [selectedPositionId]);
 
   useEffect(() => {
     let cancelled = false;
+    setPositionData(null);
     if (positionId === null) {
       setPositionData(null);
       return () => {
@@ -119,7 +127,7 @@ export function MemoryModule({
       if (cancelled || response.status !== 200) return;
       const body = response.body as { position?: PositionCardData };
       setPositionData(body.position ?? null);
-    });
+    }).catch(() => { if (!cancelled) setPositionData(null); });
     return () => {
       cancelled = true;
     };
@@ -165,6 +173,7 @@ export function MemoryModule({
       <header className="owb-memory-module__header">
         <div className="owb-memory-module__title">
           <h1>{t("memory.title")}</h1>
+          <p>{t("memory.subtitle")}</p>
         </div>
         <label className="owb-memory-module__picker">
           <UserRound aria-hidden="true" size={14} />
@@ -180,6 +189,7 @@ export function MemoryModule({
             popupMatchSelectWidth={false}
           />
         </label>
+        {onCollaborate ? <Button onClick={onCollaborate}>{t("memory.collaborate")}</Button> : null}
       </header>
 
       <section className="owb-memory-sources" aria-labelledby="owb-memory-sources-title">
@@ -187,11 +197,11 @@ export function MemoryModule({
           <h2 id="owb-memory-sources-title">{t("memory.sourcesTitle")}</h2>
         </div>
         <div className="owb-memory-sources__grid">
-          {(["docs", "drive"] as const).map((source) => (
+          {(["docs", "shared", "sessions", "drive"] as const).map((source) => (
             <SourceCard
               key={source}
               source={source}
-              summary={summaries.get(sourceKind(source))}
+              summary={source === "docs" || source === "drive" ? summaries.get(sourceKind(source)) : undefined}
               active={activeSource === source}
               onSelect={() => setActiveSource(source)}
             />
@@ -200,14 +210,18 @@ export function MemoryModule({
       </section>
 
       <section className="owb-memory-workspace" aria-label={t("memory.detailAria")}>
-        {activeSource === "docs" ? (
+        <div className="owb-memory-section-heading"><h2>{sourceTitle(activeSource, t)}</h2><p>{t(`memory.scope.${activeSource}`)}</p></div>
+        {activeSource === "docs" || activeSource === "shared" ? (
           <DocsModule
+            key={activeSource}
+            surface={activeSource === "shared" ? "plane" : "position"}
             embedded
             workspaceOpen={workspaceOpen}
             positions={positions}
             selectedPositionId={positionId}
           />
         ) : null}
+        {activeSource === "sessions" ? <SessionMemory key={positionId} positionId={positionId} onContinue={onContinue} /> : null}
         {activeSource === "drive" ? <DriveModule embedded workspaceOpen={workspaceOpen} /> : null}
       </section>
     </section>

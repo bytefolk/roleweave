@@ -20,6 +20,8 @@ export type GroupExecutionMode = "parallel" | "relay";
 export interface GroupSpawn {
   turnId: string;
   positionId: string;
+  /** Additive durable attribution. Missing only on pre-binding accepted messages. */
+  engine?: TurnEngine;
 }
 
 export interface GroupConversation {

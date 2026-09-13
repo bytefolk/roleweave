@@ -281,7 +281,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
                 </span>
                 <span className="owb-tc-head__eng">
                   <EngineIcon engine={turn.engine} />
-                  {engineLabel(turn.engine)}
+                  {turn.model ?? engineLabel(turn.engine)}
                 </span>
                 {isProvisional ? (
                   <span className="owb-tc-head__provisional" aria-label={t("turn.provisionalTitle")}>

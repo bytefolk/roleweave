@@ -1,6 +1,7 @@
 import { Select as AntSelect } from "antd";
 import { useCallback } from "react";
 import { useT } from "@roleweave/ui";
+import { resolveAgentEngine, visibleAgentHosts } from "./agent-host";
 import { EngineIcon } from "./engine-icon";
 import type { TurnEngine, TurnEngineAvailability } from "./types";
 
@@ -23,19 +24,10 @@ const ENGINE_LABEL: Record<TurnEngine, string> = {
   "codex-local": "Codex",
 };
 
-/** Engine brand names are product names, rather than UI copy. Only the local
- * sign-in suffix is translated. */
+/** Engine brand names are product names. Local sign-in is a transport detail,
+ * not a second agent choice an operator needs to reason about. */
 export function useEngineLabel(): (engine: TurnEngine) => string {
-  const t = useT();
-  return useCallback(
-    (engine: TurnEngine) =>
-      engine === "claude-local"
-        ? `Claude Code · ${t("turn.claudeLocalSuffix")}`
-        : engine === "codex-local"
-          ? `Codex · ${t("turn.codexLocalSuffix")}`
-          : ENGINE_LABEL[engine],
-    [t],
-  );
+  return useCallback((engine: TurnEngine) => ENGINE_LABEL[engine], []);
 }
 
 function engineSelectOptions(
@@ -43,28 +35,26 @@ function engineSelectOptions(
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>,
   labelOf: (engine: TurnEngine) => string,
 ) {
-  return engines.map((candidate) => ({
+  return visibleAgentHosts(engines).map((host) => {
+    const candidate = resolveAgentEngine(host, engineAvailability);
+    return {
     value: candidate,
     label: (
       <span className="owb-engine-option">
         <EngineIcon engine={candidate} />
         {labelOf(candidate)}
-        {engineAvailability[candidate].ready
-          ? " · Configured"
-          : engineAvailability[candidate].configured
-            ? " · Blocked"
-            : " · Idle"}
       </span>
     ),
-  }));
+    };
+  });
 }
 
 function isTurnEngine(value: unknown): value is TurnEngine {
   return typeof value === "string" && value in ENGINE_LABEL;
 }
 
-/** The trigger omits the availability suffix; the popup keeps it, while the
- * control itself remains compact enough for a task-focused toolbar. */
+/** The control only names the product; health and credential transport are
+ * not a second configuration dimension for operators. */
 function engineTriggerLabel(engine: TurnEngine, labelOf: (engine: TurnEngine) => string) {
   return (
     <span className="owb-engine-option">

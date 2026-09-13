@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Empty, Input, Modal, Select, Tabs, message } from "antd";
 import { useT } from "@roleweave/ui";
 import { Plus } from "lucide-react";
@@ -25,6 +25,7 @@ import { DocsPanel } from "./DocsPanel";
  *    unconfigured state instead of pretending everything is fine.
  */
 export interface DocsModuleProps {
+  surface?: "position" | "plane";
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
   selectedPositionId: string | null;
@@ -56,18 +57,27 @@ function apiErrorCode(body: unknown): string | null {
   return null;
 }
 
-export function DocsModule({ workspaceOpen, positions, selectedPositionId, embedded = false }: DocsModuleProps) {
+export function DocsModule({ workspaceOpen, positions, selectedPositionId, embedded = false, surface }: DocsModuleProps) {
   const t = useT();
   const [positionId, setPositionId] = useState<string | null>(selectedPositionId);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
+  const [createContent, setCreateContent] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const createVersion = useRef(0);
 
   useEffect(() => {
-    if (selectedPositionId !== null) setPositionId(selectedPositionId);
+    setPositionId(selectedPositionId);
   }, [selectedPositionId]);
+
+  useEffect(() => {
+    createVersion.current += 1;
+    setCreateOpen(false); setCreating(false); setCreateError(null);
+    setCreateName(""); setCreateContent("");
+    return () => { createVersion.current += 1; };
+  }, [positionId]);
 
   const listDocs = useCallback(async (id: string): Promise<DocsFileListResponse> => {
     const res = await window.owb.positionDocs(id);
@@ -122,9 +132,12 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
       return;
     }
     setCreating(true);
+    const version = createVersion.current;
     setCreateError(null);
     try {
-      const res = await window.owb.createPositionDoc({ positionId, path: name, content: "" });
+      const docPath = embedded && !name.includes("/") ? `knowledge/${name}` : name;
+      const res = await window.owb.createPositionDoc({ positionId, path: docPath, content: createContent });
+      if (version !== createVersion.current) return;
       if (res.status >= 400 || !res.body) {
         throw new Error(apiErrorMessage(res.body, t("docs.createFail")));
       }
@@ -132,11 +145,12 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
       message.success(t("docs.created", { path: created.path }));
       setCreateOpen(false);
       setCreateName("");
+      setCreateContent("");
       setReloadToken((token) => token + 1);
     } catch (error) {
-      setCreateError(error instanceof Error ? error.message : String(error));
+      if (version === createVersion.current) setCreateError(error instanceof Error ? error.message : String(error));
     } finally {
-      setCreating(false);
+      if (version === createVersion.current) setCreating(false);
     }
   };
 
@@ -151,10 +165,10 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
   const positionSurface = (
     <div className="owb-docs-module__position-surface">
       <div className="owb-docs-module__picker">
-        <div className="owb-docs-module__picker-copy">
+        {!embedded ? <div className="owb-docs-module__picker-copy">
           <span>{t("docs.pickerTitle")}</span>
-        </div>
-        <Select
+        </div> : <span className="owb-docs-module__picker-copy">{t("memory.knowledgeHint")}</span>}
+        {!embedded ? <Select
           className="owb-docs-module__select"
           aria-label={t("docs.pickPosition")}
           placeholder={t("docs.pickPosition")}
@@ -165,7 +179,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
           onChange={(value) => setPositionId(value ?? null)}
           options={positions.map((position) => ({ value: position.id, label: position.name }))}
           popupMatchSelectWidth={false}
-        />
+        /> : null}
         <Button
           className="owb-docs-module__create"
           disabled={positionId === null}
@@ -178,7 +192,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
           {t("docs.create")}
         </Button>
       </div>
-      <DocsPanel positionId={positionId} listDocs={listDocs} readDoc={readDoc} reloadToken={reloadToken} />
+      <DocsPanel positionId={positionId} listDocs={listDocs} readDoc={readDoc} reloadToken={reloadToken} knowledgeFirst={embedded} />
     </div>
   );
 
@@ -189,7 +203,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
           <h1>{t("docs.moduleTitle")}</h1>
         </header>
       ) : null}
-      <Tabs
+      {surface === "position" ? positionSurface : surface === "plane" ? <DocPlanePanel listDocs={docPlaneList} readDoc={docPlaneDetail} /> : <Tabs
         defaultActiveKey="position"
         items={[
           { key: "position", label: t("docs.moduleTitle"), children: positionSurface },
@@ -199,7 +213,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
             children: <DocPlanePanel listDocs={docPlaneList} readDoc={docPlaneDetail} />,
           },
         ]}
-      />
+      />}
       <Modal
         title={t("docs.create")}
         open={createOpen}
@@ -209,7 +223,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
         onOk={submitCreate}
         onCancel={() => setCreateOpen(false)}
       >
-        <p className="owb-docs-module__create-hint">{t("docs.noEditorHint")}</p>
+        <p className="owb-docs-module__create-hint">{t("memory.createHint")}</p>
         <Input
           aria-label={t("docs.fileNameAria")}
           placeholder="handbook.md"
@@ -217,6 +231,7 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
           onChange={(event) => setCreateName(event.target.value)}
           onPressEnter={submitCreate}
         />
+        <Input.TextArea style={{ marginTop: 12 }} rows={8} aria-label={t("memory.content")} placeholder={t("memory.contentHint")} value={createContent} onChange={(event) => setCreateContent(event.target.value)} />
         {createError !== null ? <Alert type="error" message={createError} /> : null}
       </Modal>
     </section>

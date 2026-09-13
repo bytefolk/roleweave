@@ -7,6 +7,7 @@
 
 :root,
 [data-theme] {
+  --ui-font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   --ui-brand: var(--ui-primary);
   --ui-brand-soft: var(--ui-primary-soft);
   --ui-brand-blue: var(--ui-info);
@@ -19,4 +20,27 @@
   --owb-duration-mid: var(--ui-duration-normal);
   --owb-duration-slow: var(--ui-duration-normal);
   --owb-ease-out: var(--ui-ease);
+}
+
+/* The installed provider supports light/dark; the product palette also needs
+ * concrete CSS tokens for shell components and portaled menus. */
+[data-ui-theme="mint"][data-theme="light"] {
+  --ui-primary: #287b64;
+  --ui-primary-soft: #edf5f1;
+  --ui-selection: #e5f0ea;
+  --ui-focus: #287b64;
+  --ui-navigation: #f5f7f6;
+  --ui-navigation-hover: #eaf0ed;
+  --ui-border: #e1e6e3;
+  --ui-border-strong: #b9c6bf;
+}
+[data-ui-theme="mint"][data-theme="dark"] {
+  --ui-primary: #64bca2;
+  --ui-primary-soft: #1b3029;
+  --ui-selection: #243a31;
+  --ui-focus: #64bca2;
+  --ui-navigation-hover: #28332e;
+}
+html, body, .owb-app, button, input, textarea, select {
+  font-family: var(--ui-font-sans);
 }

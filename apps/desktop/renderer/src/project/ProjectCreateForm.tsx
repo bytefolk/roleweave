@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
-import { Button as AntButton, Input } from "antd";
+import { Button as AntButton, Input, Select } from "antd";
 import { FolderPlus } from "lucide-react";
 import type { WorkspaceCreateResponse } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
+import { AGENT_HOST_LABEL, AGENT_HOSTS, defaultAgentHost, resolveAgentEngine, type AgentHost } from "../turns/agent-host";
+import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
 
 interface ProjectCreateFormProps {
   onCancel: () => void;
   onCreated: (workspace: WorkspaceCreateResponse) => void;
+  engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
 }
 
 function slugify(value: string): string {
@@ -30,13 +33,18 @@ function slugify(value: string): string {
 }
 
 /** The creation form is intentionally independent from the workspace picker. */
-export function ProjectCreateForm({ onCancel, onCreated }: ProjectCreateFormProps) {
+export function ProjectCreateForm({ onCancel, onCreated, engineAvailability }: ProjectCreateFormProps) {
   const t = useT();
   const [business, setBusiness] = useState("");
   const [description, setDescription] = useState("");
+  const [agentHost, setAgentHost] = useState<AgentHost>(() => defaultAgentHost(engineAvailability));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generatedId = useMemo(() => slugify(business), [business]);
+  const agentEngine = useMemo(
+    () => resolveAgentEngine(agentHost, engineAvailability),
+    [agentHost, engineAvailability],
+  );
   const formValid = business.trim().length > 0;
 
   const create = async () => {
@@ -48,6 +56,7 @@ export function ProjectCreateForm({ onCancel, onCreated }: ProjectCreateFormProp
         projectId: generatedId,
         business: business.trim(),
         description: description.trim(),
+        agentEngine,
       });
       if (!("status" in response)) return;
       if (response.status !== 201) {
@@ -95,6 +104,18 @@ export function ProjectCreateForm({ onCancel, onCreated }: ProjectCreateFormProp
           placeholder={t("project.descriptionPh")}
           onChange={(event) => setDescription(event.target.value)}
         />
+      </div>
+
+      <div className="owb-project-create-form__field">
+        <label htmlFor="owb-project-owner-agent">{t("project.ownerAgent")}</label>
+        <Select
+          id="owb-project-owner-agent"
+          aria-label={t("project.ownerAgent")}
+          value={agentHost}
+          onChange={(value) => setAgentHost(value as AgentHost)}
+          options={AGENT_HOSTS.map((host) => ({ value: host, label: AGENT_HOST_LABEL[host] }))}
+        />
+        <p>{t("project.ownerAgentHint")}</p>
       </div>
 
       {error ? <p className="owb-project-create-form__error" role="alert">{error}</p> : null}

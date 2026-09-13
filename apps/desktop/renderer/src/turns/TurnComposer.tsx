@@ -1,9 +1,10 @@
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { Button as AntButton, Input } from "antd";
 import { ArrowUp, Square } from "lucide-react";
 import { useT } from "@roleweave/ui";
 
 export interface TurnComposerProps {
+  options?: ReactNode;
   value: string;
   placeholder: string;
   disabledReason: string | null;
@@ -19,6 +20,7 @@ export interface TurnComposerProps {
  * host choices live in the scope bar above the thread, so this remains a
  * focused writing surface instead of a mixed settings form. */
 export function TurnComposer({
+  options,
   value,
   placeholder,
   disabledReason,
@@ -37,7 +39,7 @@ export function TurnComposer({
 
   return (
     <form className="owb-turn-composer" onSubmit={submit}>
-      <label htmlFor="owb-turn-input">{t("turn.compose")}</label>
+      <label className="owb-sr-only" htmlFor="owb-turn-input">{t("turn.compose")}</label>
       <div className="owb-turn-composer__surface">
         <Input.TextArea
           id="owb-turn-input"
@@ -76,6 +78,7 @@ export function TurnComposer({
           />
         )}
       </div>
+      {options}
       {running || disabledReason ? (
         <p className="owb-turn-composer__hint" role="status">
           {running
@@ -84,7 +87,7 @@ export function TurnComposer({
               : t("turn.running")
             : disabledReason}
         </p>
-      ) : null}
+      ) : <p className="owb-turn-composer__shortcut">{t("turn.keyboardHint")}</p>}
     </form>
   );
 }

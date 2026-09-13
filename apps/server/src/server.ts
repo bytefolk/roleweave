@@ -25,8 +25,9 @@ import {
 } from "./routes/goals.js";
 import { handleHealth } from "./routes/health.js";
 import { handleHirePost } from "./routes/hire.js";
+import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
-import { handlePositionGet } from "./routes/positions.js";
+import { handlePositionGet, handlePositionModel } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
 import {
   handleSessionCreate,
@@ -107,6 +108,10 @@ async function dispatch(
     }
     if (pathname === routes.hire && method === "POST") {
       await handleHirePost(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.avatarGenerate && method === "POST") {
+      await handleAvatarGenerate(req, res);
       return;
     }
     if (pathname === routes.reports && method === "GET") {
@@ -294,6 +299,11 @@ async function dispatch(
     }
     if (pathname === routes.events && method === "GET") {
       handleEvents(ctx, req, res);
+      return;
+    }
+    if (pathname.startsWith(`${routes.positions}/`) && pathname.endsWith("/model") && method === "PATCH") {
+      const id = decodeURIComponent(pathname.slice(routes.positions.length + 1, -6));
+      await handlePositionModel(ctx, req, res, id);
       return;
     }
     if (pathname.startsWith(`${routes.positions}/`) && method === "GET") {

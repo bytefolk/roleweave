@@ -178,10 +178,18 @@ function isGroupMessage(value: unknown): value is GroupMessage {
       record.engine !== undefined &&
       Array.isArray(record.spawns) && record.spawns.length === record.mentions.length &&
       record.spawns.length <= MAX_GROUP_MEMBERS &&
-      record.spawns.every((spawn, index) => spawn !== null && typeof spawn === "object" &&
-        exactKeys(spawn, ["turnId", "positionId"]) &&
-        typeof spawn.turnId === "string" && spawn.turnId.length <= 128 && REF_PATTERN.test(spawn.turnId) &&
-        spawn.positionId === (record.mentions as string[])[index]) &&
+      record.spawns.every((spawn, index) => {
+        if (spawn === null || typeof spawn !== "object" || Array.isArray(spawn)) return false;
+        const candidate = spawn as Record<string, unknown>;
+        // Pre-binding accepted messages have just turnId/positionId. New
+        // messages persist the resolved per-member engine as well.
+        if (!exactKeys(candidate, ["turnId", "positionId"]) && !exactKeys(candidate, ["turnId", "positionId", "engine"])) return false;
+        return (
+          typeof candidate.turnId === "string" && candidate.turnId.length <= 128 && REF_PATTERN.test(candidate.turnId) &&
+          candidate.positionId === (record.mentions as string[])[index] &&
+          (candidate.engine === undefined || (typeof candidate.engine === "string" && turnEngines.includes(candidate.engine as typeof turnEngines[number])))
+        );
+      }) &&
       new Set(record.spawns.map((spawn) => spawn.turnId)).size === record.spawns.length
     )) &&
     parseRfc3339Instant(record.createdAt) !== null

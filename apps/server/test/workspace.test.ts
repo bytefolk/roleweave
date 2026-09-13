@@ -3,6 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import {
+  AGENT_BINDING_RELATIVE_PATH,
+  AGENT_BINDING_SCHEMA_VERSION,
+} from "@roleweave/shared";
 import type { OrgTreeSnapshot } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
@@ -101,12 +105,13 @@ test("workspace: create a blank project with a generated owner and never overwri
       },
     });
     assert.equal(created.status, 201);
-    const createdBody = created.body as { open: boolean; created: boolean; next: string; path: string; owner: string; business: string };
+    const createdBody = created.body as { open: boolean; created: boolean; next: string; path: string; owner: string; business: string; agentEngine: string };
     assert.equal(createdBody.open, true);
     assert.equal(createdBody.created, true);
     assert.equal(createdBody.next, "create_employee");
     assert.equal(createdBody.owner, "content-ops-owner");
     assert.equal(createdBody.business, "内容运营");
+    assert.equal(createdBody.agentEngine, "qoder", "older clients without a choice retain the Qoder default");
 
     const project = path.join(parent, "content-ops");
     assert.equal(createdBody.path, path.join(await fs.realpath(parent), "content-ops"));
@@ -125,6 +130,11 @@ test("workspace: create a blank project with a generated owner and never overwri
     assert.equal(owner.roles.length, 1);
     assert.equal(owner.roles[0]?.id, "content-ops-owner");
     assert.equal(owner.roles[0]?.reportTo, null);
+    assert.deepEqual(
+      JSON.parse(await fs.readFile(path.join(project, "positions", "content-ops-owner", ...AGENT_BINDING_RELATIVE_PATH.split("/")), "utf8")),
+      { schemaVersion: AGENT_BINDING_SCHEMA_VERSION, engine: "qoder" },
+      "the generated project owner gets the same durable default Agent binding as a hired employee",
+    );
 
     const conflict = await api(server.baseUrl, "/workspace/create", {
       method: "POST",
@@ -138,6 +148,38 @@ test("workspace: create a blank project with a generated owner and never overwri
     });
     assert.equal(conflict.status, 409);
     assert.equal((conflict.body as { code: string }).code, "workspace_exists");
+  } finally {
+    await server.close();
+    await fs.rm(parent, { recursive: true, force: true });
+  }
+});
+
+test("workspace: persist the selected Agent for the generated project owner", async () => {
+  const server = await startTestServer();
+  const parent = await fs.mkdtemp(path.join(os.tmpdir(), "owb-project-agent-parent-"));
+  try {
+    const created = await api(server.baseUrl, "/workspace/create", {
+      method: "POST",
+      token: server.token,
+      body: {
+        parentPath: parent,
+        projectId: "release-notes",
+        business: "发布说明",
+        description: "维护发布公告和版本摘要。",
+        agentEngine: "codex-local",
+      },
+    });
+    assert.equal(created.status, 201);
+    const body = created.body as { owner: string; agentEngine: string };
+    assert.equal(body.owner, "release-notes-owner");
+    assert.equal(body.agentEngine, "codex-local");
+    assert.deepEqual(
+      JSON.parse(await fs.readFile(
+        path.join(parent, "release-notes", "positions", body.owner, ...AGENT_BINDING_RELATIVE_PATH.split("/")),
+        "utf8",
+      )),
+      { schemaVersion: AGENT_BINDING_SCHEMA_VERSION, engine: "codex-local" },
+    );
   } finally {
     await server.close();
     await fs.rm(parent, { recursive: true, force: true });

@@ -55,6 +55,10 @@ export const errorCodes = {
   reports_data_invalid: "reports_data_invalid",
   /** POST /hire request shape violates the frozen hire channel contract (#33). */
   hire_request_invalid: "hire_request_invalid",
+  /** Employee avatar request shape is invalid. */
+  avatar_request_invalid: "avatar_request_invalid",
+  /** No image provider has been configured for employee avatar generation. */
+  avatar_generation_unavailable: "avatar_generation_unavailable",
   /** POST /groups request shape violates the S2 group-chat contract (#52). */
   group_request_invalid: "group_request_invalid",
   /** A requested group conversationRef does not exist in the open workspace (#52). */

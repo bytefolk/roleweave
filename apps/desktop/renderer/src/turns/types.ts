@@ -54,6 +54,7 @@ export interface TurnApprovalRequest {
 }
 
 export interface TurnRecord {
+  model?: string;
   /** Renderer-only live/pending projection; never a persisted receipt. */
   provisional?: boolean;
   id: string;

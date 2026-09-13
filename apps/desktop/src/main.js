@@ -70,6 +70,7 @@ const {
   validateDriveUploadRequest,
 } = require("./drive-ipc.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
+const { validateAvatarGenerateRequest } = require("./avatar-ipc.cjs");
 const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 const {
   sessionListPath,
@@ -423,6 +424,26 @@ ipcMain.handle("owb:position:get", async (_event, positionId) => {
     return { status: 400, body: { code: "manifest_invalid", message: "positionId required" } };
   }
   return apiRequest(`/positions/${encodeURIComponent(positionId)}`);
+});
+
+ipcMain.handle("owb:avatar:generate", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) {
+    return { status: 403, body: { code: "avatar_request_invalid", message: "Untrusted sender", retryable: false } };
+  }
+  const validated = validateAvatarGenerateRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/avatar/generate", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:model", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  if (!request || typeof request !== "object" || Array.isArray(request) ||
+      Object.keys(request).length !== 2 || typeof request.positionId !== "string" ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(request.positionId) ||
+      typeof request.model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(request.model)) {
+    return { status: 400, body: { message: "Invalid employee model selection" } };
+  }
+  return apiRequest(`/positions/${encodeURIComponent(request.positionId)}/model`, { method: "PATCH", body: { model: request.model } });
 });
 
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.

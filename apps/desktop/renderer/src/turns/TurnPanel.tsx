@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MessagesSquare } from "lucide-react";
-import type { WorkbenchSession } from "@roleweave/shared";
+import type { EmployeeModelConfig, WorkbenchSession } from "@roleweave/shared";
+import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
-import { ConversationControls } from "./ConversationControls";
-import { SessionContext } from "./SessionContext";
 import { TurnComposer } from "./TurnComposer";
 import { useEngineLabel } from "./engine-select";
 import { TurnThread } from "./TurnThread";
+import { PositionAvatar } from "../PositionAvatar";
 import type {
   CreateTurnRequest,
   PositionMentionOption,
@@ -18,6 +18,10 @@ import type {
 export { EngineSelect, useEngineLabel } from "./engine-select";
 
 export interface TurnPanelProps {
+  modelConfig?: EmployeeModelConfig;
+  avatarUrls?: Record<string, string>;
+  modelSaving?: boolean;
+  onSelectModel?: (model: string) => void | Promise<void>;
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
   selectedPositionId: string | null;
@@ -30,8 +34,12 @@ export interface TurnPanelProps {
   sessions?: WorkbenchSession[];
   selectedSessionId?: string | null;
   sessionBusy?: boolean;
-  onSelectPosition: (positionId: string) => void;
-  onSelectEngine: (engine: TurnEngine) => void;
+  /** Selection happens in the organization tree. Kept optional for callers
+   * that share the old panel contract; this panel deliberately has no second
+   * recipient picker. */
+  onSelectPosition?: (positionId: string) => void;
+  /** An employee's agent is bound at creation time, not selected per turn. */
+  onSelectEngine?: (engine: TurnEngine) => void;
   onCreateTurn: (request: CreateTurnRequest) => void | boolean | Promise<void | boolean>;
   /** Operator interrupt for the in-flight turn of the selected position. */
   onCancelTurn?: (positionId: string) => void | Promise<void>;
@@ -47,6 +55,11 @@ export interface TurnPanelProps {
 }
 
 export function TurnPanel({
+  modelConfig,
+  avatarUrls,
+  modelSaving = false,
+  onSelectModel,
+  onSetSessionContext,
   workspaceOpen,
   positions,
   selectedPositionId,
@@ -59,16 +72,10 @@ export function TurnPanel({
   sessions,
   selectedSessionId = null,
   sessionBusy = false,
-  onSelectPosition,
-  onSelectEngine,
   onCreateTurn,
   onCancelTurn,
   onVerdictTurn,
   decidedApprovalIds,
-  onSelectSession,
-  onCreateSession,
-  onRotateSession,
-  onSetSessionContext,
 }: TurnPanelProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
@@ -101,11 +108,9 @@ export function TurnPanel({
 
   const sessionMode = sessions !== undefined;
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
-  // Never label an older receipt as the latest call when the latest durable
-  // record has no receipt. In-flight overlays are not persisted call facts.
-  const lastContext = turns.filter((turn) => turn.provisional !== true).at(-1)?.threadContext;
 
   const disabledReason = useMemo(() => {
+    if (modelSaving) return t("model.saving");
     if (!workspaceOpen) return t("turn.emptyOpenFirst");
     if (positions.length === 0) return t("turn.noPositions");
     if (!selectedPosition) return t("turn.emptyPick");
@@ -117,7 +122,7 @@ export function TurnPanel({
     }
     if (busy || employeeBusy || sending || sessionBusy) return t("turn.updating");
     return null;
-  }, [busy, employeeBusy, engine, engineAvailability, engineLabel, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
+  }, [busy, employeeBusy, engine, engineAvailability, engineLabel, modelSaving, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
 
   const dispatchTurn = async (): Promise<void> => {
     const trimmed = input.trim();
@@ -149,32 +154,15 @@ export function TurnPanel({
   return (
     <section className="owb-turn-panel owb-panel" aria-label={t("turn.panelAria")}>
       <header className="owb-turn-panel__header owb-panel-head">
-        <div className="owb-panel-head__main">
-          <h2>
-            <MessagesSquare aria-hidden="true" size={15} />
-            {t("turn.title")}
-          </h2>
+        <div className="owb-conversation-identity">
+          {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
+          <div className="owb-conversation-identity__copy">
+            <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
+            <p>{selectedPosition ? engineLabel(engine) : t("turn.pickEmployeeHint")}</p>
+          </div>
         </div>
+        {selectedPosition ? <span className="owb-conversation-kind">{t("turn.title")}</span> : null}
       </header>
-
-      <ConversationControls
-        workspaceOpen={workspaceOpen}
-        positions={positions}
-        selectedPositionId={selectedPositionId}
-        engine={engine}
-        engineAvailability={engineAvailability}
-        sessions={sessions}
-        selectedSessionId={selectedSessionId}
-        busy={busy}
-        employeeBusy={employeeBusy}
-        sending={sending}
-        sessionBusy={sessionBusy}
-        onSelectPosition={onSelectPosition}
-        onSelectEngine={onSelectEngine}
-        onSelectSession={onSelectSession}
-        onCreateSession={onCreateSession}
-        onRotateSession={onRotateSession}
-      />
 
       <TurnThread
         turns={turns}
@@ -189,17 +177,11 @@ export function TurnPanel({
         decidedApprovalIds={decidedApprovalIds}
       />
 
-      {sessionMode && selectedSession ? (
-        <SessionContext
-          session={selectedSession}
-          turnsCount={turns.length}
-          lastContext={lastContext}
-          disabled={busy || employeeBusy || sending || sessionBusy}
-          onSetContext={onSetSessionContext}
-        />
-      ) : null}
-
       <TurnComposer
+        options={selectedPosition && (modelConfig || onSetSessionContext) ? <ConversationOptions
+          config={modelConfig} saving={modelSaving} disabled={busy || employeeBusy || sending || sessionBusy}
+          session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
+        /> : undefined}
         value={input}
         placeholder={selectedPosition ? t("turn.composeTo", { name: selectedPosition.name }) : t("turn.composePlaceholder")}
         disabledReason={disabledReason}

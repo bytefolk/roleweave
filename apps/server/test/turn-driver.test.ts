@@ -23,7 +23,7 @@ async function fixtureCli(source: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(FIXTURE_TMPDIR, "owb-turn-driver-"));
   const file = path.join(dir, "fixture.mjs");
   await fs.writeFile(file, source, { mode: 0o600 });
-  return `${process.execPath} ${file}`;
+  return `${JSON.stringify(process.execPath)} ${JSON.stringify(file)}`;
 }
 
 async function waitForFixtureReady(file: string, timeoutMs: number): Promise<string> {
@@ -60,6 +60,28 @@ test("turn driver uses stdin, exact turn argv, and the selected engine environme
   });
   assert.equal(result.status, "trusted");
   assert.equal(result.events.length, 2);
+});
+
+test("per-employee models cross only the bundled adapter boundary for every Agent", async () => {
+  const dir = await fs.mkdtemp(path.join(FIXTURE_TMPDIR, "owb-model-driver-"));
+  const entry = path.join(dir, "fixture.mjs");
+  try {
+    for (const engine of ["qoder", "claude-local", "codex-local"] as const) {
+      for (const bundled of [true, false]) {
+        await fs.writeFile(entry, `
+          for await (const chunk of process.stdin) {}
+          if (process.env.ROLEWEAVE_TURN_MODEL !== ${JSON.stringify(bundled ? "economy-test" : undefined)}) process.exit(8);
+          if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== ${JSON.stringify(engine)}) process.exit(9);
+          const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+          console.log(JSON.stringify({ ...base, type: "run.started" }));
+          console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+        `);
+        const driver = new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(entry)}`, 120_000, bundled);
+        const result = await driver.turnRun({ workspace: "/workspace", positionId: "repo-owner", engine, model: "economy-test", envelope: ENVELOPE });
+        assert.equal(result.status, "trusted", `${engine}, bundled=${bundled}: ${result.diagnostic}`);
+      }
+    }
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
 
 test("a cancellation delivered at abort registration never starts the engine process", async () => {
@@ -256,7 +278,7 @@ test("an invalid bundled Qoder permission mode reaches the adapter and fails wit
     process.env.ORG_WORKBENCH_QODER_BIN = process.execPath;
     process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE = "unrestricted";
     const result = await new DigitalEmployeeCliDriver(
-      `${process.execPath} ${adapter}`,
+      `${JSON.stringify(process.execPath)} ${JSON.stringify(adapter)}`,
       120_000,
       true,
     ).turnRun({

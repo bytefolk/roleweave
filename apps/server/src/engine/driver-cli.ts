@@ -296,12 +296,13 @@ function parseEngineEvent(line: string): EngineEvent {
   }
 }
 
-function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): NodeJS.ProcessEnv {
+function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, model?: string): NodeJS.ProcessEnv {
   const source = process.env;
   const allowed = ["PATH", "HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "SHELL"] as const;
   const environment: NodeJS.ProcessEnv = {
     DIGITAL_EMPLOYEE_ENGINE_MODEL: engine,
   };
+  if (bundledElectronEngine && model) environment.ROLEWEAVE_TURN_MODEL = model;
   for (const key of allowed) {
     if (source[key] !== undefined) environment[key] = source[key];
   }
@@ -698,7 +699,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
           [...prefix, "turn", "run", request.workspace, "--position", request.positionId, "--stdin"],
           {
             stdio: ["pipe", "pipe", "pipe"],
-            env: turnEnvironment(request.engine, this.bundledElectronEngine),
+            env: turnEnvironment(request.engine, this.bundledElectronEngine, request.model),
           },
         );
       } catch {

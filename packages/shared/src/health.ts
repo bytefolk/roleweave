@@ -72,6 +72,12 @@ export interface WorkspaceCreateRequest {
   /** Human-readable project name shown in the shell. */
   business: string;
   description: string;
+  /**
+   * Concrete runtime selected for the generated root owner. This stays
+   * optional on the wire so older desktop clients still create projects with
+   * the durable Qoder default.
+   */
+  agentEngine?: TurnEngine;
 }
 
 /** Result of creating a blank project with its platform-owned root owner. */
@@ -79,6 +85,8 @@ export interface WorkspaceCreateResponse extends WorkspaceInfoResponse {
   open: true;
   created: true;
   next: "create_employee";
+  /** Concrete runtime durably bound to the generated project owner. */
+  agentEngine: TurnEngine;
 }
 
 export interface WorkspaceOpenRequest {

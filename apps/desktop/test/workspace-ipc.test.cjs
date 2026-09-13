@@ -8,6 +8,7 @@ test("project bootstrap IPC accepts the exact bounded request", () => {
     projectId: "content-ops",
     business: "内容运营",
     description: "把项目目标拆成可执行的员工任务。",
+    agentEngine: "codex-local",
   });
   assert.equal(result.ok, true);
   assert.deepEqual(result.request, {
@@ -15,7 +16,33 @@ test("project bootstrap IPC accepts the exact bounded request", () => {
     projectId: "content-ops",
     business: "内容运营",
     description: "把项目目标拆成可执行的员工任务。",
+    agentEngine: "codex-local",
   });
+});
+
+test("project bootstrap IPC accepts the renderer request and carries one concrete owner Agent", () => {
+  const result = validateWorkspaceCreateRequest({
+    projectId: "content-ops",
+    business: "内容运营",
+    description: "",
+    agentEngine: "claude-local",
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.request, {
+    projectId: "content-ops",
+    business: "内容运营",
+    description: "",
+    agentEngine: "claude-local",
+  });
+
+  const invalidEngine = validateWorkspaceCreateRequest({
+    projectId: "content-ops",
+    business: "内容运营",
+    description: "",
+    agentEngine: "not-an-agent",
+  });
+  assert.equal(invalidEngine.ok, false);
+  assert.equal(invalidEngine.response.status, 400);
 });
 
 test("project bootstrap IPC rejects traversal-shaped ids and unknown fields", () => {

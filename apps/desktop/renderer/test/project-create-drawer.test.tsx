@@ -1,7 +1,17 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { pickSelectOption } from "./select-helper";
 import { ProjectWorkspaceDialog } from "../src/project/ProjectWorkspaceDialog";
 import type { OwbBridge } from "../src/owb";
+import type { TurnEngine, TurnEngineAvailability } from "../src/turns/types";
+
+const engineAvailability: Record<TurnEngine, TurnEngineAvailability> = {
+  qoder: { configured: true, ready: true },
+  "claude-code": { configured: true, ready: true },
+  "claude-local": { configured: true, ready: true },
+  codex: { configured: true, ready: true },
+  "codex-local": { configured: true, ready: true },
+};
 
 describe("ProjectWorkspaceDialog", () => {
   it("offers the native existing-workspace picker before entering creation", () => {
@@ -13,6 +23,7 @@ describe("ProjectWorkspaceDialog", () => {
         open
         workspace={{ open: true, path: "/tmp/content-ops", business: "内容运营" }}
         positionCount={3}
+        engineAvailability={engineAvailability}
         onClose={onClose}
         onOpenWorkspace={onOpenWorkspace}
         onCreated={() => {}}
@@ -37,6 +48,7 @@ describe("ProjectWorkspaceDialog", () => {
         path: "/tmp/content-ops",
         business: "内容运营",
         owner: "project-owner",
+        agentEngine: "codex-local",
       },
     });
     window.owb = { createWorkspace } as unknown as OwbBridge;
@@ -47,6 +59,7 @@ describe("ProjectWorkspaceDialog", () => {
         open
         workspace={null}
         positionCount={null}
+        engineAvailability={engineAvailability}
         onClose={() => {}}
         onOpenWorkspace={() => {}}
         onCreated={onCreated}
@@ -59,6 +72,8 @@ describe("ProjectWorkspaceDialog", () => {
 
     expect(screen.queryByRole("textbox", { name: /项目 ID/ })).not.toBeInTheDocument();
     expect(screen.getByText("项目标识由平台根据名称自动生成，无需手动填写。")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "项目负责人 Agent" })).toBeInTheDocument();
+    pickSelectOption("项目负责人 Agent", "Codex");
     fireEvent.click(screen.getByRole("button", { name: "选择位置并创建" }));
 
     await waitFor(() => {
@@ -66,6 +81,7 @@ describe("ProjectWorkspaceDialog", () => {
         projectId: expect.stringMatching(/^project-[a-z0-9]+$/),
         business: "内容运营",
         description: "",
+        agentEngine: "codex-local",
       });
     });
     expect(onCreated).toHaveBeenCalledTimes(1);

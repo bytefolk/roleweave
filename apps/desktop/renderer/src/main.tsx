@@ -17,6 +17,7 @@ import "./roleweave-theme.css";
 import "./roleweave-components.css";
 import "./roleweave-conversation.css";
 import "./roleweave-data.css";
+import "./workspace-polish.css";
 import { App } from "./App";
 import { initThemeMode } from "./theme-mode";
 

@@ -37,7 +37,7 @@
 
 /* Organization: use identity colors sparingly and use a pale brand tint for selection. */
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-avatar, .owb-org-chart__avatar) {
-  filter: saturate(.25);
+  filter: none;
   border-radius: 6px;
   box-shadow: none;
 }
@@ -410,6 +410,7 @@
 :is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__back:focus-visible { color: var(--ui-foreground); outline: none; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__field { display: grid; gap: 7px; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__field > label { color: var(--ui-foreground); font-size: 13px; font-weight: 500; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__field > .ant-select { width: 100%; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__field > p {
   margin: -1px 0 0;
   color: var(--ui-foreground-muted);

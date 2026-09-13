@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Alert, Empty, List, Spin, message } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Empty, Input, List, Segmented, Spin, message } from "antd";
 import { Copy, FileCode2, FolderOpen, LoaderCircle } from "lucide-react";
 import { formatDocRefUri } from "@roleweave/shared/docs";
 import { useT } from "@roleweave/ui";
@@ -14,6 +14,7 @@ import { DocViewer } from "./DocViewer";
  * reference shape stays the frozen doc-ref.v1alpha1.
  */
 export interface DocsPanelProps {
+  knowledgeFirst?: boolean;
   positionId: string | null;
   listDocs(positionId: string): Promise<DocsFileListResponse>;
   readDoc(positionId: string, path: string): Promise<DocsFileResponse>;
@@ -21,7 +22,7 @@ export interface DocsPanelProps {
   reloadToken?: number;
 }
 
-export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: DocsPanelProps) {
+export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, knowledgeFirst = false }: DocsPanelProps) {
   const t = useT();
   const [files, setFiles] = useState<DocsFileEntry[]>([]);
   const [listing, setListing] = useState(false);
@@ -30,14 +31,23 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
   const [doc, setDoc] = useState<DocsFileResponse | null>(null);
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [fileScope, setFileScope] = useState("knowledge");
+  const readVersion = useRef(0);
+  const visibleFiles = files.filter((file) => (!knowledgeFirst || fileScope === "all" || /\.(md|markdown|txt)$/i.test(file.path) || file.path.startsWith("knowledge/")) && file.path.toLowerCase().includes(query.toLowerCase()));
 
   useEffect(() => {
+    readVersion.current += 1;
+    setReading(false);
+    setQuery("");
+    setFiles([]);
     setSelected(null);
     setDoc(null);
     setReadError(null);
     if (positionId === null) {
       setFiles([]);
       setListError(null);
+      setListing(false);
       return;
     }
     let cancelled = false;
@@ -58,6 +68,7 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
       });
     return () => {
       cancelled = true;
+      readVersion.current += 1;
     };
   }, [positionId, listDocs, reloadToken]);
 
@@ -67,10 +78,11 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
     setDoc(null);
     setReadError(null);
     setReading(true);
+    const version = ++readVersion.current;
     readDoc(positionId, path)
-      .then((response) => setDoc(response))
-      .catch((error) => setReadError(error instanceof Error ? error.message : String(error)))
-      .finally(() => setReading(false));
+      .then((response) => { if (version === readVersion.current) setDoc(response); })
+      .catch((error) => { if (version === readVersion.current) setReadError(error instanceof Error ? error.message : String(error)); })
+      .finally(() => { if (version === readVersion.current) setReading(false); });
   };
 
   const copyRef = async (entry: DocsFileEntry) => {
@@ -86,6 +98,14 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
       message.error(t("docs.clipboardUnavailable"));
     }
   };
+
+  // Open useful knowledge immediately rather than an oversized empty reader.
+  useEffect(() => {
+    if (!knowledgeFirst || selected !== null || listing) return;
+    const first = files.find((file) => file.path === "knowledge/README.md")
+      ?? files.find((file) => /\.(md|markdown|txt)$/i.test(file.path));
+    if (first) openFile(first.path);
+  }, [files, knowledgeFirst, selected, listing]);
 
   const formatSize = (size: number): string => {
     if (size < 1024) return `${size} B`;
@@ -120,11 +140,12 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
               <h2>{t("docs.listTitle")}</h2>
             </div>
             <span className="owb-docs-panel__count" aria-label={t("docs.fileCount", { count: files.length })}>
-              {files.length.toString().padStart(2, "0")} <small>FILES</small>
+              {t("docs.fileCount", { count: visibleFiles.length })}
             </span>
           </header>
           <div className="owb-docs-panel__workspace">
             <div className="owb-docs-panel__list-pane">
+              {knowledgeFirst ? <div className="owb-docs-filter"><Segmented aria-label={t("memory.fileScope")} value={fileScope} onChange={setFileScope} options={[{ value: "knowledge", label: t("memory.knowledge") }, { value: "all", label: t("memory.allFiles") }]} /><Input allowClear aria-label={t("memory.search")} placeholder={t("memory.search")} value={query} onChange={(event) => setQuery(event.target.value)} /></div> : null}
               {listing ? (
                 <div className="owb-docs-panel__loading" role="status">
                   <LoaderCircle aria-hidden="true" size={15} />
@@ -137,7 +158,7 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0 }: Do
                 <List
                   className="owb-docs-panel__list"
                   size="small"
-                  dataSource={files}
+                  dataSource={visibleFiles}
                   locale={{
                     emptyText: (
                       <div className="owb-docs-panel__empty">

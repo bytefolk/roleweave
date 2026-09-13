@@ -970,6 +970,42 @@ function codexEvents(stdout: string): Array<Record<string, unknown>> {
   return stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
+test("employee model overrides reach provider CLI argv without paid requests", async (t) => {
+  for (const engine of ["qoder", "claude-local", "codex-local"]) {
+    await t.test(engine, { skip: engine === "claude-local" && process.platform === "win32" ? "Claude version probe requires a native executable" : false }, async () => {
+      const workspace = await makeWorkspace();
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-provider-model-"));
+      try {
+        const argvFile = path.join(dir, "argv.json");
+        const envFile = path.join(dir, "env.json");
+        const script = path.join(dir, "provider.cjs");
+        const source = engine === "qoder" ? fakeQoderOk(argvFile, envFile)
+          : engine === "codex-local" ? fakeCodexOk(argvFile, envFile)
+          : fakeClaudeOk(argvFile, envFile, path.join(dir, "stdin.txt"));
+        await fs.writeFile(script, source.replace("const fs =", 'if (process.argv.includes("--version")) { console.log("2.1.300"); process.exit(0); }\nconst fs ='));
+        await fs.chmod(script, 0o755);
+        let executable = script;
+        if (process.platform === "win32") {
+          executable = path.join(dir, "provider.cmd");
+          await fs.writeFile(executable, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+        }
+        const result = await runAdapter(["turn", "run", workspace, "--position", "repo-owner", "--stdin"], {
+          stdin: JSON.stringify({ input: "model propagation fixture" }),
+          env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: engine, ROLEWEAVE_TURN_MODEL: "economy-test",
+            OPENAI_MODEL: "different-default", ORG_WORKBENCH_QODER_BIN: executable,
+            DIGITAL_EMPLOYEE_CLAUDE_COMMAND: executable, DIGITAL_EMPLOYEE_CODEX_COMMAND: executable },
+        });
+        assert.equal(codexEvents(result.stdout).at(-1)?.type, "run.completed", result.stderr || result.stdout);
+        const argv = JSON.parse(await fs.readFile(argvFile, "utf8")) as string[];
+        assert.equal(argv[argv.indexOf("--model") + 1], "economy-test");
+      } finally {
+        await fs.rm(workspace, { recursive: true, force: true });
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 const codexSkip = process.platform === "win32"
   ? "requires POSIX exec of a shebang fixture; the Windows package smoke leg covers the win32 .cmd spawn path"
   : false;

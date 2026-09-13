@@ -2,6 +2,8 @@
 
 import type {
   AssetRecord,
+  AvatarGenerateRequest,
+  AvatarGenerateResponse,
   AssetsCreateRequest,
   AssetsListResponse,
   DocPlaneDetailResponse,
@@ -57,6 +59,7 @@ interface OwbStatusResponse {
 }
 
 export interface OwbBridge {
+  setPositionModel?(request: { positionId: string; model: string }): Promise<OwbApiResponse<import("@roleweave/shared").EmployeeModelConfig>>;
   status(): Promise<OwbStatusResponse>;
   stopControlPlane(): Promise<{ ok: boolean; state: "stopped"; forced: boolean; exitCode: number | null; signalCode: string | null }>;
   openWorkspace(): Promise<OwbApiResponse>;
@@ -68,6 +71,7 @@ export interface OwbBridge {
   orgRestore(backupId: string): Promise<OwbApiResponse<OrgRestoreResult>>;
   orgUndo(): Promise<OwbApiResponse<OrgUndoResult>>;
   hire(request: HirePositionRequest): Promise<OwbApiResponse<HireResult>>;
+  generateAvatar(request: AvatarGenerateRequest): Promise<OwbApiResponse<AvatarGenerateResponse>>;
   reports(): Promise<OwbApiResponse<ReportsResponse>>;
   position(positionId: string): Promise<OwbApiResponse>;
   positionDocs(positionId: string): Promise<OwbApiResponse<DocsFileListResponse>>;
@@ -95,7 +99,20 @@ export interface OwbBridge {
   groups(): Promise<OwbApiResponse<GroupConversationList>>;
   group(conversationRef: string): Promise<OwbApiResponse<GroupConversation>>;
   addGroupMember(request: { conversationRef: string; positionId: string }): Promise<OwbApiResponse<GroupConversation>>;
-  createGroupTurn(request: { conversationRef: string; input: string; engine: TurnEngine; mentions: string[]; mode?: "parallel" | "relay" }): Promise<OwbApiResponse<{ conversationRef: string; messageId: string; spawns: Array<{ turnId: string; positionId: string }> }>>;
+  createGroupTurn(request: {
+    conversationRef: string;
+    input: string;
+    /** Backward-compatible scalar for older control planes. */
+    engine: TurnEngine;
+    /** Agent binding for each mentioned employee. */
+    engines?: Record<string, TurnEngine>;
+    mentions: string[];
+    mode?: "parallel" | "relay";
+  }): Promise<OwbApiResponse<{
+    conversationRef: string;
+    messageId: string;
+    spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>;
+  }>>;
   groupTimeline(conversationRef: string): Promise<OwbApiResponse<GroupTimeline>>;
   createGoal(request: { title: string; description: string; acceptanceCriteria?: string[] }): Promise<OwbApiResponse<GoalsCreateResponse>>;
   goals(): Promise<OwbApiResponse<{ goals: GoalSummary[] }>>;

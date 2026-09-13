@@ -1,0 +1,58 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import test from "node:test";
+import type { TurnRecord, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@roleweave/shared";
+import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { readPositionAgentBinding, resolvePositionAgentEngine } from "../src/agent-binding.js";
+
+test("employee model selection persists, reaches the driver, and preserves the same session context", async () => {
+  const seen: TurnRunRequest[] = [];
+  const server = await startTestServer(undefined, { async turnRun(request) {
+    seen.push(request);
+    const timestamp = new Date().toISOString();
+    const events: TurnRunResult["events"] = [
+      { type: "run.started", runId: request.envelope.turnId, timestamp },
+      { type: "usage", runId: request.envelope.turnId, timestamp, inputTokens: 30, outputTokens: 12 },
+      { type: "run.completed", runId: request.envelope.turnId, timestamp, output: "remember the cobalt milestone", terminalReason: "goal_met" },
+    ];
+    return { status: "trusted", events, diagnostic: "" };
+  } });
+  const workspace = await copyExampleWorkspace();
+  server.ctx.config.bundledElectronEngine = true;
+  const call = (url: string, method: string, body: unknown) => api(server.baseUrl, url, { method, body, token: server.token });
+  try {
+    assert.equal((await call("/workspace/open", "POST", { path: workspace })).status, 200);
+    assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "efficient" })).status, 400);
+    assert.equal(await readPositionAgentBinding(server.ctx.workspace.requireOpen(), "repo-owner"), null);
+    await resolvePositionAgentEngine(server.ctx.workspace.requireOpen(), "repo-owner", "qoder", server.ctx.turnStore, server.ctx.sessionStore);
+    const session = (await call("/sessions", "POST", { positionId: "repo-owner" })).body as WorkbenchSession;
+    assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "efficient" })).status, 200);
+    const first = (await call(`/sessions/${session.sessionId}/turns`, "POST", { engine: "qoder", input: "Remember cobalt" })).body as TurnRecord;
+    assert.equal(first.model, "efficient");
+    assert.equal(seen[0]!.model, "efficient");
+    assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "performance" })).status, 200);
+    const second = (await call(`/sessions/${session.sessionId}/turns`, "POST", { engine: "qoder", input: "What milestone?" })).body as TurnRecord;
+    assert.equal(second.model, "performance");
+    assert.equal(second.conversationRef, session.sessionId);
+    assert.equal(second.threadContext?.sourceTurnCount, 1);
+    assert.match(JSON.stringify(seen[1]!.envelope), /cobalt/);
+    assert.equal((await readPositionAgentBinding(server.ctx.workspace.requireOpen(), "repo-owner"))?.model, "performance");
+    const history = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, { token: server.token });
+    assert.equal(history.status, 200);
+    assert.deepEqual((history.body as { turns: TurnRecord[] }).turns.map((turn) => turn.model), ["efficient", "performance"]);
+    for (const body of [{ model: "opus" }, { model: "--inject" }, { model: "auto", engine: "codex" }]) {
+      assert.equal((await call("/positions/repo-owner/model", "PATCH", body)).status, 400);
+    }
+    const release = server.ctx.runningTurns.reserve(workspace, "repo-owner", "inflight");
+    try { assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "auto" })).status, 409); }
+    finally { release.release(); }
+    assert.equal((await call(`/sessions/${session.sessionId}/context`, "PATCH", { enabled: false })).status, 200);
+    const isolated = (await call(`/sessions/${session.sessionId}/turns`, "POST", { engine: "qoder", input: "New question" })).body as TurnRecord;
+    assert.equal(isolated.threadContext?.sourceTurnCount, 0);
+    assert.equal(isolated.threadContext?.contextBytes, 0);
+  } finally {
+    await server.ctx.contextExporter.waitForIdle();
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});

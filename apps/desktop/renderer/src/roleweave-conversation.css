@@ -9,14 +9,14 @@
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel {
-  border: 0;
-  border-radius: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
   background: var(--ui-surface);
   box-shadow: none;
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__header {
-  padding: 14px 20px 10px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--ui-border);
 }
 
@@ -77,7 +77,7 @@
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-conversation-session > .ant-btn:hover:not(:disabled) {
   border-color: var(--ui-border-strong);
-  background: var(--ui-surface-inset);
+  background: var(--ui-surface);
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-panel__header h2, .owb-groups__list-header h2) svg {
@@ -101,7 +101,7 @@
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread--empty strong {
   color: var(--ui-foreground-muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
 }
 
