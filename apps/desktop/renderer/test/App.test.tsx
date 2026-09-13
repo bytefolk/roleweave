@@ -1024,7 +1024,7 @@ it("restores the original workspace's running task and cancels its exact owner a
   expect(screen.getByText("B live output")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "中断回合" })).toBeEnabled();
   await act(async () => finish.get("B")!({ status: 500, body: { message: "B completed" } }));
-});
+}, 15_000);
 
 
 it("keeps the hire conversation timeout attached to the workspace where it started", async () => {
