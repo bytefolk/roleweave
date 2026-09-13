@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 const DEFAULT_RATIO = 0.5;
 const MIN_PANE_WIDTH = 280;
@@ -23,6 +23,13 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function computeBounds(host: HTMLDivElement | null): PaneBounds {
+  const measured = host?.getBoundingClientRect().width ?? 0;
+  const width = measured > 0 ? measured : 1000;
+  const min = Math.min(MIN_PANE_WIDTH / width, 0.4);
+  return { min, max: 1 - min, width };
+}
+
 /**
  * First-use organization-workspace splitter. It deliberately stays in the
  * renderer until another module needs the same interaction contract.
@@ -35,20 +42,12 @@ export function OrgWorkspaceSplit({ ariaLabel, left, resetTitle, right, valueTex
   const hostRef = useRef<HTMLDivElement>(null);
   const [ratio, setRatio] = useState(DEFAULT_RATIO);
   const [dragging, setDragging] = useState(false);
-
-  const bounds = useCallback((): PaneBounds => {
-    const measured = hostRef.current?.getBoundingClientRect().width ?? 0;
-    // jsdom has no layout. The fallback also gives keyboard interaction a
-    // predictable step before the first browser layout completes.
-    const width = measured > 0 ? measured : 1000;
-    const min = Math.min(MIN_PANE_WIDTH / width, 0.4);
-    return { min, max: 1 - min, width };
-  }, []);
+  const [paneBounds, setPaneBounds] = useState<PaneBounds>(() => computeBounds(hostRef.current));
 
   const setClampedRatio = useCallback((next: number) => {
-    const { min, max } = bounds();
-    setRatio(clamp(next, min, max));
-  }, [bounds]);
+    const b = computeBounds(hostRef.current);
+    setRatio(clamp(next, b.min, b.max));
+  }, []);
 
   const setFromPointer = useCallback((clientX: number) => {
     const rect = hostRef.current?.getBoundingClientRect();
@@ -56,8 +55,16 @@ export function OrgWorkspaceSplit({ ariaLabel, left, resetTitle, right, valueTex
     setClampedRatio((clientX - rect.left) / rect.width);
   }, [setClampedRatio]);
 
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setPaneBounds(computeBounds(host)));
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
   const reset = useCallback(() => setRatio(DEFAULT_RATIO), []);
-  const { min, max } = bounds();
+  const { min, max } = paneBounds;
   const value = Math.round(ratio * 100);
 
   return (
@@ -97,7 +104,7 @@ export function OrgWorkspaceSplit({ ariaLabel, left, resetTitle, right, valueTex
         onPointerCancel={() => setDragging(false)}
         onKeyDown={(event) => {
           const current = ratio;
-          const { width } = bounds();
+          const { width } = paneBounds;
           const step = (event.shiftKey ? KEYBOARD_PAGE_STEP : KEYBOARD_STEP) / width;
 
           if (event.key === "ArrowLeft") {

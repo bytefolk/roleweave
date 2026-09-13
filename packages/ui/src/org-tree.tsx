@@ -1,5 +1,5 @@
 import { ChevronRight, Folder, FolderOpen, Plus, UsersRound } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
 import { useT } from "./i18n";
 import { type OrgTreeNodeV1, type OrgTreeSnapshot } from "./types";
@@ -98,8 +98,11 @@ export interface OrgTreeNodeProps {
   onToggle: () => void;
   onFocus: () => void;
   draggable: boolean;
-  dropActive: boolean;
-  /** Invalid drop target while dragging (self/descendant): greyed, no-drop. */
+  /** Drop indicator zone for this row: "before"/"after" = insertion line,
+   * "body" = reparent target highlight. undefined = no indicator. Pseudo-
+   * elements render the indicator absolutely (#263: no flex-flow siblings). */
+  dropZone?: "before" | "after" | "body";
+  /** Invalid drop target (self/descendant of dragged node): greyed, no-drop. */
   dropDenied: boolean;
   onDragStart: (event: DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
@@ -111,7 +114,7 @@ export interface OrgTreeNodeProps {
   onGroupEntry?: () => void;
 }
 
-export function OrgTreeNode({
+export const OrgTreeNode = memo(function OrgTreeNode({
   node,
   depth,
   selected,
@@ -127,7 +130,7 @@ export function OrgTreeNode({
   onToggle,
   onFocus,
   draggable,
-  dropActive,
+  dropZone,
   dropDenied,
   onDragStart,
   onDragEnd,
@@ -141,6 +144,7 @@ export function OrgTreeNode({
     <div
       role="treeitem"
       data-org-node-id={node.id}
+      data-drop-zone={dropZone}
       aria-level={depth + 1}
       aria-selected={selected}
       aria-expanded={hasChildren ? expanded : undefined}
@@ -152,7 +156,7 @@ export function OrgTreeNode({
         linked && "is-linked",
         isLast && "is-last",
         draggable && "is-draggable",
-        dropActive && "is-drop-target",
+        dropZone === "body" && "is-drop-target",
         dropDenied && "is-drop-denied",
       )}
       style={{ "--d": depth } as CSSProperties}
@@ -235,9 +239,10 @@ export function OrgTreeNode({
       ) : null}
     </div>
   );
-}
+});
 
 const ENTERPRISE_ID = "__enterprise__";
+const EMPTY_SET: ReadonlySet<string> = new Set();
 
 /** Stable avatar hue for positions without a declared color. Exported so
  * other surfaces (#53 group roster) keep avatar hues consistent. */
@@ -406,11 +411,26 @@ export function OrgTree({
   const [focusedId, setFocusedId] = useState<string | null>(selectedId ?? null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropHint, setDropHint] = useState<DropHint | undefined>(undefined);
-  /** Row currently refused during dragover (self/descendant cycle). */
-  const [deniedId, setDeniedId] = useState<string | null>(null);
   /** Light inline toast for refused releases; auto-hides. */
   const [toast, setToast] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  /** Pre-computed descendants of the dragged node — these are invalid drop
+   * targets (would create a cycle). Computed once per drag, not per event. */
+  const invalidDropTargetIds = useMemo<ReadonlySet<string>>(() => {
+    if (!draggedId) return EMPTY_SET;
+    const ids = new Set<string>();
+    ids.add(draggedId);
+    const collect = (node: OrgTreeNodeV1): void => {
+      for (const child of node.children) {
+        ids.add(child.id);
+        collect(child);
+      }
+    };
+    const dragged = findInTree(snapshot.tree, draggedId);
+    if (dragged) collect(dragged);
+    return ids;
+  }, [draggedId, snapshot.tree]);
 
   useEffect(() => {
     if (toast === null) return;
@@ -608,16 +628,17 @@ export function OrgTree({
   const resetDragState = (): void => {
     setDraggedId(null);
     setDropHint(undefined);
-    setDeniedId(null);
   };
+
+  const getDropZone = (nodeId: string): "before" | "after" | "body" | undefined =>
+    dropHint?.anchorId === nodeId ? dropHint.zone : undefined;
 
   const renderPosition = (node: OrgTreeNodeV1, depth: number, isLast: boolean): ReactNode => {
     const hasChildren = node.children.length > 0;
     const isExpanded = hasChildren && expanded.has(node.id);
-    const hint = dropHint?.anchorId === node.id ? dropHint : null;
+    const dropZone = getDropZone(node.id);
     return (
       <Fragment key={node.id}>
-        {hint?.zone === "before" ? <div className="ui-org-tree__drop-line" aria-hidden="true" /> : null}
         <OrgTreeNode
           node={node}
           depth={depth}
@@ -634,46 +655,42 @@ export function OrgTree({
           onToggle={() => toggleNode(node.id)}
           onFocus={() => setFocusedId(node.id)}
           draggable={!moveDisabled && node.id !== snapshot.owner}
-          dropActive={hint?.zone === "body"}
-          dropDenied={deniedId === node.id}
+          dropZone={dropZone}
+          dropDenied={invalidDropTargetIds.has(node.id)}
           onDragStart={(event) => {
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData("application/x-org-workbench-position-id", node.id);
             setDraggedId(node.id);
           }}
           onDragEnd={() => {
-            if (deniedId !== null) setToast(t("tree.selfDropToast"));
+            if (invalidDropTargetIds.has(node.id) && node.id !== draggedId) setToast(t("tree.selfDropToast"));
             resetDragState();
           }}
           onDragOver={(event) => {
             if (!draggedId || moveDisabled) return;
-            if (isInvalidDropTarget(snapshot.tree, draggedId, node.id)) {
-              // No preventDefault: the browser refuses the drop, and the
-              // source's dragend surfaces the light toast below.
+            if (invalidDropTargetIds.has(node.id)) {
               event.dataTransfer.dropEffect = "none";
-              setDeniedId(node.id);
-              setDropHint(undefined);
+              setDropHint((current) => current === undefined ? current : undefined);
               return;
             }
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
-            setDeniedId(null);
             const rect = event.currentTarget.getBoundingClientRect();
             const y = event.clientY - rect.top;
-            // Top/bottom quarter rows = same-level insertion, middle half =
-            // reparent (body); a zero-height rect (jsdom) resolves to body.
             const zone: DropZone =
               rect.height > 0 && y < rect.height * 0.25
                 ? "before"
                 : rect.height > 0 && y > rect.height * 0.75
                   ? "after"
                   : "body";
-            setDropHint({ anchorId: node.id, zone });
+            setDropHint((current) =>
+              current?.anchorId === node.id && current.zone === zone ? current : { anchorId: node.id, zone },
+            );
           }}
           onDrop={(event) => {
             event.preventDefault();
             const source = draggedId || event.dataTransfer.getData("application/x-org-workbench-position-id");
-            const zone = hint?.zone ?? "body";
+            const zone = dropZone ?? "body";
             resetDragState();
             if (!source || isInvalidDropTarget(snapshot.tree, source, node.id)) return;
             if (zone === "before" || zone === "after") {
@@ -686,7 +703,6 @@ export function OrgTree({
           onHireEntry={onHireEntry && !moveDisabled ? () => onHireEntry(node.id) : undefined}
           onGroupEntry={onGroupEntry ? () => onGroupEntry(node.id) : undefined}
         />
-        {hint?.zone === "after" ? <div className="ui-org-tree__drop-line" aria-hidden="true" /> : null}
         {isExpanded && hasChildren
           ? node.children.map((child, index) =>
               renderPosition(child, depth + 1, index === node.children.length - 1),
@@ -712,6 +728,7 @@ export function OrgTree({
           <div
             role="treeitem"
             data-org-node-id={ENTERPRISE_ID}
+            data-drop-zone={dropHint?.anchorId === null ? dropHint.zone : undefined}
             aria-level={1}
             aria-expanded={enterpriseExpanded}
             tabIndex={focusedId === ENTERPRISE_ID ? 0 : -1}
@@ -729,8 +746,9 @@ export function OrgTree({
               if (!draggedId || moveDisabled) return;
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
-              setDeniedId(null);
-              setDropHint({ anchorId: null, zone: "body" });
+              setDropHint((current) =>
+                current?.anchorId === null && current.zone === "body" ? current : { anchorId: null, zone: "body" },
+              );
             }}
             onDragLeave={() => setDropHint(undefined)}
             onDrop={(event) => {
