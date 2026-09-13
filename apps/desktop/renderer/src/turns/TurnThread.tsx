@@ -3,7 +3,7 @@ import { Empty } from "antd";
 import { AlertTriangle, Check, ChevronRight, LoaderCircle, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useT } from "@roleweave/ui";
-import { useEngineLabel } from "./TurnPanel";
+import { useEngineLabel } from "./engine-select";
 import { EngineIcon } from "./engine-icon";
 import type { TurnProgressKind, TurnRecord } from "./types";
 

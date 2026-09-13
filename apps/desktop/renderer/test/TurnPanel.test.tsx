@@ -51,12 +51,63 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
 }
 
 describe("TurnPanel Issue #5 D3 behavior", () => {
+  it("keeps the task scope bar visible, including the current-session picker", () => {
+    const active = {
+      schemaVersion: "workbench-session.v1" as const,
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      positionId: "repo-owner",
+      workspaceInstanceId: "workspace-1",
+      principal: "position.repo-owner",
+      status: "active" as const,
+      rotatedFrom: null,
+      rotatedTo: null,
+      createdAt: "2026-09-08T00:00:00Z",
+      rotatedAt: null,
+    };
+    const historic = {
+      ...active,
+      sessionId: "22222222-2222-4222-8222-222222222222",
+      status: "rotated" as const,
+      rotatedTo: active.sessionId,
+    };
+    const selectSession = vi.fn();
+
+    render(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[]}
+        sessions={[active, historic]}
+        selectedSessionId={active.sessionId}
+        onSelectPosition={vi.fn()}
+        onSelectEngine={vi.fn()}
+        onSelectSession={selectSession}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+
+    expect(document.querySelector(".owb-conversation-controls")).toBeInTheDocument();
+    expect(screen.getByLabelText("选择对话岗位")).toBeVisible();
+    expect(screen.getByLabelText("选择本地会话")).toBeVisible();
+    expect(screen.getByLabelText("选择 Agent Host")).toBeVisible();
+    expect(screen.getByRole("button", { name: "轮换当前会话" })).toBeVisible();
+    expect(document.querySelector(".owb-turn-panel__settings")).toBeNull();
+
+    pickSelectOption("选择本地会话", "只读 · 第 1 个");
+    expect(selectSession).toHaveBeenCalledWith(historic.sessionId);
+  });
+
   it("addresses a position, switches between the five supported Hosts, and creates a turn", async () => {
     const createTurn = vi.fn();
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
-    // #248 R2 ③：对话岗位 / Agent Host 已降级进默认收起的「会话设置」，先展开。
-    fireEvent.click(screen.getByText("会话设置"));
+    // Scope controls remain visible above the task thread: switching the
+    // recipient or Host is an explicit pre-send choice, not a hidden drawer.
+    expect(screen.getByLabelText("选择对话岗位")).toBeVisible();
+    expect(screen.getByLabelText("选择 Agent Host")).toBeVisible();
 
     pickSelectOption("选择对话岗位", "发布负责人");
     // 岗位已经在组织树和对话卡头中标明，面板标题只保留模块名称。
@@ -465,7 +516,6 @@ it("names the pinned model under the Agent Host, and says who decides when none 
     "codex-local": { configured: true, ready: true, modelPinnable: true, model: "gpt-5.6-sol" },
   };
   const { rerender } = render(<TurnPanel {...props} engine="codex-local" engineAvailability={pinnable} />);
-  fireEvent.click(screen.getByText("会话设置"));
   expect(screen.getByText("模型：gpt-5.6-sol")).toBeInTheDocument();
 
   // Pinnable but nothing pinned: the row must attribute the choice to the Host
@@ -491,7 +541,6 @@ it("blocks context changes and rotation while this employee runs in a group", ()
     onSelectPosition={vi.fn()} onSelectEngine={vi.fn()} onCreateTurn={vi.fn()} onSetSessionContext={toggle} onRotateSession={rotate} />);
   expect(screen.getByRole("switch", { name: "启用会话上下文" })).toBeDisabled();
   fireEvent.click(screen.getByRole("switch", { name: "启用会话上下文" }));
-  fireEvent.click(screen.getByText("会话设置"));
   expect(screen.getByRole("button", { name: "轮换当前会话" })).toBeDisabled();
   expect(toggle).not.toHaveBeenCalled();
   expect(rotate).not.toHaveBeenCalled();
