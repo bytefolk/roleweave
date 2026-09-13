@@ -1,8 +1,10 @@
-import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { isModelId } from "@roleweave/shared";
 import type { EmployeeModelConfig, EmployeeModelOption, TurnEngine } from "@roleweave/shared";
+import { decodeStableUtf8, readStableBoundedFile } from "./stable-read.js";
+
+const MAX_MODEL_CACHE_BYTES = 4 * 1024 * 1024;
 
 /** These are provider-supported aliases; Codex's concrete list comes from
  * its local account cache, never from a guessed public model availability. */
@@ -22,9 +24,8 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
     source = "default";
     try {
       const file = path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "models_cache.json");
-      const stat = await fs.stat(file);
-      if (stat.size > 4 * 1024 * 1024) throw new Error("Model cache exceeds bound");
-      const cache = JSON.parse(await fs.readFile(file, "utf8"));
+      const stable = await readStableBoundedFile(file, MAX_MODEL_CACHE_BYTES);
+      const cache = JSON.parse(decodeStableUtf8(stable.buffer));
       if (Array.isArray(cache.models)) {
         options = cache.models.filter((m: any) => m.visibility === "list" && isModelId(m.slug)).slice(0, 64).map((m: any): EmployeeModelOption => ({
           id: m.slug, name: typeof m.display_name === "string" ? m.display_name.slice(0, 100) : m.slug,

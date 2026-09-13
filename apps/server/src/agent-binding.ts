@@ -22,6 +22,7 @@ import { resolvePositionPackageDir } from "./context-sources.js";
 import type { TurnStore } from "./turns/store.js";
 import { atomicWriteJson, compareCodeUnitOrdinal, compareRfc3339Instants, nodeAtomicTurnWriteOperations } from "./turns/store.js";
 import type { SessionStore } from "./sessions/store.js";
+import { decodeStableUtf8, readStableBoundedFile, StableReadError } from "./stable-read.js";
 
 const MAX_AGENT_BINDING_BYTES = 1024;
 const BINDING_DIR = ".workbench";
@@ -94,19 +95,19 @@ async function readBindingAt(paths: BindingPaths): Promise<PositionAgentBinding 
   if (!directory.isDirectory() || directory.isSymbolicLink()) {
     throw bindingError("position Agent binding directory must be a real directory");
   }
-  let stat;
+  let contents: Buffer;
   try {
-    stat = await fs.lstat(paths.file);
+    contents = (await readStableBoundedFile(paths.file, MAX_AGENT_BINDING_BYTES)).buffer;
   } catch (error) {
     if (isNotFound(error)) return null;
+    if (error instanceof StableReadError) {
+      throw bindingError("position Agent binding file must be a stable bounded regular file", error);
+    }
     throw bindingError("position Agent binding file is unreadable", error);
-  }
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_AGENT_BINDING_BYTES) {
-    throw bindingError("position Agent binding file must be a bounded regular file");
   }
   let raw: unknown;
   try {
-    raw = JSON.parse(await fs.readFile(paths.file, "utf8")) as unknown;
+    raw = JSON.parse(decodeStableUtf8(contents)) as unknown;
   } catch (error) {
     throw bindingError("position Agent binding file is not valid JSON", error);
   }
