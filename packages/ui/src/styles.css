@@ -114,15 +114,41 @@
   cursor: no-drop;
 }
 
-/* #32 §1: 2px insertion line for same-level drops, indented to align with
- * the anchored row's content (row padding 8px + 20px toggle + 4px gap). */
-.ui-org-tree__drop-line {
-  flex: none;
+/* #32 §1: 2px insertion indicator via absolutely-positioned pseudo-elements
+ * on the anchored row (#263: no longer in flex flow, so toggling the indicator
+ * does not shift sibling rows or cause reflow feedback loops). */
+.ui-org-tree__row::before,
+.ui-org-tree__row::after {
+  content: none;
+  position: absolute;
+  left: 32px;
+  right: var(--ui-space-2, 8px);
   height: 2px;
-  margin-left: 32px;
-  margin-right: var(--ui-space-2, 8px);
   border-radius: 1px;
   background: var(--ui-primary);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ui-org-tree__row::before {
+  top: -3px;
+}
+
+.ui-org-tree__row::after {
+  bottom: -3px;
+}
+
+.ui-org-tree__row[data-drop-zone="before"]::before {
+  content: "";
+}
+
+.ui-org-tree__row[data-drop-zone="after"]::after {
+  content: "";
+}
+
+.ui-org-tree__row[data-drop-zone="body"]::before,
+.ui-org-tree__row[data-drop-zone="body"]::after {
+  content: "";
 }
 
 /* Light inline toast for refused releases (#32 §1 invalid-drop feedback). */
