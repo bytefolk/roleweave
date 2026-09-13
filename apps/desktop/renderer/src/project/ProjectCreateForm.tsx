@@ -9,6 +9,7 @@ import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
 interface ProjectCreateFormProps {
   onCancel: () => void;
   onCreated: (workspace: WorkspaceCreateResponse) => void;
+  onBusyChange?: (busy: boolean) => void;
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
 }
 
@@ -33,7 +34,7 @@ function slugify(value: string): string {
 }
 
 /** The creation form is intentionally independent from the workspace picker. */
-export function ProjectCreateForm({ onCancel, onCreated, engineAvailability }: ProjectCreateFormProps) {
+export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAvailability }: ProjectCreateFormProps) {
   const t = useT();
   const [business, setBusiness] = useState("");
   const [description, setDescription] = useState("");
@@ -50,6 +51,7 @@ export function ProjectCreateForm({ onCancel, onCreated, engineAvailability }: P
   const create = async () => {
     if (!formValid || busy) return;
     setBusy(true);
+    onBusyChange?.(true);
     setError(null);
     try {
       const response = await window.owb.createWorkspace({
@@ -69,6 +71,7 @@ export function ProjectCreateForm({ onCancel, onCreated, engineAvailability }: P
       setError(t("project.createOffline"));
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
 

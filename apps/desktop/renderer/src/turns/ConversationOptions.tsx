@@ -14,7 +14,9 @@ export function ConversationOptions({ config, saving, disabled, session, turns, 
   const completed = turns.filter((turn) => !turn.provisional && turn.status !== "running");
   const reported = completed.filter((turn) => turn.totalTokens !== undefined);
   const total = reported.reduce((sum, turn) => sum + turn.totalTokens!, 0);
-  const latest = [...completed].reverse().find((turn) => turn.threadContext)?.threadContext;
+  // The latest completed turn is authoritative. Do not surface an older
+  // receipt when the newest durable turn deliberately has no context.
+  const latest = completed.at(-1)?.threadContext;
   const enabled = session?.threadContextEnabled !== false;
   const partial = reported.length < completed.length;
   const options = config?.options.map((m) => ({ value: m.id,

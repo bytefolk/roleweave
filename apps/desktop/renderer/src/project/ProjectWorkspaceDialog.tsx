@@ -76,6 +76,7 @@ export function ProjectWorkspaceDialog({
 }: ProjectWorkspaceDialogProps) {
   const t = useT();
   const [page, setPage] = useState<WorkspaceDialogPage>("choose");
+  const [createBusy, setCreateBusy] = useState(false);
 
   useEffect(() => {
     if (!open) setPage("choose");
@@ -93,7 +94,9 @@ export function ProjectWorkspaceDialog({
       open={open}
       footer={null}
       width="min(560px, calc(100vw - 32px))"
-      onCancel={onClose}
+      onCancel={() => { if (!createBusy) onClose(); }}
+      mask={{ closable: !createBusy }}
+      keyboard={!createBusy}
       destroyOnHidden
     >
       {page === "choose" ? (
@@ -119,13 +122,14 @@ export function ProjectWorkspaceDialog({
         </div>
       ) : (
         <div className="owb-project-dialog__create">
-          <button type="button" className="owb-project-dialog__back" onClick={() => setPage("choose")}>
+          <button type="button" className="owb-project-dialog__back" disabled={createBusy} onClick={() => setPage("choose")}>
             <ArrowLeft aria-hidden="true" size={15} />
             {t("project.back")}
           </button>
           <p className="owb-project-dialog__description">{t("project.createDescription")}</p>
           <ProjectCreateForm
             engineAvailability={engineAvailability}
+            onBusyChange={setCreateBusy}
             onCancel={() => setPage("choose")}
             onCreated={(created) => {
               onCreated(created);

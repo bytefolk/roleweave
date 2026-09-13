@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { pickSelectOption } from "./select-helper";
 import { ProjectWorkspaceDialog } from "../src/project/ProjectWorkspaceDialog";
@@ -85,5 +85,30 @@ describe("ProjectWorkspaceDialog", () => {
       });
     });
     expect(onCreated).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the workspace dialog open while creation is in flight", async () => {
+    let resolveCreate: (value: unknown) => void = () => {};
+    const createWorkspace = vi.fn(() => new Promise((resolve) => { resolveCreate = resolve; }));
+    window.owb = { createWorkspace } as unknown as OwbBridge;
+
+    render(
+      <ProjectWorkspaceDialog
+        open
+        workspace={null}
+        positionCount={null}
+        engineAvailability={engineAvailability}
+        onClose={vi.fn()}
+        onOpenWorkspace={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /新建项目/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "项目名称*" }), { target: { value: "内容运营" } });
+    fireEvent.click(screen.getByRole("button", { name: "选择位置并创建" }));
+    await waitFor(() => expect(createWorkspace).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "返回" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /取\s*消/ })).toBeDisabled();
+    await act(async () => resolveCreate({ status: 201, body: { open: true, created: true, next: "create_employee", path: "/tmp/content-ops", business: "内容运营", owner: "project-owner", agentEngine: "codex-local" } }));
   });
 });

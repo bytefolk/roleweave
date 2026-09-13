@@ -1143,7 +1143,7 @@ function AppInner({
       } }}>
     <div className="owb-app">
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
-        targets={positions.filter((p) => !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
+        targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
         avatar={positionAvatars[managementTarget]}
         busy={orgBusy || runningPositionIds.has(managementTarget)} onClose={() => setManagementTarget(undefined)} onMove={movePosition} onDismiss={dismissPosition}
         onMemory={() => { treeAction(managementTarget, "memory"); setManagementTarget(undefined); }}
@@ -1468,7 +1468,7 @@ function AppInner({
             avatarUrls={avatarUrls}
             workspaceOpen={workspaceInfo?.open === true}
             modelConfig={selectedId ? positionModels[selectedId] : undefined}
-            modelSaving={modelSavingId !== null}
+            modelSaving={modelSavingId !== null && modelSavingId === selectedId}
             onSelectModel={changeEmployeeModel}
             onSetSessionContext={setSessionContext}
             positions={positions}

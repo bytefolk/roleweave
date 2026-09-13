@@ -32,6 +32,7 @@ const BINDING_DIR = ".workbench";
 const bindingLocks = new Map<string, Promise<void>>();
 
 interface BindingPaths {
+  positionsRoot: string;
   positionDir: string;
   bindingDir: string;
   file: string;
@@ -67,7 +68,7 @@ function resolvePaths(workspace: OpenWorkspace, positionId: string): BindingPath
   if (path.dirname(bindingDir) !== positionDir || path.dirname(file) !== bindingDir) {
     throw bindingError("position Agent binding path is invalid");
   }
-  return { positionDir, bindingDir, file };
+  return { positionsRoot, positionDir, bindingDir, file };
 }
 
 async function assertRealDirectory(dir: string, missingMessage: string): Promise<void> {
@@ -83,8 +84,24 @@ async function assertRealDirectory(dir: string, missingMessage: string): Promise
   }
 }
 
+/** Verify every directory segment between the workspace positions root and a
+ * package. Checking only the leaf lets an intermediate symlink redirect the
+ * binding sidecar outside the workspace. */
+async function assertRealDirectoryChain(root: string, target: string, missingMessage: string): Promise<void> {
+  await assertRealDirectory(root, missingMessage);
+  const relative = path.relative(root, target);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw bindingError("position Agent binding path escapes the workspace positions directory");
+  }
+  let current = root;
+  for (const segment of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    await assertRealDirectory(current, missingMessage);
+  }
+}
+
 async function readBindingAt(paths: BindingPaths): Promise<PositionAgentBinding | null> {
-  await assertRealDirectory(paths.positionDir, "position package directory is missing for Agent binding");
+  await assertRealDirectoryChain(paths.positionsRoot, paths.positionDir, "position package directory is missing for Agent binding");
   let directory;
   try {
     directory = await fs.lstat(paths.bindingDir);
@@ -118,7 +135,7 @@ async function readBindingAt(paths: BindingPaths): Promise<PositionAgentBinding 
 }
 
 async function ensureBindingDirectory(paths: BindingPaths): Promise<void> {
-  await assertRealDirectory(paths.positionDir, "position package directory is missing for Agent binding");
+  await assertRealDirectoryChain(paths.positionsRoot, paths.positionDir, "position package directory is missing for Agent binding");
   try {
     await fs.mkdir(paths.bindingDir, { mode: 0o700 });
   } catch (error) {
@@ -179,7 +196,10 @@ async function legacyEngineFromHistory(
     compareRfc3339Instants(left.createdAt, right.createdAt) ||
     compareCodeUnitOrdinal(left.turnId, right.turnId),
   );
-  return records.at(-1)?.engine;
+  // Failed, interrupted, or still-running records are not evidence of the
+  // Agent that successfully served the employee. If no completed turn exists,
+  // the caller's requested engine remains the safe first-use fallback.
+  return records.filter((record) => record.status === "completed").at(-1)?.engine;
 }
 
 /** Reads an existing binding without changing a legacy employee package. */

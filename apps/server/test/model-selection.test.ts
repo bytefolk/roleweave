@@ -4,6 +4,39 @@ import test from "node:test";
 import type { TurnRecord, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import { readPositionAgentBinding, resolvePositionAgentEngine } from "../src/agent-binding.js";
+import type { SessionStore } from "../src/sessions/store.js";
+import type { TurnStore } from "../src/turns/store.js";
+
+test("legacy engine migration ignores failed history and keeps the requested engine", async () => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  try {
+    assert.equal((await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: workspace } })).status, 200);
+    const failed = {
+      turnId: "failed-legacy-turn",
+      status: "failed",
+      engine: "claude-local",
+      createdAt: "2026-09-13T00:00:00.000Z",
+    } as unknown as TurnRecord;
+    const turnStore = {
+      history: async () => ({ turns: [failed] }),
+      sessionHistory: async () => ({ turns: [] }),
+    } as unknown as TurnStore;
+    const sessionStore = { list: async () => ({ sessions: [] }) } as unknown as SessionStore;
+    const engine = await resolvePositionAgentEngine(
+      server.ctx.workspace.requireOpen(),
+      "repo-owner",
+      "qoder",
+      turnStore,
+      sessionStore,
+    );
+    assert.equal(engine, "qoder");
+    assert.equal((await readPositionAgentBinding(server.ctx.workspace.requireOpen(), "repo-owner"))?.engine, "qoder");
+  } finally {
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test("employee model selection persists, reaches the driver, and preserves the same session context", async () => {
   const seen: TurnRunRequest[] = [];

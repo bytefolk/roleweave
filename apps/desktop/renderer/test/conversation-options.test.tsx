@@ -24,3 +24,34 @@ it("switches the employee model from the composer and exposes context and honest
   expect(await screen.findByText(/最多 12 轮、64 KB/)).toBeInTheDocument();
   expect(screen.getByRole("switch", { name: "携带会话历史" })).toBeDisabled();
 });
+
+it("does not reuse an older context receipt when the newest turn has none", async () => {
+  const receipt = {
+    schemaVersion: "thread-context.v1" as const,
+    enabled: true,
+    sourceTurnCount: 1,
+    omittedTurnCount: 0,
+    contextBytes: 128,
+    contextDigest: "sha256:old",
+    summary: "older context",
+    redacted: false,
+    truncated: false,
+  };
+  const turn = (id: string, createdAt: string, threadContext?: typeof receipt) => ({
+    id,
+    positionId: "repo-owner",
+    positionName: "Owner",
+    engine: "qoder" as const,
+    input: id,
+    status: "completed" as const,
+    createdAt,
+    threadContext,
+  });
+  render(<ConversationOptions saving={false} disabled={false} session={null} turns={[
+    turn("older", "2026-09-13T00:00:00.000Z", receipt),
+    turn("newest", "2026-09-13T00:01:00.000Z"),
+  ]} />);
+  fireEvent.click(screen.getByRole("button", { name: "上下文详情" }));
+  expect(await screen.findByText("尚无上下文注入记录。")).toBeInTheDocument();
+  expect(screen.queryByText(/128 字节/)).not.toBeInTheDocument();
+});
