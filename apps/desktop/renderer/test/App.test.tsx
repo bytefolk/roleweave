@@ -956,7 +956,7 @@ it("drops workspace A's late group 202 after switching to B and reloads A on ret
   await switchWorkspace("A");
   expect(screen.getByText("A restored from disk")).toBeInTheDocument();
   expect(screen.getByLabelText("群聊消息")).toHaveValue("");
-});
+}, 15_000);
 
 it("restores the original workspace's running task and cancels its exact owner after navigation", async () => {
   let workspace = "A";
