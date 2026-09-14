@@ -296,12 +296,13 @@ function parseEngineEvent(line: string): EngineEvent {
   }
 }
 
-function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): NodeJS.ProcessEnv {
+function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, model?: string): NodeJS.ProcessEnv {
   const source = process.env;
   const allowed = ["PATH", "HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "SHELL"] as const;
   const environment: NodeJS.ProcessEnv = {
     DIGITAL_EMPLOYEE_ENGINE_MODEL: engine,
   };
+  if (bundledElectronEngine && model) environment.ROLEWEAVE_TURN_MODEL = model;
   for (const key of allowed) {
     if (source[key] !== undefined) environment[key] = source[key];
   }
@@ -346,6 +347,9 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): No
       environment.ORG_WORKBENCH_QODER_PERMISSION_MODE =
         source.ORG_WORKBENCH_QODER_PERMISSION_MODE;
     }
+    if (bundledElectronEngine && source.QODER_CONFIG_DIR !== undefined) {
+      environment.QODER_CONFIG_DIR = source.QODER_CONFIG_DIR;
+    }
   } else if (engine === "claude-code") {
     if (source.ANTHROPIC_API_KEY !== undefined) environment.ANTHROPIC_API_KEY = source.ANTHROPIC_API_KEY;
     // #81: allow a self-hosted or proxy ANTHROPIC_BASE_URL through the selected
@@ -384,11 +388,29 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean): No
       environment.DIGITAL_EMPLOYEE_CODEX_COMMAND = source.DIGITAL_EMPLOYEE_CODEX_COMMAND;
     }
   } else {
-    // claude-local runs on the operator's logged-in Claude Code; it must not
-    // receive a service credential. DIGITAL_EMPLOYEE_CLAUDE_COMMAND only
-    // overrides which local binary the engine port spawns.
+    // The external engine's historical claude-local contract remains login
+    // only. The bundled adapter below also supports the operator's own local
+    // gateway connection without loading hooks, tools, or project settings.
     if (source.DIGITAL_EMPLOYEE_CLAUDE_COMMAND !== undefined) {
       environment.DIGITAL_EMPLOYEE_CLAUDE_COMMAND = source.DIGITAL_EMPLOYEE_CLAUDE_COMMAND;
+    }
+  }
+  if (bundledElectronEngine && (engine === "claude-local" || engine === "claude-code")) {
+    for (const key of [
+      "DIGITAL_EMPLOYEE_CLAUDE_COMMAND", "CLAUDE_CONFIG_DIR",
+      "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+      "ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      "ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_CUSTOM_HEADERS",
+      "ANTHROPIC_CUSTOM_MODEL_OPTION", "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME", "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES", "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
+      "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+      "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+      "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
+    ]) {
+      if (source[key] !== undefined) environment[key] = source[key];
     }
   }
   return environment;
@@ -698,7 +720,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
           [...prefix, "turn", "run", request.workspace, "--position", request.positionId, "--stdin"],
           {
             stdio: ["pipe", "pipe", "pipe"],
-            env: turnEnvironment(request.engine, this.bundledElectronEngine),
+            env: turnEnvironment(request.engine, this.bundledElectronEngine, request.model),
           },
         );
       } catch {

@@ -45,6 +45,31 @@ function findOnPath(name, env, platform) {
 }
 
 /**
+ * Keep the operator-selected model an inert value for Codex's `--model`
+ * argument. A leading option marker, control character or unbounded value must
+ * fail before spawn rather than turning into an opaque CLI parsing failure.
+ *
+ * This lives beside the resolver because both Codex callers need it and both
+ * already import this module: bin/qoder-engine.mjs enforces it before spawn,
+ * and routes/health.ts applies it as preflight so a guaranteed-failing Host is
+ * not reported ready. #236 landed the health copy as a second implementation;
+ * the #238 review measured that health growing *stricter* than the engine was
+ * untested in either suite, so `OPENAI_MODEL=gpt-5:prod` could have been
+ * reported illegal while the engine ran it. That is the same file pair and the
+ * same failure mode as windows-launcher.js (see its header, #221) — one
+ * implementation is the fix, not a cross-check of two.
+ *
+ * @param {string | undefined} value
+ * @returns {string | null | undefined} the value, `null` when it must be
+ *   rejected, `undefined` when the operator pinned no model at all
+ */
+export function validatedCodexModel(value) {
+  if (value === undefined || value.length === 0) return undefined;
+  if (value.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value)) return null;
+  return value;
+}
+
+/**
  * Resolve the Codex executable without invoking a shell or inspecting account
  * state. Resolution order mirrors the Qoder and Claude contracts:
  *

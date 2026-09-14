@@ -2,10 +2,28 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import {
+  AGENT_BINDING_RELATIVE_PATH,
+  AGENT_BINDING_SCHEMA_VERSION,
+} from "@roleweave/shared";
 import type { TurnRecord, TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@roleweave/shared";
 import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import { SessionStore } from "../src/sessions/store.js";
 import { TurnStore } from "../src/turns/store.js";
+
+async function writePositionAgentBinding(workspace: string, engine: "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local"): Promise<void> {
+  const file = path.join(
+    workspace,
+    "positions",
+    "repo-owner",
+    ...AGENT_BINDING_RELATIVE_PATH.split("/"),
+  );
+  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  await fs.writeFile(file, `${JSON.stringify({
+    schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
+    engine,
+  })}\n`, { mode: 0o600 });
+}
 
 test("a running session rejects context-policy edits and another turn while preserving the first completion", async () => {
   let signalStarted!: () => void;
@@ -61,6 +79,40 @@ test("a running session rejects context-policy edits and another turn while pres
     await server.ctx.contextExporter.waitForIdle();
     await server.close();
     await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("session turns use the employee's durable Agent binding instead of the request engine", async () => {
+  let receivedEngine: string | undefined;
+  const driver: TurnRunDriver = {
+    async turnRun(request) {
+      receivedEngine = request.engine;
+      const timestamp = new Date().toISOString();
+      const events: TurnRunResult["events"] = [
+        { type: "run.started", runId: request.envelope.turnId, timestamp },
+        { type: "run.completed", runId: request.envelope.turnId, timestamp, output: "done", terminalReason: "goal_met" },
+      ];
+      for (const event of events) request.onEvent?.(event);
+      return { status: "trusted", events, diagnostic: "" };
+    },
+  };
+  const workspace = await copyExampleWorkspace();
+  const server = await startTestServer(undefined, driver);
+  try {
+    await writePositionAgentBinding(workspace, "claude-local");
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const created = await api(server.baseUrl, "/sessions", {
+      method: "POST", token: server.token, body: { positionId: "repo-owner" },
+    });
+    const session = created.body as WorkbenchSession;
+    const response = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, {
+      method: "POST", token: server.token, body: { input: "respect the employee binding", engine: "qoder" },
+    });
+    assert.equal(response.status, 200);
+    assert.equal((response.body as TurnRecord).engine, "claude-local");
+    assert.equal(receivedEngine, "claude-local");
+  } finally {
+    await server.close();
   }
 });
 

@@ -4,13 +4,15 @@ import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { assertPosixMode } from "./helpers.js";
 
 /** The adapter is a standalone script implementing the pinned digital-employee
  * CLI surface; tests drive it exactly like driver-cli spawns an engine. */
 const ADAPTER = fileURLToPath(new URL("../../bin/qoder-engine.mjs", import.meta.url));
+const EMPTY_PROVIDER_CONFIG = await fs.mkdtemp(path.join(os.tmpdir(), "owb-provider-test-config-"));
+after(() => fs.rm(EMPTY_PROVIDER_CONFIG, { recursive: true, force: true }));
 
 interface RunResult {
   code: number | null;
@@ -24,7 +26,20 @@ function runAdapter(
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [ADAPTER, ...args], {
-      env: { ...process.env, ...options.env },
+      env: {
+        ...process.env,
+        CLAUDE_CONFIG_DIR: EMPTY_PROVIDER_CONFIG,
+        QODER_CONFIG_DIR: EMPTY_PROVIDER_CONFIG,
+        QODERCN_CONFIG_DIR: undefined,
+        ANTHROPIC_API_KEY: undefined,
+        ANTHROPIC_AUTH_TOKEN: undefined,
+        ANTHROPIC_BASE_URL: undefined,
+        ANTHROPIC_MODEL: undefined,
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: undefined,
+        ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
+        ANTHROPIC_DEFAULT_OPUS_MODEL: undefined,
+        ...options.env,
+      },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -128,6 +143,9 @@ const fs = require("node:fs");
 if (process.env.ELECTRON_RUN_AS_NODE !== undefined) process.exit(44);
 fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)));
 fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));
+const settingsFile = process.argv[process.argv.indexOf("--settings") + 1];
+const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
+if (settings.disableAllHooks !== true || settings.hooksConfig?.enabled !== false) process.exit(87);
 const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
 write({ type: "system", subtype: "init" });
 write({ type: "assistant", message: { content: [{ type: "thinking", thinking: "internal" }, { type: "text", text: "正在核对" }], usage: { input_tokens: 10, output_tokens: 5 } } });
@@ -539,6 +557,36 @@ test("qoder-engine org apply: a stray top-level directory fails with the actiona
   assert.match(failed.message, /invalid top-level position entry: client-lead/);
 });
 
+test("qoder-engine org apply keeps newly hired display names separate from package ids", async (t) => {
+  for (const legacy of [false, true]) {
+    const dir = await makeWorkspace();
+    t.after(() => fs.rm(dir, { recursive: true, force: true }));
+    const manifestFile = path.join(dir, "organization.v1alpha1.json");
+    const manifest = JSON.parse(await fs.readFile(manifestFile, "utf8"));
+    manifest.roles = manifest.roles.filter((role: { id: string }) => role.id !== "docs-writer");
+    await fs.writeFile(manifestFile, JSON.stringify(manifest));
+    const employeeDir = path.join(dir, "positions", "repo-owner", "docs-writer");
+    if (legacy) {
+      const employeeFile = path.join(employeeDir, "employee.json");
+      const employee = JSON.parse(await fs.readFile(employeeFile, "utf8"));
+      employee.authors = ["org-workbench"];
+      await fs.writeFile(employeeFile, JSON.stringify(employee));
+      await fs.writeFile(path.join(employeeDir, "SKILL.md"), '---\nname: "docs-writer"\ndescription: "writes docs"\n---\n\n# 文档员工\n\nWorks on docs.\n');
+    } else {
+      await fs.mkdir(path.join(employeeDir, ".workbench"));
+      await fs.writeFile(path.join(employeeDir, ".workbench", "identity.v1.json"), JSON.stringify({ schemaVersion: "workbench-position-identity.v1", name: "文档员工" }));
+    }
+    for (let pass = 0; pass < 2; pass += 1) {
+      const result = await runAdapter(["org", "apply", dir, "--json"]);
+      assert.equal(result.code, 0, result.stderr);
+      const applied = JSON.parse(await fs.readFile(path.join(dir, ".digital-employee", "org.json"), "utf8"));
+      const role = applied.roles.find((entry: { id: string }) => entry.id === "docs-writer");
+      assert.equal(role.name, "文档员工");
+      assert.equal(role.package.name, "docs-writer");
+    }
+  }
+});
+
 test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and passes --agent <position>", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture; the Windows package smoke leg covers the win32 .cmd spawn path" : false }, async () => {
   const dir = await makeWorkspace();
   const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-qoder-"));
@@ -563,6 +611,8 @@ test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and pa
     SSL_CERT_FILE: path.join(fakeDir, "ca.pem"),
     SSL_CERT_DIR: path.join(fakeDir, "certs"),
   };
+  await fs.mkdir(qoderRuntimeEnvironment.TMP);
+  await fs.mkdir(qoderRuntimeEnvironment.TEMP);
   const result = await runAdapter(["turn", "run", dir, "--position", "docs-writer", "--stdin"], {
     stdin: JSON.stringify({ input: "检查发布门禁" }),
     env: {
@@ -599,6 +649,12 @@ test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and pa
   const qoderArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
   assert.ok(qoderArgs.includes("-w") && qoderArgs[qoderArgs.indexOf("-w") + 1] === dir);
   assert.ok(qoderArgs.includes("--agent") && qoderArgs[qoderArgs.indexOf("--agent") + 1] === "docs-writer");
+  const agentDefinitions = JSON.parse(qoderArgs[qoderArgs.indexOf("--agents") + 1]!);
+  assert.equal(agentDefinitions["docs-writer"].description, "docs-writer duties");
+  assert.deepEqual(agentDefinitions["docs-writer"].tools, []);
+  assert.equal(qoderArgs[qoderArgs.indexOf("--tools") + 1], "");
+  assert.ok(qoderArgs.includes("--strict-mcp-config"));
+  assert.deepEqual(JSON.parse(qoderArgs[qoderArgs.indexOf("--mcp-config") + 1]!), { mcpServers: {} });
   assert.ok(qoderArgs.includes("--permission-mode") && qoderArgs[qoderArgs.indexOf("--permission-mode") + 1] === "auto");
   assert.equal(qoderArgs.at(-1), "检查发布门禁", "envelope input becomes the qoder prompt");
   const qoderEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
@@ -619,6 +675,41 @@ test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and pa
     "ARBITRARY_SECRET",
   ]) {
     assert.equal(forbidden in qoderEnv, false, `${forbidden} reached Qoder or its MCP descendants`);
+  }
+});
+
+test("qoder-engine tool grants retain settings and MCP isolation", { skip: process.platform === "win32" }, async () => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-tools-"));
+  const argsFile = path.join(fakeDir, "args.json");
+  const fakeBin = await writeFakeQoder(fakeDir, fakeQoderOk(argsFile, path.join(fakeDir, "env.json")));
+  const permissionsFile = path.join(dir, "positions", "repo-owner", "permissions.json");
+  await fs.writeFile(permissionsFile, JSON.stringify({ tools: ["Read", "Grep", "Glob"], mcpServers: [] }));
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "inspect" }), env: { ORG_WORKBENCH_QODER_BIN: fakeBin },
+  });
+  assert.equal(result.code, 0, result.stdout + result.stderr);
+  const args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.equal(args[args.indexOf("--tools") + 1], "Read,Grep,Glob");
+  assert.equal(args[args.indexOf("--setting-sources") + 1], "");
+  assert.ok(args.includes("--strict-mcp-config"));
+  assert.deepEqual(JSON.parse(args[args.indexOf("--mcp-config") + 1]!), { mcpServers: {} });
+});
+
+test("qoder-engine never substitutes global tools or MCP for unsupported employee grants", async () => {
+  for (const permissions of [{ tools: ["default"] }, { tools: ["Read,Write"] }, { tools: ["Read"], mcpServers: [{ id: "global", tools: ["read"] }] }]) {
+    const dir = await makeWorkspace();
+    const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-grants-"));
+    const argsFile = path.join(fakeDir, "args.json");
+    const fakeBin = await writeFakeQoder(fakeDir, fakeQoderOk(argsFile, path.join(fakeDir, "env.json")));
+    await fs.writeFile(path.join(dir, "positions", "repo-owner", "permissions.json"), JSON.stringify(permissions));
+    const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+      stdin: JSON.stringify({ input: "inspect" }), env: { ORG_WORKBENCH_QODER_BIN: fakeBin },
+    });
+    assert.equal(result.code, 0, "engine.v1 reports failures as terminal events");
+    assert.equal(JSON.parse(result.stdout.trim().split("\n").at(-1)!).type, "run.failed");
+    assert.match(result.stdout, /qoder\.(position_invalid|mcp_binding_unsupported)/);
+    assert.equal(await exists(argsFile), false, "unsupported grants must fail before CLI spawn");
   }
 });
 
@@ -671,6 +762,43 @@ test("qoder-engine turn run: an error result becomes run.failed with retryable=f
   assert.equal((failed?.error as { code: string }).code, "qoder.result_error");
   assert.equal((failed?.error as { message: string }).message, "qoder hit its turn cap");
   assert.equal((failed?.error as { retryable: boolean }).retryable, false);
+});
+
+test("qoder-engine turn run: consumes an unterminated result and never treats clean exit as a successful turn", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-terminal-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fakeDir, { recursive: true, force: true })]));
+  for (const terminal of [true, false]) {
+    const record = terminal
+      ? { type: "result", subtype: "success", is_error: false, result: "real terminal result" }
+      : { type: "assistant", message: { content: [{ type: "text", text: "partial only" }] } };
+    const fakeBin = await writeFakeQoder(fakeDir, `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(record))});\n`);
+    const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+      stdin: JSON.stringify({ input: "hi" }), env: { ORG_WORKBENCH_QODER_BIN: fakeBin, DIGITAL_EMPLOYEE_ENGINE_MODEL: "qoder" },
+    });
+    const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.equal(events.at(-1)?.type, terminal ? "run.completed" : "run.failed");
+    if (terminal) assert.equal(events.at(-1)?.output, "real terminal result");
+    else assert.equal((events.at(-1)?.error as { code: string }).code, "qoder.no_terminal_event");
+  }
+});
+
+test("qoder-engine reports the provider errors array instead of unrelated stderr warnings", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-error-array-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fakeDir, { recursive: true, force: true })]));
+  const fakeBin = await writeFakeQoder(fakeDir, `#!/usr/bin/env node
+process.stderr.write('Unrelated duplicate skill warning');
+console.log(JSON.stringify({type:'result',subtype:'error_during_execution',is_error:true,error_code:118,errors:["You've reached your credit usage limit."],usage:{input_tokens:0,output_tokens:0}}));
+`);
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "hi" }), env: { ORG_WORKBENCH_QODER_BIN: fakeBin, DIGITAL_EMPLOYEE_ENGINE_MODEL: "qoder" },
+  });
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(events.at(-1)?.error.code, "qoder.credit_limit");
+  assert.match(events.at(-1)?.error.message, /额度已用尽/);
+  assert.doesNotMatch(events.at(-1)?.error.message, /duplicate skill/);
+  assert.equal(events.at(-1)?.error.retryable, false);
 });
 
 test("qoder-engine turn run: a missing qoder binary is turn_engine_unavailable and retryable", async () => {
@@ -794,7 +922,7 @@ test("qoder-engine turn run: claude-code dispatches to Claude binary, never Qode
   assert.ok(stdinContent.includes("hello from test"), "input is piped to Claude stdin");
 });
 
-test("qoder-engine turn run: claude-local dispatches to Claude without service credentials", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
+test("qoder-engine turn run: claude-local preserves OAuth discovery without unrelated service credentials", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
   const dir = await makeWorkspace();
   const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-claude-local-"));
   const argsFile = path.join(fakeDir, "claude-args.json");
@@ -807,9 +935,8 @@ test("qoder-engine turn run: claude-local dispatches to Claude without service c
     env: {
       DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-local",
       DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fakeClaude,
-      ANTHROPIC_API_KEY: "should-not-leak",
-      ANTHROPIC_BASE_URL: "https://should-not-leak.example.com",
       QODER_PERSONAL_ACCESS_TOKEN: "also-should-not-leak",
+      OPENAI_API_KEY: "other-provider-secret",
       PATH: `${fakeDir}${path.delimiter}${process.env.PATH ?? ""}`,
     },
   });
@@ -821,7 +948,202 @@ test("qoder-engine turn run: claude-local dispatches to Claude without service c
   assert.equal(claudeEnv.ANTHROPIC_API_KEY, undefined, "claude-local must not receive ANTHROPIC_API_KEY");
   assert.equal(claudeEnv.ANTHROPIC_BASE_URL, undefined, "claude-local must not receive ANTHROPIC_BASE_URL");
   assert.equal(claudeEnv.QODER_PERSONAL_ACCESS_TOKEN, undefined, "claude-local must not receive Qoder credentials");
+  assert.equal(claudeEnv.OPENAI_API_KEY, undefined);
+  assert.equal(claudeEnv.CLAUDE_CONFIG_DIR, EMPTY_PROVIDER_CONFIG);
   assert.equal(claudeEnv.DIGITAL_EMPLOYEE_CLAUDE_COMMAND, fakeClaude, "claude-local receives the binary override");
+  const args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.equal(args.includes("--bare"), false, "bare would disable native OAuth credential discovery");
+  assert.equal(args[args.indexOf("--setting-sources") + 1], "");
+});
+
+test("claude-local projects user Bearer connection and model mappings without loading hooks", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-claude-provider-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const argsFile = path.join(fixture, "args.json");
+  const envFile = path.join(fixture, "env.json");
+  const stdinFile = path.join(fixture, "stdin.txt");
+  const fakeBin = await writeFakeClaude(fixture, fakeClaudeOk(argsFile, envFile, stdinFile));
+  await fs.writeFile(path.join(fixture, "settings.json"), JSON.stringify({
+    model: "sonnet",
+    env: {
+      ANTHROPIC_AUTH_TOKEN: "fixture-user-bearer",
+      ANTHROPIC_BASE_URL: "https://claude.example.test/api",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "value-chat",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "value-small",
+      OPENAI_API_KEY: "unrelated-fixture-key",
+      ARBITRARY_SECRET: "unrelated-fixture-secret",
+    },
+    hooks: { SessionStart: [{ hooks: [{ type: "command", command: "do-not-run-user-hook" }] }] },
+    mcpServers: { unsafe: { command: "do-not-start-mcp" } },
+  }));
+  for (const selected of [undefined, "haiku"]) {
+    const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+      stdin: JSON.stringify({ input: "fixture question" }),
+      env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-local", DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fakeBin,
+        CLAUDE_CONFIG_DIR: fixture, ROLEWEAVE_TURN_MODEL: selected,
+        ANTHROPIC_AUTH_TOKEN: "shell-token-overridden-by-user", OPENAI_API_KEY: "server-other-provider" },
+    });
+    const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(events.at(-1)?.type, "run.completed", result.stdout);
+    const env = JSON.parse(await fs.readFile(envFile, "utf8"));
+    const args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+    assert.equal(env.ANTHROPIC_AUTH_TOKEN, "fixture-user-bearer");
+    assert.equal(env.ANTHROPIC_API_KEY, "", "the local Bearer configuration clears an inherited API key");
+    assert.equal(env.ANTHROPIC_BASE_URL, "https://claude.example.test/api");
+    assert.equal(env.ANTHROPIC_DEFAULT_SONNET_MODEL, "value-chat");
+    assert.equal(env.ANTHROPIC_DEFAULT_HAIKU_MODEL, "value-small");
+    assert.equal(env.OPENAI_API_KEY, undefined);
+    assert.equal(env.ARBITRARY_SECRET, undefined);
+    assert.ok(args.includes("--bare"));
+    assert.equal(args[args.indexOf("--model") + 1], selected ?? "sonnet");
+    assert.equal(args[args.indexOf("--tools") + 1], "");
+    assert.equal(args[args.indexOf("--setting-sources") + 1], "");
+    assert.ok(args.includes("--strict-mcp-config"));
+    assert.doesNotMatch(JSON.stringify(args) + result.stdout + result.stderr, /fixture-user-bearer|do-not-run-user-hook|unrelated-fixture/);
+  }
+});
+
+test("claude-code accepts explicit AUTH_TOKEN but never imports user provider settings", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-claude-explicit-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const argsFile = path.join(fixture, "args.json");
+  const envFile = path.join(fixture, "env.json");
+  const fakeBin = await writeFakeClaude(fixture, fakeClaudeOk(argsFile, envFile, path.join(fixture, "stdin.txt")));
+  await fs.writeFile(path.join(fixture, "settings.json"), JSON.stringify({ model: "local-not-selected", env: { ANTHROPIC_AUTH_TOKEN: "local-not-selected", ANTHROPIC_BASE_URL: "https://local-not-selected.test" } }));
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "hi" }),
+    env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-code", DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fakeBin,
+      CLAUDE_CONFIG_DIR: fixture, ANTHROPIC_AUTH_TOKEN: "explicit-fixture-token",
+      ANTHROPIC_BASE_URL: "https://explicit.example.test", ANTHROPIC_MODEL: "explicit-model" },
+  });
+  assert.equal(JSON.parse(result.stdout.trim().split("\n").at(-1)!).type, "run.completed", result.stdout);
+  const env = JSON.parse(await fs.readFile(envFile, "utf8"));
+  const args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.equal(env.ANTHROPIC_AUTH_TOKEN, "explicit-fixture-token");
+  assert.equal(env.ANTHROPIC_BASE_URL, "https://explicit.example.test");
+  assert.equal(args[args.indexOf("--model") + 1], "explicit-model");
+  assert.ok(args.includes("--bare"));
+  assert.doesNotMatch(JSON.stringify(args) + result.stdout + result.stderr, /explicit-fixture-token|local-not-selected/);
+});
+
+test("Claude provider errors redact Bearer tokens and require a real terminal result", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-claude-diagnostics-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  for (const scenario of ["error", "empty", "success"]) {
+    const record = scenario === "error"
+      ? { type: "result", is_error: true, errors: ["Provider rejected fixture-bearer-private fixture-header-private"] }
+      : scenario === "success" ? { type: "result", subtype: "success", result: "completed without newline" } : undefined;
+    const fakeBin = await writeFakeClaude(fixture, `#!/usr/bin/env node
+if (process.argv.includes('--version')) { console.log('2.1.300'); process.exit(0); }
+process.stdin.resume();
+process.stdin.on('end', () => { ${record ? `process.stdout.write(${JSON.stringify(JSON.stringify(record))});` : ""} });
+`);
+    const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+      stdin: JSON.stringify({ input: "fixture question" }),
+      env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-code", DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fakeBin,
+        ANTHROPIC_AUTH_TOKEN: "fixture-bearer-private", ANTHROPIC_BASE_URL: "https://provider.example.test",
+        ANTHROPIC_CUSTOM_HEADERS: "X-Gateway-Key: fixture-header-private" },
+    });
+    const terminal = JSON.parse(result.stdout.trim().split("\n").at(-1)!);
+    if (scenario === "success") assert.equal(terminal.output, "completed without newline");
+    else assert.equal(terminal.error.code, scenario === "empty" ? "claude.no_terminal_event" : "claude.result_error");
+    if (scenario === "error") assert.equal(terminal.error.message, "Provider rejected [REDACTED] [REDACTED]");
+    assert.doesNotMatch(result.stdout + result.stderr, /fixture-bearer-private|fixture-header-private/);
+  }
+});
+
+test("invalid local provider settings fail closed before launching Claude or Qoder", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-provider-invalid-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const marker = path.join(fixture, "spawned");
+  const fakeBin = await writeFakeQoder(fixture, `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'unexpected');\n`);
+  for (const engine of ["claude-local", "qoder"]) {
+    await fs.writeFile(path.join(fixture, "settings.json"), engine === "claude-local"
+      ? JSON.stringify({ env: { ANTHROPIC_AUTH_TOKEN: "invalid-fixture-secret", ANTHROPIC_BASE_URL: "ftp://unsupported.test" } })
+      : JSON.stringify({ providers: { relay: { apiKey: "invalid-fixture-secret", baseUrl: "ftp://unsupported.test", model: "test-model", protocol: "unsupported-protocol" } } }));
+    const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+      stdin: JSON.stringify({ input: "must not run" }),
+      env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: engine, DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fakeBin, ORG_WORKBENCH_QODER_BIN: fakeBin,
+        CLAUDE_CONFIG_DIR: fixture, QODER_CONFIG_DIR: fixture },
+    });
+    const terminal = JSON.parse(result.stdout.trim().split("\n").at(-1)!);
+    assert.equal(terminal.type, "run.failed");
+    assert.match(terminal.error.code, /local_provider_config_invalid/);
+    assert.equal(await exists(marker), false, "invalid provider must not silently fall back to a CLI's official model");
+    assert.doesNotMatch(result.stdout + result.stderr, /invalid-fixture-secret|unsupported.test/);
+  }
+});
+
+test("Qoder projects custom configuration through a private temporary file and cleans every terminal path", { skip: process.platform === "win32" ? "requires POSIX shebang and signals" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-provider-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const configDir = path.join(fixture, "config");
+  const tempDir = path.join(fixture, "private-temp");
+  await fs.mkdir(configDir);
+  await fs.mkdir(tempDir);
+  const settings = {
+    model: { name: "relay/value-chat" },
+    providers: { relay: { protocol: "anthropic", authType: "bearer", baseUrl: "https://qoder.example.test", apiKey: "fixture-qoder-secret", model: "value-chat", models: [{ model: "value-chat", contextWindow: 128000 }] } },
+    hooks: { SessionStart: [{ hooks: [{ type: "command", command: "do-not-run" }] }] },
+    mcpServers: { unrelated: { command: "do-not-start" } },
+    env: { OPENAI_API_KEY: "unrelated-fixture-key" },
+  };
+  const originalText = JSON.stringify(settings);
+  await fs.writeFile(path.join(configDir, "settings.json"), originalText);
+  // The UID-scoped store belongs to Qoder. The adapter must leave it intact.
+  const uidDir = path.join(configDir, ".models", "fixture-uid");
+  await fs.mkdir(uidDir, { recursive: true });
+  await fs.writeFile(path.join(uidDir, "customs"), "encrypted-store-fixture");
+  for (const scenario of ["success", "provider-error", "exit", "signal", "spawn-error"]) {
+    const capture = path.join(fixture, `capture-${scenario}.json`);
+    const fakeScript = scenario === "spawn-error" ? "#!/definitely/not/an/interpreter\n" : `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+const file = args[args.indexOf('--settings') + 1];
+fs.writeFileSync(${JSON.stringify(capture)}, JSON.stringify({args, settings: JSON.parse(fs.readFileSync(file, 'utf8')), mode: fs.statSync(file).mode & 0o777, dirMode: fs.statSync(path.dirname(file)).mode & 0o777, env: process.env}));
+const scenario = ${JSON.stringify(scenario)};
+if (scenario === 'success') console.log(JSON.stringify({type:'result',subtype:'success',result:'configured'}));
+if (scenario === 'provider-error') console.log(JSON.stringify({type:'result',is_error:true,result:'rejected fixture-qoder-secret'}));
+if (scenario === 'exit') process.exitCode = 1;
+if (scenario === 'signal') { setInterval(() => {}, 1000); process.kill(process.ppid, 'SIGTERM'); }
+`;
+    const fakeBin = await writeFakeQoder(fixture, fakeScript);
+    const selected = scenario === "success" ? "relay/hand-picked" : undefined;
+    const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+      stdin: JSON.stringify({ input: "fixture request" }),
+      env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: "qoder", ORG_WORKBENCH_QODER_BIN: fakeBin,
+        QODER_CONFIG_DIR: configDir, ROLEWEAVE_TURN_MODEL: selected, TMPDIR: tempDir,
+        ANTHROPIC_AUTH_TOKEN: "other-provider-token", OPENAI_API_KEY: "other-provider-key" },
+    });
+    assert.doesNotMatch(result.stdout + result.stderr, /fixture-qoder-secret|other-provider-token|other-provider-key/);
+    assert.deepEqual(await fs.readdir(tempDir), [], `${scenario}: temporary credential directory must be removed`);
+    assert.equal(await fs.readFile(path.join(configDir, "settings.json"), "utf8"), originalText);
+    assert.equal(await fs.readFile(path.join(uidDir, "customs"), "utf8"), "encrypted-store-fixture");
+    if (scenario === "spawn-error") continue;
+    const recorded = JSON.parse(await fs.readFile(capture, "utf8"));
+    assert.equal(recorded.mode, 0o600);
+    assert.equal(recorded.dirMode, 0o700);
+    assert.equal(recorded.settings.providers.relay.apiKey, "fixture-qoder-secret");
+    assert.equal(recorded.settings.model.name, "relay/value-chat");
+    assert.equal(recorded.settings.hooks, undefined);
+    assert.equal(recorded.settings.disableAllHooks, true);
+    assert.deepEqual(recorded.settings.hooksConfig, { enabled: false });
+    assert.equal(recorded.settings.mcpServers, undefined);
+    assert.equal(recorded.settings.env, undefined);
+    assert.equal(recorded.env.QODER_CONFIG_DIR, configDir);
+    assert.equal(recorded.env.ANTHROPIC_AUTH_TOKEN, undefined);
+    assert.equal(recorded.env.OPENAI_API_KEY, undefined);
+    assert.doesNotMatch(JSON.stringify(recorded.args), /fixture-qoder-secret|do-not-run|do-not-start/);
+    assert.equal(recorded.args[recorded.args.indexOf("--setting-sources") + 1], "");
+    if (selected) assert.equal(recorded.args[recorded.args.indexOf("--model") + 1], selected);
+    else assert.equal(recorded.args.includes("--model"), false, "preserve the local default instead of forcing a platform tier");
+  }
 });
 
 test("qoder-engine turn run: claude-code fails closed when Claude binary is missing", async () => {
@@ -969,6 +1291,42 @@ async function writeFakeCodex(dir: string, script: string): Promise<string> {
 function codexEvents(stdout: string): Array<Record<string, unknown>> {
   return stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
 }
+
+test("employee model overrides reach provider CLI argv without paid requests", async (t) => {
+  for (const engine of ["qoder", "claude-local", "codex-local"]) {
+    await t.test(engine, { skip: engine === "claude-local" && process.platform === "win32" ? "Claude version probe requires a native executable" : false }, async () => {
+      const workspace = await makeWorkspace();
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-provider-model-"));
+      try {
+        const argvFile = path.join(dir, "argv.json");
+        const envFile = path.join(dir, "env.json");
+        const script = path.join(dir, "provider.cjs");
+        const source = engine === "qoder" ? fakeQoderOk(argvFile, envFile)
+          : engine === "codex-local" ? fakeCodexOk(argvFile, envFile)
+          : fakeClaudeOk(argvFile, envFile, path.join(dir, "stdin.txt"));
+        await fs.writeFile(script, source.replace("const fs =", 'if (process.argv.includes("--version")) { console.log("2.1.300"); process.exit(0); }\nconst fs ='));
+        await fs.chmod(script, 0o755);
+        let executable = script;
+        if (process.platform === "win32") {
+          executable = path.join(dir, "provider.cmd");
+          await fs.writeFile(executable, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+        }
+        const result = await runAdapter(["turn", "run", workspace, "--position", "repo-owner", "--stdin"], {
+          stdin: JSON.stringify({ input: "model propagation fixture" }),
+          env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: engine, ROLEWEAVE_TURN_MODEL: "economy-test",
+            OPENAI_MODEL: "different-default", ORG_WORKBENCH_QODER_BIN: executable,
+            DIGITAL_EMPLOYEE_CLAUDE_COMMAND: executable, DIGITAL_EMPLOYEE_CODEX_COMMAND: executable },
+        });
+        assert.equal(codexEvents(result.stdout).at(-1)?.type, "run.completed", result.stderr || result.stdout);
+        const argv = JSON.parse(await fs.readFile(argvFile, "utf8")) as string[];
+        assert.equal(argv[argv.indexOf("--model") + 1], "economy-test");
+      } finally {
+        await fs.rm(workspace, { recursive: true, force: true });
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
 
 const codexSkip = process.platform === "win32"
   ? "requires POSIX exec of a shebang fixture; the Windows package smoke leg covers the win32 .cmd spawn path"

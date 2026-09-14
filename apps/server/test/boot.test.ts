@@ -12,9 +12,17 @@ import {
   probeCodexBinary,
   probeQoderLocalBinary,
   supportedClaudeVersion,
+  supportedQoderCapabilities,
   supportedQoderVersion,
 } from "../src/routes/health.js";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
+
+const QODER_CLI_HELP = "--print --output-format text,json,stream-json --cwd --agent --permission-mode default,dont_ask --no-session-persistence --agents --tools --strict-mcp-config --mcp-config --setting-sources --settings --model";
+const QODER_HELP_CASE = `if [ "$1" = '--help' ]; then printf '%s\\n' '${QODER_CLI_HELP}'; exit 0; fi\nif [ "$1" = 'status' ]; then printf '%s\\n' '{"logged_in":true}'; exit 0; fi\n`;
+
+function qoderProbeFixture(version = "1.1.31"): string {
+  return `#!/bin/sh\n${QODER_HELP_CASE}printf '%s\\n' '${version}'\n`;
+}
 
 async function assertEventuallyReaped(pid: number, timeoutMs = 1000): Promise<void> {
   const deadline = performance.now() + timeoutMs;
@@ -64,7 +72,7 @@ test("normal digital-employee Qoder readiness keeps the service-token gate and n
     engineAvailable: true,
     engineVersion: "digital-employee 0.6.1",
     env: {},
-    qoderLocal: { installed: true, version: "1.1.31", supported: true },
+    qoderLocal: { installed: true, version: "1.1.31", supported: true, authenticated: true },
   });
   assert.deepEqual(withoutToken.qoder, {
     configured: false,
@@ -73,12 +81,12 @@ test("normal digital-employee Qoder readiness keeps the service-token gate and n
   });
 });
 
-test("bundled qoder-engine readiness uses the local Qoder 1.1.x preflight without a service token", () => {
+test("bundled qoder-engine readiness uses the local Qoder CLI capability preflight without a service token", () => {
   const ready = hostHealth({
     engineAvailable: true,
     engineVersion: "qoder-engine 0.1.0",
     env: {},
-    qoderLocal: { installed: true, version: "1.1.31", supported: true },
+    qoderLocal: { installed: true, version: "1.1.31", supported: true, authenticated: true },
   });
   assert.deepEqual(ready.qoder, { configured: true, ready: true });
 
@@ -88,15 +96,15 @@ test("bundled qoder-engine readiness uses the local Qoder 1.1.x preflight withou
     env: {},
     qoderLocal: {
       installed: true,
-      version: "1.2.0",
+      version: "2.0.0",
       supported: false,
       failure: "unsupported_version",
     },
   });
   assert.equal(unsupported.qoder.configured, false);
   assert.equal(unsupported.qoder.ready, false);
-  assert.match(unsupported.qoder.nextStep ?? "", /1\.2\.0/);
-  assert.match(unsupported.qoder.nextStep ?? "", /1\.1\.x/);
+  assert.match(unsupported.qoder.nextStep ?? "", /2\.0\.0/);
+  assert.match(unsupported.qoder.nextStep ?? "", /1\.1\.0/);
 
   const missing = hostHealth({
     engineAvailable: true,
@@ -162,7 +170,7 @@ test("codex Host health in bundled mode requires the binary plus an explicit pro
     env: { OPENAI_API_KEY: "service-key" },
     codex: installed,
   });
-  assert.deepEqual(ready.codex, { configured: true, ready: true });
+  assert.deepEqual(ready.codex, { configured: true, modelPinnable: true, ready: true });
 
   const noCli = hostHealth({
     engineAvailable: false,
@@ -198,7 +206,7 @@ test("codex Host health in bundled mode requires the binary plus an explicit pro
     env: { OPENAI_API_KEY: "service-key" },
     codex: { installed: true, version: null },
   });
-  assert.deepEqual(unknownVersion.codex, { configured: true, ready: true });
+  assert.deepEqual(unknownVersion.codex, { configured: true, modelPinnable: true, ready: true });
 
   // The health surface never echoes a credential value back.
   assert.doesNotMatch(JSON.stringify(ready), /service-key/);
@@ -210,7 +218,7 @@ test("codex-local Host readiness in bundled mode is the binary alone and never s
   // No credential anywhere: the credentialed Host stays Idle, the local-login
   // Host is ready. This is the whole point of splitting them.
   const noKey = hostHealth({ engineAvailable: true, bundledElectronEngine: true, env: {}, codex: installed });
-  assert.deepEqual(noKey["codex-local"], { configured: true, ready: true });
+  assert.deepEqual(noKey["codex-local"], { configured: true, modelPinnable: true, ready: true });
   assert.equal(noKey.codex.configured, false);
   assert.match(noKey.codex.nextStep ?? "", /本地登录/);
 
@@ -236,8 +244,99 @@ test("codex-local Host readiness in bundled mode is the binary alone and never s
     env: { OPENAI_API_KEY: "service-key" },
     codex: installed,
   });
-  assert.deepEqual(withKey["codex-local"], { configured: true, ready: true });
+  assert.deepEqual(withKey["codex-local"], { configured: true, modelPinnable: true, ready: true });
   assert.doesNotMatch(JSON.stringify(withKey["codex-local"]), /service-key/);
+});
+
+test("Codex Host health reports the pinned model, and claims none when OPENAI_MODEL is unset (#236)", () => {
+  const installed = { installed: true, version: "0.154.0" };
+  const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
+
+  const pinned = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: "gpt-5.6-sol" } });
+  assert.equal(pinned.codex.model, "gpt-5.6-sol");
+  assert.equal(pinned["codex-local"].model, "gpt-5.6-sol");
+  assert.equal(pinned.codex.ready, true);
+  assert.equal(pinned["codex-local"].ready, true);
+
+  // Unset and empty are the same state: the control plane passes no --model and
+  // Codex chooses for itself. Absent must stay absent — an inferred default
+  // would be a guess, and Codex reports its own choice to no caller.
+  for (const env of [{}, { OPENAI_MODEL: "" }]) {
+    const unpinned = hostHealth({ ...base, env });
+    assert.equal("model" in unpinned.codex, false);
+    assert.equal("model" in unpinned["codex-local"], false);
+    assert.equal(unpinned["codex-local"].ready, true);
+    // Still pinnable — the knob exists, the operator simply used none of it.
+    assert.equal(unpinned.codex.modelPinnable, true);
+    assert.equal(unpinned["codex-local"].modelPinnable, true);
+  }
+
+  // #238 review: "pinnable but unpinned" and "has no knob at all" must not both
+  // be a bare missing `model`, or a client can only separate them by carrying
+  // its own engine list. `modelPinnable` is the Host's property, so it holds
+  // whether or not a model is pinned.
+  assert.equal(pinned.codex.modelPinnable, true);
+  assert.equal(pinned["codex-local"].modelPinnable, true);
+
+  // No other Host has an LLM-model knob, so none of them may claim one.
+  const others = hostHealth({
+    engineAvailable: true,
+    engineVersion: "qoder-engine 0.2.0",
+    bundledElectronEngine: true,
+    env: { OPENAI_MODEL: "gpt-5.6-sol", ANTHROPIC_API_KEY: "k", QODER_PERSONAL_ACCESS_TOKEN: "t" },
+    codex: installed,
+    qoderLocal: { installed: true, version: "1.1.0", supported: true, authenticated: true },
+    claudeLocal: { installed: true, version: "2.1.214", supported: true },
+  });
+  for (const host of ["qoder", "claude-code", "claude-local"] as const) {
+    assert.equal("model" in others[host], false);
+    // The distinguishing half: absent `modelPinnable` is what tells a client
+    // this Host has no knob, rather than one left unset.
+    assert.equal("modelPinnable" in others[host], false, `${host} must not claim a model knob`);
+  }
+});
+
+test("an OPENAI_MODEL the engine would reject blocks the Codex Hosts instead of being displayed (#236)", () => {
+  const installed = { installed: true, version: "0.154.0" };
+  const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
+
+  // Each of these fails the shared `validatedCodexModel`, so every turn would
+  // die before spawn. Preflight is the place to say so.
+  for (const value of [
+    "--sandbox", "gpt 5", "gpt\n5", "-gpt-5", "x".repeat(257),
+    "gpt 5", "gpt@1", "gpt+1", "gpt;1", "'gpt'", "模型",
+  ]) {
+    const rejected = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: value } });
+    for (const host of ["codex", "codex-local"] as const) {
+      assert.equal("model" in rejected[host], false, `${value} must not be echoed as a model`);
+      assert.equal(rejected[host].configured, false, `${value} must not read as configured`);
+      assert.equal(rejected[host].ready, false, `${value} must not read as ready`);
+      assert.match(rejected[host].nextStep ?? "", /OPENAI_MODEL/);
+    }
+    // The local-login Host must still never point at a service credential.
+    assert.doesNotMatch(rejected["codex-local"].nextStep ?? "", /OPENAI_API_KEY/);
+  }
+});
+
+test("preflight never calls a legal OPENAI_MODEL illegal (#238 review)", () => {
+  const installed = { installed: true, version: "0.154.0" };
+  const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
+
+  // The direction the original two-copy design could not see. Health shared no
+  // implementation with the engine, so narrowing health's character class —
+  // dropping `:` was the measured mutation — left every suite green while an
+  // operator running `gpt-5:prod` was told their working config was illegal
+  // and both Hosts went unavailable. `codex-binary.js` now owns the only
+  // implementation, and these shapes pin the accepting side of it.
+  for (const value of ["gpt-5.6-sol", "gpt-5:prod", "o3", "a", "ns/model-1.2_3", "x".repeat(256)]) {
+    const accepted = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: value } });
+    for (const host of ["codex", "codex-local"] as const) {
+      assert.equal(accepted[host].model, value, `${value} is legal and must be reported verbatim`);
+      assert.equal(accepted[host].configured, true, `${value} must not block the Host`);
+      assert.equal(accepted[host].ready, true, `${value} must not block the Host`);
+      assert.equal(accepted[host].nextStep, undefined, `${value} must not produce a next step`);
+    }
+  }
 });
 
 test("Codex Hosts stay unavailable for an external engine even with a binary and service key", () => {
@@ -301,12 +400,12 @@ test("GET /health gates Codex Hosts on the configured bundled engine boundary", 
   const bundled = await api(server.baseUrl, "/health");
   assert.equal(bundled.status, 200);
   const bundledHealth = bundled.body as HealthResponse;
-  assert.deepEqual(bundledHealth.hosts.codex, { configured: true, ready: true });
-  assert.deepEqual(bundledHealth.hosts["codex-local"], { configured: true, ready: true });
+  assert.deepEqual(bundledHealth.hosts.codex, { configured: true, modelPinnable: true, ready: true });
+  assert.deepEqual(bundledHealth.hosts["codex-local"], { configured: true, modelPinnable: true, ready: true });
   delete process.env.OPENAI_API_KEY;
   const localLogin = (await api(server.baseUrl, "/health")).body as HealthResponse;
   assert.equal(localLogin.hosts.codex.ready, false);
-  assert.deepEqual(localLogin.hosts["codex-local"], { configured: true, ready: true });
+  assert.deepEqual(localLogin.hosts["codex-local"], { configured: true, modelPinnable: true, ready: true });
 });
 
 /**
@@ -357,7 +456,7 @@ test("codex probe reports not-installed when the binary cannot be resolved", () 
 
 test("claude-code Host health in bundled mode requires binary + version + API key", () => {
   const supportedClaude = { installed: true, version: "2.1.300", supported: true };
-  const bundledQoderLocal = { installed: true, version: "1.1.0", supported: true };
+  const bundledQoderLocal = { installed: true, version: "1.1.0", supported: true, authenticated: true };
 
   const fullyReady = hostHealth({
     engineAvailable: true,
@@ -402,14 +501,14 @@ test("claude-code Host health in bundled mode requires binary + version + API ke
   assert.match(unsupportedVersion["claude-code"].nextStep ?? "", /2\.2\.0/);
 });
 
-test("Qoder local probe accepts only the 1.1.x family and fails closed for missing, unsupported, and timed-out binaries", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
+test("Qoder local probe requires a supported 1.x version and headless capabilities, and fails closed", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-probe-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const supportedBin = path.join(dir, "qoder-supported");
   const unsupportedBin = path.join(dir, "qoder-unsupported");
   const slowBin = path.join(dir, "qoder-slow");
-  await fs.writeFile(supportedBin, "#!/bin/sh\nprintf '%s\\n' '1.1.31 local-account-data-must-not-leak'\n", { mode: 0o755 });
-  await fs.writeFile(unsupportedBin, "#!/bin/sh\nprintf '%s\\n' '1.2.0'\n", { mode: 0o755 });
+  await fs.writeFile(supportedBin, qoderProbeFixture("1.1.31 local-account-data-must-not-leak"), { mode: 0o755 });
+  await fs.writeFile(unsupportedBin, qoderProbeFixture("2.0.0"), { mode: 0o755 });
   await fs.writeFile(slowBin, "#!/bin/sh\nwhile :; do :; done\n", { mode: 0o755 });
 
   const supported = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: supportedBin });
@@ -417,11 +516,12 @@ test("Qoder local probe accepts only the 1.1.x family and fails closed for missi
     installed: true,
     version: "1.1.31",
     supported: true,
+    authenticated: true,
   });
   assert.doesNotMatch(JSON.stringify(supported), /local-account-data-must-not-leak/);
   assert.deepEqual(await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: unsupportedBin }), {
     installed: true,
-    version: "1.2.0",
+    version: "2.0.0",
     supported: false,
     failure: "unsupported_version",
   });
@@ -443,8 +543,68 @@ test("Qoder local probe accepts only the 1.1.x family and fails closed for missi
   assert.equal(supportedQoderVersion("1.1.0"), true);
   assert.equal(supportedQoderVersion("qodercli 1.1.31"), true);
   assert.equal(supportedQoderVersion("1.0.99"), false);
-  assert.equal(supportedQoderVersion("1.2.0"), false);
+  assert.equal(supportedQoderVersion("1.2.0"), true);
+  assert.equal(supportedQoderVersion("1.20.1"), true, "version alone must not grant readiness");
+  assert.equal(supportedQoderVersion("2.0.0"), false);
   assert.equal(supportedQoderVersion(null), false);
+});
+
+test("Qoder preflight distinguishes the IDE 1.20.1 launcher and checks each required headless capability", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-capabilities-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const bin = path.join(dir, "qoder");
+  await fs.writeFile(bin, qoderProbeFixture("1.20.1\n4ee322f78fe8606b0bcb6dd6991c61463b3112de\nx64"), { mode: 0o755 });
+  const ide = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin });
+  assert.deepEqual(ide, { installed: true, version: "1.20.1", supported: false, failure: "not_cli" });
+  const health = hostHealth({ engineAvailable: true, engineVersion: "qoder-engine 0.2.0", env: {}, qoderLocal: ide });
+  assert.equal(health.qoder.ready, false);
+  assert.match(health.qoder.nextStep ?? "", /编辑器.*Qoder CLI/);
+
+  // A new minor release is accepted based on its actual headless surface.
+  await fs.writeFile(bin, qoderProbeFixture("1.2.0"), { mode: 0o755 });
+  assert.deepEqual(await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin }), { installed: true, version: "1.2.0", supported: true, authenticated: true });
+  assert.equal(supportedQoderCapabilities(QODER_CLI_HELP.replace("text,json,stream-json", "<format>")), true, "1.1.51 help no longer enumerates output formats");
+  for (const required of ["--print", "--output-format", "--cwd", "--agent", "--permission-mode", "--no-session-persistence", "--agents", "--tools", "--strict-mcp-config", "--mcp-config", "--setting-sources", "--settings", "--model", "dont_ask"]) {
+    const incompleteHelp = QODER_CLI_HELP.replace(required, "missing");
+    assert.equal(supportedQoderCapabilities(incompleteHelp), false, required);
+  }
+  assert.equal(supportedQoderCapabilities(QODER_CLI_HELP.replace("--agent ", "--agents ")), false, "--agents does not satisfy --agent");
+  await fs.writeFile(bin, qoderProbeFixture("1.2.0").replace(QODER_CLI_HELP, "--print --output-format json"), { mode: 0o755 });
+  assert.deepEqual(await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin }), { installed: true, version: "1.2.0", supported: false, failure: "unsupported_cli" });
+
+  await fs.writeFile(bin, qoderProbeFixture("1.2.0").replace(QODER_CLI_HELP, "--install-extension"), { mode: 0o755 });
+  assert.equal((await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin })).failure, "not_cli");
+
+  await fs.writeFile(bin, `#!/bin/sh\nif [ "$1" = '--help' ]; then while :; do :; done; fi\nprintf '1.2.0\\n'\n`, { mode: 0o755 });
+  const startedAt = performance.now();
+  assert.deepEqual(await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin }, 50), { installed: true, version: "1.2.0", supported: false, failure: "timed_out" });
+  assert.ok(performance.now() - startedAt < 1000, "version and help share one bounded timeout");
+});
+
+test("Qoder readiness requires a genuine boolean CLI login status and never returns account data", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-login-probe-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const bin = path.join(dir, "qodercli");
+  for (const payload of [{ logged_in: true }, { logged_in: false }, { logged_in: "true" }, { account: { configured: true } }]) {
+    const status = JSON.stringify({ ...payload, token: "account-secret-must-not-leak", email: "account@example.invalid" });
+    await fs.writeFile(bin, qoderProbeFixture().replace('{"logged_in":true}', status), { mode: 0o755 });
+    const state = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin, QODER_PERSONAL_ACCESS_TOKEN: "presence-alone-is-not-login" });
+    assert.equal(state.authenticated, "logged_in" in payload && payload.logged_in === true);
+    const health = hostHealth({ engineAvailable: true, engineVersion: "qoder-engine 0.2.0", env: {}, qoderLocal: state });
+    assert.equal(health.qoder.ready, state.authenticated);
+    if ("logged_in" in payload && payload.logged_in === false) assert.match(health.qoder.nextStep ?? "", /qodercli login/);
+    if (!("logged_in" in payload) || typeof payload.logged_in !== "boolean") assert.equal(state.failure, "auth_check_failed");
+    assert.doesNotMatch(JSON.stringify({ state, health }), /secret-must-not-leak|account@example|presence-alone/);
+  }
+  await fs.writeFile(bin, qoderProbeFixture().replace('{"logged_in":true}', "not-json"), { mode: 0o755 });
+  assert.equal((await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin })).failure, "auth_check_failed");
+  // Local cold starts can exceed the old 3-second budget; the default 8-second
+  // budget still completes the actual status check instead of declaring ready.
+  await fs.writeFile(bin, qoderProbeFixture().replace("then printf '%s\\n' '{\"logged_in\":true}'", "then /bin/sleep 3.1; printf '%s\\n' '{\"logged_in\":true}'"), { mode: 0o755 });
+  assert.equal((await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin })).authenticated, true);
+  const timedOut = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin }, 50);
+  assert.equal(timedOut.failure, "timed_out");
+  assert.equal(timedOut.authenticated, false);
 });
 
 test("Qoder local probe does not wait for a descendant that inherits stdio", { skip: process.platform === "win32" ? "requires POSIX process-group semantics" : false }, async (t) => {
@@ -455,6 +615,7 @@ test("Qoder local probe does not wait for a descendant that inherits stdio", { s
   await fs.writeFile(
     qoderBin,
     `#!/bin/sh
+${QODER_HELP_CASE}
 (sleep 30) &
 printf '%s' "$!" > ${JSON.stringify(pidFile)}
 printf '%s\\n' '1.1.31'
@@ -466,7 +627,7 @@ exit 0
   const startedAt = Date.now();
   const result = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: qoderBin }, 3000);
   const elapsedMs = Date.now() - startedAt;
-  assert.deepEqual(result, { installed: true, version: "1.1.31", supported: true });
+  assert.deepEqual(result, { installed: true, version: "1.1.31", supported: true, authenticated: true });
   assert.ok(elapsedMs < 1500, `probe waited for descendant-held stdio: ${elapsedMs}ms`);
   const descendantPid = Number(await fs.readFile(pidFile, "utf8"));
   assert.ok(Number.isSafeInteger(descendantPid) && descendantPid > 0);
@@ -488,6 +649,7 @@ test("Qoder local probe receives only the non-secret runtime environment allowli
   await fs.writeFile(
     qoderBin,
     `#!/bin/sh
+${QODER_HELP_CASE}
 /usr/bin/env > ${JSON.stringify(envFile)}
 printf '%s\\n' '1.1.31'
 `,
@@ -512,7 +674,7 @@ printf '%s\\n' '1.1.31'
       ANTHROPIC_API_KEY: "anthropic-secret",
       ARBITRARY_SECRET: "arbitrary-secret",
     }),
-    { installed: true, version: "1.1.31", supported: true },
+    { installed: true, version: "1.1.31", supported: true, authenticated: true },
   );
 
   const childEnvironment = Object.fromEntries(
@@ -598,7 +760,7 @@ test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on 
   await fs.mkdir(path.dirname(realFixedQoderCli), { recursive: true });
   await fs.mkdir(path.dirname(unsafeFixedQoderCli), { recursive: true });
   for (const file of [explicitBin, pathQoder, pathQoderCli, pathQoderCliCn, realFixedQoderCli]) {
-    await fs.writeFile(file, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
+    await fs.writeFile(file, qoderProbeFixture(), { mode: 0o755 });
   }
   await fs.writeFile(unsafeFixedQoderCli, "#!/bin/sh\nprintf '1.1.31\\n'\n", { mode: 0o755 });
   await fs.writeFile(nonExecutableBin, "not executable\n", { mode: 0o644 });
@@ -660,7 +822,7 @@ test("Qoder binary resolution is explicit-first, shell-free, and Finder-safe on 
   assert.equal(resolveQoderExecutable({ PATH: "/usr/bin:/bin", HOME: path.join(dir, "missing-home") }, "darwin"), null);
 
   const finderProbe = await probeQoderLocalBinary({ PATH: "/usr/bin:/bin", HOME: home }, 3000, "darwin");
-  assert.deepEqual(finderProbe, { installed: true, version: "1.1.31", supported: true });
+  assert.deepEqual(finderProbe, { installed: true, version: "1.1.31", supported: true, authenticated: true });
 });
 
 test("GET /health recognizes only the bundled qoder-engine local preflight and never exposes probe output", { skip: process.platform === "win32" ? "requires POSIX exec of a #!/bin/sh probe fixture" : false }, async (t) => {
@@ -673,7 +835,7 @@ test("GET /health recognizes only the bundled qoder-engine local preflight and n
   const probeMarker = path.join(dir, "unexpected-qoder-probe");
   await fs.writeFile(bundledEngine, "#!/bin/sh\nprintf '%s\\n' 'qoder-engine 0.1.0'\n", { mode: 0o755 });
   await fs.writeFile(normalEngine, "#!/bin/sh\nprintf '%s\\n' 'digital-employee 0.6.1'\n", { mode: 0o755 });
-  await fs.writeFile(localQoder, "#!/bin/sh\nprintf '%s\\n' 'qodercli 1.1.31 private-status-must-not-leak'\n", { mode: 0o755 });
+  await fs.writeFile(localQoder, qoderProbeFixture("qodercli 1.1.31 private-status-must-not-leak"), { mode: 0o755 });
   await fs.writeFile(
     shouldNotProbeQoder,
     `#!/bin/sh\nprintf '%s' 'called' > ${JSON.stringify(probeMarker)}\nprintf '%s\\n' '1.1.31'\n`,

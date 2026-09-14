@@ -23,7 +23,7 @@ async function fixtureCli(source: string): Promise<string> {
   const dir = await fs.mkdtemp(path.join(FIXTURE_TMPDIR, "owb-turn-driver-"));
   const file = path.join(dir, "fixture.mjs");
   await fs.writeFile(file, source, { mode: 0o600 });
-  return `${process.execPath} ${file}`;
+  return `${JSON.stringify(process.execPath)} ${JSON.stringify(file)}`;
 }
 
 async function waitForFixtureReady(file: string, timeoutMs: number): Promise<string> {
@@ -60,6 +60,71 @@ test("turn driver uses stdin, exact turn argv, and the selected engine environme
   });
   assert.equal(result.status, "trusted");
   assert.equal(result.events.length, 2);
+});
+
+test("per-employee models cross only the bundled adapter boundary for every Agent", async () => {
+  const dir = await fs.mkdtemp(path.join(FIXTURE_TMPDIR, "owb-model-driver-"));
+  const entry = path.join(dir, "fixture.mjs");
+  try {
+    for (const engine of ["qoder", "claude-local", "codex-local"] as const) {
+      for (const bundled of [true, false]) {
+        await fs.writeFile(entry, `
+          for await (const chunk of process.stdin) {}
+          if (process.env.ROLEWEAVE_TURN_MODEL !== ${JSON.stringify(bundled ? "economy-test" : undefined)}) process.exit(8);
+          if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== ${JSON.stringify(engine)}) process.exit(9);
+          const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+          console.log(JSON.stringify({ ...base, type: "run.started" }));
+          console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+        `);
+        const driver = new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(entry)}`, 120_000, bundled);
+        const result = await driver.turnRun({ workspace: "/workspace", positionId: "repo-owner", engine, model: "economy-test", envelope: ENVELOPE });
+        assert.equal(result.status, "trusted", `${engine}, bundled=${bundled}: ${result.diagnostic}`);
+      }
+    }
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test("only the bundled Claude boundary receives its selected gateway environment", async () => {
+  const injected = {
+    ANTHROPIC_AUTH_TOKEN: "fixture-bearer", ANTHROPIC_BASE_URL: "https://gateway.example/anthropic",
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: "gateway-small", CLAUDE_CONFIG_DIR: "/fixture/claude",
+    ANTHROPIC_CUSTOM_MODEL_OPTION: "gateway-custom", ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: "Custom",
+    ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION: "Registered gateway model",
+    ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES: "tool_use",
+    ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES: "tool_use",
+    ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES: "tool_use",
+    CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+    QODER_PERSONAL_ACCESS_TOKEN: "other-provider-secret", OPENAI_API_KEY: "other-openai-secret",
+    ORG_WORKBENCH_TOKEN: "control-plane-secret",
+  };
+  const saved = Object.fromEntries(Object.keys(injected).map((key) => [key, process.env[key]]));
+  const dir = await fs.mkdtemp(path.join(FIXTURE_TMPDIR, "owb-gateway-driver-"));
+  const entry = path.join(dir, "fixture.mjs");
+  try {
+    Object.assign(process.env, injected);
+    for (const bundled of [false, true]) {
+      await fs.writeFile(entry, `
+        for await (const chunk of process.stdin) {}
+        const bundled = ${JSON.stringify(bundled)};
+        for (const key of ${JSON.stringify(Object.keys(injected).filter((key) => key.startsWith("ANTHROPIC_") || key.startsWith("CLAUDE_")))}) {
+          if ((process.env[key] !== undefined) !== bundled) process.exit(9);
+        }
+        if (process.env.QODER_PERSONAL_ACCESS_TOKEN || process.env.OPENAI_API_KEY || process.env.ORG_WORKBENCH_TOKEN) process.exit(8);
+        if (process.argv.some((arg) => arg.includes("fixture-bearer"))) process.exit(7);
+        const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+        console.log(JSON.stringify({ ...base, type: "run.started" }));
+        console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+      `);
+      const driver = new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(entry)}`, 120_000, bundled);
+      const result = await driver.turnRun({ workspace: "/workspace", positionId: "repo-owner", engine: "claude-local", envelope: ENVELOPE });
+      assert.equal(result.status, "trusted", `bundled=${bundled}: ${result.diagnostic}`);
+    }
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("a cancellation delivered at abort registration never starts the engine process", async () => {
@@ -200,7 +265,7 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
       expectedPermissionMode: undefined,
       expectedQoderCommand: undefined,
         expectQoderRuntime: false,
-        label: "a non-Qoder turn receives neither adapter controls nor Qoder runtime",
+        label: "Claude receives shared proxy/TLS runtime but no Qoder controls",
       },
     ];
     for (const testCase of cases) {
@@ -217,7 +282,8 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
         if (process.env.DIGITAL_EMPLOYEE_QODER_COMMAND !== ${JSON.stringify(testCase.expectedQoderCommand)}) process.exit(7);
         const expectedRuntime = ${JSON.stringify(qoderRuntimeEnvironment)};
         for (const [key, value] of Object.entries(expectedRuntime)) {
-          const expected = ${JSON.stringify(testCase.expectQoderRuntime)} ? value : undefined;
+          const sharedClaudeRuntime = ${JSON.stringify(testCase.engine === "claude-code" && testCase.bundled)} && /^(?:HTTPS?_PROXY|NO_PROXY|https?_proxy|no_proxy|NODE_EXTRA_CA_CERTS|SSL_CERT_FILE|SSL_CERT_DIR)$/.test(key);
+          const expected = ${JSON.stringify(testCase.expectQoderRuntime)} || sharedClaudeRuntime ? value : undefined;
           if (process.env[key] !== expected) process.exit(4);
         }
         const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
@@ -256,7 +322,7 @@ test("an invalid bundled Qoder permission mode reaches the adapter and fails wit
     process.env.ORG_WORKBENCH_QODER_BIN = process.execPath;
     process.env.ORG_WORKBENCH_QODER_PERMISSION_MODE = "unrestricted";
     const result = await new DigitalEmployeeCliDriver(
-      `${process.execPath} ${adapter}`,
+      `${JSON.stringify(process.execPath)} ${JSON.stringify(adapter)}`,
       120_000,
       true,
     ).turnRun({

@@ -29,6 +29,10 @@
       "types": "./dist/docs.d.ts",
       "import": "./dist/docs.js"
     },
+    "./model-selection": {
+      "types": "./dist/model-selection.d.ts",
+      "import": "./dist/model-selection.js"
+    },
     "./capabilities": {
       "types": "./dist/capabilities.d.ts",
       "import": "./dist/capabilities.js"

@@ -37,6 +37,38 @@ function makeApiRequestStub({ status = 200, body = { open: true }, shouldReject 
   return fn;
 }
 
+function autoOpenFixture(t, platform, existingPaths = []) {
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+  const moduleIds = [
+    require.resolve("../src/auto-open-workspace.cjs"),
+    require.resolve("../src/control-plane-launch.cjs"),
+  ];
+  const cachedModules = moduleIds.map((id) => require.cache[id]);
+  t.after(() => {
+    Object.defineProperty(process, "platform", originalPlatform);
+    moduleIds.forEach((id, index) => {
+      if (cachedModules[index]) require.cache[id] = cachedModules[index];
+      else delete require.cache[id];
+    });
+  });
+  Object.defineProperty(process, "platform", { ...originalPlatform, value: platform });
+  moduleIds.forEach((id) => { delete require.cache[id]; });
+  const { openDefaultWorkspace } = require("../src/auto-open-workspace.cjs");
+  const checkedPaths = [];
+  // Only the mode is emulated; fs and API fixtures never touch a live Windows/WSL host.
+  t.mock.method(fs, "existsSync", (filePath) => {
+    checkedPaths.push(filePath);
+    return existingPaths.includes(filePath);
+  });
+  const messages = [];
+  return {
+    openDefaultWorkspace,
+    checkedPaths,
+    messages,
+    writeStderr: (message) => { messages.push(message); },
+  };
+}
+
 test("AC-001: non-2xx response is recorded with status and code", async (t) => {
   const workspaceDir = makeTempWorkspace(t);
   fs.writeFileSync(path.join(workspaceDir, "workspace.json"), "{}");
@@ -296,4 +328,133 @@ test("last-workspace path: successful open returns no fallback notice", async (t
 
   assert.equal(capture.output(), "");
   assert.equal(result.fallbackNoticePath, null);
+});
+
+test("demo fallback: prefers the existing legacy .org-workbench workspace when the canonical demo is absent", async (t) => {
+  const fakeHome = makeTempWorkspace(t);
+  const userDataPath = makeTempWorkspace(t);
+  const legacyDir = path.join(fakeHome, ".org-workbench", "demo-workspace");
+  const canonicalDir = path.join(fakeHome, ".roleweave", "demo-workspace");
+  const manifest = path.join(legacyDir, "workspace.json");
+  const fixture = autoOpenFixture(t, "darwin", [manifest]);
+  t.mock.method(os, "homedir", () => fakeHome);
+  const apiRequest = makeApiRequestStub();
+
+  const result = await fixture.openDefaultWorkspace({
+    apiRequest,
+    env: {},
+    userDataPath,
+    writeStderr: fixture.writeStderr,
+  });
+
+  assert.deepEqual(result, { fallbackNoticePath: null });
+  assert.deepEqual(fixture.checkedPaths, [path.join(canonicalDir, "workspace.json"), manifest, manifest]);
+  assert.deepEqual(apiRequest.calls, [{
+    pathname: "/workspace/open",
+    options: { method: "POST", body: { path: legacyDir } },
+  }]);
+  assert.deepEqual(fixture.messages, []);
+});
+
+for (const alias of ["ROLEWEAVE_DEFAULT_WORKSPACE", "ORG_WORKBENCH_DEFAULT_WORKSPACE"]) {
+  for (const { platform, controlPlane } of [
+    { platform: "linux", controlPlane: "wsl" },
+    { platform: "darwin", controlPlane: "wsl" },
+    { platform: "win32", controlPlane: undefined },
+    { platform: "win32", controlPlane: "native" },
+  ]) {
+    for (const exists of [false, true]) {
+      test(`native override: ${platform} env=${controlPlane ?? "unset"} ${alias} exists=${exists} (#156 AC-003/004/005)`, async (t) => {
+        const dir = platform === "win32" ? "C:\\projects\\workspace" : "/home/test/workspace";
+        const manifest = path.join(dir, "workspace.json");
+        const fixture = autoOpenFixture(t, platform, exists ? [manifest] : []);
+        const apiRequest = makeApiRequestStub({ status: 422, body: { code: "workspace_invalid" } });
+        const env = { [alias]: dir };
+        if (controlPlane !== undefined) env.ORG_WORKBENCH_CONTROL_PLANE = controlPlane;
+
+        const result = await fixture.openDefaultWorkspace({
+          apiRequest,
+          env,
+          userDataPath: "/unused/user-data",
+          writeStderr: fixture.writeStderr,
+        });
+
+        assert.deepEqual(result, { fallbackNoticePath: null });
+        assert.deepEqual(apiRequest.calls, exists ? [{
+          pathname: "/workspace/open",
+          options: { method: "POST", body: { path: dir } },
+        }] : [], "native mode must validate locally before POST and preserve the path");
+        assert.deepEqual(fixture.checkedPaths, [manifest]);
+        assert.equal(fixture.messages.length, 1);
+        if (exists) {
+          assert.ok(fixture.messages[0].includes(`[mode=native, dir=${dir}]`));
+          assert.match(fixture.messages[0], /422.*workspace_invalid/);
+        } else {
+          assert.equal(fixture.messages[0], `auto-open skipped: workspace.json not found at ${dir}\n`);
+        }
+      });
+    }
+  }
+
+  for (const [dir, serverPath] of [
+    ["/mnt/c/some/workspace", "/mnt/c/some/workspace"],
+    ["/home/test/workspace", "/home/test/workspace"],
+    ["C:\\projects\\workspace", "/mnt/c/projects/workspace"],
+  ]) {
+    for (const outcome of ["success", "non-2xx", "rejection"]) {
+      test(`WSL override: win32 ${alias} ${dir} ${outcome} (#156 AC-003/004/005)`, async (t) => {
+        const fixture = autoOpenFixture(t, "win32");
+        const apiRequest = makeApiRequestStub({
+          status: outcome === "non-2xx" ? 422 : 200,
+          body: { code: "workspace_invalid" },
+          shouldReject: outcome === "rejection",
+        });
+
+        const result = await fixture.openDefaultWorkspace({
+          apiRequest,
+          env: { [alias]: dir, ORG_WORKBENCH_CONTROL_PLANE: "wsl" },
+          userDataPath: "/unused/user-data",
+          writeStderr: fixture.writeStderr,
+        });
+
+        assert.deepEqual(result, { fallbackNoticePath: null });
+        assert.deepEqual(fixture.checkedPaths, [], "WSL overrides must be validated by the server");
+        assert.deepEqual(apiRequest.calls, [{
+          pathname: "/workspace/open",
+          options: { method: "POST", body: { path: serverPath } },
+        }]);
+        if (outcome === "success") {
+          assert.deepEqual(fixture.messages, [], "success must stay silent");
+        } else {
+          assert.equal(fixture.messages.length, 1);
+          assert.ok(fixture.messages[0].includes(`[mode=wsl, dir=${dir}]`));
+          assert.match(fixture.messages[0], outcome === "non-2xx"
+            ? /422.*workspace_invalid/ : /control plane is not running/);
+        }
+      });
+    }
+  }
+}
+
+test("WSL override: win32 ROLEWEAVE_CONTROL_PLANE_MODE=wsl alias activates the #224 guard", async (t) => {
+  const fixture = autoOpenFixture(t, "win32");
+  const apiRequest = makeApiRequestStub({ status: 200, body: { open: true } });
+
+  const result = await fixture.openDefaultWorkspace({
+    apiRequest,
+    env: {
+      ROLEWEAVE_DEFAULT_WORKSPACE: "C:\\projects\\workspace",
+      ROLEWEAVE_CONTROL_PLANE_MODE: "wsl",
+    },
+    userDataPath: "/unused/user-data",
+    writeStderr: fixture.writeStderr,
+  });
+
+  assert.deepEqual(result, { fallbackNoticePath: null });
+  assert.deepEqual(fixture.checkedPaths, [], "the alias must skip the Windows-side existsSync");
+  assert.deepEqual(apiRequest.calls, [{
+    pathname: "/workspace/open",
+    options: { method: "POST", body: { path: "/mnt/c/projects/workspace" } },
+  }]);
+  assert.deepEqual(fixture.messages, [], "success must stay silent");
 });

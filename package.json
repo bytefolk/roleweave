@@ -18,6 +18,8 @@
     "node": ">=22"
   },
   "scripts": {
+    "services": "node scripts/services.mjs",
+    "local-services": "node scripts/local-services.mjs",
     "build": "tsc -b",
     "dedupe:react": "node scripts/dedupe-react.mjs",
     "postinstall": "node scripts/dedupe-react.mjs",
@@ -26,6 +28,7 @@
     "test:ui": "vitest run --config packages/ui/vitest.config.ts",
     "test:renderer": "node scripts/run-renderer-tests.mjs",
     "test:desktop-main": "npm run build:renderer && node --test --test-timeout=120000 \"apps/desktop/test/*.test.cjs\"",
+    "test:wsl-acceptance:windows": "node --test --test-timeout=60000 \"apps/desktop/test/wsl-acceptance-windows.cjs\"",
     "test:context-e3": "node --test --test-timeout=120000 apps/server/dist/test/context-exporter-e3.test.js",
     "security:check": "npm audit --audit-level=high",
     "doctor": "node scripts/dev.mjs doctor",
@@ -65,6 +68,7 @@
     "electron-builder": "26.15.3",
     "electron-updater": "6.8.9",
     "esbuild": "0.25.12",
+    "tar": "7.5.22",
     "typescript": "^5.6.0"
   }
 }

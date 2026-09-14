@@ -19,6 +19,7 @@ import {
   Tag,
 } from "antd";
 import { useOwbLocale, useT } from "@roleweave/ui";
+import { useEngineLabel } from "../turns/TurnPanel";
 import type { TurnEngine, TurnTerminalReason } from "@roleweave/shared";
 
 /** Event classes rendered on the timeline. `model.delta` is intentionally excluded. */
@@ -428,6 +429,14 @@ function TimelineGroupHead({
 }) {
   const t = useT();
   const localeTag = useLocaleTag();
+  // #240 review: this used a third local label map typed `engine: string` with a
+  // `return engine` fallback, so Codex turns rendered as the raw id and
+  // claude-local read "Claude Local" here but "Claude Code · local login" in the
+  // conversation panel. The raw id was unreachable until this PR stopped
+  // /reports failing closed on Codex records. Sharing the hook removes both the
+  // fallback and the wording split, and `Record<TurnEngine, string>` behind it
+  // makes a sixth engine a compile error rather than a bare id on screen.
+  const engineLabel = useEngineLabel();
   const first = events[0];
   const terminal = events.find(
     (e) => e.type === "run.failed" || e.type === "run.completed" || e.type === "turn.indeterminate",
@@ -583,13 +592,6 @@ function typeLabel(type: AuditTimelineEventType, t: ReturnType<typeof useT>): st
     case "hire.progress": return t("rep.eventHireProgress");
     default: return type;
   }
-}
-
-function engineLabel(engine: string): string {
-  if (engine === "qoder") return "Qoder";
-  if (engine === "claude-code") return "Claude Code";
-  if (engine === "claude-local") return "Claude Local";
-  return engine;
 }
 
 function formatTime(value: string | undefined, localeTag = "zh-CN"): string {

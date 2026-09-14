@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   THEME_STORAGE_KEY,
+  THEME_PROFILE_STORAGE_KEY,
+  applyThemeProfile,
   applyThemeMode,
   initThemeMode,
   osThemeMode,
+  readStoredProfile,
   readStoredMode,
+  resolveThemeProfile,
   resolveThemeMode,
+  setThemeProfile,
   setThemeMode,
 } from "../src/theme-mode";
 
@@ -40,6 +45,7 @@ function stubDarkQuery(matches: boolean) {
 beforeEach(() => {
   window.localStorage.clear();
   document.documentElement.setAttribute("data-theme", "light");
+  document.documentElement.setAttribute("data-ui-theme", "mint");
 });
 
 afterEach(() => {
@@ -79,7 +85,19 @@ describe("theme mode resolution (#94)", () => {
     const stop = initThemeMode();
 
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(document.documentElement.getAttribute("data-ui-theme")).toBe("mint");
     stop();
+  });
+
+  it("defaults to mint and persists a separately selectable color profile", () => {
+    expect(readStoredProfile()).toBeNull();
+    expect(resolveThemeProfile()).toBe("mint");
+
+    setThemeProfile("default");
+
+    expect(document.documentElement.getAttribute("data-ui-theme")).toBe("default");
+    expect(window.localStorage.getItem(THEME_PROFILE_STORAGE_KEY)).toBe("default");
+    expect(readStoredProfile()).toBe("default");
   });
 
   it("follows later OS changes only while no explicit choice is pinned", () => {
@@ -145,5 +163,12 @@ describe("theme mode resolution (#94)", () => {
 
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
+  });
+
+  it("applies a profile without touching storage", () => {
+    applyThemeProfile("default");
+
+    expect(document.documentElement.getAttribute("data-ui-theme")).toBe("default");
+    expect(window.localStorage.getItem(THEME_PROFILE_STORAGE_KEY)).toBeNull();
   });
 });

@@ -9,13 +9,14 @@
 // Shell-service split (ADR-0001): main spawns apps/server as a child process
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
-const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage } = require("electron");
 // Keep the development window and the packaged bundle aligned on the public
 // product name. The old IPC/package identifiers below remain compatibility
 // contracts, but users should only see RoleWeave.
 app.setName("RoleWeave");
 const { spawn } = require("node:child_process");
 const {
+  bundledEngineCommand,
   createControlPlaneChild,
   engineRuntimeEnvironment,
   serverPathForWorkspace,
@@ -25,6 +26,7 @@ const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
+const { runtimeSettingsEnvironment } = require("./runtime-settings.cjs");
 const { recoverMacGuiPath } = require("./macos-login-path.cjs");
 const {
   reservePackagedSmokeRequests,
@@ -70,6 +72,7 @@ const {
   validateDriveUploadRequest,
 } = require("./drive-ipc.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
+const { validateAvatarGenerateRequest } = require("./avatar-ipc.cjs");
 const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 const {
   sessionListPath,
@@ -87,10 +90,16 @@ const {
   validateGroupTurnRequest,
 } = require("./group-ipc.cjs");
 const {
+  goalPath,
+  validateGoalCreateRequest,
+  validateGoalUpdateRequest,
+} = require("./goal-ipc.cjs");
+const {
   writeLastWorkspacePath,
 } = require("./last-workspace.cjs");
 const { validateWorkspaceCreateRequest } = require("./workspace-ipc.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
+const { createConnectionStore, createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const ROLEWEAVE_DEV_ICON = path.resolve(
@@ -118,9 +127,20 @@ let eventStreamRequest = null;
 let currentSseStatus = "connecting";
 let pendingFallbackNotice = null;
 let updateCheckTimer = null;
+const serviceConnections = createServiceConnections({
+  apiRequest,
+  // Electron's secure storage is available only after app.whenReady().
+  store: {
+    read: () => createConnectionStore({ userDataPath: app.getPath("userData"), safeStorage }).read(),
+    write: (connections) => createConnectionStore({ userDataPath: app.getPath("userData"), safeStorage }).write(connections),
+  },
+});
+registerServiceIpc({
+  ipcMain, manager: serviceConnections, BrowserWindow, shell,
+  isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
+});
 
 function pinnedEngineCommandDefault() {
-  const nodePath = process.execPath;
   const enginePath = path.join(
     __dirname,
     "..",
@@ -132,7 +152,7 @@ function pinnedEngineCommandDefault() {
   // Wrap both paths in double quotes so the server's quote-aware splitCommand
   // recovers them as two argv tokens even when the install path contains
   // spaces (Windows `C:\Program Files\...`, macOS OneDrive folders, etc).
-  return `"${nodePath}" "${enginePath}"`;
+  return bundledEngineCommand(enginePath, process.env);
 }
 
 function startControlPlane() {
@@ -420,6 +440,26 @@ ipcMain.handle("owb:position:get", async (_event, positionId) => {
   return apiRequest(`/positions/${encodeURIComponent(positionId)}`);
 });
 
+ipcMain.handle("owb:avatar:generate", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) {
+    return { status: 403, body: { code: "avatar_request_invalid", message: "Untrusted sender", retryable: false } };
+  }
+  const validated = validateAvatarGenerateRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/avatar/generate", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:model", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  if (!request || typeof request !== "object" || Array.isArray(request) ||
+      Object.keys(request).length !== 2 || typeof request.positionId !== "string" ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(request.positionId) ||
+      typeof request.model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(request.model)) {
+    return { status: 400, body: { message: "Invalid employee model selection" } };
+  }
+  return apiRequest(`/positions/${encodeURIComponent(request.positionId)}/model`, { method: "PATCH", body: { model: request.model } });
+});
+
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.
 ipcMain.handle("owb:position:docs:list", async (_event, positionId) => {
   const validated = validateDocsListRequest(positionId);
@@ -603,6 +643,45 @@ ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {
   return apiRequest(`/groups/${encodeURIComponent(conversationRef)}/turns`);
 });
 
+// Additive #222: workspace-local goal surface.
+ipcMain.handle("owb:goal:create", async (_event, request) => {
+  const validated = validateGoalCreateRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/goals", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:goal:list", async () => apiRequest("/goals"));
+
+ipcMain.handle("owb:goal:get", async (_event, goalId) => {
+  const pathname = goalPath(goalId);
+  if (pathname === null) {
+    return { status: 400, body: { code: "goal_request_invalid", message: "goalId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname);
+});
+
+ipcMain.handle("owb:goal:update", async (_event, request) => {
+  if (request === null || typeof request !== "object" || Array.isArray(request)) {
+    return { status: 400, body: { code: "goal_request_invalid", message: "goal update requires an object", retryable: false } };
+  }
+  const { goalId, ...rest } = request;
+  const validated = validateGoalUpdateRequest(rest);
+  if (!validated.ok) return validated.response;
+  const pathname = goalPath(goalId);
+  if (pathname === null) {
+    return { status: 400, body: { code: "goal_request_invalid", message: "goalId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname, { method: "PATCH", body: validated.request });
+});
+
+ipcMain.handle("owb:goal:delete", async (_event, goalId) => {
+  const pathname = goalPath(goalId);
+  if (pathname === null) {
+    return { status: 400, body: { code: "goal_request_invalid", message: "goalId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname, { method: "DELETE" });
+});
+
 // Drive plane (bytefolk/mem proxy): whitelisted list/detail reads and a
 // stubbed upload seam. The desktop shell owns the OS file picker so an
 // absolute path never crosses the renderer boundary unvalidated.
@@ -689,12 +768,17 @@ function createWindow() {
     // an AC-002 "no raw hex in components" violation (there is no component
     // here, just Electron's own pre-paint).
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#14151b" : "#f7f8fb",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        // Packaged smoke/layout runs are launched without an activated window
+        // on CI/Windows. Chromium otherwise throttles renderer timers to ~1s,
+        // stretching the bounded probe into a false timeout. Normal windows
+        // retain the default background throttling behavior.
+        backgroundThrottling: smokeRequest !== null || behaviorSmokeRequest !== null || layoutReportPath !== null,
+      },
   });
   mainWindow.setMenuBarVisibility(false);
   // Lane A staging harness: static, opt-in, packaged-only, and confined to the
@@ -953,7 +1037,10 @@ app.whenReady().then(async () => {
   // turn Qoder/MCP children) is spawned; all other inherited env is unchanged.
   process.env.PATH = await recoverMacGuiPath();
   try {
+    Object.assign(process.env, runtimeSettingsEnvironment(app.getPath("userData"), process.env));
     controlPlane = await startControlPlane();
+    // Optional remote services must not prevent the local workspace opening.
+    try { await serviceConnections.initialize(); } catch { /* A later probe reports connectivity. */ }
     startEventStream();
     const autoOpenResult = await openDefaultWorkspace({
       apiRequest,

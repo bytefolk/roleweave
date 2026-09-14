@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
       - name: Set up Node
@@ -77,7 +77,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
       - name: Set up Node
@@ -141,7 +141,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
       - name: Set up Node
@@ -162,6 +162,10 @@ jobs:
       - name: Install workbench
         working-directory: org-workbench
         run: npm ci
+
+      - name: WSL control-plane acceptance on real Windows (#224)
+        working-directory: org-workbench
+        run: npm run test:wsl-acceptance:windows
 
       - name: Stage unsigned Windows app
         working-directory: org-workbench
@@ -201,7 +205,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
       - name: Set up Node
@@ -245,7 +249,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
       - name: Set up Node

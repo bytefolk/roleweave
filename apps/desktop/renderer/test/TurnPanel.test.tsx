@@ -1,9 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { pickSelectOption, visibleSelectOptions } from "./select-helper";
-import { TurnPanel } from "../src/turns";
-import type { CreateTurnRequest, TurnEngine, TurnPanelProps, TurnRecord } from "../src/turns";
+import { TurnPanel, TurnThread } from "../src/turns";
+import type { CreateTurnRequest, TurnPanelProps, TurnRecord } from "../src/turns";
 
 const positions = [
   { id: "repo-owner", name: "代码库负责人" },
@@ -19,18 +17,14 @@ const availability: TurnPanelProps["engineAvailability"] = {
 };
 
 function ControlledPanel({ onCreateTurn }: { onCreateTurn: (request: CreateTurnRequest) => void }) {
-  const [positionId, setPositionId] = useState<string | null>("repo-owner");
-  const [engine, setEngine] = useState<TurnEngine>("qoder");
   return (
     <TurnPanel
       workspaceOpen
       positions={positions}
-      selectedPositionId={positionId}
-      engine={engine}
+      selectedPositionId="repo-owner"
+      engine="qoder"
       engineAvailability={availability}
       turns={[]}
-      onSelectPosition={setPositionId}
-      onSelectEngine={setEngine}
       onCreateTurn={onCreateTurn}
     />
   );
@@ -51,28 +45,55 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
 }
 
 describe("TurnPanel Issue #5 D3 behavior", () => {
-  it("addresses a position, switches between the five supported Hosts, and creates a turn", async () => {
+  it("keeps execution details out of a direct employee conversation", () => {
+    const active = {
+      schemaVersion: "workbench-session.v1" as const,
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      positionId: "repo-owner",
+      workspaceInstanceId: "workspace-1",
+      principal: "position.repo-owner",
+      status: "active" as const,
+      rotatedFrom: null,
+      rotatedTo: null,
+      createdAt: "2026-09-08T00:00:00Z",
+      rotatedAt: null,
+    };
+    const historic = {
+      ...active,
+      sessionId: "22222222-2222-4222-8222-222222222222",
+      status: "rotated" as const,
+      rotatedTo: active.sessionId,
+    };
+    render(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[]}
+        sessions={[active, historic]}
+        selectedSessionId={active.sessionId}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+
+    expect(document.querySelector(".owb-conversation-controls")).toBeNull();
+    expect(screen.queryByLabelText("选择对话岗位")).toBeNull();
+    expect(screen.queryByLabelText("选择本地会话")).toBeNull();
+    expect(screen.queryByLabelText("选择 Agent Host")).toBeNull();
+    expect(screen.queryByRole("button", { name: "轮换当前会话" })).toBeNull();
+    expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  });
+
+  it("sends directly to the employee selected in the organization tree", async () => {
     const createTurn = vi.fn();
-    render(<ControlledPanel onCreateTurn={createTurn} />);
+    render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="release-manager" engine="claude-local"
+      engineAvailability={availability} turns={[]} onCreateTurn={createTurn} />);
 
-    // #248 R2 ③：对话岗位 / Agent Host 已降级进默认收起的「会话设置」，先展开。
-    fireEvent.click(screen.getByText("会话设置"));
-
-    pickSelectOption("选择对话岗位", "发布负责人");
-    // 岗位已经在组织树和对话卡头中标明，面板标题只保留模块名称。
-    expect(screen.getByRole("heading", { name: "本地对话" })).toBeInTheDocument();
-
-    fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
-    // #206 added Codex twice: a credentialed Host and a local-login Host,
-    // mirroring the claude-code / claude-local split.
-    expect(visibleSelectOptions().map((option) => option.textContent)).toEqual([
-      "Qoder · Configured",
-      "Claude Code · Configured",
-      "Claude Code · 本地登录 · Configured",
-      "Codex · Configured",
-      "Codex · 本地登录 · Configured",
-    ]);
-    pickSelectOption("选择 Agent Host", "Claude Code · Configured");
+    expect(screen.getByRole("heading", { name: "发布负责人" })).toBeInTheDocument();
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    expect(screen.queryByLabelText("选择 Agent Host")).toBeNull();
 
     fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "准备发布说明" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
@@ -80,7 +101,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     await waitFor(() => {
       expect(createTurn).toHaveBeenCalledWith({
         positionId: "release-manager",
-        engine: "claude-code",
+        engine: "claude-local",
         input: "准备发布说明",
       });
     });
@@ -190,7 +211,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getAllByText("先从组织树或 @ 选择器选择岗位").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("先从左侧组织树选择人员").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
 
     rerender(
@@ -290,7 +311,6 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(document.querySelector('[data-turn-id="turn-uncertain"]')).toBeInTheDocument();
   });
 });
-
 describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
   it("replaces the send button with an interrupt while a turn is running", async () => {
     const cancelTurn = vi.fn();
@@ -412,60 +432,54 @@ it("preserves each employee/session draft and lets B send while A's promise is p
   await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
   expect(screen.getByLabelText("下达任务")).toHaveValue("B draft");
 });
+describe("TurnThread #234 — preserve conversation viewport on employee switch", () => {
+  function makeTurns(count: number, positionId: string): TurnRecord[] {
+    return Array.from({ length: count }, (_, i) =>
+      turn({
+        id: `${positionId}-turn-${i}`,
+        positionId,
+        positionName: positionId,
+        input: `task ${i}`,
+        output: `output ${i}`,
+      }),
+    );
+  }
 
-it("shows actual last-call context with a persistent session toggle and an honest initial zero state", async () => {
-  const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "11111111-1111-4111-8111-111111111111", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
-  const toggle = vi.fn();
-  const props = { workspaceOpen: true, positions, selectedPositionId: "repo-owner", selectedSessionId: session.sessionId,
-    sessions: [session], engine: "qoder" as const, engineAvailability: availability,
-    onSelectPosition: vi.fn(), onSelectEngine: vi.fn(), onCreateTurn: vi.fn(), onSetSessionContext: toggle };
-  const { rerender } = render(<TurnPanel {...props} turns={[]} />);
-  expect(screen.getByText("尚未调用 · 0 轮 · 0 字节")).toBeInTheDocument();
-  const metadata = { schemaVersion: "thread-context.v1" as const, enabled: true, sourceTurnCount: 2, omittedTurnCount: 1, contextBytes: 345, contextDigest: "sha256:actual", redacted: true, truncated: false, summary: "User: project background\nAssistant: draft produced" };
-  rerender(<TurnPanel {...props} turns={[turn({ threadContext: metadata })]} />);
-  expect(screen.getByText("上次调用：2 轮 · 345 字节")).toBeInTheDocument();
-  fireEvent.click(screen.getByText("上次调用：2 轮 · 345 字节"));
-  expect(screen.getByText("sha256:actual")).toBeInTheDocument();
-  expect(screen.getByText(/project background/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("switch", { name: "启用会话上下文" }));
-  expect(toggle).toHaveBeenCalledWith(session.sessionId, false);
-  rerender(<TurnPanel {...props} sessions={[{ ...session, threadContextEnabled: false }]} turns={[turn({ threadContext: metadata })]} />);
-  expect(screen.getByRole("switch", { name: "启用会话上下文" })).not.toBeChecked();
-  expect(screen.getByText("上次调用：2 轮 · 345 字节")).toBeInTheDocument();
-});
+  it("restores the prior viewport when switching A → B → A", () => {
+    const turnsA = makeTurns(5, "pos-A");
+    const turnsB = makeTurns(3, "pos-B");
+    const { rerender } = render(
+      <TurnThread turns={turnsA} scrollKey="pos-A:sess-1" />,
+    );
 
-it("reports unrecorded context for legacy history instead of inventing an empty zero-use session", () => {
-  const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "legacy-session", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
-  render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner" selectedSessionId={session.sessionId}
-    sessions={[session]} engine="qoder" engineAvailability={availability} turns={[turn({})]}
-    onSelectPosition={vi.fn()} onSelectEngine={vi.fn()} onCreateTurn={vi.fn()} />);
-  expect(screen.getByText("历史回合未记录上下文用量")).toBeInTheDocument();
-  expect(screen.queryByText(/尚未调用|0 轮|0 字节/)).not.toBeInTheDocument();
-});
+    const ol = document.querySelector("ol.owb-turn-thread") as HTMLOListElement;
+    expect(ol).not.toBeNull();
+    ol.scrollTop = 420;
+    ol.dispatchEvent(new Event("scroll"));
 
-it("does not label an older receipt as the latest call when newer history has no receipt", () => {
-  const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "mixed-history", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
-  const metadata = { schemaVersion: "thread-context.v1" as const, enabled: true, sourceTurnCount: 7, omittedTurnCount: 0, contextBytes: 890, contextDigest: "sha256:older", redacted: false, truncated: false, summary: "old receipt" };
-  const props = { workspaceOpen: true, positions, selectedPositionId: "repo-owner", selectedSessionId: session.sessionId, sessions: [session], engine: "qoder" as const, engineAvailability: availability,
-    onSelectPosition: vi.fn(), onSelectEngine: vi.fn(), onCreateTurn: vi.fn() };
-  const { rerender } = render(<TurnPanel {...props} turns={[turn({ id: "older", threadContext: metadata }), turn({ id: "newer", threadContext: undefined })]} />);
-  expect(screen.getByText("历史回合未记录上下文用量")).toBeInTheDocument();
-  expect(screen.queryByText("上次调用：7 轮 · 890 字节")).not.toBeInTheDocument();
-  rerender(<TurnPanel {...props} turns={[turn({ id: "latest", threadContext: metadata }), turn({ id: "pending-next", status: "running", provisional: true })]} />);
-  expect(screen.getByText("上次调用：7 轮 · 890 字节")).toBeInTheDocument();
-});
+    rerender(<TurnThread turns={[]} scrollKey="pos-B:sess-1" />);
+    rerender(<TurnThread turns={turnsB} scrollKey="pos-B:sess-1" />);
 
-it("blocks context changes and rotation while this employee runs in a group", () => {
-  const session = { schemaVersion: "workbench-session.v1" as const, sessionId: "group-busy-session", positionId: "repo-owner", workspaceInstanceId: "ws", principal: "position.repo-owner", status: "active" as const, rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-08T00:00:00Z", rotatedAt: null };
-  const toggle = vi.fn();
-  const rotate = vi.fn();
-  render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner" selectedSessionId={session.sessionId}
-    sessions={[session]} engine="qoder" engineAvailability={availability} turns={[]} employeeBusy
-    onSelectPosition={vi.fn()} onSelectEngine={vi.fn()} onCreateTurn={vi.fn()} onSetSessionContext={toggle} onRotateSession={rotate} />);
-  expect(screen.getByRole("switch", { name: "启用会话上下文" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("switch", { name: "启用会话上下文" }));
-  fireEvent.click(screen.getByText("会话设置"));
-  expect(screen.getByRole("button", { name: "轮换当前会话" })).toBeDisabled();
-  expect(toggle).not.toHaveBeenCalled();
-  expect(rotate).not.toHaveBeenCalled();
+    rerender(<TurnThread turns={[]} scrollKey="pos-A:sess-1" />);
+    rerender(<TurnThread turns={turnsA} scrollKey="pos-A:sess-1" />);
+    const olAfterRestore = document.querySelector("ol.owb-turn-thread") as HTMLOListElement;
+    expect(olAfterRestore.scrollTop).toBe(420);
+  });
+
+  it("starts at the default position for an employee with no stored viewport", () => {
+    const turnsA = makeTurns(3, "pos-A");
+    const turnsC = makeTurns(2, "pos-C");
+    const { rerender } = render(
+      <TurnThread turns={turnsA} scrollKey="pos-A:sess-1" />,
+    );
+
+    const ol = document.querySelector("ol.owb-turn-thread") as HTMLOListElement;
+    ol.scrollTop = 300;
+    ol.dispatchEvent(new Event("scroll"));
+
+    rerender(<TurnThread turns={[]} scrollKey="pos-C:sess-1" />);
+    rerender(<TurnThread turns={turnsC} scrollKey="pos-C:sess-1" />);
+    const olC = document.querySelector("ol.owb-turn-thread") as HTMLOListElement;
+    expect(olC.scrollTop).toBe(0);
+  });
 });

@@ -10,9 +10,15 @@ export * from "./workflows.js";
 export * from "./org-layout.js";
 export * from "./health.js";
 export * from "./turns.js";
+export * from "./agent-binding.js";
+export * from "./model-selection.js";
 export * from "./sessions.js";
 export * from "./groups.js";
 export * from "./docs.js";
 export * from "./drive.js";
 export * from "./context-sources.js";
 export * from "./updates.js";
+export * from "./goals.js";
+export * from "./avatar.js";
+
+export * from "./services.js";

@@ -12,6 +12,11 @@ export const API_VERSION = "v0" as const;
 export const API_VERSION_HEADER = "x-orgworkbench-api" as const;
 
 export const routes = {
+  services: "/services",
+  servicesConfigure: "/services/configure",
+  servicesDisconnect: "/services/disconnect",
+  servicesProbe: "/services/probe",
+  servicesRelease: "/services/release",
   health: "/health",
   workspace: "/workspace",
   workspaceOpen: "/workspace/open",
@@ -22,6 +27,8 @@ export const routes = {
   orgRestore: "/org/restore",
   orgUndo: "/org/undo",
   hire: "/hire",
+  /** One local-proxy image generation request for an employee portrait. */
+  avatarGenerate: "/avatar/generate",
   positions: "/positions",
   reports: "/reports",
   sessions: "/sessions",
@@ -52,6 +59,8 @@ export const routes = {
   driveList: "/drive/list",
   driveDetail: "/drive/detail",
   driveUpload: "/drive/upload",
+  /** Additive user-owned goal surface (#222). */
+  goals: "/goals",
   events: "/events",
 } as const;
 
@@ -81,6 +90,9 @@ export const sseEventTypes = [
   // @mentioned member spawn; group turn.* payloads additionally carry
   // additive groupRef/turnId/positionId fields for renderer attribution.
   "group.turn.spawned",
+  // Additive goal lifecycle events (#222).
+  "goal.created",
+  "goal.updated",
 ] as const;
 
 export type SseEventType = (typeof sseEventTypes)[number];

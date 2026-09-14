@@ -42,6 +42,25 @@ describe("P0 Turn / 审计时间线（AuditTimeline）", () => {
     expect(screen.getAllByText("未命名岗位").length).toBeGreaterThanOrEqual(2);
   });
 
+  // #240 review: the timeline carried its own third engine-label map, typed
+  // `engine: string` with a `return engine` fallback, so runtime ids leaked
+  // into reports. All local-login transports now collapse to the same three
+  // employee Agent brands used everywhere else.
+  it("引擎标签与对话面板同源：不显示裸 runtime id 或本地登录层", () => {
+    const events: AuditTimelineEvent[] = [
+      makeEvent({ id: "X:start", runId: "run-X", at: "2026-09-11T09:00:00.000Z", positionId: "writer-1", engine: "codex-local", type: "run.started" }),
+      makeEvent({ id: "Y:start", runId: "run-Y", at: "2026-09-11T09:01:00.000Z", positionId: "writer-1", engine: "codex", type: "run.started" }),
+      makeEvent({ id: "Z:start", runId: "run-Z", at: "2026-09-11T09:02:00.000Z", positionId: "writer-1", engine: "claude-local", type: "run.started" }),
+    ];
+    render(<AuditTimeline events={events} />);
+    expect(screen.getAllByText("· Codex").length).toBe(2);
+    expect(screen.getByText("· Claude Code")).toBeInTheDocument();
+    // Runtime ids and transport wording must both stay out of the UI.
+    expect(screen.queryByText(/codex-local/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Claude Local/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/本地登录/)).not.toBeInTheDocument();
+  });
+
   it("展开一个组后可以看到该组的事件行", () => {
     const { container } = render(<AuditTimeline events={sample} />);
     const headers = container.querySelectorAll(".ant-collapse-header");
