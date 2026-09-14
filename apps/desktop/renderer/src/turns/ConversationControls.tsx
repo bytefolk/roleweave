@@ -164,7 +164,9 @@ export function ConversationControls({
             onChange={onSelectEngine}
           />
           {modelPinnable ? (
-            <span className="owb-turn-engine__model" title={t("turn.modelHintCodex")}>
+            <span className="owb-turn-engine__model" title={pinnedModel === undefined
+                ? t("turn.modelUnpinned", { engine: engineLabel(engine) })
+                : t("turn.modelPinned", { model: pinnedModel })}>
               {pinnedModel === undefined
                 ? t("turn.modelUnpinned", { engine: engineLabel(engine) })
                 : t("turn.modelPinned", { model: pinnedModel })}
