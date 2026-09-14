@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const readWorkflow = (name) => readFileSync(new URL(`../../.github/workflows/${name}`, import.meta.url), "utf8");
+const readWorkflow = (name) => readFileSync(new URL(`../../.github/workflows/${name}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const pr = readWorkflow("scorecard-pr.yml");
 const main = readWorkflow("bytefolk-scorecard.yml");
 

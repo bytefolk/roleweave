@@ -453,7 +453,7 @@ export function applyTurnEvent(
           return { ...state, seq: nextSeq };
         }
       }
-      const rawTotal = payload?.totalTokens;
+      const rawTotal = payload?.totalTokens ?? (typeof payload?.inputTokens === "number" && typeof payload?.outputTokens === "number" ? payload.inputTokens + payload.outputTokens : undefined);
       const totalTokens = typeof rawTotal === "number" && Number.isFinite(rawTotal) ? rawTotal : existing.totalTokens;
       return {
         ...state,

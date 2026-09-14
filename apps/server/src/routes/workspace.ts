@@ -3,16 +3,19 @@ import fs from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import {
+  DEFAULT_AGENT_ENGINE,
   WORKSPACE_MANIFEST_SCHEMA_VERSION,
   WORKSPACE_ORG_SCHEMA_VERSION,
   OrgApiError,
   errorCodes,
   isPositionId,
+  turnEngines,
 } from "@roleweave/shared";
 import type {
   OrganizationFile,
   OrgRole,
   PositionBudget,
+  TurnEngine,
   WorkspaceCreateRequest,
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
@@ -40,7 +43,7 @@ function assertWorkspaceCreateRequest(raw: unknown): WorkspaceCreateRequest {
     throw invalid("workspace create request must be a JSON object");
   }
   const body = raw as Record<string, unknown>;
-  const known = new Set(["parentPath", "projectId", "business", "description"]);
+  const known = new Set(["parentPath", "projectId", "business", "description", "agentEngine"]);
   for (const key of Object.keys(body)) {
     if (!known.has(key)) throw invalid(`unknown field: ${key}`);
   }
@@ -66,11 +69,18 @@ function assertWorkspaceCreateRequest(raw: unknown): WorkspaceCreateRequest {
   ) {
     throw invalid(`description must be at most ${MAX_DESCRIPTION_CHARACTERS} characters`);
   }
+  if (
+    body.agentEngine !== undefined &&
+    (typeof body.agentEngine !== "string" || !turnEngines.includes(body.agentEngine as TurnEngine))
+  ) {
+    throw invalid(`agentEngine must be ${turnEngines.join(" or ")}`);
+  }
   return {
     parentPath: body.parentPath.trim(),
     projectId: body.projectId,
     business: body.business.trim(),
     description: body.description.trim(),
+    agentEngine: body.agentEngine === undefined ? DEFAULT_AGENT_ENGINE : body.agentEngine as TurnEngine,
   };
 }
 
@@ -108,6 +118,7 @@ async function writeProjectSkeleton(
     mode: "read_only",
     budget: PROJECT_OWNER_BUDGET,
     prompt: "作为项目负责人，先理解项目上下文，再把明确的工作拆给合适的数字员工；只读岗位资料并给出有依据的结论。",
+    agentEngine: request.agentEngine ?? DEFAULT_AGENT_ENGINE,
   });
   const employee = files.get("employee.json");
   if (employee === undefined) throw new Error("project owner skeleton must contain employee.json");
@@ -213,6 +224,7 @@ export async function handleWorkspaceCreate(
       path: ws.dir,
       business: ws.organization.business,
       owner,
+      agentEngine: request.agentEngine ?? DEFAULT_AGENT_ENGINE,
       version: ws.version,
       budgetPoolTokens: ctx.config.budgetPoolTokens,
     };

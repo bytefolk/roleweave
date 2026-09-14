@@ -2,7 +2,10 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  AGENT_BINDING_RELATIVE_PATH,
+  AGENT_BINDING_SCHEMA_VERSION,
   CHANGE_MANIFEST_SCHEMA_VERSION,
+  DEFAULT_AGENT_ENGINE,
   OrgApiError,
   errorCodes,
   hireMcpCatalog,
@@ -23,6 +26,7 @@ import type {
   HireMemorySource,
   HirePermissions,
   ReorderPositionsChange,
+  TurnEngine,
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { parentKey } from "./layout.js";
@@ -525,6 +529,8 @@ export interface SkeletonPosition {
   permissions?: HirePermissions;
   prompt?: string;
   memorySources?: HireMemorySource[];
+  /** Workbench-local execution binding; deliberately not an employee asset. */
+  agentEngine?: TurnEngine;
 }
 
 /**
@@ -623,6 +629,10 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     defaultEffect: "deny",
     servers: mcpDefinitions.map(({ grant, definition }) => ({ id: grant.id, name: definition.name, description: definition.description, tools: grant.tools })),
   };
+  const agentBinding = {
+    schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
+    engine: role.agentEngine ?? DEFAULT_AGENT_ENGINE,
+  };
   return new Map<string, string>([
     ["employee.json", `${JSON.stringify(employee, null, 2)}\n`],
     ["SKILL.md", skill],
@@ -633,6 +643,10 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     ["skills.json", `${JSON.stringify(skillsFile, null, 2)}\n`],
     ["mcp.json", `${JSON.stringify(mcpFile, null, 2)}\n`],
     ["budget.json", `${JSON.stringify(role.budget, null, 2)}\n`],
+    [".workbench/identity.v1.json", `${JSON.stringify({ schemaVersion: "workbench-position-identity.v1", name: role.name }, null, 2)}\n`],
+    // This is unlisted runtime state, not a package asset: changing a local
+    // Agent must never invalidate the upstream employee.json digest.
+    [AGENT_BINDING_RELATIVE_PATH, `${JSON.stringify(agentBinding, null, 2)}\n`],
   ]);
 }
 
@@ -640,7 +654,7 @@ export async function writeSkeletonFiles(dir: string, files: Map<string, string>
   for (const [relative, content] of files) {
     const target = path.join(dir, relative);
     await fs.mkdir(path.dirname(target), { recursive: true });
-    if (relative === "budget.json") {
+    if (relative === "budget.json" || relative.startsWith(".workbench/")) {
       await writePrivateAtomic(target, content);
     } else {
       await fs.writeFile(target, content, "utf8");

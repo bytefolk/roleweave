@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button as AntButton, ConfigProvider, theme } from "antd";
+import { Alert, Badge, Button as AntButton, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
 import { OwbI18nProvider, useT, type OwbLocale } from "@roleweave/ui";
 import {
   AppShell,
+  DSProvider,
   ModuleRail,
   Sidebar,
   Skeleton,
@@ -14,6 +15,7 @@ import { OrgTree, PositionCard } from "@roleweave/ui";
 import type { OrgDropPosition, PositionCardData } from "@roleweave/ui";
 import type {
   ChangeManifest,
+  EmployeeModelConfig,
   GroupTimeline,
   HealthResponse,
   OrgBackupEntry,
@@ -27,8 +29,8 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { BrainCircuit, Check, ChevronDown, Cog, FileChartColumn, FolderOpen, FolderPlus, Network, Plus, ShieldAlert, Undo2, UsersRound } from "lucide-react";
-import { useThemeMode } from "./theme-toggle";
+import { BrainCircuit, Cog, FileChartColumn, FolderOpen, Network, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
+import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
 import {
@@ -40,7 +42,9 @@ import {
   approvalResumeInput,
   beginGroupRun,
   beginPendingTurn,
+  defaultAgentHost,
   reconcileGroupTimeline,
+  resolveAgentEngine,
   resetStreamSeq,
   settlePendingTurn,
 } from "./turns";
@@ -55,20 +59,24 @@ import type {
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
+import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
+import { OrgWorkspaceSplit } from "./org/OrgWorkspaceSplit";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
-import { ProjectCreateDrawer } from "./project/ProjectCreateDrawer";
+import { GoalsModule } from "./goals/GoalsModule";
+import { ProjectSwitcher } from "./project/ProjectSwitcher";
+import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
+import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
 
 interface PositionCardState {
   loading: boolean;
   data: PositionCardData | null;
   notFound: boolean;
 }
-
 /**
  * D1 renderer: AppShell four-zone layout (spec §1) — ModuleRail (org active,
  * memory module), Topbar (workspace location + engine status), Sidebar
@@ -94,7 +102,6 @@ function AppRoot() {
     </OwbI18nProvider>
   );
 }
-
 function AppInner({
   locale,
   onChangeLocale,
@@ -103,7 +110,7 @@ function AppInner({
   onChangeLocale: (next: OwbLocale) => void;
 }) {
   const [activeModule, setActiveModule] = useState<
-    "org" | "groups" | "reports" | "approvals" | "docs" | "settings"
+    "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "settings"
   >("org");
   const [memorySource, setMemorySource] = useState<MemorySource>("docs");
   /**
@@ -114,8 +121,10 @@ function AppInner({
    */
   const [approvalItems] = useState<ApprovalQueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [startupError, setStartupError] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
+  const [managementTarget, setManagementTarget] = useState<string | null | undefined>(undefined);
   const [treeLoading, setTreeLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
@@ -127,7 +136,16 @@ function AppInner({
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
   const [positionColors, setPositionColors] = useState<Record<string, string>>({});
-  const [turnEngine, setTurnEngine] = useState<TurnEngine>("qoder");
+  /** Avatar is a presentation preference scoped to this local project. It
+   * never mutates the employee package or its upstream digest. */
+  const [positionAvatars, setPositionAvatars] = useState<Record<string, AvatarValue>>({});
+  const workspaceAvatars = useRef(new Map<string, Record<string, AvatarValue>>());
+  /** Concrete runtime picked once when an employee is hired. The server owns
+   * enforcement; this local projection lets the renderer show accurate
+   * readiness and seed a legacy employee's first durable binding. */
+  const [positionEngines, setPositionEngines] = useState<Record<string, TurnEngine>>({});
+  const [positionModels, setPositionModels] = useState<Record<string, EmployeeModelConfig>>({});
+  const [modelSavingId, setModelSavingId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
   const [busyPositions, setBusyPositions] = useState<Record<string, boolean>>({});
@@ -166,7 +184,7 @@ function AppInner({
   const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
-  const [projectCreateOpen, setProjectCreateOpen] = useState(false);
+  const [projectHubOpen, setProjectHubOpen] = useState(false);
   /** Org-tree group entry (#53): prefilled draft members handed to the
    * GroupsPanel create panel; nonce re-fires repeated entries. */
   const groupWorkspaceScope = useMemo(() => Symbol("group-workspace"), [workspaceInfo?.path, workspaceInfo?.open]);
@@ -175,6 +193,7 @@ function AppInner({
   const [groupDraftSeed, setGroupDraftSeed] = useState<{ members: string[]; nonce: number; scope: symbol } | null>(null);
   /** 亮/暗跟随 <html data-theme>，antd cssinjs 与 --ui-* skin 同步切换。 */
   const themeMode = useThemeMode();
+  const themeProfile = useThemeProfile();
   /** #146：界面文案唯一入口；数据层文案不经过这里。 */
   const t = useT();
 
@@ -199,6 +218,8 @@ function AppInner({
   useEffect(() => {
     if (workspacePathRef.current === workspaceInfo?.path) return;
     workspacePathRef.current = workspaceInfo?.path;
+    setManagementTarget(undefined);
+    setPositionModels({});
     selectionVersion.current += 1;
     historyRequest.current += 1;
     selectedSessions.current = {};
@@ -212,6 +233,28 @@ function AppInner({
     selectedSessionIdRef.current = null;
     setSelectedSessionId(null);
   }, [workspaceInfo?.path]);
+
+  useEffect(() => {
+    const path = workspaceInfo?.open ? workspaceInfo.path : null;
+    if (!path) { setPositionAvatars({}); return; }
+    const avatars = workspaceAvatars.current.get(path) ?? readAvatarPreferences(window.localStorage, path);
+    workspaceAvatars.current.set(path, avatars);
+    setPositionAvatars(avatars);
+  }, [workspaceInfo?.open, workspaceInfo?.path]);
+
+  const setPositionAvatar = useCallback((positionId: string, value: string) => {
+    setPositionAvatars((current) => {
+      const next = { ...current, [positionId]: value };
+      const path = workspacePathRef.current;
+      if (path) {
+        workspaceAvatars.current.set(path, next);
+        try { window.localStorage.setItem(`roleweave:position-avatars:${path}`, JSON.stringify(next)); } catch { /* keep an in-memory choice when storage is unavailable */ }
+      }
+      return next;
+    });
+  }, []);
+
+  const avatarUrls = useMemo(() => Object.fromEntries(Object.keys(positionNames).map((id) => [id, avatarSrcFor(id, positionAvatars[id])])), [positionAvatars, positionNames]);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -255,11 +298,16 @@ function AppInner({
   }, [t]);
 
   const refresh = useCallback(async () => {
-    const [statusRes, workspaceRes] = await Promise.all([
-      window.owb.status(),
-      window.owb.workspace(),
-    ]);
+    try {
+    const statusRes = await window.owb.status();
     setHealth(statusRes.health ?? null);
+    if (!statusRes.running) {
+      setStartupError(t("misc.serviceFailed"));
+      return;
+    }
+    const workspaceRes = await window.owb.workspace();
+    if (workspaceRes.status !== 200) throw new Error("Workspace unavailable");
+    setStartupError(null);
     const ws = workspaceRes.body as WorkspaceInfoResponse | null;
     setWorkspaceInfo(ws);
     if (ws?.open === true) {
@@ -269,16 +317,18 @@ function AppInner({
         setSnapshot(nextSnapshot);
         const positionIds = flattenPositionIds(nextSnapshot.tree);
         setSelectedId((current) => current && positionIds.includes(current) ? current : null);
-        const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string }]> => {
+        const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; agentEngine?: TurnEngine }]> => {
           const response = await window.owb.position(id);
-          const body = response.body as { position?: PositionCardData };
+          const body = response.body as { position?: PositionCardData; agentEngine?: unknown };
           const position = response.status === 200 && body.position
             ? normalizePositionForDisplay(body.position)
             : undefined;
           const color = position?.metadata?.color;
+          const agentEngine = isTurnEngine(body.agentEngine) ? body.agentEngine : undefined;
           return [id, {
             name: position?.name ?? t("org.unknownPosition"),
             ...(typeof color === "string" && color.length > 0 ? { color } : {}),
+            ...(agentEngine === undefined ? {} : { agentEngine }),
             // The org chart only needs a human name and optional color. Mode,
             // budget and permissions belong to the selected position record.
           }];
@@ -286,19 +336,33 @@ function AppInner({
         const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
         positionNamesRef.current = names;
         setPositionNames(names);
+        const avatars = assignDefaultAvatars(positionIds, ws.path ? {
+          ...readAvatarPreferences(window.localStorage, ws.path),
+          ...workspaceAvatars.current.get(ws.path),
+        } : {});
+        if (ws.path) workspaceAvatars.current.set(ws.path, avatars);
+        try { if (ws.path) window.localStorage.setItem(`roleweave:position-avatars:${ws.path}`, JSON.stringify(avatars)); } catch { /* assignments remain available for this session */ }
+        setPositionAvatars(avatars);
         setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
+        const engines = cardEntries.reduce<Record<string, TurnEngine>>((next, [id, entry]) => {
+          if (entry.agentEngine !== undefined) next[id] = entry.agentEngine;
+          return next;
+        }, {});
+        setPositionEngines(engines);
         await Promise.all([loadBackups(), loadReports()]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
         setPositionNames({});
         setPositionColors({});
+        setPositionEngines({});
       }
     } else {
       setSnapshot(null);
       positionNamesRef.current = {};
       setPositionNames({});
       setPositionColors({});
+      setPositionEngines({});
       setSelectedId(null);
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
@@ -312,7 +376,11 @@ function AppInner({
       setReports(null);
       setReportsError(null);
     }
-    setTreeLoading(false);
+    } catch {
+      setStartupError(t("misc.serviceFailed"));
+    } finally {
+      setTreeLoading(false);
+    }
   }, [loadBackups, loadReports, t]);
 
   const loadPosition = useCallback(async (id: string) => {
@@ -320,10 +388,19 @@ function AppInner({
     setCard({ loading: true, data: null, notFound: false });
     const res = await window.owb.position(id);
     if (version !== selectionVersion.current || selectedIdRef.current !== id) return;
-    const body = res.body as { position?: PositionCardData; code?: string };
+    const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown; modelConfig?: EmployeeModelConfig };
+    if (body.modelConfig) setPositionModels((current) => ({ ...current, [id]: body.modelConfig! }));
     if (res.status === 404 || body?.code === "position_missing") {
       setCard({ loading: false, data: null, notFound: true });
+      setPositionEngines((current) => {
+        const { [id]: _removed, ...rest } = current;
+        return rest;
+      });
       return;
+    }
+    if (isTurnEngine(body.agentEngine)) {
+      const agentEngine = body.agentEngine;
+      setPositionEngines((current) => current[id] === agentEngine ? current : { ...current, [id]: agentEngine });
     }
     setCard({
       loading: false,
@@ -411,7 +488,9 @@ function AppInner({
         }
       }
     } catch {
-      // 会话自动挂载失败不阻断：操作员仍可在「会话设置」里手动新建。
+      // Keep the direct conversation honest and disabled. Clicking the same
+      // employee in the tree retries this automatic attachment; there is no
+      // separate session-configuration surface to maintain.
     } finally {
       if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
     }
@@ -475,7 +554,7 @@ function AppInner({
       }
     };
     const offSse = window.owb.onSseStatus(applySseStatus);
-    void window.owb.sseStatus().then(applySseStatus);
+    void window.owb.sseStatus().then(applySseStatus).catch(() => setStartupError(t("misc.serviceFailed")));
     const offFallback = window.owb.onFallbackNotice((failedPath) => {
       setFallbackNotice(failedPath);
     });
@@ -500,74 +579,14 @@ function AppInner({
     setSelectedId(id);
   }, []);
 
-  const selectSession = useCallback((sessionId: string) => {
-    historyRequest.current += 1;
-    if (selectedIdRef.current) selectedSessions.current[selectedIdRef.current] = sessionId;
-    selectedSessionIdRef.current = sessionId;
-    setSelectedSessionId(sessionId);
-    setTurns([]);
-    setTurnError(null);
-  }, []);
-
-  const createSession = useCallback(async () => {
-    const positionId = selectedIdRef.current;
-    if (positionId === null) return;
-    const version = selectionVersion.current;
-    const operation = Symbol();
-    sessionOperations.current.set(positionId, operation);
-    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
-    setTurnError(null);
-    try {
-      const res = await window.owb.createSession({ positionId });
-      if (selectionVersion.current !== version || selectedIdRef.current !== positionId) return;
-      if (res.status !== 201) {
-        setTurnError(apiErrorMessage(res.body, t("turn.createSessionFail")));
-        return;
-      }
-      const session = res.body as WorkbenchSession;
-      selectedSessions.current[positionId] = session.sessionId;
-      selectedSessionIdRef.current = session.sessionId;
-      setSelectedSessionId(session.sessionId);
-      await loadSessions(positionId);
-    } catch {
-      if (selectionVersion.current === version) setTurnError(t("turn.createSessionFailOffline"));
-    } finally {
-      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
-    }
-  }, [loadSessions, t]);
-
   /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
   const openConversation = useCallback((positionId: string) => {
-    selectPosition(positionId);
-  }, [selectPosition]);
-
-  const rotateSession = useCallback(async (sessionId: string) => {
-    const positionId = selectedIdRef.current;
-    if (positionId === null) return;
-    const version = selectionVersion.current;
-    const operation = Symbol();
-    sessionOperations.current.set(positionId, operation);
-    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
-    setTurnError(null);
-    try {
-      const res = await window.owb.rotateSession(sessionId);
-      if (selectionVersion.current !== version || selectedIdRef.current !== positionId) return;
-      if (res.status !== 200 && res.status !== 201) {
-        setTurnError(apiErrorMessage(res.body, t("turn.rotateFail")));
-        return;
-      }
-      const session = res.body as WorkbenchSession;
-      selectedSessions.current[positionId] = session.sessionId;
-      selectedSessionIdRef.current = session.sessionId;
-      setSelectedSessionId(session.sessionId);
-      setTurns([]);
-      await loadSessions(positionId);
-    } catch {
-      if (selectionVersion.current === version) setTurnError(t("turn.rotateFailOffline"));
-    } finally {
-      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
+    if (selectedIdRef.current === positionId) {
+      void ensureActiveSession(positionId);
+      return;
     }
-  }, [loadSessions, t]);
+    selectPosition(positionId);
+  }, [ensureActiveSession, selectPosition]);
 
   const createTurn = useCallback(async (request: CreateTurnRequest) => {
     const sessionId = selectedSessionIdRef.current;
@@ -606,6 +625,13 @@ function AppInner({
         updateWorkspaceStream(workspacePath, (current) => settlePendingTurn(current, { positionId: request.positionId, sessionId, runId: null }));
         return false;
       }
+      const body = res.body as { engine?: unknown; runId?: unknown; turnId?: unknown };
+      if (workspacePathRef.current === workspacePath && isTurnEngine(body.engine)) {
+        const resolvedEngine = body.engine;
+        setPositionEngines((current) => current[request.positionId] === resolvedEngine
+          ? current
+          : { ...current, [request.positionId]: resolvedEngine });
+      }
       if (isSelected()) {
         historyRequest.current += 1;
         const returned = adaptTurnRecord(
@@ -615,7 +641,6 @@ function AppInner({
         );
         setTurns((current) => replaceTurn(current, returned));
       }
-      const body = res.body as { runId?: unknown; turnId?: unknown };
       updateWorkspaceStream(workspacePath, (current) =>
         settlePendingTurn(current, {
           runId: typeof body.runId === "string" ? body.runId : null,
@@ -625,6 +650,9 @@ function AppInner({
         }),
       );
       if (isSelected()) await loadTurnHistory(request.positionId, sessionId);
+      // First use may have migrated a legacy employee's Agent binding.
+      // Refresh its model catalog without turning a successful send into an error.
+      if (isSelected()) void loadPosition(request.positionId).catch(() => {});
       return true;
     } catch {
       updateWorkspaceStream(workspacePath, (current) => settlePendingTurn(current, { positionId: request.positionId, sessionId, runId: null }));
@@ -634,7 +662,7 @@ function AppInner({
       inFlightPositions.current.delete(requestKey);
       updateWorkspaceBusy(workspacePath, request.positionId, false);
     }
-  }, [loadTurnHistory, t, updateWorkspaceBusy, updateWorkspaceStream]);
+  }, [loadPosition, loadTurnHistory, t, updateWorkspaceBusy, updateWorkspaceStream]);
 
   const setSessionContext = useCallback(async (sessionId: string, enabled: boolean) => {
     const positionId = selectedIdRef.current;
@@ -656,13 +684,29 @@ function AppInner({
     }
   }, [t]);
 
+  const changeEmployeeModel = useCallback(async (model: string) => {
+    const id = selectedIdRef.current;
+    const workspace = workspacePathRef.current;
+    if (!id || !window.owb.setPositionModel || modelSavingId !== null) return;
+    setModelSavingId(id);
+    try {
+      const response = await window.owb.setPositionModel({ positionId: id, model });
+      if (workspacePathRef.current !== workspace) return;
+      if (response.status !== 200) { setTurnError(t("model.saveFailed")); return; }
+      setPositionModels((current) => ({ ...current, [id]: response.body }));
+      setTurnError(null);
+    } catch {
+      if (workspacePathRef.current === workspace) setTurnError(t("model.saveFailed"));
+    } finally { setModelSavingId(null); }
+  }, [modelSavingId, t]);
+
   /** Group spawn (#52): the 202 spawn list carries pre-assigned turnIds; seed
    * one live buffer per mentioned member so SSE deltas aggregate per member. */
   const spawnGroupRuns = useCallback(
     (
       groupRef: string,
       messageId: string,
-      spawns: Array<{ turnId: string; positionId: string }>,
+      spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>,
       input: string,
       engine: TurnEngine,
     ) => {
@@ -677,7 +721,7 @@ function AppInner({
               messageId,
               turnId: spawn.turnId,
               positionId: spawn.positionId,
-              engine,
+              engine: spawn.engine ?? engine,
               input,
             }),
           current,
@@ -817,11 +861,12 @@ function AppInner({
   }, [applyOrg, positionNames, snapshot, t]);
 
   /** #33: hire is the only creation channel; success linkage = refresh + select the new node. */
-  const hiredPosition = useCallback(async (positionId: string, name: string) => {
+  const hiredPosition = useCallback(async (positionId: string, name: string, avatar?: string) => {
+    if (avatar !== undefined) setPositionAvatar(positionId, avatar);
     setOrgFeedback({ tone: "info", text: t("org.hired", { name }) });
     await refresh();
-    setSelectedId(positionId);
-  }, [refresh, t]);
+    selectPosition(positionId);
+  }, [refresh, selectPosition, setPositionAvatar, t]);
 
   const dismissPosition = useCallback(async (id: string) =>
     applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, t("org.dismissed")), [applyOrg, t]);
@@ -948,6 +993,7 @@ function AppInner({
       reason: health?.hosts?.qoder.nextStep ?? t("misc.qoderHostUnknown"),
       modelPinnable: health?.hosts?.qoder.modelPinnable,
       model: health?.hosts?.qoder.model,
+      connection: health?.hosts?.qoder.connection,
     },
     "claude-code": {
       configured: health?.hosts?.["claude-code"].configured === true,
@@ -955,13 +1001,17 @@ function AppInner({
       reason: health?.hosts?.["claude-code"].nextStep ?? t("misc.claudeHostUnknown"),
       modelPinnable: health?.hosts?.["claude-code"].modelPinnable,
       model: health?.hosts?.["claude-code"].model,
+      connection: health?.hosts?.["claude-code"].connection,
     },
     "claude-local": {
       configured: health?.hosts?.["claude-local"]?.configured === true,
       ready: health?.hosts?.["claude-local"]?.ready === true,
-      reason: health?.hosts?.["claude-local"]?.nextStep ?? t("misc.claudeLocalHostUnknown"),
+      // The local executable is an implementation detail of Claude Code,
+      // not a second user-facing Agent or authentication mode.
+      reason: health?.hosts?.["claude-local"]?.nextStep ?? t("misc.claudeHostUnknown"),
       modelPinnable: health?.hosts?.["claude-local"]?.modelPinnable,
       model: health?.hosts?.["claude-local"]?.model,
+      connection: health?.hosts?.["claude-local"]?.connection,
     },
     codex: {
       configured: health?.hosts?.codex?.configured === true,
@@ -973,11 +1023,21 @@ function AppInner({
     "codex-local": {
       configured: health?.hosts?.["codex-local"]?.configured === true,
       ready: health?.hosts?.["codex-local"]?.ready === true,
-      reason: health?.hosts?.["codex-local"]?.nextStep ?? t("misc.codexLocalHostUnknown"),
+      // Keep the same product-level language as the hosted runtime.
+      reason: t("misc.codexHostUnknown"),
       modelPinnable: health?.hosts?.["codex-local"]?.modelPinnable,
       model: health?.hosts?.["codex-local"]?.model,
     },
   }), [health, t]);
+
+  /** A visible conversation has exactly one employee-selected runtime. For
+   * legacy employees this supplies the first request used by the server to
+   * create their one-time binding. */
+  const defaultTurnEngine = resolveAgentEngine(defaultAgentHost(engineAvailability), engineAvailability);
+  const engineForPosition = useCallback(
+    (positionId: string): TurnEngine => positionEngines[positionId] ?? defaultTurnEngine,
+    [defaultTurnEngine, positionEngines],
+  );
 
   const displayTurns = useMemo(() => {
     const historyRunIds = new Set(turns.flatMap((turn) => (turn.runId ? [turn.runId] : [])));
@@ -1008,36 +1068,35 @@ function AppInner({
     return [...turns, ...live].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }, [positionNames, selectedId, selectedSessionId, t, turnStream.pending, turnStream.runs, turns]);
 
-  // ADR-0002: Ant Design consumes the same semantic skin as the custom layout.
-  // The provider lives here (not in main.tsx) so tests render the same config;
-  // autoInsertSpace is off so two-char CJK labels keep exact accessible names.
+  // The shared provider derives both AntD and custom-component values from the
+  // selected profile. <html data-ui-theme> is seeded before React renders.
+  const treeAction = (id: string | null, action: TreeAction) => {
+    if (action === "settings") { setManagementTarget(id); return; }
+    if (action === "switch") { setProjectHubOpen(true); return; }
+    if (action === "hire") { setTreeHireParent(id ?? snapshot?.owner ?? null); return; }
+    if (action === "group") { setGroupDraftSeed({ members: id ? [id] : [], nonce: Date.now(), scope: groupWorkspaceScope }); setActiveModule("groups"); return; }
+    if (id) openConversation(id);
+    if (action === "memory") { setMemorySource(id ? "docs" : "shared"); setActiveModule("docs"); }
+    else setActiveModule("org");
+  };
+  const managedNode = typeof managementTarget === "string" && snapshot ? findNodeById(snapshot.tree, managementTarget) : null;
   return (
-    <ConfigProvider
-      locale={locale === "en" ? enUS : zhCN}
-      button={{ autoInsertSpace: false }}
-      theme={{
-        algorithm: ANTD_ALGORITHM[themeMode],
-        token: {
-          // RoleWeave brand tokens stay synchronized in both themes,
-          // including portaled Antd menus, notifications and drawers.
-          ...ANTD_SEED[themeMode],
-          // Both themes use the same readable typography and control geometry.
-          fontSize: 13,
-          borderRadius: 8,
-          // 动效三档 120/160/240ms，全 ease-out，禁 >300ms。
-          motionDurationFast: "0.12s",
-          motionDurationMid: "0.16s",
-          motionDurationSlow: "0.24s",
-          motionEaseInOut: "cubic-bezier(0.22, 0.61, 0.36, 1)",
-          motionEaseOut: "cubic-bezier(0.22, 0.61, 0.36, 1)",
-          controlHeight: 32,
-          controlHeightSM: 26,
-          controlHeightLG: 36,
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
-        },
-      }}
-    >
+    <DSProvider mode={themeMode}>
+    <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }}
+      theme={{ token: {
+        fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
+        ...(themeProfile === "mint" ? { colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64" } : {}),
+      } }}>
     <div className="owb-app">
+      {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
+        targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
+        avatar={positionAvatars[managementTarget]}
+        busy={orgBusy || runningPositionIds.has(managementTarget)} onClose={() => setManagementTarget(undefined)} onMove={movePosition} onDismiss={dismissPosition}
+        onMemory={() => { treeAction(managementTarget, "memory"); setManagementTarget(undefined); }}
+        onSaved={() => { if (selectedIdRef.current === managementTarget) void loadPosition(managementTarget); }} onAvatarChange={(value) => setPositionAvatar(managementTarget, value)} /> : null}
+      {managementTarget === null && workspaceInfo?.open ? <ProjectSettings workspace={workspaceInfo} onClose={() => setManagementTarget(undefined)}
+        onMemory={() => { treeAction(null, "memory"); setManagementTarget(undefined); }} onCollaborate={() => { treeAction(null, "group"); setManagementTarget(undefined); }}
+        onSwitch={() => { setManagementTarget(undefined); setProjectHubOpen(true); }} /> : null}
       {/* 自定义 40px 标题栏（设计稿 .wintitle）：品牌标 + 窗口点 + 引擎/工作区
           状态 chip。状态灯诚实映射 /health，不假装在线。 */}
       <header
@@ -1048,7 +1107,12 @@ function AppInner({
         <WindowControls />
         <span className="owb-wintitle__name">RoleWeave</span>
         <span className="owb-wintitle__spacer" />
-        <PrefsMenu locale={locale} onChangeLocale={onChangeLocale} mode={themeMode} />
+        <PrefsMenu
+          locale={locale}
+          onChangeLocale={onChangeLocale}
+          mode={themeMode}
+          profile={themeProfile}
+        />
       </header>
 
     {/* 壳层尺寸（导轨 54 / 侧栏 300 / topbar 48）定在 app.css 的
@@ -1086,6 +1150,7 @@ function AppInner({
             // #134: the update pane needs room for a version, live progress and
             // a changelog link, so it is a module rather than a third row in
             // the prefs drawer (#174), which stays two quick toggles.
+            { id: "goals", label: t("rail.goals"), icon: <Target aria-hidden="true" size={16} />, active: activeModule === "goals", onSelect: () => setActiveModule("goals") },
             { id: "settings", label: t("rail.settings"), icon: <Cog aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
           ]}
         />
@@ -1095,13 +1160,14 @@ function AppInner({
           label={t("tree.dir")}
           header={
             <>
-              <ProjectSwitcher
+              <TreeRowMenu id={null} name={workspaceInfo?.business ?? ""} busy={orgBusy} onAction={treeAction}>
+              <div><ProjectSwitcher
                 workspace={workspaceInfo}
-                positionCount={snapshot?.positionCount ?? null}
                 disabled={orgBusy}
-                onOpenWorkspace={() => void openWorkspace()}
-                onCreateProject={() => setProjectCreateOpen(true)}
-              />
+                dialogOpen={projectHubOpen}
+                onOpen={() => setProjectHubOpen(true)}
+              /></div>
+              </TreeRowMenu>
               <div className="owb-side-head">
                 <div className="owb-side-head__copy">
                   <strong className="owb-side-head__title">{t("tree.dir")}</strong>
@@ -1142,10 +1208,13 @@ function AppInner({
                 }}
               >
                 <OrgTree
+                  decorateRow={(id, row) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
+                  rowActions={(id) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction} />}
                   snapshot={snapshot}
                   versionStamp={snapshot.updatedAt}
                   displayNames={positionNames}
                   avatarColors={positionColors}
+                  avatarUrls={avatarUrls}
                   runningIds={runningPositionIds}
                   selectedId={selectedId}
                   onSelect={openConversation}
@@ -1171,20 +1240,25 @@ function AppInner({
               open={treeHireParent !== undefined}
               positions={positions}
               presetReportTo={treeHireParent ?? null}
-              engine={turnEngine}
+              engine={hireConversationHostId === null ? defaultTurnEngine : engineForPosition(hireConversationHostId)}
+              conversationEngine={hireConversationHostId === null ? defaultTurnEngine : engineForPosition(hireConversationHostId)}
               engineAvailability={engineAvailability}
               conversationHostId={hireConversationHostId}
               conversationHostName={hireConversationHostId ? positionNames[hireConversationHostId] : undefined}
               budgetPoolTokens={workspaceInfo.budgetPoolTokens}
               budgetAllocatedTokens={hireBudgetAllocatedTokens}
-              onSelectEngine={setTurnEngine}
               onClose={() => setTreeHireParent(undefined)}
-              onHired={(positionId, name) => void hiredPosition(positionId, name)}
+              onHired={(positionId, name, avatar) => void hiredPosition(positionId, name, avatar)}
             />
           ) : null}
-          <ProjectCreateDrawer
-            open={projectCreateOpen}
-            onClose={() => setProjectCreateOpen(false)}
+          <ProjectWorkspaceDialog
+            open={projectHubOpen}
+            workspace={workspaceInfo}
+            positionCount={snapshot?.positionCount ?? null}
+            engineAvailability={engineAvailability}
+            disabled={orgBusy}
+            onClose={() => setProjectHubOpen(false)}
+            onOpenWorkspace={() => void openWorkspace()}
             onCreated={(created) => void onProjectCreated(created)}
           />
         </Sidebar>
@@ -1201,7 +1275,7 @@ function AppInner({
                   className={engineOk ? "owb-led" : "owb-led owb-led--off"}
                   aria-hidden="true"
                 />
-                <span className="owb-src__text">{engineOk ? t("misc.engineAvailable") : t("misc.engineOffline")}</span>
+                <span className="owb-src__text">{startupError ? t("misc.serviceOffline") : health === null ? t("misc.serviceStarting") : engineOk ? t("misc.engineAvailable") : t("misc.engineOffline")}</span>
               </span>
             </div>
           }
@@ -1209,7 +1283,11 @@ function AppInner({
       }
     >
       <div className="owb-main">
-        {sseState === "connecting" ? (
+        {startupError ? (
+          <Alert type="error" showIcon role="alert" title={startupError}
+            action={<AntButton size="small" onClick={() => void refresh()}>{t("misc.retryConnection")}</AntButton>} />
+        ) : null}
+        {sseState === "connecting" && health !== null && workspaceInfo?.open === true && !startupError ? (
           <Alert type="info" showIcon role="status" title={t("misc.sseReconnecting")} />
         ) : null}
         {health && !engineOk ? (
@@ -1234,6 +1312,8 @@ function AppInner({
         ) : null}
         {activeModule === "reports" ? (
           <ReportsCenter
+            key={workspaceInfo?.path}
+            onRefresh={() => void loadReports()}
             reports={reports}
             loading={reportsLoading}
             positionNames={positionNames}
@@ -1260,61 +1340,86 @@ function AppInner({
             positions={positions}
             positionNames={positionNames}
             positionColors={positionColors}
+            avatarUrls={avatarUrls}
             draftSeed={groupDraftSeed?.scope === groupWorkspaceScope ? groupDraftSeed : null}
-            engine={turnEngine}
+            engine={defaultTurnEngine}
             engineAvailability={engineAvailability}
+            engineForPosition={engineForPosition}
             liveRuns={turnStream.runs}
-            onSelectEngine={setTurnEngine}
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
           />
+        ) : activeModule === "goals" ? (
+          <GoalsModule workspaceOpen={workspaceInfo?.open === true} />
         ) : activeModule === "settings" ? (
           <SettingsModule />
         ) : activeModule === "docs" ? (
           <MemoryModule
+            key={workspaceInfo?.path}
+            onCollaborate={() => setActiveModule("groups")}
+            onContinue={(id, sessionId) => { selectPosition(id); selectedSessions.current[id] = sessionId; setActiveModule("org"); }}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
             selectedPositionId={selectedId}
             position={card.data}
             initialSource={memorySource}
           />
-        ) : <div className="owb-org-module">
-          {/* #137 two-column workspace: the left column stacks the org chart
-              and the position-record card (aligned, one column); the right
-              column is owned solely by the conversation panel so the turn
-              stream gets the full module height. */}
-          <div className="owb-org-module__left">
-          {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
-          <OrgChart
-            snapshot={snapshot}
-            loading={treeLoading}
-            displayNames={positionNames}
-            avatarColors={positionColors}
-            selectedId={selectedId}
-            onSelect={openConversation}
-          />
-          <div className="owb-position-column">
-            <PositionCard
-              position={card.data}
-              loading={card.loading}
-              notFound={card.notFound}
-              consumption={selectedBudgetRatio}
-              running={selectedId !== null && runningPositionIds.has(selectedId)}
-              onRefresh={() => void refresh()}
-              onContextSourceSelect={(source) => {
-                setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
-                setActiveModule("docs");
-              }}
-              actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
-            />
-          </div>
-          </div>
-          <TurnPanel
+        ) : workspaceInfo?.open !== true ? (
+          <section className="owb-workspace-welcome">
+            <div className="owb-workspace-welcome__icon"><FolderOpen size={28} aria-hidden="true" /></div>
+            <h1>{t("project.welcomeTitle")}</h1>
+            <p>{t("project.welcomeDescription")}</p>
+            <AntButton type="primary" size="large" icon={<Plus size={16} aria-hidden="true" />}
+              disabled={startupError !== null || health === null} onClick={() => setProjectHubOpen(true)}>{t("project.welcomeAction")}</AntButton>
+          </section>
+        ) : <OrgWorkspaceSplit
+          ariaLabel={t("tree.splitPane")}
+          resetTitle={t("tree.splitPaneReset")}
+          valueText={(value) => t("tree.splitPaneValue", { value })}
+          left={
+            <div className="owb-org-module__left">
+              {/* #137 two-column workspace: the left column stacks the org chart
+                  and the position-record card (aligned, one column); the right
+                  column is owned solely by the conversation panel so the turn
+                  stream gets the full module height. */}
+              {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
+              <OrgChart
+                snapshot={snapshot}
+                loading={treeLoading}
+                displayNames={positionNames}
+                avatarColors={positionColors}
+                avatarUrls={avatarUrls}
+                selectedId={selectedId}
+                onSelect={openConversation}
+              />
+              <div className="owb-position-column">
+                <PositionCard
+                  position={card.data}
+                  loading={card.loading}
+                  notFound={card.notFound}
+                  consumption={selectedBudgetRatio}
+                  running={selectedId !== null && runningPositionIds.has(selectedId)}
+                  onRefresh={() => void refresh()}
+                  onContextSourceSelect={(source) => {
+                    setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
+                    setActiveModule("docs");
+                  }}
+                  actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
+                />
+              </div>
+            </div>
+          }
+          right={<TurnPanel
             key={workspaceInfo?.path}
+            avatarUrls={avatarUrls}
             workspaceOpen={workspaceInfo?.open === true}
+            modelConfig={selectedId ? positionModels[selectedId] : undefined}
+            modelSaving={modelSavingId !== null && modelSavingId === selectedId}
+            onSelectModel={changeEmployeeModel}
+            onSetSessionContext={setSessionContext}
             positions={positions}
             selectedPositionId={selectedId}
-            engine={turnEngine}
+            engine={selectedId === null ? defaultTurnEngine : engineForPosition(selectedId)}
             engineAvailability={engineAvailability}
             turns={displayTurns}
             busy={turnBusy}
@@ -1322,23 +1427,18 @@ function AppInner({
             sessions={sessions}
             selectedSessionId={selectedSessionId}
             sessionBusy={sessionBusy}
-            onSelectPosition={openConversation}
-            onSelectEngine={setTurnEngine}
             onCreateTurn={createTurn}
             onCancelTurn={cancelTurn}
             onVerdictTurn={verdictTurn}
             decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
-            onSelectSession={selectSession}
-            onCreateSession={createSession}
-            onRotateSession={rotateSession}
-            onSetSessionContext={setSessionContext}
-          />
-        </div>}
+          />}
+        />}
       </div>
     </AppShell>
     </div>
     </ConfigProvider>
+    </DSProvider>
   );
 }
 
@@ -1364,6 +1464,14 @@ function replaceTurn(turns: TurnRecord[], next: TurnRecord): TurnRecord[] {
   const index = turns.findIndex((turn) => turn.id === next.id);
   if (index < 0) return [...turns, next];
   return turns.map((turn, current) => current === index ? next : turn);
+}
+
+function isTurnEngine(value: unknown): value is TurnEngine {
+  return value === "qoder"
+    || value === "claude-code"
+    || value === "claude-local"
+    || value === "codex"
+    || value === "codex-local";
 }
 
 function apiErrorMessage(body: unknown, fallback: string): string {
@@ -1458,153 +1566,6 @@ function WindowControls() {
   );
 }
 
-/** antd seed tokens per theme — values mirror antd-skin.css exactly so the
- * cssinjs layer and the CSS custom properties never disagree. */
-const ANTD_SEED = {
-  "light": {
-    "colorPrimary": "#3e63dd",
-    "colorPrimaryHover": "#3153c4",
-    "colorPrimaryActive": "#3153c4",
-    "colorPrimaryBg": "#edf1ff",
-    "colorPrimaryBgHover": "#edf1ff",
-    "colorPrimaryBorder": "#e2e5ed",
-    "colorPrimaryBorderHover": "#c7cedb",
-    "colorSuccess": "#2e7052",
-    "colorSuccessHover": "#24573f",
-    "colorSuccessActive": "#24573f",
-    "colorSuccessBg": "#edf7f1",
-    "colorSuccessBgHover": "#edf7f1",
-    "colorSuccessBorder": "#e2e5ed",
-    "colorSuccessBorderHover": "#c7cedb",
-    "colorWarning": "#8a5a12",
-    "colorWarningHover": "#75480b",
-    "colorWarningActive": "#75480b",
-    "colorWarningBg": "#fff5e4",
-    "colorWarningBgHover": "#fff5e4",
-    "colorWarningBorder": "#e2e5ed",
-    "colorWarningBorderHover": "#c7cedb",
-    "colorError": "#b83d3d",
-    "colorErrorHover": "#a22f36",
-    "colorErrorActive": "#a22f36",
-    "colorErrorBg": "#fff0f0",
-    "colorErrorBgHover": "#fff0f0",
-    "colorErrorBorder": "#e2e5ed",
-    "colorErrorBorderHover": "#c7cedb",
-    "colorInfo": "#3e63dd",
-    "colorInfoHover": "#3153c4",
-    "colorInfoActive": "#3153c4",
-    "colorInfoBg": "#edf1ff",
-    "colorInfoBgHover": "#edf1ff",
-    "colorInfoBorder": "#e2e5ed",
-    "colorInfoBorderHover": "#c7cedb",
-    "colorErrorBgFilledHover": "#fff0f0",
-    "colorErrorBgActive": "#fff0f0",
-    "colorLink": "#3e63dd",
-    "colorLinkHover": "#3153c4",
-    "colorLinkActive": "#3153c4",
-    "colorBorder": "#e2e5ed",
-    "colorBorderSecondary": "#e2e5ed",
-    "colorBgBase": "#ffffff",
-    "colorBgContainer": "#ffffff",
-    "colorBgElevated": "#ffffff",
-    "colorBgLayout": "#f7f8fb",
-    "colorFillAlter": "#f4f5f8",
-    "controlItemBgHover": "#e8ebf2",
-    "controlItemBgActive": "#f3edfc",
-    "controlItemBgActiveHover": "#f3edfc",
-    "colorText": "#242630",
-    "colorTextSecondary": "#596172",
-    "colorTextTertiary": "#606a7b",
-    "colorTextPlaceholder": "#606a7b",
-    "colorTextDisabled": "#606a7b",
-    "colorBgContainerDisabled": "#f4f5f8",
-    "colorTextLightSolid": "#ffffff",
-    "borderRadiusSM": 6,
-    "borderRadiusLG": 12,
-    "borderRadiusOuter": 16,
-    "boxShadow": "0 4px 16px rgba(20, 21, 27, 0.1)",
-    "boxShadowSecondary": "0 16px 48px rgba(20, 21, 27, 0.14)"
-  },
-  "dark": {
-    "colorPrimary": "#86a0ff",
-    "colorPrimaryHover": "#a0b4ff",
-    "colorPrimaryActive": "#a0b4ff",
-    "colorPrimaryBg": "#252e49",
-    "colorPrimaryBgHover": "#252e49",
-    "colorPrimaryBorder": "#343844",
-    "colorPrimaryBorderHover": "#4b5262",
-    "colorSuccess": "#84c7a3",
-    "colorSuccessHover": "#a2dabb",
-    "colorSuccessActive": "#a2dabb",
-    "colorSuccessBg": "#20372c",
-    "colorSuccessBgHover": "#20372c",
-    "colorSuccessBorder": "#343844",
-    "colorSuccessBorderHover": "#4b5262",
-    "colorWarning": "#ddb35d",
-    "colorWarningHover": "#efcc86",
-    "colorWarningActive": "#efcc86",
-    "colorWarningBg": "#352e20",
-    "colorWarningBgHover": "#352e20",
-    "colorWarningBorder": "#343844",
-    "colorWarningBorderHover": "#4b5262",
-    "colorError": "#ef9699",
-    "colorErrorHover": "#ffb1b4",
-    "colorErrorActive": "#ffb1b4",
-    "colorErrorBg": "#3a242b",
-    "colorErrorBgHover": "#3a242b",
-    "colorErrorBorder": "#343844",
-    "colorErrorBorderHover": "#4b5262",
-    "colorInfo": "#86a0ff",
-    "colorInfoHover": "#a0b4ff",
-    "colorInfoActive": "#a0b4ff",
-    "colorInfoBg": "#252e49",
-    "colorInfoBgHover": "#252e49",
-    "colorInfoBorder": "#343844",
-    "colorInfoBorderHover": "#4b5262",
-    "colorErrorBgFilledHover": "#3a242b",
-    "colorErrorBgActive": "#3a242b",
-    "colorLink": "#86a0ff",
-    "colorLinkHover": "#a0b4ff",
-    "colorLinkActive": "#a0b4ff",
-    "colorBorder": "#343844",
-    "colorBorderSecondary": "#343844",
-    "colorBgBase": "#1c1e25",
-    "colorBgContainer": "#1c1e25",
-    "colorBgElevated": "#252831",
-    "colorBgLayout": "#14151b",
-    "colorFillAlter": "#171920",
-    "controlItemBgHover": "#252831",
-    "controlItemBgActive": "#30233f",
-    "controlItemBgActiveHover": "#30233f",
-    "colorText": "#e5e7ed",
-    "colorTextSecondary": "#b1b7c5",
-    "colorTextTertiary": "#969eaf",
-    "colorTextPlaceholder": "#969eaf",
-    "colorTextDisabled": "#969eaf",
-    "colorBgContainerDisabled": "#171920",
-    "colorTextLightSolid": "#14151b",
-    "borderRadiusSM": 6,
-    "borderRadiusLG": 12,
-    "borderRadiusOuter": 16,
-    "boxShadow": "0 4px 20px rgba(0, 0, 0, 0.35)",
-    "boxShadowSecondary": "0 16px 48px rgba(0, 0, 0, 0.4)"
-  }
-} as const;
-
-// Antd's dark algorithm derives a new primary color from its seed. Restore our
-// explicit palette after derivation so native controls and CSS share colors.
-function brandAlgorithm(
-  algorithm: typeof theme.defaultAlgorithm,
-  palette: typeof ANTD_SEED[keyof typeof ANTD_SEED],
-): typeof theme.defaultAlgorithm {
-  return (seed) => ({ ...algorithm(seed), ...palette });
-}
-
-const ANTD_ALGORITHM = {
-  light: brandAlgorithm(theme.defaultAlgorithm, ANTD_SEED.light),
-  dark: brandAlgorithm(theme.darkAlgorithm, ANTD_SEED.dark),
-};
-
 function Breadcrumbs({
   workspace,
 }: {
@@ -1622,111 +1583,5 @@ function Breadcrumbs({
         <span className="owb-workspace-location__path">{workspace.path}</span>
       </span>
     </span>
-  );
-}
-
-interface ProjectSwitcherProps {
-  workspace: WorkspaceInfoResponse | null;
-  positionCount: number | null;
-  disabled?: boolean;
-  onOpenWorkspace: () => void;
-  onCreateProject: () => void;
-}
-
-/**
- * Project context belongs above the organization tree, not in a second global
- * chrome row. The trigger is intentionally compact, while its menu keeps the
- * IDE-like open/create actions together with the current workspace context.
- */
-function ProjectSwitcher({
-  workspace,
-  positionCount,
-  disabled = false,
-  onOpenWorkspace,
-  onCreateProject,
-}: ProjectSwitcherProps) {
-  const t = useT();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const open = workspace?.open === true;
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Node && rootRef.current?.contains(target)) return;
-      setMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [menuOpen]);
-
-  return (
-    <div className="owb-project-switcher" ref={rootRef}>
-      <button
-        type="button"
-        className="owb-project-switcher__trigger"
-        aria-label={t("project.switcherAria")}
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        disabled={disabled}
-        onClick={() => setMenuOpen((current) => !current)}
-      >
-        <span className="owb-project-switcher__icon" aria-hidden="true">
-          <FolderOpen size={14} />
-        </span>
-        <span className="owb-project-switcher__copy">
-          <strong>{open ? workspace?.business ?? t("tree.workspaceFallback") : t("project.launcherTitle")}</strong>
-        </span>
-        <ChevronDown className="owb-project-switcher__chevron" aria-hidden="true" size={15} />
-      </button>
-
-      {menuOpen ? (
-        <div className="owb-project-switcher__menu" role="menu" aria-label={t("project.switcherAria")}>
-          {open ? (
-            <section className="owb-project-switcher__current" aria-label={t("project.current")}>
-              <p className="owb-project-switcher__eyebrow">{t("project.current")}</p>
-              <div className="owb-project-switcher__current-row">
-                <span className="owb-project-switcher__current-mark" aria-hidden="true"><Check size={12} /></span>
-                <span className="owb-project-switcher__current-copy">
-                  <strong>{workspace?.business ?? t("tree.workspaceFallback")}</strong>
-                  <small title={workspace?.path}>{workspace?.path ?? t("project.localOnly")}</small>
-                  <span>{positionCount === null ? t("project.positionsUnknown") : t("tree.positions", { count: positionCount })}</span>
-                </span>
-              </div>
-            </section>
-          ) : (
-            <p className="owb-project-switcher__empty">{t("project.noProjectOpen")}</p>
-          )}
-          <div className="owb-project-switcher__actions">
-            <button
-              type="button"
-              role="menuitem"
-              disabled={disabled}
-              onClick={() => { setMenuOpen(false); onOpenWorkspace(); }}
-            >
-              <FolderOpen aria-hidden="true" size={14} />
-              <span><strong>{t("project.openAction")}</strong><small>{t("project.openActionHint")}</small></span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={disabled}
-              onClick={() => { setMenuOpen(false); onCreateProject(); }}
-            >
-              <FolderPlus aria-hidden="true" size={14} />
-              <span><strong>{t("project.newCta")}</strong><small>{t("project.newActionHint")}</small></span>
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </div>
   );
 }

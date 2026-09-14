@@ -2,6 +2,8 @@
 
 import type {
   AssetRecord,
+  AvatarGenerateRequest,
+  AvatarGenerateResponse,
   AssetsCreateRequest,
   AssetsListResponse,
   DocPlaneDetailResponse,
@@ -15,9 +17,18 @@ import type {
   DriveObjectDetailResponse,
   DriveObjectListResponse,
   DriveUploadResponse,
+  ExternalServiceKind,
+  ServiceConnectionInput,
+  ServiceConnectionView,
+  ServiceProbe,
+  ServiceRelease,
+  ServicesResponse,
   GroupConversation,
   GroupConversationList,
   GroupTimeline,
+  GoalDetail,
+  GoalSummary,
+  GoalsCreateResponse,
   HealthResponse,
   ChangeManifest,
   CancelTurnRequest,
@@ -46,6 +57,7 @@ interface OwbApiResponse<T = unknown> {
 
 interface OwbStatusResponse {
   running: boolean;
+  runtime?: { mode: "native" | "wsl"; distro: string | null };
   state?: "starting" | "ready" | "degraded" | "stopping" | "stopped" | "failed";
   port?: number;
   health?: HealthResponse | null;
@@ -54,6 +66,7 @@ interface OwbStatusResponse {
 }
 
 export interface OwbBridge {
+  setPositionModel?(request: { positionId: string; model: string }): Promise<OwbApiResponse<import("@roleweave/shared").EmployeeModelConfig>>;
   status(): Promise<OwbStatusResponse>;
   stopControlPlane(): Promise<{ ok: boolean; state: "stopped"; forced: boolean; exitCode: number | null; signalCode: string | null }>;
   openWorkspace(): Promise<OwbApiResponse>;
@@ -65,6 +78,7 @@ export interface OwbBridge {
   orgRestore(backupId: string): Promise<OwbApiResponse<OrgRestoreResult>>;
   orgUndo(): Promise<OwbApiResponse<OrgUndoResult>>;
   hire(request: HirePositionRequest): Promise<OwbApiResponse<HireResult>>;
+  generateAvatar(request: AvatarGenerateRequest): Promise<OwbApiResponse<AvatarGenerateResponse>>;
   reports(): Promise<OwbApiResponse<ReportsResponse>>;
   position(positionId: string): Promise<OwbApiResponse>;
   positionDocs(positionId: string): Promise<OwbApiResponse<DocsFileListResponse>>;
@@ -92,8 +106,26 @@ export interface OwbBridge {
   groups(): Promise<OwbApiResponse<GroupConversationList>>;
   group(conversationRef: string): Promise<OwbApiResponse<GroupConversation>>;
   addGroupMember(request: { conversationRef: string; positionId: string }): Promise<OwbApiResponse<GroupConversation>>;
-  createGroupTurn(request: { conversationRef: string; input: string; engine: TurnEngine; mentions: string[]; mode?: "parallel" | "relay" }): Promise<OwbApiResponse<{ conversationRef: string; messageId: string; spawns: Array<{ turnId: string; positionId: string }> }>>;
+  createGroupTurn(request: {
+    conversationRef: string;
+    input: string;
+    /** Backward-compatible scalar for older control planes. */
+    engine: TurnEngine;
+    /** Agent binding for each mentioned employee. */
+    engines?: Record<string, TurnEngine>;
+    mentions: string[];
+    mode?: "parallel" | "relay";
+  }): Promise<OwbApiResponse<{
+    conversationRef: string;
+    messageId: string;
+    spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>;
+  }>>;
   groupTimeline(conversationRef: string): Promise<OwbApiResponse<GroupTimeline>>;
+  createGoal(request: { title: string; description: string; acceptanceCriteria?: string[] }): Promise<OwbApiResponse<GoalsCreateResponse>>;
+  goals(): Promise<OwbApiResponse<{ goals: GoalSummary[] }>>;
+  goal(goalId: string): Promise<OwbApiResponse<GoalDetail>>;
+  updateGoal(request: { goalId: string; title?: string; description?: string; acceptanceCriteria?: string[]; status?: string; health?: string }): Promise<OwbApiResponse<{ goalId: string }>>;
+  deleteGoal(goalId: string): Promise<OwbApiResponse<{ goalId: string; deleted: boolean }>>;
   drive: {
     list(q?: string): Promise<OwbApiResponse<DriveObjectListResponse>>;
     detail(id: string): Promise<OwbApiResponse<DriveObjectDetailResponse>>;
@@ -101,6 +133,15 @@ export interface OwbBridge {
     pickAndUpload(): Promise<OwbApiResponse<DriveUploadResponse> | { canceled: true }>;
   };
   sseStatus(): Promise<"connecting" | "connected">;
+  services: {
+    list(): Promise<OwbApiResponse<ServicesResponse>>;
+    configure(request: ServiceConnectionInput): Promise<OwbApiResponse<ServiceConnectionView>>;
+    disconnect(kind: ExternalServiceKind): Promise<OwbApiResponse<ServiceConnectionView>>;
+    probe(kind: ExternalServiceKind): Promise<OwbApiResponse<ServiceProbe>>;
+    release(kind: ExternalServiceKind): Promise<OwbApiResponse<ServiceRelease>>;
+    open(kind: ExternalServiceKind): Promise<OwbApiResponse<{ opened: boolean }>>;
+    openRelease(kind: ExternalServiceKind): Promise<OwbApiResponse<{ opened: boolean }>>;
+  };
   /** #134 update surface. Null means the shell declined to answer this frame. */
   update: {
     status(): Promise<UpdateStatus | null>;

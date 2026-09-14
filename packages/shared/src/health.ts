@@ -1,6 +1,7 @@
 /** Shapes for GET /health and GET /workspace, GET /reports (frozen at v0). */
 
 import type { TurnEngine } from "./turns.js";
+import type { EmployeeModelConnection } from "./model-selection.js";
 
 export interface TurnHostHealth {
   /** The Host's local preconditions are present; credential values never leave the server. */
@@ -28,6 +29,7 @@ export interface TurnHostHealth {
    * Only meaningful where `modelPinnable` is true.
    */
   model?: string;
+  connection?: EmployeeModelConnection;
 }
 
 export interface HealthResponse {
@@ -72,6 +74,12 @@ export interface WorkspaceCreateRequest {
   /** Human-readable project name shown in the shell. */
   business: string;
   description: string;
+  /**
+   * Concrete runtime selected for the generated root owner. This stays
+   * optional on the wire so older desktop clients still create projects with
+   * the durable Qoder default.
+   */
+  agentEngine?: TurnEngine;
 }
 
 /** Result of creating a blank project with its platform-owned root owner. */
@@ -79,6 +87,8 @@ export interface WorkspaceCreateResponse extends WorkspaceInfoResponse {
   open: true;
   created: true;
   next: "create_employee";
+  /** Concrete runtime durably bound to the generated project owner. */
+  agentEngine: TurnEngine;
 }
 
 export interface WorkspaceOpenRequest {

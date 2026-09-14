@@ -67,6 +67,7 @@ function renderPanel(
     createGroup?: () => Promise<{ status: number; body: unknown }>;
     addGroupMember?: () => Promise<{ status: number; body: unknown }>;
     createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
+    engineForPosition?: (positionId: string) => "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
     onReconcileTimeline?: (timeline: GroupTimeline) => void;
   } = {},
 ) {
@@ -93,8 +94,8 @@ function renderPanel(
         codex: readyAvailability,
         "codex-local": readyAvailability,
       }}
+      engineForPosition={extra.engineForPosition}
       liveRuns={extra.liveRuns ?? {}}
-      onSelectEngine={() => {}}
       onSpawnRuns={() => {}}
       onReconcileTimeline={extra.onReconcileTimeline ?? (() => {})}
       draftSeed={extra.draftSeed ?? null}
@@ -161,7 +162,8 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     });
     const stack = screen.getByLabelText("群成员 2 人");
     expect(stack.querySelectorAll(".owb-groups__avatar")).toHaveLength(2);
-    expect(stack.querySelector('[title="Repo Owner"]')).toHaveStyle({ background: "#5e6ad2" });
+    expect(stack.querySelector('[title="Repo Owner"] img')).not.toBeNull();
+    expect(stack.querySelector('[title="Repo Owner"]')).not.toHaveAttribute("style");
     const roster = container.querySelector(".owb-groups__roster-items");
     expect(roster).toHaveTextContent("Repo Owner");
     expect(roster).toHaveTextContent("Release Engineer");
@@ -252,24 +254,54 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
         conversationRef: group.conversationRef,
         input: "请检查发布说明",
         engine: "qoder",
+        engines: { "repo-owner": "qoder" },
         mentions: ["repo-owner"],
         mode: "parallel",
       });
     });
   });
 
-  // #94 defect 2: this panel's Agent Host column was a *fixed* 150px track, so
-  // it never widened at any window size. It must render the same compact
-  // trigger label as TurnPanel — i.e. go through the shared EngineSelect.
-  it("renders the Agent Host trigger through the shared compact picker", async () => {
-    renderPanel();
-    await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "选择 Agent Host" })).toBeInTheDocument();
+  it("routes each selected employee through its bound Agent without a global host picker", async () => {
+    const createGroupTurn = vi.fn().mockResolvedValue({
+      status: 202,
+      body: {
+        conversationRef: group.conversationRef,
+        messageId: "message-2",
+        spawns: [
+          { turnId: "turn-owner-2", positionId: "repo-owner", engine: "qoder" },
+          { turnId: "turn-release-2", positionId: "release-engineer", engine: "codex-local" },
+        ],
+      },
     });
-    const trigger = document.querySelector(".owb-groups__panel-sub .ant-select-content");
-    expect(trigger).toHaveTextContent("Qoder");
-    expect(trigger).not.toHaveTextContent("Configured");
-    expect(trigger?.querySelector("img.owb-engine-icon")).not.toBeNull();
+    const { bridge } = renderPanel({
+      createGroupTurn,
+      engineForPosition: (positionId) => positionId === "release-engineer" ? "codex-local" : "qoder",
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "选择要 @ 的成员" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
+    expect(document.querySelector(".owb-groups__panel-sub")).toBeNull();
+
+    pickSelectOption("选择要 @ 的成员", "Repo Owner");
+    pickSelectOption("选择要 @ 的成员", "Release Engineer");
+    fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), {
+      target: { value: "分别检查" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送群消息" }));
+
+    await waitFor(() => {
+      expect(bridge.createGroupTurn).toHaveBeenCalledWith({
+        conversationRef: group.conversationRef,
+        input: "分别检查",
+        // Retained solely for pre-upgrade control planes; the mapping carries
+        // the durable employee-level bindings.
+        engine: "qoder",
+        engines: { "repo-owner": "qoder", "release-engineer": "codex-local" },
+        mentions: ["repo-owner", "release-engineer"],
+        mode: "parallel",
+      });
+    });
   });
 
   it("ignores a draftSeed whose members are all unknown positions", async () => {
@@ -345,7 +377,7 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
           codex: readyAvailability,
           "codex-local": readyAvailability,
         }}
-        liveRuns={{ "engine-run-owner": run }} onSelectEngine={() => {}} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
+        liveRuns={{ "engine-run-owner": run }} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
     );
     const { rerender } = render(panel(liveOwner));
     const progress = await screen.findByRole("group", { name: "执行进展" });
@@ -461,7 +493,7 @@ it("sends explicit relay in selected order and restores mode, outputs and blocke
   expect(screen.getByText(/按选择顺序执行：Release Engineer → Repo Owner/)).toBeInTheDocument();
   fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), { target: { value: "next relay" } });
   fireEvent.click(screen.getByRole("button", { name: "发送群消息" }));
-  await waitFor(() => expect(bridge.createGroupTurn).toHaveBeenCalledWith({ conversationRef: group.conversationRef, input: "next relay", engine: "qoder", mentions: ["release-engineer", "repo-owner"], mode: "relay" }));
+  await waitFor(() => expect(bridge.createGroupTurn).toHaveBeenCalledWith({ conversationRef: group.conversationRef, input: "next relay", engine: "qoder", engines: { "release-engineer": "qoder", "repo-owner": "qoder" }, mentions: ["release-engineer", "repo-owner"], mode: "relay" }));
 });
 
 it.each(["create", "add"] as const)("does not refresh another workspace after an abandoned %s request finishes", async (action) => {

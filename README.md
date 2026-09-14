@@ -24,7 +24,7 @@ For example, an open-source maintenance team can have a repository owner with th
 
 The v0.1.2 source includes bounded conversation context, independent employee dispatch, and explicit parallel/relay group execution. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.1.1 installers do not include these features.
 
-Workspace auto-open diagnostics also remain best-effort in the v0.1.2 source: an unavailable stderr stream does not turn a diagnostic write into a failed startup. Existing workspace overrides and fallback behavior are preserved; see the [candidate release notes](docs/releases/v0.1.2.md).
+Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior is a post-v0.1.2 change and is not included in the v0.1.2 installers.
 
 ## Download
 
@@ -44,10 +44,32 @@ See the [v0.1.2 release notes](docs/releases/v0.1.2.md) for this candidate's cha
 1. **Install and open RoleWeave.** Choose the package for your platform above. The interface supports English and Simplified Chinese; open Preferences in the top-right title bar, then choose Language to switch to English.
 2. **Create or open a workspace.** Use the project menu to create a project or open an existing `digital-employee` workspace. To explore a prepared team, download or clone this repository and open its `examples/oss-maintainer` folder.
 3. **Choose a role.** Inspect its instructions and budget, or create a role for the work you want it to do.
-4. **Prepare an AI host.** The default desktop adapter uses a locally installed Qoder CLI in the supported **1.1.x** series. Set up the CLI and its account access before sending a task. RoleWeave does not include a model subscription. A successful local readiness check confirms CLI prerequisites, not account access or a successful model request.
+4. **Prepare an AI host.** The default desktop adapter uses a locally installed Qoder CLI **1.x, version 1.1.0 or newer**, and checks the headless command options required for employee conversations. Install the native CLI with `npm install -g @qoder-ai/qodercli` and sign in with `qodercli login`; the Qoder editor's `qoder` launcher is not the CLI. RoleWeave checks the CLI's reported login status before enabling Qoder conversations. It does not include a model subscription, and local readiness does not establish model entitlement or a successful model request.
 5. **Send a small first task.** Select the role's conversation and send a prompt such as: “Summarize your role instructions and suggest a first task.” Review the recorded result and return to its history when needed.
 
 If the host is unavailable, follow the engine status guidance. For a custom Qoder installation, the server-side `ORG_WORKBENCH_QODER_BIN` environment variable can point to its executable. Restart the app after changing its launch environment.
+
+### Windows with local WSL Agents
+
+The current source can keep the Windows interface while running the project backend and Agents in a local WSL distribution. This is a post-v0.1.2 change. Linux Node.js 22 or newer and the chosen Agent CLI must already be installed in that distribution.
+
+To make WSL the default on one machine, place `runtime-settings.json` in RoleWeave's Electron user-data directory (normally `%APPDATA%\RoleWeave`):
+
+```json
+{
+  "mode": "wsl",
+  "distro": "Ubuntu-22.04",
+  "homePath": "/home/your-user"
+}
+```
+
+Use your actual distribution and Linux home directory. An optional `nodePath` pins an absolute Linux Node executable; otherwise the launcher checks the WSL login PATH and local nvm installation. The launcher uses the Linux account's Bash or Zsh login configuration; other shells fall back to Bash with an explicit diagnostic. Configure PATH, proxy and certificates in Bash's login configuration if your account uses another shell. Explicit launch-environment overrides, including `ROLEWEAVE_WSL_NODE_PATH`, take precedence over this machine preference. Machines without the file keep the native backend.
+
+After fully restarting RoleWeave, project pickers start in the selected WSL home. Both `\\wsl.localhost\<distribution>\...` and `\\wsl$\<distribution>\...` are supported; another distribution is rejected. Windows drive paths still map to `/mnt/<drive>/...`. The backend uses the WSL user's CLI installations, login files, proxy and certificate settings.
+
+For environment-based provider, document or memory connections, keep each endpoint and its credentials together in one environment. A Windows override replaces that connection's Linux environment values as a group; missing credentials are never borrowed from Linux. Connections without a Windows override keep their Linux environment configuration.
+
+Choose an Agent when creating a project or hiring an employee. Each employee keeps its own saved runtime binding across restarts and health changes; conversations do not share a global Host selector. Claude Code and Codex prefer an available local configuration for new bindings. A ready status does not prove model entitlement or a successful model request. Settings shows which environment supplies the project and Agents alongside the document and memory service connections. Closing the desktop also closes its WSL backend.
 
 ## How workspaces work
 
@@ -71,15 +93,19 @@ Moving a role changes its reporting relationship. Archiving through the app pres
 
 Workspace files and conversation records are stored locally. **Local storage does not mean offline AI:** prompts and task context may be sent to the AI provider used by your configured host. Connected services have their own storage and access policies.
 
-These integrations are optional and configured on the server side:
+These integrations are optional. In the desktop app, open **Preferences → Document and memory services** to connect doc or mem by API URL and token. Tokens are encrypted with the operating system credential facility; the full upstream editor or drive opens in its own sandboxed window. Server-only deployments can keep using environment variables:
 
 | Service | Purpose | Configuration |
 | --- | --- | --- |
-| [bytefolk/doc](https://github.com/bytefolk/doc) | Read shared organization documents through its v1 API | `ORG_WORKBENCH_DOC_URL`, `ORG_WORKBENCH_DOC_TOKEN` |
-| [bytefolk/mem](https://github.com/bytefolk/mem) | Connect the shared file and knowledge view to memd | `ORG_WORKBENCH_MEM_URL`, `ORG_WORKBENCH_MEM_TOKEN` |
+| [bytefolk/doc](https://github.com/bytefolk/doc) | Read shared documents through its v1 API; open the upstream collaborative editor | Preferences, or `ORG_WORKBENCH_DOC_URL`, `ORG_WORKBENCH_DOC_TOKEN` |
+| [bytefolk/mem](https://github.com/bytefolk/mem) | Read the shared file index; open the upstream drive and memory interface | Preferences, or `ORG_WORKBENCH_MEM_URL`, `ORG_WORKBENCH_MEM_TOKEN` |
 | [bytefolk/context](https://github.com/bytefolk/context) | Export completed session turns into scoped context records | `ORG_WORKBENCH_CONTEXT_CLI`, `CONTEXT_VAULT`, `CONTEXT_RUNTIME_TOKEN` |
 
-Unconfigured document and file services display a disconnected or unconfigured state. Context export requires an operator to establish the appropriate scope grant first. Keep service tokens in the server environment, outside role documents, prompts, and committed files. See the [API reference](docs/api-contract-v0.md) and [context boundary](docs/adr/0006-context-cli-export-boundary.md) for details.
+Unconfigured document and file services display a disconnected or unconfigured state. Context export requires an operator to establish the appropriate scope grant first. Keep service tokens in the encrypted desktop connection store or server environment, outside role documents, prompts, and committed files. See the [API reference](docs/api-contract-v0.md) and [context boundary](docs/adr/0006-context-cli-export-boundary.md) for details.
+
+Manage both local Docker deployments with `npm run local-services -- init`, `up`, `status`, `logs`, and `stop` (each also accepts `doc` or `mem`). Configuration and data volumes persist across source upgrades. Enable Docker Desktop WSL integration when running from WSL.
+
+doc and mem run independently: use local services by default, or a team HTTPS endpoint. Their Web interfaces update with their deployments; API compatibility is checked through authenticated requests. RoleWeave does not bundle their source or database. Use `npm run services -- plan doc` (or `mem`) to inspect upstream source candidates, then prepare an explicit commit for a separate deployment. The [independent services guide](docs/design/independent-services.md) covers local setup, source updates, persistent data, and compatibility limits.
 
 ## For AI assistants and integrations
 
@@ -122,7 +148,7 @@ git clone https://github.com/bytefolk/design-system.git
 git clone https://github.com/bytefolk/roleweave.git
 
 cd design-system
-git checkout 9d048faaabe0429a6a8720bfbb31418544237b6b
+git checkout 910456901dda74da4d5b0320cd03d36ad18650b0
 npm ci
 npm run build:package
 

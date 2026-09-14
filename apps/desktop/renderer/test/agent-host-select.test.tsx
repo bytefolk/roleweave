@@ -5,22 +5,18 @@ import { visibleSelectOptions } from "./select-helper";
 import { EngineSelect } from "../src/turns";
 import type { TurnEngine, TurnEngineAvailability } from "../src/turns";
 
-/** #94 defect 2: the Agent Host picker was narrower than its own longest
- * option, so the trigger *and* the dropdown (which inherited the trigger width)
- * both ellipsised `Claude Code · 本地登录 · Configured`. The split fixed here is
- * the invariant worth pinning: the trigger carries a label that fits its real
- * width, and the dropdown carries the full text including the readiness suffix.
- * The column widths themselves are guarded in apps/desktop/test/agent-host-width. */
+/** Runtime credentials and local-login transports are deliberately collapsed
+ * into the three agent products operators understand. */
 
 const availability: Record<TurnEngine, TurnEngineAvailability> = {
   qoder: { configured: true, ready: true },
   "claude-code": { configured: true, ready: true },
-  "claude-local": { configured: false, ready: false },
-  codex: { configured: false, ready: false },
-  "codex-local": { configured: false, ready: false },
+  "claude-local": { configured: true, ready: true },
+  codex: { configured: true, ready: true },
+  "codex-local": { configured: true, ready: true },
 };
 
-const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local"];
+const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local"];
 
 function Picker({ initial }: { initial: TurnEngine }) {
   const [engine, setEngine] = useState<TurnEngine>(initial);
@@ -42,23 +38,23 @@ function triggerText(): string {
 }
 
 describe("Agent Host picker (#94)", () => {
-  // The longest label is the one that used to be cut mid-CJK.
-  it("shows the selected host in full in the trigger, without the readiness suffix", () => {
+  it("collapses a local runtime into its one agent name", () => {
     render(<Picker initial="claude-local" />);
 
-    expect(triggerText()).toBe("Claude Code · 本地登录");
+    expect(triggerText()).toBe("Claude Code");
     expect(triggerText()).not.toContain("Idle");
+    expect(triggerText()).not.toContain("本地登录");
   });
 
-  it("keeps the readiness suffix in the dropdown, where there is room for it", () => {
+  it("shows one option for each agent product without transport status", () => {
     render(<Picker initial="claude-local" />);
 
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
 
     expect(visibleSelectOptions().map((option) => option.textContent)).toEqual([
-      "Qoder · Configured",
-      "Claude Code · Configured",
-      "Claude Code · 本地登录 · Idle",
+      "Qoder",
+      "Claude Code",
+      "Codex",
     ]);
   });
 
@@ -68,12 +64,12 @@ describe("Agent Host picker (#94)", () => {
 
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
     const target = visibleSelectOptions().find(
-      (option) => option.textContent === "Claude Code · 本地登录 · Idle",
+      (option) => option.textContent === "Claude Code",
     );
-    if (target === undefined) throw new Error("claude-local option missing");
+    if (target === undefined) throw new Error("Claude Code option missing");
     fireEvent.click(target);
 
-    expect(triggerText()).toBe("Claude Code · 本地登录");
+    expect(triggerText()).toBe("Claude Code");
   });
 
   // Every host keeps its brand mark in the trigger, not just in the list (#57).

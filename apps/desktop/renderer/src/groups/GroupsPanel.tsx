@@ -5,7 +5,7 @@ import { useOwbLocale, useT } from "@roleweave/ui";
 import { PositionAvatar } from "../PositionAvatar";
 import { ProgressTrail, TypingIndicator } from "../turns/TurnThread";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@roleweave/shared";
-import { EngineSelect, useEngineLabel } from "../turns/TurnPanel";
+import { useEngineLabel } from "../turns/engine-select";
 import { EngineIcon } from "../turns/engine-icon";
 import { adaptTurnRecord } from "../turns/adapter";
 import type { LiveRunState } from "../turns/turnStream";
@@ -18,21 +18,34 @@ export interface GroupsPanelProps {
   /** Avatar background colors keyed by position id (metadata.color); positions
    * without one get the same deterministic hue the org tree uses (#53). */
   positionColors?: Record<string, string>;
+  /** Render-ready per-employee portraits, shared with tree and chat. */
+  avatarUrls?: Record<string, string>;
   /** Prefilled group draft from the org-tree entry (#53, DS-34-001 §1.3):
    * opens the create panel with these members checked. The nonce re-fires
    * repeated entries on the same member set. Explicit draft only — creation
    * still requires the operator to confirm ≥2 members. */
   draftSeed?: { members: string[]; nonce: number } | null;
+  /**
+   * Legacy fall-back used only while an older control plane is in use. New
+   * requests carry an engine per mentioned employee, so an operator never
+   * selects a shared host for a group conversation.
+   */
   engine: TurnEngine;
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
+  /** The durable Agent binding for a position, resolved by App from its org data. */
+  engineForPosition?: (positionId: string) => TurnEngine;
   /** Shared SSE projection; group runs carry groupRef and are filtered here. */
   liveRuns: Record<string, LiveRunState>;
-  onSelectEngine: (engine: TurnEngine) => void;
+  /**
+   * Kept optional while callers migrate. It deliberately has no UI effect:
+   * Agent choice belongs to employee creation, not to a group message.
+   */
+  onSelectEngine?: (engine: TurnEngine) => void;
   /** 202 spawn list, reported upward so the shared stream seeds live buffers. */
   onSpawnRuns: (
     groupRef: string,
     messageId: string,
-    spawns: Array<{ turnId: string; positionId: string }>,
+    spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>,
     input: string,
     engine: TurnEngine,
   ) => void;
@@ -40,7 +53,6 @@ export interface GroupsPanelProps {
   onReconcileTimeline: (timeline: GroupTimeline) => void;
 }
 
-const GROUP_ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local"];
 const GROUP_RECONCILE_INTERVAL_MS = 1_000;
 const GROUP_RECONCILE_MAX_READS = 180;
 
@@ -89,11 +101,12 @@ export function GroupsPanel({
   positions,
   positionNames,
   positionColors,
+  avatarUrls,
   draftSeed,
   engine,
   engineAvailability,
+  engineForPosition,
   liveRuns,
-  onSelectEngine,
   onSpawnRuns,
   onReconcileTimeline,
 }: GroupsPanelProps) {
@@ -135,6 +148,22 @@ export function GroupsPanel({
   const draft = drafts[draftKey] ?? emptyDraft;
   const input = draft.input;
   const mentions = useMemo(() => new Set(draft.mentions), [draft.mentions]);
+  const mentionedPositionIds = useMemo(() => [...mentions], [mentions]);
+  /** Each recipient retains the Agent chosen when that employee was created.
+   * `engine` is intentionally only the pre-binding/older-server fall-back. */
+  const mentionEngines = useMemo(
+    () => Object.fromEntries(
+      mentionedPositionIds.map((positionId) => [positionId, engineForPosition?.(positionId) ?? engine]),
+    ) as Record<string, TurnEngine>,
+    [engine, engineForPosition, mentionedPositionIds],
+  );
+  const unavailableMention = useMemo(
+    () => mentionedPositionIds
+      .map((positionId) => ({ positionId, engine: mentionEngines[positionId]! }))
+      .find(({ engine: mentionEngine }) => engineAvailability[mentionEngine]?.ready !== true),
+    [engineAvailability, mentionEngines, mentionedPositionIds],
+  );
+  const mentionsReady = unavailableMention === undefined;
   const dispatchMode = draft.mode;
   const setInput = (input: string) => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), input } }));
   const setMentions = (mentions: ReadonlySet<string>) => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), mentions: [...mentions] } }));
@@ -344,7 +373,11 @@ export function GroupsPanel({
     if (!isCurrent()) return;
     const ref = selectedRefRef.current;
     const trimmed = input.trim();
-    if (ref === null || trimmed.length === 0 || mentions.size === 0 || sendingGroupsRef.current.has(ref)) return;
+    if (
+      ref === null || trimmed.length === 0 || mentions.size === 0 || !mentionsReady ||
+      sendingGroupsRef.current.has(ref)
+    ) return;
+    const requestEngine = mentionEngines[mentionedPositionIds[0]!] ?? engine;
     sendingGroupsRef.current.add(ref);
     setSendingGroups((current) => ({ ...current, [ref]: true }));
     setPanelError(null);
@@ -352,8 +385,11 @@ export function GroupsPanel({
       const res = await window.owb.createGroupTurn({
         conversationRef: ref,
         input: trimmed,
-        engine,
-        mentions: [...mentions],
+        // The legacy scalar keeps older desktop/control-plane pairs working;
+        // `engines` is authoritative for an up-to-date server.
+        engine: requestEngine,
+        engines: mentionEngines,
+        mentions: mentionedPositionIds,
         mode: dispatchMode,
       });
       if (!isCurrent()) return;
@@ -361,8 +397,12 @@ export function GroupsPanel({
         if (selectedRefRef.current === ref) setPanelError(apiErrorMessage(res.body, t("grp.turnFail")));
         return;
       }
-      const body = res.body as { conversationRef: string; messageId: string; spawns: Array<{ turnId: string; positionId: string }> };
-      onSpawnRuns(ref, body.messageId, body.spawns, trimmed, engine);
+      const body = res.body as {
+        conversationRef: string;
+        messageId: string;
+        spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>;
+      };
+      onSpawnRuns(ref, body.messageId, body.spawns, trimmed, requestEngine);
       setDrafts((current) => current[ref]?.input === input ? { ...current, [ref]: { ...current[ref]!, input: "", mentions: [] } } : current);
       void loadTimeline(ref);
     } catch {
@@ -373,7 +413,20 @@ export function GroupsPanel({
         setSendingGroups((current) => ({ ...current, [ref]: false }));
       }
     }
-  }, [captureScope, dispatchMode, engine, input, loadTimeline, mentions, onSpawnRuns, sending, t]);
+  }, [
+    captureScope,
+    dispatchMode,
+    engine,
+    input,
+    loadTimeline,
+    mentionEngines,
+    mentionedPositionIds,
+    mentions,
+    mentionsReady,
+    onSpawnRuns,
+    sending,
+    t,
+  ]);
 
   /** Merge persisted timeline with live SSE buffers for this group. A run
    * whose turnId is already persisted is suppressed — the record wins. */
@@ -453,6 +506,7 @@ export function GroupsPanel({
                       <PositionAvatar
                         key={memberId}
                         colors={positionColors ?? {}}
+                        sources={avatarUrls}
                         id={memberId}
                         name={displayPositionName(memberId)}
                         className="owb-groups__avatar owb-groups__avatar--xs"
@@ -528,6 +582,7 @@ export function GroupsPanel({
                   <PositionAvatar
                     key={memberId}
                     colors={positionColors ?? {}}
+                    sources={avatarUrls}
                     id={memberId}
                     name={displayPositionName(memberId)}
                     className="owb-groups__avatar"
@@ -557,18 +612,6 @@ export function GroupsPanel({
               </span>
             </header>
 
-            <div className="owb-groups__panel-sub">
-              <label className="owb-turn-engine">
-                <span className="owb-turn-control__label">Agent Host</span>
-                <EngineSelect
-                  engines={GROUP_ENGINES}
-                  engineAvailability={engineAvailability}
-                  value={engine}
-                  onChange={onSelectEngine}
-                />
-              </label>
-            </div>
-
             <div className="owb-groups__panel-body">
               <aside className="owb-groups__roster" aria-label={t("grp.roster")}>
                 <h4>{t("grp.membersHead")}</h4>
@@ -583,6 +626,7 @@ export function GroupsPanel({
                         />
                         <PositionAvatar
                           colors={positionColors ?? {}}
+                          sources={avatarUrls}
                           id={memberId}
                           name={displayPositionName(memberId)}
                           className="owb-groups__avatar owb-groups__avatar--sm"
@@ -652,6 +696,7 @@ export function GroupsPanel({
                           <header className="owb-bubble__header">
                             <PositionAvatar
                               colors={positionColors}
+                              sources={avatarUrls}
                               id={turn.positionId}
                               name={turn.positionName}
                               className="owb-bubble__avatar"
@@ -687,6 +732,7 @@ export function GroupsPanel({
                     <header className="owb-bubble__header">
                       <PositionAvatar
                         colors={positionColors}
+                        sources={avatarUrls}
                         id={turn.positionId}
                         name={turn.positionName}
                         className="owb-bubble__avatar"
@@ -759,7 +805,7 @@ export function GroupsPanel({
                   placeholder={mentions.size > 0
                     ? t("grp.sendTo", { list: [...mentions].map((id) => `@${displayPositionName(id)}`).join(nameSep) })
                     : t("grp.routePh")}
-                  disabled={sending || !engineAvailability[engine].ready}
+                  disabled={sending || (mentionedPositionIds.length > 0 && !mentionsReady)}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={(event) => {
                     const native = event.nativeEvent as KeyboardEvent;
@@ -773,17 +819,18 @@ export function GroupsPanel({
                 <AntButton
                   type="primary"
                   htmlType="submit"
-                  disabled={sending || input.trim().length === 0 || mentions.size === 0 || !engineAvailability[engine].ready}
+                  disabled={sending || input.trim().length === 0 || mentions.size === 0 || !mentionsReady}
                   aria-label={t("grp.send")}
                   icon={<ArrowUp aria-hidden="true" size={15} />}
                 />
               </div>
               <p className="owb-turn-composer__hint" role="status">
-                {engineAvailability[engine].ready
-                  ? mentions.size === 0
-                    ? t("grp.hintRoute")
-                    : t("grp.hintMentions", { count: mentions.size })
-                  : engineAvailability[engine].reason ?? t("turn.engineNotReady", { engine: engineLabel(engine) })}
+                {mentions.size === 0
+                  ? t("grp.hintRoute")
+                  : mentionsReady
+                    ? t("grp.hintMentions", { count: mentions.size })
+                    : engineAvailability[unavailableMention!.engine]?.reason
+                      ?? t("turn.engineNotReady", { engine: engineLabel(unavailableMention!.engine) })}
               </p>
             </form>
           </>

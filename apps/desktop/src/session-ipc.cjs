@@ -26,11 +26,11 @@ function validateSessionTurnRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("turn_request_invalid", "session turn must be an object") };
   }
-  const keys = Object.keys(value).sort().join(",");
-  if (keys !== "engine,input,sessionId" && keys !== "engine,input,pendingApproval,sessionId") {
+  const allowedKeys = new Set(["sessionId", "input", "engine", "pendingApproval", "goalId", "branchId"]);
+  if (Object.keys(value).some((k) => !allowedKeys.has(k))) {
     return {
       ok: false,
-      response: invalid("turn_request_invalid", "session turn accepts exactly sessionId, input, engine, and optional pendingApproval"),
+      response: invalid("turn_request_invalid", "session turn accepts sessionId, input, engine, and optional pendingApproval, goalId, branchId"),
     };
   }
   if (!validateSessionId(value.sessionId)) {
@@ -42,6 +42,13 @@ function validateSessionTurnRequest(value) {
   }
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
     return { ok: false, response: invalid("turn_engine_unsupported", `engine must be ${turnEngineMessage()}`) };
+  }
+  const GOAL_ID = /^[a-zA-Z0-9_-]{1,64}$/;
+  if (value.goalId !== undefined && (typeof value.goalId !== "string" || !GOAL_ID.test(value.goalId))) {
+    return { ok: false, response: invalid("turn_request_invalid", "goalId must be a bounded alphanumeric string") };
+  }
+  if (value.branchId !== undefined && (typeof value.branchId !== "string" || !GOAL_ID.test(value.branchId))) {
+    return { ok: false, response: invalid("turn_request_invalid", "branchId must be a bounded alphanumeric string") };
   }
   let pendingApproval;
   if (value.pendingApproval !== undefined) {
@@ -56,6 +63,8 @@ function validateSessionTurnRequest(value) {
       input: value.input,
       engine: value.engine,
       ...(pendingApproval !== undefined ? { pendingApproval } : {}),
+      ...(value.goalId !== undefined ? { goalId: value.goalId } : {}),
+      ...(value.branchId !== undefined ? { branchId: value.branchId } : {}),
     },
   };
 }

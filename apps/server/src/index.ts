@@ -17,6 +17,7 @@ import { TurnStore } from "./turns/store.js";
 import { RunningTurnRegistry } from "./turns/running.js";
 import { SessionStore } from "./sessions/store.js";
 import { GroupStore } from "./groups/store.js";
+import { GoalStore } from "./goals/store.js";
 import { ContextCliAdapterClient } from "./context-export/adapter-cli.js";
 import { ContextExportService } from "./context-export/exporter.js";
 
@@ -37,6 +38,7 @@ const ctx: ControlPlaneContext = {
   runningTurns: new RunningTurnRegistry(),
   sessionStore: new SessionStore(),
   groupStore: new GroupStore(),
+  goalStore: new GoalStore(),
   contextExporter: new ContextExportService(
     new ContextCliAdapterClient(config.contextCliCommand, process.env),
   ),
