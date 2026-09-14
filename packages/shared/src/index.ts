@@ -20,3 +20,5 @@ export * from "./context-sources.js";
 export * from "./updates.js";
 export * from "./goals.js";
 export * from "./avatar.js";
+
+export * from "./services.js";

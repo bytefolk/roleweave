@@ -8,7 +8,7 @@
  */
 import { turnEngines } from "./turns.js";
 import type { TurnEngine } from "./turns.js";
-import { isModelId } from "./model-selection.js";
+import { isEngineModelId } from "./model-selection.js";
 
 export const AGENT_BINDING_SCHEMA_VERSION = "roleweave-agent-binding.v1" as const;
 export const AGENT_BINDING_RELATIVE_PATH = ".workbench/agent-binding.v1.json" as const;
@@ -27,7 +27,7 @@ export function isPositionAgentBinding(value: unknown): value is PositionAgentBi
   const record = value as Record<string, unknown>;
   return (
     Object.keys(record).every((key) => ["schemaVersion", "engine", "model"].includes(key)) &&
-    (record.model === undefined || isModelId(record.model)) &&
+    (record.model === undefined || isEngineModelId(record.model, record.engine)) &&
     Object.hasOwn(record, "schemaVersion") &&
     Object.hasOwn(record, "engine") &&
     record.schemaVersion === AGENT_BINDING_SCHEMA_VERSION &&

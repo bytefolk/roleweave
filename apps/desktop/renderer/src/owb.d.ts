@@ -17,6 +17,12 @@ import type {
   DriveObjectDetailResponse,
   DriveObjectListResponse,
   DriveUploadResponse,
+  ExternalServiceKind,
+  ServiceConnectionInput,
+  ServiceConnectionView,
+  ServiceProbe,
+  ServiceRelease,
+  ServicesResponse,
   GroupConversation,
   GroupConversationList,
   GroupTimeline,
@@ -126,6 +132,15 @@ export interface OwbBridge {
     pickAndUpload(): Promise<OwbApiResponse<DriveUploadResponse> | { canceled: true }>;
   };
   sseStatus(): Promise<"connecting" | "connected">;
+  services: {
+    list(): Promise<OwbApiResponse<ServicesResponse>>;
+    configure(request: ServiceConnectionInput): Promise<OwbApiResponse<ServiceConnectionView>>;
+    disconnect(kind: ExternalServiceKind): Promise<OwbApiResponse<ServiceConnectionView>>;
+    probe(kind: ExternalServiceKind): Promise<OwbApiResponse<ServiceProbe>>;
+    release(kind: ExternalServiceKind): Promise<OwbApiResponse<ServiceRelease>>;
+    open(kind: ExternalServiceKind): Promise<OwbApiResponse<{ opened: boolean }>>;
+    openRelease(kind: ExternalServiceKind): Promise<OwbApiResponse<{ opened: boolean }>>;
+  };
   /** #134 update surface. Null means the shell declined to answer this frame. */
   update: {
     status(): Promise<UpdateStatus | null>;

@@ -44,7 +44,7 @@ See the [v0.1.2 release notes](docs/releases/v0.1.2.md) for this candidate's cha
 1. **Install and open RoleWeave.** Choose the package for your platform above. The interface supports English and Simplified Chinese; open Preferences in the top-right title bar, then choose Language to switch to English.
 2. **Create or open a workspace.** Use the project menu to create a project or open an existing `digital-employee` workspace. To explore a prepared team, download or clone this repository and open its `examples/oss-maintainer` folder.
 3. **Choose a role.** Inspect its instructions and budget, or create a role for the work you want it to do.
-4. **Prepare an AI host.** The default desktop adapter uses a locally installed Qoder CLI in the supported **1.1.x** series. Set up the CLI and its account access before sending a task. RoleWeave does not include a model subscription. A successful local readiness check confirms CLI prerequisites, not account access or a successful model request.
+4. **Prepare an AI host.** The default desktop adapter uses a locally installed Qoder CLI **1.x, version 1.1.0 or newer**, and checks the headless command options required for employee conversations. Install the native CLI with `npm install -g @qoder-ai/qodercli` and sign in with `qodercli login`; the Qoder editor's `qoder` launcher is not the CLI. RoleWeave checks the CLI's reported login status before enabling Qoder conversations. It does not include a model subscription, and local readiness does not establish model entitlement or a successful model request.
 5. **Send a small first task.** Select the role's conversation and send a prompt such as: “Summarize your role instructions and suggest a first task.” Review the recorded result and return to its history when needed.
 
 If the host is unavailable, follow the engine status guidance. For a custom Qoder installation, the server-side `ORG_WORKBENCH_QODER_BIN` environment variable can point to its executable. Restart the app after changing its launch environment.
@@ -71,15 +71,19 @@ Moving a role changes its reporting relationship. Archiving through the app pres
 
 Workspace files and conversation records are stored locally. **Local storage does not mean offline AI:** prompts and task context may be sent to the AI provider used by your configured host. Connected services have their own storage and access policies.
 
-These integrations are optional and configured on the server side:
+These integrations are optional. In the desktop app, open **Preferences → Document and memory services** to connect doc or mem by API URL and token. Tokens are encrypted with the operating system credential facility; the full upstream editor or drive opens in its own sandboxed window. Server-only deployments can keep using environment variables:
 
 | Service | Purpose | Configuration |
 | --- | --- | --- |
-| [bytefolk/doc](https://github.com/bytefolk/doc) | Read shared organization documents through its v1 API | `ORG_WORKBENCH_DOC_URL`, `ORG_WORKBENCH_DOC_TOKEN` |
-| [bytefolk/mem](https://github.com/bytefolk/mem) | Connect the shared file and knowledge view to memd | `ORG_WORKBENCH_MEM_URL`, `ORG_WORKBENCH_MEM_TOKEN` |
+| [bytefolk/doc](https://github.com/bytefolk/doc) | Read shared documents through its v1 API; open the upstream collaborative editor | Preferences, or `ORG_WORKBENCH_DOC_URL`, `ORG_WORKBENCH_DOC_TOKEN` |
+| [bytefolk/mem](https://github.com/bytefolk/mem) | Read the shared file index; open the upstream drive and memory interface | Preferences, or `ORG_WORKBENCH_MEM_URL`, `ORG_WORKBENCH_MEM_TOKEN` |
 | [bytefolk/context](https://github.com/bytefolk/context) | Export completed session turns into scoped context records | `ORG_WORKBENCH_CONTEXT_CLI`, `CONTEXT_VAULT`, `CONTEXT_RUNTIME_TOKEN` |
 
-Unconfigured document and file services display a disconnected or unconfigured state. Context export requires an operator to establish the appropriate scope grant first. Keep service tokens in the server environment, outside role documents, prompts, and committed files. See the [API reference](docs/api-contract-v0.md) and [context boundary](docs/adr/0006-context-cli-export-boundary.md) for details.
+Unconfigured document and file services display a disconnected or unconfigured state. Context export requires an operator to establish the appropriate scope grant first. Keep service tokens in the encrypted desktop connection store or server environment, outside role documents, prompts, and committed files. See the [API reference](docs/api-contract-v0.md) and [context boundary](docs/adr/0006-context-cli-export-boundary.md) for details.
+
+Manage both local Docker deployments with `npm run local-services -- init`, `up`, `status`, `logs`, and `stop` (each also accepts `doc` or `mem`). Configuration and data volumes persist across source upgrades. Enable Docker Desktop WSL integration when running from WSL.
+
+doc and mem run independently: use local services by default, or a team HTTPS endpoint. Their Web interfaces update with their deployments; API compatibility is checked through authenticated requests. RoleWeave does not bundle their source or database. Use `npm run services -- plan doc` (or `mem`) to inspect upstream source candidates, then prepare an explicit commit for a separate deployment. The [independent services guide](docs/design/independent-services.md) covers local setup, source updates, persistent data, and compatibility limits.
 
 ## For AI assistants and integrations
 

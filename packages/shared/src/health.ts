@@ -1,6 +1,7 @@
 /** Shapes for GET /health and GET /workspace, GET /reports (frozen at v0). */
 
 import type { TurnEngine } from "./turns.js";
+import type { EmployeeModelConnection } from "./model-selection.js";
 
 export interface TurnHostHealth {
   /** The Host's local preconditions are present; credential values never leave the server. */
@@ -28,6 +29,7 @@ export interface TurnHostHealth {
    * Only meaningful where `modelPinnable` is true.
    */
   model?: string;
+  connection?: EmployeeModelConnection;
 }
 
 export interface HealthResponse {

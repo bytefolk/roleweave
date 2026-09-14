@@ -12,6 +12,11 @@ export const API_VERSION = "v0" as const;
 export const API_VERSION_HEADER = "x-orgworkbench-api" as const;
 
 export const routes = {
+  services: "/services",
+  servicesConfigure: "/services/configure",
+  servicesDisconnect: "/services/disconnect",
+  servicesProbe: "/services/probe",
+  servicesRelease: "/services/release",
   health: "/health",
   workspace: "/workspace",
   workspaceOpen: "/workspace/open",

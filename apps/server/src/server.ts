@@ -1,5 +1,6 @@
 import http from "node:http";
 import { OrgApiError, errorCodes, routes } from "@roleweave/shared";
+import { handleServices } from "./routes/services.js";
 import { bearerAuthorized } from "./auth.js";
 import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
@@ -69,6 +70,8 @@ async function dispatch(
       );
       return;
     }
+
+    if (await handleServices(ctx, req, res, url)) return;
 
     if (pathname === routes.health && method === "GET") {
       await handleHealth(ctx, res);
@@ -251,11 +254,11 @@ async function dispatch(
       return;
     }
     if (pathname === routes.driveList && method === "GET") {
-      await handleDriveList(res, url);
+      await handleDriveList(ctx, res, url);
       return;
     }
     if (pathname === routes.driveDetail && method === "GET") {
-      await handleDriveDetail(res, url);
+      await handleDriveDetail(ctx, res, url);
       return;
     }
     if (pathname === routes.driveUpload && method === "POST") {

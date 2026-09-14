@@ -27,6 +27,11 @@ const LAYOUT_SETTLE_SAMPLES = 3;
 const LAYOUT_SETTLE_EPSILON_PX = 0.5;
 
 const LAYOUT_MEASURE_SCRIPT = String.raw`(async () => {
+  // The static package marker intentionally has no real org columns. Do not
+  // spend the bounded mount-poll budget waiting for elements that can never be
+  // present; on a background Windows renderer those timers are throttled and
+  // would make a valid package miss the external smoke timeout.
+  if (document.querySelector("[data-org-workbench-packaged-smoke-entry='true']")) return null;
   const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
   const readColumns = () => {
     const left = document.querySelector(".owb-org-module__left")?.getBoundingClientRect();

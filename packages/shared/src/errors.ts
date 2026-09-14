@@ -9,6 +9,8 @@
  */
 
 export const errorCodes = {
+  service_request_invalid: "service_request_invalid",
+  service_upstream_failed: "service_upstream_failed",
   /** Missing/invalid bearer token (401). */
   unauthorized: "unauthorized",
   /** Request body failed to parse or violates the 1 MiB limit (400). */

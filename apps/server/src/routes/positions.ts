@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { OrgApiError, errorCodes } from "@roleweave/shared";
+import { OrgApiError, errorCodes, isQoderModelId } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
+import { resolveServiceConnection } from "../services/connections.js";
 import { buildContextSources } from "../context-sources.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { readPositionAgentBinding, setPositionModel } from "../agent-binding.js";
@@ -36,7 +37,7 @@ export async function handlePositionGet(
   if (!role) {
     throw new OrgApiError(errorCodes.position_missing, 404, `position not found: ${positionId}`);
   }
-  const contextSources = await buildContextSources(ws.dir, role);
+  const contextSources = await buildContextSources(ws.dir, role, { memConfigured: resolveServiceConnection(ctx, "mem") !== null });
   const capabilities = await readCapabilitySummary(role.package.localReference);
   // Reading a card never migrates a legacy employee. The binding is surfaced
   // only when it already exists; first-use migration remains transactional
@@ -76,8 +77,10 @@ export async function handlePositionModel(ctx: ControlPlaneContext, req: Incomin
     const existing = await readPositionAgentBinding(ws, positionId);
     if (!existing) throw new OrgApiError(errorCodes.turn_request_invalid, 400, "An Agent must be bound before choosing its model");
     const config = await employeeModelConfig(existing.engine, existing.model);
-    if (!config.options.some((m) => m.id === body.model)) throw new OrgApiError(errorCodes.turn_request_invalid, 400, "Model is not in this Agent's catalog");
+    if (!config.options.some((m) => m.id === body.model) && !(config.allowCustomModel && isQoderModelId(body.model))) {
+      throw new OrgApiError(errorCodes.turn_request_invalid, 400, "Model is not in this Agent's catalog");
+    }
     await setPositionModel(ws, positionId, body.model);
-    sendJson(res, 200, { ...config, selected: body.model });
+    sendJson(res, 200, await employeeModelConfig(existing.engine, body.model));
   } finally { release(); }
 }

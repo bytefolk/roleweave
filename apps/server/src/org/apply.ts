@@ -643,6 +643,7 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     ["skills.json", `${JSON.stringify(skillsFile, null, 2)}\n`],
     ["mcp.json", `${JSON.stringify(mcpFile, null, 2)}\n`],
     ["budget.json", `${JSON.stringify(role.budget, null, 2)}\n`],
+    [".workbench/identity.v1.json", `${JSON.stringify({ schemaVersion: "workbench-position-identity.v1", name: role.name }, null, 2)}\n`],
     // This is unlisted runtime state, not a package asset: changing a local
     // Agent must never invalidate the upstream employee.json digest.
     [AGENT_BINDING_RELATIVE_PATH, `${JSON.stringify(agentBinding, null, 2)}\n`],
@@ -653,7 +654,7 @@ export async function writeSkeletonFiles(dir: string, files: Map<string, string>
   for (const [relative, content] of files) {
     const target = path.join(dir, relative);
     await fs.mkdir(path.dirname(target), { recursive: true });
-    if (relative === "budget.json" || relative === AGENT_BINDING_RELATIVE_PATH) {
+    if (relative === "budget.json" || relative.startsWith(".workbench/")) {
       await writePrivateAtomic(target, content);
     } else {
       await fs.writeFile(target, content, "utf8");

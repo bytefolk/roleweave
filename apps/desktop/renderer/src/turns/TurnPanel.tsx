@@ -117,12 +117,13 @@ export function TurnPanel({
     if (sessionMode && sessionBusy) return t("turn.sessionPreparing");
     if (sessionMode && !selectedSession) return t("turn.emptySession");
     if (sessionMode && selectedSession?.status !== "active") return t("turn.sessionReadOnly");
+    if (modelConfig?.connection?.status === "invalid") return modelConfig.connection.message ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
     if (!engineAvailability[engine].ready) {
       return engineAvailability[engine].reason ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
     }
     if (busy || employeeBusy || sending || sessionBusy) return t("turn.updating");
     return null;
-  }, [busy, employeeBusy, engine, engineAvailability, engineLabel, modelSaving, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
+  }, [busy, employeeBusy, engine, engineAvailability, engineLabel, modelConfig, modelSaving, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
 
   const dispatchTurn = async (): Promise<void> => {
     const trimmed = input.trim();
@@ -137,7 +138,7 @@ export function TurnPanel({
   };
 
   const retry = async (turn: TurnRecord) => {
-    if (busy || employeeBusy || sendingRef.current.has(draftKey) || !workspaceOpen || !engineAvailability[turn.engine].ready) return;
+    if (busy || employeeBusy || sendingRef.current.has(draftKey) || !workspaceOpen || !engineAvailability[turn.engine].ready || modelConfig?.connection?.status === "invalid") return;
     setSending(true);
     try {
       await onCreateTurn({
@@ -171,7 +172,7 @@ export function TurnPanel({
         // stay next to the input so the conversation area never oscillates
         // between "create a session" and "start from a clear task".
         emptyPrompt={selectedPosition ? t("turn.emptySelected") : t("turn.emptyStart")}
-        canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && (!sessionMode || selectedSession?.status === "active")}
+        canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && modelConfig?.connection?.status !== "invalid" && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
         decidedApprovalIds={decidedApprovalIds}

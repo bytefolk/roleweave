@@ -118,6 +118,7 @@ test("POST /hire: the bundled qoder-engine validates and applies a hire through 
     const applied = await readApplied(dir);
     const appliedRole = applied.roles.find((role) => role.id === "docs-writer");
     assert.ok(appliedRole, "gate two publishes the staged employee");
+    assert.equal(appliedRole.name, VALID_HIRE.name, "hiring preserves the requested display name rather than showing the package id");
     assert.deepEqual(appliedRole.toolAllow, ["Read", "Grep", "Glob"], "package permissions flow into the org model");
     const packageDir = path.join(dir, "positions", "repo-owner", "docs-writer");
     const employee = await readJson<{ entrypoints: { mcp?: string }; policy: { mcpTools: Array<{ name: string; requestedMode: string }> }; assets: string[] }>(path.join(packageDir, "employee.json"));

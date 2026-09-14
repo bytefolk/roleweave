@@ -162,13 +162,20 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
     );
   }
 
+  const createButton = (
+    <Button className="owb-docs-module__create" disabled={positionId === null}
+      icon={<Plus aria-hidden="true" size={14} />} onClick={() => { setCreateError(null); setCreateOpen(true); }}>
+      {t("docs.create")}
+    </Button>
+  );
+
   const positionSurface = (
     <div className="owb-docs-module__position-surface">
-      <div className="owb-docs-module__picker">
-        {!embedded ? <div className="owb-docs-module__picker-copy">
+      {!embedded ? <div className="owb-docs-module__picker">
+        <div className="owb-docs-module__picker-copy">
           <span>{t("docs.pickerTitle")}</span>
-        </div> : <span className="owb-docs-module__picker-copy">{t("memory.knowledgeHint")}</span>}
-        {!embedded ? <Select
+        </div>
+        <Select
           className="owb-docs-module__select"
           aria-label={t("docs.pickPosition")}
           placeholder={t("docs.pickPosition")}
@@ -179,20 +186,10 @@ export function DocsModule({ workspaceOpen, positions, selectedPositionId, embed
           onChange={(value) => setPositionId(value ?? null)}
           options={positions.map((position) => ({ value: position.id, label: position.name }))}
           popupMatchSelectWidth={false}
-        /> : null}
-        <Button
-          className="owb-docs-module__create"
-          disabled={positionId === null}
-          icon={<Plus aria-hidden="true" size={14} />}
-          onClick={() => {
-            setCreateError(null);
-            setCreateOpen(true);
-          }}
-        >
-          {t("docs.create")}
-        </Button>
-      </div>
-      <DocsPanel positionId={positionId} listDocs={listDocs} readDoc={readDoc} reloadToken={reloadToken} knowledgeFirst={embedded} />
+        />
+        {createButton}
+      </div> : null}
+      <DocsPanel positionId={positionId} listDocs={listDocs} readDoc={readDoc} reloadToken={reloadToken} knowledgeFirst={embedded} toolbar={embedded ? createButton : undefined} />
     </div>
   );
 

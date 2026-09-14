@@ -198,6 +198,9 @@ export async function executeTurn(
     if (body.engine !== resolvedEngine) body = { ...body, engine: resolvedEngine };
     const binding = await readPositionAgentBinding(workspace, body.positionId);
     const modelConfig = await employeeModelConfig(resolvedEngine, binding?.model, ctx.config.bundledElectronEngine);
+    if (modelConfig.connection?.status === "invalid") {
+      throw new OrgApiError(errorCodes.turn_request_invalid, 400, modelConfig.connection.message ?? "Agent connection configuration is invalid");
+    }
     const model = modelConfig.editable && modelConfig.selected !== "provider-default" ? modelConfig.selected : undefined;
     if (group !== undefined && group.engine !== resolvedEngine) group = { ...group, engine: resolvedEngine };
     // Group spawns carry a pre-assigned turnId so the 202 spawn list and the

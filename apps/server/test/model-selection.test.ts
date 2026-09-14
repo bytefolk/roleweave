@@ -73,16 +73,21 @@ test("employee model selection persists, reaches the driver, and preserves the s
     const history = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, { token: server.token });
     assert.equal(history.status, 200);
     assert.deepEqual((history.body as { turns: TurnRecord[] }).turns.map((turn) => turn.model), ["efficient", "performance"]);
-    for (const body of [{ model: "opus" }, { model: "--inject" }, { model: "auto", engine: "codex" }]) {
+    for (const body of [{ model: "" }, { model: "--inject" }, { model: "auto", engine: "codex" }]) {
       assert.equal((await call("/positions/repo-owner/model", "PATCH", body)).status, 400);
     }
     const release = server.ctx.runningTurns.reserve(workspace, "repo-owner", "inflight");
     try { assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "auto" })).status, 409); }
     finally { release.release(); }
+    assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "custom/研发 小模型 (BYOK)" })).status, 200);
     assert.equal((await call(`/sessions/${session.sessionId}/context`, "PATCH", { enabled: false })).status, 200);
     const isolated = (await call(`/sessions/${session.sessionId}/turns`, "POST", { engine: "qoder", input: "New question" })).body as TurnRecord;
     assert.equal(isolated.threadContext?.sourceTurnCount, 0);
     assert.equal(isolated.threadContext?.contextBytes, 0);
+    assert.equal(isolated.model, "custom/研发 小模型 (BYOK)");
+    assert.equal(seen.at(-1)?.model, "custom/研发 小模型 (BYOK)");
+    const customHistory = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, { token: server.token });
+    assert.equal((customHistory.body as { turns: TurnRecord[] }).turns.at(-1)?.model, "custom/研发 小模型 (BYOK)");
   } finally {
     await server.ctx.contextExporter.waitForIdle();
     await server.close();

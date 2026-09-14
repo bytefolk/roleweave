@@ -70,7 +70,7 @@ import { SettingsModule } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
-import { avatarSrcFor, type AvatarValue } from "./PositionAvatar";
+import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
 
 interface PositionCardState {
   loading: boolean;
@@ -139,6 +139,7 @@ function AppInner({
   /** Avatar is a presentation preference scoped to this local project. It
    * never mutates the employee package or its upstream digest. */
   const [positionAvatars, setPositionAvatars] = useState<Record<string, AvatarValue>>({});
+  const workspaceAvatars = useRef(new Map<string, Record<string, AvatarValue>>());
   /** Concrete runtime picked once when an employee is hired. The server owns
    * enforcement; this local projection lets the renderer show accurate
    * readiness and seed a legacy employee's first durable binding. */
@@ -236,11 +237,9 @@ function AppInner({
   useEffect(() => {
     const path = workspaceInfo?.open ? workspaceInfo.path : null;
     if (!path) { setPositionAvatars({}); return; }
-    try {
-      const raw = window.localStorage.getItem(`roleweave:position-avatars:${path}`);
-      const parsed = raw ? JSON.parse(raw) : {};
-      setPositionAvatars(parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, AvatarValue> : {});
-    } catch { setPositionAvatars({}); }
+    const avatars = workspaceAvatars.current.get(path) ?? readAvatarPreferences(window.localStorage, path);
+    workspaceAvatars.current.set(path, avatars);
+    setPositionAvatars(avatars);
   }, [workspaceInfo?.open, workspaceInfo?.path]);
 
   const setPositionAvatar = useCallback((positionId: string, value: string) => {
@@ -248,6 +247,7 @@ function AppInner({
       const next = { ...current, [positionId]: value };
       const path = workspacePathRef.current;
       if (path) {
+        workspaceAvatars.current.set(path, next);
         try { window.localStorage.setItem(`roleweave:position-avatars:${path}`, JSON.stringify(next)); } catch { /* keep an in-memory choice when storage is unavailable */ }
       }
       return next;
@@ -336,6 +336,13 @@ function AppInner({
         const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
         positionNamesRef.current = names;
         setPositionNames(names);
+        const avatars = assignDefaultAvatars(positionIds, ws.path ? {
+          ...readAvatarPreferences(window.localStorage, ws.path),
+          ...workspaceAvatars.current.get(ws.path),
+        } : {});
+        if (ws.path) workspaceAvatars.current.set(ws.path, avatars);
+        try { if (ws.path) window.localStorage.setItem(`roleweave:position-avatars:${ws.path}`, JSON.stringify(avatars)); } catch { /* assignments remain available for this session */ }
+        setPositionAvatars(avatars);
         setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
         const engines = cardEntries.reduce<Record<string, TurnEngine>>((next, [id, entry]) => {
           if (entry.agentEngine !== undefined) next[id] = entry.agentEngine;
@@ -1050,6 +1057,7 @@ function AppInner({
       reason: health?.hosts?.qoder.nextStep ?? t("misc.qoderHostUnknown"),
       modelPinnable: health?.hosts?.qoder.modelPinnable,
       model: health?.hosts?.qoder.model,
+      connection: health?.hosts?.qoder.connection,
     },
     "claude-code": {
       configured: health?.hosts?.["claude-code"].configured === true,
@@ -1057,15 +1065,17 @@ function AppInner({
       reason: health?.hosts?.["claude-code"].nextStep ?? t("misc.claudeHostUnknown"),
       modelPinnable: health?.hosts?.["claude-code"].modelPinnable,
       model: health?.hosts?.["claude-code"].model,
+      connection: health?.hosts?.["claude-code"].connection,
     },
     "claude-local": {
       configured: health?.hosts?.["claude-local"]?.configured === true,
       ready: health?.hosts?.["claude-local"]?.ready === true,
       // The local executable is an implementation detail of Claude Code,
       // not a second user-facing Agent or authentication mode.
-      reason: t("misc.claudeHostUnknown"),
+      reason: health?.hosts?.["claude-local"]?.nextStep ?? t("misc.claudeHostUnknown"),
       modelPinnable: health?.hosts?.["claude-local"]?.modelPinnable,
       model: health?.hosts?.["claude-local"]?.model,
+      connection: health?.hosts?.["claude-local"]?.connection,
     },
     codex: {
       configured: health?.hosts?.codex?.configured === true,

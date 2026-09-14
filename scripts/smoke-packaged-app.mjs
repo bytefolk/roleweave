@@ -145,6 +145,14 @@ if [ "\${1:-}" = "--version" ]; then
   printf '%s\\n' 'qoder 1.1.0'
   exit 0
 fi
+if [ "\${1:-}" = "--help" ]; then
+  printf '%s\\n' '--print --output-format <format> --cwd --agent --agents --tools --strict-mcp-config --mcp-config --setting-sources --settings --model --permission-mode default,dont_ask --no-session-persistence'
+  exit 0
+fi
+if [ "\${1:-}" = "status" ]; then
+  printf '%s\\n' '{"logged_in":true}'
+  exit 0
+fi
 if [ "\${OWB_LOGIN_ONLY_SECRET:-}" != "" ]; then
   exit 43
 fi

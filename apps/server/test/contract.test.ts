@@ -32,6 +32,12 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
     assert.equal(health.header("x-orgworkbench-api"), "v0");
 
     const protectedRoutes: Array<{ path: string; method: string }> = [
+      { path: routes.services, method: "GET" },
+      { path: routes.servicesConfigure, method: "PUT" },
+      { path: routes.servicesDisconnect, method: "POST" },
+      // Invalid kind exercises routing and auth without contacting external services.
+      { path: `${routes.servicesProbe}?kind=invalid`, method: "GET" },
+      { path: `${routes.servicesRelease}?kind=invalid`, method: "GET" },
       { path: routes.workspace, method: "GET" },
       { path: routes.workspaceOpen, method: "POST" },
       { path: routes.orgTree, method: "GET" },

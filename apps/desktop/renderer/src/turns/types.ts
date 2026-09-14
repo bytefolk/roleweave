@@ -1,4 +1,4 @@
-import type { TurnRecord as ApiTurnRecord } from "@roleweave/shared";
+import type { EmployeeModelConnection, TurnRecord as ApiTurnRecord } from "@roleweave/shared";
 export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
@@ -31,6 +31,7 @@ export interface TurnEngineAvailability {
   modelPinnable?: boolean;
   /** Model the control plane pins for this Host; absent means its CLI decides. */
   model?: string;
+  connection?: EmployeeModelConnection;
 }
 
 /** Renderer projection of the #193 verdict field (engine shape verbatim). */

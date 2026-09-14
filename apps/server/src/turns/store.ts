@@ -7,7 +7,7 @@ import {
   TURN_RECORD_SCHEMA_VERSION,
   errorCodes,
   isPositionId,
-  isModelId,
+  isEngineModelId,
   turnEngines,
 } from "@roleweave/shared";
 import type { ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
@@ -393,7 +393,7 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
     ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "goalId", "branchId", "model"],
   )) return false;
   if (Object.hasOwn(value, "threadContext") && !isThreadContextMetadata(value.threadContext)) return false;
-  if (Object.hasOwn(value, "model") && !isModelId(value.model)) return false;
+  if (Object.hasOwn(value, "model") && !isEngineModelId(value.model, value.engine)) return false;
   const createdInstant = parseRfc3339Instant(value.createdAt);
   const updatedInstant = parseRfc3339Instant(value.updatedAt);
   if (
