@@ -122,7 +122,7 @@ git clone https://github.com/bytefolk/design-system.git
 git clone https://github.com/bytefolk/roleweave.git
 
 cd design-system
-git checkout 671500fb28435275b5d2bda3704261aa785ed21d
+git checkout 910456901dda74da4d5b0320cd03d36ad18650b0
 npm ci
 npm run build:package
 
