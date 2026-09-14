@@ -11,8 +11,8 @@ export interface ServerConfig {
   cliCommand: string;
   /** Desktop-owned Electron adapter boundary; never inferred from CLI text. */
   bundledElectronEngine: boolean;
-  /** Spawn timeout (ms) for engine org apply / turn run. */
-  engineTimeoutMs?: number;
+  /** Spawn timeout (ms) for engine turn run. Configurable via ORG_WORKBENCH_TURN_TIMEOUT_MS. */
+  engineTimeoutMs: number;
   /** Workspace-wide daily token allocation ceiling for deterministic hiring. */
   budgetPoolTokens?: number;
   /** Pinned context provider CLI/stdio adapter command (context main >= f63f57f). */
@@ -70,12 +70,17 @@ export function resolveServerConfig(
   const budgetPoolTokens = Number.isSafeInteger(rawBudgetPool) && rawBudgetPool > 0
     ? Math.min(rawBudgetPool, 1_000_000_000)
     : 10_000_000;
+  const rawTimeout = Number(env.ORG_WORKBENCH_TURN_TIMEOUT_MS ?? "120000");
+  const engineTimeoutMs = Number.isSafeInteger(rawTimeout) && rawTimeout > 0
+    ? rawTimeout
+    : 120_000;
   return {
     host: "127.0.0.1",
     port,
     token,
     cliCommand,
     bundledElectronEngine,
+    engineTimeoutMs,
     contextCliCommand,
     budgetPoolTokens,
     serverVersion: readServerVersion(),
