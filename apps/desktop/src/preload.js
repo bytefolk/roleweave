@@ -13,8 +13,10 @@ contextBridge.exposeInMainWorld("owb", {
   orgRestore: (backupId) => ipcRenderer.invoke("owb:org:restore", backupId),
   orgUndo: () => ipcRenderer.invoke("owb:org:undo"),
   hire: (request) => ipcRenderer.invoke("owb:hire:create", request),
+  generateAvatar: (request) => ipcRenderer.invoke("owb:avatar:generate", request),
   reports: () => ipcRenderer.invoke("owb:reports:get"),
   position: (positionId) => ipcRenderer.invoke("owb:position:get", positionId),
+  setPositionModel: (request) => ipcRenderer.invoke("owb:position:model", request),
   positionDocs: (positionId) => ipcRenderer.invoke("owb:position:docs:list", positionId),
   positionDocFile: (positionId, filePath) => ipcRenderer.invoke("owb:position:docs:read", positionId, filePath),
   createPositionDoc: (request) => ipcRenderer.invoke("owb:position:docs:create", request),
@@ -52,6 +54,15 @@ contextBridge.exposeInMainWorld("owb", {
     pickAndUpload: () => ipcRenderer.invoke("owb:drive:pick-and-upload"),
   },
   sseStatus: () => ipcRenderer.invoke("owb:sse-status:get"),
+  services: {
+    list: () => ipcRenderer.invoke("owb:services:list"),
+    configure: (request) => ipcRenderer.invoke("owb:services:configure", request),
+    disconnect: (kind) => ipcRenderer.invoke("owb:services:disconnect", kind),
+    probe: (kind) => ipcRenderer.invoke("owb:services:probe", kind),
+    release: (kind) => ipcRenderer.invoke("owb:services:release", kind),
+    open: (kind) => ipcRenderer.invoke("owb:services:open", kind),
+    openRelease: (kind) => ipcRenderer.invoke("owb:services:open-release", kind),
+  },
   // #134 update surface: enumerated operations only, no generic updater
   // channel. `confirmedByUser` is passed through rather than defaulted here —
   // the service refuses an unconfirmed download or install, and that refusal is

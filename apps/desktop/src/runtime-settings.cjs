@@ -4,9 +4,11 @@ const { controlPlaneMode } = require("./control-plane-launch.cjs");
 
 function validateRuntimeSettings(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).some((key) => !["mode", "distro", "nodePath", "homePath"].includes(key)) ||
-      !["native", "wsl"].includes(value.mode)) {
+      Object.keys(value).some((key) => !["mode", "distro", "nodePath", "homePath"].includes(key))) {
     throw new Error("Invalid local runtime settings");
+  }
+  if (value.mode !== undefined && !["native", "wsl"].includes(value.mode)) {
+    throw new Error("Invalid runtime setting: mode must be native or wsl");
   }
   for (const key of ["distro", "nodePath", "homePath"]) {
     if (value[key] === undefined) continue;
@@ -26,6 +28,7 @@ function validateRuntimeSettings(value) {
   return value;
 }
 
+/** Load Windows preferences into a clone; inherited operator settings win. */
 function runtimeEnvironment(env, userDataPath, platform = process.platform) {
   if (platform !== "win32") return { ...env };
   const file = path.join(userDataPath, "runtime-settings.json");
@@ -39,10 +42,10 @@ function runtimeEnvironment(env, userDataPath, platform = process.platform) {
   const settings = validateRuntimeSettings(value);
   const next = { ...env };
   // An explicit launch environment remains the operator's override.
-  next.ROLEWEAVE_CONTROL_PLANE_MODE = env.ROLEWEAVE_CONTROL_PLANE_MODE ??
-    env.ORG_WORKBENCH_CONTROL_PLANE ?? settings.mode;
+  const mode = env.ROLEWEAVE_CONTROL_PLANE_MODE ?? env.ORG_WORKBENCH_CONTROL_PLANE ?? settings.mode;
+  if (mode !== undefined) next.ROLEWEAVE_CONTROL_PLANE_MODE = mode;
   for (const [key, name] of [["distro", "ROLEWEAVE_WSL_DISTRO"],
-    ["nodePath", "ROLEWEAVE_WSL_NODE"], ["homePath", "ROLEWEAVE_WSL_HOME"]]) {
+    ["nodePath", "ROLEWEAVE_WSL_NODE_PATH"], ["homePath", "ROLEWEAVE_WSL_HOME"]]) {
     if (settings[key] !== undefined && next[name] === undefined) next[name] = settings[key];
   }
   return next;

@@ -8,10 +8,12 @@ const MAX_CONFIG_BYTES = 128 * 1024;
 const BRIDGED_ENV_KEYS = Object.freeze([
   "ORG_WORKBENCH_SERVER_PORT", "ORG_WORKBENCH_BOOT_TOKEN",
   "ORG_WORKBENCH_BUDGET_POOL_TOKENS", "ORG_WORKBENCH_DOC_URL",
-  "ORG_WORKBENCH_DOC_TOKEN", "ORG_WORKBENCH_DOC_MOCK",
+  "ORG_WORKBENCH_DOC_TOKEN", "ORG_WORKBENCH_DOC_MOCK", "ORG_WORKBENCH_DOC_WEB_URL",
+  "ORG_WORKBENCH_MEM_URL", "ORG_WORKBENCH_MEM_TOKEN", "ORG_WORKBENCH_MEM_WEB_URL",
+  "ORG_WORKBENCH_MEM_WORKSPACE_ID", "MEM_URL", "MEM_TOKEN", "MEM_WORKSPACE",
   "ORG_WORKBENCH_QODER_PERMISSION_MODE", "QODER_PERSONAL_ACCESS_TOKEN",
   "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL",
-  "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
 ]);
 
 function parseConfiguration(raw) {
@@ -38,7 +40,19 @@ function quoteCommandArgument(value) {
 }
 
 function serverEnvironment(config, source = process.env, nodePath = process.execPath) {
-  const environment = { ...source, ...config.environment };
+  const environment = { ...source };
+  // A Windows connection override must never borrow a Linux endpoint or secret.
+  for (const keys of [
+    ["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_CUSTOM_HEADERS"],
+    ["OPENAI_BASE_URL", "OPENAI_API_KEY"],
+    ["ORG_WORKBENCH_DOC_URL", "ORG_WORKBENCH_DOC_TOKEN"],
+    ["ORG_WORKBENCH_MEM_URL", "ORG_WORKBENCH_MEM_TOKEN", "MEM_URL", "MEM_TOKEN"],
+  ]) {
+    if (keys.some((key) => Object.hasOwn(config.environment, key))) {
+      for (const key of keys) delete environment[key];
+    }
+  }
+  Object.assign(environment, config.environment);
   for (const key of Object.keys(environment)) {
     const upper = key.toUpperCase();
     if (upper.startsWith("ORG_WORKBENCH_PACKAGED_SMOKE_") || upper.startsWith("ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_")) delete environment[key];

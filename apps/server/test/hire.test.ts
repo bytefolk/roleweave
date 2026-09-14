@@ -4,6 +4,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import {
+  AGENT_BINDING_RELATIVE_PATH,
+  AGENT_BINDING_SCHEMA_VERSION,
+} from "@roleweave/shared";
 import type { HireResult, OrganizationFile } from "@roleweave/shared";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 import { computeEnvelopeDigest } from "../src/turns/envelope.js";
@@ -114,6 +118,7 @@ test("POST /hire: the bundled qoder-engine validates and applies a hire through 
     const applied = await readApplied(dir);
     const appliedRole = applied.roles.find((role) => role.id === "docs-writer");
     assert.ok(appliedRole, "gate two publishes the staged employee");
+    assert.equal(appliedRole.name, VALID_HIRE.name, "hiring preserves the requested display name rather than showing the package id");
     assert.deepEqual(appliedRole.toolAllow, ["Read", "Grep", "Glob"], "package permissions flow into the org model");
     const packageDir = path.join(dir, "positions", "repo-owner", "docs-writer");
     const employee = await readJson<{ entrypoints: { mcp?: string }; policy: { mcpTools: Array<{ name: string; requestedMode: string }> }; assets: string[] }>(path.join(packageDir, "employee.json"));
@@ -273,6 +278,37 @@ test("POST /hire: seals a hire-request.v1alpha1 envelope, validates before any e
     assert.deepEqual(phases, ["validate", "stage", "apply"]);
   } finally {
     sse.close();
+    await server.close();
+  }
+});
+
+test("POST /hire persists the selected Agent outside employee package assets and returns it", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const response = await api(server.baseUrl, "/hire", {
+      method: "POST",
+      token: server.token,
+      body: { ...VALID_HIRE, agentEngine: "codex-local" },
+    });
+    assert.equal(response.status, 200);
+    assert.equal((response.body as Extract<HireResult, { status: "hired" }>).agentEngine, "codex-local");
+
+    const packageDir = path.join(dir, "positions", "repo-owner", "docs-writer");
+    const binding = await readJson<{ schemaVersion: string; engine: string }>(
+      path.join(packageDir, ...AGENT_BINDING_RELATIVE_PATH.split("/")),
+    );
+    assert.deepEqual(binding, {
+      schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
+      engine: "codex-local",
+    });
+    const employee = await readJson<{ assets: string[] }>(path.join(packageDir, "employee.json"));
+    assert.equal(employee.assets.includes(`./${AGENT_BINDING_RELATIVE_PATH}`), false,
+      "the local Agent binding must not affect the sealed upstream package asset list");
+  } finally {
     await server.close();
   }
 });

@@ -15,6 +15,10 @@ test("hire IPC accepts the contracted HirePositionRequest shape", () => {
   assert.deepEqual(validateHireRequest(VALID), { ok: true, request: VALID });
   assert.equal(validateHireRequest({ ...VALID, reportTo: null }).ok, true);
   assert.equal(validateHireRequest({ ...VALID, deadline: "2026-08-27T00:00:00.000Z" }).ok, true);
+  assert.deepEqual(
+    validateHireRequest({ ...VALID, agentEngine: "codex-local" }),
+    { ok: true, request: { ...VALID, agentEngine: "codex-local" } },
+  );
   // #92: exactly at the bound is accepted; 1025 is rejected below.
   assert.equal(validateHireRequest({ ...VALID, description: "a".repeat(1024) }).ok, true);
 });
@@ -36,6 +40,7 @@ test("hire IPC fails closed on unknown fields and malformed inputs", () => {
     { ...VALID, mode: "autonomous" },
     { ...VALID, budget: null },
     { ...VALID, deadline: 1756000000000 },
+    { ...VALID, agentEngine: "not-an-agent" },
   ];
   for (const candidate of cases) {
     const result = validateHireRequest(candidate);

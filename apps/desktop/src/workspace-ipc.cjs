@@ -5,10 +5,13 @@ const path = require("node:path");
 const { serverPathForWorkspace } = require("./control-plane-launch.cjs");
 const { writeLastWorkspacePath } = require("./last-workspace.cjs");
 const { workspaceDialogOptions } = require("./runtime-settings.cjs");
+const { TURN_ENGINE_IDS, turnEngineMessage } = require("@roleweave/shared/turn-engines");
 
 const PROJECT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_PROJECT_ID_LENGTH = 48;
 const MAX_DESCRIPTION_CHARACTERS = 1024;
+const TURN_ENGINES = new Set(TURN_ENGINE_IDS);
+const KNOWN_KEYS = new Set(["projectId", "business", "description", "agentEngine"]);
 
 function invalid(message) {
   return { status: 400, body: { code: "workspace_invalid", message, retryable: false } };
@@ -18,9 +21,8 @@ function validateWorkspaceCreateRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("workspace create request must be an object") };
   }
-  const keys = Object.keys(value).sort().join(",");
-  if (keys !== "business,description,projectId") {
-    return { ok: false, response: invalid("workspace create accepts projectId, business and description; choose the parent directory in the folder picker") };
+  if (Object.keys(value).some((key) => !KNOWN_KEYS.has(key))) {
+    return { ok: false, response: invalid("workspace create accepts projectId, business, description, and optional agentEngine; choose the parent directory in the folder picker") };
   }
   if (typeof value.projectId !== "string" || value.projectId.length > MAX_PROJECT_ID_LENGTH || !PROJECT_ID.test(value.projectId)) {
     return { ok: false, response: invalid("projectId must be lowercase words joined by hyphens") };
@@ -31,12 +33,16 @@ function validateWorkspaceCreateRequest(value) {
   if (typeof value.description !== "string" || value.description.trim().length > MAX_DESCRIPTION_CHARACTERS) {
     return { ok: false, response: invalid(`description must be at most ${MAX_DESCRIPTION_CHARACTERS} characters`) };
   }
+  if (value.agentEngine !== undefined && (typeof value.agentEngine !== "string" || !TURN_ENGINES.has(value.agentEngine))) {
+    return { ok: false, response: invalid(`agentEngine must be ${turnEngineMessage()}`) };
+  }
   return {
     ok: true,
     request: {
       projectId: value.projectId,
       business: value.business.trim(),
       description: value.description.trim(),
+      ...(value.agentEngine === undefined ? {} : { agentEngine: value.agentEngine }),
     },
   };
 }

@@ -185,6 +185,7 @@
   flex: none;
   color: var(--ui-foreground-subtle);
 }
+.ui-org-tree__avatar { width: 17px; height: 17px; border-radius: 5px; object-fit: cover; vertical-align: middle; }
 
 .ui-org-tree__row--enterprise .ui-org-tree__icon {
   color: var(--ui-primary);

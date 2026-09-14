@@ -274,7 +274,7 @@ test("WSL launch has fixed shell source, literal argv paths, and credentials onl
     bootstrapEntry: "D:\\RoleWeave $() `literal`\\apps\\desktop\\src\\wsl-bootstrap.cjs",
     env: {
       ROLEWEAVE_WSL_DISTRO: "Ubuntu-22.04",
-      ROLEWEAVE_WSL_NODE: "/home/me/node $(literal)/bin/node",
+      ROLEWEAVE_WSL_NODE_PATH: "/home/me/node $(literal)/bin/node",
       ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE: "1",
       ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI: '"D:\\RoleWeave\\RoleWeave.exe" "D:\\engine.mjs"',
       OPENAI_API_KEY: "dummy-secret-only-for-stdin",
@@ -298,11 +298,88 @@ test("WSL launch has fixed shell source, literal argv paths, and credentials onl
   assert.equal(spec.env.WSLENV, "");
 });
 
+test("WSL forwards document and memory connections through stdin without exposing tokens in argv", () => {
+  const environment = {
+    ORG_WORKBENCH_DOC_WEB_URL: "https://docs.example.com",
+    ORG_WORKBENCH_MEM_URL: "https://mem.example.com/api",
+    ORG_WORKBENCH_MEM_TOKEN: "fixture-mem-token",
+    ORG_WORKBENCH_MEM_WEB_URL: "https://mem.example.com",
+    ORG_WORKBENCH_MEM_WORKSPACE_ID: "workspace-fixture",
+    MEM_URL: "https://memory.example.com/api",
+    MEM_TOKEN: "fixture-memory-token",
+    MEM_WORKSPACE: "memory-fixture",
+  };
+  const spec = wslLaunchSpec({
+    serverEntry: "/app/server/dist/src/index.js",
+    bootstrapEntry: "/app/desktop/src/wsl-bootstrap.cjs",
+    env: environment,
+  });
+  const config = parseConfiguration(spec.input.trim());
+  assert.deepEqual(config.environment, environment);
+  assert.equal(spec.env.WSLENV, "");
+  assert.doesNotMatch(spec.args.join(" "), /fixture-mem-token|fixture-memory-token/);
+  const runtime = serverEnvironment(config, { HOME: "/home/user", PATH: "/usr/bin" }, "/usr/bin/node");
+  for (const [key, value] of Object.entries(environment)) assert.equal(runtime[key], value);
+});
+
+test("WSL Claude Bearer overrides keep endpoint and credentials from the same environment", async () => {
+  const { resolveClaudeProviderConfig } = await import("../../server/src/local-provider-config.js");
+  const linux = {
+    ANTHROPIC_BASE_URL: "https://linux.example/v1",
+    ANTHROPIC_API_KEY: "fixture-linux-key",
+    ANTHROPIC_AUTH_TOKEN: "fixture-linux-bearer",
+    ANTHROPIC_CUSTOM_HEADERS: "X-Gateway-Key: fixture-linux-header",
+  };
+  const windows = {
+    ANTHROPIC_BASE_URL: "https://windows.example/v1",
+    ANTHROPIC_AUTH_TOKEN: "fixture-windows-bearer",
+  };
+  const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", env: windows });
+  const environment = serverEnvironment(parseConfiguration(spec.input), linux, "/usr/bin/node");
+  const provider = resolveClaudeProviderConfig(environment, { local: false });
+  assert.equal(provider.providerEnv.ANTHROPIC_BASE_URL, windows.ANTHROPIC_BASE_URL);
+  assert.equal(provider.providerEnv.ANTHROPIC_AUTH_TOKEN, windows.ANTHROPIC_AUTH_TOKEN);
+  assert.equal(provider.providerEnv.ANTHROPIC_API_KEY, undefined);
+  assert.equal(provider.providerEnv.ANTHROPIC_CUSTOM_HEADERS, undefined);
+  assert.doesNotMatch(spec.args.join(" "), /fixture-windows-bearer/);
+  const customHeaders = "X-Gateway-Key: fixture-windows-header";
+  const withHeaders = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", env: { ...windows, ANTHROPIC_CUSTOM_HEADERS: customHeaders } });
+  const headerProvider = resolveClaudeProviderConfig(serverEnvironment(parseConfiguration(withHeaders.input), linux), { local: false });
+  assert.equal(headerProvider.providerEnv.ANTHROPIC_CUSTOM_HEADERS, customHeaders);
+  assert.doesNotMatch(withHeaders.args.join(" "), /fixture-windows-header/);
+  assert.equal(spec.env.WSLENV, "");
+  assert.equal(linux.ANTHROPIC_API_KEY, "fixture-linux-key");
+
+  const incomplete = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", env: { ANTHROPIC_BASE_URL: windows.ANTHROPIC_BASE_URL } });
+  assert.throws(() => resolveClaudeProviderConfig(serverEnvironment(parseConfiguration(incomplete.input), linux), { local: false }), { code: "local_provider_config_invalid" });
+});
+
+test("WSL connection overrides never borrow endpoints or secrets from Linux", () => {
+  const groups = [
+    ["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_CUSTOM_HEADERS"],
+    ["OPENAI_BASE_URL", "OPENAI_API_KEY"],
+    ["ORG_WORKBENCH_DOC_URL", "ORG_WORKBENCH_DOC_TOKEN"],
+    ["ORG_WORKBENCH_MEM_URL", "ORG_WORKBENCH_MEM_TOKEN", "MEM_URL", "MEM_TOKEN"],
+  ];
+  for (const keys of groups) {
+    const linux = Object.fromEntries(keys.map((key) => [key, `linux-${key}`]));
+    const inherited = serverEnvironment({ engineCommand: null, serverEntry: "/app/server/dist/src/index.js", environment: {} }, linux);
+    for (const key of keys) assert.equal(inherited[key], linux[key]);
+    for (const selected of keys) {
+      for (const value of [`windows-${selected}`, ""]) {
+        const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", env: { [selected]: value } });
+        const environment = serverEnvironment(parseConfiguration(spec.input), linux);
+        for (const key of keys) assert.equal(environment[key], key === selected ? value : undefined, `${selected} must not inherit ${key}`);
+      }
+    }
+  }
+});
+
 test("WSL launch rejects invalid distribution, node path, and oversized configuration", () => {
   const base = { serverEntry: "/app/server/dist/src/index.js", bootstrapEntry: "/app/desktop/src/wsl-bootstrap.cjs" };
   assert.throws(() => wslLaunchSpec({ ...base, env: { ROLEWEAVE_WSL_DISTRO: "--exec" } }), { code: "wsl_distribution_invalid" });
   for (const nodePath of ["C:\\node.exe", "node --eval code", "/usr/bin/node\n--eval"]) {
-    assert.throws(() => wslLaunchSpec({ ...base, env: { ROLEWEAVE_WSL_NODE: nodePath } }), { code: "wsl_node_invalid" });
+    assert.throws(() => wslLaunchSpec({ ...base, env: { ROLEWEAVE_WSL_NODE_PATH: nodePath } }), { code: "wsl_node_invalid" });
   }
   assert.throws(() => wslLaunchSpec({ ...base, env: { OPENAI_API_KEY: "x".repeat(128 * 1024) } }), { code: "wsl_config_invalid" });
 });
@@ -460,7 +537,7 @@ test("fixed WSL shell accepts literal special-character runtime paths and fails 
   fs.symlinkSync(process.execPath, nodePath);
   const bootstrapEntry = path.join(literalDir, "bootstrap.cjs");
   fs.writeFileSync(bootstrapEntry, 'console.log("LITERAL_PATH_OK")');
-  const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", bootstrapEntry, env: { ROLEWEAVE_WSL_NODE: nodePath } });
+  const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", bootstrapEntry, env: { ROLEWEAVE_WSL_NODE_PATH: nodePath } });
   const script = spec.args[5]; // Inner Node script remains a separate positional argument.
   const child = spawn("/bin/bash", ["-c", script, "roleweave-wsl", ...spec.args.slice(6)], { stdio: ["ignore", "pipe", "pipe"] });
   const output = waitForLine(child.stdout);
@@ -537,7 +614,7 @@ test("WSL wrapper selects the account's bash or zsh login shell and preserves li
     const spec = wslLaunchSpec({
       serverEntry: "/app/server/dist/src/index.js",
       bootstrapEntry: "/app/literal $(no-command) `no-command`/bootstrap.cjs",
-      env: { ROLEWEAVE_WSL_NODE: "/home/me/node $(no-command)/bin/node" },
+      env: { ROLEWEAVE_WSL_NODE_PATH: "/home/me/node $(no-command)/bin/node" },
     });
     const result = spawnSync(spec.args[1], spec.args.slice(2), {
       env: { PATH: `${root}:/usr/bin:/bin`, ROLEWEAVE_TEST_SHELL: loginShell },
@@ -554,7 +631,7 @@ test("WSL wrapper explains its bash-login fallback for an unsupported account sh
   fs.writeFileSync(path.join(root, "getent"), '#!/bin/sh\nprintf "fixture:x:1000:1000::/home/fixture:/usr/bin/fish\\n"\n', { mode: 0o700 });
   const bootstrapEntry = path.join(root, "bootstrap.cjs");
   fs.writeFileSync(bootstrapEntry, 'console.log("BASH_FALLBACK_OK")');
-  const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", bootstrapEntry, env: { ROLEWEAVE_WSL_NODE: process.execPath } });
+  const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", bootstrapEntry, env: { ROLEWEAVE_WSL_NODE_PATH: process.execPath } });
   const result = spawnSync(spec.args[1], spec.args.slice(2), {
     env: { HOME: root, PATH: `${root}:/usr/bin:/bin` }, encoding: "utf8", timeout: 5000,
   });

@@ -4,6 +4,7 @@ import {
   initialHireFlow,
   parseHireProposal,
   reduceHireFlow,
+  toHirePositionRequest,
   type HireDraft,
   type HireFlowState,
 } from "../src/org/hire-flow";
@@ -22,6 +23,11 @@ const draft = (overrides?: Partial<HireDraft>): HireDraft =>
   });
 
 describe("#33 hire 四态状态机（本地态骨架，不触契约）", () => {
+  it("把新员工在创建时选定的具体 Agent 一并提交，重试不会改绑", () => {
+    const request = toHirePositionRequest(draft({ agentEngine: "codex-local" }));
+    expect(request.agentEngine).toBe("codex-local");
+  });
+
   it("只接受 Agent 返回的有限结构化草案，不把自然语言当成创建指令", () => {
     expect(parseHireProposal("先分析一下，再给方案：没有 JSON")).toEqual({});
     expect(parseHireProposal('```json\n{"name":"文档助手","description":"维护文档","mode":"read_only","tools":["Read","Unknown"],"memorySources":["position_docs","bad"]}\n```')).toEqual({

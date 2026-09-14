@@ -16,12 +16,14 @@ import os from "node:os";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
+  DEFAULT_AGENT_ENGINE,
   HIRE_REQUEST_SCHEMA_VERSION,
   OrgApiError,
   errorCodes,
   hireMcpCatalog,
   hireSkillCatalog,
   isPositionId,
+  turnEngines,
 } from "@roleweave/shared";
 import type {
   HireFailure,
@@ -32,6 +34,7 @@ import type {
   HireSkillGrant,
   HireSuccess,
   PositionBudget,
+  TurnEngine,
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
@@ -127,6 +130,7 @@ interface ValidatedHireRequest {
   permissions: HirePermissions;
   prompt: string;
   memorySources: HireMemorySource[];
+  agentEngine: TurnEngine;
   deadline?: string;
 }
 
@@ -208,7 +212,7 @@ function assertHireRequest(raw: unknown): ValidatedHireRequest {
     throw invalid("hire request must be a JSON object");
   }
   const body = raw as Record<string, unknown>;
-  const known = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "permissions", "prompt", "memorySources", "deadline"]);
+  const known = new Set(["positionId", "name", "description", "reportTo", "mode", "budget", "permissions", "prompt", "memorySources", "deadline", "agentEngine"]);
   for (const key of Object.keys(body)) {
     if (!known.has(key)) throw invalid(`unknown field: ${key}`);
   }
@@ -217,6 +221,9 @@ function assertHireRequest(raw: unknown): ValidatedHireRequest {
   if (!boundedNonEmptyCharacters(body.description, MAX_DESCRIPTION_CHARACTERS)) throw invalid(`description must be a non-empty string of at most ${MAX_DESCRIPTION_CHARACTERS} characters`);
   if (body.reportTo !== null && !isPositionId(body.reportTo)) throw invalid("reportTo must be a position id or null");
   if (body.mode !== "read_only" && body.mode !== "approval_required") throw invalid("mode must be read_only or approval_required");
+  if (body.agentEngine !== undefined && (typeof body.agentEngine !== "string" || !turnEngines.includes(body.agentEngine as TurnEngine))) {
+    throw invalid(`agentEngine must be ${turnEngines.join(" or ")}`);
+  }
   if (typeof body.budget !== "object" || body.budget === null || Array.isArray(body.budget)) {
     throw invalid("budget is required");
   }
@@ -247,6 +254,7 @@ function assertHireRequest(raw: unknown): ValidatedHireRequest {
     permissions: body.permissions === undefined ? { tools: ["Read", "Grep", "Glob"], rules: [] } : validatePermissions(body.permissions),
     prompt,
     memorySources: body.memorySources === undefined ? [{ kind: "position_docs", locator: "./knowledge/**" }] : validateMemorySources(body.memorySources),
+    agentEngine: body.agentEngine === undefined ? DEFAULT_AGENT_ENGINE : body.agentEngine as TurnEngine,
     ...(body.deadline !== undefined ? { deadline: body.deadline } : {}),
   };
 }
@@ -331,6 +339,7 @@ async function hireUnlocked(
     permissions: request.permissions,
     prompt: request.prompt,
     memorySources: request.memorySources,
+    agentEngine: request.agentEngine,
   });
   const employeeBytes = files.get("employee.json");
   if (employeeBytes === undefined) throw new Error("skeleton builder must emit employee.json");
@@ -403,6 +412,6 @@ async function hireUnlocked(
   });
   return {
     status: 200,
-    body: { status: "hired", positionId: request.positionId, version },
+    body: { status: "hired", positionId: request.positionId, agentEngine: request.agentEngine, version },
   };
 }

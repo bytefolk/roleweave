@@ -19,6 +19,7 @@ import type {
   PositionBudget,
 } from "@roleweave/shared";
 import { hireMcpCatalog, hireSkillCatalog } from "@roleweave/shared/capabilities";
+import type { TurnEngine } from "../turns/types";
 
 export interface HireProposal {
   name?: string;
@@ -88,6 +89,8 @@ export interface HireDraft {
   permissions: HirePermissions;
   prompt: string;
   memorySources: HireMemorySource[];
+  /** Concrete runtime chosen when this employee is created. */
+  agentEngine: TurnEngine;
 }
 
 export type HireFlowState =
@@ -120,6 +123,7 @@ export function createHireDraft(presets?: Partial<HireDraft>): HireDraft {
     permissions: { tools: ["Read", "Grep", "Glob"], rules: [], skills: [], mcpServers: [] },
     prompt: "",
     memorySources: [{ kind: "position_docs", locator: "./knowledge/**" }],
+    agentEngine: "qoder",
     ...presets,
   };
 }
@@ -140,6 +144,7 @@ export function toHirePositionRequest(draft: HireDraft): HirePositionRequest {
     permissions: draft.permissions,
     prompt: draft.prompt,
     memorySources: draft.memorySources,
+    agentEngine: draft.agentEngine,
   };
 }
 

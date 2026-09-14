@@ -12,6 +12,11 @@ export const API_VERSION = "v0" as const;
 export const API_VERSION_HEADER = "x-orgworkbench-api" as const;
 
 export const routes = {
+  services: "/services",
+  servicesConfigure: "/services/configure",
+  servicesDisconnect: "/services/disconnect",
+  servicesProbe: "/services/probe",
+  servicesRelease: "/services/release",
   health: "/health",
   workspace: "/workspace",
   workspaceOpen: "/workspace/open",
@@ -22,6 +27,8 @@ export const routes = {
   orgRestore: "/org/restore",
   orgUndo: "/org/undo",
   hire: "/hire",
+  /** One local-proxy image generation request for an employee portrait. */
+  avatarGenerate: "/avatar/generate",
   positions: "/positions",
   reports: "/reports",
   sessions: "/sessions",

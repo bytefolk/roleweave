@@ -146,6 +146,7 @@ export interface TurnEnvelope {
 }
 
 export interface TurnRunRequest {
+  model?: string;
   workspace: string;
   positionId: string;
   engine: TurnEngine;
@@ -185,6 +186,8 @@ export interface ThreadContextMetadata {
 }
 
 export interface TurnRecord {
+  /** Requested model/alias, not an unverified provider routing result. */
+  model?: string;
   schemaVersion: typeof TURN_RECORD_SCHEMA_VERSION;
   conversationId: string;
   turnId: string;

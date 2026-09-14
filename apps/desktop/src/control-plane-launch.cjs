@@ -74,7 +74,7 @@ else
     fi
   fi
   if ! roleweave_node_usable "$roleweave_node"; then
-    printf '%s\\n' 'RoleWeave: install Linux Node.js 22 or newer in WSL, or set ROLEWEAVE_WSL_NODE to its absolute path.' >&2
+    printf '%s\\n' 'RoleWeave: install Linux Node.js 22 or newer in WSL, or set ROLEWEAVE_WSL_NODE_PATH to its absolute path.' >&2
     exit 127
   fi
 fi
@@ -100,7 +100,7 @@ exec /bin/bash -lc "$1" roleweave-wsl "$2" "$3"
 
 function wslLaunchSpec({ serverEntry, env, bootstrapEntry = path.join(__dirname, "wsl-bootstrap.cjs") }) {
   const distro = wslDistribution(env);
-  const nodePath = env.ROLEWEAVE_WSL_NODE ?? "";
+  const nodePath = env.ROLEWEAVE_WSL_NODE_PATH ?? "";
   if (typeof nodePath !== "string" || (nodePath !== "" && (!path.posix.isAbsolute(nodePath) || nodePath.startsWith("//") || /[\x00-\x1f]/.test(nodePath))) || nodePath.length > 32768) {
     throw wslError("wsl_node_invalid", "WSL Node must be an absolute Linux executable path");
   }
@@ -131,6 +131,17 @@ function wslLaunchSpec({ serverEntry, env, bootstrapEntry = path.join(__dirname,
     env: { ...stripPackagedSmokeControls(env), WSLENV: "" },
     input,
   };
+}
+
+function quoteCommandArgument(value) {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/** The bundled adapter must use the same operating system as its server. */
+function bundledEngineCommand(enginePath, env, executable = process.execPath) {
+  const wsl = controlPlaneMode(env) === "wsl";
+  const binary = wsl ? (env.ROLEWEAVE_WSL_NODE_PATH || "node") : executable;
+  return `${quoteCommandArgument(binary)} ${quoteCommandArgument(wsl ? winToWslPath(enginePath, wslDistribution(env)) : enginePath)}`;
 }
 
 /**
@@ -176,7 +187,7 @@ function createControlPlaneChild({ serverEntry, env }) {
   const mode = controlPlaneMode(childEnv);
   if (mode === "wsl") {
     const spec = wslLaunchSpec({ serverEntry, env: childEnv });
-    const child = spawn(spec.command, spec.args, { env: spec.env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(spec.command, spec.args, { env: spec.env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     // Keep the pipe open as the supervisor's lifetime lease. Closing the app
     // (even abnormally) yields EOF in Linux and reaps the server/Host subtree.
     child.stdin.on("error", () => {});
@@ -218,6 +229,7 @@ function serverPathForWorkspace(windowsPath, env) {
 }
 
 module.exports = {
+  bundledEngineCommand,
   controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,

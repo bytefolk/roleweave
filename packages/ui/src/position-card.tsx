@@ -199,7 +199,6 @@ export function PositionCard({
               <ContextSourceRow key={source.id} source={source} onSelect={onContextSourceSelect} />
             ))}
           </div>
-          <p className="owb-context-sources__hint">{t("pos.contextSourcesHint")}</p>
         </section>
       </div>
     </section>

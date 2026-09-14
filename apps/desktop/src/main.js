@@ -9,7 +9,7 @@
 // Shell-service split (ADR-0001): main spawns apps/server as a child process
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
-const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage } = require("electron");
 // Keep the development window and the packaged bundle aligned on the public
 // product name. The old IPC/package identifiers below remain compatibility
 // contracts, but users should only see RoleWeave.
@@ -17,6 +17,7 @@ app.setName("RoleWeave");
 const { spawn } = require("node:child_process");
 const {
   controlPlaneMode,
+  bundledEngineCommand,
   createControlPlaneChild,
   engineRuntimeEnvironment,
 } = require("./control-plane-launch.cjs");
@@ -70,6 +71,7 @@ const {
   validateDriveUploadRequest,
 } = require("./drive-ipc.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
+const { validateAvatarGenerateRequest } = require("./avatar-ipc.cjs");
 const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 const {
   sessionListPath,
@@ -94,6 +96,7 @@ const {
 const { openWorkspaceWithPicker, createWorkspaceWithPicker } = require("./workspace-ipc.cjs");
 const { runtimeEnvironment, runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
+const { createConnectionStore, createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const ROLEWEAVE_DEV_ICON = path.resolve(
@@ -122,9 +125,20 @@ let currentSseStatus = "connecting";
 let pendingFallbackNotice = null;
 let updateCheckTimer = null;
 let desktopEnv = { ...process.env };
+const serviceConnections = createServiceConnections({
+  apiRequest,
+  // Electron's secure storage is available only after app.whenReady().
+  store: {
+    read: () => createConnectionStore({ userDataPath: app.getPath("userData"), safeStorage }).read(),
+    write: (connections) => createConnectionStore({ userDataPath: app.getPath("userData"), safeStorage }).write(connections),
+  },
+});
+registerServiceIpc({
+  ipcMain, manager: serviceConnections, BrowserWindow, shell,
+  isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
+});
 
 function pinnedEngineCommandDefault() {
-  const nodePath = process.execPath;
   const enginePath = path.join(
     __dirname,
     "..",
@@ -136,7 +150,7 @@ function pinnedEngineCommandDefault() {
   // Wrap both paths in double quotes so the server's quote-aware splitCommand
   // recovers them as two argv tokens even when the install path contains
   // spaces (Windows `C:\Program Files\...`, macOS OneDrive folders, etc).
-  return `"${nodePath}" "${enginePath}"`;
+  return bundledEngineCommand(enginePath, desktopEnv);
 }
 
 function startControlPlane() {
@@ -392,6 +406,26 @@ ipcMain.handle("owb:position:get", async (_event, positionId) => {
     return { status: 400, body: { code: "manifest_invalid", message: "positionId required" } };
   }
   return apiRequest(`/positions/${encodeURIComponent(positionId)}`);
+});
+
+ipcMain.handle("owb:avatar:generate", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) {
+    return { status: 403, body: { code: "avatar_request_invalid", message: "Untrusted sender", retryable: false } };
+  }
+  const validated = validateAvatarGenerateRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/avatar/generate", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:model", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  if (!request || typeof request !== "object" || Array.isArray(request) ||
+      Object.keys(request).length !== 2 || typeof request.positionId !== "string" ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(request.positionId) ||
+      typeof request.model !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(request.model)) {
+    return { status: 400, body: { message: "Invalid employee model selection" } };
+  }
+  return apiRequest(`/positions/${encodeURIComponent(request.positionId)}/model`, { method: "PATCH", body: { model: request.model } });
 });
 
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.
@@ -702,12 +736,17 @@ function createWindow() {
     // an AC-002 "no raw hex in components" violation (there is no component
     // here, just Electron's own pre-paint).
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#14151b" : "#f7f8fb",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        // Packaged smoke/layout runs are launched without an activated window
+        // on CI/Windows. Chromium otherwise throttles renderer timers to ~1s,
+        // stretching the bounded probe into a false timeout. Normal windows
+        // retain the default background throttling behavior.
+        backgroundThrottling: smokeRequest !== null || behaviorSmokeRequest !== null || layoutReportPath !== null,
+      },
   });
   mainWindow.setMenuBarVisibility(false);
   // Lane A staging harness: static, opt-in, packaged-only, and confined to the
@@ -968,6 +1007,8 @@ app.whenReady().then(async () => {
   try {
     desktopEnv = runtimeEnvironment(process.env, app.getPath("userData"));
     controlPlane = await startControlPlane();
+    // Optional remote services must not prevent the local workspace opening.
+    try { await serviceConnections.initialize(); } catch { /* A later probe reports connectivity. */ }
     startEventStream();
     const autoOpenResult = await openDefaultWorkspace({
       apiRequest,
