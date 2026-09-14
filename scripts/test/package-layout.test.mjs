@@ -142,7 +142,7 @@ test("runtime manifest is an explicit allowlist for every packaged consumer", ()
   assert.deepEqual(
     compiledServer,
     walkFiles(path.join(projectRoot, "apps/server/src"))
-      .filter((entry) => /\.(?:js|ts)$/.test(entry))
+      .filter((entry) => /\.(?:js|ts)$/.test(entry) && !entry.endsWith(".d.ts"))
       .map((entry) => entry.replace(/\.(?:js|ts)$/, ".js")),
     "compiled control-plane inventory must be updated explicitly when source modules change",
   );
@@ -352,6 +352,22 @@ test("every package command refuses publish authority", () => {
       `${name} neither carries --publish never nor delegates to a command that does`,
     );
   }
+});
+
+test("server and shared relative imports are closed over the runtime manifest", () => {
+  const { SERVER_RUNTIME_FILES, SHARED_RUNTIME_FILES } = require("../../apps/desktop/packaging/runtime-layout.cjs");
+  const missing = [];
+  for (const [root, entries] of [["apps/server", SERVER_RUNTIME_FILES], ["packages/shared", SHARED_RUNTIME_FILES]]) {
+    const shipped = new Set(entries);
+    for (const entry of entries.filter((file) => /\.[cm]?js$/.test(file))) {
+      const source = fs.readFileSync(path.join(projectRoot, root, entry), "utf8");
+      for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)["'](\.{1,2}\/[^"']+)["']/g)) {
+        const dependency = path.posix.normalize(path.posix.join(path.posix.dirname(entry), match[1]));
+        if (!shipped.has(dependency)) missing.push(`${root}/${entry} imports unpackaged ${dependency}`);
+      }
+    }
+  }
+  assert.deepEqual(missing, [], `runtime dependencies missing from the explicit allowlist:\n${missing.join("\n")}`);
 });
 
 test("every module the desktop entry requires is named in the runtime manifest", () => {

@@ -12,10 +12,51 @@ function engineRuntimeEnvironment(env, bundledEngineCommand) {
 }
 
 /** Convert a Windows path (C:\x\y) to a WSL path (/mnt/c/x/y). */
-function winToWslPath(p) {
+function winToWslPath(p, configuredDistro) {
+  const unc = /^\\\\wsl(?:\.localhost|\$)\\([^\\]+)\\(.*)$/i.exec(p);
+  if (unc) {
+    if (configuredDistro && unc[1].toLowerCase() !== configuredDistro.toLowerCase()) {
+      throw new Error(`WSL 路径属于 ${unc[1]}，当前运行环境为 ${configuredDistro}；请选择同一发行版内的路径`);
+    }
+    return `/${unc[2].replace(/\\/g, "/")}`;
+  }
   const m = /^([A-Za-z]):[\\/](.*)$/.exec(p);
   if (!m) return p;
   return `/mnt/${m[1].toLowerCase()}/${m[2].replace(/\\/g, "/")}`;
+}
+
+function quoteCommandArgument(value) {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+/** The bundled adapter must use the same operating system as its server. */
+function bundledEngineCommand(enginePath, env, executable = process.execPath) {
+  const wsl = controlPlaneMode(env) === "wsl";
+  const binary = wsl ? (env.ROLEWEAVE_WSL_NODE_PATH || "node") : executable;
+  return `${quoteCommandArgument(binary)} ${quoteCommandArgument(wsl ? winToWslPath(enginePath, env.ROLEWEAVE_WSL_DISTRO) : enginePath)}`;
+}
+
+function wslControlPlaneSpec(serverEntry, env) {
+  const environment = { ...env, ELECTRON_RUN_AS_NODE: "1" };
+  // WSL does not inherit arbitrary Windows environment variables. Forward
+  // application/provider settings by name, without putting secrets in argv.
+  // HOME/PATH stay Linux-owned; the bootstrap adds only known Linux locations.
+  const forwarded = Object.keys(environment).filter((key) =>
+    /^(ORG_WORKBENCH_|ROLEWEAVE_|DIGITAL_EMPLOYEE_|OPENAI_|ANTHROPIC_|QODER_|CONTEXT_)/.test(key) ||
+    /^(ELECTRON_RUN_AS_NODE|HTTP_PROXY|HTTPS_PROXY|NO_PROXY|http_proxy|https_proxy|no_proxy|NODE_EXTRA_CA_CERTS|SSL_CERT_FILE|SSL_CERT_DIR)$/.test(key));
+  environment.WSLENV = [...new Set([
+    ...(environment.WSLENV || "").split(":").filter(Boolean),
+    ...forwarded,
+  ])].join(":");
+  const args = [];
+  if (env.ROLEWEAVE_WSL_DISTRO) args.push("--distribution", env.ROLEWEAVE_WSL_DISTRO);
+  args.push("--exec", "bash", "-lc", [
+    'if [ -n "$3" ]; then export HOME="$3"; fi',
+    'case "$1" in /*) export PATH="${1%/*}:$PATH";; esac',
+    'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"',
+    'exec "$1" "$2"',
+  ].join("; "), "roleweave", env.ROLEWEAVE_WSL_NODE_PATH || "node", winToWslPath(serverEntry, env.ROLEWEAVE_WSL_DISTRO), env.ROLEWEAVE_WSL_HOME || "");
+  return { command: "wsl.exe", args, env: environment };
 }
 
 /**
@@ -60,11 +101,11 @@ function createControlPlaneChild({ serverEntry, env }) {
   const childEnv = stripPackagedSmokeControls(env);
   const mode = controlPlaneMode(childEnv);
   if (mode === "wsl") {
-    const wslEntry = winToWslPath(serverEntry);
+    const spec = wslControlPlaneSpec(serverEntry, childEnv);
     const child = spawn(
-      "wsl.exe",
-      ["-e", "bash", "-lc", `node "${wslEntry}"`],
-      { env: childEnv, stdio: ["ignore", "pipe", "pipe"] },
+      spec.command,
+      spec.args,
+      { env: spec.env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
     );
     return child;
   }
@@ -87,16 +128,18 @@ function createControlPlaneChild({ serverEntry, env }) {
  */
 function serverPathForWorkspace(windowsPath, env) {
   if (controlPlaneMode(env) === "wsl") {
-    return winToWslPath(windowsPath);
+    return winToWslPath(windowsPath, env.ROLEWEAVE_WSL_DISTRO);
   }
   return windowsPath;
 }
 
 module.exports = {
+  bundledEngineCommand,
   controlPlaneMode,
   createControlPlaneChild,
   engineRuntimeEnvironment,
   serverPathForWorkspace,
   stripPackagedSmokeControls,
   winToWslPath,
+  wslControlPlaneSpec,
 };

@@ -6,6 +6,9 @@ import type {
   DriveObjectListResponse,
 } from "@roleweave/shared";
 import { sendJson } from "../http.js";
+import type { ControlPlaneContext } from "../context.js";
+import { requestService, resolveServiceConnection } from "../services/connections.js";
+import { normalizeMemFile } from "../services/mem-contract.js";
 
 /**
  * Drive plane proxy (MVP) — forwards `list`/`detail` reads to the bytefolk/mem
@@ -19,87 +22,47 @@ import { sendJson } from "../http.js";
  * `drive-object.v1`) so the renderer never depends on mem field naming.
  */
 
-interface MemFileRecord {
-  id?: unknown;
-  name?: unknown;
-  path?: unknown;
-  size?: unknown;
-  mime?: unknown;
-  mime_type?: unknown;
-  created_at?: unknown;
-  summary?: unknown;
-  caption?: unknown;
+const MEM_PAGE_SIZE = 200;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function coerceString(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback;
+function invalidResponse(): OrgApiError {
+  return new OrgApiError(errorCodes.drive_upstream_failed, 502, "mem returned an invalid file response");
 }
 
-function coerceNumber(value: unknown, fallback = 0): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+function requireMemFile(raw: unknown): DriveObject {
+  const file = normalizeMemFile(raw);
+  if (file === null) throw invalidResponse();
+  return file;
 }
 
-function normalizeMemFile(raw: MemFileRecord): DriveObject | null {
-  const id = coerceString(raw.id);
-  if (id === "") return null;
-  const name = coerceString(raw.name, coerceString(raw.path, id));
-  const size = coerceNumber(raw.size, 0);
-  const mime = coerceString(raw.mime, coerceString(raw.mime_type, "application/octet-stream"));
-  const createdAt = coerceString(raw.created_at, new Date(0).toISOString());
-  const summary = coerceString(raw.summary, coerceString(raw.caption, ""));
-  return {
-    id,
-    name,
-    size,
-    mime,
-    createdAt,
-    ...(summary !== "" ? { summary } : {}),
-  };
-}
-
-function memUrlFromEnv(): string | null {
-  const raw = process.env.MEM_URL ?? process.env.ORG_WORKBENCH_MEM_URL ?? "";
-  if (raw.trim() === "") return null;
-  return raw.replace(/\/$/, "");
-}
-
-function memToken(): string | null {
-  const raw = process.env.MEM_TOKEN ?? process.env.ORG_WORKBENCH_MEM_TOKEN ?? "";
-  return raw.trim() === "" ? null : raw;
-}
-
-async function fetchMem(pathname: string): Promise<{ ok: true; body: unknown } | OrgApiError> {
-  const base = memUrlFromEnv();
-  if (base === null) {
-    return new OrgApiError(
+async function fetchMem(ctx: ControlPlaneContext, pathname: string): Promise<unknown> {
+  const connection = await resolveServiceConnection(ctx, "mem");
+  if (connection === null) {
+    throw new OrgApiError(
       errorCodes.drive_not_configured,
       503,
-      "mem is not configured; set MEM_URL or ORG_WORKBENCH_MEM_URL",
+      "mem is not configured; connect mem in service settings",
     );
   }
-  const url = `${base}${pathname}`;
-  const token = memToken();
   try {
-    const response = await fetch(url, {
-      headers: {
-        accept: "application/json",
-        ...(token !== null ? { authorization: `Bearer ${token}` } : {}),
-      },
-    });
-    if (!response.ok) {
-      return new OrgApiError(
+    const response = await requestService(connection, pathname);
+    if (response.status < 200 || response.status >= 300) {
+      throw new OrgApiError(
         errorCodes.drive_upstream_failed,
-        response.status,
+        response.status >= 400 && response.status < 500 ? response.status : 502,
         `mem upstream failed: ${response.status}`,
       );
     }
-    const body = (await response.json()) as unknown;
-    return { ok: true, body };
-  } catch (err) {
-    return new OrgApiError(
+    return response.body;
+  } catch (error) {
+    if (error instanceof OrgApiError && error.code === errorCodes.drive_upstream_failed) throw error;
+    throw new OrgApiError(
       errorCodes.drive_upstream_unavailable,
       502,
-      `mem upstream unreachable: ${err instanceof Error ? err.message : String(err)}`,
+      "mem upstream unavailable",
     );
   }
 }
@@ -110,22 +73,20 @@ function matches(object: DriveObject, needle: string): boolean {
 }
 
 /** GET /drive/list?q=<search>: mem `/v1/files` with bounded client-side filtering. */
-export async function handleDriveList(res: ServerResponse, url: URL): Promise<void> {
+export async function handleDriveList(ctx: ControlPlaneContext, res: ServerResponse, url: URL): Promise<void> {
   const q = url.searchParams.get("q") ?? "";
   if (q.length > 256) {
     throw new OrgApiError(errorCodes.drive_request_invalid, 400, "q parameter exceeds 256 chars");
   }
-  const result = await fetchMem("/v1/files?limit=200&page=1");
-  if (result instanceof OrgApiError) throw result;
-  const raw = result.body as { files?: unknown; items?: unknown };
-  const list = Array.isArray(raw.files)
-    ? (raw.files as MemFileRecord[])
-    : Array.isArray(raw.items)
-      ? (raw.items as MemFileRecord[])
-      : [];
+  // mem does not support a `q` filter on /files. Keep this text filter local
+  // to the bounded page; semantic retrieval belongs to its /search API.
+  const raw = await fetchMem(ctx, `/v1/files?limit=${MEM_PAGE_SIZE}&page=1`);
+  if (!isRecord(raw) || (raw.files !== null && !Array.isArray(raw.files))) throw invalidResponse();
+  // Go's nil []File serializes as null for an empty mem workspace.
+  const list = raw.files === null ? [] : raw.files as unknown[];
+  if (list.length > MEM_PAGE_SIZE) throw invalidResponse();
   const objects = list
-    .map((entry) => normalizeMemFile(entry))
-    .filter((entry): entry is DriveObject => entry !== null)
+    .map(requireMemFile)
     .filter((entry) => q === "" || matches(entry, q));
   const body: DriveObjectListResponse = {
     schemaVersion: "drive-object-list.v1",
@@ -136,17 +97,13 @@ export async function handleDriveList(res: ServerResponse, url: URL): Promise<vo
 }
 
 /** GET /drive/detail?id=<memFileId>. */
-export async function handleDriveDetail(res: ServerResponse, url: URL): Promise<void> {
+export async function handleDriveDetail(ctx: ControlPlaneContext, res: ServerResponse, url: URL): Promise<void> {
   const id = url.searchParams.get("id") ?? "";
-  if (id === "" || id.length > 128) {
-    throw new OrgApiError(errorCodes.drive_request_invalid, 400, "id parameter is required");
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(id)) {
+    throw new OrgApiError(errorCodes.drive_request_invalid, 400, "a valid file id is required");
   }
-  const result = await fetchMem(`/v1/files/${encodeURIComponent(id)}`);
-  if (result instanceof OrgApiError) throw result;
-  const object = normalizeMemFile(result.body as MemFileRecord);
-  if (object === null) {
-    throw new OrgApiError(errorCodes.asset_not_found, 404, `drive object not found: ${id}`);
-  }
+  const object = requireMemFile(await fetchMem(ctx, `/v1/files/${encodeURIComponent(id)}`));
+  if (object.id !== id) throw invalidResponse();
   const body: DriveObjectDetailResponse = {
     schemaVersion: "drive-object.v1",
     object,

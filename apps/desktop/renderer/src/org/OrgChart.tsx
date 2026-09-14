@@ -79,6 +79,7 @@ export interface OrgChartProps {
   /** 专注模式由工作台拥有，避免图组件擅自隐藏其他产品区域。 */
   focusMode?: boolean;
   onFocusModeChange?: (focused: boolean) => void;
+  avatarUrls?: Record<string, string>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   className?: string;
@@ -89,6 +90,7 @@ interface ChartNodeProps {
   displayNames?: Record<string, string>;
   avatarColors?: Record<string, string>;
   runningIds?: ReadonlySet<string>;
+  avatarUrls?: Record<string, string>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 }
@@ -98,6 +100,7 @@ function ChartNode({
   displayNames,
   avatarColors,
   runningIds,
+  avatarUrls,
   selectedId,
   onSelect,
 }: ChartNodeProps) {
@@ -124,6 +127,7 @@ function ChartNode({
           <span className={`owb-led owb-org-chart__led${running ? " owb-led--running" : ""}`} aria-hidden="true" />
           <PositionAvatar
             colors={avatarColors}
+            sources={avatarUrls}
             id={node.id}
             name={name}
             className="owb-org-chart__avatar"
@@ -152,6 +156,7 @@ function ChartNode({
               displayNames={displayNames}
               avatarColors={avatarColors}
               runningIds={runningIds}
+              avatarUrls={avatarUrls}
               selectedId={selectedId}
               onSelect={onSelect}
             />
@@ -172,6 +177,7 @@ export function OrgChart({
   runningIds,
   focusMode = false,
   onFocusModeChange,
+  avatarUrls,
   selectedId,
   onSelect,
   className,
@@ -444,6 +450,7 @@ export function OrgChart({
                   displayNames={displayNames}
                   avatarColors={avatarColors}
                   runningIds={runningIds}
+                  avatarUrls={avatarUrls}
                   selectedId={selectedId}
                   onSelect={onSelect}
                 />

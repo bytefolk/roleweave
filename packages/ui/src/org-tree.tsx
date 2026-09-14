@@ -44,6 +44,8 @@ export interface OrgDropPosition {
 }
 
 export interface OrgTreeProps {
+  decorateRow?: (id: string | null, row: ReactNode) => ReactNode;
+  rowActions?: (id: string | null) => ReactNode;
   snapshot: OrgTreeSnapshot;
   /** Applied-state stamp (updatedAt); change re-triggers the 180ms fade. */
   versionStamp?: string | null;
@@ -53,6 +55,9 @@ export interface OrgTreeProps {
   /** Avatar background colors keyed by position id (e.g. metadata.color);
    * positions without one get a deterministic hue from their id. */
   avatarColors?: Record<string, string>;
+  /** Render-ready avatar sources are supplied by the desktop shell. The UI
+   * package deliberately stores no user media itself. */
+  avatarUrls?: Record<string, string>;
   /** Position ids with a turn in flight (SSE run stream) — the row's status
    * light breathes AI purple. Observed state only, never inferred. */
   runningIds?: ReadonlySet<string>;
@@ -77,6 +82,8 @@ export interface OrgTreeProps {
 }
 
 export interface OrgTreeNodeProps {
+  decorate?: (row: ReactNode) => ReactNode;
+  actions?: ReactNode;
   node: OrgTreeNodeV1;
   depth: number;
   selected: boolean;
@@ -91,6 +98,7 @@ export interface OrgTreeNodeProps {
   tabIndex: number;
   displayName?: string;
   avatarColor?: string;
+  avatarUrl?: string;
   /** Live turn in flight for this position (from the SSE run stream): the
    * status light switches to the AI-purple breathing state. Never inferred. */
   running?: boolean;
@@ -112,6 +120,8 @@ export interface OrgTreeNodeProps {
 }
 
 export function OrgTreeNode({
+  decorate,
+  actions,
   node,
   depth,
   selected,
@@ -122,6 +132,7 @@ export function OrgTreeNode({
   tabIndex,
   displayName,
   avatarColor,
+  avatarUrl,
   running = false,
   onSelect,
   onToggle,
@@ -137,7 +148,7 @@ export function OrgTreeNode({
   onGroupEntry,
 }: OrgTreeNodeProps) {
   const t = useT();
-  return (
+  const row = (
     <div
       role="treeitem"
       data-org-node-id={node.id}
@@ -198,12 +209,12 @@ export function OrgTreeNode({
         aria-hidden="true"
         style={avatarColor ? { color: avatarColor } : undefined}
       >
-        {expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
+        {avatarUrl ? <img className="ui-org-tree__avatar" src={avatarUrl} alt="" /> : expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
       </span>
       <span className="ui-org-tree__label" title={displayName ?? node.id}>
         <span className="ui-org-tree__name">{displayName ?? node.id}</span>
       </span>
-      {onGroupEntry || onHireEntry ? (
+      {actions ?? (onGroupEntry || onHireEntry ? (
         <span className="ui-org-tree__actions">
           {onGroupEntry ? (
             <button
@@ -232,9 +243,10 @@ export function OrgTreeNode({
             </button>
           ) : null}
         </span>
-      ) : null}
+      ) : null)}
     </div>
   );
+  return decorate ? decorate(row) : row;
 }
 
 const ENTERPRISE_ID = "__enterprise__";
@@ -341,10 +353,13 @@ interface FlatNode {
  * updates with a 180ms fade; the UI never polls.
  */
 export function OrgTree({
+  decorateRow,
+  rowActions,
   snapshot,
   versionStamp,
   displayNames,
   avatarColors,
+  avatarUrls,
   runningIds,
   selectedId,
   onSelect,
@@ -619,6 +634,8 @@ export function OrgTree({
       <Fragment key={node.id}>
         {hint?.zone === "before" ? <div className="ui-org-tree__drop-line" aria-hidden="true" /> : null}
         <OrgTreeNode
+          decorate={decorateRow ? (row) => decorateRow(node.id, row) : undefined}
+          actions={rowActions?.(node.id)}
           node={node}
           depth={depth}
           selected={selectedId === node.id}
@@ -629,6 +646,7 @@ export function OrgTree({
           tabIndex={focusedId === node.id ? 0 : -1}
           displayName={displayNames?.[node.id]}
           avatarColor={avatarColors?.[node.id]}
+          avatarUrl={avatarUrls?.[node.id]}
           running={runningIds?.has(node.id) === true}
           onSelect={() => onSelect?.(node.id)}
           onToggle={() => toggleNode(node.id)}
@@ -709,7 +727,7 @@ export function OrgTree({
     >
       {useEnterpriseRoot ? (
         <Fragment>
-          <div
+          {(decorateRow ?? ((_id, row) => row))(null, <div
             role="treeitem"
             data-org-node-id={ENTERPRISE_ID}
             aria-level={1}
@@ -764,7 +782,8 @@ export function OrgTree({
             <span className="ui-org-tree__label" title={enterpriseName}>
               <span className="ui-org-tree__name">{enterpriseName}</span>
             </span>
-          </div>
+            {rowActions?.(null)}
+          </div>)}
           {enterpriseExpanded
             ? topLevel.map((node, index) =>
                 renderPosition(node, 1, index === topLevel.length - 1),

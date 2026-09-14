@@ -2,12 +2,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import { routes } from "@roleweave/shared";
+import {
+  AGENT_BINDING_RELATIVE_PATH,
+  AGENT_BINDING_SCHEMA_VERSION,
+  routes,
+} from "@roleweave/shared";
 import type {
   GroupConversation,
   GroupTimeline,
+  TurnEngine,
   TurnRecord,
   TurnRunDriver,
+  TurnRunResult,
   WorkbenchSession,
   WorkbenchSessionList,
 } from "@roleweave/shared";
@@ -34,6 +40,39 @@ async function createGroup(
   });
   assert.equal(created.status, 201);
   return created.body as GroupConversation;
+}
+
+async function writePositionAgentBinding(
+  workspace: string,
+  positionId: string,
+  engine: TurnEngine,
+): Promise<void> {
+  const positionDir = await findPositionPackageDir(path.join(workspace, "positions"), positionId);
+  const file = path.join(positionDir, ...AGENT_BINDING_RELATIVE_PATH.split("/"));
+  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  await fs.writeFile(file, `${JSON.stringify({
+    schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
+    engine,
+  })}\n`, { mode: 0o600 });
+}
+
+async function findPositionPackageDir(directory: string, positionId: string): Promise<string> {
+  const employeePath = path.join(directory, "employee.json");
+  const employee = await fs.readFile(employeePath, "utf8").catch(() => undefined);
+  if (employee !== undefined) {
+    const parsed = JSON.parse(employee) as { name?: unknown };
+    if (parsed.name === positionId) return directory;
+  }
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+    try {
+      return await findPositionPackageDir(path.join(directory, entry.name), positionId);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "position_not_found") throw error;
+    }
+  }
+  throw new Error("position_not_found");
 }
 
 test("group create anchors a real session, persists 0o700/0o600 state, and lists/gets by ref", async () => {
@@ -317,6 +356,66 @@ test("group turn answers 202 with pre-assigned spawns and persists per-member re
     assert.deepEqual(userItem.mentions, ["repo-owner", "release-engineer"]);
   } finally {
     sse.close();
+    await server.close();
+  }
+});
+
+test("group turns use each mentioned employee's durable Agent binding", async () => {
+  const calls: Array<{ positionId: string; engine: TurnEngine }> = [];
+  const driver: TurnRunDriver = {
+    async turnRun(request) {
+      calls.push({ positionId: request.positionId, engine: request.engine });
+      const timestamp = new Date().toISOString();
+      const events: TurnRunResult["events"] = [
+        { type: "run.started", runId: request.envelope.turnId, timestamp },
+        {
+          type: "run.completed",
+          runId: request.envelope.turnId,
+          timestamp,
+          output: "bound Agent completed",
+          terminalReason: "goal_met",
+        },
+      ];
+      for (const event of events) request.onEvent?.(event);
+      return { status: "trusted", events, diagnostic: "" };
+    },
+  };
+  const server = await startTestServer(undefined, driver);
+  const workspace = await copyExampleWorkspace();
+  try {
+    await writePositionAgentBinding(workspace, "repo-owner", "codex-local");
+    await writePositionAgentBinding(workspace, "release-engineer", "claude-local");
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const group = await createGroup(server.baseUrl, server.token);
+    const accepted = await api(server.baseUrl, `${routes.groups}/${group.conversationRef}/turns`, {
+      method: "POST",
+      token: server.token,
+      // Try to override both bindings. The server must persist and run the
+      // per-position sidecars instead of this request-scoped value.
+      body: {
+        input: "check the release",
+        engine: "qoder",
+        engines: { "repo-owner": "qoder", "release-engineer": "qoder" },
+        mentions: ["repo-owner", "release-engineer"],
+      },
+    });
+    assert.equal(accepted.status, 202);
+    const spawns = (accepted.body as { spawns: Array<{ positionId: string; engine: TurnEngine }> }).spawns;
+    assert.deepEqual(Object.fromEntries(spawns.map((spawn) => [spawn.positionId, spawn.engine])), {
+      "repo-owner": "codex-local",
+      "release-engineer": "claude-local",
+    });
+    for (let attempt = 0; attempt < 100 && calls.length < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.deepEqual(
+      calls.sort((left, right) => left.positionId.localeCompare(right.positionId)),
+      [
+        { positionId: "release-engineer", engine: "claude-local" },
+        { positionId: "repo-owner", engine: "codex-local" },
+      ],
+    );
+  } finally {
     await server.close();
   }
 });

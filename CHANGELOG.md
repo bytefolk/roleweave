@@ -38,6 +38,8 @@
 
 ### Changed
 
+- 本地 doc / mem 新增统一 Docker 管理入口：共同或单独初始化、验证、启动、查看状态/日志和停止；复用独立 Compose 项目与持久卷，修正 doc 外部环境初始化，失败升级保留成功版本记录，停止按项目标签覆盖旧容器。
+- doc / mem 以独立 HTTP 服务接入：桌面设置可保存加密令牌、验证实际 API 契约并打开上游原生界面；支持本机与远程 HTTPS，连接变更立即刷新索引。独立源码工具固定上游 commit、保留历史及持久化数据路径，并生成部署步骤；源码准备不会自动迁移数据库或切换运行中服务。
 - #206：RoleWeave 内置引擎新增 Codex 服务凭据与本地登录两种 Agent Host；本地登录不依赖服务 API key。
 - #236：Agent Host 下方显示本次回合将使用的模型（仅对存在模型旋钮的 Host 展示，由 `/health` 新增的可选 `modelPinnable` 下发，客户端不自带引擎清单）。`/health` 的 Host 状态新增可选 `model`（取自 `OPENAI_MODEL`）；未指定时如实显示"由 Host 自行决定"而不推断名字——Codex CLI 不向调用方报告它选中的模型。Codex 回合一律带 `--ignore-user-config`，`~/.codex/config.toml` 的 `model` 不生效。`OPENAI_MODEL` 非法时两个 Codex Host 在前置检查即 fail closed 并给出可执行提示，不再等到 spawn 前失败。
 - 以 RoleWeave 标识的紫蓝色建立 light / dark 双主题，逐组件统一组织、会话、群聊、招聘、文档、网盘、报表、审批和设置；简化嵌套卡片与装饰标签，改善正文、长路径、超限数值及暗色表单的可读性，保留业务行为。

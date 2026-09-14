@@ -8,12 +8,10 @@
 // the block a second time. Keep variable names out of prose, or write them
 // without the glob.
 //
-// #248 moved the palette into @fullstack-ai-infra/ui's profile blocks, so the
-// guard now pins those instead of the old inline antd-skin palette: every hex
-// token the mint profile declares must arrive in the built bundle, in both
-// themes. Mint is the seeded default profile (resolveThemeProfile()). The
-// RoleWeave-owned alias block from antd-skin.css rides the same pipeline and
-// is pinned the same way.
+// Mint inherits the shared token map and keeps its product-specific overlay in
+// antd-skin.css. Pin every overlay hex token in the built bundle, in both
+// themes. Mint is the seeded default profile (resolveThemeProfile()); the
+// RoleWeave-owned alias block rides the same pipeline and is pinned too.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -42,10 +40,13 @@ function expandHex(value) {
 }
 
 function mintBlock(css, theme) {
-  const selector = `[data-ui-theme=mint][data-theme=${theme}]`;
-  const start = css.indexOf(selector);
-  assert.notEqual(start, -1, `mint ${theme} block missing from the design-system stylesheet`);
-  const open = css.indexOf("{", start);
+  const selector = new RegExp(
+    `\\[\\s*data-ui-theme\\s*=\\s*(?:["']mint["']|mint)\\s*\\]\\s*` +
+    `\\[\\s*data-theme\\s*=\\s*(?:["']${theme}["']|${theme})\\s*\\]\\s*\\{`,
+  );
+  const match = selector.exec(css);
+  assert.ok(match, `mint ${theme} overlay block missing from antd-skin.css`);
+  const open = css.indexOf("{", match.index);
   let depth = 0;
   for (let i = open; i < css.length; i += 1) {
     if (css[i] === "{") depth += 1;
@@ -54,7 +55,7 @@ function mintBlock(css, theme) {
       if (depth === 0) return css.slice(open + 1, i);
     }
   }
-  assert.fail(`unbalanced braces in the mint ${theme} block`);
+  assert.fail(`unbalanced braces in the mint ${theme} overlay block`);
 }
 
 function hexDeclarations(block) {
@@ -65,10 +66,7 @@ function hexDeclarations(block) {
 
 test("renderer bundle keeps the skin token blocks (#50, #73, #248)", () => {
   const bundle = normalize(builtCss());
-  const skin = fs.readFileSync(
-    require.resolve("@fullstack-ai-infra/ui/styles.css"),
-    "utf8",
-  );
+  const skin = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "antd-skin.css"), "utf8");
 
   for (const theme of ["light", "dark"]) {
     const selector = `[data-ui-theme=mint][data-theme=${theme}]`;

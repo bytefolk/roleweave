@@ -9,8 +9,9 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { constants as fsConstants, realpathSync } from "node:fs";
+import { constants as fsConstants, realpathSync, rmSync, rmdirSync } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
@@ -18,6 +19,7 @@ import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
 import { resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
 import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
+import { resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../src/local-provider-config.js";
 
 const VERSION = "0.2.0";
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
@@ -51,6 +53,7 @@ const QODER_CHILD_ENV_KEYS = [
   "XDG_CONFIG_HOME",
   "XDG_CACHE_HOME",
   "QODER_PERSONAL_ACCESS_TOKEN",
+  "QODER_CONFIG_DIR",
   "HTTP_PROXY",
   "HTTPS_PROXY",
   "NO_PROXY",
@@ -89,8 +92,7 @@ const CLAUDE_CODE_CHILD_ENV_KEYS = [
   "SHELL",
   "XDG_CONFIG_HOME",
   "XDG_CACHE_HOME",
-  "ANTHROPIC_API_KEY",
-  "ANTHROPIC_BASE_URL",
+  "CLAUDE_CONFIG_DIR",
   "HTTP_PROXY",
   "HTTPS_PROXY",
   "NO_PROXY",
@@ -122,6 +124,7 @@ const CLAUDE_LOCAL_CHILD_ENV_KEYS = [
   "XDG_CONFIG_HOME",
   "XDG_CACHE_HOME",
   "DIGITAL_EMPLOYEE_CLAUDE_COMMAND",
+  "CLAUDE_CONFIG_DIR",
   "HTTP_PROXY",
   "HTTPS_PROXY",
   "NO_PROXY",
@@ -133,13 +136,45 @@ const CLAUDE_LOCAL_CHILD_ENV_KEYS = [
   "SSL_CERT_DIR",
 ];
 
-function claudeChildEnvironment(source, engineModel) {
+function claudeChildEnvironment(source, engineModel, providerEnv = {}) {
   const keys = engineModel === "claude-local" ? CLAUDE_LOCAL_CHILD_ENV_KEYS : CLAUDE_CODE_CHILD_ENV_KEYS;
   const environment = {};
   for (const key of keys) {
     if (source[key] !== undefined) environment[key] = source[key];
   }
-  return environment;
+  return { ...environment, ...providerEnv };
+}
+
+// Provider diagnostics can echo request credentials. Never forward those
+// values, including JSON-escaped representations, into the Workbench stream.
+function providerDiagnosticRedactor(configuration) {
+  const secrets = new Set();
+  const visit = (value) => {
+    if (!value || typeof value !== "object") return;
+    for (const [key, item] of Object.entries(value)) {
+      if (typeof item === "string" && /(?:api.?key|auth.?token|access.?token)$/i.test(key) && item) {
+        secrets.add(item);
+        secrets.add(JSON.stringify(item).slice(1, -1));
+      } else if (key === "ANTHROPIC_CUSTOM_HEADERS" && typeof item === "string") {
+        for (const header of item.split(/\r?\n/)) {
+          const separator = header.indexOf(":");
+          if (separator < 0) continue;
+          const value = header.slice(separator + 1).trim();
+          if (!value) continue;
+          secrets.add(value);
+          secrets.add(JSON.stringify(value).slice(1, -1));
+          const bearer = /^Bearer\s+(.+)$/i.exec(value)?.[1];
+          if (bearer) secrets.add(bearer);
+        }
+      } else if (item && typeof item === "object") visit(item);
+    }
+  };
+  visit(configuration);
+  return (message) => {
+    let text = String(message);
+    for (const secret of [...secrets].sort((a, b) => b.length - a.length)) text = text.split(secret).join("[REDACTED]");
+    return text;
+  };
 }
 
 const CLAUDE_VERSION_MIN = [2, 1, 214];
@@ -557,9 +592,23 @@ async function orgApply(workspaceDir) {
       }
     }
     const declaredRole = (declared.roles ?? []).find((role) => role.id === position.id);
+    // Package names remain path-safe ids; the employee's display name is
+    // Workbench metadata. Older generated packages already retain it in the
+    // SKILL heading, so reapplying repairs them without rewriting the package.
+    const identity = await readJsonIfPresent(path.join(position.dir, ".workbench", "identity.v1.json"));
+    let displayName = identity?.schemaVersion === "workbench-position-identity.v1" && typeof identity.name === "string"
+      ? identity.name.trim()
+      : "";
+    if (!displayName && Array.isArray(employee.authors) && employee.authors.includes("org-workbench")) {
+      try {
+        const skill = await fs.readFile(path.join(position.dir, "SKILL.md"), "utf8");
+        displayName = /^---\r?\n[\s\S]*?\r?\n---\r?\n+#[ \t]+([^\r\n]+)/.exec(skill)?.[1]?.trim() ?? "";
+      } catch { /* External packages can have no Workbench display metadata. */ }
+    }
+    if (Buffer.byteLength(displayName, "utf8") > 128) displayName = "";
     roles.push({
       id: position.id,
-      name: declaredRole?.name ?? employee.name ?? position.id,
+      name: declaredRole?.name ?? (displayName || previousById.get(position.id)?.name || employee.name || position.id),
       description: declaredRole?.description ?? employee.description ?? "",
       reportTo: position.reportTo,
       package: {
@@ -673,11 +722,20 @@ function turnRun(workspaceDir, positionId) {
   });
 }
 
-function turnRunQoder(workspaceDir, positionId, input) {
+async function turnRunQoder(workspaceDir, positionId, input) {
   const runId = randomUUID();
   emit({ type: "run.started", runId, timestamp: now() });
 
     let terminalEmitted = false;
+    let redactDiagnostic = (message) => String(message);
+    let settingsDir;
+    let settingsFile;
+    const cleanupSettings = () => {
+      // Both paths are generated by this run, never supplied by the user.
+      // Do not recursively remove the directory: only our one file is owned.
+      try { if (settingsFile) rmSync(settingsFile, { force: true }); } catch { /* best effort on process exit */ }
+      try { if (settingsDir) rmdirSync(settingsDir); } catch { /* never delete unrelated files */ }
+    };
     const fail = (code, message, retryable) => {
       if (terminalEmitted) return;
       terminalEmitted = true;
@@ -685,7 +743,7 @@ function turnRunQoder(workspaceDir, positionId, input) {
         type: "run.failed",
         runId,
         timestamp: now(),
-        error: { code, message: message.slice(0, 2000), retryable, terminalReason: "engine_internal_error" },
+        error: { code, message: redactDiagnostic(message).slice(0, 2000), retryable, terminalReason: "engine_internal_error" },
       });
       process.exit(0);
     };
@@ -714,11 +772,70 @@ function turnRunQoder(workspaceDir, positionId, input) {
       fail("qoder.permission_mode_invalid", "unsupported Qoder permission mode", false);
       return;
     }
+    let provider;
+    try {
+      provider = resolveQoderProviderConfig(process.env);
+      redactDiagnostic = providerDiagnosticRedactor(provider);
+    } catch {
+      fail("qoder.local_provider_config_invalid", "Qoder 本地模型配置无效，请检查连接配置；未切换至官方模型。", false);
+      return;
+    }
+    let definition;
+    try {
+      const position = (await scanPositions(workspaceDir)).find((entry) => entry.id === positionId);
+      if (!position) throw new Error("position package not found");
+      const employee = await readJson(path.join(position.dir, "employee.json"));
+      const permissions = await readJsonIfPresent(path.join(position.dir, "permissions.json"));
+      const tools = permissions?.tools ?? [];
+      if (!Array.isArray(tools) || tools.length > 128 || tools.some((tool) =>
+        typeof tool !== "string" || !/^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(tool) || tool === "default")) {
+        throw new Error("invalid explicit tool allowlist");
+      }
+      // Workbench MCP grants are references, not executable server definitions.
+      // Until resolved explicitly, never substitute the user's global MCP config.
+      if (permissions?.mcpServers !== undefined &&
+        (!Array.isArray(permissions.mcpServers) || permissions.mcpServers.length > 0)) {
+        fail("qoder.mcp_binding_unsupported", "当前 Qoder 适配器尚不支持员工 MCP 绑定；未加载全局 MCP 配置。", false);
+        return;
+      }
+      const description = employee.description || positionId;
+      const skillFile = path.join(position.dir, "SKILL.md");
+      const prompt = await isRegularFile(skillFile) ? await fs.readFile(skillFile, "utf8") : description;
+      if (Buffer.byteLength(prompt, "utf8") > 128 * 1024) throw new Error("position prompt exceeds 128 KiB");
+      definition = { description, prompt, tools };
+    } catch {
+      fail("qoder.position_invalid", "无法读取员工岗位资料，请检查员工配置。", false);
+      return;
+    }
+    {
+      try {
+        settingsDir = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-qoder-settings-"));
+        process.once("exit", cleanupSettings);
+        await fs.chmod(settingsDir, 0o700);
+        settingsFile = path.join(settingsDir, "settings.json");
+        // Qoder plugin hooks are not filtered by --setting-sources. Its
+        // explicit global switch must also disable that independent source.
+        await fs.writeFile(settingsFile, JSON.stringify({
+          ...provider.providerSettings, disableAllHooks: true, hooksConfig: { enabled: false },
+        }), { mode: 0o600, flag: "wx" });
+      } catch {
+        fail("qoder.provider_settings_unavailable", "无法安全准备 Qoder 模型配置；未发送请求。", false);
+        return;
+      }
+    }
     const args = [
       "-p", "-o", "stream-json", "--no-session-persistence",
       "-w", workspaceDir,
+      "--agents", JSON.stringify({ [positionId]: definition }),
       "--agent", positionId,
       "--permission-mode", permissionMode,
+      // Tool-enabled employees retain the same configuration isolation. Only
+      // explicitly declared built-ins are visible; global hooks/MCP stay off.
+      "--tools", definition.tools.join(","),
+      "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--setting-sources", "",
+      ...(settingsFile ? ["--settings", settingsFile] : []),
+      ...(process.env.ROLEWEAVE_TURN_MODEL ? ["--model", process.env.ROLEWEAVE_TURN_MODEL] : []),
+      "--",
       input || `Execute your position duties for this turn.`,
     ];
     let child;
@@ -726,7 +843,7 @@ function turnRunQoder(workspaceDir, positionId, input) {
       // Adapter controls, Electron runtime switches, boot authority, Context
       // tokens, and arbitrary server configuration stop here. Qoder and any
       // MCP descendants receive only their explicit runtime/credential contract.
-      const qoderEnvironment = qoderChildEnvironment(process.env);
+      const qoderEnvironment = { ...qoderChildEnvironment(process.env), ...provider.providerEnv };
       const spawnSpec = createQoderSpawnSpec(qoderBin, args, qoderEnvironment);
       child = spawn(spawnSpec.command, spawnSpec.args, {
         ...spawnSpec.options,
@@ -735,6 +852,13 @@ function turnRunQoder(workspaceDir, positionId, input) {
     } catch {
       fail("turn_engine_unavailable", "cannot spawn the resolved Qoder CLI; install qoder/qodercli/qoderclicn or check ORG_WORKBENCH_QODER_BIN / DIGITAL_EMPLOYEE_QODER_COMMAND", true);
       return;
+    }
+    for (const signal of ["SIGTERM", "SIGINT"]) {
+      process.once(signal, () => {
+        child.kill(signal);
+        cleanupSettings();
+        process.exit(signal === "SIGINT" ? 130 : 143);
+      });
     }
 
     let buffer = "";
@@ -775,7 +899,19 @@ function turnRunQoder(workspaceDir, positionId, input) {
             }
           : null;
         if (event.is_error === true || (typeof event.subtype === "string" && event.subtype !== "success")) {
-          fail("qoder.result_error", typeof event.result === "string" ? event.result : stderrTail || "qoder reported an error result", false);
+          const details = typeof event.result === "string" && event.result.trim().length > 0
+            ? event.result
+            : Array.isArray(event.errors)
+              ? event.errors.filter((error) => typeof error === "string").join("\n")
+              : "";
+          const creditLimit = event.error_code === 118 || /credit usage limit/i.test(details);
+          fail(
+            creditLimit ? "qoder.credit_limit" : "qoder.result_error",
+            creditLimit
+              ? "Qoder 当前模型额度已用尽；可切换已配置的第三方模型，或检查当前连接的额度。"
+              : details || stderrTail || "qoder reported an error result",
+            false,
+          );
         } else {
           complete(typeof event.result === "string" ? event.result : "", usage && Object.keys(usage).length > 0 ? usage : null);
         }
@@ -788,9 +924,12 @@ function turnRunQoder(workspaceDir, positionId, input) {
       true,
     ));
     child.on("close", (code) => {
+      // A final JSON record need not end with a newline. It is still the
+      // authoritative result; a clean process exit by itself is not success.
+      if (buffer.trim().length > 0) handleLine(buffer);
       if (terminalEmitted) return;
       if (code === 0) {
-        complete("");
+        fail("qoder.no_terminal_event", "Qoder CLI 已退出，但未返回对话结果；请检查 CLI 和登录状态后重试", true);
       } else {
         fail("qoder.exit_nonzero", stderrTail.trim() || `qoder exited with code ${code}`, true);
       }
@@ -801,12 +940,16 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
   const runId = randomUUID();
   emit({ type: "run.started", runId, timestamp: now() });
 
+  let terminalEmitted = false;
+  let redactDiagnostic = (message) => String(message);
   const fail = (code, message, retryable) => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
     emit({
       type: "run.failed",
       runId,
       timestamp: now(),
-      error: { code, message: message.slice(0, 2000), retryable, terminalReason: "engine_internal_error" },
+      error: { code, message: redactDiagnostic(message).slice(0, 2000), retryable, terminalReason: "engine_internal_error" },
     });
     process.exit(0);
   };
@@ -816,14 +959,23 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     fail("claude.binary_unresolved", "cannot resolve an executable Claude Code CLI; install claude or set DIGITAL_EMPLOYEE_CLAUDE_COMMAND", false);
     return;
   }
-
-  const versionProbe = spawnSync(claudeBin, ["--version"], {
+  let provider;
+  try {
+    provider = resolveClaudeProviderConfig(process.env, { local: engineModel === "claude-local" });
+    redactDiagnostic = providerDiagnosticRedactor(provider);
+  } catch {
+    fail("claude.local_provider_config_invalid", "Claude 本地模型配置无效，请检查连接配置；未切换至官方模型。", false);
+    return;
+  }
+  const childEnv = claudeChildEnvironment(process.env, engineModel, provider.providerEnv);
+  const versionSpawn = createQoderSpawnSpec(claudeBin, ["--version"], childEnv);
+  const versionProbe = spawnSync(versionSpawn.command, versionSpawn.args, {
+    ...versionSpawn.options,
     encoding: "utf8",
     timeout: 5000,
     killSignal: "SIGKILL",
     shell: false,
     windowsHide: true,
-    env: claudeChildEnvironment(process.env, engineModel),
   });
   if (versionProbe.error !== undefined || versionProbe.status !== 0) {
     fail("claude.binary_unresolved", "Claude Code version probe failed; ensure claude is executable and in PATH", false);
@@ -843,8 +995,11 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
 
   const safeInput = (input || "Execute your position duties for this turn.").replace(/@/g, "\\u0040");
   const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n`;
+  const selectedModel = process.env.ROLEWEAVE_TURN_MODEL || provider.selectedDefault;
   const args = [
-    "--bare",
+    // Bare deliberately bypasses OAuth discovery. Use it only when we have
+    // projected an explicit provider key/token into this child environment.
+    ...(childEnv.ANTHROPIC_API_KEY || childEnv.ANTHROPIC_AUTH_TOKEN ? ["--bare"] : []),
     "--print",
     "--input-format", "text",
     "--output-format", "stream-json",
@@ -858,11 +1013,11 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     "--no-chrome",
     "--no-session-persistence",
     "--max-turns", "1",
+    ...(selectedModel ? ["--model", selectedModel] : []),
   ];
 
   let child;
   try {
-    const childEnv = claudeChildEnvironment(process.env, engineModel);
     const spawnSpec = createQoderSpawnSpec(claudeBin, args, childEnv);
     child = spawn(spawnSpec.command, spawnSpec.args, {
       ...spawnSpec.options,
@@ -897,7 +1052,7 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
   });
 
   function handleClaudeLine(line) {
-    if (line.trim().length === 0) return;
+    if (terminalEmitted || line.trim().length === 0) return;
     let event;
     try {
       event = JSON.parse(line);
@@ -944,8 +1099,12 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
         const errorCode = event.subtype === "error_max_turns" ? "claude.max_turns_exceeded"
           : event.subtype === "error_max_budget_usd" ? "claude.budget_exceeded"
           : "claude.result_error";
-        fail(errorCode, typeof event.result === "string" ? event.result : stderrTail || "Claude Code reported an error result", false);
+        const details = typeof event.result === "string" && event.result.trim()
+          ? event.result
+          : Array.isArray(event.errors) ? event.errors.filter((error) => typeof error === "string").join("\n") : "";
+        fail(errorCode, details || stderrTail || "Claude Code reported an error result", false);
       } else {
+        terminalEmitted = true;
         const output = typeof event.result === "string" ? event.result : "";
         emit({ type: "usage", runId, timestamp: now(), ...usage });
         emit({ type: "run.completed", runId, timestamp: now(), output, terminalReason: "goal_met" });
@@ -960,9 +1119,10 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     true,
   ));
   child.on("close", (code) => {
+    if (buffer.trim().length > 0) handleClaudeLine(buffer);
+    if (terminalEmitted) return;
     if (code === 0) {
-      emit({ type: "run.completed", runId, timestamp: now(), output: "", terminalReason: "goal_met" });
-      process.exit(0);
+      fail("claude.no_terminal_event", "Claude CLI 已退出，但未返回对话结果；请检查连接后重试。", true);
     } else {
       fail("claude.exit_nonzero", stderrTail.trim() || `claude exited with code ${code}`, true);
     }
@@ -1205,7 +1365,7 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
     }
   }
 
-  const model = validatedCodexModel(process.env.OPENAI_MODEL);
+  const model = validatedCodexModel(process.env.ROLEWEAVE_TURN_MODEL ?? process.env.OPENAI_MODEL);
   if (model === null) {
     fail("codex.model_invalid", "OPENAI_MODEL must be a bounded model identifier", false);
     return;
