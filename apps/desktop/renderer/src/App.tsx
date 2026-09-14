@@ -579,42 +579,6 @@ function AppInner({
     setSelectedId(id);
   }, []);
 
-  const selectSession = useCallback((sessionId: string) => {
-    historyRequest.current += 1;
-    if (selectedIdRef.current) selectedSessions.current[selectedIdRef.current] = sessionId;
-    selectedSessionIdRef.current = sessionId;
-    setSelectedSessionId(sessionId);
-    setTurns([]);
-    setTurnError(null);
-  }, []);
-
-  const createSession = useCallback(async () => {
-    const positionId = selectedIdRef.current;
-    if (positionId === null) return;
-    const version = selectionVersion.current;
-    const operation = Symbol();
-    sessionOperations.current.set(positionId, operation);
-    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
-    setTurnError(null);
-    try {
-      const res = await window.owb.createSession({ positionId });
-      if (selectionVersion.current !== version || selectedIdRef.current !== positionId) return;
-      if (res.status !== 201) {
-        setTurnError(apiErrorMessage(res.body, t("turn.createSessionFail")));
-        return;
-      }
-      const session = res.body as WorkbenchSession;
-      selectedSessions.current[positionId] = session.sessionId;
-      selectedSessionIdRef.current = session.sessionId;
-      setSelectedSessionId(session.sessionId);
-      await loadSessions(positionId);
-    } catch {
-      if (selectionVersion.current === version) setTurnError(t("turn.createSessionFailOffline"));
-    } finally {
-      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
-    }
-  }, [loadSessions, t]);
-
   /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
   const openConversation = useCallback((positionId: string) => {
     if (selectedIdRef.current === positionId) {
@@ -623,34 +587,6 @@ function AppInner({
     }
     selectPosition(positionId);
   }, [ensureActiveSession, selectPosition]);
-
-  const rotateSession = useCallback(async (sessionId: string) => {
-    const positionId = selectedIdRef.current;
-    if (positionId === null) return;
-    const version = selectionVersion.current;
-    const operation = Symbol();
-    sessionOperations.current.set(positionId, operation);
-    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
-    setTurnError(null);
-    try {
-      const res = await window.owb.rotateSession(sessionId);
-      if (selectionVersion.current !== version || selectedIdRef.current !== positionId) return;
-      if (res.status !== 200 && res.status !== 201) {
-        setTurnError(apiErrorMessage(res.body, t("turn.rotateFail")));
-        return;
-      }
-      const session = res.body as WorkbenchSession;
-      selectedSessions.current[positionId] = session.sessionId;
-      selectedSessionIdRef.current = session.sessionId;
-      setSelectedSessionId(session.sessionId);
-      setTurns([]);
-      await loadSessions(positionId);
-    } catch {
-      if (selectionVersion.current === version) setTurnError(t("turn.rotateFailOffline"));
-    } finally {
-      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
-    }
-  }, [loadSessions, t]);
 
   const createTurn = useCallback(async (request: CreateTurnRequest) => {
     const sessionId = selectedSessionIdRef.current;

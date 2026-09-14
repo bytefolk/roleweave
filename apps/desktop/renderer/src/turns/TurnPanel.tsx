@@ -48,9 +48,6 @@ export interface TurnPanelProps {
   /** Approval ids whose verdict was already dispatched this session; their
    * cards settle into a decided state (no duplicate verdicts). */
   decidedApprovalIds?: ReadonlySet<string>;
-  onSelectSession?: (sessionId: string) => void;
-  onCreateSession?: () => void | Promise<void>;
-  onRotateSession?: (sessionId: string) => void | Promise<void>;
   onSetSessionContext?: (sessionId: string, enabled: boolean) => void | Promise<void>;
 }
 
