@@ -333,7 +333,7 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     fireEvent.click(liveDisclosure);
     expect(liveDisclosure).toHaveAttribute("aria-expanded", "false");
     await waitFor(() => expect(timeline.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
-    await waitFor(() => expect(document.querySelector(".owb-bubble__expand > summary")).toHaveTextContent("OWNER_DONE"));
+    await waitFor(() => expect(screen.getByText("OWNER_DONE")).toBeInTheDocument());
     expect(screen.queryByText(/已发送给/)).not.toBeInTheDocument();
     expect(document.querySelector(".owb-bubble--operator")).toHaveTextContent("@Repo Owner 检查");
     expect(onReconcileTimeline).toHaveBeenCalledWith(completedTimeline());
@@ -361,7 +361,7 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
 
     await waitFor(() => expect(screen.getByText("1 运行中")).toBeInTheDocument());
     await waitFor(() => expect(timeline.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2500 });
-    await waitFor(() => expect(document.querySelector(".owb-bubble__expand > summary")).toHaveTextContent("OWNER_DONE"));
+    await waitFor(() => expect(screen.getByText("OWNER_DONE")).toBeInTheDocument());
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
     expect(container.querySelectorAll(".is-running")).toHaveLength(0);
   });
@@ -385,7 +385,7 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(within(progress).getByRole("button")).toHaveAttribute("aria-expanded", "false");
     await act(async () => rerender(panel({ ...liveOwner, text: "New public result" })));
     expect(within(screen.getByRole("group", { name: "执行进展" })).getByRole("button")).toHaveAttribute("aria-expanded", "false");
-    expect(document.querySelector(".owb-bubble__expand > summary")).toHaveTextContent("New public result");
+    expect(screen.getByText("New public result")).toBeVisible();
     expect(screen.queryByText(/执行工具/)).not.toBeInTheDocument();
   });
 
@@ -423,17 +423,19 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(within(screen.getByRole("group", { name: "执行进展" })).getByRole("button")).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("keeps an expanded group message open across a timeline reload (#237)", async () => {
+  it("keeps an expanded group message open across live→persisted relocation (#237)", async () => {
     const longOutput = "Line one.\nLine two.\nLine three.\nLine four.";
-    const turnWithLongOutput = { ...completedTurn(), output: longOutput };
-    const timelineBody: GroupTimeline = {
-      ...completedTimeline(),
-      items: [completedTimeline().items[0]!, { kind: "member", turn: turnWithLongOutput }],
-    };
-    installBridge({
-      timeline: vi.fn().mockResolvedValue({ status: 200, body: timelineBody }),
-    });
-    const panel = (
+    const liveRunWithLongOutput: LiveRunState = { ...liveOwner, text: longOutput, turnId: "turn-expand" };
+    const persistedTurn = { ...completedTurn(), turnId: "turn-expand", output: longOutput };
+    const emptyTimeline: GroupTimeline = { ...completedTimeline(), items: [completedTimeline().items[0]!] };
+    const persistedTimeline: GroupTimeline = { ...completedTimeline(), items: [completedTimeline().items[0]!, { kind: "member", turn: persistedTurn }] };
+
+    const timelineFn = vi.fn()
+      .mockResolvedValue({ status: 200, body: emptyTimeline })
+      .mockResolvedValue({ status: 200, body: persistedTimeline });
+    installBridge({ timeline: timelineFn });
+
+    const panel = (live: Record<string, LiveRunState>) => (
       <GroupsPanel workspaceOpen positions={positions} positionNames={positionNames}
         engine="qoder" engineAvailability={{
           qoder: readyAvailability,
@@ -442,22 +444,24 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
           codex: readyAvailability,
           "codex-local": readyAvailability,
         }}
-        liveRuns={{}} onSelectEngine={() => {}} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
+        liveRuns={live} onSelectEngine={() => {}} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
     );
-    const { rerender } = render(panel);
+    const { rerender } = render(panel({ "engine-run-expand": liveRunWithLongOutput }));
 
     await waitFor(() => expect(document.querySelector(".owb-bubble__expand")).not.toBeNull(), { timeout: 3000 });
-    const details = document.querySelector(".owb-bubble__expand") as HTMLDetailsElement;
-    expect(details.open).toBe(false);
+    const detailsBefore = document.querySelector(".owb-bubble__expand") as HTMLDetailsElement;
+    expect(detailsBefore).not.toBeNull();
+    expect(detailsBefore.open).toBe(false);
 
-    fireEvent.click(details.querySelector("summary")!);
-    expect(details.open).toBe(true);
+    fireEvent.click(detailsBefore.querySelector("summary")!);
+    expect(detailsBefore.open).toBe(true);
 
-    await act(async () => { rerender(panel); });
-    const afterRerender = document.querySelector(".owb-bubble__expand") as HTMLDetailsElement;
-    expect(afterRerender).not.toBeNull();
-    expect(afterRerender.open).toBe(true);
-    expect(afterRerender.querySelector(".owb-tc__out--markdown")).not.toBeNull();
+    await act(async () => { rerender(panel({})); });
+    const detailsAfter = document.querySelector(".owb-bubble__expand") as HTMLDetailsElement;
+    expect(detailsAfter).not.toBeNull();
+    expect(detailsAfter).toBe(detailsBefore);
+    expect(detailsAfter.open).toBe(true);
+    expect(detailsAfter.querySelector(".owb-tc__out--markdown")).not.toBeNull();
   });
 });
 

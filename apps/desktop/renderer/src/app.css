@@ -1181,6 +1181,15 @@
 .owb-bubble__expand-body {
   margin-top: 8px;
 }
+/* #237: only one copy of the output text is queryable at a time.
+   Collapsed → summary text visible, body display:none.
+   Expanded  → summary text display:none, body visible. */
+.owb-bubble__expand[open] > summary > .owb-bubble__expand-text {
+  display: none;
+}
+.owb-bubble__expand:not([open]) > .owb-bubble__expand-body {
+  display: none;
+}
 
 .owb-turn__status {
   display: inline-flex;
