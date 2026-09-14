@@ -530,6 +530,7 @@ export function GroupsPanel({
             input: run.input,
             status: "running" as const,
             createdAt: run.startedAt,
+            errorCode: undefined,
             ...(run.text !== "" ? { output: run.text } : {}),
             ...(run.totalTokens !== null ? { totalTokens: run.totalTokens } : {}),
           },
@@ -810,7 +811,7 @@ export function GroupsPanel({
                           </time>
                         )}
                       </header>
-                      {(isLive || turn.errorCode !== "group_relay_blocked") ? <ProgressTrail turn={turn} /> : null}
+                      {isLive ? <ProgressTrail turn={turn} /> : turn.errorCode !== "group_relay_blocked" ? <ProgressTrail turn={turn} /> : null}
                       {turn.output ? (
                         <GroupBubbleExpand
                           summaryClassName="owb-turn__output owb-clamp-2"
