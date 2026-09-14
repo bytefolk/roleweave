@@ -11,14 +11,22 @@
  */
 
 export type ThemeMode = "light" | "dark";
+export type ThemeProfile = "default" | "mint";
 
 /** Key for an *explicit* user choice. Absent means "follow the OS". */
 export const THEME_STORAGE_KEY = "owb.theme-mode";
+/** Palette is independent from light/dark mode. `mint` is RoleWeave's default;
+ * `default` retains the shared Ant Design profile for users who prefer it. */
+export const THEME_PROFILE_STORAGE_KEY = "owb.theme-profile";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark";
+}
+
+function isThemeProfile(value: unknown): value is ThemeProfile {
+  return value === "default" || value === "mint";
 }
 
 /** The pinned choice, or null when the user has never picked one. Storage can
@@ -31,6 +39,19 @@ export function readStoredMode(): ThemeMode | null {
   } catch {
     return null;
   }
+}
+
+export function readStoredProfile(): ThemeProfile | null {
+  try {
+    const raw = window.localStorage.getItem(THEME_PROFILE_STORAGE_KEY);
+    return isThemeProfile(raw) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveThemeProfile(): ThemeProfile {
+  return readStoredProfile() ?? "mint";
 }
 
 function darkQuery(): MediaQueryList | null {
@@ -67,6 +88,10 @@ export function applyThemeMode(mode: ThemeMode): void {
   document.documentElement.setAttribute("data-theme", mode);
 }
 
+export function applyThemeProfile(profile: ThemeProfile): void {
+  document.documentElement.setAttribute("data-ui-theme", profile);
+}
+
 /** Pins an explicit choice: apply it and remember it across restarts. */
 export function setThemeMode(mode: ThemeMode): void {
   applyThemeMode(mode);
@@ -75,6 +100,15 @@ export function setThemeMode(mode: ThemeMode): void {
   } catch {
     // Read-only storage still leaves this session switched; losing the
     // preference on restart beats failing the click.
+  }
+}
+
+export function setThemeProfile(profile: ThemeProfile): void {
+  applyThemeProfile(profile);
+  try {
+    window.localStorage.setItem(THEME_PROFILE_STORAGE_KEY, profile);
+  } catch {
+    // The session still switches when persistence is unavailable.
   }
 }
 
@@ -89,6 +123,7 @@ export function setThemeMode(mode: ThemeMode): void {
  * choice is pinned — the first toggle click ends the follow for good.
  */
 export function initThemeMode(): () => void {
+  applyThemeProfile(resolveThemeProfile());
   applyThemeMode(resolveThemeMode());
 
   const query = darkQuery();

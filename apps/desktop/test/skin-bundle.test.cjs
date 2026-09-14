@@ -1,43 +1,101 @@
-// #50 regression: a stray `*/` inside the antd-skin.css header comment closed the
-// comment early, and the CSS parser dropped the whole light-theme :root token block
-// (caught by CDP computed-value audit, invisible to static checks). Assert the
-// skin token values survive parsing in the built renderer bundle.
-//
-// Both themes use the RoleWeave purple / blue brand palette.
+// #50 regression: a stray `*/` inside the antd-skin.css header comment closed
+// the comment early, and the CSS parser dropped the whole light-theme :root
+// token block (caught by CDP computed-value audit, invisible to static
+// checks). Assert the skin token values survive parsing in the built renderer
+// bundle.
 // This guard fired again during #73 — the header comment mentioned
-// `--ui-duration-*/--ui-ease`, whose `*/` re-closed the comment and dropped the
-// block a second time. Keep variable names out of prose, or write them without
-// the glob.
+// `--ui-duration-*/--ui-ease`, whose `*/` re-closed the comment and dropped
+// the block a second time. Keep variable names out of prose, or write them
+// without the glob.
+//
+// #248 moved the palette into @fullstack-ai-infra/ui's profile blocks, so the
+// guard now pins those instead of the old inline antd-skin palette: every hex
+// token the mint profile declares must arrive in the built bundle, in both
+// themes. Mint is the seeded default profile (resolveThemeProfile()). The
+// RoleWeave-owned alias block from antd-skin.css rides the same pipeline and
+// is pinned the same way.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 
-test("renderer bundle keeps the light and dark skin token blocks (#50, #73)", () => {
+function builtCss() {
   const assetsDir = path.join(__dirname, "..", "dist", "renderer", "assets");
   const cssFiles = fs.readdirSync(assetsDir).filter((file) => file.endsWith(".css"));
   assert.ok(cssFiles.length > 0, "renderer build must emit css assets");
-  const css = cssFiles
+  return cssFiles
     .map((file) => fs.readFileSync(path.join(assetsDir, file), "utf8"))
     .join("\n");
+}
 
-  // Light theme: cool paper surfaces / purple identity / readable blue actions.
-  assert.ok(/--ui-canvas:\s*#f7f8fb/.test(css), "neutral canvas token must survive CSS parsing");
-  assert.ok(/--ui-navigation:\s*#f1f3f7/.test(css), "sidebar tier token must survive CSS parsing");
-  assert.ok(/--ui-primary:\s*#3e63dd/.test(css), "blue action token must survive CSS parsing");
-  // Muted health states (control-plane 设计稿, not the antd bright palette).
-  assert.ok(/--ui-success:\s*#2e7052/.test(css), "muted success token must survive CSS parsing");
-  // Three-tier motion + the display font token added by #73.
-  assert.ok(
-    /--owb-duration-mid:\s*(160ms|\.16s)/.test(css),
-    "motion three-tier tokens must survive CSS parsing",
+// Minifiers strip whitespace and quotes and may shorten #aabbcc to #abc, so
+// compare with all of that normalized away rather than pinning the source
+// formatting.
+function normalize(text) {
+  return text.toLowerCase().replace(/["']/g, "").replace(/\s+/g, "");
+}
+
+function expandHex(value) {
+  return value.length === 4
+    ? `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`
+    : value;
+}
+
+function mintBlock(css, theme) {
+  const selector = `[data-ui-theme=mint][data-theme=${theme}]`;
+  const start = css.indexOf(selector);
+  assert.notEqual(start, -1, `mint ${theme} block missing from the design-system stylesheet`);
+  const open = css.indexOf("{", start);
+  let depth = 0;
+  for (let i = open; i < css.length; i += 1) {
+    if (css[i] === "{") depth += 1;
+    else if (css[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return css.slice(open + 1, i);
+    }
+  }
+  assert.fail(`unbalanced braces in the mint ${theme} block`);
+}
+
+function hexDeclarations(block) {
+  return [...block.matchAll(/(--[\w-]+):\s*(#[0-9a-fA-F]{6})\b/g)].map(
+    (match) => [match[1], match[2].toLowerCase()],
   );
-  assert.ok(/--ui-font-sans:\s*-apple-system/.test(css), "system font token must survive CSS parsing");
-  assert.ok(/--owb-font-display:\s*var\(--ui-font-sans\)/.test(css), "light display font token must survive CSS parsing");
+}
 
-  // Dark theme block must survive the same parsing path.
-  assert.ok(/--ui-canvas:\s*#14151b/.test(css), "dark canvas token must survive CSS parsing");
-  assert.ok(/--ui-primary:\s*#86a0ff/.test(css), "dark blue action must survive CSS parsing");
-  assert.ok(/--ui-brand:\s*#732fd1/.test(css), "light purple identity must survive CSS parsing");
-  assert.ok(/--ui-brand:\s*#bb93f6/.test(css), "dark purple identity must survive CSS parsing");
+test("renderer bundle keeps the skin token blocks (#50, #73, #248)", () => {
+  const bundle = normalize(builtCss());
+  const skin = fs.readFileSync(
+    require.resolve("@fullstack-ai-infra/ui/styles.css"),
+    "utf8",
+  );
+
+  for (const theme of ["light", "dark"]) {
+    const selector = `[data-ui-theme=mint][data-theme=${theme}]`;
+    assert.ok(
+      bundle.includes(normalize(selector)),
+      `mint ${theme} block selector must survive CSS parsing`,
+    );
+    const declarations = hexDeclarations(mintBlock(skin, theme));
+    assert.ok(declarations.length > 0, `mint ${theme} block must declare hex tokens`);
+    for (const [name, value] of declarations) {
+      assert.ok(
+        bundle.includes(`${name}:${expandHex(value)}`),
+        `mint ${theme} token ${name}: ${value} must survive CSS parsing`,
+      );
+    }
+  }
+
+  // The antd-skin.css alias block is RoleWeave's glue to those tokens; #73
+  // dropped exactly this kind of block once.
+  for (const alias of [
+    "--ui-brand:var(--ui-primary)",
+    "--owb-font-display:var(--ui-font-sans)",
+    "--owb-duration-mid:var(--ui-duration-normal)",
+  ]) {
+    assert.ok(
+      bundle.includes(normalize(alias)),
+      `${alias} must survive CSS parsing`,
+    );
+  }
 });

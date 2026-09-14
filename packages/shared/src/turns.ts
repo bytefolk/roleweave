@@ -209,6 +209,10 @@ export interface TurnRecord {
    * are written with conversationRef instead. */
   groupRef?: string;
   threadContext?: ThreadContextMetadata;
+  /** Additive #222: optional goal binding. When present, this turn
+   * contributes to a specific goal branch's progress. */
+  goalId?: string;
+  branchId?: string;
 }
 
 export interface TurnHistory {

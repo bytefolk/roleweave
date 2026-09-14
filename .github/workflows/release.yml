@@ -172,7 +172,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 9d048faaabe0429a6a8720bfbb31418544237b6b
+          ref: 671500fb28435275b5d2bda3704261aa785ed21d
           path: design-system
 
       - name: Set up Node

@@ -18,6 +18,9 @@ import type {
   GroupConversation,
   GroupConversationList,
   GroupTimeline,
+  GoalDetail,
+  GoalSummary,
+  GoalsCreateResponse,
   HealthResponse,
   ChangeManifest,
   CancelTurnRequest,
@@ -94,6 +97,11 @@ export interface OwbBridge {
   addGroupMember(request: { conversationRef: string; positionId: string }): Promise<OwbApiResponse<GroupConversation>>;
   createGroupTurn(request: { conversationRef: string; input: string; engine: TurnEngine; mentions: string[]; mode?: "parallel" | "relay" }): Promise<OwbApiResponse<{ conversationRef: string; messageId: string; spawns: Array<{ turnId: string; positionId: string }> }>>;
   groupTimeline(conversationRef: string): Promise<OwbApiResponse<GroupTimeline>>;
+  createGoal(request: { title: string; description: string; acceptanceCriteria?: string[] }): Promise<OwbApiResponse<GoalsCreateResponse>>;
+  goals(): Promise<OwbApiResponse<{ goals: GoalSummary[] }>>;
+  goal(goalId: string): Promise<OwbApiResponse<GoalDetail>>;
+  updateGoal(request: { goalId: string; title?: string; description?: string; acceptanceCriteria?: string[]; status?: string; health?: string }): Promise<OwbApiResponse<{ goalId: string }>>;
+  deleteGoal(goalId: string): Promise<OwbApiResponse<{ goalId: string; deleted: boolean }>>;
   drive: {
     list(q?: string): Promise<OwbApiResponse<DriveObjectListResponse>>;
     detail(id: string): Promise<OwbApiResponse<DriveObjectDetailResponse>>;
