@@ -87,6 +87,11 @@ const {
   validateGroupTurnRequest,
 } = require("./group-ipc.cjs");
 const {
+  goalPath,
+  validateGoalCreateRequest,
+  validateGoalUpdateRequest,
+} = require("./goal-ipc.cjs");
+const {
   writeLastWorkspacePath,
 } = require("./last-workspace.cjs");
 const { validateWorkspaceCreateRequest } = require("./workspace-ipc.cjs");
@@ -601,6 +606,45 @@ ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {
     return { status: 400, body: { code: "group_request_invalid", message: "conversationRef is invalid", retryable: false } };
   }
   return apiRequest(`/groups/${encodeURIComponent(conversationRef)}/turns`);
+});
+
+// Additive #222: workspace-local goal surface.
+ipcMain.handle("owb:goal:create", async (_event, request) => {
+  const validated = validateGoalCreateRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/goals", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:goal:list", async () => apiRequest("/goals"));
+
+ipcMain.handle("owb:goal:get", async (_event, goalId) => {
+  const pathname = goalPath(goalId);
+  if (pathname === null) {
+    return { status: 400, body: { code: "goal_request_invalid", message: "goalId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname);
+});
+
+ipcMain.handle("owb:goal:update", async (_event, request) => {
+  if (request === null || typeof request !== "object" || Array.isArray(request)) {
+    return { status: 400, body: { code: "goal_request_invalid", message: "goal update requires an object", retryable: false } };
+  }
+  const { goalId, ...rest } = request;
+  const validated = validateGoalUpdateRequest(rest);
+  if (!validated.ok) return validated.response;
+  const pathname = goalPath(goalId);
+  if (pathname === null) {
+    return { status: 400, body: { code: "goal_request_invalid", message: "goalId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname, { method: "PATCH", body: validated.request });
+});
+
+ipcMain.handle("owb:goal:delete", async (_event, goalId) => {
+  const pathname = goalPath(goalId);
+  if (pathname === null) {
+    return { status: 400, body: { code: "goal_request_invalid", message: "goalId is invalid", retryable: false } };
+  }
+  return apiRequest(pathname, { method: "DELETE" });
 });
 
 // Drive plane (bytefolk/mem proxy): whitelisted list/detail reads and a

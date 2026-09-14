@@ -76,12 +76,20 @@ function parseAddMember(raw: unknown): string {
   return raw.positionId;
 }
 
-function parseGroupTurn(raw: unknown): { input: string; engine: TurnEngine; mentions: string[]; mode: GroupExecutionMode } {
-  if (!isRecord(raw) || (!exactKeys(raw, ["input", "engine", "mentions"]) && !exactKeys(raw, ["input", "engine", "mentions", "mode"]))) {
+function parseGroupTurn(raw: unknown): { input: string; engine: TurnEngine; mentions: string[]; mode: GroupExecutionMode; goalId?: string; branchId?: string } {
+  if (!isRecord(raw)) {
     throw new OrgApiError(
       errorCodes.group_request_invalid,
       400,
-      "group turn accepts input, engine, mentions, and optional mode",
+      "group turn request must be a JSON object",
+    );
+  }
+  const allowedKeys = new Set(["input", "engine", "mentions", "mode", "goalId", "branchId"]);
+  if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
+    throw new OrgApiError(
+      errorCodes.group_request_invalid,
+      400,
+      "group turn accepts input, engine, mentions, and optional mode, goalId, branchId",
     );
   }
   if (
@@ -115,7 +123,21 @@ function parseGroupTurn(raw: unknown): { input: string; engine: TurnEngine; ment
   if (raw.mode !== undefined && raw.mode !== "parallel" && raw.mode !== "relay") {
     throw new OrgApiError(errorCodes.group_request_invalid, 400, "mode must be parallel or relay");
   }
-  return { input: raw.input, engine: raw.engine as TurnEngine, mentions: raw.mentions as string[], mode: raw.mode ?? "parallel" };
+  const GOAL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+  if (raw.goalId !== undefined && (typeof raw.goalId !== "string" || !GOAL_ID_PATTERN.test(raw.goalId))) {
+    throw new OrgApiError(errorCodes.group_request_invalid, 400, "goalId must be a bounded alphanumeric string");
+  }
+  if (raw.branchId !== undefined && (typeof raw.branchId !== "string" || !GOAL_ID_PATTERN.test(raw.branchId))) {
+    throw new OrgApiError(errorCodes.group_request_invalid, 400, "branchId must be a bounded alphanumeric string");
+  }
+  return {
+    input: raw.input,
+    engine: raw.engine as TurnEngine,
+    mentions: raw.mentions as string[],
+    mode: raw.mode ?? "parallel",
+    ...(raw.goalId !== undefined ? { goalId: raw.goalId } : {}),
+    ...(raw.branchId !== undefined ? { branchId: raw.branchId } : {}),
+  };
 }
 
 export async function handleGroupCreate(

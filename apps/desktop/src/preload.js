@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld("owb", {
   addGroupMember: (request) => ipcRenderer.invoke("owb:group:member:add", request),
   createGroupTurn: (request) => ipcRenderer.invoke("owb:group:turn:create", request),
   groupTimeline: (conversationRef) => ipcRenderer.invoke("owb:group:timeline", conversationRef),
+  createGoal: (request) => ipcRenderer.invoke("owb:goal:create", request),
+  goals: () => ipcRenderer.invoke("owb:goal:list"),
+  goal: (goalId) => ipcRenderer.invoke("owb:goal:get", goalId),
+  updateGoal: (request) => ipcRenderer.invoke("owb:goal:update", request),
+  deleteGoal: (goalId) => ipcRenderer.invoke("owb:goal:delete", goalId),
   drive: {
     list: (q) => ipcRenderer.invoke("owb:drive:list", q),
     detail: (id) => ipcRenderer.invoke("owb:drive:detail", id),

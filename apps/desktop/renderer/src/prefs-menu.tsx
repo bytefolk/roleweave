@@ -4,16 +4,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Languages, Palette, Settings2 } from "lucide-react";
 import { useT, type OwbLocale } from "@roleweave/ui";
-import { setThemeMode, type ThemeMode } from "./theme-mode";
+import { setThemeMode, setThemeProfile, type ThemeMode, type ThemeProfile } from "./theme-mode";
 
 export function PrefsMenu({
   locale,
   onChangeLocale,
   mode,
+  profile,
 }: {
   locale: OwbLocale;
   onChangeLocale: (next: OwbLocale) => void;
   mode: ThemeMode;
+  profile: ThemeProfile;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -62,6 +64,19 @@ export function PrefsMenu({
             <span>{t("prefs.language")}</span>
             <span className="owb-prefs__value">
               {locale === "zh-CN" ? t("prefs.langZh") : t("prefs.langEn")}
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="owb-prefs__item"
+            aria-pressed={profile === "mint"}
+            onClick={() => setThemeProfile(profile === "mint" ? "default" : "mint")}
+          >
+            <Palette aria-hidden="true" size={14} strokeWidth={1.8} />
+            <span>{t("prefs.palette")}</span>
+            <span className="owb-prefs__value">
+              {profile === "mint" ? t("prefs.paletteMint") : t("prefs.paletteDefault")}
             </span>
           </button>
           <button

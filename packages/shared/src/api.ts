@@ -52,6 +52,8 @@ export const routes = {
   driveList: "/drive/list",
   driveDetail: "/drive/detail",
   driveUpload: "/drive/upload",
+  /** Additive user-owned goal surface (#222). */
+  goals: "/goals",
   events: "/events",
 } as const;
 
@@ -81,6 +83,9 @@ export const sseEventTypes = [
   // @mentioned member spawn; group turn.* payloads additionally carry
   // additive groupRef/turnId/positionId fields for renderer attribution.
   "group.turn.spawned",
+  // Additive goal lifecycle events (#222).
+  "goal.created",
+  "goal.updated",
 ] as const;
 
 export type SseEventType = (typeof sseEventTypes)[number];

@@ -93,6 +93,14 @@ export const errorCodes = {
   drive_upstream_unavailable: "drive_upstream_unavailable",
   /** The upstream mem service returned a non-2xx status for a proxied request. */
   drive_upstream_failed: "drive_upstream_failed",
+  /** Goal request shape is invalid (#222). */
+  goal_request_invalid: "goal_request_invalid",
+  /** A requested goal does not exist in the open workspace (#222). */
+  goal_missing: "goal_missing",
+  /** Goal lifecycle state rejects the requested mutation (#222). */
+  goal_conflict: "goal_conflict",
+  /** Workspace-local goal state failed validation or atomic persistence (#222). */
+  goal_storage_failed: "goal_storage_failed",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */

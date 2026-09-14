@@ -58,11 +58,12 @@ function validateGroupAddMemberRequest(value) {
 }
 
 function validateGroupTurnRequest(value) {
-  if (
-    value === null || typeof value !== "object" || Array.isArray(value) ||
-    !["conversationRef,engine,input,mentions", "conversationRef,engine,input,mentions,mode"].includes(Object.keys(value).sort().join(","))
-  ) {
-    return { ok: false, response: invalid("group_request_invalid", "group turn accepts conversationRef, input, engine, mentions and optional mode") };
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, response: invalid("group_request_invalid", "group turn must be an object") };
+  }
+  const allowedKeys = new Set(["conversationRef", "input", "engine", "mentions", "mode", "goalId", "branchId"]);
+  if (Object.keys(value).some((k) => !allowedKeys.has(k))) {
+    return { ok: false, response: invalid("group_request_invalid", "group turn accepts conversationRef, input, engine, mentions and optional mode, goalId, branchId") };
   }
   if (value.mode !== undefined && value.mode !== "parallel" && value.mode !== "relay") {
     return { ok: false, response: invalid("group_request_invalid", "mode must be parallel or relay") };
@@ -87,10 +88,24 @@ function validateGroupTurnRequest(value) {
       response: invalid("group_request_invalid", "mentions must be a non-empty unique positionId list; broadcast is not allowed"),
     };
   }
+  const GOAL_ID = /^[a-zA-Z0-9_-]{1,64}$/;
+  if (value.goalId !== undefined && (typeof value.goalId !== "string" || !GOAL_ID.test(value.goalId))) {
+    return { ok: false, response: invalid("group_request_invalid", "goalId must be a bounded alphanumeric string") };
+  }
+  if (value.branchId !== undefined && (typeof value.branchId !== "string" || !GOAL_ID.test(value.branchId))) {
+    return { ok: false, response: invalid("group_request_invalid", "branchId must be a bounded alphanumeric string") };
+  }
   return {
     ok: true,
     conversationRef: value.conversationRef,
-    request: { input: value.input, engine: value.engine, mentions: value.mentions, ...(value.mode !== undefined ? { mode: value.mode } : {}) },
+    request: {
+      input: value.input,
+      engine: value.engine,
+      mentions: value.mentions,
+      ...(value.mode !== undefined ? { mode: value.mode } : {}),
+      ...(value.goalId !== undefined ? { goalId: value.goalId } : {}),
+      ...(value.branchId !== undefined ? { branchId: value.branchId } : {}),
+    },
   };
 }
 
