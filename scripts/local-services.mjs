@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -108,9 +109,20 @@ export function createLocalStack({ root = DEFAULT_ROOT, run = runProcess, source
       const entries = await fs.readdir(lock);
       if (entries.length === 1 && entries[0] === "owner") {
         const owner = path.join(lock, "owner");
-        const ownerStat = await fs.lstat(owner);
-        if (!ownerStat.isFile() || ownerStat.isSymbolicLink()) throw new Error("Local stack lock owner is not a safe file");
-        const marker = (await fs.readFile(owner, "utf8")).trim();
+        let ownerHandle;
+        try {
+          ownerHandle = await fs.open(owner, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW || 0));
+        } catch {
+          throw new Error("Local stack lock owner is not a safe file");
+        }
+        let marker;
+        try {
+          const ownerStat = await ownerHandle.stat();
+          if (!ownerStat.isFile()) throw new Error("Local stack lock owner is not a safe file");
+          marker = (await ownerHandle.readFile("utf8")).trim();
+        } finally {
+          await ownerHandle.close();
+        }
         const match = marker.match(/^([1-9][0-9]*):[0-9a-f-]{36}$/i);
         if (!match) throw new Error("Local stack lock owner is invalid");
         let active = true;
