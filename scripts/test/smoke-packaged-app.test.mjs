@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { createRequire } from "node:module";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +13,7 @@ import {
   createExternalStagingRoot,
   awaitStagedAppExit,
   launchApp,
+  hostChildProcesses,
   parseSmokeArgs,
   smokePackagedApp,
   waitForReport,
@@ -292,4 +294,33 @@ test("#186 the staged-app exit wait is bounded and rejects an unclean exit", asy
       /did not close within 30ms/,
     );
   });
+});
+
+// Exercise the actual native process table: fixture strings alone would not
+// catch a launcher alias being missed while a host child remains alive.
+test("smoke process oracle finds live descendants for every Host CLI alias", { timeout: 30000 }, async (t) => {
+  const require = createRequire(import.meta.url);
+  const { descendantProcesses, listNativeProcesses } = require("../../apps/desktop/packaging/process-tree.cjs");
+  const root = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), "owb-host-oracle-"));
+  const children = [];
+  t.after(async () => {
+    await Promise.all(children.map(async (child) => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      const exited = once(child, "close");
+      child.kill();
+      await exited;
+    }));
+    await fs.rm(root, { force: true, recursive: true });
+  });
+  for (const name of ["qoder-engine", "qodercli", "qoderclicn", "claude", "codex", "codebuddy", "codebuddy-code", "workbuddy", "cbc", "unrelated-worker"]) {
+    const file = path.join(root, `${name}.cjs`);
+    await fs.writeFile(file, "setInterval(()=>{},1000); process.send('ready');\n");
+    const child = spawn(process.execPath, [file], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
+    children.push(child);
+    await once(child, "message");
+  }
+  const descendants = descendantProcesses(listNativeProcesses(), process.pid);
+  const detected = new Set(hostChildProcesses(descendants).map(({ pid }) => pid));
+  for (const child of children.slice(0, -1)) assert.ok(detected.has(child.pid), `Host child ${child.spawnargs[1]} was missed`);
+  assert.equal(detected.has(children.at(-1).pid), false, "unrelated process must stay distinct");
 });

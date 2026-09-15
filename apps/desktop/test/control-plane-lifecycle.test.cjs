@@ -15,6 +15,9 @@ const {
 
 const token = "a".repeat(64);
 const readyLine = `org-workbench-server ready ${JSON.stringify({ api: "v0", port: 43123, token })}\n`;
+// Successful startup fixtures need room for concurrent Node process launches.
+// Keep the separate 30ms no-READY test as the timeout-behavior assertion.
+const fixtureReadyTimeoutMs = 5000;
 // Keep fixture data out of executable source; argv is passed without a shell.
 const readyChildScript = `
 if (process.argv[2] === "ignore-term") process.on("SIGTERM", () => {});
@@ -57,7 +60,7 @@ test("control-plane lifecycle starts from READY and stops idempotently", async (
   const child = spawn(process.execPath, ["-e", readyChildScript, readyLine], {
     stdio: ["ignore", "pipe", "ignore"],
   });
-  const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 1000 });
+  const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: fixtureReadyTimeoutMs });
   assert.equal(handle.state, "ready");
   assert.equal(handle.port, 43123);
   assert.equal(isControlPlaneAlive(child), true);
@@ -86,7 +89,7 @@ test("stop escalates to SIGKILL when the control plane ignores SIGTERM", async (
   const child = spawn(process.execPath, ["-e", readyChildScript, readyLine, "ignore-term"], {
     stdio: ["ignore", "pipe", "ignore"],
   });
-  const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: 1000 });
+  const handle = await startControlPlaneProcess({ createChild: () => child, readyTimeoutMs: fixtureReadyTimeoutMs });
   const stopped = await stopControlPlaneProcess(handle, { termTimeoutMs: 30 });
   assert.equal(stopped.state, "stopped");
   assert.equal(stopped.forced, true);
@@ -110,6 +113,7 @@ test("a real server completes READY → health → stop and releases its port", 
       DIGITAL_EMPLOYEE_CLAUDE_COMMAND: process.execPath,
       DIGITAL_EMPLOYEE_QODER_COMMAND: process.execPath,
       DIGITAL_EMPLOYEE_CODEX_COMMAND: process.execPath,
+      DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND: process.execPath,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

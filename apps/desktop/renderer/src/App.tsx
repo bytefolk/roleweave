@@ -43,6 +43,7 @@ import {
   beginGroupRun,
   beginPendingTurn,
   defaultAgentHost,
+  TURN_ENGINES,
   reconcileGroupTimeline,
   resolveAgentEngine,
   resetStreamSeq,
@@ -1028,6 +1029,13 @@ function AppInner({
       modelPinnable: health?.hosts?.["codex-local"]?.modelPinnable,
       model: health?.hosts?.["codex-local"]?.model,
     },
+    workbuddy: {
+      configured: health?.hosts?.workbuddy?.configured === true,
+      ready: health?.hosts?.workbuddy?.ready === true,
+      reason: health?.hosts?.workbuddy?.nextStep ?? t("misc.workbuddyHostUnknown"),
+      modelPinnable: health?.hosts?.workbuddy?.modelPinnable,
+      model: health?.hosts?.workbuddy?.model,
+    },
   }), [health, t]);
 
   /** A visible conversation has exactly one employee-selected runtime. For
@@ -1467,11 +1475,7 @@ function replaceTurn(turns: TurnRecord[], next: TurnRecord): TurnRecord[] {
 }
 
 function isTurnEngine(value: unknown): value is TurnEngine {
-  return value === "qoder"
-    || value === "claude-code"
-    || value === "claude-local"
-    || value === "codex"
-    || value === "codex-local";
+  return typeof value === "string" && (TURN_ENGINES as readonly string[]).includes(value);
 }
 
 function apiErrorMessage(body: unknown, fallback: string): string {

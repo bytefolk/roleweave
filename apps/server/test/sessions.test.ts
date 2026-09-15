@@ -6,12 +6,12 @@ import {
   AGENT_BINDING_RELATIVE_PATH,
   AGENT_BINDING_SCHEMA_VERSION,
 } from "@roleweave/shared";
-import type { TurnRecord, TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@roleweave/shared";
+import type { TurnEngine, TurnRecord, TurnRunDriver, TurnRunRequest, TurnRunResult, WorkbenchSession } from "@roleweave/shared";
 import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import { SessionStore } from "../src/sessions/store.js";
 import { TurnStore } from "../src/turns/store.js";
 
-async function writePositionAgentBinding(workspace: string, engine: "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local"): Promise<void> {
+async function writePositionAgentBinding(workspace: string, engine: TurnEngine): Promise<void> {
   const file = path.join(
     workspace,
     "positions",
@@ -82,39 +82,47 @@ test("a running session rejects context-policy edits and another turn while pres
   }
 });
 
-test("session turns use the employee's durable Agent binding instead of the request engine", async () => {
-  let receivedEngine: string | undefined;
-  const driver: TurnRunDriver = {
-    async turnRun(request) {
-      receivedEngine = request.engine;
-      const timestamp = new Date().toISOString();
-      const events: TurnRunResult["events"] = [
-        { type: "run.started", runId: request.envelope.turnId, timestamp },
-        { type: "run.completed", runId: request.envelope.turnId, timestamp, output: "done", terminalReason: "goal_met" },
-      ];
-      for (const event of events) request.onEvent?.(event);
-      return { status: "trusted", events, diagnostic: "" };
-    },
-  };
-  const workspace = await copyExampleWorkspace();
-  const server = await startTestServer(undefined, driver);
-  try {
-    await writePositionAgentBinding(workspace, "claude-local");
-    await openWorkspace(server.baseUrl, server.token, workspace);
-    const created = await api(server.baseUrl, "/sessions", {
-      method: "POST", token: server.token, body: { positionId: "repo-owner" },
-    });
-    const session = created.body as WorkbenchSession;
-    const response = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, {
-      method: "POST", token: server.token, body: { input: "respect the employee binding", engine: "qoder" },
-    });
-    assert.equal(response.status, 200);
-    assert.equal((response.body as TurnRecord).engine, "claude-local");
-    assert.equal(receivedEngine, "claude-local");
-  } finally {
-    await server.close();
-  }
-});
+for (const engine of ["claude-local", "workbuddy"] as const) {
+  test(`session turns use the employee's durable ${engine} binding instead of the request engine`, async () => {
+    let receivedEngine: string | undefined;
+    const driver: TurnRunDriver = {
+      async turnRun(request) {
+        receivedEngine = request.engine;
+        const timestamp = new Date().toISOString();
+        const events: TurnRunResult["events"] = [
+          { type: "run.started", runId: request.envelope.turnId, timestamp },
+          { type: "run.completed", runId: request.envelope.turnId, timestamp, output: "done", terminalReason: "goal_met" },
+        ];
+        for (const event of events) request.onEvent?.(event);
+        return { status: "trusted", events, diagnostic: "" };
+      },
+    };
+    const workspace = await copyExampleWorkspace();
+    const server = await startTestServer(undefined, driver);
+    try {
+      await writePositionAgentBinding(workspace, engine);
+      await openWorkspace(server.baseUrl, server.token, workspace);
+      const created = await api(server.baseUrl, "/sessions", {
+        method: "POST", token: server.token, body: { positionId: "repo-owner" },
+      });
+      const session = created.body as WorkbenchSession;
+      const response = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, {
+        method: "POST", token: server.token, body: { input: "respect the employee binding", engine: "qoder" },
+      });
+      assert.equal(response.status, 200);
+      assert.equal((response.body as TurnRecord).engine, engine);
+      assert.equal(receivedEngine, engine);
+      const readback = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, { token: server.token });
+      assert.equal(readback.status, 200);
+      assert.equal((readback.body as { turns: TurnRecord[] }).turns[0]?.engine, engine);
+      const record = response.body as TurnRecord;
+      const turnFile = path.join(workspace, ".digital-employee", "workbench", "sessions", "conversations", session.sessionId, "turns", `${record.turnId}.json`);
+      await assertPosixMode(turnFile, 0o600);
+    } finally {
+      await server.close();
+    }
+  });
+}
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {
   const opened = await api(baseUrl, "/workspace/open", {

@@ -14,6 +14,7 @@ export const TURN_ENGINES: readonly TurnEngine[] = [
   "claude-local",
   "codex",
   "codex-local",
+  "workbuddy",
 ];
 
 const ENGINE_LABEL: Record<TurnEngine, string> = {
@@ -22,6 +23,7 @@ const ENGINE_LABEL: Record<TurnEngine, string> = {
   "claude-local": "Claude Code",
   codex: "Codex",
   "codex-local": "Codex",
+  workbuddy: "WorkBuddy",
 };
 
 /** Engine brand names are product names. Local sign-in is a transport detail,

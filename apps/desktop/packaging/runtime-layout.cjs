@@ -50,6 +50,8 @@ const SERVER_RUNTIME_FILES = [
   "src/qoder-binary.js",
   "src/claude-binary.js",
   "src/codex-binary.js",
+  "src/workbuddy-binary.js",
+  "src/workbuddy-runtime.js",
   "src/local-provider-config.js",
   "src/windows-launcher.js",
   "dist/src/agent-binding.js",
@@ -108,6 +110,8 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/turns/store.js",
   "dist/src/turns/thread-context.js",
   "dist/src/windows-launcher.js",
+  "dist/src/workbuddy-binary.js",
+  "dist/src/workbuddy-runtime.js",
   "dist/src/workspace-state.js",
 ];
 
@@ -213,6 +217,10 @@ const APP_RESOURCE_REQUIRED_ENTRIES = [
   "apps/server/dist/src/stable-read.js",
   "apps/server/bin/qoder-engine.mjs",
   "apps/server/src/qoder-binary.js",
+  "apps/server/src/workbuddy-binary.js",
+  "apps/server/src/workbuddy-runtime.js",
+  "apps/server/dist/src/workbuddy-binary.js",
+  "apps/server/dist/src/workbuddy-runtime.js",
   "node_modules/@roleweave/shared/package.json",
   "node_modules/@roleweave/shared/dist/index.js",
   "node_modules/@roleweave/shared/dist/agent-binding.js",

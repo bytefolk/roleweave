@@ -360,65 +360,67 @@ test("group turn answers 202 with pre-assigned spawns and persists per-member re
   }
 });
 
-test("group turns use each mentioned employee's durable Agent binding", async () => {
-  const calls: Array<{ positionId: string; engine: TurnEngine }> = [];
-  const driver: TurnRunDriver = {
-    async turnRun(request) {
-      calls.push({ positionId: request.positionId, engine: request.engine });
-      const timestamp = new Date().toISOString();
-      const events: TurnRunResult["events"] = [
-        { type: "run.started", runId: request.envelope.turnId, timestamp },
-        {
-          type: "run.completed",
-          runId: request.envelope.turnId,
-          timestamp,
-          output: "bound Agent completed",
-          terminalReason: "goal_met",
-        },
-      ];
-      for (const event of events) request.onEvent?.(event);
-      return { status: "trusted", events, diagnostic: "" };
-    },
-  };
-  const server = await startTestServer(undefined, driver);
-  const workspace = await copyExampleWorkspace();
-  try {
-    await writePositionAgentBinding(workspace, "repo-owner", "codex-local");
-    await writePositionAgentBinding(workspace, "release-engineer", "claude-local");
-    await openWorkspace(server.baseUrl, server.token, workspace);
-    const group = await createGroup(server.baseUrl, server.token);
-    const accepted = await api(server.baseUrl, `${routes.groups}/${group.conversationRef}/turns`, {
-      method: "POST",
-      token: server.token,
-      // Try to override both bindings. The server must persist and run the
-      // per-position sidecars instead of this request-scoped value.
-      body: {
-        input: "check the release",
-        engine: "qoder",
-        engines: { "repo-owner": "qoder", "release-engineer": "qoder" },
-        mentions: ["repo-owner", "release-engineer"],
+for (const engine of ["codex-local", "workbuddy"] as const) {
+  test(`group turns use the durable ${engine} binding for the mentioned employee`, async () => {
+    const calls: Array<{ positionId: string; engine: TurnEngine }> = [];
+    const driver: TurnRunDriver = {
+      async turnRun(request) {
+        calls.push({ positionId: request.positionId, engine: request.engine });
+        const timestamp = new Date().toISOString();
+        const events: TurnRunResult["events"] = [
+          { type: "run.started", runId: request.envelope.turnId, timestamp },
+          {
+            type: "run.completed",
+            runId: request.envelope.turnId,
+            timestamp,
+            output: "bound Agent completed",
+            terminalReason: "goal_met",
+          },
+        ];
+        for (const event of events) request.onEvent?.(event);
+        return { status: "trusted", events, diagnostic: "" };
       },
-    });
-    assert.equal(accepted.status, 202);
-    const spawns = (accepted.body as { spawns: Array<{ positionId: string; engine: TurnEngine }> }).spawns;
-    assert.deepEqual(Object.fromEntries(spawns.map((spawn) => [spawn.positionId, spawn.engine])), {
-      "repo-owner": "codex-local",
-      "release-engineer": "claude-local",
-    });
-    for (let attempt = 0; attempt < 100 && calls.length < 2; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+    };
+    const server = await startTestServer(undefined, driver);
+    const workspace = await copyExampleWorkspace();
+    try {
+      await writePositionAgentBinding(workspace, "repo-owner", engine);
+      await writePositionAgentBinding(workspace, "release-engineer", "claude-local");
+      await openWorkspace(server.baseUrl, server.token, workspace);
+      const group = await createGroup(server.baseUrl, server.token);
+      const accepted = await api(server.baseUrl, `${routes.groups}/${group.conversationRef}/turns`, {
+        method: "POST",
+        token: server.token,
+        // Try to override both bindings. The server must persist and run the
+        // per-position sidecars instead of this request-scoped value.
+        body: {
+          input: "check the release",
+          engine: "qoder",
+          engines: { "repo-owner": "qoder", "release-engineer": "qoder" },
+          mentions: ["repo-owner", "release-engineer"],
+        },
+      });
+      assert.equal(accepted.status, 202);
+      const spawns = (accepted.body as { spawns: Array<{ positionId: string; engine: TurnEngine }> }).spawns;
+      assert.deepEqual(Object.fromEntries(spawns.map((spawn) => [spawn.positionId, spawn.engine])), {
+        "repo-owner": engine,
+        "release-engineer": "claude-local",
+      });
+      for (let attempt = 0; attempt < 100 && calls.length < 2; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.deepEqual(
+        calls.sort((left, right) => left.positionId.localeCompare(right.positionId)),
+        [
+          { positionId: "release-engineer", engine: "claude-local" },
+          { positionId: "repo-owner", engine },
+        ],
+      );
+    } finally {
+      await server.close();
     }
-    assert.deepEqual(
-      calls.sort((left, right) => left.positionId.localeCompare(right.positionId)),
-      [
-        { positionId: "release-engineer", engine: "claude-local" },
-        { positionId: "repo-owner", engine: "codex-local" },
-      ],
-    );
-  } finally {
-    await server.close();
-  }
-});
+  });
+}
 
 test("group driver failure publishes indeterminate with the complete exact attribution", async () => {
   const failingDriver: TurnRunDriver = {
