@@ -69,6 +69,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/engine/process-environment.js",
   "dist/src/goals/store.js",
   "dist/src/groups/store.js",
+  "dist/src/history-limits.js",
   "dist/src/http.js",
   "dist/src/index.js",
   "dist/src/local-provider-config.js",

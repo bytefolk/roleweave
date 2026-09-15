@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { OrgApiError, errorCodes } from "@roleweave/shared";
 import type { ThreadContextMetadata, TurnRecord } from "@roleweave/shared";
+import { THREAD_CONTEXT_MAX_OMITTED_TURNS } from "../history-limits.js";
 
 const MAX_CONTEXT_BYTES = 64 * 1024;
 const MAX_INPUT_BYTES = 256 * 1024;
@@ -149,7 +150,9 @@ export function isThreadContextMetadata(value: unknown): value is ThreadContextM
     record.schemaVersion === "thread-context.v1" && typeof record.enabled === "boolean" &&
     typeof record.redacted === "boolean" && typeof record.truncated === "boolean" &&
     ["sourceTurnCount", "omittedTurnCount", "contextBytes"].every((key) => Number.isSafeInteger(record[key]) && (record[key] as number) >= 0) &&
-    (record.sourceTurnCount as number) <= MAX_SOURCE_TURNS && (record.omittedTurnCount as number) <= 32 * 256 + 32 &&
+    // Read invariant: member count * history limit + corrupt-source headroom.
+    // The write path builds context from those bounded sources.
+    (record.sourceTurnCount as number) <= MAX_SOURCE_TURNS && (record.omittedTurnCount as number) <= THREAD_CONTEXT_MAX_OMITTED_TURNS &&
     (record.contextBytes as number) <= MAX_CONTEXT_BYTES &&
     typeof record.contextDigest === "string" && /^sha256:[a-f0-9]{64}$/.test(record.contextDigest) &&
     typeof record.summary === "string" && bytes(record.summary) <= 1024;
