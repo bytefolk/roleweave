@@ -15,6 +15,7 @@ import { OwbI18nProvider } from "@roleweave/ui";
 import type { UpdateEvent, UpdateResult, UpdateStatus } from "@roleweave/shared";
 import { SettingsModule } from "../src/settings/SettingsModule";
 import { stateMessage, updateAffordances } from "../src/settings/update-copy";
+import { CREDENTIAL_FIELDS } from "../src/settings/credential-settings";
 
 const windowsUnsigned: UpdateStatus = {
   version: "0.1.0",
@@ -59,6 +60,10 @@ function installBridge(status: UpdateStatus | null, results: Partial<UpdateResul
   const queue = [...results];
   const next = () => result(queue.shift() ?? {});
   const bridge = {
+    settings: {
+      get: vi.fn().mockResolvedValue({ ok: true, storageAvailable: true,
+        credentials: CREDENTIAL_FIELDS.map(({ key }) => ({ key, configured: false, last4: null })) }),
+    },
     status: vi.fn().mockResolvedValue({ running: true, runtime: { mode: "wsl", distro: "Ubuntu-22.04" } }),
     services: {
       list: vi.fn().mockResolvedValue({ status: 200, body: { connections: [] } }),
@@ -90,6 +95,9 @@ it("shows runtime, service connections, and updates together without claiming a 
   render(<SettingsModule />);
   expect(await screen.findByText("WSL · Ubuntu-22.04")).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "项目与 Agent 运行环境" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Agent Host 凭据" })).toBeInTheDocument();
+  expect(await screen.findByText("QODER_PERSONAL_ACCESS_TOKEN")).toBeInTheDocument();
+  expect(bridge.settings.get).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("region", { name: "文档与记忆服务" })).toBeInTheDocument();
   expect(await screen.findByRole("form", { name: "Doc 连接" })).toBeInTheDocument();
   expect(screen.getByRole("form", { name: "Mem 连接" })).toBeInTheDocument();

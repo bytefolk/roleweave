@@ -97,6 +97,7 @@ const { openWorkspaceWithPicker, createWorkspaceWithPicker } = require("./worksp
 const { runtimeEnvironment, runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createConnectionStore, createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
+const { createCredentialStore, registerSettingsIpc, forwardCredentialSafeStderr } = require("./credential-settings.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const ROLEWEAVE_DEV_ICON = path.resolve(
@@ -125,6 +126,11 @@ let currentSseStatus = "connecting";
 let pendingFallbackNotice = null;
 let updateCheckTimer = null;
 let desktopEnv = { ...process.env };
+const credentialStore = () => createCredentialStore({ userDataPath: app.getPath("userData"), safeStorage });
+registerSettingsIpc({
+  ipcMain, getStore: credentialStore,
+  isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
+});
 const serviceConnections = createServiceConnections({
   apiRequest,
   // Electron's secure storage is available only after app.whenReady().
@@ -160,19 +166,17 @@ function startControlPlane() {
     // A stopped WSL distribution needs time to boot before Node can announce readiness.
     readyTimeoutMs: controlPlaneMode(desktopEnv) === "wsl" ? 45000 : DEFAULT_READY_TIMEOUT_MS,
     createChild: () => {
+      // Decrypted settings only enter this child environment, never desktopEnv,
+      // process.env, argv, server config, or renderer status responses.
+      const env = credentialStore().environment({
+        ...desktopEnv,
+        ...engineRuntimeEnvironment(desktopEnv, pinnedEngineCommandDefault()),
+      });
       const child = createControlPlaneChild({
         serverEntry: SERVER_ENTRY,
-        env: {
-          ...desktopEnv,
-          // Directly runnable: default the pinned engine to the bundled qoder
-          // adapter unless the operator pins a real digital-employee CLI.
-          ...engineRuntimeEnvironment(
-            desktopEnv,
-            pinnedEngineCommandDefault(),
-          ),
-        },
+        env,
       });
-      child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+      forwardCredentialSafeStderr(child.stderr, env, (chunk) => process.stderr.write(chunk));
       return child;
     },
   }).then((handle) => {
