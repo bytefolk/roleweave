@@ -31,11 +31,13 @@ import type {
 } from "@roleweave/shared";
 import { assertSessionId } from "../sessions/store.js";
 import { PerKeyLock } from "../per-key-lock.js";
+import { MAX_GROUP_MEMBERS } from "../history-limits.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations, parseRfc3339Instant, compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
+
+export { MAX_GROUP_MEMBERS } from "../history-limits.js";
 
 const GROUPS_ROOT = path.join(".digital-employee", "workbench", "groups");
 const MAX_GROUPS = 64;
-export const MAX_GROUP_MEMBERS = 32;
 const MAX_GROUP_MESSAGES = 256;
 const MAX_GROUP_RECORD_BYTES = 16 * 1024;
 export const MAX_GROUP_INPUT_BYTES = 256 * 1024;
