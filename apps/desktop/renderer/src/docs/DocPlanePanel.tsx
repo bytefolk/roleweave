@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Button, Empty, Input, List, Space, Spin, Tag } from "antd";
 import { FileText } from "lucide-react";
 import { useT } from "@roleweave/ui";
@@ -38,6 +38,7 @@ export type DocPlaneDetailLoadResult =
 
 export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
   const t = useT();
+  const readerRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<DocPlaneListEntry[]>([]);
   const [source, setSource] = useState<"upstream" | "mock" | null>(null);
@@ -84,6 +85,7 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
 
   const openEntry = (id: string) => {
     setSelectedId(id);
+    if (readerRef.current) readerRef.current.scrollTop = 0;
     setDetail(null);
     setReadError(null);
     setReading(true);
@@ -168,7 +170,7 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
             />
           ) : null}
         </div>
-        <div className="owb-doc-plane__reader-pane" aria-label={t("docs.readerAria")}>
+        <div ref={readerRef} className="owb-doc-plane__reader-pane" aria-label={t("docs.readerAria")}>
           {reading ? <Spin aria-label={t("docs.planeLoading")} /> : null}
           {readError !== null ? <Alert type="error" message={readError} /> : null}
           {detail !== null ? (

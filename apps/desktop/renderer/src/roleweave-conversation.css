@@ -9,14 +9,14 @@
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel {
-  border: 0;
-  border-radius: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
   background: var(--ui-surface);
   box-shadow: none;
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__header {
-  padding: 12px 20px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--ui-border);
 }
 
@@ -29,13 +29,64 @@
   text-transform: none;
 }
 
+/* Scope is a first-class part of a task, so it stays visible above the
+ * transcript. This is intentionally a plain toolbar rather than a drawer or
+ * a stack of decorative cards. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-conversation-controls {
+  padding: 10px 20px 12px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-conversation-controls__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  align-items: end;
+  gap: 10px 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-position-mention, .owb-turn-engine, .owb-conversation-session > label) {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-conversation-session {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-position-mention .ant-select, .owb-turn-engine .ant-select, .owb-conversation-session .ant-select) {
+  width: 100%;
+  min-width: 0;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-conversation-session > .ant-btn {
+  height: 32px;
+  border-color: var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-surface);
+  box-shadow: none;
+  color: var(--ui-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-conversation-session > .ant-btn:hover:not(:disabled) {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface);
+}
+
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-panel__header h2, .owb-groups__list-header h2) svg {
   color: var(--ui-foreground-muted);
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread {
-  padding: 20px;
-  background: var(--ui-surface);
+  padding: 18px 20px 22px;
+  background: var(--ui-surface-inset);
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
 }
@@ -50,13 +101,13 @@
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread--empty strong {
   color: var(--ui-foreground-muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread .owb-turn {
-  gap: 16px;
-  padding: 0 0 28px;
+  gap: 14px;
+  padding: 0 0 26px;
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread .owb-turn::before {
@@ -65,11 +116,11 @@
 
 /* Human messages are the only filled message surface. */
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-thread, .owb-groups__timeline) .owb-bubble--operator {
-  max-width: min(88%, 720px);
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--ui-surface-inset);
+  max-width: min(82%, 720px);
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  background: var(--ui-surface);
   box-shadow: none;
   color: var(--ui-foreground);
   font-size: 13px;
@@ -80,11 +131,11 @@
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-groups__timeline .owb-bubble--employee {
   width: 100%;
   max-width: 100%;
-  padding: 0 0 16px;
+  padding: 0 0 20px;
   border: 0;
   border-bottom: 1px solid var(--ui-border);
   border-radius: 0;
-  background: var(--ui-surface);
+  background: transparent;
   box-shadow: none;
   color: var(--ui-foreground);
   font-size: 13px;
@@ -412,10 +463,13 @@
   justify-content: flex-start;
 }
 
-/* White composer, quiet utility rows, and one primary send action. */
+/* The composer is a distinct writing block. It carries the only primary
+ * action in the panel, with no gradients, glow, or synthetic "assistant"
+ * decoration competing with the task text. */
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer {
   gap: 8px;
-  padding: 12px 20px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--ui-border);
   background: var(--ui-surface);
 }
 
@@ -429,10 +483,10 @@
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer textarea {
-  min-height: 96px;
+  min-height: 88px;
   padding: 12px 48px 12px 12px;
   border-color: var(--ui-border-strong);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--ui-surface);
   color: var(--ui-foreground);
   box-shadow: none;
@@ -478,9 +532,39 @@
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-thread-context {
-  padding: 8px 20px 0;
+  padding: 8px 20px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-surface);
   color: var(--ui-foreground-muted);
   font-size: 12px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-session-context {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 18px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-session-context__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-session-context__label {
+  color: var(--ui-foreground);
+  font-weight: 500;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-session-context__state {
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-session-context__usage {
+  min-width: 0;
+  text-align: right;
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-thread-context details[open] {
@@ -503,42 +587,6 @@
   padding: 8px 10px;
   border-left: 1px solid var(--ui-border-strong);
   background: var(--ui-surface-inset);
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__settings {
-  margin-inline: 20px;
-  border-top: 1px solid var(--ui-border);
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__settings-summary {
-  padding: 10px 0;
-  font-size: 12px;
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__settings-body {
-  gap: 12px;
-  padding: 0 0 14px;
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-panel__controls, .owb-session-controls) {
-  padding: 0;
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__controls > label {
-  flex: 1 1 220px;
-  min-width: 0;
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-session-controls button {
-  height: 32px;
-  border-radius: 6px;
-  background: var(--ui-surface);
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-position-mention__field > svg {
@@ -871,12 +919,22 @@
     padding: 14px 12px;
   }
 
-  :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-panel__header, .owb-turn-composer, .owb-thread-context) {
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-panel__header, .owb-conversation-controls, .owb-turn-composer, .owb-thread-context) {
     padding-inline: 12px;
   }
 
-  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__settings {
-    margin-inline: 12px;
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-conversation-controls__fields {
+    grid-template-columns: 1fr;
+  }
+
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-session-context {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 4px;
+  }
+
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-session-context__usage {
+    text-align: left;
   }
 
   :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread .owb-bubble-row--operator {

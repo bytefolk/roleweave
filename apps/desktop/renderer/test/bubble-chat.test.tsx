@@ -231,7 +231,8 @@ describe("group chat bubbles with member identity (#61)", () => {
       expect(container.querySelector(".owb-bubble-row--employee .owb-bubble__avatar")).not.toBeNull();
     });
     const memberRow = container.querySelector(".owb-bubble-row--employee");
-    expect(memberRow?.querySelector(".owb-bubble__avatar")).toHaveStyle({ background: "#5e6ad2" });
+    expect(memberRow?.querySelector(".owb-bubble__avatar img")).not.toBeNull();
+    expect(memberRow?.querySelector(".owb-bubble__avatar")).not.toHaveAttribute("style");
     expect(memberRow?.querySelector(".owb-bubble__name")?.textContent).toBe("@Release Engineer");
     expect(memberRow?.textContent).toContain("发布已检查。");
     const operatorRow = container.querySelector(".owb-bubble-row--operator .owb-bubble--operator");

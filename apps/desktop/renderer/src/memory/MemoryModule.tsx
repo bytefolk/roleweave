@@ -1,16 +1,21 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Empty, Select } from "antd";
-import { ArrowUpRight, Cloud, FileText, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Button, Empty, Select, Tooltip } from "antd";
+import { Cloud, FileText, History, Library, UserRound, PanelLeftClose, PanelLeftOpen, Maximize2, Minimize2, Info } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type { PositionCardData } from "@roleweave/ui";
 import type { ContextSourceSummary } from "@roleweave/shared";
 import type { PositionMentionOption } from "../turns/types";
 import { DocsModule } from "../docs/DocsModule";
 import { DriveModule } from "../drive/DriveModule";
+import { SessionMemory } from "./SessionMemory";
+import { ServiceLaunch } from "../settings/ServiceLaunch";
+import { SERVICES_CHANGED } from "../settings/ServiceConnections";
 
-export type MemorySource = "docs" | "drive";
+export type MemorySource = "docs" | "shared" | "sessions" | "drive";
 
 export interface MemoryModuleProps {
+  onCollaborate?: () => void;
+  onContinue?: (positionId: string, sessionId: string) => void;
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
   selectedPositionId: string | null;
@@ -23,6 +28,8 @@ function sourceKind(source: MemorySource): ContextSourceSummary["kind"] {
 }
 
 function sourceTitle(source: MemorySource, t: ReturnType<typeof useT>): string {
+  if (source === "shared") return t("memory.shared");
+  if (source === "sessions") return t("memory.sessions");
   if (source === "docs") return t("memory.docsTitle");
   return t("memory.driveTitle");
 }
@@ -35,44 +42,29 @@ function sourceStatus(source: ContextSourceSummary | undefined, t: ReturnType<ty
   return t("memory.sourceError");
 }
 
-function SourceCard({
-  source,
-  summary,
-  active,
-  onSelect,
-}: {
+function SourceItem({ source, summary, active, onSelect }: {
   source: MemorySource;
   summary?: ContextSourceSummary;
   active: boolean;
   onSelect: () => void;
 }) {
   const t = useT();
-  const Icon = source === "docs" ? FileText : Cloud;
-  const count = summary?.itemCount === undefined
-    ? null
-    : t("memory.count", { count: summary.itemCount });
+  const Icon = source === "docs" ? FileText : source === "shared" ? Library : source === "sessions" ? History : Cloud;
+  const status = source === "shared" ? t("memory.teamScope") : source === "sessions" ? t("memory.sessionScope") : source === "drive" ? t("services.memSource") : sourceStatus(summary, t);
   return (
-    <button
-      type="button"
-      className={`owb-memory-source-card is-${source}${active ? " is-active" : ""}`}
-      aria-pressed={active}
-      aria-label={t("memory.openSource", { name: sourceTitle(source, t) })}
-      onClick={onSelect}
-    >
-      <span className="owb-memory-source-card__icon" aria-hidden="true"><Icon size={17} strokeWidth={1.8} /></span>
-      <span className="owb-memory-source-card__main">
-        <strong>{sourceTitle(source, t)}</strong>
-        <span className="owb-memory-source-card__facts">
-          {count ? <small>{count}</small> : null}
-          {summary?.readOnly ? <small>{t("pos.readOnly")}</small> : null}
-        </span>
-      </span>
-      <span className={`owb-memory-source-card__status is-${summary?.state ?? "unknown"}`}>
-        <i aria-hidden="true" />
-        {sourceStatus(summary, t)}
-      </span>
-      <ArrowUpRight aria-hidden="true" size={15} className="owb-memory-source-card__arrow" />
-    </button>
+    <Tooltip title={`${sourceTitle(source, t)} · ${status}`} placement="right">
+      <button
+        type="button"
+        className="owb-memory-source"
+        aria-pressed={active}
+        aria-label={t("memory.openSource", { name: sourceTitle(source, t) })}
+        onClick={onSelect}
+      >
+        <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
+        <span className="owb-memory-source__label">{sourceTitle(source, t)}</span>
+        {summary?.itemCount !== undefined ? <small className="owb-memory-source__count">{summary.itemCount}</small> : null}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -82,21 +74,32 @@ export function MemoryModule({
   selectedPositionId,
   position,
   initialSource = "docs",
+  onCollaborate,
+  onContinue,
 }: MemoryModuleProps) {
   const t = useT();
-  const moduleRef = useRef<HTMLElement>(null);
+  const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
+  const [readingFocus, setReadingFocus] = useState(false);
   const [positionId, setPositionId] = useState<string | null>(selectedPositionId);
   const [positionData, setPositionData] = useState<PositionCardData | null>(
     position?.id === selectedPositionId ? position : null,
   );
   const [activeSource, setActiveSource] = useState<MemorySource>(initialSource);
+  const [sourceRevision, setSourceRevision] = useState(0);
 
   useEffect(() => {
-    if (selectedPositionId !== null) setPositionId(selectedPositionId);
+    const refresh = () => setSourceRevision((value) => value + 1);
+    window.addEventListener(SERVICES_CHANGED, refresh);
+    return () => window.removeEventListener(SERVICES_CHANGED, refresh);
+  }, []);
+
+  useEffect(() => {
+    setPositionId(selectedPositionId);
   }, [selectedPositionId]);
 
   useEffect(() => {
     let cancelled = false;
+    setPositionData(null);
     if (positionId === null) {
       setPositionData(null);
       return () => {
@@ -119,7 +122,7 @@ export function MemoryModule({
       if (cancelled || response.status !== 200) return;
       const body = response.body as { position?: PositionCardData };
       setPositionData(body.position ?? null);
-    });
+    }).catch(() => { if (!cancelled) setPositionData(null); });
     return () => {
       cancelled = true;
     };
@@ -128,20 +131,6 @@ export function MemoryModule({
   useEffect(() => {
     setActiveSource(initialSource);
   }, [initialSource]);
-
-  // The memory surface owns the scroll container. Reset it when the user
-  // changes the employee or source so the page heading never remains clipped
-  // above the viewport after a deep scroll in another source.
-  useLayoutEffect(() => {
-    const node = moduleRef.current;
-    if (!node) return;
-    if (typeof node.scrollTo === "function") {
-      node.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    } else {
-      node.scrollTop = 0;
-      node.scrollLeft = 0;
-    }
-  }, [activeSource, positionId]);
 
   const selectedPosition = positionData?.id === positionId ? positionData : null;
   const contextSources = selectedPosition?.contextSources ?? [];
@@ -160,8 +149,11 @@ export function MemoryModule({
     );
   }
 
+  const isDocument = activeSource === "docs" || activeSource === "shared";
+  const focused = isDocument && readingFocus;
+  const activeSummary = activeSource === "docs" ? summaries.get(sourceKind(activeSource)) : undefined;
   return (
-    <section ref={moduleRef} className="owb-memory-module" aria-label={t("memory.moduleAria")}>
+    <section className="owb-memory-module" data-sources-collapsed={sourcesCollapsed} data-reading-focus={focused} aria-label={t("memory.moduleAria")}>
       <header className="owb-memory-module__header">
         <div className="owb-memory-module__title">
           <h1>{t("memory.title")}</h1>
@@ -180,36 +172,55 @@ export function MemoryModule({
             popupMatchSelectWidth={false}
           />
         </label>
+        {isDocument ? <Tooltip title={t(focused ? "memory.exitFocus" : "memory.focusReading")}>
+          <Button aria-label={t(focused ? "memory.exitFocus" : "memory.focusReading")} aria-pressed={focused}
+            icon={focused ? <Minimize2 size={15} /> : <Maximize2 size={15} />} onClick={() => setReadingFocus(!readingFocus)} />
+        </Tooltip> : null}
+        {onCollaborate ? <Button onClick={onCollaborate}>{t("memory.collaborate")}</Button> : null}
       </header>
 
-      <section className="owb-memory-sources" aria-labelledby="owb-memory-sources-title">
-        <div className="owb-memory-sources__heading">
-          <h2 id="owb-memory-sources-title">{t("memory.sourcesTitle")}</h2>
-        </div>
-        <div className="owb-memory-sources__grid">
-          {(["docs", "drive"] as const).map((source) => (
-            <SourceCard
-              key={source}
-              source={source}
-              summary={summaries.get(sourceKind(source))}
-              active={activeSource === source}
-              onSelect={() => setActiveSource(source)}
+      <div className="owb-memory-module__body">
+        <aside className="owb-memory-sidebar">
+          <div className="owb-memory-sidebar__heading">
+            <span>{t("memory.sourcesTitle")}</span>
+            <Tooltip title={t(sourcesCollapsed ? "memory.expandSources" : "memory.collapseSources")}>
+              <Button type="text" size="small" aria-label={t(sourcesCollapsed ? "memory.expandSources" : "memory.collapseSources")}
+                aria-expanded={!sourcesCollapsed} icon={sourcesCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+                onClick={() => setSourcesCollapsed(!sourcesCollapsed)} />
+            </Tooltip>
+          </div>
+          <nav aria-label={t("memory.sourcesTitle")}>
+            {(["docs", "shared", "sessions", "drive"] as const).map((source) => (
+              <SourceItem key={source} source={source}
+                summary={source === "docs" ? summaries.get(sourceKind(source)) : undefined}
+                active={activeSource === source} onSelect={() => setActiveSource(source)} />
+            ))}
+          </nav>
+          <p className="owb-memory-sidebar__hint">{t("memory.sidebarHint")}</p>
+        </aside>
+        <section className="owb-memory-workspace" aria-label={t("memory.detailAria")}>
+          <header className="owb-memory-location">
+            <h2>{sourceTitle(activeSource, t)}</h2>
+            {activeSummary ? <span className="owb-memory-location__status">{sourceStatus(activeSummary, t)}{activeSummary.readOnly ? ` · ${t("pos.readOnly")}` : ""}</span> : null}
+            {activeSource === "shared" ? <ServiceLaunch kind="doc" /> : activeSource === "drive" ? <ServiceLaunch kind="mem" /> : null}
+            <Tooltip title={t(`memory.scope.${activeSource}`)}>
+              <Button type="text" size="small" aria-label={t("memory.sourceInfo")} icon={<Info size={14} />} />
+            </Tooltip>
+          </header>
+          {activeSource === "docs" || activeSource === "shared" ? (
+            <DocsModule
+              key={`${activeSource}:${sourceRevision}`}
+              surface={activeSource === "shared" ? "plane" : "position"}
+              embedded
+              workspaceOpen={workspaceOpen}
+              positions={positions}
+              selectedPositionId={positionId}
             />
-          ))}
-        </div>
-      </section>
-
-      <section className="owb-memory-workspace" aria-label={t("memory.detailAria")}>
-        {activeSource === "docs" ? (
-          <DocsModule
-            embedded
-            workspaceOpen={workspaceOpen}
-            positions={positions}
-            selectedPositionId={positionId}
-          />
-        ) : null}
-        {activeSource === "drive" ? <DriveModule embedded workspaceOpen={workspaceOpen} /> : null}
-      </section>
+          ) : null}
+          {activeSource === "sessions" ? <SessionMemory key={positionId} positionId={positionId} onContinue={onContinue} /> : null}
+          {activeSource === "drive" ? <DriveModule key={sourceRevision} embedded workspaceOpen={workspaceOpen} /> : null}
+        </section>
+      </div>
     </section>
   );
 }

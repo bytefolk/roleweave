@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import type { ThemeMode } from "./theme-mode";
+import type { ThemeMode, ThemeProfile } from "./theme-mode";
 
-export type { ThemeMode };
+export type { ThemeMode, ThemeProfile };
 
 /** Live `data-theme` on <html> (main.tsx seeds it, see initThemeMode). antd's
  * cssinjs algorithm has to follow the same switch as the --ui-* skin, otherwise
@@ -20,4 +20,28 @@ export function useThemeMode(): ThemeMode {
     return () => observer.disconnect();
   }, []);
   return mode;
+}
+
+/** The color profile is persisted independently from light/dark mode. It is
+ * stamped on <html> by theme-mode.ts before React renders, so portaled AntD
+ * surfaces and custom CSS always resolve the same profile. */
+export function useThemeProfile(): ThemeProfile {
+  const [profile, setProfile] = useState<ThemeProfile>(() =>
+    document.documentElement.getAttribute("data-ui-theme") === "default" ? "default" : "mint",
+  );
+  useEffect(() => {
+    const target = document.documentElement;
+    const sync = (): void => {
+      if (target.getAttribute("data-ui-theme") === null) {
+        target.setAttribute("data-ui-theme", "mint");
+        return;
+      }
+      setProfile(target.getAttribute("data-ui-theme") === "default" ? "default" : "mint");
+    };
+    const observer = new MutationObserver(sync);
+    observer.observe(target, { attributes: true, attributeFilter: ["data-ui-theme"] });
+    sync();
+    return () => observer.disconnect();
+  }, []);
+  return profile;
 }

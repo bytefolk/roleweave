@@ -780,14 +780,18 @@
   gap: 5px;
 }
 
-/* #236: model line under the Agent Host trigger. A model slug can be longer
-   than the ~220px column, so it wraps instead of being clipped to a prefix
-   that reads like a different model. */
+/* #236: model line under the Agent Host trigger. #245: overflow-wrap: anywhere
+   could break a long slug at an arbitrary point (e.g., "ns/model-1." + "2_3"),
+   which reads like a different model. Ellipsis truncation keeps the visible
+   prefix honest; the full slug is in the title attribute. */
 .owb-turn-engine__model {
   color: var(--ui-foreground-muted);
   font-size: 11px;
   line-height: 1.4;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .owb-position-mention__field {
@@ -988,7 +992,6 @@
 }
 
 .owb-bubble__avatar--operator {
-  background: var(--ui-primary);
 }
 
 .owb-bubble__column {
@@ -1726,7 +1729,6 @@
   flex: none;
   width: 26px;
   height: 26px;
-  border: 2px solid var(--ui-surface);
   border-radius: 50%;
   color: #fff;
   font-size: 11px;
@@ -1754,7 +1756,6 @@
 }
 
 .owb-groups__avatar--more {
-  background: var(--ui-surface-inset);
   border-color: var(--ui-border-strong);
   color: var(--ui-foreground-subtle);
 }
@@ -2874,6 +2875,24 @@
   width: 100%;
 }
 
+.owb-hire-agent-binding {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.owb-hire-agent-binding > span {
+  color: var(--ui-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.owb-hire-agent-binding > small {
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .owb-hire-conversation {
   display: grid;
   grid-template-rows: auto minmax(92px, auto) auto;
@@ -3044,6 +3063,19 @@
 .owb-hire-basic-grid label,
 .owb-hire-two-col label { display: grid; min-width: 0; gap: 6px; }
 .owb-hire-basic-grid__wide { grid-column: 1 / -1; }
+.owb-hire-avatar-picker { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--ui-border); }
+.owb-hire-avatar-picker strong { font-size: 13px; }
+.owb-hire-avatar-picker p { margin: 3px 0 0; font-size: 11px; color: var(--ui-foreground-muted); }
+.owb-hire-avatar-picker__choices { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.owb-hire-avatar-picker__choices button, .owb-hire-avatar-picker__upload { position: relative; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 9px; background: transparent; cursor: pointer; }
+.owb-hire-avatar-picker__choices button.is-selected { border-color: var(--ui-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-primary) 18%, transparent); }
+.owb-hire-avatar-picker__choices img { width: 100%; height: 100%; object-fit: contain; }
+.owb-hire-avatar-picker__generate { display: grid; gap: 1px; color: var(--ui-primary); font-size: 9px; font-weight: 650; }
+.owb-hire-avatar-picker__generate:disabled { opacity: .58; cursor: wait; }
+.owb-hire-avatar-picker__error { color: var(--ui-error, #bd3d3d) !important; }
+.owb-hire-avatar-picker__choices button:first-child span { position: absolute; right: 2px; bottom: 1px; padding: 0 2px; border-radius: 3px; background: rgba(0,0,0,.55); color: #fff; font-size: 9px; }
+.owb-hire-avatar-picker__upload { color: var(--ui-primary); font-size: 10px; font-weight: 600; }
+.owb-hire-avatar-picker__upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .owb-hire-basic-grid .ant-select,
 .owb-hire-two-col .ant-select { width: 100%; }
 
@@ -3251,147 +3283,6 @@
   .owb-hire-capability__head { align-items: flex-start; flex-wrap: wrap; }
   .owb-hire-footer { flex-wrap: wrap; padding-inline: 14px; }
   .owb-hire-footer > span { flex-basis: 100%; }
-}
-
-/* ---------- 项目立项：先创建边界，再进入员工配置 ---------- */
-
-.owb-project-drawer-shell.ant-drawer {
-  max-width: 100vw;
-}
-
-.owb-project-drawer-shell .ant-drawer-content {
-  background: var(--ui-canvas);
-}
-
-.owb-project-drawer-shell .ant-drawer-header {
-  border-bottom: 1px solid var(--ui-border);
-  background: color-mix(in srgb, var(--ui-surface) 94%, var(--ui-primary) 6%);
-}
-
-.owb-project-drawer-shell .ant-drawer-body {
-  padding: 0;
-}
-
-.owb-project-drawer {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-  padding: 18px 22px 22px;
-  color: var(--ui-foreground);
-}
-
-.owb-project-hero {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 13px;
-  min-width: 0;
-  padding: 17px 18px;
-  border: 1px solid color-mix(in srgb, var(--ui-primary) 38%, var(--ui-border));
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--ui-surface) 91%, var(--ui-primary) 9%);
-}
-
-.owb-project-hero__icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  color: var(--ui-primary);
-  background: var(--ui-primary-soft);
-}
-
-.owb-project-eyebrow {
-  margin: 0 0 5px;
-  color: var(--ui-primary);
-  font: 600 10px/1.2 var(--ui-font-mono, monospace);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
-.owb-project-hero h3 {
-  margin: 0;
-  font-size: 17px;
-  letter-spacing: -.02em;
-}
-
-.owb-project-hero p:not(.owb-project-eyebrow) {
-  margin: 6px 0 0;
-  color: var(--ui-foreground-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.owb-project-form {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--ui-border);
-  border-radius: 14px;
-  background: var(--ui-surface);
-}
-
-.owb-project-form label {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  color: var(--ui-foreground-muted);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.owb-project-form .ant-input,
-.owb-project-form .ant-input-affix-wrapper {
-  box-sizing: border-box;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.owb-project-form small {
-  color: var(--ui-foreground-subtle);
-  font: 10px/1.4 var(--ui-font-mono, monospace);
-  font-weight: 400;
-}
-
-.owb-project-form__note {
-  margin: -2px 0 0;
-  color: var(--ui-primary);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.owb-project-error {
-  margin: 0;
-  padding: 9px 10px;
-  border: 1px solid color-mix(in srgb, var(--ui-danger) 45%, var(--ui-border));
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--ui-danger) 10%, var(--ui-surface));
-  color: var(--ui-danger);
-  font-size: 11px;
-}
-
-.owb-project-footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding-top: 2px;
-}
-
-.owb-project-footer > span {
-  min-width: 0;
-  flex: 1 1 auto;
-  color: var(--ui-foreground-muted);
-  font-size: 10px;
-  line-height: 1.35;
-}
-
-@media (max-width: 520px) {
-  .owb-project-drawer { padding-inline: 14px; }
-  .owb-project-hero { grid-template-columns: 1fr; }
-  .owb-project-footer { flex-wrap: wrap; }
-  .owb-project-footer > span { flex-basis: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4176,23 +4067,63 @@ body,
 .owb-org-module {
   display: grid;
   height: auto;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(280px, var(--owb-org-left-width, 1fr)) 10px minmax(280px, 1fr);
   align-items: stretch;
 }
 
-/* minmax(0, …) 只保证轨道等宽。栅格项的自动最小尺寸是 min-content，轨道比
-   它窄时内容会顶出轨道，所以项自己放弃这个下限。 */
-.owb-org-module > * {
+/* Split Pane is renderer-local until a second real module needs the same
+   contract. Panes opt out of intrinsic minimum sizes, while the grid tracks
+   retain their readable desktop lower bound. */
+.owb-org-module__pane {
   min-width: 0;
   min-height: 0;
 }
 
-.owb-org-module > .owb-turn-panel {
+/* The panes are the grid items, so they alone receive the module's stretch.
+   Pass that height through to the column inside each pane; in stacked mode
+   the pane is content-sized, so 100% resolves to auto there. */
+.owb-org-module__pane--left > .owb-org-module__left {
+  height: 100%;
+}
+
+.owb-org-module__pane--right > .owb-turn-panel {
   position: relative;
   z-index: 1;
-  height: auto;
+  height: 100%;
   min-height: 0;
+}
+
+.owb-org-module__splitter {
+  position: relative;
+  z-index: 2;
+  width: 10px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.owb-org-module__splitter::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--ui-border);
+  content: "";
+  transition: background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-org-module__splitter:hover::before,
+.owb-org-module[data-dragging="true"] .owb-org-module__splitter::before {
+  background: var(--ui-primary);
+}
+
+.owb-org-module__splitter:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -1px;
 }
 
 /* #127 + #120 合并口径：左栏必须与对话面板等高且卡片真正吃掉列高。
@@ -4918,9 +4849,14 @@ body,
   }
 
   .owb-org-module {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
     align-content: start;
+  }
+
+  .owb-org-module__splitter {
+    display: none;
   }
 
   /* The desktop Org grid is height-filling. Once it becomes one column, its
@@ -4937,15 +4873,15 @@ body,
     overscroll-behavior: contain;
   }
 
-  .owb-org-module__left {
+  .owb-org-module__pane--left,
+  .owb-org-module__pane--right {
     flex: none;
-    height: auto;
   }
 
   /* 单栏堆叠时给两栏各自可用的最小高度；选择器特异性必须对齐前面的
-     `.owb-org-module > .owb-turn-panel { min-height: 0 }`，否则被压掉。 */
+     `.owb-org-module__pane--right > .owb-turn-panel { min-height: 0 }`，否则被压掉。 */
   .owb-org-module__left > .owb-position-column,
-  .owb-org-module > .owb-turn-panel {
+  .owb-org-module__pane--right > .owb-turn-panel {
     flex: none;
     min-height: 380px;
   }
@@ -4991,7 +4927,7 @@ body,
 /* 竖向压缩（窗口被压扁）：面板不再抢固定最小高度，交给滚动。 */
 @media (max-height: 720px) {
   .owb-org-module__left > .owb-position-column,
-  .owb-org-module > .owb-turn-panel {
+  .owb-org-module__pane--right > .owb-turn-panel {
     min-height: 0;
   }
 
@@ -8348,7 +8284,7 @@ body,
   }
 }
 
-.owb-thread-context { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; font-size: 12px; color: var(--ui-text-muted); }
+.owb-thread-context { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; font-size: 12px; color: var(--ui-foreground-muted); }
 .owb-thread-context details { min-width: 0; max-width: 100%; }
 .owb-thread-context pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
 .owb-thread-context code { overflow-wrap: anywhere; }

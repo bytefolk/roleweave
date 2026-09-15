@@ -74,6 +74,7 @@ export interface OrgChartProps {
   displayNames?: Record<string, string>;
   /** 头像底色按岗位 id（metadata.color），与侧栏树/群聊同色。 */
   avatarColors?: Record<string, string>;
+  avatarUrls?: Record<string, string>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   className?: string;
@@ -83,6 +84,7 @@ interface ChartNodeProps {
   node: OrgTreeNodeV1;
   displayNames?: Record<string, string>;
   avatarColors?: Record<string, string>;
+  avatarUrls?: Record<string, string>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 }
@@ -91,6 +93,7 @@ function ChartNode({
   node,
   displayNames,
   avatarColors,
+  avatarUrls,
   selectedId,
   onSelect,
 }: ChartNodeProps) {
@@ -110,6 +113,7 @@ function ChartNode({
         <span className="owb-org-chart__card-head">
           <PositionAvatar
             colors={avatarColors}
+            sources={avatarUrls}
             id={node.id}
             name={name}
             className="owb-org-chart__avatar"
@@ -127,6 +131,7 @@ function ChartNode({
               node={child}
               displayNames={displayNames}
               avatarColors={avatarColors}
+              avatarUrls={avatarUrls}
               selectedId={selectedId}
               onSelect={onSelect}
             />
@@ -144,6 +149,7 @@ export function OrgChart({
   loading = false,
   displayNames,
   avatarColors,
+  avatarUrls,
   selectedId,
   onSelect,
   className,
@@ -387,6 +393,7 @@ export function OrgChart({
                   node={root}
                   displayNames={displayNames}
                   avatarColors={avatarColors}
+                  avatarUrls={avatarUrls}
                   selectedId={selectedId}
                   onSelect={onSelect}
                 />
