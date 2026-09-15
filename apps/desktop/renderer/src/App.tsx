@@ -61,6 +61,7 @@ import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
 import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
 import { OrgWorkspaceSplit } from "./org/OrgWorkspaceSplit";
+import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh-coordinator";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
@@ -178,9 +179,7 @@ function AppInner({
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
-  /** When true, the next org.updated SSE event skips its refresh() because
-   * applyOrg already fetched the updated tree (#263: avoids double reload). */
-  const skipNextOrgRefresh = useRef(false);
+  const [orgRefreshes] = useState(createOrgRefreshCoordinator);
   /** Approvals whose verdict was already sealed into a resume turn. The
    * server record never persists pendingApproval, so this client-side set is
    * the only source for settling the verdict card into a terminal state. */
@@ -300,7 +299,7 @@ function AppInner({
     }
   }, [t]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (reusePositionMetadata = false) => {
     try {
     const statusRes = await window.owb.status();
     setHealth(statusRes.health ?? null);
@@ -308,50 +307,59 @@ function AppInner({
       setStartupError(t("misc.serviceFailed"));
       return;
     }
-    const workspaceRes = await window.owb.workspace();
+    // A structural refresh reads the workspace summary and tree together;
+    // ordinary startup still checks for an open workspace before reading it.
+    const [workspaceRes, refreshedTree] = await Promise.all([
+      window.owb.workspace(),
+      reusePositionMetadata ? window.owb.orgTree() : undefined,
+    ]);
     if (workspaceRes.status !== 200) throw new Error("Workspace unavailable");
     setStartupError(null);
     const ws = workspaceRes.body as WorkspaceInfoResponse | null;
     setWorkspaceInfo(ws);
     if (ws?.open === true) {
-      const treeRes = await window.owb.orgTree();
+      const treeRes = refreshedTree ?? await window.owb.orgTree();
       if (treeRes.status === 200) {
         const nextSnapshot = treeRes.body as OrgTreeSnapshot;
         setSnapshot(nextSnapshot);
         const positionIds = flattenPositionIds(nextSnapshot.tree);
         setSelectedId((current) => current && positionIds.includes(current) ? current : null);
-        const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; agentEngine?: TurnEngine }]> => {
-          const response = await window.owb.position(id);
-          const body = response.body as { position?: PositionCardData; agentEngine?: unknown };
-          const position = response.status === 200 && body.position
-            ? normalizePositionForDisplay(body.position)
-            : undefined;
-          const color = position?.metadata?.color;
-          const agentEngine = isTurnEngine(body.agentEngine) ? body.agentEngine : undefined;
-          return [id, {
-            name: position?.name ?? t("org.unknownPosition"),
-            ...(typeof color === "string" && color.length > 0 ? { color } : {}),
-            ...(agentEngine === undefined ? {} : { agentEngine }),
-            // The org chart only needs a human name and optional color. Mode,
-            // budget and permissions belong to the selected position record.
-          }];
-        }));
-        const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
-        positionNamesRef.current = names;
-        setPositionNames(names);
-        const avatars = assignDefaultAvatars(positionIds, ws.path ? {
-          ...readAvatarPreferences(window.localStorage, ws.path),
-          ...workspaceAvatars.current.get(ws.path),
-        } : {});
-        if (ws.path) workspaceAvatars.current.set(ws.path, avatars);
-        try { if (ws.path) window.localStorage.setItem(`roleweave:position-avatars:${ws.path}`, JSON.stringify(avatars)); } catch { /* assignments remain available for this session */ }
-        setPositionAvatars(avatars);
-        setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
-        const engines = cardEntries.reduce<Record<string, TurnEngine>>((next, [id, entry]) => {
-          if (entry.agentEngine !== undefined) next[id] = entry.agentEngine;
-          return next;
-        }, {});
-        setPositionEngines(engines);
+        // Moves/reorders keep the sidebar's names, avatars and engines. Other
+        // mutations (especially deletion/hire) still reconcile all metadata.
+        if (!reusePositionMetadata) {
+          const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; agentEngine?: TurnEngine }]> => {
+            const response = await window.owb.position(id);
+            const body = response.body as { position?: PositionCardData; agentEngine?: unknown };
+            const position = response.status === 200 && body.position
+              ? normalizePositionForDisplay(body.position)
+              : undefined;
+            const color = position?.metadata?.color;
+            const agentEngine = isTurnEngine(body.agentEngine) ? body.agentEngine : undefined;
+            return [id, {
+              name: position?.name ?? t("org.unknownPosition"),
+              ...(typeof color === "string" && color.length > 0 ? { color } : {}),
+              ...(agentEngine === undefined ? {} : { agentEngine }),
+              // The org chart only needs a human name and optional color. Mode,
+              // budget and permissions belong to the selected position record.
+            }];
+          }));
+          const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
+          positionNamesRef.current = names;
+          setPositionNames(names);
+          const avatars = assignDefaultAvatars(positionIds, ws.path ? {
+            ...readAvatarPreferences(window.localStorage, ws.path),
+            ...workspaceAvatars.current.get(ws.path),
+          } : {});
+          if (ws.path) workspaceAvatars.current.set(ws.path, avatars);
+          try { if (ws.path) window.localStorage.setItem(`roleweave:position-avatars:${ws.path}`, JSON.stringify(avatars)); } catch { /* assignments remain available for this session */ }
+          setPositionAvatars(avatars);
+          setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
+          const engines = cardEntries.reduce<Record<string, TurnEngine>>((next, [id, entry]) => {
+            if (entry.agentEngine !== undefined) next[id] = entry.agentEngine;
+            return next;
+          }, {});
+          setPositionEngines(engines);
+        }
         await Promise.all([loadBackups(), loadReports()]);
       } else {
         setSnapshot(null);
@@ -386,17 +394,10 @@ function AppInner({
     }
   }, [loadBackups, loadReports, t]);
 
-  /** Lightweight tree-only refresh for post-apply updates (#263): fetches the
-   * org tree without the per-position name/color fan-out, since moves and
-   * reorders do not change position data. Sets skipNextOrgRefresh so the
-   * SSE org.updated event does not trigger a second full reload. */
-  const refreshTree = useCallback(async () => {
-    const treeRes = await window.owb.orgTree();
-    if (treeRes.status === 200) {
-      setSnapshot(treeRes.body as OrgTreeSnapshot);
-      skipNextOrgRefresh.current = true;
-    }
-  }, []);
+  const refreshOrg = useCallback((workspace: unknown, version: unknown, changes: unknown) =>
+    orgRefreshes.run(workspace, version, () => refresh(onlyMovesAndReorders(changes))), [orgRefreshes, refresh]);
+
+  useEffect(() => { orgRefreshes.clear(); }, [orgRefreshes, workspaceInfo?.path]);
 
   const loadPosition = useCallback(async (id: string) => {
     const version = selectionVersion.current;
@@ -537,11 +538,8 @@ function AppInner({
     const offEvent = window.owb.onEvent((event) => {
       const envelope = event as { type?: string };
       if (envelope?.type === "org.updated") {
-        if (skipNextOrgRefresh.current) {
-          skipNextOrgRefresh.current = false;
-          return;
-        }
-        void refresh();
+        const payload = (event as { payload?: { workspace?: unknown; version?: unknown; changes?: unknown } }).payload;
+        void refreshOrg(payload?.workspace, payload?.version, payload?.changes);
         return;
       }
       if (typeof envelope?.type === "string" && envelope.type.startsWith("turn.")) {
@@ -569,6 +567,7 @@ function AppInner({
       // A reconnect restarts the server-side seq space; drop the replay guard
       // so new events are not suppressed by a stale high-water mark.
       if (state === "connecting") {
+        orgRefreshes.clear();
         for (const path of workspaceStreams.current.keys()) updateWorkspaceStream(path, resetStreamSeq);
       }
     };
@@ -583,7 +582,7 @@ function AppInner({
       offSse();
       offFallback();
     };
-  }, [loadReports, loadTurnHistory, refresh, updateWorkspaceStream]);
+  }, [loadReports, loadTurnHistory, orgRefreshes, refresh, refreshOrg, updateWorkspaceStream]);
 
   const selectPosition = useCallback((id: string) => {
     if (selectedIdRef.current === id) return;
@@ -832,6 +831,7 @@ function AppInner({
   }, [refresh, t]);
 
   const applyOrg = useCallback(async (manifest: ChangeManifest, successMessage: string) => {
+    const workspace = workspacePathRef.current;
     setOrgBusy(true);
     setOrgFeedback(null);
     try {
@@ -841,7 +841,7 @@ function AppInner({
         return false;
       }
       setOrgFeedback({ tone: "info", text: successMessage });
-      await refreshTree();
+      await refreshOrg(workspace, (response.body as { version?: unknown }).version, manifest.changes);
       return true;
     } catch {
       setOrgFeedback({ tone: "warn", text: t("org.applyUncertain") });
@@ -849,7 +849,7 @@ function AppInner({
     } finally {
       setOrgBusy(false);
     }
-  }, [refreshTree, t]);
+  }, [refreshOrg, t]);
 
   const movePosition = useCallback(async (id: string, reportTo: string | null) => {
     if (!snapshot) return false;

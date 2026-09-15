@@ -203,6 +203,56 @@ describe("OrgTree (#32 §1 insertion lines, invalid-drop rejection, ⌘ reorder)
     fireEvent(row, event);
   };
 
+  it.each([4, 30])("pointer movement only renders involved rows in a %i-position tree", (size) => {
+    const tree = {
+      ...SNAPSHOT,
+      positionCount: size,
+      tree: [{ ...SNAPSHOT.tree[0]!, children: [
+        ...SNAPSHOT.tree[0]!.children,
+        ...Array.from({ length: size - 4 }, (_, i) => ({
+          ...SNAPSHOT.tree[0]!.children[0]!, id: `extra-${i}`,
+        })),
+      ] }],
+    };
+    // decorateRow runs inside the real row render, including the enterprise
+    // row. This catches fresh callbacks defeating React.memo as well as root
+    // state updates traversing the entire tree.
+    const decorate = vi.fn((_id, row) => row);
+    render(<OrgTree snapshot={tree} decorateRow={decorate} />);
+    const source = screen.getByText("release-engineer").closest('[role="treeitem"]')!;
+    const target = screen.getByText("community-operator").closest('[role="treeitem"]')!;
+    const enterprise = screen.getByText("oss-maintainer").closest('[role="treeitem"]')!;
+    const dataTransfer = makeDataTransfer();
+    withRowRect(target, 40);
+    decorate.mockClear();
+    fireEvent.dragStart(source, { dataTransfer });
+    const dragStartRenders = decorate.mock.calls.map(([id]) => id);
+
+    for (const [y, zone] of [[5, "before"], [20, "body"], [35, "after"]] as const) {
+      decorate.mockClear();
+      fireEvent.pointerMove(target, { clientY: y });
+      // Native HTML drag-and-drop delivers pointer samples as dragover.
+      dragOverAt(target, dataTransfer, y);
+      expect(target).toHaveAttribute("data-drop-zone", zone);
+      expect(decorate.mock.calls.map(([id]) => id)).toEqual(["community-operator"]);
+      decorate.mockClear();
+      for (let sample = 0; sample < 10; sample++) {
+        fireEvent.pointerMove(target, { clientY: y + 1 });
+        dragOverAt(target, dataTransfer, y + 1);
+      }
+      expect(decorate).not.toHaveBeenCalled();
+    }
+
+    dragOverAt(enterprise, dataTransfer, 20);
+    expect(decorate.mock.calls.map(([id]) => id)).toEqual([null, "community-operator"]);
+    expect(target).not.toHaveAttribute("data-drop-zone");
+    expect(enterprise).toHaveAttribute("data-drop-zone", "body");
+    decorate.mockClear();
+    fireEvent.dragEnd(source);
+    expect(new Set(decorate.mock.calls.map(([id]) => id))).toEqual(new Set([null, "release-engineer"]));
+    expect(dragStartRenders).toEqual(["release-engineer"]);
+  });
+
   it("edge drops emit an ordered same-level insertion instead of a reparent", () => {
     const onMove = vi.fn();
     const onDropPosition = vi.fn();
