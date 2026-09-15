@@ -37,7 +37,7 @@
 
 /* Organization: use identity colors sparingly and use a pale brand tint for selection. */
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-avatar, .owb-org-chart__avatar) {
-  filter: saturate(.25);
+  filter: none;
   border-radius: 6px;
   box-shadow: none;
 }
@@ -288,24 +288,158 @@
 :is([data-theme="light"], [data-theme="dark"]) :is(.owb-hire-capability__options b, .owb-hire-mcp__select b) { font-size: 13px; font-weight: 500; }
 :is([data-theme="light"], [data-theme="dark"]) :is(.owb-hire-capability__options small, .owb-hire-mcp__select small) { font: 400 12px/1.5 var(--ui-font-sans); }
 
-/* Project creation shares the same form rhythm instead of a marketing hero. */
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-drawer { gap: 24px; padding: 20px 24px 24px; }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-hero { display: block; padding: 0; border: 0; border-radius: 0; background: transparent; }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-hero__icon { display: none; }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-hero h3 { font-size: 16px; font-weight: 600; letter-spacing: normal; }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-hero p:not(.owb-project-eyebrow) { font-size: 13px; line-height: 1.7; }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-form { gap: 16px; padding: 0; border: 0; border-radius: 0; }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-form label { color: var(--ui-foreground); font-size: 13px; font-weight: 500; }
-:is([data-theme="light"], [data-theme="dark"]) :is(.owb-project-form small, .owb-project-form__note, .owb-project-footer > span) {
-  color: var(--ui-foreground-muted);
-  font: 400 12px/1.6 var(--ui-font-sans);
+/* Workspace picker: a compact, centered desktop dialog — not a side drawer. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog .ant-modal-content {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-lg);
 }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-form__note { margin-top: -10px; }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-error { font-size: 13px; border-radius: 6px; }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-footer { border-top: 1px solid var(--ui-border); padding-top: 16px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog .ant-modal-header {
+  min-height: 0;
+  margin: 0;
+  padding: 20px 24px 0;
+  border: 0;
+  background: transparent;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog .ant-modal-title {
+  color: var(--ui-foreground);
+  font-size: 16px;
+  font-weight: 600;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog .ant-modal-close { top: 15px; right: 15px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog .ant-modal-body { padding: 14px 24px 24px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__chooser,
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__create,
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form { display: grid; gap: 18px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__description {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font: 400 13px/1.55 var(--ui-font-sans);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-current-workspace {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px 0;
+  border-block: 1px solid var(--ui-border);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-current-workspace__mark {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-muted);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-current-workspace > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-current-workspace strong {
+  overflow: hidden;
+  color: var(--ui-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:is([data-theme="light"], [data-theme="dark"]) :is(.owb-project-current-workspace small, .owb-project-current-workspace em) {
+  overflow: hidden;
+  color: var(--ui-foreground-muted);
+  font: 400 12px/1.45 var(--ui-font-sans);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__actions { display: grid; gap: 6px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-workspace-action {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 64px;
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ui-duration-fast) var(--ui-ease), background var(--ui-duration-fast) var(--ui-ease);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-workspace-action:hover,
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-workspace-action:focus-visible {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-inset);
+  outline: none;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-workspace-action:focus-visible { box-shadow: 0 0 0 2px var(--ui-focus); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-workspace-action:disabled { cursor: not-allowed; opacity: .5; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-workspace-action__icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-muted);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-workspace-action > span:last-child { display: grid; gap: 2px; min-width: 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-workspace-action strong { font-size: 13px; font-weight: 500; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-workspace-action small { color: var(--ui-foreground-muted); font-size: 12px; line-height: 1.45; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__back {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  font: 400 12px/1.4 var(--ui-font-sans);
+  cursor: pointer;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__back:hover,
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__back:focus-visible { color: var(--ui-foreground); outline: none; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__field { display: grid; gap: 7px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__field > label { color: var(--ui-foreground); font-size: 13px; font-weight: 500; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__field > .ant-select { width: 100%; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__field > p {
+  margin: -1px 0 0;
+  color: var(--ui-foreground-muted);
+  font: 400 12px/1.5 var(--ui-font-sans);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 45%, var(--ui-border));
+  border-radius: 6px;
+  color: var(--ui-danger);
+  font: 400 12px/1.5 var(--ui-font-sans);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ui-border);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-create-form__footer > span {
+  flex: 1 1 auto;
+  color: var(--ui-foreground-muted);
+  font: 400 12px/1.5 var(--ui-font-sans);
+}
 
 @media (max-width: 620px) {
-  :is([data-theme="light"], [data-theme="dark"]) :is(.owb-hire-shell__scroll, .owb-project-drawer) { padding-inline: 16px; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog .ant-modal-header { padding-inline: 16px; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog .ant-modal-body { padding-inline: 16px; }
   :is([data-theme="light"], [data-theme="dark"]) .owb-hire-footer { padding-inline: 16px; }
   :is([data-theme="light"], [data-theme="dark"]) .owb-hire-capability-grid { grid-template-columns: 1fr; }
 }

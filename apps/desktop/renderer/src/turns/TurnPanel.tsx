@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Button as AntButton, Input, Switch, Select as AntSelect } from "antd";
-import { ArrowUp, MessagesSquare, Plus, RefreshCw, Square } from "lucide-react";
-import type { WorkbenchSession } from "@roleweave/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MessagesSquare } from "lucide-react";
+import type { EmployeeModelConfig, WorkbenchSession } from "@roleweave/shared";
+import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
-import { PositionMention } from "./PositionMention";
-import { EngineIcon } from "./engine-icon";
+import { TurnComposer } from "./TurnComposer";
+import { useEngineLabel } from "./engine-select";
 import { TurnThread } from "./TurnThread";
+import { PositionAvatar } from "../PositionAvatar";
 import type {
   CreateTurnRequest,
   PositionMentionOption,
@@ -14,7 +15,13 @@ import type {
   TurnRecord,
 } from "./types";
 
+export { EngineSelect, useEngineLabel } from "./engine-select";
+
 export interface TurnPanelProps {
+  modelConfig?: EmployeeModelConfig;
+  avatarUrls?: Record<string, string>;
+  modelSaving?: boolean;
+  onSelectModel?: (model: string) => void | Promise<void>;
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
   selectedPositionId: string | null;
@@ -27,8 +34,12 @@ export interface TurnPanelProps {
   sessions?: WorkbenchSession[];
   selectedSessionId?: string | null;
   sessionBusy?: boolean;
-  onSelectPosition: (positionId: string) => void;
-  onSelectEngine: (engine: TurnEngine) => void;
+  /** Selection happens in the organization tree. Kept optional for callers
+   * that share the old panel contract; this panel deliberately has no second
+   * recipient picker. */
+  onSelectPosition?: (positionId: string) => void;
+  /** An employee's agent is bound at creation time, not selected per turn. */
+  onSelectEngine?: (engine: TurnEngine) => void;
   onCreateTurn: (request: CreateTurnRequest) => void | boolean | Promise<void | boolean>;
   /** Operator interrupt for the in-flight turn of the selected position. */
   onCancelTurn?: (positionId: string) => void | Promise<void>;
@@ -37,114 +48,15 @@ export interface TurnPanelProps {
   /** Approval ids whose verdict was already dispatched this session; their
    * cards settle into a decided state (no duplicate verdicts). */
   decidedApprovalIds?: ReadonlySet<string>;
-  onSelectSession?: (sessionId: string) => void;
-  onCreateSession?: () => void | Promise<void>;
-  onRotateSession?: (sessionId: string) => void | Promise<void>;
   onSetSessionContext?: (sessionId: string, enabled: boolean) => void | Promise<void>;
 }
 
-const ENGINE_LABEL: Record<TurnEngine, string> = {
-  qoder: "Qoder",
-  "claude-code": "Claude Code",
-  "claude-local": "Claude Code",
-  codex: "Codex",
-  "codex-local": "Codex",
-};
-
-/** #146：引擎品牌名保持原文（数据面不迁）；只有 claude-local 的变体修饰词
- * 走目录。同 locale 内返回的函数身份稳定。 */
-export function useEngineLabel(): (engine: TurnEngine) => string {
-  const t = useT();
-  return useCallback(
-    (engine: TurnEngine) =>
-      engine === "claude-local"
-        ? `Claude Code · ${t("turn.claudeLocalSuffix")}`
-        : engine === "codex-local"
-          ? `Codex · ${t("turn.codexLocalSuffix")}`
-          : ENGINE_LABEL[engine],
-    [t],
-  );
-}
-
-/** antd Select option list for the Agent Host picker (#57): brand icon + label
- * + availability suffix. Only EngineSelect consumes it. */
-function engineSelectOptions(
-  engines: readonly TurnEngine[],
-  engineAvailability: Record<TurnEngine, TurnEngineAvailability>,
-  labelOf: (engine: TurnEngine) => string,
-) {
-  return engines.map((candidate) => ({
-    value: candidate,
-    label: (
-      <span className="owb-engine-option">
-        <EngineIcon engine={candidate} />
-        {labelOf(candidate)}
-        {engineAvailability[candidate].ready
-          ? " · Configured"
-          : engineAvailability[candidate].configured
-            ? " · Blocked"
-            : " · Idle"}
-      </span>
-    ),
-  }));
-}
-
-function isTurnEngine(value: unknown): value is TurnEngine {
-  return typeof value === "string" && value in ENGINE_LABEL;
-}
-
-/** Compact trigger label (#94 defect 2). The popup keeps the full option text
- * including the availability suffix; the trigger only ever has ~220px, so it
- * shows icon + host name. Readiness is already stated in prose right under the
- * control (see the engine hint below) and in GroupsPanel's engine chip, so the
- * suffix is the redundant half and the right thing to drop here. */
-function engineTriggerLabel(engine: TurnEngine, labelOf: (engine: TurnEngine) => string) {
-  return (
-    <span className="owb-engine-option">
-      <EngineIcon engine={engine} />
-      {labelOf(engine)}
-    </span>
-  );
-}
-
-/** Agent Host picker, shared by TurnPanel and GroupsPanel so the two cannot
- * drift apart again.
- *
- * `popupMatchSelectWidth={false}` is load-bearing rather than cosmetic: left
- * unset, @rc-component/select pins the popup to the trigger's *width* (not
- * min-width), so a trigger too narrow for the longest label ellipsises every
- * option too and no interaction is left that reveals the full text (#94). */
-export function EngineSelect({
-  engines,
-  engineAvailability,
-  value,
-  disabled = false,
-  onChange,
-}: {
-  engines: readonly TurnEngine[];
-  engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
-  value: TurnEngine;
-  disabled?: boolean;
-  onChange: (engine: TurnEngine) => void;
-}) {
-  const t = useT();
-  const labelOf = useEngineLabel();
-  return (
-    <AntSelect
-      classNames={{ popup: { root: "owb-conversation-select-popup" } }}
-      aria-label={t("turn.pickHost")}
-      value={value}
-      disabled={disabled}
-      onChange={(next) => onChange(next as TurnEngine)}
-      options={engineSelectOptions(engines, engineAvailability, labelOf)}
-      labelRender={({ value: selected, label }) =>
-        isTurnEngine(selected) ? engineTriggerLabel(selected, labelOf) : label}
-      popupMatchSelectWidth={false}
-    />
-  );
-}
-
 export function TurnPanel({
+  modelConfig,
+  avatarUrls,
+  modelSaving = false,
+  onSelectModel,
+  onSetSessionContext,
   workspaceOpen,
   positions,
   selectedPositionId,
@@ -157,16 +69,10 @@ export function TurnPanel({
   sessions,
   selectedSessionId = null,
   sessionBusy = false,
-  onSelectPosition,
-  onSelectEngine,
   onCreateTurn,
   onCancelTurn,
   onVerdictTurn,
   decidedApprovalIds,
-  onSelectSession,
-  onCreateSession,
-  onRotateSession,
-  onSetSessionContext,
 }: TurnPanelProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
@@ -197,33 +103,24 @@ export function TurnPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [cancelling, onCancelTurn, runningTurn, selectedPosition]);
 
-  const modelPinnable = engineAvailability[engine].modelPinnable === true;
-  const pinnedModel = engineAvailability[engine].model;
   const sessionMode = sessions !== undefined;
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
-  const activeSession = sessions?.find((session) => session.status === "active") ?? null;
-  // Never label an older receipt as the latest call when the latest durable
-  // record has no receipt. In-flight overlays are not persisted call facts.
-  const lastContext = turns.filter((turn) => turn.provisional !== true).at(-1)?.threadContext;
 
   const disabledReason = useMemo(() => {
+    if (modelSaving) return t("model.saving");
     if (!workspaceOpen) return t("turn.emptyOpenFirst");
     if (positions.length === 0) return t("turn.noPositions");
     if (!selectedPosition) return t("turn.emptyPick");
     if (sessionMode && sessionBusy) return t("turn.sessionPreparing");
     if (sessionMode && !selectedSession) return t("turn.emptySession");
     if (sessionMode && selectedSession?.status !== "active") return t("turn.sessionReadOnly");
+    if (modelConfig?.connection?.status === "invalid") return modelConfig.connection.message ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
     if (!engineAvailability[engine].ready) {
       return engineAvailability[engine].reason ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
     }
     if (busy || employeeBusy || sending || sessionBusy) return t("turn.updating");
     return null;
-  }, [busy, employeeBusy, engine, engineAvailability, engineLabel, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    await dispatchTurn();
-  };
+  }, [busy, employeeBusy, engine, engineAvailability, engineLabel, modelConfig, modelSaving, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
 
   const dispatchTurn = async (): Promise<void> => {
     const trimmed = input.trim();
@@ -238,7 +135,7 @@ export function TurnPanel({
   };
 
   const retry = async (turn: TurnRecord) => {
-    if (busy || employeeBusy || sendingRef.current.has(draftKey) || !workspaceOpen || !engineAvailability[turn.engine].ready) return;
+    if (busy || employeeBusy || sendingRef.current.has(draftKey) || !workspaceOpen || !engineAvailability[turn.engine].ready || modelConfig?.connection?.status === "invalid") return;
     setSending(true);
     try {
       await onCreateTurn({
@@ -255,12 +152,14 @@ export function TurnPanel({
   return (
     <section className="owb-turn-panel owb-panel" aria-label={t("turn.panelAria")}>
       <header className="owb-turn-panel__header owb-panel-head">
-        <div className="owb-panel-head__main">
-          <h2>
-            <MessagesSquare aria-hidden="true" size={15} />
-            {t("turn.title")}
-          </h2>
+        <div className="owb-conversation-identity">
+          {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
+          <div className="owb-conversation-identity__copy">
+            <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
+            <p>{selectedPosition ? engineLabel(engine) : t("turn.pickEmployeeHint")}</p>
+          </div>
         </div>
+        {selectedPosition ? <span className="owb-conversation-kind">{t("turn.title")}</span> : null}
       </header>
 
       <TurnThread
@@ -270,173 +169,30 @@ export function TurnPanel({
         // stay next to the input so the conversation area never oscillates
         // between "create a session" and "start from a clear task".
         emptyPrompt={selectedPosition ? t("turn.emptySelected") : t("turn.emptyStart")}
-        canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && (!sessionMode || selectedSession?.status === "active")}
+        canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && modelConfig?.connection?.status !== "invalid" && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
         decidedApprovalIds={decidedApprovalIds}
+        scrollKey={`${selectedPositionId ?? ""}:${selectedSessionId ?? ""}`}
       />
 
-      {sessionMode && selectedSession ? (
-        <div className="owb-thread-context">
-          <span>{t("turn.contextLabel")}</span>
-          <Switch size="small" aria-label={t("turn.contextToggle")}
-            checked={selectedSession.threadContextEnabled !== false}
-            disabled={busy || employeeBusy || sending || sessionBusy || selectedSession.status !== "active"}
-            onChange={(enabled) => void onSetSessionContext?.(selectedSession.sessionId, enabled)} />
-          <span>{selectedSession.threadContextEnabled === false ? t("turn.contextOff") : t("turn.contextOn")}</span>
-          {lastContext ? (
-            <details>
-              <summary>{t("turn.contextLast", { count: lastContext.sourceTurnCount, bytes: lastContext.contextBytes })}</summary>
-              <p>{t("turn.contextOmitted", { count: lastContext.omittedTurnCount })}</p>
-              <code>{lastContext.contextDigest}</code>
-              <pre>{lastContext.summary || t("turn.contextEmpty")}</pre>
-            </details>
-          ) : <span>{t(turns.length === 0 ? "turn.contextUnused" : "turn.contextUnrecorded")}</span>}
-        </div>
-      ) : null}
-
-      <form className="owb-turn-composer" onSubmit={(event) => void submit(event)}>
-        <label htmlFor="owb-turn-input">{t("turn.compose")}</label>
-        <div className="owb-turn-composer__surface">
-          <Input.TextArea
-            id="owb-turn-input"
-            value={input}
-            rows={3}
-            placeholder={selectedPosition ? t("turn.composeTo", { name: selectedPosition.name }) : t("turn.composePlaceholder")}
-            disabled={disabledReason !== null}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              // Enter sends; Shift+Enter keeps the multiline escape hatch.
-              // Meta/Ctrl+Enter remains supported for keyboard muscle memory.
-              //
-              // #128 AC-003 / #127 AC-003: while a Chinese IME is composing,
-              // pressing Enter commits the candidate — never a message. React
-              // exposes `nativeEvent.isComposing`; older WebKit/Firefox
-              // fall back to `keyCode === 229` while composing. Guard on
-              // both so Enter during composition is a no-op, not a send.
-              const native = event.nativeEvent as KeyboardEvent;
-              if (native.isComposing || native.keyCode === 229) return;
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void dispatchTurn();
-              }
-            }}
-          />
-          {runningTurn ? (
-            <AntButton
-              danger
-              disabled={cancelling || !selectedPosition}
-              aria-label={t("turn.interrupt")}
-              title={t("turn.interruptTitle")}
-              icon={<Square aria-hidden="true" size={15} />}
-              onClick={() => {
-                if (selectedPosition) void onCancelTurn?.(selectedPosition.id);
-              }}
-            />
-          ) : (
-            <AntButton
-              type="primary"
-              htmlType="submit"
-              disabled={disabledReason !== null || input.trim().length === 0}
-              aria-label={t("turn.send")}
-              icon={<ArrowUp aria-hidden="true" size={15} />}
-            />
-          )}
-        </div>
-        {/* #167：空闲不挂提示行；运行态/禁用原因保留（有用反馈）。 */}
-        {runningTurn || disabledReason ? (
-          <p className="owb-turn-composer__hint" role="status">
-          {runningTurn
-            ? cancelling
-              ? t("turn.interrupting")
-              : t("turn.running")
-            : disabledReason}
-          </p>
-        ) : null}
-      </form>
-
-      {/* #248 R2 ③：对话岗位 / 新建会话 / Agent Host 降级为默认收起的会话设置，
-          值由点人即聊自动填充，不挡在聊天输入前面。 */}
-      <details className="owb-turn-panel__settings">
-        <summary className="owb-turn-panel__settings-summary">{t("turn.sessionSettings")}</summary>
-        <div className="owb-turn-panel__settings-body">
-          <div className="owb-turn-panel__controls">
-            <PositionMention
-              positions={positions}
-              value={selectedPositionId}
-              disabled={!workspaceOpen || positions.length === 0}
-              onChange={onSelectPosition}
-            />
-            <label className="owb-turn-engine">
-              <span className="owb-turn-control__label">Agent Host</span>
-              <EngineSelect
-                engines={Object.keys(ENGINE_LABEL) as TurnEngine[]}
-                engineAvailability={engineAvailability}
-                value={engine}
-                disabled={!workspaceOpen}
-                onChange={onSelectEngine}
-              />
-              {/* #236: no Host CLI reports the model it resolved for itself, so
-                  state what the control plane pins and say plainly when it pins
-                  nothing — an inferred name would be a guess presented as fact.
-                  #238 review: only for a Host that has the knob. Saying "its CLI
-                  decides" for one that has none advertises an option nobody has,
-                  which is the same dishonesty as inferring a name. Which Hosts
-                  those are comes from the contract, never from an id list here. */}
-              {modelPinnable ? (
-                <span className="owb-turn-engine__model" title={t("turn.modelHintCodex")}>
-                  {pinnedModel === undefined
-                    ? t("turn.modelUnpinned", { engine: engineLabel(engine) })
-                    : t("turn.modelPinned", { model: pinnedModel })}
-                </span>
-              ) : null}
-            </label>
-          </div>
-
-          {sessionMode ? (
-            <div className="owb-session-controls" aria-label={t("turn.positionSessions")}>
-              <label>
-                <span className="owb-turn-control__label">{t("turn.session")}</span>
-                <AntSelect
-                  classNames={{ popup: { root: "owb-conversation-select-popup" } }}
-                  aria-label={t("turn.pickSession")}
-                  value={selectedSessionId ?? undefined}
-                  placeholder={t("turn.noSession")}
-                  disabled={!workspaceOpen || !selectedPosition || sessionBusy || sessions.length === 0}
-                  onChange={(next) => {
-                    if (next) onSelectSession?.(next);
-                  }}
-                  options={sessions.map((session, index) => ({
-                    value: session.sessionId,
-                    label: t("turn.sessionOption", {
-                      kind: session.status === "active" ? t("turn.sessionKindActive") : t("turn.sessionKindReadonly"),
-                      index: sessions.length - index,
-                    }),
-                  }))}
-                />
-              </label>
-              {activeSession ? (
-                <AntButton
-                  disabled={sessionBusy || busy || employeeBusy || sending}
-                  onClick={() => void onRotateSession?.(activeSession.sessionId)}
-                  icon={<RefreshCw aria-hidden="true" size={13} />}
-                >
-                  {t("turn.rotate")}
-                </AntButton>
-              ) : (
-                <AntButton
-                  disabled={!workspaceOpen || !selectedPosition || sessionBusy}
-                  onClick={() => void onCreateSession?.()}
-                  icon={<Plus aria-hidden="true" size={13} />}
-                >
-                  {t("turn.newSession")}
-                </AntButton>
-              )}
-            </div>
-          ) : null}
-
-        </div>
-      </details>
+      <TurnComposer
+        options={selectedPosition && (modelConfig || onSetSessionContext) ? <ConversationOptions
+          config={modelConfig} saving={modelSaving} disabled={busy || employeeBusy || sending || sessionBusy}
+          session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
+        /> : undefined}
+        value={input}
+        placeholder={selectedPosition ? t("turn.composeTo", { name: selectedPosition.name }) : t("turn.composePlaceholder")}
+        disabledReason={disabledReason}
+        running={runningTurn}
+        cancelling={cancelling}
+        canCancel={selectedPosition !== null}
+        onChange={setInput}
+        onSend={dispatchTurn}
+        onCancel={() => {
+          if (selectedPosition) return onCancelTurn?.(selectedPosition.id);
+        }}
+      />
     </section>
   );
 }

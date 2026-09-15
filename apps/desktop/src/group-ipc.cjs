@@ -61,9 +61,9 @@ function validateGroupTurnRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("group_request_invalid", "group turn must be an object") };
   }
-  const allowedKeys = new Set(["conversationRef", "input", "engine", "mentions", "mode", "goalId", "branchId"]);
+  const allowedKeys = new Set(["conversationRef", "input", "engine", "engines", "mentions", "mode", "goalId", "branchId"]);
   if (Object.keys(value).some((k) => !allowedKeys.has(k))) {
-    return { ok: false, response: invalid("group_request_invalid", "group turn accepts conversationRef, input, engine, mentions and optional mode, goalId, branchId") };
+    return { ok: false, response: invalid("group_request_invalid", "group turn accepts conversationRef, input, engine, optional engines, mentions and optional mode, goalId, branchId") };
   }
   if (value.mode !== undefined && value.mode !== "parallel" && value.mode !== "relay") {
     return { ok: false, response: invalid("group_request_invalid", "mode must be parallel or relay") };
@@ -88,6 +88,24 @@ function validateGroupTurnRequest(value) {
       response: invalid("group_request_invalid", "mentions must be a non-empty unique positionId list; broadcast is not allowed"),
     };
   }
+  let engines;
+  if (value.engines !== undefined) {
+    if (value.engines === null || typeof value.engines !== "object" || Array.isArray(value.engines)) {
+      return { ok: false, response: invalid("group_request_invalid", "engines must map exactly the mentioned positions") };
+    }
+    const keys = Object.keys(value.engines);
+    if (keys.length !== value.mentions.length || keys.some((key) => !value.mentions.includes(key))) {
+      return { ok: false, response: invalid("group_request_invalid", "engines must map exactly the mentioned positions") };
+    }
+    engines = {};
+    for (const mention of value.mentions) {
+      const engine = value.engines[mention];
+      if (typeof engine !== "string" || !TURN_ENGINES.has(engine)) {
+        return { ok: false, response: invalid("turn_engine_unsupported", `engine for ${mention} must be ${turnEngineMessage()}`) };
+      }
+      engines[mention] = engine;
+    }
+  }
   const GOAL_ID = /^[a-zA-Z0-9_-]{1,64}$/;
   if (value.goalId !== undefined && (typeof value.goalId !== "string" || !GOAL_ID.test(value.goalId))) {
     return { ok: false, response: invalid("group_request_invalid", "goalId must be a bounded alphanumeric string") };
@@ -101,6 +119,7 @@ function validateGroupTurnRequest(value) {
     request: {
       input: value.input,
       engine: value.engine,
+      ...(engines !== undefined ? { engines } : {}),
       mentions: value.mentions,
       ...(value.mode !== undefined ? { mode: value.mode } : {}),
       ...(value.goalId !== undefined ? { goalId: value.goalId } : {}),

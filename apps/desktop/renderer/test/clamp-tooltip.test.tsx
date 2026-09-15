@@ -106,9 +106,10 @@ describe("conversation readability", () => {
     fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
     expect(container.querySelector(".owb-report-card code")).toBeNull();
     expect(container.textContent).not.toContain(digest);
-    const evidenceP = container.querySelector(".owb-report-card:not(.is-escalation) p");
-    expect(evidenceP?.className).toContain("owb-clamp-2");
-    expect(evidenceP?.getAttribute("title")).toBe(evidenceP?.textContent);
+    const executionRecords = container.querySelector(".owb-execution-records");
+    expect(executionRecords).not.toBeNull();
+    expect(executionRecords).toHaveTextContent("client-lead");
+    expect(executionRecords).toHaveTextContent("Qoder");
   });
 
   it("renders the typing indicator (screen-reader copy intact) while running", () => {

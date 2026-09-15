@@ -109,6 +109,7 @@ test("a real server completes READY → health → stop and releases its port", 
       ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI: process.execPath,
       DIGITAL_EMPLOYEE_CLAUDE_COMMAND: process.execPath,
       DIGITAL_EMPLOYEE_QODER_COMMAND: process.execPath,
+      DIGITAL_EMPLOYEE_CODEX_COMMAND: process.execPath,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

@@ -1,12 +1,14 @@
 /* Compatibility aliases for RoleWeave-owned component CSS.
  *
- * Values deliberately come from @fullstack-ai-infra/ui's generated semantic
- * tokens. The selected profile now drives both these aliases and Ant Design's
- * ConfigProvider through DSProvider; do not add palette values here.
+ * The shared semantic token map comes from @fullstack-ai-infra/ui. The
+ * selected profile drives both these aliases and Ant Design's ConfigProvider
+ * through DSProvider; the narrowly scoped mint overlay below owns only the
+ * product values that differ from the shared map.
  */
 
 :root,
 [data-theme] {
+  --ui-font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   --ui-brand: var(--ui-primary);
   --ui-brand-soft: var(--ui-primary-soft);
   --ui-brand-blue: var(--ui-info);
@@ -19,4 +21,43 @@
   --owb-duration-mid: var(--ui-duration-normal);
   --owb-duration-slow: var(--ui-duration-normal);
   --owb-ease-out: var(--ui-ease);
+}
+
+/* The installed provider supplies the shared light/dark token map; this
+ * product overlay keeps mint-specific shell values together with the text and
+ * solid-control pairs it changes. Keep these in sync with contrast.test.cjs:
+ * --ui-foreground-subtle is used for small text and the solid roles share
+ * --ui-primary-foreground through the compatibility aliases above. */
+[data-ui-theme="mint"][data-theme="light"] {
+  --ui-foreground-subtle: #5e6b65;
+  --ui-primary: #287b64;
+  --ui-primary-hover: #236d58;
+  --ui-primary-soft: #edf5f1;
+  --ui-success: #2e7052;
+  --ui-success-strong: #24573f;
+  --ui-warning: #8a5a12;
+  --ui-warning-strong: #75480b;
+  --ui-danger: #b83d3d;
+  --ui-danger-strong: #a22f36;
+  --ui-selection: #e5f0ea;
+  --ui-focus: #287b64;
+  --ui-navigation: #f5f7f6;
+  --ui-navigation-hover: #eaf0ed;
+  --ui-border: #e1e6e3;
+  --ui-border-strong: #b9c6bf;
+}
+[data-ui-theme="mint"][data-theme="dark"] {
+  --ui-foreground-subtle: #90a098;
+  --ui-primary: #64bca2;
+  --ui-primary-hover: #78c9b0;
+  --ui-primary-foreground: #14151b;
+  --ui-primary-soft: #1b3029;
+  --ui-danger: #e75b61;
+  --ui-danger-strong: #ef7075;
+  --ui-selection: #243a31;
+  --ui-focus: #64bca2;
+  --ui-navigation-hover: #28332e;
+}
+html, body, .owb-app, button, input, textarea, select {
+  font-family: var(--ui-font-sans);
 }

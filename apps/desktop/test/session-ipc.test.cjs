@@ -45,6 +45,12 @@ test("group dispatch IPC forwards validated explicit modes and preserves recipie
   const { validateGroupTurnRequest } = require("../src/group-ipc.cjs");
   const value = { conversationRef: "group-one", engine: "qoder", input: "draft then review", mentions: ["writer", "reviewer"], mode: "relay" };
   assert.deepEqual(validateGroupTurnRequest(value).request, { engine: "qoder", input: "draft then review", mentions: ["writer", "reviewer"], mode: "relay" });
+  assert.deepEqual(
+    validateGroupTurnRequest({ ...value, engines: { writer: "qoder", reviewer: "codex-local" } }).request,
+    { engine: "qoder", engines: { writer: "qoder", reviewer: "codex-local" }, input: "draft then review", mentions: ["writer", "reviewer"], mode: "relay" },
+  );
+  assert.equal(validateGroupTurnRequest({ ...value, engines: { writer: "qoder" } }).ok, false);
+  assert.equal(validateGroupTurnRequest({ ...value, engines: { writer: "qoder", reviewer: "invalid" } }).ok, false);
   assert.equal(validateGroupTurnRequest({ ...value, mode: "automatic" }).ok, false);
   assert.equal(validateGroupTurnRequest({ ...value, principal: "admin" }).ok, false);
 });

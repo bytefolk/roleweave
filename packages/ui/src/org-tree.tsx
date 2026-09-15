@@ -44,6 +44,8 @@ export interface OrgDropPosition {
 }
 
 export interface OrgTreeProps {
+  decorateRow?: (id: string | null, row: ReactNode) => ReactNode;
+  rowActions?: (id: string | null) => ReactNode;
   snapshot: OrgTreeSnapshot;
   /** Applied-state stamp (updatedAt); change re-triggers the 180ms fade. */
   versionStamp?: string | null;
@@ -53,6 +55,9 @@ export interface OrgTreeProps {
   /** Avatar background colors keyed by position id (e.g. metadata.color);
    * positions without one get a deterministic hue from their id. */
   avatarColors?: Record<string, string>;
+  /** Render-ready avatar sources are supplied by the desktop shell. The UI
+   * package deliberately stores no user media itself. */
+  avatarUrls?: Record<string, string>;
   /** Position ids with a turn in flight (SSE run stream) — the row's status
    * light breathes AI purple. Observed state only, never inferred. */
   runningIds?: ReadonlySet<string>;
@@ -77,6 +82,8 @@ export interface OrgTreeProps {
 }
 
 export interface OrgTreeNodeProps {
+  decorate?: (row: ReactNode) => ReactNode;
+  actions?: ReactNode;
   node: OrgTreeNodeV1;
   depth: number;
   selected: boolean;
@@ -91,6 +98,7 @@ export interface OrgTreeNodeProps {
   tabIndex: number;
   displayName?: string;
   avatarColor?: string;
+  avatarUrl?: string;
   /** Live turn in flight for this position (from the SSE run stream): the
    * status light switches to the AI-purple breathing state. Never inferred. */
   running?: boolean;
@@ -115,6 +123,8 @@ export interface OrgTreeNodeProps {
 }
 
 export const OrgTreeNode = memo(function OrgTreeNode({
+  decorate,
+  actions,
   node,
   depth,
   selected,
@@ -125,6 +135,7 @@ export const OrgTreeNode = memo(function OrgTreeNode({
   tabIndex,
   displayName,
   avatarColor,
+  avatarUrl,
   running = false,
   onSelect,
   onToggle,
@@ -140,7 +151,7 @@ export const OrgTreeNode = memo(function OrgTreeNode({
   onGroupEntry,
 }: OrgTreeNodeProps) {
   const t = useT();
-  return (
+  const row = (
     <div
       role="treeitem"
       data-org-node-id={node.id}
@@ -202,12 +213,12 @@ export const OrgTreeNode = memo(function OrgTreeNode({
         aria-hidden="true"
         style={avatarColor ? { color: avatarColor } : undefined}
       >
-        {expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
+        {avatarUrl ? <img className="ui-org-tree__avatar" src={avatarUrl} alt="" /> : expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
       </span>
       <span className="ui-org-tree__label" title={displayName ?? node.id}>
         <span className="ui-org-tree__name">{displayName ?? node.id}</span>
       </span>
-      {onGroupEntry || onHireEntry ? (
+      {actions ?? (onGroupEntry || onHireEntry ? (
         <span className="ui-org-tree__actions">
           {onGroupEntry ? (
             <button
@@ -236,9 +247,10 @@ export const OrgTreeNode = memo(function OrgTreeNode({
             </button>
           ) : null}
         </span>
-      ) : null}
+      ) : null)}
     </div>
   );
+  return decorate ? decorate(row) : row;
 });
 
 const ENTERPRISE_ID = "__enterprise__";
@@ -346,10 +358,13 @@ interface FlatNode {
  * updates with a 180ms fade; the UI never polls.
  */
 export function OrgTree({
+  decorateRow,
+  rowActions,
   snapshot,
   versionStamp,
   displayNames,
   avatarColors,
+  avatarUrls,
   runningIds,
   selectedId,
   onSelect,
@@ -414,6 +429,10 @@ export function OrgTree({
   /** Light inline toast for refused releases; auto-hides. */
   const [toast, setToast] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  /** Set when a dragover lands on an invalid target during the current drag.
+   * The source row's dragend reads (and clears) it to surface the refusal
+   * toast; a ref keeps this off the render path (#263 perf goal). */
+  const deniedRef = useRef(false);
 
   /** Pre-computed descendants of the dragged node — these are invalid drop
    * targets (would create a cycle). Computed once per drag, not per event. */
@@ -628,6 +647,7 @@ export function OrgTree({
   const resetDragState = (): void => {
     setDraggedId(null);
     setDropHint(undefined);
+    deniedRef.current = false;
   };
 
   const getDropZone = (nodeId: string): "before" | "after" | "body" | undefined =>
@@ -640,6 +660,8 @@ export function OrgTree({
     return (
       <Fragment key={node.id}>
         <OrgTreeNode
+          decorate={decorateRow ? (row) => decorateRow(node.id, row) : undefined}
+          actions={rowActions?.(node.id)}
           node={node}
           depth={depth}
           selected={selectedId === node.id}
@@ -650,6 +672,7 @@ export function OrgTree({
           tabIndex={focusedId === node.id ? 0 : -1}
           displayName={displayNames?.[node.id]}
           avatarColor={avatarColors?.[node.id]}
+          avatarUrl={avatarUrls?.[node.id]}
           running={runningIds?.has(node.id) === true}
           onSelect={() => onSelect?.(node.id)}
           onToggle={() => toggleNode(node.id)}
@@ -660,21 +683,27 @@ export function OrgTree({
           onDragStart={(event) => {
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData("application/x-org-workbench-position-id", node.id);
+            deniedRef.current = false;
             setDraggedId(node.id);
           }}
           onDragEnd={() => {
-            if (invalidDropTargetIds.has(node.id) && node.id !== draggedId) setToast(t("tree.selfDropToast"));
+            // dragend fires on the source row, so node.id always equals
+            // draggedId; the refusal has to be recorded by the rejected
+            // dragover, not inferred here.
+            if (deniedRef.current) setToast(t("tree.selfDropToast"));
             resetDragState();
           }}
           onDragOver={(event) => {
             if (!draggedId || moveDisabled) return;
             if (invalidDropTargetIds.has(node.id)) {
               event.dataTransfer.dropEffect = "none";
+              deniedRef.current = true;
               setDropHint((current) => current === undefined ? current : undefined);
               return;
             }
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
+            deniedRef.current = false;
             const rect = event.currentTarget.getBoundingClientRect();
             const y = event.clientY - rect.top;
             const zone: DropZone =
@@ -725,7 +754,7 @@ export function OrgTree({
     >
       {useEnterpriseRoot ? (
         <Fragment>
-          <div
+          {(decorateRow ?? ((_id, row) => row))(null, <div
             role="treeitem"
             data-org-node-id={ENTERPRISE_ID}
             data-drop-zone={dropHint?.anchorId === null ? dropHint.zone : undefined}
@@ -746,6 +775,7 @@ export function OrgTree({
               if (!draggedId || moveDisabled) return;
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
+              deniedRef.current = false;
               setDropHint((current) =>
                 current?.anchorId === null && current.zone === "body" ? current : { anchorId: null, zone: "body" },
               );
@@ -782,7 +812,8 @@ export function OrgTree({
             <span className="ui-org-tree__label" title={enterpriseName}>
               <span className="ui-org-tree__name">{enterpriseName}</span>
             </span>
-          </div>
+            {rowActions?.(null)}
+          </div>)}
           {enterpriseExpanded
             ? topLevel.map((node, index) =>
                 renderPosition(node, 1, index === topLevel.length - 1),
