@@ -113,6 +113,7 @@ export async function startTestServer(
       token: TEST_TOKEN,
       cliCommand: "digital-employee",
       bundledElectronEngine: false,
+      engineTimeoutMs: 120_000,
       contextCliCommand: "context",
       serverVersion: "0.0.0-test",
       docPlaneUrl: undefined,

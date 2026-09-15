@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
+import { resolveServerConfig } from "../src/config.js";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 const ENVELOPE = {
@@ -794,4 +795,67 @@ test("HTTP control plane completes and reads back a turn through the real spawn 
   } finally {
     await server.close();
   }
+});
+
+test("timeout is configurable via the constructor parameter (AC-001)", async () => {
+  const command = await fixtureCli(`
+    process.on("SIGTERM", () => {});
+    const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+    console.log(JSON.stringify({ ...base, type: "run.started" }));
+    setTimeout(() => {}, 30_000);
+  `);
+  const driver = new DigitalEmployeeCliDriver(command, 1_000);
+  const start = Date.now();
+  const result = await driver.turnRun({
+    workspace: "/workspace",
+    positionId: "repo-owner",
+    engine: "qoder",
+    envelope: ENVELOPE,
+  });
+  const elapsed = Date.now() - start;
+  assert.equal(result.status, "indeterminate");
+  assert.equal(result.code, "turn_timeout");
+  assert.ok(elapsed < 5_000, `timeout should fire near 1000ms, took ${elapsed}ms`);
+});
+
+test("default timeout is 120000ms when not specified (AC-001)", async () => {
+  const driver = new DigitalEmployeeCliDriver("nonexistent-command");
+  assert.equal((driver as unknown as { timeoutMs: number }).timeoutMs, 120_000);
+});
+
+test("timeout reaps engine descendants via process group (AC-006)", async () => {
+  if (process.platform === "win32") return;
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-turn-group-"));
+  const grandchildPidFile = path.join(stateDir, "grandchild-pid");
+  const command = await fixtureCli(`
+    import { spawn } from "node:child_process";
+    import fs from "node:fs";
+    const gc = spawn("sleep", ["60"], { stdio: "ignore" });
+    fs.writeFileSync(${JSON.stringify(grandchildPidFile)}, String(gc.pid));
+    process.on("SIGTERM", () => {});
+    setTimeout(() => {}, 30_000);
+  `);
+  const driver = new DigitalEmployeeCliDriver(command, 2_000);
+  const result = await driver.turnRun({
+    workspace: "/workspace",
+    positionId: "repo-owner",
+    engine: "qoder",
+    envelope: ENVELOPE,
+  });
+  assert.equal(result.status, "indeterminate");
+  assert.equal(result.code, "turn_timeout");
+  const gcPid = Number(await waitForFixtureReady(grandchildPidFile, 10_000));
+  await delay(500);
+  assert.throws(() => process.kill(gcPid, 0), (error: unknown) => {
+    return (error as NodeJS.ErrnoException).code === "ESRCH";
+  }, `grandchild PID ${gcPid} should be dead after process-group kill`);
+});
+
+test("ORG_WORKBENCH_TURN_TIMEOUT_MS controls config.engineTimeoutMs (AC-001)", () => {
+  const custom = resolveServerConfig({ ORG_WORKBENCH_TURN_TIMEOUT_MS: "300000" }, []);
+  assert.equal(custom.engineTimeoutMs, 300_000);
+  const defaultConfig = resolveServerConfig({}, []);
+  assert.equal(defaultConfig.engineTimeoutMs, 120_000);
+  const invalid = resolveServerConfig({ ORG_WORKBENCH_TURN_TIMEOUT_MS: "not-a-number" }, []);
+  assert.equal(invalid.engineTimeoutMs, 120_000);
 });

@@ -289,7 +289,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
               : turn.status === "indeterminate"
                 ? "is-indeterminate"
                 : "";
-        const isProvisional = turn.status === "running" && Boolean(turn.output);
+        const isProvisional = (turn.status === "running" || turn.status === "indeterminate") && Boolean(turn.output);
         return (
           <li className={`owb-turn ${stateClass}`} key={turn.id} data-turn-id={turn.id}>
             {/* #248 R2 ④：D3 升级为对话界面——操作员下达（右）与岗位回复（左）成对成线程。 */}
@@ -343,6 +343,12 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
 
               {turn.error ? (
                 <div className="owb-bubble__error owb-clamp-2" title={turn.error}>{turn.error}</div>
+              ) : null}
+              {turn.diagnostic ? (
+                <details className="owb-turn__diagnostic">
+                  <summary>{t("turn.diagnosticTitle")}</summary>
+                  <pre className="owb-turn__diagnostic-body">{turn.diagnostic}</pre>
+                </details>
               ) : null}
               {turn.status === "indeterminate" ? (
                 <p className="owb-turn__warning owb-clamp-2" title={t("turn.untrustedWarning")}>

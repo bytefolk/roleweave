@@ -69,6 +69,7 @@ export interface TurnRecord {
   output?: string;
   error?: string;
   errorCode?: string;
+  diagnostic?: string;
   threadContext?: ApiTurnRecord["threadContext"];
   /** Engine runId when the server record carries one; keys live-stream dedupe. */
   runId?: string;
