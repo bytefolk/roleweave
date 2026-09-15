@@ -1,44 +1,75 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { controlPlaneMode } = require("./control-plane-launch.cjs");
 
-/** Read the shell-owned runtime selection before starting the control plane. */
-function runtimeSettingsEnvironment(userDataPath, env) {
-  const file = path.join(userDataPath, "runtime-settings.json");
-  let settings;
-  try {
-    settings = JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (error) {
-    if (error.code === "ENOENT") return {};
-    throw new Error("无法读取运行环境设置 runtime-settings.json", { cause: error });
+function validateRuntimeSettings(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).some((key) => !["mode", "distro", "nodePath", "homePath"].includes(key))) {
+    throw new Error("Invalid local runtime settings");
   }
-  if (settings === null || typeof settings !== "object" || Array.isArray(settings)) {
-    throw new Error("运行环境设置必须是一个 JSON 对象");
+  if (value.mode !== undefined && !["native", "wsl"].includes(value.mode)) {
+    throw new Error("Invalid runtime setting: mode must be native or wsl");
   }
-  const overrides = {};
-  if (settings.mode !== undefined) {
-    if (settings.mode !== "native" && settings.mode !== "wsl") {
-      throw new Error("运行环境 mode 必须是 native 或 wsl");
-    }
-    if (env.ROLEWEAVE_CONTROL_PLANE_MODE === undefined && env.ORG_WORKBENCH_CONTROL_PLANE === undefined) {
-      overrides.ROLEWEAVE_CONTROL_PLANE_MODE = settings.mode;
+  for (const key of ["distro", "nodePath", "homePath"]) {
+    if (value[key] === undefined) continue;
+    if (typeof value[key] !== "string" || !value[key].trim() ||
+        value[key].length > 4096 || /[\x00-\x1f\x7f]/.test(value[key])) {
+      throw new Error(`Invalid runtime setting: ${key}`);
     }
   }
-  for (const [field, variable] of [
-    ["distro", "ROLEWEAVE_WSL_DISTRO"],
-    ["nodePath", "ROLEWEAVE_WSL_NODE_PATH"],
-    ["homePath", "ROLEWEAVE_WSL_HOME"],
-  ]) {
-    const value = settings[field];
-    if (value === undefined) continue;
-    if (typeof value !== "string" || value.length === 0 || /[\0\r\n]/.test(value)) {
-      throw new Error(`运行环境 ${field} 无效`);
-    }
-    if ((field === "nodePath" || field === "homePath") && !path.posix.isAbsolute(value)) {
-      throw new Error(`运行环境 ${field} 必须是 WSL 绝对路径`);
-    }
-    if (env[variable] === undefined) overrides[variable] = value;
+  if (value.distro !== undefined && /[\\/]/.test(value.distro)) {
+    throw new Error("WSL distribution must be a name");
   }
-  return overrides;
+  for (const key of ["nodePath", "homePath"]) {
+    if (value[key] !== undefined && !value[key].startsWith("/")) {
+      throw new Error(`${key} must be an absolute Linux path`);
+    }
+  }
+  return value;
 }
 
-module.exports = { runtimeSettingsEnvironment };
+/** Load Windows preferences into a clone; inherited operator settings win. */
+function runtimeEnvironment(env, userDataPath, platform = process.platform) {
+  if (platform !== "win32") return { ...env };
+  const file = path.join(userDataPath, "runtime-settings.json");
+  let value;
+  try {
+    value = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return { ...env };
+    throw new Error("Cannot read local runtime settings", { cause: error });
+  }
+  const settings = validateRuntimeSettings(value);
+  const next = { ...env };
+  // An explicit launch environment remains the operator's override.
+  const mode = env.ROLEWEAVE_CONTROL_PLANE_MODE ?? env.ORG_WORKBENCH_CONTROL_PLANE ?? settings.mode;
+  if (mode !== undefined) next.ROLEWEAVE_CONTROL_PLANE_MODE = mode;
+  for (const [key, name] of [["distro", "ROLEWEAVE_WSL_DISTRO"],
+    ["nodePath", "ROLEWEAVE_WSL_NODE_PATH"], ["homePath", "ROLEWEAVE_WSL_HOME"]]) {
+    if (settings[key] !== undefined && next[name] === undefined) next[name] = settings[key];
+  }
+  return next;
+}
+
+function runtimeDescription(env) {
+  const mode = controlPlaneMode(env);
+  return { mode, distro: mode === "wsl" ? env.ROLEWEAVE_WSL_DISTRO ?? null : null };
+}
+
+function workspaceDialogOptions(env, creating = false) {
+  const options = {
+    title: creating ? "选择项目保存位置" : "打开 RoleWeave 工作区",
+    properties: creating ? ["openDirectory", "createDirectory"] : ["openDirectory"],
+  };
+  if (controlPlaneMode(env) === "wsl") {
+    const distro = env.ROLEWEAVE_WSL_DISTRO;
+    options.title += distro ? ` (WSL · ${distro})` : " (WSL)";
+    const directory = env.ROLEWEAVE_WSL_HOME ?? "/home";
+    options.defaultPath = distro
+      ? `\\\\wsl.localhost\\${distro}${directory.replace(/\//g, "\\")}`
+      : "\\\\wsl.localhost";
+  }
+  return options;
+}
+
+module.exports = { runtimeEnvironment, runtimeDescription, validateRuntimeSettings, workspaceDialogOptions };

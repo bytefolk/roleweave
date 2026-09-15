@@ -59,6 +59,10 @@ function installBridge(status: UpdateStatus | null, results: Partial<UpdateResul
   const queue = [...results];
   const next = () => result(queue.shift() ?? {});
   const bridge = {
+    status: vi.fn().mockResolvedValue({ running: true, runtime: { mode: "wsl", distro: "Ubuntu-22.04" } }),
+    services: {
+      list: vi.fn().mockResolvedValue({ status: 200, body: { connections: [] } }),
+    },
     update: {
       status: vi.fn().mockResolvedValue(status),
       check: vi.fn().mockImplementation(async () => next()),
@@ -80,6 +84,32 @@ function installBridge(status: UpdateStatus | null, results: Partial<UpdateResul
     },
   };
 }
+
+it("shows runtime, service connections, and updates together without claiming a successful Agent login", async () => {
+  const { bridge } = installBridge(windowsUnsigned);
+  render(<SettingsModule />);
+  expect(await screen.findByText("WSL · Ubuntu-22.04")).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "项目与 Agent 运行环境" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "文档与记忆服务" })).toBeInTheDocument();
+  expect(await screen.findByRole("form", { name: "Doc 连接" })).toBeInTheDocument();
+  expect(screen.getByRole("form", { name: "Mem 连接" })).toBeInTheDocument();
+  expect(screen.getAllByText("未连接")).toHaveLength(2);
+  expect(screen.queryByText("服务 API 可访问，授权有效")).not.toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "应用更新" })).toBeInTheDocument();
+  expect(await screen.findByText("0.1.0")).toBeInTheDocument();
+  expect(bridge.services.list).toHaveBeenCalledTimes(1);
+});
+
+it("keeps service connections and updates available when runtime status cannot be read", async () => {
+  const { bridge } = installBridge(windowsSigned);
+  bridge.status.mockRejectedValue(new Error("runtime unavailable"));
+  render(<SettingsModule />);
+  expect(await screen.findByRole("form", { name: "Doc 连接" })).toBeInTheDocument();
+  expect(screen.getByRole("form", { name: "Mem 连接" })).toBeInTheDocument();
+  expect(await screen.findByText("0.1.0")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /检查更新/ })).toBeEnabled();
+  expect(screen.queryByRole("region", { name: "项目与 Agent 运行环境" })).not.toBeInTheDocument();
+});
 
 describe("#134 更新面板：八个状态", () => {
   const cases: Array<[UpdateEvent["state"], Partial<UpdateEvent>, string | RegExp]> = [

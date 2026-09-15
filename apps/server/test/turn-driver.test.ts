@@ -190,7 +190,7 @@ test("run-as-node crosses only the exact packaged bundled-engine boundary", asyn
   }
 });
 
-test("Qoder runtime reaches only selected Qoder while adapter controls require the bundled boundary", async () => {
+test("Host runtime reaches every selected engine while Qoder controls remain scoped", async () => {
   const qoderRuntimeEnvironment = {
     LOGNAME: "qoder-user",
     TMP: "/tmp/qoder-tmp",
@@ -218,7 +218,7 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
   };
   try {
     const cases: Array<{
-      engine: "qoder" | "claude-code";
+      engine: "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
       bundled: boolean;
       permissionMode: string;
       expectedBin: string | undefined;
@@ -261,12 +261,22 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
         engine: "claude-code",
         bundled: true,
         permissionMode: "auto",
-      expectedBin: undefined,
-      expectedPermissionMode: undefined,
-      expectedQoderCommand: undefined,
-        expectQoderRuntime: false,
-        label: "Claude receives shared proxy/TLS runtime but no Qoder controls",
+        expectedBin: undefined,
+        expectedPermissionMode: undefined,
+        expectedQoderCommand: undefined,
+        expectQoderRuntime: true,
+        label: "Claude service receives runtime but no Qoder controls",
       },
+      ...(["claude-local", "codex", "codex-local"] as const).map((engine) => ({
+        engine,
+        bundled: true,
+        permissionMode: "auto",
+        expectedBin: undefined,
+        expectedPermissionMode: undefined,
+        expectedQoderCommand: undefined,
+        expectQoderRuntime: true,
+        label: `${engine} receives local runtime, proxy and CA settings without Qoder controls`,
+      })),
     ];
     for (const testCase of cases) {
       process.env.ORG_WORKBENCH_QODER_BIN = "/opt/qoder/bin/qodercli";
@@ -282,8 +292,7 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
         if (process.env.DIGITAL_EMPLOYEE_QODER_COMMAND !== ${JSON.stringify(testCase.expectedQoderCommand)}) process.exit(7);
         const expectedRuntime = ${JSON.stringify(qoderRuntimeEnvironment)};
         for (const [key, value] of Object.entries(expectedRuntime)) {
-          const sharedClaudeRuntime = ${JSON.stringify(testCase.engine === "claude-code" && testCase.bundled)} && /^(?:HTTPS?_PROXY|NO_PROXY|https?_proxy|no_proxy|NODE_EXTRA_CA_CERTS|SSL_CERT_FILE|SSL_CERT_DIR)$/.test(key);
-          const expected = ${JSON.stringify(testCase.expectQoderRuntime)} || sharedClaudeRuntime ? value : undefined;
+          const expected = ${JSON.stringify(testCase.expectQoderRuntime)} ? value : undefined;
           if (process.env[key] !== expected) process.exit(4);
         }
         const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };

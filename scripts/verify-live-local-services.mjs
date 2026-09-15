@@ -40,7 +40,7 @@ function appData(payload, label) {
   if (payload?.errno !== 0) fail(`${label} returned application error`);
   return payload.data;
 }
-function decodeHtml(value) { return value.replaceAll("&amp;", "&").replaceAll("&quot;", '"').replaceAll("&#x27;", "'").replaceAll("&#39;", "'"); }
+function decodeHtml(value) { return value.replaceAll("&quot;", '"').replaceAll("&#x27;", "'").replaceAll("&#39;", "'").replaceAll("&amp;", "&"); }
 function collectStrings(value, output = []) {
   if (typeof value === "string") output.push(value);
   else if (Array.isArray(value)) value.forEach((item) => collectStrings(item, output));

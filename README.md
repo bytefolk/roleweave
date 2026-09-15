@@ -22,20 +22,20 @@ Its organizing principle is simple: **the file tree is the org chart.** Roles li
 
 For example, an open-source maintenance team can have a repository owner with three supporting roles: an issue researcher, a community operator, and a release engineer. The repository includes an [example workspace](examples/oss-maintainer) with this structure and role budgets.
 
-The v0.1.2 source includes bounded conversation context, independent employee dispatch, and explicit parallel/relay group execution. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.1.1 installers do not include these features.
+The v0.2.0 source adds a goal-centered collaboration spine, a Windows WSL runtime for projects and Agent hosts, employee avatars, and local doc/mem service surfaces, on top of the bounded conversation context, independent employee dispatch, and explicit parallel/relay group execution shipped in v0.1.2. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.1.2 installers do not include these features.
 
-Workspace auto-open diagnostics also remain best-effort in the v0.1.2 source: an unavailable stderr stream does not turn a diagnostic write into a failed startup. Existing workspace overrides and fallback behavior are preserved; see the [candidate release notes](docs/releases/v0.1.2.md).
+Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior ships with v0.2.0.
 
 ## Download
 
-RoleWeave is an **early preview**. This source targets **v0.1.2**. The versioned downloads below become available when the release is published; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
+RoleWeave is an **early preview**. This source targets **v0.2.0**. The versioned downloads below become available when the release is published; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
 
 | Platform | Download |
 | --- | --- |
-| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.1.2/roleweave-0.1.2-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.1.2/roleweave-0.1.2-arm64.zip) |
-| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.1.2/roleweave-0.1.2-x64.exe) |
+| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.2.0/roleweave-0.2.0-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.2.0/roleweave-0.2.0-arm64.zip) |
+| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.2.0/roleweave-0.2.0-x64.exe) |
 
-See the [v0.1.2 release notes](docs/releases/v0.1.2.md) for this candidate's changes and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
+See the [v0.2.0 release notes](docs/releases/v0.2.0.md) for this candidate's changes and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
 
 **Installation notes:** macOS packages are not Apple Developer ID-signed or notarized, and the Windows installer is not Authenticode-signed. Your operating system may show a security prompt on installation or first launch. The macOS update manifest has a separate cryptographic signature; this does not provide Apple code-signing trust. Users of older Org Workbench development builds need to install RoleWeave manually once.
 
@@ -48,6 +48,28 @@ See the [v0.1.2 release notes](docs/releases/v0.1.2.md) for this candidate's cha
 5. **Send a small first task.** Select the role's conversation and send a prompt such as: “Summarize your role instructions and suggest a first task.” Review the recorded result and return to its history when needed.
 
 If the host is unavailable, follow the engine status guidance. For a custom Qoder installation, the server-side `ORG_WORKBENCH_QODER_BIN` environment variable can point to its executable. Restart the app after changing its launch environment.
+
+### Windows with local WSL Agents
+
+The current source can keep the Windows interface while running the project backend and Agents in a local WSL distribution. This ships with the v0.2.0 release. Linux Node.js 22 or newer and the chosen Agent CLI must already be installed in that distribution.
+
+To make WSL the default on one machine, place `runtime-settings.json` in RoleWeave's Electron user-data directory (normally `%APPDATA%\RoleWeave`):
+
+```json
+{
+  "mode": "wsl",
+  "distro": "Ubuntu-22.04",
+  "homePath": "/home/your-user"
+}
+```
+
+Use your actual distribution and Linux home directory. An optional `nodePath` pins an absolute Linux Node executable; otherwise the launcher checks the WSL login PATH and local nvm installation. The launcher uses the Linux account's Bash or Zsh login configuration; other shells fall back to Bash with an explicit diagnostic. Configure PATH, proxy and certificates in Bash's login configuration if your account uses another shell. Explicit launch-environment overrides, including `ROLEWEAVE_WSL_NODE_PATH`, take precedence over this machine preference. Machines without the file keep the native backend.
+
+After fully restarting RoleWeave, project pickers start in the selected WSL home. Both `\\wsl.localhost\<distribution>\...` and `\\wsl$\<distribution>\...` are supported; another distribution is rejected. Windows drive paths still map to `/mnt/<drive>/...`. The backend uses the WSL user's CLI installations, login files, proxy and certificate settings.
+
+For environment-based provider, document or memory connections, keep each endpoint and its credentials together in one environment. A Windows override replaces that connection's Linux environment values as a group; missing credentials are never borrowed from Linux. Connections without a Windows override keep their Linux environment configuration.
+
+Choose an Agent when creating a project or hiring an employee. Each employee keeps its own saved runtime binding across restarts and health changes; conversations do not share a global Host selector. Claude Code and Codex prefer an available local configuration for new bindings. A ready status does not prove model entitlement or a successful model request. Settings shows which environment supplies the project and Agents alongside the document and memory service connections. Closing the desktop also closes its WSL backend.
 
 ## How workspaces work
 
@@ -126,7 +148,7 @@ git clone https://github.com/bytefolk/design-system.git
 git clone https://github.com/bytefolk/roleweave.git
 
 cd design-system
-git checkout 671500fb28435275b5d2bda3704261aa785ed21d
+git checkout 910456901dda74da4d5b0320cd03d36ad18650b0
 npm ci
 npm run build:package
 
