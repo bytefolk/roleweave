@@ -3,30 +3,89 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 早期开发记录以里程碑（D0/D1/D2…）标注，安装包发布使用语义化版本。
 
-## [Unreleased] — D2 组织操作 + D3 对话控制面 + D4 本地上报
+## [Unreleased]
+
+## [0.2.0] — 2026-09-15
 
 ### Changed
 
-含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
+- #222：新增目标模块：声明目标，并把个人会话、群聊与回合关联到目标上，集中查看目标及其相关工作；契约层新增 goals 类型与 API，界面支持中英双语。
+- #265：简化员工与项目配置，支持为员工/项目绑定一个 Agent 并选择模型；新增记忆与会话协作入口和对话路由；员工头像支持上传、预设与 AI 生成入口。
+- 首次启动不再自动复制或打开演示工作区，用户从空工作区新建或打开项目；仍恢复有效的上次工作区并保留显式路径覆盖。上次工作区无法访问时留空并提示重新打开，已有演示和用户文件保持原样。
+- Windows 可通过本机运行环境偏好默认连接指定 WSL 发行版；项目选择器从其 Linux home 开始，设置展示项目与 Agent 所用环境；沿用每个员工独立保存的 Agent 绑定。
+- WSL 后台使用 Linux Node 与内置 adapter，保留 Linux CLI 的登录、代理与证书配置，并在桌面退出时清理其子进程；支持两种 WSL UNC 路径并拒绝跨发行版选择。
+- 本地 doc / mem 新增统一 Docker 管理入口：共同或单独初始化、验证、启动、查看状态/日志和停止；复用独立 Compose 项目与持久卷，修正 doc 外部环境初始化，失败升级保留成功版本记录，停止按项目标签覆盖旧容器。
+- doc / mem 以独立 HTTP 服务接入：桌面设置可保存加密令牌、验证实际 API 契约并打开上游原生界面；支持本机与远程 HTTPS，连接变更立即刷新索引。独立源码工具固定上游 commit、保留历史及持久化数据路径，并生成部署步骤；源码准备不会自动迁移数据库或切换运行中服务。
+- #206：RoleWeave 内置引擎新增 Codex 服务凭据与本地登录两种 Agent Host；本地登录不依赖服务 API key。
+- #236：Agent Host 下方显示本次回合将使用的模型（仅对存在模型旋钮的 Host 展示，由 `/health` 新增的可选 `modelPinnable` 下发，客户端不自带引擎清单）。`/health` 的 Host 状态新增可选 `model`（取自 `OPENAI_MODEL`）；未指定时如实显示"由 Host 自行决定"而不推断名字——Codex CLI 不向调用方报告它选中的模型。Codex 回合一律带 `--ignore-user-config`，`~/.codex/config.toml` 的 `model` 不生效。`OPENAI_MODEL` 非法时两个 Codex Host 在前置检查即 fail closed 并给出可执行提示，不再等到 spawn 前失败。
+- 以 RoleWeave 标识的紫蓝色建立 light / dark 双主题，逐组件统一组织、会话、群聊、招聘、文档、网盘、报表、审批和设置；简化嵌套卡片与装饰标签，改善正文、长路径、超限数值及暗色表单的可读性，保留业务行为。
+- 会话使用可折叠的执行状态行与连续正文：运行时展开公开里程碑并显示真实耗时，结束时默认收起，手动开合不受流式输出刷新影响；审批与错误保持可见，不推断工具次数，缺失的时间不补零。
 
 ### Fixed
 
-### Added
+- #245：模型名过长时在 Agent Host 模型行以单行省略号截断，不再换行。
+- #234：切换员工时保留会话面板的滚动视口，不再重置。
+- #240 review：报表中心的审计时间线改用与对话面板同一个引擎标签来源。它此前自带第三份标签映射（签名 `engine: string` + `return engine` 兜底），Codex 回合会显示成裸 id `codex-local`，`claude-local` 也与对话面板措辞不一致；这个缺陷在 #239 修复前不可达，因为 `/reports` 遇到 Codex 记录会直接硬报错。
+- 新建项目接受界面传入的项目字段与可选 Agent 绑定，父目录只由原生选择器提供；打开与创建共用 WSL 路径转换，恢复 Linux 工作区时不再依赖 Windows 的存在性检查。
+- 本地 Claude Host 复用用户 OAuth 登录时不再使用禁用该登录的 bare/空设置来源选项；保留工具限制并禁用 hooks。
+- #239：Codex 回合不再在写盘后变成不可读记录。回合记录校验器仍保留 #206 之前的三引擎硬编码白名单，导致 `codex` / `codex-local` 的回合被路由接受并落盘、却在回读时判为非法，使该会话历史和整个报表中心永久报错（`local session turn history contains an invalid record` / `local reports data is invalid`）。校验器改为走 `turnEngines` 契约；已落盘的记录无需修复，本身合法。
+- #221 review：Codex 就绪状态要求内置引擎边界；使用外部 digital-employee CLI 时，即使已安装 Codex 并配置凭据，两种 Codex Host 仍显示不可用并说明原因。
+- #156：工作区覆盖路径仅在 Windows WSL 控制面模式下跳过本地存在性检查，由控制面在路径边界转换后校验；模式判断与路由、诊断统一，Linux/macOS 即使设置 `ORG_WORKBENCH_CONTROL_PLANE=wsl` 仍保留原生校验。
+- #224：控制面模式开关同时接受 RoleWeave 命名 `ROLEWEAVE_CONTROL_PLANE_MODE`（RoleWeave 名优先，与 `ROLEWEAVE_DEFAULT_WORKSPACE` 一致），保留 `ORG_WORKBENCH_CONTROL_PLANE` 兼容旧部署；避免按新品牌名设置时被静默忽略而退回原生模式、使 #156 的 WSL 路径修复在真实 Windows 主机上失效。
+- #135：新增免费 macOS GitHub 自动更新通道：发布 workflow 使用 `OWB_UPDATE_SIGNING_PRIVATE_KEY` 为 ZIP 元数据生成 Ed25519 签名，客户端校验后后台下载，并在正常退出时自动替换、重启；应用本身仍为 unsigned，Gatekeeper/Developer ID 方案保留为后续切换路径。
+
+## [0.1.2] — 2026-09-10
+
+### Changed
+
+- #214：同一会话的后续回合可携带有界、脱敏的可信历史，并展示实际注入摘要、数量、字节数和 digest；上下文开关按会话持久化。
+- #214：不同员工可同时处理任务；群聊支持显式并行和有序接力，前序失败时停止后续执行并保留可查询的状态。
+- Rewrote the README in English with customer onboarding, desktop downloads, AI integration guidance, and source development instructions.
+
+### Fixed
+
+- GitHub Release 正文从冻结发布提交中的同版本说明文件自动载入；缺失、空白、版本不符或传输后改变的说明会在创建草稿前被拒绝，说明文件不会混入安装包资产。
+- #170：工作区自动打开的失败诊断保持 best-effort；即使 stderr 不可写也不会把启动变成失败，并补充 main.js 调用边界回归覆盖。
+- #215 review：群历史和接力结果先脱敏后截断；落盘失败释放运行标记，坏历史来源与失败事件订阅者不再连带中断其他成员。
+- #215 review：取消绑定原工作区及已知回合；个人与群组执行共同阻止会话轮换和上下文策略变更，前端按工作区、岗位、引擎隔离事件。
+- #215 review：补足最大群消息的持久化空间，接力只保留有界结果，恢复记录保留原接受时间并保证并发恢复幂等。
+- #155：Windows 目录 fsync 的 EPERM 判断收回唯一的原子写入口（context export 不再自带第二份），裸 errno 通过 `cause` 穿过 groups/assets/sessions/turns 各自的存储错误包装；平台改为可注入后，这批回归在 POSIX runner 上真正执行而不是 skip。
+
+## [0.1.1] — 2026-09-08
+
+### Changed
+
+- 产品与仓库统一为 RoleWeave / `bytefolk/roleweave`，使用带透明安全边距的 R/W 应用图标。
+- 岗位文档采用左右分栏阅读，组织共享文档对接 `bytefolk/doc` v1 API；访问凭据仅留在服务端。
+- 优化项目切换、员工创建、群聊成员搜索以及记忆来源展示。
+
+### Fixed
+
+- 修复 macOS 发布时误拒绝签名更新清单的问题，发布前校验清单签名、版本及 ZIP 大小和哈希。
+- 安装包文件名、GitHub 发布坐标与 macOS 签名更新清单统一使用 `roleweave`，避免更新器寻找旧名称安装包。
+- 保留旧环境变量、工作区数据迁移和应用 ID；旧开发包需手动安装新版一次，不放宽更新信任校验。
+
+## [0.1.0] — 2026-09-03
+
+初始公开版本，包含 D0–D4 全部开发切片的审查合并。
+
+含 PR #3（feat(d1): 组织树只读）与 PR #7（fix(examples)）。
+
+> 版本归属说明：本节由发布 v0.1.0 之前的 `[Unreleased]` 里程碑堆积转名而来，块内条目实际跨 v0.1.0 与 v0.1.2 分批发布，未在本变更中逐条重分派。
+> 复核依据（`git merge-base --is-ancestor`）：`6fdb582`（#127 layout parity）、`d738343`（#146 i18n）、`4a1de4b`（#135 auto-update）是 `v0.1.1` 的祖先但不是 `v0.1.0` 的祖先；
+> `c2bff33`（#206/#221）、`bbacc69`（#236/#238）、`b981b7d`（双主题）、`d209a97`（#239/#240）、`2faf6d4`（#156/#224）是 `v0.1.2` 的祖先。
+> 逐条按版本重分派留待单独一次文档变更处理；本文件只保证不丢条目、不虚构归属。
+
 ### Added
 
 - #127 AC-004 跨平台布局一致性证据：新增 layout smoke 模式（macOS arm64 / Windows x64 双平台，全应用渲染两栏组织工作区并由 main 进程度量列矩形写报告），verify.yml 新增 layout-parity job 下载双平台报告比对（per-platform bottomDelta ≤2px、per-platform 两列高差 ≤2px、跨平台宽差 ≤4px、跨平台 chrome overhead 差 ≤8px，阈值声明在 scripts/check-layout-parity.mjs）。跨平台一项自 #190 起比的是 chrome overhead（`viewport.innerHeight - 列高`）而非绝对列高：runner 给两侧的窗口高度本就不同，比绝对高度量到的是 runner 而不是布局，#190 之前的「高差 ≤8px」写法已随之作废。顺带修 #150 打包缺口：doc-plane.js 未登记 SERVER_RUNTIME_FILES 导致打包 server 启动即崩、main CI 红。
-### Added
-
 - #146 国际化骨架与全量迁移：`@org-workbench/ui` 新增 `OwbI18nProvider` / `useT` / `zhText` 与 zh-CN/en 双目录（440 key，parity 门强制 key 集合一致）；标题栏新增语言切换钮（恰好两态，持久化，默认 zh-CN，antd ConfigProvider locale 同步切换）；renderer 与 ui 包全部用户可见文案迁入目录，`i18n-cjk-gate` 测试扫描源码字符串字面量内的 CJK 防绕过；数据层（turn 原文、信封、组织文件、裁决输入）不翻译。
-
 - #167 组织图画布化收尾：视口 overflow:hidden 零滚动条，平移纯拖拽（transform translate + pointer capture，4px 点击阈值保留），缩放（按钮/捏合）以光标为锚；选中岗位 translate 居中替代 scrollIntoView；布局不再随滚动条跳动。描述语精简到标题：图表头部只留标题、空态只留标题行、composer 空闲提示行移除（运行态/禁用原因保留）。
-
 - 上下文来源与统一网盘入口：岗位卡片展示岗位知识库、mem 统一网盘和岗位级 context 来源；新增 Workbench 内网盘模块，支持清单、搜索与详情查看，不引入 Obsidian 客户端。
 - #132：新增 macOS arm64 DMG/ZIP 与 Windows x64 NSIS 安装包构建；保持无签名、Windows per-user 和 `--publish never`。安装/启动/卸载行为验证仍待后续切片。
 - **D2 目录提案编排**：招聘直接生成嵌套岗位包与 0600 原子写 `budget.json`，调岗整目录 rename，裁撤移至树外 `.digital-employee/backup/<id>-<stamp>/`；支持移至根和 `maxDepth=8` 防御上限。
 - **引擎 org-audit 报告流**：`GET /reports` 改读 `.digital-employee/org-audit.jsonl`（org-audit.v1）。
 - **真实引擎契约测试**：覆盖 workspace 参数、严格 status/payload 解析、拒绝时应用态字节零变更与提案保留。
-
 - **`packages/ui` 组件包**：OrgTree / OrgTreeNode / PositionCard / BudgetBar 四组件，消费 design-system 语义 token；OrgTree 支持键盘树导航（↑↓ 移动、←→ 折叠展开）。
 - **React/Vite 渲染层**：桌面壳 renderer 重写为 AppShell 四区布局（Sidebar 288px / 主区 / 岗位卡片 / 预算条），SSE `org.updated` 驱动自动刷新。
 - **冻结契约类型**：`packages/shared/src/org-tree.ts` 提供 org-tree.v1 类型与运行时守卫。
@@ -53,7 +112,6 @@
 - `apps/desktop/test/contrast.test.cjs`：对 `--ui-foreground-subtle` 在亮/暗两套主题的全部 5 个背景阶做真实 WCAG 对比度计算断言（≥4.5:1），而非仅检查 token 字符串存在。
 - #94 主题切换入口：自定义标题栏新增亮/暗切换按钮（`aria-pressed` + 目标态 `title`/`aria-label`），`theme-mode.ts` 提供唯一的 `data-theme` 写入路径与 `localStorage` 持久化，`main.tsx` 在 `createRoot()` 前种子化。未显式选择过时跟随系统 `prefers-color-scheme`（含运行时变化），首次点击即固化为显式选择并停止跟随。`antd-skin.css` 的暗色调色板与 antd `darkAlgorithm`/`ANTD_SEED.dark` 自 #73 起已完备，此前只是无人可达。
 - #110 Lane A：新增 macOS arm64 / Windows x64 原生无产品签名的 unpacked staging、逐文件字节精确的运行时 inventory/拒绝清单、架构与签名状态核验，以及从源码树外 clean staging 启动后证明静态 renderer、控制面 ready 和严格 process-ownership 边界归零的 smoke；command/staging path 不授予 signal 权限。只扩展只读验证工作流，不含安装器、分发签名、发布或自动更新。#111 的 Finder PATH → Qoder/MCP fixture → turn/history 行为资格验证保留为独立 macOS-only command/schema，不与 static smoke 混称。Windows 原生结果已由 `windows-latest` 在 head `59b7eaf` 实际运行验证（run 33601662786：package / verify / smoke 全绿，verifier 报告 33 required entries、189 packaged files、`authenticode-not-signed`）；该结果不外推到安装包、签名与自动更新路径，Windows 上的 Qoder 残留断言按构造未被执行，见 #131。并入 #122 中未被本分支取代的部分：Windows 下 `.bat`/`.cmd` 启动脚本的 shell 路由（Node 因 CVE-2024-27980 加固拒绝无 shell 执行，缺此项打包后的 Windows 应用无法启动 Qoder）、Qoder 子进程环境补入 `PATHEXT`/`ComSpec`/`SystemRoot`/`WINDIR`，以及测试可移植性辅助（NTFS 合成权限位改用 `assertPosixMode` 跳过、exec `#!/bin/sh` fixture 的用例在 win32 跳过）。曾一并并入的 `windows-latest` check 矩阵腿**已撤回** —— 该套件按 POSIX 进程与文件系统语义编写，在 Windows 上跑 `npm run check` 挂起逾一小时且无有界失败可定位；Windows 改由专门的 staging package/verify/smoke 腿覆盖（与 cc-haha 同形：其全部质量 job 均在 ubuntu 上，Windows 只跑针对性检查）。撤回时保留了这次尝试的两项产物：所有 `node --test` 的 `--test-timeout` 上限与 check job 的 `timeout-minutes`；#122 的打包面（两条目 `WIN_APP_REQUIRED_ENTRIES`、`signAndEditExecutable`、重复的 package-windows job）已被本分支取代而未并入。
-
 ### Changed
 
 - #35 文档模块视觉整理：增加岗位文档上下文、文件类型与大小信息，优化文件选择/复制引用/解析引用的层级，并补齐加载、空状态、错误状态及窄窗口适配；文档引用契约与读写行为不变。
@@ -130,67 +188,6 @@
 - Fix for #94: `npm run build` / `test:scripts` 4/4 / `typecheck:ui` / `test:ui` 31/31 / `typecheck:renderer` / `test:renderer` 155/155 / `test:desktop-main` 35/35 / `npm audit --audit-level=high` 0 漏洞，全部本地绿。新增 19 条 renderer 用例（`theme-mode` 9、`theme-toggle` 5、`agent-host-select` 4、`groups-panel` +1）与 1 条 `agent-host-width.test.cjs`。宽度门禁做过反向验证：把两条 grid track 改回 `150px` 并重新构建，断言以 `Agent Host track floor is 150px, below the 200px the compact label needs` 失败，确认它真的能捕获原缺陷。`apps/server` 未改动，其套件本地 124/142 pass、17 fail、1 skipped——与 `git stash` 后干净 `main` 的失败用例名集合**完全相同**（0 条为本次变更独有），系本文件上文已记录的既有 test 隔离 flake。桌面壳双主题的真实观感（WSLg 实机）本轮**未**由我执行，仅有 jsdom 层的属性/可访问性断言与既有 `contrast.test.cjs` 覆盖；实机确认留给 review。
 - Fix for #86: `tsc -b` clean; new `buildPositionSkeletonFiles` regression test (numeric position ID stays quoted in SKILL.md) passes. `node --test apps/server/dist/test/*.test.js` locally: 112/130 pass, 17 fail, 1 skipped — the 17 failures reproduce identically against unmodified `main` (verified via a `git stash`/rebuild A/B check isolating this change), matching the pre-existing, already-documented test-isolation flake noted in the PR #77 verification entry above (not introduced by this change; CI clean-environment runs are the gate of record). Renderer/desktop suites are untouched by this diff and were not rerun locally.
 - Fix for #98: `npm run build` / `typecheck:ui` / `typecheck:renderer` clean, `test:scripts` 4/4, `test:ui` 31/31, `test:renderer` 155/155, `test:desktop-main` 37/37, `npm audit --audit-level=high` 0 vulnerabilities, all local green. No new test file was added — both fixes are covered by the existing `org-chart.test.tsx` / `position-card.test.tsx` / `App.test.tsx` suites, none of which assert the removed pixel cap or the stretch behavior directly (they assert selection state, node structure, and card content, all unaffected by the layout change); a pixel-level regression guard was judged not worth adding for two CSS layout properties — flagged for reviewer judgment. `apps/server` untouched by this diff (`git diff --stat` confirms zero overlap): 124/142 pass, 17 fail, 1 skipped, the exact same shape already recorded against unmodified `main` in the #94 entry above, so it was not independently re-verified via a fresh `git stash` A/B this time. Real-window confirmation on WSLg: performed by the requester after each of the two fixes (screenshots reviewed in the linked issue), not captured as an automated check.
-
-
-## [0.2.0] — 2026-09-15
-
-### Changed
-
-- #222：新增目标模块：声明目标，并把个人会话、群聊与回合关联到目标上，集中查看目标及其相关工作；契约层新增 goals 类型与 API，界面支持中英双语。
-- #265：简化员工与项目配置，支持为员工/项目绑定一个 Agent 并选择模型；新增记忆与会话协作入口和对话路由；员工头像支持上传、预设与 AI 生成入口。
-- 首次启动不再自动复制或打开演示工作区，用户从空工作区新建或打开项目；仍恢复有效的上次工作区并保留显式路径覆盖。上次工作区无法访问时留空并提示重新打开，已有演示和用户文件保持原样。
-- Windows 可通过本机运行环境偏好默认连接指定 WSL 发行版；项目选择器从其 Linux home 开始，设置展示项目与 Agent 所用环境；沿用每个员工独立保存的 Agent 绑定。
-- WSL 后台使用 Linux Node 与内置 adapter，保留 Linux CLI 的登录、代理与证书配置，并在桌面退出时清理其子进程；支持两种 WSL UNC 路径并拒绝跨发行版选择。
-- 本地 doc / mem 新增统一 Docker 管理入口：共同或单独初始化、验证、启动、查看状态/日志和停止；复用独立 Compose 项目与持久卷，修正 doc 外部环境初始化，失败升级保留成功版本记录，停止按项目标签覆盖旧容器。
-- doc / mem 以独立 HTTP 服务接入：桌面设置可保存加密令牌、验证实际 API 契约并打开上游原生界面；支持本机与远程 HTTPS，连接变更立即刷新索引。独立源码工具固定上游 commit、保留历史及持久化数据路径，并生成部署步骤；源码准备不会自动迁移数据库或切换运行中服务。
-- #206：RoleWeave 内置引擎新增 Codex 服务凭据与本地登录两种 Agent Host；本地登录不依赖服务 API key。
-- #236：Agent Host 下方显示本次回合将使用的模型（仅对存在模型旋钮的 Host 展示，由 `/health` 新增的可选 `modelPinnable` 下发，客户端不自带引擎清单）。`/health` 的 Host 状态新增可选 `model`（取自 `OPENAI_MODEL`）；未指定时如实显示"由 Host 自行决定"而不推断名字——Codex CLI 不向调用方报告它选中的模型。Codex 回合一律带 `--ignore-user-config`，`~/.codex/config.toml` 的 `model` 不生效。`OPENAI_MODEL` 非法时两个 Codex Host 在前置检查即 fail closed 并给出可执行提示，不再等到 spawn 前失败。
-- 以 RoleWeave 标识的紫蓝色建立 light / dark 双主题，逐组件统一组织、会话、群聊、招聘、文档、网盘、报表、审批和设置；简化嵌套卡片与装饰标签，改善正文、长路径、超限数值及暗色表单的可读性，保留业务行为。
-- 会话使用可折叠的执行状态行与连续正文：运行时展开公开里程碑并显示真实耗时，结束时默认收起，手动开合不受流式输出刷新影响；审批与错误保持可见，不推断工具次数，缺失的时间不补零。
-
-### Fixed
-
-- #245：模型名过长时在 Agent Host 模型行以单行省略号截断，不再换行。
-- #234：切换员工时保留会话面板的滚动视口，不再重置。
-- #240 review：报表中心的审计时间线改用与对话面板同一个引擎标签来源。它此前自带第三份标签映射（签名 `engine: string` + `return engine` 兜底），Codex 回合会显示成裸 id `codex-local`，`claude-local` 也与对话面板措辞不一致；这个缺陷在 #239 修复前不可达，因为 `/reports` 遇到 Codex 记录会直接硬报错。
-- 新建项目接受界面传入的项目字段与可选 Agent 绑定，父目录只由原生选择器提供；打开与创建共用 WSL 路径转换，恢复 Linux 工作区时不再依赖 Windows 的存在性检查。
-- 本地 Claude Host 复用用户 OAuth 登录时不再使用禁用该登录的 bare/空设置来源选项；保留工具限制并禁用 hooks。
-- #239：Codex 回合不再在写盘后变成不可读记录。回合记录校验器仍保留 #206 之前的三引擎硬编码白名单，导致 `codex` / `codex-local` 的回合被路由接受并落盘、却在回读时判为非法，使该会话历史和整个报表中心永久报错（`local session turn history contains an invalid record` / `local reports data is invalid`）。校验器改为走 `turnEngines` 契约；已落盘的记录无需修复，本身合法。
-- #221 review：Codex 就绪状态要求内置引擎边界；使用外部 digital-employee CLI 时，即使已安装 Codex 并配置凭据，两种 Codex Host 仍显示不可用并说明原因。
-- #156：工作区覆盖路径仅在 Windows WSL 控制面模式下跳过本地存在性检查，由控制面在路径边界转换后校验；模式判断与路由、诊断统一，Linux/macOS 即使设置 `ORG_WORKBENCH_CONTROL_PLANE=wsl` 仍保留原生校验。
-- #224：控制面模式开关同时接受 RoleWeave 命名 `ROLEWEAVE_CONTROL_PLANE_MODE`（RoleWeave 名优先，与 `ROLEWEAVE_DEFAULT_WORKSPACE` 一致），保留 `ORG_WORKBENCH_CONTROL_PLANE` 兼容旧部署；避免按新品牌名设置时被静默忽略而退回原生模式、使 #156 的 WSL 路径修复在真实 Windows 主机上失效。
-- #135：新增免费 macOS GitHub 自动更新通道：发布 workflow 使用 `OWB_UPDATE_SIGNING_PRIVATE_KEY` 为 ZIP 元数据生成 Ed25519 签名，客户端校验后后台下载，并在正常退出时自动替换、重启；应用本身仍为 unsigned，Gatekeeper/Developer ID 方案保留为后续切换路径。
-
-## [0.1.2] — 2026-09-10
-
-### Changed
-
-- #214：同一会话的后续回合可携带有界、脱敏的可信历史，并展示实际注入摘要、数量、字节数和 digest；上下文开关按会话持久化。
-- #214：不同员工可同时处理任务；群聊支持显式并行和有序接力，前序失败时停止后续执行并保留可查询的状态。
-- Rewrote the README in English with customer onboarding, desktop downloads, AI integration guidance, and source development instructions.
-
-### Fixed
-
-- GitHub Release 正文从冻结发布提交中的同版本说明文件自动载入；缺失、空白、版本不符或传输后改变的说明会在创建草稿前被拒绝，说明文件不会混入安装包资产。
-- #170：工作区自动打开的失败诊断保持 best-effort；即使 stderr 不可写也不会把启动变成失败，并补充 main.js 调用边界回归覆盖。
-- #215 review：群历史和接力结果先脱敏后截断；落盘失败释放运行标记，坏历史来源与失败事件订阅者不再连带中断其他成员。
-- #215 review：取消绑定原工作区及已知回合；个人与群组执行共同阻止会话轮换和上下文策略变更，前端按工作区、岗位、引擎隔离事件。
-- #215 review：补足最大群消息的持久化空间，接力只保留有界结果，恢复记录保留原接受时间并保证并发恢复幂等。
-- #155：Windows 目录 fsync 的 EPERM 判断收回唯一的原子写入口（context export 不再自带第二份），裸 errno 通过 `cause` 穿过 groups/assets/sessions/turns 各自的存储错误包装；平台改为可注入后，这批回归在 POSIX runner 上真正执行而不是 skip。
-
-## [0.1.1] — 2026-09-08
-
-### Changed
-
-- 产品与仓库统一为 RoleWeave / `bytefolk/roleweave`，使用带透明安全边距的 R/W 应用图标。
-- 岗位文档采用左右分栏阅读，组织共享文档对接 `bytefolk/doc` v1 API；访问凭据仅留在服务端。
-- 优化项目切换、员工创建、群聊成员搜索以及记忆来源展示。
-
-### Fixed
-
-- 修复 macOS 发布时误拒绝签名更新清单的问题，发布前校验清单签名、版本及 ZIP 大小和哈希。
-- 安装包文件名、GitHub 发布坐标与 macOS 签名更新清单统一使用 `roleweave`，避免更新器寻找旧名称安装包。
-- 保留旧环境变量、工作区数据迁移和应用 ID；旧开发包需手动安装新版一次，不放宽更新信任校验。
 
 ## [D0] — 骨架
 
