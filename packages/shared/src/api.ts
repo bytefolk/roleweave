@@ -90,6 +90,8 @@ export const sseEventTypes = [
   // @mentioned member spawn; group turn.* payloads additionally carry
   // additive groupRef/turnId/positionId fields for renderer attribution.
   "group.turn.spawned",
+  // Group lifecycle event (#274): broadcast when a group is dismissed.
+  "group.updated",
   // Additive goal lifecycle events (#222).
   "goal.created",
   "goal.updated",

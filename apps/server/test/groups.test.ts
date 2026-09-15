@@ -535,8 +535,12 @@ test("corrupt or unsafe local group state fails closed without echoing content",
     const secret = { ...group, sessionSecret: "group-secret-value" };
     await fs.writeFile(groupFile, `${JSON.stringify(secret)}\n`, { mode: 0o600 });
     const leaked = await api(server.baseUrl, routes.groups, { token: server.token });
-    assert.equal(leaked.status, 500);
+    // REQ-007: list() skips malformed entries instead of failing the whole list.
+    // The corrupt entry is omitted; the secret must not appear in the response.
+    assert.equal(leaked.status, 200);
     assert.doesNotMatch(JSON.stringify(leaked.body), /group-secret-value/);
+    const listBody = leaked.body as { groups: Array<{ conversationRef: string }> };
+    assert.equal(listBody.groups.some((g) => g.conversationRef === group.conversationRef), false);
 
     await fs.rm(path.join(workspace, ".digital-employee", "workbench", "groups", group.conversationRef), { recursive: true });
     const real = path.join(workspace, ".digital-employee", "workbench", "groups", group.conversationRef);

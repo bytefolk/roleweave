@@ -12,6 +12,7 @@ import { handleEvents } from "./routes/events.js";
 import {
   handleGroupAddMember,
   handleGroupCreate,
+  handleGroupDismiss,
   handleGroupGet,
   handleGroupList,
   handleGroupTimeline,
@@ -184,6 +185,10 @@ async function dispatch(
       const operation = groupMatch[2];
       if (operation === undefined && method === "GET") {
         await handleGroupGet(ctx, res, conversationRef);
+        return;
+      }
+      if (operation === undefined && method === "DELETE") {
+        await handleGroupDismiss(ctx, res, conversationRef);
         return;
       }
       if (operation === "members" && method === "POST") {

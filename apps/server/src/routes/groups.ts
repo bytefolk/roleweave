@@ -215,6 +215,18 @@ export async function handleGroupGet(
   sendJson(res, 200, await ctx.groupStore.get(workspace.dir, assertConversationRef(conversationRef)));
 }
 
+export async function handleGroupDismiss(
+  ctx: ControlPlaneContext,
+  res: ServerResponse,
+  conversationRef: string,
+): Promise<void> {
+  const workspace = ctx.workspace.requireOpen();
+  const ref = assertConversationRef(conversationRef);
+  const result = await ctx.groupStore.dismiss(workspace.dir, ref);
+  ctx.bus.publish("group.updated", { conversationRef: ref, workspacePath: workspace.dir, deleted: true });
+  sendJson(res, 200, result);
+}
+
 export async function handleGroupAddMember(
   ctx: ControlPlaneContext,
   req: IncomingMessage,
