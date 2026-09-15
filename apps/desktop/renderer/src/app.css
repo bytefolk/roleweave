@@ -8318,6 +8318,44 @@ body,
 .owb-theme-settings__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--ui-border); }
 .owb-theme-settings__actions { display: flex; gap: 8px; }
 
+/* Overlay buttons. The panel renders in the overlay, outside every workbench
+ * button skin, and a bare `.owb-theme-overlay button` base would outrank the
+ * descendant rules for the tabs / preset cards / mode switch and flatten their
+ * padding and background. So each button carries its own class and this rule
+ * set only ever mentions those classes. */
+.owb-theme-settings__reset,
+.owb-theme-settings__cancel,
+.owb-theme-settings__save,
+.owb-theme-agent__generate,
+.owb-theme-agent__apply,
+.owb-theme-agent__cancel { font: inherit; padding: 5px 12px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface); color: var(--ui-foreground); cursor: pointer; transition: background var(--ui-duration-fast) var(--ui-ease), border-color var(--ui-duration-fast) var(--ui-ease), color var(--ui-duration-fast) var(--ui-ease); }
+.owb-theme-settings__reset:hover:not(:disabled),
+.owb-theme-settings__cancel:hover:not(:disabled),
+.owb-theme-settings__save:hover:not(:disabled),
+.owb-theme-agent__generate:hover:not(:disabled),
+.owb-theme-agent__apply:hover:not(:disabled),
+.owb-theme-agent__cancel:hover:not(:disabled) { background: var(--ui-navigation-hover); }
+.owb-theme-settings__reset:focus-visible,
+.owb-theme-settings__cancel:focus-visible,
+.owb-theme-settings__save:focus-visible,
+.owb-theme-agent__generate:focus-visible,
+.owb-theme-agent__apply:focus-visible,
+.owb-theme-agent__cancel:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 1px; }
+.owb-theme-settings__save:disabled,
+.owb-theme-agent__generate:disabled { opacity: .5; cursor: not-allowed; }
+/* Primary intent, declared after the shared skin: equal specificity, so source
+ * order is what decides. */
+.owb-theme-settings__save,
+.owb-theme-agent__generate,
+.owb-theme-agent__apply { border-color: var(--ui-primary); background: var(--ui-primary); color: var(--ui-primary-foreground); }
+.owb-theme-settings__save:hover:not(:disabled),
+.owb-theme-agent__generate:hover:not(:disabled),
+.owb-theme-agent__apply:hover:not(:disabled) { border-color: var(--ui-primary-hover); background: var(--ui-primary-hover); }
+/* Reset stays a text button: the confirm dialog carries the weight, and a second
+ * filled button next to Save would read as a second commit. */
+.owb-theme-settings__reset { border-color: transparent; background: none; color: var(--ui-danger); }
+.owb-theme-settings__reset:hover:not(:disabled) { border-color: var(--ui-border); background: var(--ui-danger-soft); color: var(--ui-danger); }
+
 /* Color picker */
 .owb-theme-picker__mode-switch { display: flex; gap: 4px; margin-bottom: 12px; }
 .owb-theme-picker__mode-switch button { padding: 4px 12px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: none; color: var(--ui-foreground-muted); cursor: pointer; font-size: var(--ui-text-xs); }

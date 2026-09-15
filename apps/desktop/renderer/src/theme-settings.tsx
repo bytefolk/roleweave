@@ -53,7 +53,7 @@ export function ThemeSettings({ onClose }: { onClose: () => void }) {
       <footer className="owb-theme-settings__footer">
         <button type="button" onClick={handleReset} className="owb-theme-settings__reset">{t("theme.settings.reset")}</button>
         <div className="owb-theme-settings__actions">
-          <button type="button" onClick={handleCancel}>{t("dlg.cancel")}</button>
+          <button type="button" className="owb-theme-settings__cancel" onClick={handleCancel}>{t("dlg.cancel")}</button>
           <button type="button" onClick={handleSave} disabled={!isDirty} className="owb-theme-settings__save">{t("theme.settings.save")}</button>
         </div>
       </footer>

@@ -41,8 +41,8 @@ export function ThemeAgentPrompt() {
               <p className="owb-theme-agent__success">{t("theme.agent.success")}</p>
               <ContrastWarningsView theme={result.theme} title={t("theme.settings.contrastWarnings")} />
               <div className="owb-theme-agent__actions">
-                <button type="button" onClick={handleApply}>{t("theme.agent.apply")}</button>
-                <button type="button" onClick={handleCancel}>{t("theme.agent.cancel")}</button>
+                <button type="button" className="owb-theme-agent__apply" onClick={handleApply}>{t("theme.agent.apply")}</button>
+                <button type="button" className="owb-theme-agent__cancel" onClick={handleCancel}>{t("theme.agent.cancel")}</button>
               </div>
             </>
           ) : <p className="owb-theme-agent__error">{(result.errors ?? []).map((issue) => t(issue.key, issue.vars)).join("; ")}</p>}
