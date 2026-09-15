@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("owb", {
   createGroup: (request) => ipcRenderer.invoke("owb:group:create", request),
   groups: () => ipcRenderer.invoke("owb:group:list"),
   group: (conversationRef) => ipcRenderer.invoke("owb:group:get", conversationRef),
+  dismissGroup: (conversationRef) => ipcRenderer.invoke("owb:group:dismiss", conversationRef),
   addGroupMember: (request) => ipcRenderer.invoke("owb:group:member:add", request),
   createGroupTurn: (request) => ipcRenderer.invoke("owb:group:turn:create", request),
   groupTimeline: (conversationRef) => ipcRenderer.invoke("owb:group:timeline", conversationRef),

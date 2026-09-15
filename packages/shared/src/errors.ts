@@ -69,6 +69,12 @@ export const errorCodes = {
   group_conflict: "group_conflict",
   /** Workspace-local group state failed validation or atomic persistence (#52). */
   group_storage_failed: "group_storage_failed",
+  /** Group quota (MAX_GROUPS) is full; dismiss a group before creating another (#274). */
+  group_quota_reached: "group_quota_reached",
+  /** Message quota (MAX_GROUP_MESSAGES) is full for the target group (#274). */
+  group_message_quota_reached: "group_message_quota_reached",
+  /** Group has active turn dispatches and cannot be dismissed right now (#274). */
+  group_busy: "group_busy",
   /** Doc routing request shape is invalid: missing/bad position or path params (#35 S2). */
   docs_request_invalid: "docs_request_invalid",
   /** Doc routing refused: path escapes the position dir, symlink, or non-allowlisted file (#35 S2). */

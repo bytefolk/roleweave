@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button as AntButton, Input, Select as AntSelect } from "antd";
-import { ArrowUp, Plus, Search, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
+import { ArrowUp, Plus, Search, Trash2, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
 import { PositionAvatar } from "../PositionAvatar";
 import { ProgressTrail, TypingIndicator } from "../turns/TurnThread";
@@ -172,6 +172,8 @@ export function GroupsPanel({
   const sendingGroupsRef = useRef(new Set<string>());
   const sending = sendingGroups[draftKey] === true;
   const [panelError, setPanelError] = useState<string | null>(null);
+  const [dismissOpen, setDismissOpen] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
 
   useEffect(() => {
     selectedRefRef.current = selectedRef;
@@ -281,6 +283,20 @@ export function GroupsPanel({
     };
   }, [loadTimeline]);
 
+  // SSE: remove dismissed groups from the list immediately.
+  useEffect(() => {
+    const off = window.owb.onEvent((event) => {
+      const envelope = event as { type?: string; payload?: unknown };
+      if (envelope?.type !== "group.updated") return;
+      const payload = envelope.payload as { conversationRef?: unknown; deleted?: unknown } | null;
+      if (payload?.deleted !== true || typeof payload.conversationRef !== "string") return;
+      const ref = payload.conversationRef;
+      setGroups((current) => current.filter((group) => group.conversationRef !== ref));
+      if (selectedRefRef.current === ref) setSelectedRef(null);
+    });
+    return off;
+  }, []);
+
   const selectedReconcileSignature = useMemo(() => {
     const live = Object.values(liveRuns)
       .filter((run) => run.groupRef === selectedRef)
@@ -367,6 +383,35 @@ export function GroupsPanel({
       if (isCurrent() && selectedRefRef.current === ref) setPanelError(t("grp.addFailOffline"));
     }
   }, [captureScope, loadGroups, loadTimeline, t]);
+
+  const dismissGroup = useCallback(async () => {
+    const isCurrent = captureScope();
+    if (!isCurrent()) return;
+    const ref = selectedRefRef.current;
+    if (ref === null || dismissing) return;
+    setDismissing(true);
+    setPanelError(null);
+    try {
+      const res = await window.owb.dismissGroup(ref);
+      if (!isCurrent()) return;
+      if (res.status !== 200) {
+        const body = res.body as { code?: string } | null;
+        if (body?.code === "group_busy") {
+          setPanelError(t("grp.busy"));
+        } else {
+          setPanelError(apiErrorMessage(res.body, t("grp.dismissFail")));
+        }
+        return;
+      }
+      setDismissOpen(false);
+      setGroups((current) => current.filter((group) => group.conversationRef !== ref));
+      if (selectedRefRef.current === ref) setSelectedRef(null);
+    } catch {
+      if (isCurrent()) setPanelError(t("grp.dismissFailOffline"));
+    } finally {
+      if (isCurrent()) setDismissing(false);
+    }
+  }, [captureScope, dismissing, t]);
 
   const send = useCallback(async () => {
     const isCurrent = captureScope();
@@ -610,6 +655,16 @@ export function GroupsPanel({
                   </span>
                 )}
               </span>
+              <button
+                type="button"
+                className="owb-dismiss"
+                onClick={() => setDismissOpen(true)}
+                disabled={runningMembers.size > 0}
+                title={t("grp.dismissAction")}
+              >
+                <Trash2 aria-hidden="true" size={13} />
+                {t("grp.dismissAction")}
+              </button>
             </header>
 
             <div className="owb-groups__panel-body">
@@ -836,6 +891,69 @@ export function GroupsPanel({
           </>
         )}
       </div>
+      {selectedGroup !== null && (
+        <DismissGroupModal
+          open={dismissOpen}
+          groupName={groupLabel(selectedGroup)}
+          busy={dismissing}
+          onOpenChange={setDismissOpen}
+          onConfirm={dismissGroup}
+        />
+      )}
     </section>
+  );
+}
+
+function DismissGroupModal({
+  open,
+  groupName,
+  busy,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  groupName: string;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  const t = useT();
+  const titleId = useId();
+  const descriptionId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onOpenChange(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onOpenChange, open]);
+
+  if (!open) return null;
+  return (
+    <div className="owb-modal" role="presentation" onMouseDown={(event) => {
+      if (event.currentTarget === event.target) onOpenChange(false);
+    }}>
+      <section
+        className="owb-modal__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <header className="owb-modal__header">
+          <div>
+            <h2 id={titleId}>{t("grp.dismissTitle", { name: groupName })}</h2>
+            <p id={descriptionId}>{t("grp.dismissDesc")}</p>
+          </div>
+          <button type="button" className="owb-modal__close" aria-label={t("dlg.close")} onClick={() => onOpenChange(false)}>×</button>
+        </header>
+        <footer className="owb-modal__footer">
+          <AntButton disabled={busy} onClick={() => onOpenChange(false)}>{t("grp.dismissCancel")}</AntButton>
+          <AntButton danger disabled={busy} onClick={onConfirm}>{t("grp.dismissConfirm")}</AntButton>
+        </footer>
+      </section>
+    </div>
   );
 }
