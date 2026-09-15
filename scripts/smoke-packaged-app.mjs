@@ -594,7 +594,7 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       0,
       "staged app reported no descendants while still held open",
     );
-    const liveQoderDescendants = liveDescendants.filter(({ command }) => /qoder(?:-engine|cli)?|claude/i.test(command));
+    const liveQoderDescendants = liveDescendants.filter(({ command }) => /qoder(?:-engine|cli)?|claude|codex|codebuddy|workbuddy/i.test(command));
     assert.equal(
       liveQoderDescendants.length,
       0,

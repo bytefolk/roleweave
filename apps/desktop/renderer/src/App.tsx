@@ -1028,6 +1028,13 @@ function AppInner({
       modelPinnable: health?.hosts?.["codex-local"]?.modelPinnable,
       model: health?.hosts?.["codex-local"]?.model,
     },
+    workbuddy: {
+      configured: health?.hosts?.workbuddy?.configured === true,
+      ready: health?.hosts?.workbuddy?.ready === true,
+      reason: health?.hosts?.workbuddy?.nextStep ?? t("misc.workbuddyHostUnknown"),
+      modelPinnable: health?.hosts?.workbuddy?.modelPinnable,
+      model: health?.hosts?.workbuddy?.model,
+    },
   }), [health, t]);
 
   /** A visible conversation has exactly one employee-selected runtime. For

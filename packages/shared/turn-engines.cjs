@@ -14,7 +14,7 @@
 // cannot derive a literal union from a runtime require — so a new engine is
 // added in both places, and turn-engines.test.cjs asserts every id here is
 // accepted by all three IPC validators.
-const TURN_ENGINE_IDS = ["qoder", "claude-code", "claude-local", "codex", "codex-local"];
+const TURN_ENGINE_IDS = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"];
 
 /** "a, b, or c" — the shape the IPC rejection messages have always used. */
 function turnEngineMessage(ids = TURN_ENGINE_IDS) {

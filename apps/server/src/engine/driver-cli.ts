@@ -374,6 +374,18 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, mod
     if (source.DIGITAL_EMPLOYEE_CODEX_COMMAND !== undefined) {
       environment.DIGITAL_EMPLOYEE_CODEX_COMMAND = source.DIGITAL_EMPLOYEE_CODEX_COMMAND;
     }
+  } else if (engine === "workbuddy") {
+    if (source.CODEBUDDY_API_KEY !== undefined) environment.CODEBUDDY_API_KEY = source.CODEBUDDY_API_KEY;
+    if (source.CODEBUDDY_BASE_URL !== undefined) environment.CODEBUDDY_BASE_URL = source.CODEBUDDY_BASE_URL;
+    if (source.CODEBUDDY_MODEL !== undefined) environment.CODEBUDDY_MODEL = source.CODEBUDDY_MODEL;
+    if (source.CODEBUDDY_CONFIG_DIR !== undefined) environment.CODEBUDDY_CONFIG_DIR = source.CODEBUDDY_CONFIG_DIR;
+    if (source.WORKBUDDY_CONFIG_DIR !== undefined) environment.WORKBUDDY_CONFIG_DIR = source.WORKBUDDY_CONFIG_DIR;
+    if (source.CODEBUDDY_INTERNET_ENVIRONMENT !== undefined) {
+      environment.CODEBUDDY_INTERNET_ENVIRONMENT = source.CODEBUDDY_INTERNET_ENVIRONMENT;
+    }
+    if (source.DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND !== undefined) {
+      environment.DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND = source.DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND;
+    }
   } else {
     // The external engine's historical claude-local contract remains login
     // only. The bundled adapter below also supports the operator's own local

@@ -50,6 +50,7 @@ const SERVER_RUNTIME_FILES = [
   "src/qoder-binary.js",
   "src/claude-binary.js",
   "src/codex-binary.js",
+  "src/workbuddy-binary.js",
   "src/local-provider-config.js",
   "src/windows-launcher.js",
   "dist/src/agent-binding.js",
@@ -108,6 +109,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/turns/store.js",
   "dist/src/turns/thread-context.js",
   "dist/src/windows-launcher.js",
+  "dist/src/workbuddy-binary.js",
   "dist/src/workspace-state.js",
 ];
 

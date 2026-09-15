@@ -47,6 +47,26 @@ sources and MCP, and limits built-in tools to the employee's explicit grants.
 MCP grant references are currently unsupported by this adapter and fail closed
 instead of loading global MCP servers.
 
+## WorkBuddy (CodeBuddy Code)
+
+WorkBuddy ships its CLI (CodeBuddy Code) inside the desktop application; the
+binary is not on PATH by default. The resolver checks
+`DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND` first, then PATH for `codebuddy`,
+`codebuddy-code`, or `cbc`, then known desktop install locations on Windows
+and macOS.
+
+The engine requires an explicit `CODEBUDDY_API_KEY`; it does not reuse a
+personal login session. An optional `CODEBUDDY_BASE_URL` points the CLI at a
+compatible endpoint, and `CODEBUDDY_MODEL` pins the model. The supported CLI
+version window is >= 2.106.0 and < 3.0.0; versions outside this range are
+reported as not-ready with an actionable `nextStep`.
+
+Each invocation isolates settings sources (`--setting-sources none`), empties
+MCP configuration, and passes a version-bound deny list to
+`--disallowedTools` because `--tools ""` alone does not clear the model-visible
+tool set on all supported versions. The deny list must be re-audited when the
+version window moves.
+
 ## Status and cost
 
 The menu shows the local connection source, hostname, mapped model identifier

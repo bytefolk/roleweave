@@ -18,6 +18,7 @@ import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
 import { resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
+import { resolveWorkbuddyExecutable, validatedWorkbuddyModel } from "../src/workbuddy-binary.js";
 import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
 import { resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../src/local-provider-config.js";
 
@@ -716,6 +717,8 @@ function turnRun(workspaceDir, positionId) {
       case "codex":
       case "codex-local":
         return turnRunCodex(workspaceDir, positionId, input, engineModel);
+      case "workbuddy":
+        return turnRunWorkbuddy(workspaceDir, positionId, input);
       default:
         return turnRunQoder(workspaceDir, positionId, input);
     }
@@ -1530,6 +1533,337 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
   child.on("close", (code) => {
     if (terminalEmitted) return;
     fail("codex.no_terminal_event", stderrTail.trim() || `codex exited with code ${code} without a terminal event`, true);
+  });
+}
+
+const WORKBUDDY_CHILD_ENV_KEYS = [
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "SystemRoot",
+  "WINDIR",
+  "ComSpec",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "SHELL",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "CODEBUDDY_CONFIG_DIR",
+  "WORKBUDDY_CONFIG_DIR",
+  "CODEBUDDY_API_KEY",
+  "CODEBUDDY_MODEL",
+  "CODEBUDDY_BASE_URL",
+  "CODEBUDDY_INTERNET_ENVIRONMENT",
+  "DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+];
+
+function workbuddyChildEnvironment(source) {
+  const environment = {};
+  for (const key of WORKBUDDY_CHILD_ENV_KEYS) {
+    if (source[key] !== undefined) environment[key] = source[key];
+  }
+  return environment;
+}
+
+/**
+ * WorkBuddy (CodeBuddy Code) supported version window. The deny list that
+ * empties the model-visible tool set is version-bound; a version outside this
+ * window must be re-audited before the engine claims an empty tool set.
+ */
+const WORKBUDDY_VERSION_MIN = [2, 106, 0];
+const WORKBUDDY_VERSION_MAX = [3, 0, 0];
+
+function parseWorkbuddyVersion(version) {
+  if (typeof version !== "string") return null;
+  const match = /(\d+)\.(\d+)\.(\d+)/.exec(version);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareParts(parts, bound) {
+  for (let index = 0; index < 3; index += 1) {
+    if (parts[index] < bound[index]) return -1;
+    if (parts[index] > bound[index]) return 1;
+  }
+  return 0;
+}
+
+function supportedWorkbuddyVersion(version) {
+  const parts = parseWorkbuddyVersion(version);
+  if (parts === null) return false;
+  return compareParts(parts, WORKBUDDY_VERSION_MIN) >= 0 && compareParts(parts, WORKBUDDY_VERSION_MAX) < 0;
+}
+
+/**
+ * WorkBuddy's --tools "" does not empty the model-visible tool set on all
+ * supported versions (same observation as upstream CODEBUDDY_2_106_4_TOOLS).
+ * The deny list is version-bound; this is the minimum set known to neutralise
+ * the built-in tools for the supported window. If the window moves, this list
+ * must be re-audited — do not assume --tools "" alone suffices.
+ */
+const WORKBUDDY_DISALLOWED_TOOLS = [
+  "apply_patch",
+  "execute",
+  "web_search",
+  "url_fetch",
+];
+
+const WORKBUDDY_STALL_TIMEOUT_MS = 90_000;
+
+/**
+ * @param {string | undefined} model
+ * @param {string | undefined} baseUrl
+ * @returns {string[]}
+ */
+export function workbuddyTurnArgs(model, baseUrl) {
+  const args = [
+    "-p",
+    "--input-format", "text",
+    "--output-format", "stream-json",
+    "--include-partial-messages",
+    // Empty --tools is not sufficient on supported versions; the deny list
+    // complements it. See WORKBUDDY_DISALLOWED_TOOLS header comment.
+    "--tools", "",
+    "--disallowedTools", WORKBUDDY_DISALLOWED_TOOLS.join(","),
+    "--permission-mode", "default",
+    "--strict-mcp-config",
+    "--mcp-config", '{"mcpServers":{}}',
+    "--setting-sources", "none",
+  ];
+  if (model !== undefined && model.length > 0) args.push("--model", model);
+  if (baseUrl !== undefined) args.push("--base-url", baseUrl);
+  return args;
+}
+
+function turnRunWorkbuddy(workspaceDir, positionId, input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+
+  let terminalEmitted = false;
+  let child;
+  let stallTimer;
+  const stopChild = () => {
+    if (stallTimer !== undefined) clearTimeout(stallTimer);
+    if (child === undefined || child.pid === undefined || child.exitCode !== null) return;
+    try {
+      if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+      else child.kill("SIGKILL");
+    } catch {
+      try { child.kill("SIGKILL"); } catch { /* already gone */ }
+    }
+  };
+  const fail = (code, message, retryable) => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
+    stopChild();
+    emit({
+      type: "run.failed",
+      runId,
+      timestamp: now(),
+      error: { code, message: message.slice(0, 2000), retryable, terminalReason: "engine_internal_error" },
+    });
+    process.exit(0);
+  };
+
+  const workbuddyBin = resolveWorkbuddyExecutable(process.env);
+  if (workbuddyBin === null) {
+    fail("workbuddy.binary_unresolved", "cannot resolve an executable WorkBuddy CLI; install WorkBuddy or set DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND", false);
+    return;
+  }
+
+  // Bounded version probe before spawn.
+  let versionProbe;
+  try {
+    const spec = createLauncherSpawnSpec(workbuddyBin, ["--version"], workbuddyChildEnvironment(process.env));
+    versionProbe = spawnSync(spec.command, spec.args, {
+      ...spec.options,
+      encoding: "utf8",
+      killSignal: "SIGKILL",
+      timeout: 5000,
+      windowsHide: true,
+    });
+  } catch {
+    fail("workbuddy.version_probe_failed", "cannot probe WorkBuddy CLI version", true);
+    return;
+  }
+  if (versionProbe.error !== undefined || versionProbe.status !== 0) {
+    fail("workbuddy.version_probe_failed", "WorkBuddy CLI --version probe failed", true);
+    return;
+  }
+  const announced = typeof versionProbe.stdout === "string" && versionProbe.stdout.trim().length > 0
+    ? versionProbe.stdout
+    : typeof versionProbe.stderr === "string"
+      ? versionProbe.stderr
+      : "";
+  const versionMatch = /(\d+\.\d+\.\d+)/.exec(announced);
+  const detectedVersion = versionMatch ? versionMatch[1] : null;
+  if (!supportedWorkbuddyVersion(detectedVersion)) {
+    fail(
+      "workbuddy.version_not_supported",
+      detectedVersion
+        ? `WorkBuddy CLI version ${detectedVersion} is outside the supported window (>= ${WORKBUDDY_VERSION_MIN.join(".")} and < ${WORKBUDDY_VERSION_MAX.join(".")})`
+        : "cannot determine WorkBuddy CLI version",
+      false,
+    );
+    return;
+  }
+
+  const baseUrl = (process.env.CODEBUDDY_BASE_URL ?? "").trim();
+  if (baseUrl.length > 0) {
+    if (baseUrl.length > 2048 || /[\u0000-\u001f\u007f]/.test(baseUrl)) {
+      fail("workbuddy.base_url_invalid", "CODEBUDDY_BASE_URL is invalid", false);
+      return;
+    }
+  }
+
+  const model = validatedWorkbuddyModel(process.env.ROLEWEAVE_TURN_MODEL ?? process.env.CODEBUDDY_MODEL);
+  if (model === null) {
+    fail("workbuddy.model_invalid", "CODEBUDDY_MODEL must be a bounded model identifier", false);
+    return;
+  }
+
+  if (!process.env.CODEBUDDY_API_KEY?.trim()) {
+    fail("workbuddy.credential_missing", "CODEBUDDY_API_KEY is not set; WorkBuddy requires an explicit API key", false);
+    return;
+  }
+
+  const sessionId = randomUUID();
+  const args = workbuddyTurnArgs(model, baseUrl || undefined);
+  args.push("--session-id", sessionId);
+  args.push("--max-turns", "1");
+
+  const prompt = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n${input || "Execute your position duties for this turn."}`;
+
+  try {
+    const spawnSpec = createQoderSpawnSpec(workbuddyBin, args, workbuddyChildEnvironment(process.env));
+    child = spawn(spawnSpec.command, spawnSpec.args, {
+      ...spawnSpec.options,
+      cwd: workspaceDir,
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+    });
+  } catch {
+    fail("workbuddy.spawn_failed", "cannot spawn the resolved WorkBuddy CLI", true);
+    return;
+  }
+
+  // Write prompt to stdin.
+  child.stdin.end(prompt);
+
+  let buffer = "";
+  let stderrTail = "";
+  let output = "";
+
+  const noteProgress = () => {
+    if (stallTimer !== undefined) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      fail(
+        "workbuddy.stalled",
+        `workbuddy produced no terminal event for ${WORKBUDDY_STALL_TIMEOUT_MS}ms`,
+        true,
+      );
+    }, WORKBUDDY_STALL_TIMEOUT_MS);
+    stallTimer.unref?.();
+  };
+  noteProgress();
+
+  child.stderr.on("data", (chunk) => {
+    stderrTail = (stderrTail + String(chunk)).slice(-2000);
+  });
+
+  function handleWorkbuddyLine(line) {
+    if (terminalEmitted || line.trim().length === 0) return;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return;
+    }
+
+    // stream_event with text_delta → text increment.
+    if (event?.type === "stream_event" && event?.event?.type === "text_delta") {
+      const text = typeof event.event.text === "string" ? event.event.text : "";
+      if (text.length > 0) {
+        output += text;
+        noteProgress();
+        emit({ type: "model.delta", runId, timestamp: now(), text });
+      }
+      return;
+    }
+
+    // result event → terminal.
+    if (event?.type === "result") {
+      terminalEmitted = true;
+      if (stallTimer !== undefined) clearTimeout(stallTimer);
+      if (event.subtype !== "success" || event.is_error === true) {
+        const errorDetail = typeof event.result === "string" ? event.result : stderrTail || "WorkBuddy reported an error result";
+        fail("workbuddy.result_error", errorDetail, false);
+        return;
+      }
+      const usage = event.usage && typeof event.usage === "object"
+        ? {
+            ...(Number.isInteger(event.usage.input_tokens) ? { inputTokens: event.usage.input_tokens } : {}),
+            ...(Number.isInteger(event.usage.output_tokens) ? { outputTokens: event.usage.output_tokens } : {}),
+          }
+        : null;
+      if (usage && Object.keys(usage).length > 0) {
+        emit({ type: "usage", runId, timestamp: now(), ...usage });
+      }
+      const finalOutput = typeof event.result === "string" && event.result.length > 0 ? event.result : output;
+      emit({ type: "run.completed", runId, timestamp: now(), output: finalOutput, terminalReason: "goal_met" });
+      process.exit(0);
+      return;
+    }
+
+    // system/init — validate and acknowledge.
+    if (event?.type === "system" && event?.subtype === "init") {
+      noteProgress();
+      return;
+    }
+
+    // Unknown events are ignored but do not fail closed — the NDJSON stream
+    // may carry auxiliary events that are not terminal.
+  }
+
+  child.stdout.on("data", (chunk) => {
+    buffer += String(chunk);
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      handleWorkbuddyLine(buffer.slice(0, newline));
+      buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf("\n");
+    }
+  });
+
+  child.on("error", () => fail(
+    "workbuddy.spawn_failed",
+    "cannot spawn the resolved WorkBuddy CLI; install WorkBuddy or check DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND",
+    true,
+  ));
+  child.on("close", (code) => {
+    if (buffer.trim().length > 0) handleWorkbuddyLine(buffer);
+    if (terminalEmitted) return;
+    if (code === 0) {
+      fail("workbuddy.no_terminal_event", "WorkBuddy CLI exited without a terminal result event", true);
+    } else {
+      fail("workbuddy.exit_nonzero", stderrTail.trim() || `workbuddy exited with code ${code}`, true);
+    }
   });
 }
 
