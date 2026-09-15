@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isPositionId } from "@roleweave/shared";
 import type { TurnRecord, WorkbenchSession } from "@roleweave/shared";
+import { isWorkbenchSession, UUID_PATTERN } from "../sessions/store.js";
 import type { AtomicTurnWriteOperations } from "../turns/store.js";
 import {
   atomicWriteJson,
@@ -16,7 +17,6 @@ const EXPORT_ROOT = [".digital-employee", "workbench", "context-exports"] as con
 const MAX_OCCURRENCE_BYTES = 64 * 1024;
 const MAX_EXPORT_STATE_BYTES = 64 * 1024;
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 export interface ContextOccurrence {
   schemaVersion: typeof OCCURRENCE_SCHEMA_VERSION;
@@ -188,7 +188,7 @@ export class ContextExportService {
 }
 
 function prepareExport(session: WorkbenchSession, turn: TurnRecord): PreparedExport {
-  if (!isValidSession(session)) throw new ContextExportError("context export session is invalid");
+  if (!isWorkbenchSession(session)) throw new ContextExportError("context export session is invalid");
   if (!isTurnRecord(turn)) throw new ContextExportError("context export turn is invalid");
   if (turn.status !== "completed") throw new ContextExportError("turn is not eligible for context export");
   if (turn.positionId !== session.positionId || turn.conversationId !== session.sessionId) {
@@ -287,29 +287,6 @@ function boundedContent(content: string): { content: string; truncated: boolean 
     bytes += next;
   }
   return { content: bounded, truncated: true };
-}
-
-function isValidSession(session: WorkbenchSession): boolean {
-  const expectedKeys = [
-    "schemaVersion", "sessionId", "workspaceInstanceId", "positionId", "principal",
-    "status", "rotatedFrom", "rotatedTo", "createdAt", "rotatedAt",
-  ].sort();
-  const baseValid = Object.keys(session).filter((key) => key !== "threadContextEnabled").sort().join(",") === expectedKeys.join(",") &&
-    (session.threadContextEnabled === undefined || typeof session.threadContextEnabled === "boolean") &&
-    session.schemaVersion === "workbench-session.v1" &&
-    UUID_PATTERN.test(session.sessionId) &&
-    UUID_PATTERN.test(session.workspaceInstanceId) &&
-    isPositionId(session.positionId) &&
-    session.principal === `position.${session.positionId}` &&
-    (session.status === "active" || session.status === "rotated") &&
-    Number.isFinite(Date.parse(session.createdAt)) &&
-    (session.rotatedFrom === null || UUID_PATTERN.test(session.rotatedFrom)) &&
-    (session.rotatedTo === null || UUID_PATTERN.test(session.rotatedTo)) &&
-    (session.rotatedAt === null || Number.isFinite(Date.parse(session.rotatedAt)));
-  if (!baseValid) return false;
-  return session.status === "active"
-    ? session.rotatedTo === null && session.rotatedAt === null
-    : session.rotatedTo !== null && session.rotatedAt !== null;
 }
 
 function digest(value: string): string {

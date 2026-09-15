@@ -25,7 +25,7 @@ const MAX_SESSIONS_PER_POSITION = 128;
 const MAX_POSITION_TEMP_FILES = MAX_POSITIONS;
 const MAX_POSITION_DIRECTORY_ENTRIES = MAX_POSITIONS + MAX_POSITION_TEMP_FILES;
 const MAX_AUTHORITATIVE_POSITION_BYTES = 64 * 1024 * 1024;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 interface WorkspaceInstanceRecord {
   schemaVersion: typeof WORKSPACE_SCHEMA_VERSION;
@@ -120,7 +120,7 @@ function isWorkspaceRecord(value: unknown): value is WorkspaceInstanceRecord {
     validTimestamp(record.createdAt);
 }
 
-function isWorkbenchSession(value: unknown): value is WorkbenchSession {
+export function isWorkbenchSession(value: unknown): value is WorkbenchSession {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   const base = { ...record };
