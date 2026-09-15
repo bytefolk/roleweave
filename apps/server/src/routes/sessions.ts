@@ -42,15 +42,29 @@ function parseSessionTurn(raw: unknown): {
   input: string;
   engine: TurnEngine;
   pendingApproval?: TurnPendingApproval;
+  goalId?: string;
+  branchId?: string;
 } {
-  if (
-    !isRecord(raw) ||
-    (!exactKeys(raw, ["input", "engine"]) && !exactKeys(raw, ["input", "engine", "pendingApproval"]))
-  ) {
+  if (!isRecord(raw)) {
     throw new OrgApiError(
       errorCodes.turn_request_invalid,
       400,
-      "session turn accepts exactly input, engine, and optional pendingApproval",
+      "session turn request must be a JSON object",
+    );
+  }
+  const allowedKeys = new Set(["input", "engine", "pendingApproval", "goalId", "branchId"]);
+  if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
+    throw new OrgApiError(
+      errorCodes.turn_request_invalid,
+      400,
+      "session turn accepts input, engine, and optional pendingApproval, goalId, branchId",
+    );
+  }
+  if (typeof raw.input !== "string" || !Object.hasOwn(raw, "engine")) {
+    throw new OrgApiError(
+      errorCodes.turn_request_invalid,
+      400,
+      "session turn requires input and engine",
     );
   }
   if (
@@ -66,12 +80,21 @@ function parseSessionTurn(raw: unknown): {
   if (typeof raw.engine !== "string" || !turnEngines.includes(raw.engine as TurnEngine)) {
     throw new OrgApiError(errorCodes.turn_engine_unsupported, 400, `engine must be ${turnEngines.join(" or ")}`);
   }
+  const GOAL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+  if (raw.goalId !== undefined && (typeof raw.goalId !== "string" || !GOAL_ID_PATTERN.test(raw.goalId))) {
+    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "goalId must be a bounded alphanumeric string");
+  }
+  if (raw.branchId !== undefined && (typeof raw.branchId !== "string" || !GOAL_ID_PATTERN.test(raw.branchId))) {
+    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "branchId must be a bounded alphanumeric string");
+  }
   return {
     input: raw.input,
     engine: raw.engine as TurnEngine,
     ...(raw.pendingApproval !== undefined
       ? { pendingApproval: assertPendingApproval(raw.pendingApproval) }
       : {}),
+    ...(raw.goalId !== undefined ? { goalId: raw.goalId } : {}),
+    ...(raw.branchId !== undefined ? { branchId: raw.branchId } : {}),
   };
 }
 

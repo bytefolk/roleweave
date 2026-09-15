@@ -2,61 +2,50 @@ import { useCallback, useState } from "react";
 import { useT } from "@roleweave/ui";
 import { useTheme } from "./theme-context";
 import { type ThemeGenerationResult } from "./theme-agent";
-import { getContrastWarnings, type ContrastWarning } from "./theme-validation";
+import { ContrastWarningsView } from "./theme-picker";
 
 export function ThemeAgentPrompt() {
   const t = useT();
   const { mode, setCustom } = useTheme();
   const [prompt, setPrompt] = useState("");
-  const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ThemeGenerationResult | null>(null);
-  const [contrastWarnings, setContrastWarnings] = useState<ContrastWarning[]>([]);
 
-  const handleGenerate = useCallback(async () => {
+  // `generateThemeFromPrompt` is a stub that resolves with a failure, so it can
+  // neither reject nor succeed: the old try/catch was unreachable and the 1s
+  // delay only stalled the panel. Report the outcome immediately.
+  const handleGenerate = useCallback(() => {
     if (!prompt.trim()) return;
-    setLoading(true); setResult(null); setContrastWarnings([]);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      setResult({ success: false, error: t("theme.agent.notIntegrated") });
-    } catch (error) {
-      setResult({ success: false, error: error instanceof Error ? error.message : t("theme.agent.unknownError") });
-    } finally { setLoading(false); }
-  }, [prompt, t]);
+    setResult({ success: false, errors: [{ key: "theme.agent.notIntegrated" }] });
+  }, [prompt]);
 
   const handleApply = useCallback(() => {
-    if (result?.success && result.theme) {
-      const warnings = getContrastWarnings(result.theme);
-      setContrastWarnings(warnings);
-      setCustom({ [mode]: result.theme });
-    }
+    if (!result?.success || !result.theme) return;
+    // Keep the shape explicit: a computed `{ [mode]: theme }` widens to an index
+    // signature that `CustomThemeOverrides` does not accept.
+    setCustom(mode === "light" ? { light: result.theme } : { dark: result.theme });
   }, [result, mode, setCustom]);
 
-  const handleCancel = useCallback(() => { setResult(null); setContrastWarnings([]); }, []);
+  const handleCancel = useCallback(() => { setResult(null); }, []);
 
   return (
     <div className="owb-theme-agent">
       <div className="owb-theme-agent__input">
         <label htmlFor="theme-agent-prompt">{t("theme.agent.promptLabel")}</label>
         <textarea id="theme-agent-prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t("theme.agent.promptPlaceholder")} rows={4} className="owb-theme-agent__textarea" />
-        <button type="button" onClick={handleGenerate} disabled={loading || !prompt.trim()} className="owb-theme-agent__generate">{loading ? t("theme.agent.generating") : t("theme.agent.generate")}</button>
+        <button type="button" onClick={handleGenerate} disabled={!prompt.trim()} className="owb-theme-agent__generate">{t("theme.agent.generate")}</button>
       </div>
       {result && (
         <div className="owb-theme-agent__result">
-          {result.success ? (
+          {result.success && result.theme ? (
             <>
               <p className="owb-theme-agent__success">{t("theme.agent.success")}</p>
-              {contrastWarnings.length > 0 && (
-                <div className="owb-theme-agent__warnings">
-                  <h4>{t("theme.agent.contrastWarnings")}</h4>
-                  <ul>{contrastWarnings.map((warning, i) => <li key={i}>{t("theme.agent.contrastWarning", { foreground: warning.foreground, background: warning.background, ratio: warning.ratio.toString(), required: warning.required.toString() })}</li>)}</ul>
-                </div>
-              )}
+              <ContrastWarningsView theme={result.theme} title={t("theme.settings.contrastWarnings")} />
               <div className="owb-theme-agent__actions">
                 <button type="button" onClick={handleApply}>{t("theme.agent.apply")}</button>
                 <button type="button" onClick={handleCancel}>{t("theme.agent.cancel")}</button>
               </div>
             </>
-          ) : <p className="owb-theme-agent__error">{result.error}</p>}
+          ) : <p className="owb-theme-agent__error">{(result.errors ?? []).map((issue) => t(issue.key, issue.vars)).join("; ")}</p>}
         </div>
       )}
     </div>

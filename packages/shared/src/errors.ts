@@ -9,6 +9,8 @@
  */
 
 export const errorCodes = {
+  service_request_invalid: "service_request_invalid",
+  service_upstream_failed: "service_upstream_failed",
   /** Missing/invalid bearer token (401). */
   unauthorized: "unauthorized",
   /** Request body failed to parse or violates the 1 MiB limit (400). */
@@ -55,6 +57,10 @@ export const errorCodes = {
   reports_data_invalid: "reports_data_invalid",
   /** POST /hire request shape violates the frozen hire channel contract (#33). */
   hire_request_invalid: "hire_request_invalid",
+  /** Employee avatar request shape is invalid. */
+  avatar_request_invalid: "avatar_request_invalid",
+  /** No image provider has been configured for employee avatar generation. */
+  avatar_generation_unavailable: "avatar_generation_unavailable",
   /** POST /groups request shape violates the S2 group-chat contract (#52). */
   group_request_invalid: "group_request_invalid",
   /** A requested group conversationRef does not exist in the open workspace (#52). */
@@ -93,6 +99,14 @@ export const errorCodes = {
   drive_upstream_unavailable: "drive_upstream_unavailable",
   /** The upstream mem service returned a non-2xx status for a proxied request. */
   drive_upstream_failed: "drive_upstream_failed",
+  /** Goal request shape is invalid (#222). */
+  goal_request_invalid: "goal_request_invalid",
+  /** A requested goal does not exist in the open workspace (#222). */
+  goal_missing: "goal_missing",
+  /** Goal lifecycle state rejects the requested mutation (#222). */
+  goal_conflict: "goal_conflict",
+  /** Workspace-local goal state failed validation or atomic persistence (#222). */
+  goal_storage_failed: "goal_storage_failed",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */

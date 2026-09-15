@@ -21,6 +21,8 @@ import { createTurnEnvelope } from "../turns/envelope.js";
 import { DeltaForwarder } from "../turns/delta-forwarder.js";
 import { assertPositionId, compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 import { compactThreadContextHistory, materializeThreadContext, type SupplementalContext, type ThreadContextSource } from "../turns/thread-context.js";
+import { readPositionAgentBinding, resolvePositionAgentEngine } from "../agent-binding.js";
+import { employeeModelConfig } from "../model-selection.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -32,6 +34,9 @@ export interface TurnPostBody {
   pendingApproval?: TurnPendingApproval;
   /** Additive #52: set only by the group spawn path, never by a route body. */
   groupRef?: string;
+  /** Additive #222: optional goal binding. */
+  goalId?: string;
+  branchId?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -55,12 +60,12 @@ function parsePostBody(raw: unknown): TurnPostBody {
   if (!isRecord(raw)) {
     throw new OrgApiError(errorCodes.turn_request_invalid, 400, "turn request must be a JSON object");
   }
-  const keys = Object.keys(raw).sort();
-  if (keys.join(",") !== "engine,input,positionId" && keys.join(",") !== "engine,input,pendingApproval,positionId") {
+  const allowedKeys = new Set(["positionId", "input", "engine", "pendingApproval", "goalId", "branchId"]);
+  if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
     throw new OrgApiError(
       errorCodes.turn_request_invalid,
       400,
-      "turn request accepts exactly positionId, input, engine, and optional pendingApproval",
+      "turn request accepts positionId, input, engine, and optional pendingApproval, goalId, branchId",
     );
   }
   const positionId = assertPositionId(raw.positionId);
@@ -82,6 +87,13 @@ function parsePostBody(raw: unknown): TurnPostBody {
       `engine must be ${turnEngines.join(" or ")}`,
     );
   }
+  const GOAL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+  if (raw.goalId !== undefined && (typeof raw.goalId !== "string" || !GOAL_ID_PATTERN.test(raw.goalId))) {
+    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "goalId must be a bounded alphanumeric string");
+  }
+  if (raw.branchId !== undefined && (typeof raw.branchId !== "string" || !GOAL_ID_PATTERN.test(raw.branchId))) {
+    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "branchId must be a bounded alphanumeric string");
+  }
   return {
     positionId,
     input: raw.input,
@@ -89,6 +101,8 @@ function parsePostBody(raw: unknown): TurnPostBody {
     ...(raw.pendingApproval !== undefined
       ? { pendingApproval: assertPendingApproval(raw.pendingApproval) }
       : {}),
+    ...(raw.goalId !== undefined ? { goalId: raw.goalId } : {}),
+    ...(raw.branchId !== undefined ? { branchId: raw.branchId } : {}),
   };
 }
 
@@ -171,6 +185,24 @@ export async function executeTurn(
   const turnId = group !== undefined ? group.turnId : crypto.randomUUID();
   const reservation = ctx.runningTurns.reserve(workspace.dir, body.positionId, turnId);
   try {
+    // The renderer's engine value is only a first-use fallback for legacy
+    // positions. Once a sidecar exists it is authoritative, including for
+    // session and group paths which share this executor.
+    const resolvedEngine = await resolvePositionAgentEngine(
+      workspace,
+      body.positionId,
+      body.engine,
+      ctx.turnStore,
+      ctx.sessionStore,
+    );
+    if (body.engine !== resolvedEngine) body = { ...body, engine: resolvedEngine };
+    const binding = await readPositionAgentBinding(workspace, body.positionId);
+    const modelConfig = await employeeModelConfig(resolvedEngine, binding?.model, ctx.config.bundledElectronEngine);
+    if (modelConfig.connection?.status === "invalid") {
+      throw new OrgApiError(errorCodes.turn_request_invalid, 400, modelConfig.connection.message ?? "Agent connection configuration is invalid");
+    }
+    const model = modelConfig.editable && modelConfig.selected !== "provider-default" ? modelConfig.selected : undefined;
+    if (group !== undefined && group.engine !== resolvedEngine) group = { ...group, engine: resolvedEngine };
     // Group spawns carry a pre-assigned turnId so the 202 spawn list and the
     // executed envelope share one identity; personal turns keep server-random.
     const createdAt = new Date().toISOString();
@@ -190,14 +222,15 @@ export async function executeTurn(
     if (session !== undefined && session.threadContextEnabled !== false) {
       history = (await ctx.turnStore.sessionHistory(workspace.dir, session.sessionId, session.positionId, createdAt)).turns;
     } else if (group !== undefined) {
-      const conversation = await ctx.groupStore.get(workspace.dir, group.groupRef);
+      const groupRef = group.groupRef;
+      const conversation = await ctx.groupStore.get(workspace.dir, groupRef);
       // Read accepted identities from this group instead of every employee's
       // personal history. Corrupt sources are omitted individually.
-      const messages = await ctx.groupStore.readContextMessages(workspace.dir, group.groupRef);
+      const messages = await ctx.groupStore.readContextMessages(workspace.dir, groupRef);
       const memberSources = new Map<string, ThreadContextSource[]>();
       const seen = new Set<string>();
-      const belongs = (turn: TurnRecord): boolean => turn.conversationRef === group.groupRef ||
-        (turn.conversationRef === undefined && turn.groupRef === group.groupRef);
+      const belongs = (turn: TurnRecord): boolean => turn.conversationRef === groupRef ||
+        (turn.conversationRef === undefined && turn.groupRef === groupRef);
       const compare = (left: ThreadContextSource, right: ThreadContextSource): number =>
         compareRfc3339Instants(left.createdAt, right.createdAt) || compareCodeUnitOrdinal(left.turnId, right.turnId);
       for (const message of messages) {
@@ -262,6 +295,7 @@ export async function executeTurn(
       ...(conversationRef !== undefined ? { conversationRef } : {}),
     });
     const beginInput = {
+      ...(model === undefined ? {} : { model }),
       workspace: workspace.dir,
       positionId: body.positionId,
       turnId,
@@ -290,6 +324,7 @@ export async function executeTurn(
     });
     try {
       result = await ctx.turnDriver.turnRun({
+        ...(model === undefined ? {} : { model }),
         workspace: workspace.dir,
         positionId: body.positionId,
         engine: body.engine,

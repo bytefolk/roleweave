@@ -20,7 +20,7 @@ export function themeToCssOverrides(theme: ColorTokenValues): string {
   return Object.entries(theme).map(([key, value]) => `  --ui-${key}: ${value};`).join("\n");
 }
 
-export function themeToAntdSeed(theme: ColorTokenValues): Record<string, string | number> {
+export function themeToAntdSeed(theme: ColorTokenValues, mode: ThemeMode): Record<string, string | number> {
   return {
     colorPrimary: theme.primary, colorPrimaryHover: theme["primary-hover"], colorPrimaryActive: theme["primary-hover"],
     colorPrimaryBg: theme["primary-soft"], colorPrimaryBgHover: theme["primary-soft"],
@@ -35,7 +35,7 @@ export function themeToAntdSeed(theme: ColorTokenValues): Record<string, string 
     colorErrorBg: theme["danger-soft"], colorErrorBgHover: theme["danger-soft"],
     colorErrorBorder: theme.border, colorErrorBorderHover: theme["border-strong"],
     colorErrorBgFilledHover: theme["danger-soft"], colorErrorBgActive: theme["danger-soft"],
-    colorInfo: theme.info, colorInfoHover: theme.primary, colorInfoActive: theme["primary-hover"],
+    colorInfo: theme.info, colorInfoHover: theme["primary-hover"], colorInfoActive: theme["primary-hover"],
     colorInfoBg: theme["info-soft"], colorInfoBgHover: theme["info-soft"],
     colorInfoBorder: theme.border, colorInfoBorderHover: theme["border-strong"],
     colorLink: theme.primary, colorLinkHover: theme["primary-hover"], colorLinkActive: theme["primary-hover"],
@@ -47,7 +47,10 @@ export function themeToAntdSeed(theme: ColorTokenValues): Record<string, string 
     colorTextPlaceholder: theme["foreground-subtle"], colorTextDisabled: theme["foreground-subtle"],
     colorBgContainerDisabled: theme["surface-inset"], colorTextLightSolid: theme["primary-foreground"],
     borderRadiusSM: 6, borderRadiusLG: 12, borderRadiusOuter: 16,
-    boxShadow: "0 4px 16px rgba(20, 21, 27, 0.1)", boxShadowSecondary: "0 16px 48px rgba(20, 21, 27, 0.14)",
+    // Elevation is not mode-neutral: reusing the light shadow pair in dark mode
+    // flattened every popover and drawer into the background.
+    boxShadow: mode === "dark" ? "0 6px 20px rgba(0, 0, 0, 0.45)" : "0 4px 16px rgba(20, 21, 27, 0.1)",
+    boxShadowSecondary: mode === "dark" ? "0 20px 56px rgba(0, 0, 0, 0.55)" : "0 16px 48px rgba(20, 21, 27, 0.14)",
   };
 }
 

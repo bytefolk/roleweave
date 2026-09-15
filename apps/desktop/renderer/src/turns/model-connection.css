@@ -1,0 +1,101 @@
+.owb-model-connection__model {
+  display: flex;
+  flex: 1 1 230px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  min-width: 160px;
+}
+
+.owb-model-connection__model .owb-model-picker {
+  flex: 1 1 130px;
+  min-width: 110px;
+  max-width: none;
+}
+
+.owb-model-connection__summary {
+  flex: 0 1 auto;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-model-connection__error {
+  flex-basis: 100%;
+  margin: 1px 0 0;
+  color: var(--ui-error, #bd3d3d);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.owb-model-menu__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 6px;
+}
+
+.owb-model-menu__heading strong { font-size: 12px; }
+
+.owb-model-menu__heading span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-foreground-muted);
+  font-size: 10px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-model-choice p { overflow-wrap: anywhere; }
+
+.owb-model-menu__custom {
+  padding: 5px 8px 3px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.owb-model-menu__custom .ant-btn { padding-inline: 4px; font-size: 11px; }
+
+.owb-model-connection__details {
+  width: 272px;
+  max-width: 75vw;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.owb-model-connection__details dl { display: grid; gap: 7px; margin: 0; }
+
+.owb-model-connection__details dl > div {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.owb-model-connection__details dt { color: var(--ui-foreground-muted); }
+
+.owb-model-connection__details dd {
+  margin: 0;
+  color: var(--ui-foreground);
+  overflow-wrap: anywhere;
+}
+
+.owb-model-custom-form {
+  display: grid;
+  width: 272px;
+  max-width: 75vw;
+  gap: 7px;
+}
+
+.owb-model-custom-form label { font-size: 12px; color: var(--ui-foreground); }
+
+.owb-model-custom-form p {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.owb-model-custom-form p.owb-model-custom-form__error { color: var(--ui-error, #bd3d3d); }

@@ -1,4 +1,5 @@
-import { isThemeConfig, type ThemeConfig } from "./theme-config";
+import { COLOR_TOKEN_KEYS, isThemeConfig, type ThemeConfig } from "./theme-config";
+import { isValidColorValue } from "./theme-validation";
 import { DEFAULT_PRESET_ID } from "./theme-presets";
 
 const THEME_CONFIG_KEY = "owb.theme-config";
@@ -9,7 +10,17 @@ export function readStoredTheme(): ThemeConfig | null {
     const raw = window.localStorage.getItem(THEME_CONFIG_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return isThemeConfig(parsed) ? parsed : null;
+    if (!isThemeConfig(parsed)) return null;
+    // `isThemeConfig` only proves the shape. Anything that survives a hand-edited
+    // localStorage entry would otherwise be injected straight into a <style> tag
+    // and into AntD's token layer.
+    const config = parsed as ThemeConfig;
+    for (const mode of ["light", "dark"] as const) {
+      for (const key of COLOR_TOKEN_KEYS) {
+        if (!isValidColorValue(config[mode][key])) return null;
+      }
+    }
+    return config;
   } catch { return null; }
 }
 

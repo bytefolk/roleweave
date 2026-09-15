@@ -2,8 +2,10 @@ import { DEFAULT_THEME, type ThemeConfig } from "./theme-config";
 
 export interface PresetDefinition {
   id: string;
-  name: string;
-  description: string;
+  /** Catalog keys, not literals: every other user-visible string in the panel
+   * goes through `t()`, so preset names must too. */
+  nameKey: string;
+  descriptionKey: string;
   theme: ThemeConfig;
 }
 
@@ -26,8 +28,8 @@ const ONE_DARK_THEME: ThemeConfig = {
 };
 
 export const BUILT_IN_PRESETS: readonly PresetDefinition[] = [
-  { id: "roleweave-default", name: "RoleWeave 默认", description: "RoleWeave 品牌标准配色，紫色主色调", theme: DEFAULT_THEME },
-  { id: "one-dark", name: "One Dark", description: "Atom One Dark 风格，深灰背景 + 蓝色操作按钮", theme: ONE_DARK_THEME },
+  { id: "roleweave-default", nameKey: "theme.preset.roleweaveDefault.name", descriptionKey: "theme.preset.roleweaveDefault.description", theme: DEFAULT_THEME },
+  { id: "one-dark", nameKey: "theme.preset.oneDark.name", descriptionKey: "theme.preset.oneDark.description", theme: ONE_DARK_THEME },
 ];
 
 export const DEFAULT_PRESET_ID = "roleweave-default";
@@ -37,5 +39,9 @@ export function getPresetById(id: string): PresetDefinition | undefined {
 }
 
 export function getDefaultPreset(): PresetDefinition {
-  return getPresetById(DEFAULT_PRESET_ID) ?? BUILT_IN_PRESETS[0];
+  const preset = getPresetById(DEFAULT_PRESET_ID) ?? BUILT_IN_PRESETS[0];
+  // BUILT_IN_PRESETS is a literal with the default first, so this cannot happen —
+  // but returning `undefined` typed as PresetDefinition silently is worse.
+  if (!preset) throw new Error("no built-in theme preset is registered");
+  return preset;
 }

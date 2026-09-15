@@ -9,9 +9,15 @@ type TabId = "preset" | "custom" | "agent";
 
 export function ThemeSettings({ onClose }: { onClose: () => void }) {
   const t = useT();
-  const { presetId, setPreset, reset, save, isDirty } = useTheme();
+  const { presetId, custom, setPreset, reset, save, isDirty } = useTheme();
   const [activeTab, setActiveTab] = useState<TabId>("preset");
-  const handlePresetSelect = useCallback((id: string) => { setPreset(id); }, [setPreset]);
+  // `setPreset` persists at once and drops the saved custom colours, so that
+  // loss has to be an explicit choice instead of a side effect of browsing.
+  const handlePresetSelect = useCallback((id: string) => {
+    if (id === presetId) return;
+    if (custom && !window.confirm(t("theme.settings.presetConfirm"))) return;
+    setPreset(id);
+  }, [presetId, custom, setPreset, t]);
   const handleReset = useCallback(() => { if (window.confirm(t("theme.settings.resetConfirm"))) reset(); }, [reset, t]);
   const handleSave = useCallback(() => { save(); onClose(); }, [save, onClose]);
   const handleCancel = useCallback(() => { onClose(); }, [onClose]);
@@ -34,8 +40,8 @@ export function ThemeSettings({ onClose }: { onClose: () => void }) {
             <div className="owb-theme-settings__preset-list">
               {BUILT_IN_PRESETS.map((preset) => (
                 <button key={preset.id} type="button" className={`owb-theme-settings__preset ${presetId === preset.id ? "active" : ""}`} onClick={() => handlePresetSelect(preset.id)}>
-                  <span className="owb-theme-settings__preset-name">{preset.name}</span>
-                  <span className="owb-theme-settings__preset-desc">{preset.description}</span>
+                  <span className="owb-theme-settings__preset-name">{t(preset.nameKey)}</span>
+                  <span className="owb-theme-settings__preset-desc">{t(preset.descriptionKey)}</span>
                 </button>
               ))}
             </div>

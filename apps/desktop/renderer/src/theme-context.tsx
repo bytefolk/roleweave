@@ -1,11 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { type ColorTokenValues, type ThemeMode, cloneThemeConfig, DEFAULT_THEME } from "./theme-config";
+import { type ColorTokenValues, type ThemeConfig, type ThemeMode, cloneThemeConfig, DEFAULT_THEME } from "./theme-config";
 import { DEFAULT_PRESET_ID, getPresetById } from "./theme-presets";
 import { readStoredPresetId, readStoredTheme, writeStoredPresetId, writeStoredTheme, clearAllThemeStorage } from "./theme-storage";
 import { resolveEffectiveTheme, applyThemeToDom, type CustomThemeOverrides } from "./theme-resolution";
 
 interface ThemeContextValue {
   mode: ThemeMode; presetId: string; custom: CustomThemeOverrides | null; effective: ColorTokenValues;
+  /** Resolved palette for an arbitrary mode. `effective` only covers the *active*
+   * mode, so editing the dark palette while the app is in light would otherwise
+   * display light values as the starting point. */
+  forMode: (mode: ThemeMode) => ColorTokenValues;
   setPreset: (presetId: string) => void; setCustom: (custom: CustomThemeOverrides | null) => void;
   updateCustomColor: (mode: ThemeMode, key: string, value: string) => void;
   reset: () => void; save: () => void; isDirty: boolean;
@@ -35,6 +39,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const effective = useMemo(() => resolveEffectiveTheme(mode, presetId, custom), [mode, presetId, custom]);
+  const forMode = useCallback((target: ThemeMode) => resolveEffectiveTheme(target, presetId, custom), [presetId, custom]);
 
   useEffect(() => { applyThemeToDom(effective); }, [effective]);
 
@@ -60,13 +65,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const save = useCallback(() => {
-    if (pendingCustom) { writeStoredTheme(pendingCustom); setSavedCustom(pendingCustom); }
+    if (pendingCustom) {
+      // Persist a *complete* config, never the override set. `CustomThemeOverrides`
+      // legitimately covers a single mode (the Agent path only fills the mode it
+      // generated), while `readStoredTheme` rejects anything that is not a full
+      // ThemeConfig — so saving the overrides verbatim dropped the theme again on
+      // the next start with no visible error.
+      const complete: ThemeConfig = {
+        light: resolveEffectiveTheme("light", presetId, pendingCustom),
+        dark: resolveEffectiveTheme("dark", presetId, pendingCustom),
+      };
+      writeStoredTheme(complete);
+      setSavedCustom(complete);
+    }
     setPendingCustom(null);
-  }, [pendingCustom]);
+  }, [pendingCustom, presetId]);
 
   const value = useMemo<ThemeContextValue>(() => ({
-    mode, presetId, custom, effective, setPreset, setCustom, updateCustomColor, reset, save, isDirty,
-  }), [mode, presetId, custom, effective, setPreset, setCustom, updateCustomColor, reset, save, isDirty]);
+    mode, presetId, custom, effective, forMode, setPreset, setCustom, updateCustomColor, reset, save, isDirty,
+  }), [mode, presetId, custom, effective, forMode, setPreset, setCustom, updateCustomColor, reset, save, isDirty]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

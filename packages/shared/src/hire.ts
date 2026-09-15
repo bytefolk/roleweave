@@ -14,6 +14,7 @@
 
 import type { PositionBudget, PositionMode } from "./org-tree.js";
 import type { HireMcpGrant, HireSkillGrant } from "./capabilities.js";
+import type { TurnEngine } from "./turns.js";
 
 export const HIRE_REQUEST_SCHEMA_VERSION = "hire-request.v1alpha1" as const;
 
@@ -70,6 +71,9 @@ export interface HirePositionRequest {
   memorySources?: HireMemorySource[];
   /** Optional ISO 8601 passthrough onto the envelope deadline (upstream-optional). */
   deadline?: string;
+  /** Workbench-local Agent binding written once with the new employee package.
+   * This is intentionally outside the frozen upstream hire envelope. */
+  agentEngine?: TurnEngine;
 }
 
 export interface HirePackageReference {
@@ -96,6 +100,8 @@ export interface HireRequestEnvelope {
 export interface HireSuccess {
   status: "hired";
   positionId: string;
+  /** Concrete engine durably bound to this newly created position. */
+  agentEngine: TurnEngine;
   version: { seq: number; updatedAt: string };
 }
 

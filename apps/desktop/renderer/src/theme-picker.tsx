@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
 import { useT } from "@roleweave/ui";
-import { COLOR_TOKEN_KEYS, type ColorTokenKey, type ThemeMode } from "./theme-config";
+import { COLOR_TOKEN_KEYS, type ColorTokenKey, type ColorTokenValues, type ThemeMode } from "./theme-config";
 import { useTheme } from "./theme-context";
-import { isValidColorValue } from "./theme-validation";
+import { getContrastWarnings, isValidColorValue } from "./theme-validation";
 
 interface ColorGroup { label: string; keys: ColorTokenKey[]; }
 const COLOR_GROUPS: ColorGroup[] = [
@@ -18,8 +18,11 @@ const COLOR_GROUPS: ColorGroup[] = [
 
 export function ThemePicker() {
   const t = useT();
-  const { mode, effective, updateCustomColor } = useTheme();
+  const { mode, forMode, updateCustomColor } = useTheme();
   const [editMode, setEditMode] = useState<ThemeMode>(mode);
+  // The values shown must belong to the mode being edited, not to the mode the
+  // app is currently rendering: `updateCustomColor` writes to `editMode`.
+  const values = forMode(editMode);
   const handleChange = useCallback((key: ColorTokenKey, value: string) => {
     if (isValidColorValue(value)) updateCustomColor(editMode, key, value);
   }, [editMode, updateCustomColor]);
@@ -34,10 +37,37 @@ export function ThemePicker() {
         <div key={group.label} className="owb-theme-picker__group">
           <h4 className="owb-theme-picker__group-label">{t(`theme.picker.group.${group.label}`)}</h4>
           <div className="owb-theme-picker__items">
-            {group.keys.map((key) => <ColorItem key={`${editMode}-${key}`} tokenKey={key} value={effective[key]} onChange={(value) => handleChange(key, value)} />)}
+            {group.keys.map((key) => <ColorItem key={`${editMode}-${key}`} tokenKey={key} value={values[key]} onChange={(value) => handleChange(key, value)} />)}
           </div>
         </div>
       ))}
+      <ContrastWarningsView theme={values} title={t("theme.settings.contrastWarnings")} />
+    </div>
+  );
+}
+
+/** #246 AC-06. Contrast feedback must not be reachable only through the (still
+ * stubbed) Agent path — editing a colour by hand gets the very same check, so
+ * both surfaces render this one component. */
+export function ContrastWarningsView({ theme, title }: { theme: ColorTokenValues; title: string }) {
+  const t = useT();
+  const warnings = getContrastWarnings(theme);
+  if (warnings.length === 0) return null;
+  return (
+    <div className="owb-theme-contrast-warnings">
+      <h4 className="owb-theme-contrast-warnings__title">{title}</h4>
+      <ul>
+        {warnings.map((warning) => (
+          <li key={`${warning.foreground}-${warning.background}`} className="owb-theme-contrast-warnings__item">
+            {t("theme.agent.contrastWarning", {
+              foreground: warning.foreground,
+              background: warning.background,
+              ratio: String(warning.ratio),
+              required: String(warning.required),
+            })}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

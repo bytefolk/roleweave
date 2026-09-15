@@ -11,6 +11,8 @@ import type {
   DocPlaneListResponse,
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
+import { isDocumentId, normalizeDocEntry } from "../services/doc-contract.js";
+import { hasServiceOverride, requestService, resolveServiceConnection } from "../services/connections.js";
 import { sendJson } from "../http.js";
 
 /**
@@ -34,7 +36,6 @@ import { sendJson } from "../http.js";
  * -equivalent list + detail reads.
  */
 
-const UPSTREAM_TIMEOUT_MS = 8_000;
 const MAX_QUERY_LEN = 200;
 
 // Mock fixture — deliberately small and deterministic; anchor for the
@@ -63,20 +64,14 @@ const MOCK_CONTENT: Record<string, string> = {
     "# Onboarding guide (mock)\n\nSecond fixture. TODO(#35 R3): remove once upstream `/api/v1/documents/:id` is stable and we can serve real content.\n",
 };
 
+function useMock(ctx: ControlPlaneContext): boolean {
+  return ctx.config.docPlaneMock && !hasServiceOverride(ctx, "doc");
+}
 function requireConfigured(ctx: ControlPlaneContext): void {
-  if (ctx.config.docPlaneMock) return;
-  if (
-    typeof ctx.config.docPlaneUrl !== "string" ||
-    ctx.config.docPlaneUrl.length === 0 ||
-    typeof ctx.config.docPlaneToken !== "string" ||
-    ctx.config.docPlaneToken.length === 0
-  ) {
-    throw new OrgApiError(
-      errorCodes.doc_plane_unconfigured,
-      503,
-      "doc plane is not configured (set ORG_WORKBENCH_DOC_URL and ORG_WORKBENCH_DOC_TOKEN, or ORG_WORKBENCH_DOC_MOCK=1)",
-      false,
-    );
+  if (useMock(ctx)) return;
+  const connection = resolveServiceConnection(ctx, "doc");
+  if (!connection?.token) {
+    throw new OrgApiError(errorCodes.doc_plane_unconfigured, 503, "Connect doc and a documents:read token in Settings > Services", false);
   }
 }
 
@@ -130,59 +125,14 @@ export function flattenTiptap(node: unknown): string {
   }
 }
 
-interface UpstreamListEntry {
-  id?: unknown;
-  title?: unknown;
-  icon?: unknown;
-  updatedAt?: unknown;
-  starred?: unknown;
-}
-
-function coerceListEntry(raw: unknown): DocPlaneListEntry | null {
-  if (raw === null || typeof raw !== "object") return null;
-  const item = raw as UpstreamListEntry;
-  if (typeof item.id !== "string" || item.id.length === 0) return null;
-  if (typeof item.title !== "string") return null;
-  if (typeof item.updatedAt !== "string") return null;
-  return {
-    id: item.id,
-    title: item.title,
-    icon: typeof item.icon === "string" ? item.icon : null,
-    updatedAt: item.updatedAt,
-    starred: item.starred === true,
-  };
-}
-
 async function fetchUpstream(
   ctx: ControlPlaneContext,
   path: string,
 ): Promise<{ status: number; body: unknown }> {
-  // ORG_WORKBENCH_DOC_URL is required by requireConfigured.
-  const base = ctx.config.docPlaneUrl!;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
-  const headers: Record<string, string> = { accept: "application/json" };
-  if (typeof ctx.config.docPlaneToken === "string" && ctx.config.docPlaneToken.length > 0) {
-    headers.authorization = `Bearer ${ctx.config.docPlaneToken}`;
-  }
-  try {
-    const response = await fetch(`${base}${path}`, { headers, signal: controller.signal });
-    let body: unknown = null;
-    const contentType = response.headers.get("content-type") ?? "";
-    if (contentType.includes("application/json")) {
-      body = await response.json().catch(() => null);
-    }
-    return { status: response.status, body };
-  } catch (error) {
-    throw new OrgApiError(
-      errorCodes.doc_plane_unavailable,
-      502,
-      `upstream doc plane unreachable: ${(error as Error).message}`,
-      true,
-    );
-  } finally {
-    clearTimeout(timer);
-  }
+  const connection = resolveServiceConnection(ctx, "doc");
+  if (!connection) throw new OrgApiError(errorCodes.doc_plane_unconfigured, 503, "doc is not configured", false);
+  try { return await requestService(connection, path); }
+  catch { throw new OrgApiError(errorCodes.doc_plane_unavailable, 502, "doc service could not be reached or returned an unsafe response", true); }
 }
 
 function upstreamFailure(operation: string, status: number): OrgApiError {
@@ -211,7 +161,7 @@ export async function handleDocPlaneList(
   const rawQuery = url.searchParams.get("q") ?? "";
   const query = rawQuery.slice(0, MAX_QUERY_LEN);
 
-  if (ctx.config.docPlaneMock || ctx.config.docPlaneUrl === undefined) {
+  if (useMock(ctx)) {
     const body: DocPlaneListResponse = {
       schemaVersion: DOC_PLANE_LIST_SCHEMA_VERSION,
       source: "mock",
@@ -222,6 +172,7 @@ export async function handleDocPlaneList(
   }
 
   const entries: DocPlaneListEntry[] = [];
+  const seenIds = new Set<string>();
   let cursor: string | null = null;
   // The upstream API is cursor based. Keep the UI complete for normal workspaces
   // while retaining a hard bound if a remote server returns a broken cursor.
@@ -234,13 +185,16 @@ export async function handleDocPlaneList(
       throw upstreamFailure("list", upstream.status);
     }
     const container = upstream.body as { data?: unknown; meta?: { nextCursor?: unknown } } | null;
-    const rawEntries = Array.isArray(container?.data) ? (container!.data as unknown[]) : [];
+    if (!Array.isArray(container?.data) || container.data.length > 100) throw new OrgApiError(errorCodes.doc_plane_unavailable, 502, "doc list does not match the supported v1 contract", false);
+    const rawEntries = container.data;
     for (const raw of rawEntries) {
-      const coerced = coerceListEntry(raw);
-      if (coerced !== null && !entries.some((entry) => entry.id === coerced.id)) entries.push(coerced);
+      const coerced = normalizeDocEntry(raw);
+      if (coerced === null) throw new OrgApiError(errorCodes.doc_plane_unavailable, 502, "doc entry does not match the supported v1 contract", false);
+      if (!seenIds.has(coerced.id)) { entries.push(coerced); seenIds.add(coerced.id); }
     }
     const nextCursor = container?.meta?.nextCursor;
-    if (typeof nextCursor !== "string" || nextCursor.length === 0 || nextCursor === cursor) break;
+    if (nextCursor === null || nextCursor === undefined || nextCursor === "") break;
+    if (typeof nextCursor !== "string" || nextCursor.length > 2048 || nextCursor === cursor || page === 9) throw new OrgApiError(errorCodes.doc_plane_unavailable, 502, "doc list pagination exceeded the supported bound", false);
     cursor = nextCursor;
   }
   const body: DocPlaneListResponse = {
@@ -258,11 +212,11 @@ export async function handleDocPlaneDetail(
 ): Promise<void> {
   requireConfigured(ctx);
   const id = url.searchParams.get("id") ?? "";
-  if (id === "" || id.length > 128) {
-    throw invalidRequest("id parameter is required and must be at most 128 characters");
+  if (!isDocumentId(id)) {
+    throw invalidRequest("id parameter must be a valid document identifier");
   }
 
-  if (ctx.config.docPlaneMock || ctx.config.docPlaneUrl === undefined) {
+  if (useMock(ctx)) {
     const entry = MOCK_FIXTURE.find((candidate) => candidate.id === id);
     if (entry === undefined) {
       throw new OrgApiError(errorCodes.doc_plane_unavailable, 404, `mock document not found: ${id}`, false);
@@ -291,7 +245,7 @@ export async function handleDocPlaneDetail(
   const raw = container?.data as
     | { id?: unknown; title?: unknown; icon?: unknown; updatedAt?: unknown; content?: unknown }
     | undefined;
-  if (raw === undefined || typeof raw.id !== "string" || typeof raw.title !== "string" || typeof raw.updatedAt !== "string") {
+  if (raw === undefined || raw.id !== id || typeof raw.title !== "string" || typeof raw.updatedAt !== "string") {
     throw new OrgApiError(
       errorCodes.doc_plane_unavailable,
       502,

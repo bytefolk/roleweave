@@ -1,16 +1,24 @@
-import { COLOR_TOKEN_KEYS, type ColorTokenKey, type ColorTokenValues, type ThemeConfig, type ThemeMode } from "./theme-config";
-import { validateThemeConfig, isValidColorValue } from "./theme-validation";
+import { type ColorTokenValues, type ThemeConfig, type ThemeMode } from "./theme-config";
+import { validateThemeConfig, type ThemeValidationIssue } from "./theme-validation";
 
 export interface ThemeGenerationRequest { prompt: string; baseTheme: ThemeConfig; mode: ThemeMode; }
-export interface ThemeGenerationResult { success: boolean; theme?: ColorTokenValues; error?: string; warnings?: string[]; }
-
-export async function generateThemeFromPrompt(request: ThemeGenerationRequest): Promise<ThemeGenerationResult> {
-  return { success: false, error: "Agent 主题生成功能尚未集成。需要配置 Agent 端点。" };
+/** Outcome carries catalog keys rather than prose — see theme-validation.ts. */
+export interface ThemeGenerationResult {
+  success: boolean;
+  theme?: ColorTokenValues;
+  errors?: ThemeValidationIssue[];
+  warnings?: ThemeValidationIssue[];
 }
 
-export function validateGeneratedTheme(theme: unknown): ThemeGenerationResult {
+export async function generateThemeFromPrompt(request: ThemeGenerationRequest): Promise<ThemeGenerationResult> {
+  return { success: false, errors: [{ key: "theme.agent.notIntegrated" }] };
+}
+
+export function validateGeneratedTheme(theme: unknown, mode: ThemeMode): ThemeGenerationResult {
   const validation = validateThemeConfig(theme);
-  if (!validation.valid) return { success: false, error: validation.errors.join("; "), warnings: validation.warnings };
+  if (!validation.valid) return { success: false, errors: validation.errors, warnings: validation.warnings };
   const config = theme as ThemeConfig;
-  return { success: true, theme: config.light, warnings: validation.warnings };
+  // Must follow the requested mode: dark-mode generation returning the light half
+  // would apply light values to a dark palette.
+  return { success: true, theme: config[mode], warnings: validation.warnings };
 }

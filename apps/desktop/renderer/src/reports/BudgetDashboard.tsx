@@ -15,6 +15,7 @@ import { BudgetDetailDrawer } from "./BudgetDetailDrawer";
  *   4. 超限即事实：`state === "exceeded"` 永远置顶 + 左 3px 红条 + 汇总 Alert。
  */
 export interface BudgetDashboardProps {
+  compact?: boolean;
   budgets: BudgetReport[];
   escalations?: EscalationEntry[];
   loading?: boolean;
@@ -68,6 +69,7 @@ export function stateLabel(state: BudgetReport["state"]): string {
 }
 
 export function BudgetDashboard({
+  compact = false,
   budgets,
   escalations = [],
   loading = false,
@@ -153,7 +155,7 @@ export function BudgetDashboard({
         ),
       },
       {
-        title: t("rep.colPerTask"),
+        title: t(compact ? "rep.latestTask" : "rep.colPerTask"),
         key: "perTask",
         render: (_: unknown, row: BudgetRow) => (
           <BudgetBar
@@ -173,12 +175,12 @@ export function BudgetDashboard({
           const unit = row.declared.perDay.tokens !== undefined ? "tokens" : "iterations";
           return (
             <span className="owb-budget-dash__daily">
-              <BudgetBar
+              {!compact ? <BudgetBar
                 label={t("pos.perDay")}
                 declared={{ taskLimit: null, dailyLimit: row.declared.perDay }}
                 consumption={null}
                 format="compact"
-              />
+              /> : null}
               <span className="owb-budget-dash__daily-cap">
                 {typeof cap === "number"
                   ? t("rep.dailyCap", { cap: cap.toLocaleString(), unit })
@@ -237,7 +239,7 @@ export function BudgetDashboard({
         },
       },
     ],
-    [t],
+    [t, compact],
   );
 
   if (loading) {
@@ -264,7 +266,7 @@ export function BudgetDashboard({
 
   return (
     <section className="owb-budget-dash" aria-label={t("rep.dashAria")}>
-      <div className="owb-budget-dash__summary" role="group" aria-label={t("rep.summary")}>
+      {!compact ? <div className="owb-budget-dash__summary" role="group" aria-label={t("rep.summary")}>
         <div className="owb-budget-dash__stat" data-tone="neutral">
           <Statistic title={t("rep.colPosition")} value={summary.total} />
         </div>
@@ -289,7 +291,7 @@ export function BudgetDashboard({
         <div className="owb-budget-dash__stat" data-tone="neutral">
           <Statistic title={t("rep.declaredPhase")} value={summary.unobserved} />
         </div>
-      </div>
+      </div> : null}
 
       {summary.exceeded > 0 ? (
         <Alert
@@ -337,7 +339,8 @@ export function BudgetDashboard({
           rowKey="positionId"
           columns={columns}
           dataSource={visibleRows}
-          pagination={false}
+          pagination={compact ? { pageSize: 10, hideOnSinglePage: true, showSizeChanger: false } : false}
+          scroll={compact ? { x: 760 } : undefined}
           size="middle"
           rowClassName={(row) => {
             const marks: string[] = [];
@@ -361,7 +364,7 @@ export function BudgetDashboard({
         />
       )}
 
-      {budgetRelatedEscalations.length > 0 ? (
+      {!compact && budgetRelatedEscalations.length > 0 ? (
         <div className="owb-budget-dash__escalations" aria-label={t("rep.budgetFailsAria")}>
           <header>
             <AlertTriangle aria-hidden="true" size={14} />

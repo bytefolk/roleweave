@@ -4,17 +4,19 @@
 import { useEffect, useRef, useState } from "react";
 import { Languages, Palette, Settings2, SwatchBook } from "lucide-react";
 import { useT, type OwbLocale } from "@roleweave/ui";
-import { setThemeMode, type ThemeMode } from "./theme-mode";
+import { setThemeMode, setThemeProfile, type ThemeMode, type ThemeProfile } from "./theme-mode";
 import { ThemeSettings } from "./theme-settings";
 
 export function PrefsMenu({
   locale,
   onChangeLocale,
   mode,
+  profile,
 }: {
   locale: OwbLocale;
   onChangeLocale: (next: OwbLocale) => void;
   mode: ThemeMode;
+  profile: ThemeProfile;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -70,6 +72,19 @@ export function PrefsMenu({
             type="button"
             role="menuitem"
             className="owb-prefs__item"
+            aria-pressed={profile === "mint"}
+            onClick={() => setThemeProfile(profile === "mint" ? "default" : "mint")}
+          >
+            <Palette aria-hidden="true" size={14} strokeWidth={1.8} />
+            <span>{t("prefs.palette")}</span>
+            <span className="owb-prefs__value">
+              {profile === "mint" ? t("prefs.paletteMint") : t("prefs.paletteDefault")}
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="owb-prefs__item"
             aria-pressed={mode === "dark"}
             onClick={() => setThemeMode(mode === "dark" ? "light" : "dark")}
           >
@@ -79,6 +94,9 @@ export function PrefsMenu({
               {mode === "dark" ? t("prefs.themeDark") : t("prefs.themeLight")}
             </span>
           </button>
+          {/* The label must stay distinguishable from the `prefs.theme` row above:
+              both start with 主题 in Chinese, and the theme-toggle specs query that
+              row by accessible name. */}
           <button
             type="button"
             role="menuitem"
@@ -91,7 +109,17 @@ export function PrefsMenu({
         </div>
       ) : null}
       {themeSettingsOpen ? (
-        <ThemeSettings onClose={() => setThemeSettingsOpen(false)} />
+        // The panel is a modal surface, not a menu row: it needs the overlay for
+        // fixed positioning, stacking above the workbench, and a dialog role.
+        // Without this wrapper the panel rendered inline in the prefs dropdown.
+        <div
+          className="owb-theme-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("theme.settings.title")}
+        >
+          <ThemeSettings onClose={() => setThemeSettingsOpen(false)} />
+        </div>
       ) : null}
     </div>
   );

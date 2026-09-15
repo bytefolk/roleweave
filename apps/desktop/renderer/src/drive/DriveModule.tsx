@@ -172,6 +172,8 @@ export function DriveModule({ workspaceOpen, embedded = false }: DriveModuleProp
         </Button>
       </div>
 
+      <p className="owb-service-drive-limit">{t("services.driveLimit")}</p>
+
       {connectionState === "unconfigured" ? (
         <div className="owb-drive-module__unconfigured" role="status">
           <span className="owb-drive-module__unconfigured-dot" aria-hidden="true" />

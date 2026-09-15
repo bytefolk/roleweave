@@ -16,9 +16,10 @@ import "./app.css";
 import "./roleweave-components.css";
 import "./roleweave-conversation.css";
 import "./roleweave-data.css";
+import "./workspace-polish.css";
+import "./memory/memory-workspace.css";
 import { App } from "./App";
 import { initThemeMode } from "./theme-mode";
-import { ThemeProvider } from "./theme-context";
 
 export const PACKAGED_SMOKE_QUERY_KEY = "orgWorkbenchPackagedSmoke";
 const PACKAGED_SMOKE_NONCE = /^[a-f0-9]{64}$/;
@@ -50,9 +51,7 @@ export function rendererEntryElement(
   }
   return (
     <React.StrictMode>
-      <ThemeProvider>
-        <AppComponent />
-      </ThemeProvider>
+      <AppComponent />
     </React.StrictMode>
   );
 }

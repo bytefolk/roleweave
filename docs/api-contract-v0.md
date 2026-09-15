@@ -54,7 +54,7 @@
 }
 ```
 
-约束：`engine.available` 为对已配置引擎命令的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。普通 `digital-employee` 的 Qoder model port 保持 service-token 门禁：`configured` 仅表示 `QODER_PERSONAL_ACCESS_TOKEN` 非空。仅当引擎精确宣布 `qoder-engine <semver>` 时，Qoder Host 才使用与 turn adapter 相同的无 shell executable resolver：非空 `ORG_WORKBENCH_QODER_BIN` 优先，其次为 `DIGITAL_EMPLOYEE_QODER_COMMAND`（无效显式覆盖均 fail closed），否则查 PATH 的 `qodercli` / `qoderclicn` / `qoder` 与 macOS 已支持的精确用户安装位置；符号链接的最终目标必须是可执行普通文件。解析出的绝对路径接受有界 `--version` 探针；探针以 CLI 主进程退出为完成条件，不等待后代继承的 stdio，并在超时或异常时清理独立进程组；当前支持 1.1.x，缺失、不可执行、超时、无法解析或版本越界均 fail closed。adapter spawn 同一绝对路径并保持继承 PATH 不变；Finder 登录 PATH 恢复和打包验收由 #110 的 macOS arm64 foundation partial 承接，不是本修复的完成依赖。该探针不读取账号、登录态或凭据存储，`ready` 也只表示本地执行前置满足，不代表远端 provider 接受了账号或具备 entitlement；一次真实回合仍是唯一的运行证据。响应只含布尔值与非敏感 `nextStep`，绝不返回凭据值、绝对 Qoder 路径或原始探针输出。Claude 各 Host 的判定独立，不得成为 bundled Qoder ready 的门槛。客户端必须以 Host 状态控制选择和发送，不得以 `engine.available` 代替 Host ready。
+约束：`engine.available` 为对已配置引擎命令的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。普通 `digital-employee` 的 Qoder model port 保持 service-token 门禁：`configured` 仅表示 `QODER_PERSONAL_ACCESS_TOKEN` 非空。仅当引擎精确宣布 `qoder-engine <semver>` 时，Qoder Host 才使用与 turn adapter 相同的无 shell executable resolver：非空 `ORG_WORKBENCH_QODER_BIN` 优先，其次为 `DIGITAL_EMPLOYEE_QODER_COMMAND`（无效显式覆盖均 fail closed），否则查 PATH 的 `qodercli` / `qoderclicn` / `qoder` 与 macOS 已支持的精确用户安装位置；符号链接的最终目标必须是可执行普通文件。解析出的绝对路径接受共享 8 秒超时预算的 `--version`、`--help` 和 `status -o json` 探针；探针以 CLI 主进程退出为完成条件，不等待后代继承的 stdio，并在超时或异常时清理独立进程组。版本需为 1.x 且不低于 1.1.0，同时必须具备员工对话所需的 `--print`、`--output-format`、`--cwd`、`--agent`、`--permission-mode`、`--no-session-persistence` 参数及 `dont_ask` 模式；本机 Qoder CLI 1.1.51 已通过能力预检。Qoder 编辑器的同名启动器由版本指纹或编辑器帮助参数识别，并提示安装原生 CLI；缺失、不可执行、超时、无法解析、版本越界或缺少对话参数均 fail closed。adapter spawn 同一绝对路径并保持继承 PATH 不变；Finder 登录 PATH 恢复和打包验收由 #110 的 macOS arm64 foundation partial 承接，不是本修复的完成依赖。登录状态由原生 CLI 的 `status -o json` 返回，控制平面只接收严格布尔值 `logged_in`，不读取凭据存储、不返回账号详情。未登录、返回格式异常或超时均不会报告 ready；`ready` 表示本地执行能力与 CLI 登录前置满足，不代表远端 provider 接受了账号或具备 entitlement；一次真实回合仍是唯一的运行证据，CLI 零退出但缺少终结 `result` 不会被计为成功。响应只含布尔值与非敏感 `nextStep`，绝不返回凭据值、绝对 Qoder 路径或原始探针输出。Claude 各 Host 的判定独立，不得成为 bundled Qoder ready 的门槛。客户端必须以 Host 状态控制选择和发送，不得以 `engine.available` 代替 Host ready。
 
 可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，只有两个 Codex Host 传 `true`，其余三个不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
 
@@ -467,6 +467,30 @@ GET  /groups/:conversationRef/turns
 - `GET /groups/:conversationRef/turns` 返回 `group-timeline.v1`：用户消息（`kind:"user"`）与成员回合（`kind:"member"`，内嵌完整 `turn-record.v1`）按 `createdAt` 归并排序。
 - 持久化位于 `<workspace>/.digital-employee/workbench/groups/<conversationRef>/`（`group.json` + `messages/<messageId>.json`）：目录 0700、文件 0600、原子替换，拒绝 symlink/路径穿越/损坏或无界记录；群数上限 64、单群消息上限 256、`input` ≤256 KiB。存储失败 500 `group_storage_failed`，不回显记录内容。
 - 1:1 面不变：legacy `/turns` 与 session turn 的请求键集校验拒绝任何 wire 侧 `groupRef`；群回合不进入 1:1 展示面，反之亦然。
+
+### 2.16 `/services` — doc / mem 独立连接（加法）
+
+所有端点要求本地控制面的 boot token，不要求已打开工作区。连接覆盖仅属于当前控制面进程；桌面主进程负责通过系统凭据设施加密保存 PAT，并在控制面启动后恢复。连接地址支持 HTTPS 或 loopback HTTP，可包含部署路径，不能携带用户信息、查询参数或 fragment。
+
+| 方法与路径 | 输入 | 成功响应 |
+| --- | --- | --- |
+| `GET /services` | 无 | `{connections: ServiceConnectionView[]}`，固定包含 doc 与 mem |
+| `PUT /services/configure` | `{kind, apiUrl, webUrl?, token?, workspaceId?}` | `ServiceConnectionView` |
+| `POST /services/disconnect` | `{kind}` | 未配置的 `ServiceConnectionView` |
+| `GET /services/probe?kind=doc`（或 mem） | `kind` | `ServiceProbe` |
+| `GET /services/release?kind=doc`（或 mem） | `kind` | `ServiceRelease` |
+
+`kind` 只能为 `doc` 或 `mem`。`workspaceId` 是 mem 的可选 UUID。`webUrl` 省略或为空时采用 `apiUrl`。只有 API 地址保持相同时，省略 `token` 才会保留已有值；显式空字符串清除 PAT。断开连接会覆盖环境配置，直到显式重新配置或控制面重新启动；桌面同时持久化这个断开状态。
+
+`ServiceConnectionView` 包含 `{kind, apiUrl: string|null, webUrl: string|null, workspaceId: string|null, configured: boolean, tokenConfigured: boolean}`；不返回 PAT。`configured` 表示有保存地址，不能当作连通证明。写入配置不调用上游服务。
+
+`ServiceProbe` 包含 `{kind, state, apiVersion: "v1", version: string|null, message, checkedAt}`。`state` 为 `ready | unconfigured | unauthorized | unavailable | incompatible`。HTTP 200 表示探测请求完成，客户端必须读取 `state`；`ready` 只证明当前健康、授权和索引读取契约通过。doc 当前没有运行版本接口，`version` 为 null。mem 版本来自其实际 `/v1/version`，不从源码或发布标签推测。
+
+`ServiceRelease` 包含 `{kind, state, version: string|null, url, publishedAt: string|null, artifact}`，`state` 为 `available | unpublished | unavailable`，`artifact` 为 `source`（doc）或 `mcp-client`（mem 当前发布渠道）。检查只访问官方 GitHub release 元数据，不携带服务令牌、不下载代码、不更新运行中服务；mem 的 MCP 客户端版本不是整套服务的版本。
+
+服务 API 请求不跟随重定向，单请求限时 8 秒、JSON 响应限制 8 MiB。文档索引按上游 cursor 最多读取 10 页、每页 100 条，超限明确报错。mem 文件索引最多 200 条，`q` 仅过滤这批返回项，完整网盘管理与检索在 mem 原生界面进行。接口响应不匹配契约时不降级为伪造空列表。
+
+输入错误返回 `400 service_request_invalid`；上游传输、响应大小或契约异常返回 `502 service_upstream_failed`（具体 probe 状态仍按上述成功响应返回）。原生窗口和凭据持久化通过受信任桌面 IPC 提供，不属于远程服务可访问的控制面能力。部署和版本策略见 [独立服务说明](design/independent-services.md)。
 
 ## 3. 稳定错误码登记表
 

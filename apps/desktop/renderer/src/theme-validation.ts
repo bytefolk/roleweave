@@ -1,6 +1,9 @@
 import { COLOR_TOKEN_KEYS, type ColorTokenKey, type ColorTokenValues } from "./theme-config";
 
-export interface ValidationResult { valid: boolean; errors: string[]; warnings: string[]; }
+/** Validation reports catalog keys, never prose: this file lives under
+ * renderer/src, which the #146 CJK gate covers, and the panel owns the locale. */
+export interface ThemeValidationIssue { key: string; vars?: Record<string, string>; }
+export interface ValidationResult { valid: boolean; errors: ThemeValidationIssue[]; warnings: ThemeValidationIssue[]; }
 export interface ContrastWarning { foreground: ColorTokenKey; background: ColorTokenKey; ratio: number; required: number; level: "AA" | "AAA"; size: "normal" | "large"; }
 
 export function isValidColorValue(value: string): boolean {
@@ -12,38 +15,62 @@ export function isValidColorValue(value: string): boolean {
 }
 
 export function validateThemeConfig(config: unknown): ValidationResult {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  if (typeof config !== "object" || config === null) { errors.push("主题配置必须是对象"); return { valid: false, errors, warnings }; }
+  const errors: ThemeValidationIssue[] = [];
+  const warnings: ThemeValidationIssue[] = [];
+  if (typeof config !== "object" || config === null) {
+    errors.push({ key: "theme.validation.notObject" });
+    return { valid: false, errors, warnings };
+  }
   const obj = config as Record<string, unknown>;
   for (const mode of ["light", "dark"] as const) {
-    if (typeof obj[mode] !== "object" || obj[mode] === null) { errors.push(`缺少 ${mode} 模式配置`); continue; }
+    if (typeof obj[mode] !== "object" || obj[mode] === null) {
+      errors.push({ key: "theme.validation.missingMode", vars: { mode } });
+      continue;
+    }
     const modeConfig = obj[mode] as Record<string, unknown>;
     for (const key of COLOR_TOKEN_KEYS) {
       const value = modeConfig[key];
-      if (typeof value !== "string") errors.push(`${mode}.${key} 必须是字符串`);
-      else if (!isValidColorValue(value)) errors.push(`${mode}.${key} 不是有效的颜色值: ${value}`);
+      if (typeof value !== "string") errors.push({ key: "theme.validation.notString", vars: { mode, key } });
+      else if (!isValidColorValue(value)) errors.push({ key: "theme.validation.invalidColor", vars: { mode, key, value } });
     }
     for (const key of Object.keys(modeConfig)) {
-      if (!COLOR_TOKEN_KEYS.includes(key as ColorTokenKey)) warnings.push(`${mode}.${key} 是未知键，将被忽略`);
+      if (!COLOR_TOKEN_KEYS.includes(key as ColorTokenKey)) warnings.push({ key: "theme.validation.unknownKey", vars: { mode, key } });
     }
   }
   return { valid: errors.length === 0, errors, warnings };
 }
 
-function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const trimmed = hex.replace("#", "");
-  let r: number, g: number, b: number;
-  if (trimmed.length === 3) { r = parseInt(trimmed[0] + trimmed[0], 16); g = parseInt(trimmed[1] + trimmed[1], 16); b = parseInt(trimmed[2] + trimmed[2], 16); }
-  else if (trimmed.length === 6 || trimmed.length === 8) { r = parseInt(trimmed.slice(0, 2), 16); g = parseInt(trimmed.slice(2, 4), 16); b = parseInt(trimmed.slice(4, 6), 16); }
-  else return null;
-  if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
-  return { r, g, b };
+/** Parses every value `isValidColorValue` accepts, so a colour that passes
+ * validation cannot silently skip its contrast check. `#RGBA` used to be accepted
+ * by the validator and rejected here, which made the check a no-op. */
+function hexToRgb(color: string): { r: number; g: number; b: number } | null {
+  const value = color.trim();
+  const functional = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*[\d.]+\s*)?\)$/i.exec(value);
+  if (functional) {
+    const r = Number(functional[1]);
+    const g = Number(functional[2]);
+    const b = Number(functional[3]);
+    if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return null;
+    return { r, g, b };
+  }
+  const hex = /^#([0-9a-fA-F]{3,8})$/.exec(value)?.[1];
+  if (!hex) return null;
+  const expand = (c: string) => parseInt(c + c, 16);
+  if (hex.length === 3 || hex.length === 4) {
+    return { r: expand(hex.charAt(0)), g: expand(hex.charAt(1)), b: expand(hex.charAt(2)) };
+  }
+  if (hex.length === 6 || hex.length === 8) {
+    return { r: parseInt(hex.slice(0, 2), 16), g: parseInt(hex.slice(2, 4), 16), b: parseInt(hex.slice(4, 6), 16) };
+  }
+  return null;
 }
 
 function relativeLuminance(r: number, g: number, b: number): number {
-  const [rs, gs, bs] = [r, g, b].map((c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); });
-  return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+  const channel = (component: number): number => {
+    const s = component / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 }
 
 export function contrastRatio(color1: string, color2: string): number | null {
