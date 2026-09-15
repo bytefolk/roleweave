@@ -54,9 +54,27 @@ export function themeToAntdSeed(theme: ColorTokenValues, mode: ThemeMode): Recor
   };
 }
 
+/** Writes the resolved palette into a single `<style>` element.
+ *
+ * The selector is not incidental. The design system ships its palettes as
+ * `[data-ui-theme='mint'][data-theme='light']` and
+ * `:root[data-ui-theme='mint']:not([data-theme])` — specificity (0,2,0) and
+ * (0,3,0). A plain `:root, [data-theme]` injection is only (0,1,0), so with the
+ * default `mint` profile selected the user's colours lost the cascade and editing
+ * the panel changed nothing. Matching the ordinary (0,2,0) shape and relying on
+ * this element being appended last in `<head>` is what makes the palette win.
+ *
+ * The caller only calls this while a custom palette is actually in use, so an
+ * untouched install keeps rendering exactly what #248 shipped. */
 export function applyThemeToDom(theme: ColorTokenValues): void {
   const styleId = "roleweave-theme-overrides";
   let styleEl = document.getElementById(styleId) as HTMLStyleElement | null;
   if (!styleEl) { styleEl = document.createElement("style"); styleEl.id = styleId; document.head.appendChild(styleEl); }
-  styleEl.textContent = `:root, [data-theme] {\n${themeToCssOverrides(theme)}\n}`;
+  styleEl.textContent = `:root[data-theme], :root:not([data-theme]) {\n${themeToCssOverrides(theme)}\n}`;
+}
+
+/** Drops the runtime palette, returning the design-system profile to sole
+ * ownership of the semantic colours. */
+export function clearThemeOverrides(): void {
+  document.getElementById("roleweave-theme-overrides")?.remove();
 }

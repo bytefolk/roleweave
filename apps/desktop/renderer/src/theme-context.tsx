@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { type ColorTokenValues, type ThemeConfig, type ThemeMode, cloneThemeConfig, DEFAULT_THEME } from "./theme-config";
 import { DEFAULT_PRESET_ID, getPresetById } from "./theme-presets";
 import { readStoredPresetId, readStoredTheme, writeStoredPresetId, writeStoredTheme, clearAllThemeStorage } from "./theme-storage";
-import { resolveEffectiveTheme, applyThemeToDom, type CustomThemeOverrides } from "./theme-resolution";
+import { resolveEffectiveTheme, applyThemeToDom, clearThemeOverrides, type CustomThemeOverrides } from "./theme-resolution";
 
 interface ThemeContextValue {
   mode: ThemeMode; presetId: string; custom: CustomThemeOverrides | null; effective: ColorTokenValues;
@@ -41,7 +41,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const effective = useMemo(() => resolveEffectiveTheme(mode, presetId, custom), [mode, presetId, custom]);
   const forMode = useCallback((target: ThemeMode) => resolveEffectiveTheme(target, presetId, custom), [presetId, custom]);
 
-  useEffect(() => { applyThemeToDom(effective); }, [effective]);
+  // The palette is only injected once the user actually departs from the shipped
+  // defaults. While `custom` is empty and the default preset is selected, the
+  // design-system profile keeps sole ownership of the semantic colours, so an
+  // untouched install renders exactly what it rendered before this PR.
+  const paletteActive = custom !== null || presetId !== DEFAULT_PRESET_ID;
+
+  useEffect(() => {
+    if (paletteActive) applyThemeToDom(effective);
+    else clearThemeOverrides();
+  }, [effective, paletteActive]);
 
   const setPreset = useCallback((newPresetId: string) => {
     if (!getPresetById(newPresetId)) return;

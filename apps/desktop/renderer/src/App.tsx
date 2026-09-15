@@ -33,6 +33,7 @@ import { BrainCircuit, Cog, FileChartColumn, FolderOpen, Network, Plus, ShieldAl
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
+import { DEFAULT_PRESET_ID } from "./theme-presets";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
 import {
@@ -1100,8 +1101,13 @@ function AppInner({
   // palette on top as token overrides — exactly the nesting main already uses for
   // the "mint" profile below, just driven by a full token set instead of one key.
   // Keeping `algorithm` out of this layer leaves a single owner for light/dark.
+  // Same activation rule as the CSS side in theme-context: the palette only
+  // layers over AntD once the user departs from the shipped defaults, so an
+  // untouched install keeps the profile-derived seed values it had before this
+  // PR and keeps the `mint` colourPrimary override meaningful.
+  const paletteActive = themeContext.custom !== null || themeContext.presetId !== DEFAULT_PRESET_ID;
   const antdToken = useMemo(() => ({
-    ...themeToAntdSeed(themeContext.effective, themeContext.mode),
+    ...(paletteActive ? themeToAntdSeed(themeContext.effective, themeContext.mode) : {}),
     fontSize: 13,
     borderRadius: 8,
     motionDurationFast: "0.12s",
@@ -1113,8 +1119,8 @@ function AppInner({
     controlHeightSM: 26,
     controlHeightLG: 36,
     fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
-    ...(themeProfile === "mint" ? { colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64" } : {}),
-  }), [themeContext.effective, themeMode, themeProfile]);
+    ...(paletteActive ? {} : themeProfile === "mint" ? { colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64" } : {}),
+  }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
 
   return (
     <DSProvider mode={themeMode}>
