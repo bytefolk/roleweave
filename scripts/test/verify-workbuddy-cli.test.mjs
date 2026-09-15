@@ -27,11 +27,13 @@ request.end(JSON.stringify({model:process.env.CODEBUDDY_MODEL,tools:${JSON.strin
   return cli;
 }
 
-const posix = { skip: process.platform === "win32" ? "native WorkBuddy lifecycle is not yet qualified" : false, timeout: 15000 };
+// The full scripts suite runs child-process and packaging tests concurrently.
+// Leave room for their CPU contention without changing production deadlines.
+const posix = { skip: process.platform === "win32" ? "native WorkBuddy lifecycle is not yet qualified" : false, timeout: 30000 };
 
 for (const [tools, toolsField] of [[[], "empty-array"], [undefined, "omitted"]]) {
   test(`manual WorkBuddy verifier accepts ${toolsField} provider tools through the adapter`, posix, async (t) => {
-    const result = await verifyWorkbuddyCli(await fixture(t, tools), { timeoutMs: 5000 });
+    const result = await verifyWorkbuddyCli(await fixture(t, tools), { timeoutMs: 20000 });
     assert.deepEqual(result, {
       ok: true, evidence: "E3 real CLI with simulated loopback provider", version: "2.137.1",
       modelRequests: 1, modelVisibleTools: 0, providerToolsField: toolsField, deltaFrames: 1, terminalEvents: 1, residualProcesses: 0,
@@ -41,5 +43,5 @@ for (const [tools, toolsField] of [[[], "empty-array"], [undefined, "omitted"]])
 }
 
 test("manual WorkBuddy verifier rejects a real outbound tool payload despite a tool-free init", posix, async (t) => {
-  await assert.rejects(verifyWorkbuddyCli(await fixture(t, [{ type: "function", function: { name: "Bash" } }]), { timeoutMs: 5000 }), /verification.provider_tools_not_empty/);
+  await assert.rejects(verifyWorkbuddyCli(await fixture(t, [{ type: "function", function: { name: "Bash" } }]), { timeoutMs: 20000 }), /verification.provider_tools_not_empty/);
 });
