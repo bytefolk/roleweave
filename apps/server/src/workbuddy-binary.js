@@ -76,7 +76,7 @@ export function validatedWorkbuddyModel(value) {
 export function resolveWorkbuddyExecutable(env, platform = process.platform) {
   const explicit = (env.DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND ?? "").trim();
   if (explicit.length > 0) {
-    if (explicit.includes("\0")) return null;
+    if (/[\u0000-\u001f\u007f]/.test(explicit)) return null;
     const pathLike = path.isAbsolute(explicit) || explicit.includes("/") || explicit.includes("\\");
     return pathLike ? executableTarget(path.resolve(explicit)) : findOnPath(explicit, env, platform);
   }
@@ -110,16 +110,17 @@ export function resolveWorkbuddyExecutable(env, platform = process.platform) {
   }
 
   if (platform === "darwin") {
+    const systemInstall = executableTarget("/Applications/WorkBuddy.app/Contents/Resources/app.asar.unpacked/cli/bin/codebuddy");
     const home = env.HOME ?? "";
     if (path.isAbsolute(home) && !/[\0\r\n]/.test(home)) {
       for (const candidate of [
         path.join(home, "Applications", "WorkBuddy.app", "Contents", "Resources", "app.asar.unpacked", "cli", "bin", "codebuddy"),
-        path.join("/Applications", "WorkBuddy.app", "Contents", "Resources", "app.asar.unpacked", "cli", "bin", "codebuddy"),
       ]) {
         const found = executableTarget(candidate);
         if (found !== null) return found;
       }
     }
+    if (systemInstall !== null) return systemInstall;
   }
 
   return null;

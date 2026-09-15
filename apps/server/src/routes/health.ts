@@ -7,7 +7,8 @@ import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
 import { resolveCodexExecutable, validatedCodexModel } from "../codex-binary.js";
-import { resolveWorkbuddyExecutable, validatedWorkbuddyModel } from "../workbuddy-binary.js";
+import { resolveWorkbuddyExecutable } from "../workbuddy-binary.js";
+import { probeWorkbuddyExecutable, workbuddyConfiguration, workbuddyVersionProfile } from "../workbuddy-runtime.js";
 import { createLauncherSpawnSpec } from "../windows-launcher.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 import { LocalProviderConfigError, resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../local-provider-config.js";
@@ -33,6 +34,8 @@ export interface WorkbuddyBinaryState {
   installed: boolean;
   version: string | null;
   supported: boolean;
+  /** Stable local reason only; never retain probe stderr or executable paths. */
+  failure?: string;
 }
 
 export type QoderLocalProbeFailure = "unavailable" | "timed_out" | "unsupported_version" | "not_cli" | "unsupported_cli" | "not_authenticated" | "auth_check_failed";
@@ -170,6 +173,7 @@ export interface HostHealthInput {
   claudeLocal?: ClaudeLocalBinaryState;
   codex?: CodexBinaryState;
   workbuddy?: WorkbuddyBinaryState;
+  platform?: NodeJS.Platform;
 }
 
 function compareParts(parts: readonly [number, number, number], bound: readonly [number, number, number]): number {
@@ -396,21 +400,7 @@ export const __codexVersionProbeSpec = (
 ): { command: string; args: string[]; options: Record<string, unknown> } =>
   createLauncherSpawnSpec(command, ["--version"], env, platform);
 
-/**
- * WorkBuddy (CodeBuddy Code) supported version window — must match the
- * engine adapter's own bounds so health and spawn agree.
- */
-const WORKBUDDY_VERSION_MIN = [2, 106, 0] as const;
-const WORKBUDDY_VERSION_MAX = [3, 0, 0] as const;
-
-function supportedWorkbuddyVersion(announced: string | null): boolean {
-  if (announced === null) return false;
-  const match = /(\d+)\.(\d+)\.(\d+)/.exec(announced);
-  if (!match) return false;
-  const parts: [number, number, number] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  return compareParts(parts, WORKBUDDY_VERSION_MIN) >= 0 && compareParts(parts, WORKBUDDY_VERSION_MAX) < 0;
-}
-
+/** Version and isolation policy are shared with the actual WorkBuddy launcher. */
 export function probeWorkbuddyBinary(
   env: NodeJS.ProcessEnv,
   timeoutMs = 3000,
@@ -418,37 +408,23 @@ export function probeWorkbuddyBinary(
 ): WorkbuddyBinaryState {
   const command = resolveWorkbuddyExecutable(env, platform);
   if (command === null) {
-    return { installed: false, version: null, supported: false };
+    return { installed: false, version: null, supported: false, failure: "workbuddy.binary_unavailable" };
   }
-  const spec = createLauncherSpawnSpec(
-    command,
-    ["--version"],
-    runtimeExecutableEnvironment(env),
-    platform,
-  );
-  let probe: ReturnType<typeof spawnSync>;
-  try {
-    probe = spawnSync(spec.command, spec.args, {
-      ...spec.options,
-      encoding: "utf8",
-      killSignal: "SIGKILL",
-      timeout: timeoutMs,
-      windowsHide: true,
-    });
-  } catch {
-    return { installed: false, version: null, supported: false };
-  }
-  if (probe.error !== undefined || probe.status !== 0) {
-    return { installed: false, version: null, supported: false };
-  }
-  const announced = typeof probe.stdout === "string" && probe.stdout.trim().length > 0
-    ? probe.stdout
-    : typeof probe.stderr === "string"
-      ? probe.stderr
-      : "";
-  const match = /(\d+\.\d+\.\d+)/.exec(announced);
-  const version = match ? match[1]! : null;
-  return { installed: true, version, supported: supportedWorkbuddyVersion(version) };
+  const probe = probeWorkbuddyExecutable(command, env, { timeoutMs, platform });
+  return {
+    installed: true,
+    version: probe.version ?? null,
+    supported: probe.ready,
+    ...(!probe.ready ? { failure: probe.code } : {}),
+  };
+}
+
+function workbuddyConfigurationNextStep(code: string): string {
+  if (code.includes("api_key") || code.includes("credential")) return "设置有效的 CODEBUDDY_API_KEY 服务凭据后重启工作台；个人 WorkBuddy 登录状态不会被复用";
+  if (code.includes("model")) return "设置有效的 CODEBUDDY_MODEL 后重启工作台；模型标识须以字母或数字开头，仅含字母、数字及 . _ : / -，长度不超过 256";
+  if (code.includes("base_url")) return "更正 CODEBUDDY_BASE_URL：使用 HTTPS，或本机回环 HTTP；地址不得包含用户名、密码、查询或片段";
+  if (code.includes("internet_environment")) return "将 CODEBUDDY_INTERNET_ENVIRONMENT 设为 external、internal、ioa、selfhosted 或 cloudhosted 后重启工作台";
+  return "检查 WorkBuddy 的 CODEBUDDY_API_KEY、CODEBUDDY_MODEL 与服务端点配置后重启工作台";
 }
 
 function isBundledQoderEngine(version: string | undefined): boolean {
@@ -490,6 +466,7 @@ export function hostHealth({
   claudeLocal = { installed: false, version: null, supported: false },
   codex = { installed: false, version: null },
   workbuddy = { installed: false, version: null, supported: false },
+  platform = process.platform,
 }: HostHealthInput): HealthResponse["hosts"] {
   const bundledQoder = isBundledQoderEngine(engineVersion);
   const qoderServiceTokenConfigured = typeof env.QODER_PERSONAL_ACCESS_TOKEN === "string" && env.QODER_PERSONAL_ACCESS_TOKEN.length > 0;
@@ -612,36 +589,31 @@ export function hostHealth({
               : {}),
     },
     workbuddy: (() => {
-      const workbuddyProviderConfigured = typeof env.CODEBUDDY_API_KEY === "string" && env.CODEBUDDY_API_KEY.length > 0;
-      const workbuddyModel = validatedWorkbuddyModel(env.ROLEWEAVE_TURN_MODEL ?? env.CODEBUDDY_MODEL);
-      const workbuddyModelUsable = workbuddyModel !== null;
-      const workbuddyConfigured = workbuddy.installed && workbuddy.supported && workbuddyProviderConfigured && workbuddyModelUsable;
-      const workbuddyModelHealth = {
-        modelPinnable: true,
-        ...(typeof workbuddyModel === "string" ? { model: workbuddyModel } : {}),
-      };
-      const workbuddyModelNextStep = "CODEBUDDY_MODEL 不是合法的模型标识（首字符为字母或数字，其余限 A-Z a-z 0-9 . _ : / -，长度 ≤ 256）；请更正或清空后重启工作台";
+      // Health describes local configuration, not authentication, model quota,
+      // or a completed turn. Per-turn model overrides are not server defaults.
+      const configuration = workbuddyConfiguration({ ...env, ROLEWEAVE_TURN_MODEL: undefined });
+      const profile = workbuddyVersionProfile(workbuddy.version ?? "");
+      const configured = workbuddy.installed && workbuddy.supported && profile !== null && configuration.ready;
+      let nextStep: string | undefined;
+      if (!bundledElectronEngine || !engineAvailable) {
+        nextStep = "WorkBuddy 需要 RoleWeave 内置 bundled qoder-engine；请恢复内置引擎或修复其本地启动配置";
+      } else if (platform === "win32" || workbuddy.failure?.includes("platform_not_verified")) {
+        nextStep = "WorkBuddy Windows 进程树清理尚未完成验证，当前禁止派活；请使用受支持的 macOS/Linux CLI，等待 Windows 验证完成后更新 RoleWeave";
+      } else if (!workbuddy.installed) {
+        nextStep = "安装 WorkBuddy / CodeBuddy Code CLI，或将 DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND 指向桌面安装目录中 app.asar.unpacked/cli/bin/codebuddy；然后重启工作台";
+      } else if (!workbuddy.supported || profile === null) {
+        nextStep = workbuddy.failure?.includes("timed_out")
+          ? "WorkBuddy CLI 本地版本探测超时；检查本机进程，或用 DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND 指定可执行 CLI 后重启"
+          : "安装已审计的 CodeBuddy Code CLI 2.106.4 或 2.137.1；用 DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND 指定该 CLI 后重启工作台";
+      } else if (!configuration.ready) {
+        nextStep = workbuddyConfigurationNextStep(configuration.code);
+      }
       return {
-        configured: workbuddyConfigured,
-        ready: bundledElectronEngine && engineAvailable && workbuddyConfigured,
-        ...workbuddyModelHealth,
-        ...(!bundledElectronEngine
-          ? { nextStep: "WorkBuddy 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 WorkBuddy 回合" }
-          : !workbuddy.installed
-            ? { nextStep: "安装 WorkBuddy 并确保 codebuddy 在 PATH 上（或用 DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND 指定二进制路径）" }
-            : !workbuddy.supported
-              ? {
-                  nextStep: workbuddy.version === null
-                    ? "WorkBuddy CLI 版本无法解析；支持窗口为 >= 2.106.0 且 < 3.0.0"
-                    : `WorkBuddy CLI 版本 ${workbuddy.version} 不在支持窗口（>= 2.106.0 且 < 3.0.0）内，请升级或降级`,
-                }
-              : !workbuddyProviderConfigured
-                ? { nextStep: "设置 CODEBUDDY_API_KEY（如需自建或中转端点，另设 CODEBUDDY_BASE_URL）后重启工作台" }
-                : !workbuddyModelUsable
-                  ? { nextStep: workbuddyModelNextStep }
-                  : !engineAvailable
-                    ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
-                    : {}),
+        configured,
+        ready: configured && nextStep === undefined,
+        modelPinnable: true,
+        ...(configuration.ready && configuration.model ? { model: configuration.model } : {}),
+        ...(nextStep ? { nextStep } : {}),
       };
     })(),
   };

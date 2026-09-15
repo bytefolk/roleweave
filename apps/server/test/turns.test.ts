@@ -217,7 +217,19 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
           body: { positionId: "repo-owner", input: "hello", engine },
         });
         assert.equal(accepted.status, 200, `${engine} must be accepted`);
-        assert.equal((accepted.body as { engine: TurnEngine }).engine, engine);
+        const record = accepted.body as { engine: TurnEngine; turnId: string };
+        assert.equal(record.engine, engine);
+        const turnFile = path.join(freshWorkspace, ".digital-employee", "workbench", "conversations", "repo-owner", "turns", `${record.turnId}.json`);
+        await assertPosixMode(turnFile, 0o600);
+        assert.equal(JSON.parse(await fs.readFile(turnFile, "utf8")).engine, engine);
+        // A fresh store and HTTP history must both read the actual file. A
+        // validator-only assertion misses write/read routing regressions.
+        const history = await new TurnStore().history(freshWorkspace, "repo-owner", new Date().toISOString());
+        assert.equal(history.turns[0]?.engine, engine);
+        const readback = await api(server.baseUrl, "/turns?positionId=repo-owner", { token: server.token });
+        assert.equal(readback.status, 200);
+        assert.equal((readback.body as { turns: Array<{ engine: TurnEngine }> }).turns[0]?.engine, engine);
+        assert.equal((await api(server.baseUrl, "/reports", { token: server.token })).status, 200);
       } finally {
         await fs.rm(freshWorkspace, { recursive: true, force: true });
       }

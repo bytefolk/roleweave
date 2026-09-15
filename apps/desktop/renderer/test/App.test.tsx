@@ -181,6 +181,7 @@ function openedBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
           "claude-local": { configured: true, ready: true },
           codex: { configured: true, ready: true },
           "codex-local": { configured: true, ready: true },
+          workbuddy: { configured: true, ready: true, modelPinnable: true, model: "fixture-model" },
         },
         workspace: { open: true, path: "/fixture/workspace" },
       },
@@ -306,7 +307,7 @@ describe("App runtime bridge", () => {
     expect(screen.queryByRole("switch", { name: "启用会话上下文" })).not.toBeInTheDocument();
   });
 
-  it.each(["qoder", "claude-code"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
+  it.each(["qoder", "claude-code", "workbuddy"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
     window.localStorage.setItem("owb-turn-engine", "codex-local");
     try {
       for (let mount = 0; mount < 2; mount += 1) {
@@ -319,7 +320,7 @@ describe("App runtime bridge", () => {
           await selectRepoOwner();
           await waitFor(() => expect(bridge.sessionTurnHistory).toHaveBeenCalled());
           expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
-          if (agentEngine === "qoder") {
+          if (agentEngine !== "claude-code") {
             await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
             fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "使用员工绑定" } });
             fireEvent.click(screen.getByRole("button", { name: "发送任务" }));

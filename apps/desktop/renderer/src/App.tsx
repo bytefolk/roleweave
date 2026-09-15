@@ -43,6 +43,7 @@ import {
   beginGroupRun,
   beginPendingTurn,
   defaultAgentHost,
+  TURN_ENGINES,
   reconcileGroupTimeline,
   resolveAgentEngine,
   resetStreamSeq,
@@ -1474,11 +1475,7 @@ function replaceTurn(turns: TurnRecord[], next: TurnRecord): TurnRecord[] {
 }
 
 function isTurnEngine(value: unknown): value is TurnEngine {
-  return value === "qoder"
-    || value === "claude-code"
-    || value === "claude-local"
-    || value === "codex"
-    || value === "codex-local";
+  return typeof value === "string" && (TURN_ENGINES as readonly string[]).includes(value);
 }
 
 function apiErrorMessage(body: unknown, fallback: string): string {

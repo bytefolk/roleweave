@@ -6,7 +6,7 @@ import { EngineSelect } from "../src/turns";
 import type { TurnEngine, TurnEngineAvailability } from "../src/turns";
 
 /** Runtime credentials and local-login transports are deliberately collapsed
- * into the three agent products operators understand. */
+ * into the four agent products operators understand. */
 
 const availability: Record<TurnEngine, TurnEngineAvailability> = {
   qoder: { configured: true, ready: true },
@@ -14,9 +14,10 @@ const availability: Record<TurnEngine, TurnEngineAvailability> = {
   "claude-local": { configured: true, ready: true },
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
+  workbuddy: { configured: true, ready: true },
 };
 
-const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local"];
+const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"];
 
 function Picker({ initial }: { initial: TurnEngine }) {
   const [engine, setEngine] = useState<TurnEngine>(initial);
@@ -55,21 +56,22 @@ describe("Agent Host picker (#94)", () => {
       "Qoder",
       "Claude Code",
       "Codex",
+      "WorkBuddy",
     ]);
   });
 
-  it("still selects, and the trigger follows the new host", () => {
+  it.each(["Claude Code", "WorkBuddy"])("selects %s and the trigger follows the new host", (label) => {
     render(<Picker initial="qoder" />);
     expect(triggerText()).toBe("Qoder");
 
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
     const target = visibleSelectOptions().find(
-      (option) => option.textContent === "Claude Code",
+      (option) => option.textContent === label,
     );
-    if (target === undefined) throw new Error("Claude Code option missing");
+    if (target === undefined) throw new Error(`${label} option missing`);
     fireEvent.click(target);
 
-    expect(triggerText()).toBe("Claude Code");
+    expect(triggerText()).toBe(label);
   });
 
   // Every host keeps its brand mark in the trigger, not just in the list (#57).
