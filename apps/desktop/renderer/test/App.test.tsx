@@ -540,6 +540,103 @@ describe("App runtime bridge", () => {
     expect(orgApply).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [3, "before-response"], [30, "before-response"],
+    [3, "after-refresh"], [30, "after-refresh"],
+    [3, "missing"], [30, "missing"],
+  ] as const)("refreshes once per drop with %i positions and %s SSE", async (size, timing) => {
+    const children = ["docs-writer", "release-engineer", ...Array.from({ length: size - 3 }, (_, i) => `extra-${i}`)]
+      .map((id) => ({ id, reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }));
+    const tree = { ...snapshot, positionCount: size, depth: 2, tree: [{ ...snapshot.tree[0]!, children }] };
+    const moved = {
+      ...tree, depth: 3, tree: [{ ...tree.tree[0]!, children: [
+        { ...children[1]!, children: [{ ...children[0]!, reportTo: "release-engineer" }] }, ...children.slice(2),
+      ] }],
+    };
+    const version = { seq: 2, updatedAt: snapshot.updatedAt };
+    const changes = [{ op: "move", id: "docs-writer", reportTo: "release-engineer" }];
+    const listeners = new Set<(event: unknown) => void>();
+    const emit = (seq: number, ops: unknown = changes) => listeners.forEach((listener) => listener({
+      type: "org.updated", payload: { workspace: "/fixture/workspace", version: { ...version, seq }, changes: ops },
+    }));
+    let resolveApply!: (response: { status: number; body: unknown }) => void;
+    let resolveTree!: (response: { status: number; body: unknown }) => void;
+    let resolveWorkspace!: (response: { status: number; body: unknown }) => void;
+    const bridge = openedBridge({
+      onEvent: vi.fn((listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; }),
+      orgApply: vi.fn(() => new Promise((resolve) => { resolveApply = resolve; })),
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: tree }),
+      position: vi.fn(async (id: string) => ({ status: 200, body: { position: { ...position, id, name: id } } })),
+    });
+    render(<App />);
+    const source = await screen.findByText("docs-writer", { selector: ".ui-org-tree__name" });
+    const target = screen.getByText("release-engineer", { selector: ".ui-org-tree__name" });
+    await waitFor(() => expect(bridge.reports).toHaveBeenCalledTimes(1));
+    const positionReads = vi.mocked(bridge.position).mock.calls.length;
+    for (const read of [bridge.status, bridge.workspace, bridge.orgTree, bridge.orgBackups, bridge.reports]) vi.mocked(read).mockClear();
+    vi.mocked(bridge.orgTree).mockImplementationOnce(() => new Promise((resolve) => { resolveTree = resolve; }));
+    vi.mocked(bridge.workspace).mockImplementationOnce(() => new Promise((resolve) => { resolveWorkspace = resolve; }));
+    const data = new Map<string, string>();
+    const dataTransfer = { effectAllowed: "move", dropEffect: "move", setData: (type: string, value: string) => data.set(type, value), getData: (type: string) => data.get(type) ?? "" };
+    fireEvent.dragStart(source.closest('[role="treeitem"]')!, { dataTransfer });
+    fireEvent.drop(target.closest('[role="treeitem"]')!, { dataTransfer });
+    expect(bridge.orgApply).toHaveBeenCalledWith({ schemaVersion: "change-manifest.v1", changes });
+    if (timing === "before-response") {
+      act(() => emit(2));
+      await waitFor(() => expect(bridge.orgTree).toHaveBeenCalledTimes(1));
+    }
+    await act(async () => resolveApply({ status: 200, body: { status: "applied", version, changesApplied: 1 } }));
+    await waitFor(() => expect(bridge.orgTree).toHaveBeenCalledTimes(1));
+    expect(source.closest('[role="treeitem"]')).toHaveAttribute("draggable", "false");
+    // orgTree has started even though the workspace read is still pending.
+    await act(async () => resolveWorkspace({ status: 200, body: { open: true, path: "/fixture/workspace", business: "开源业务" } }));
+    await act(async () => resolveTree({ status: 200, body: moved }));
+    const movedRow = () => screen.getByText("docs-writer", { selector: ".ui-org-tree__name" }).closest('[role="treeitem"]');
+    await waitFor(() => expect(movedRow()).toHaveAttribute("draggable", "true"));
+    expect(movedRow()).toHaveAttribute("aria-level", "4");
+    if (timing === "after-refresh") await act(async () => emit(2));
+    for (const read of [bridge.status, bridge.workspace, bridge.orgTree, bridge.orgBackups, bridge.reports]) expect(read).toHaveBeenCalledTimes(1);
+    expect(bridge.position).toHaveBeenCalledTimes(positionReads);
+
+    // A later independent mutation must never be swallowed, even if this
+    // drop's SSE event was missing. Reorders can share updatedAt, so seq is
+    // part of the key. Unknown/delete changes take the full metadata path.
+    await act(async () => emit(3, [{ op: "delete", id: "extra" }]));
+    await waitFor(() => expect(bridge.orgTree).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(bridge.position).mock.calls.length).toBeGreaterThan(positionReads);
+  });
+
+  it.each(["rejected", "offline"])("preserves %s apply feedback and accepts the next SSE update", async (outcome) => {
+    const tree = { ...snapshot, positionCount: 2, tree: [{ ...snapshot.tree[0]!, children: [
+      { id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] },
+    ] }] };
+    const listeners = new Set<(event: unknown) => void>();
+    const bridge = openedBridge({
+      onEvent: vi.fn((listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; }),
+      orgApply: outcome === "offline"
+        ? vi.fn().mockRejectedValue(new Error("offline"))
+        : vi.fn().mockResolvedValue({ status: 422, body: { message: "engine rejected proposal", retryable: false } }),
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: tree }),
+      position: vi.fn(async (id: string) => ({ status: 200, body: { position: { ...position, id, name: id } } })),
+    });
+    render(<App />);
+    const row = (await screen.findByText("docs-writer", { selector: ".ui-org-tree__name" })).closest('[role="treeitem"]')!;
+    await waitFor(() => expect(bridge.reports).toHaveBeenCalledTimes(1));
+    vi.mocked(bridge.orgTree).mockClear();
+    fireEvent.focus(row);
+    fireEvent.keyDown(screen.getByRole("tree"), { key: "ArrowLeft", metaKey: true });
+    expect(await screen.findByText(outcome === "offline"
+      ? "组织变更状态不确定：本地服务不可用；不会自动重试"
+      : "engine rejected proposal")).toBeInTheDocument();
+    expect(bridge.orgApply).toHaveBeenCalledTimes(1);
+    expect(bridge.orgTree).not.toHaveBeenCalled();
+    expect(row).toHaveAttribute("draggable", "true");
+    await act(async () => listeners.forEach((listener) => listener({ type: "org.updated", payload: {
+      workspace: "/fixture/workspace", version: { seq: 3, updatedAt: snapshot.updatedAt }, changes: [{ op: "move", id: "docs-writer" }],
+    } })));
+    expect(bridge.orgTree).toHaveBeenCalledTimes(1);
+  });
+
   it("⌘↑ emits a reorder manifest and the 撤销 button replays /org/undo", async () => {
     const tree = {
       ...snapshot,
