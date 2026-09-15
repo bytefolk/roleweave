@@ -1100,11 +1100,17 @@ function AppInner({
   };
   const managedNode = typeof managementTarget === "string" && snapshot ? findNodeById(snapshot.tree, managementTarget) : null;
   return (
-    <DSProvider mode={themeMode}>
+    <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }}
       theme={{ token: {
         fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
-        ...(themeProfile === "mint" ? { colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64" } : {}),
+        ...(themeProfile === "mint" ? {
+          colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64",
+          colorPrimaryHover: themeMode === "dark" ? "#78c9b0" : "#236d58",
+          colorPrimaryActive: themeMode === "dark" ? "#64bca2" : "#236d58",
+          colorTextLightSolid: themeMode === "dark" ? "#14151b" : "#ffffff",
+          colorTextDisabled: themeMode === "dark" ? "#90a098" : "#5e6b65",
+        } : {}),
       } }}>
     <div className="owb-app">
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
