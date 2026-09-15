@@ -7,6 +7,7 @@ import {
   TURN_RECORD_SCHEMA_VERSION,
   errorCodes,
   isPositionId,
+  isEngineModelId,
   turnEngines,
 } from "@roleweave/shared";
 import type { ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
@@ -389,9 +390,10 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
       "schemaVersion", "conversationId", "turnId", "positionId", "engine", "status",
       "input", "envelopeDigest", "createdAt", "updatedAt", "events",
     ],
-    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "goalId", "branchId"],
+    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "goalId", "branchId", "model"],
   )) return false;
   if (Object.hasOwn(value, "threadContext") && !isThreadContextMetadata(value.threadContext)) return false;
+  if (Object.hasOwn(value, "model") && !isEngineModelId(value.model, value.engine)) return false;
   const createdInstant = parseRfc3339Instant(value.createdAt);
   const updatedInstant = parseRfc3339Instant(value.updatedAt);
   if (
@@ -786,6 +788,7 @@ export class TurnStore {
   ) {}
 
   async begin(input: {
+    model?: string;
     workspace: string;
     positionId: string;
     turnId: string;
@@ -813,6 +816,7 @@ export class TurnStore {
       turnId: input.turnId,
       positionId: input.positionId,
       engine: input.engine,
+      ...(input.model === undefined ? {} : { model: input.model }),
       status: "running",
       input: input.message,
       envelopeDigest: input.envelopeDigest,
@@ -849,6 +853,7 @@ export class TurnStore {
   }
 
   async beginSession(input: {
+    model?: string;
     workspace: string;
     sessionId: string;
     positionId: string;
@@ -889,6 +894,7 @@ export class TurnStore {
       updatedAt: input.now,
       events: [],
       ...(input.conversationRef !== undefined ? { conversationRef: input.conversationRef } : {}),
+      ...(input.model === undefined ? {} : { model: input.model }),
       ...(input.goalId !== undefined ? { goalId: input.goalId } : {}),
       ...(input.branchId !== undefined ? { branchId: input.branchId } : {}),
     };

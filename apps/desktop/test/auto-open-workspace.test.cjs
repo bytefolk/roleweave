@@ -263,11 +263,11 @@ test("AC-006: unavailable stderr never turns diagnostics into a failed startup",
       userDataPath,
       writeStderr,
     }),
-    "last-workspace and demo diagnostics",
+    "last-workspace diagnostic",
   );
 });
 
-test("last-workspace path: non-2xx falls through to demo with fallback notice", async (t) => {
+test("last-workspace path: non-2xx leaves no workspace open and returns a fallback notice", async (t) => {
   const lastDir = makeTempWorkspace(t);
   fs.writeFileSync(path.join(lastDir, "workspace.json"), "{}");
   const userDataPath = makeTempWorkspace(t);
@@ -301,8 +301,9 @@ test("last-workspace path: non-2xx falls through to demo with fallback notice", 
 
   const stderr = capture.output();
   assert.match(stderr, new RegExp(`dir=${lastDir}[^\\n]*500`), "last-workspace failure must report 500");
-  assert.match(stderr, /503/, "demo fallback failure must report 503");
-  assert.equal(calls.length, 2, "both last-workspace and demo paths must POST");
+  assert.doesNotMatch(stderr, /503/, "no demo request should be attempted");
+  assert.equal(calls.length, 1, "only the remembered workspace should be attempted");
+  assert.deepEqual(fs.readdirSync(fakeHome), [], "failed reopen must not create a demo workspace");
   assert.equal(result.fallbackNoticePath, lastDir);
 });
 
@@ -328,32 +329,116 @@ test("last-workspace path: successful open returns no fallback notice", async (t
 
   assert.equal(capture.output(), "");
   assert.equal(result.fallbackNoticePath, null);
+  assert.deepEqual(apiRequest.calls, [{
+    pathname: "/workspace/open",
+    options: { method: "POST", body: { path: lastDir } },
+  }]);
 });
 
-test("demo fallback: prefers the existing legacy .org-workbench workspace when the canonical demo is absent", async (t) => {
+test("first launch stays empty without creating a demo workspace", async (t) => {
+  const fakeHome = makeTempWorkspace(t);
+  const userDataPath = makeTempWorkspace(t);
+  t.mock.method(os, "homedir", () => fakeHome);
+  const apiRequest = makeApiRequestStub();
+  const messages = [];
+
+  const result = await openDefaultWorkspace({
+    apiRequest,
+    env: {},
+    userDataPath,
+    writeStderr: (message) => messages.push(message),
+  });
+
+  assert.deepEqual(result, { fallbackNoticePath: null });
+  assert.deepEqual(apiRequest.calls, []);
+  assert.deepEqual(fs.readdirSync(fakeHome), [], "first launch must not populate user projects");
+  assert.deepEqual(fs.readdirSync(userDataPath), [], "first launch must not persist a workspace choice");
+  assert.deepEqual(messages, []);
+});
+
+test("existing canonical and legacy demos are left untouched without an explicit workspace choice", async (t) => {
   const fakeHome = makeTempWorkspace(t);
   const userDataPath = makeTempWorkspace(t);
   const legacyDir = path.join(fakeHome, ".org-workbench", "demo-workspace");
   const canonicalDir = path.join(fakeHome, ".roleweave", "demo-workspace");
-  const manifest = path.join(legacyDir, "workspace.json");
-  const fixture = autoOpenFixture(t, "darwin", [manifest]);
+  for (const dir of [legacyDir, canonicalDir]) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "workspace.json"), JSON.stringify({ name: dir }));
+  }
   t.mock.method(os, "homedir", () => fakeHome);
   const apiRequest = makeApiRequestStub();
+  const messages = [];
 
-  const result = await fixture.openDefaultWorkspace({
+  const result = await openDefaultWorkspace({
     apiRequest,
     env: {},
     userDataPath,
-    writeStderr: fixture.writeStderr,
+    writeStderr: (message) => messages.push(message),
   });
 
   assert.deepEqual(result, { fallbackNoticePath: null });
-  assert.deepEqual(fixture.checkedPaths, [path.join(canonicalDir, "workspace.json"), manifest, manifest]);
+  assert.deepEqual(apiRequest.calls, []);
+  for (const dir of [legacyDir, canonicalDir]) {
+    assert.deepEqual(fs.readdirSync(dir), ["workspace.json"]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "workspace.json"), "utf8")), { name: dir });
+  }
+  assert.deepEqual(messages, []);
+});
+
+for (const outcome of ["missing", "rejection"]) {
+  test(`last-workspace path: ${outcome} preserves the notice without creating or opening a demo`, async (t) => {
+    const lastDir = makeTempWorkspace(t);
+    if (outcome === "rejection") fs.writeFileSync(path.join(lastDir, "workspace.json"), "{}");
+    const userDataPath = makeTempWorkspace(t);
+    fs.writeFileSync(path.join(userDataPath, "last-workspace.json"), JSON.stringify({ path: lastDir }));
+    const fakeHome = makeTempWorkspace(t);
+    t.mock.method(os, "homedir", () => fakeHome);
+    const apiRequest = makeApiRequestStub({ shouldReject: true });
+
+    const result = await openDefaultWorkspace({ apiRequest, env: {}, userDataPath, writeStderr: () => {} });
+
+    assert.deepEqual(result, { fallbackNoticePath: lastDir });
+    assert.equal(apiRequest.calls.length, outcome === "missing" ? 0 : 1);
+    assert.deepEqual(fs.readdirSync(fakeHome), []);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(userDataPath, "last-workspace.json"), "utf8")), { path: lastDir });
+  });
+}
+
+test("explicit workspace override takes precedence over the remembered workspace", async (t) => {
+  const lastDir = makeTempWorkspace(t);
+  const overrideDir = makeTempWorkspace(t);
+  fs.writeFileSync(path.join(overrideDir, "workspace.json"), "{}");
+  const userDataPath = makeTempWorkspace(t);
+  fs.writeFileSync(path.join(userDataPath, "last-workspace.json"), JSON.stringify({ path: lastDir }));
+  const apiRequest = makeApiRequestStub();
+
+  const result = await openDefaultWorkspace({
+    apiRequest,
+    env: { ROLEWEAVE_DEFAULT_WORKSPACE: overrideDir },
+    userDataPath,
+  });
+
+  assert.deepEqual(result, { fallbackNoticePath: null });
   assert.deepEqual(apiRequest.calls, [{
     pathname: "/workspace/open",
-    options: { method: "POST", body: { path: legacyDir } },
+    options: { method: "POST", body: { path: overrideDir } },
   }]);
-  assert.deepEqual(fixture.messages, []);
+});
+
+test("WSL reopens a remembered Linux path without asking the Windows filesystem to stat it", async (t) => {
+  const userDataPath = makeTempWorkspace(t);
+  const lastPath = "/home/tester/projects/saved-team";
+  fs.writeFileSync(path.join(userDataPath, "last-workspace.json"), JSON.stringify({ path: lastPath }));
+  const fixture = autoOpenFixture(t, "win32", []);
+  const apiRequest = makeApiRequestStub();
+  const result = await fixture.openDefaultWorkspace({
+    apiRequest, userDataPath,
+    env: { ROLEWEAVE_CONTROL_PLANE_MODE: "wsl", ROLEWEAVE_WSL_DISTRO: "Ubuntu" },
+    writeStderr: fixture.writeStderr,
+  });
+  assert.deepEqual(result, { fallbackNoticePath: null });
+  assert.deepEqual(fixture.checkedPaths, []);
+  assert.deepEqual(apiRequest.calls, [{ pathname: "/workspace/open", options: { method: "POST", body: { path: lastPath } } }]);
 });
 
 for (const alias of ["ROLEWEAVE_DEFAULT_WORKSPACE", "ORG_WORKBENCH_DEFAULT_WORKSPACE"]) {

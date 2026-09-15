@@ -204,9 +204,15 @@ test("group HTTP accepts a 32-member escaped 256 KiB request and rejects bodies 
   assert.equal(messages.length, 1);
   assert.equal(messages[0]?.input, input);
   assert.equal(messages[0]?.spawns?.length, 32);
-  const tooLarge = await api(server.baseUrl, `/groups/${group.conversationRef}/turns`, { method: "POST", token: server.token, body: { input: "x" + "\u0000".repeat(256 * 1024 - 1), engine: "qoder", mentions: members, mode: "parallel" } });
+  // Rejection can arrive before this upload is consumed. Do not leave that request in
+  // fetch's keep-alive pool, where Node 22 can leave server.close() pending at teardown.
+  const tooLarge = await fetch(`${server.baseUrl}/groups/${group.conversationRef}/turns`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${server.token}`, "content-type": "application/json", connection: "close" },
+    body: JSON.stringify({ input: "x" + "\u0000".repeat(256 * 1024 - 1), engine: "qoder", mentions: members, mode: "parallel" }),
+  });
   assert.equal(tooLarge.status, 400);
-  assert.equal((tooLarge.body as { code: string }).code, "body_invalid");
+  assert.equal((await tooLarge.json() as { code: string }).code, "body_invalid");
   assert.equal((await server.ctx.groupStore.readMessages(workspace, group.conversationRef)).length, 1, "rejected request must not create acceptance records");
 });
 

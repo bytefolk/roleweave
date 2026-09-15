@@ -5,12 +5,11 @@
 // tokens, not a token-string presence check — it would have caught the
 // original #85887c / #7e8176 regression.
 //
-// #248 moved the palette out of antd-skin.css into @fullstack-ai-infra/ui's
-// profile blocks, so this audit now reads them — through the package's
-// exports map, i.e. the exact CSS the renderer bundles. The audited profile
-// is `mint`: resolveThemeProfile() seeds it as RoleWeave's default, so it is
-// the palette the app ships. The `default` profile is the upstream Ant
-// Design palette kept as an opt-in; its contrast is upstream's to own.
+// Mint inherits the shared light/dark token map from
+// @fullstack-ai-infra/ui, then applies the RoleWeave-owned overlay in
+// antd-skin.css. Resolve that actual cascade here: the package stylesheet
+// intentionally has no product profile blocks. `mint` is seeded as the
+// RoleWeave default, while `default` remains the opt-in upstream palette.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -30,20 +29,29 @@ function contrastRatio(hexA, hexB) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function tokenValue(block, name) {
-  const match = block.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`));
-  assert.ok(match, `expected ${name} as a hex value in block`);
-  return match[1];
+function tokenValues(...blocks) {
+  const values = new Map();
+  for (const block of blocks) {
+    for (const match of block.matchAll(/(--[\w-]+):\s*(#[0-9a-fA-F]{6})\b/g)) {
+      values.set(match[1], match[2]);
+    }
+  }
+  return values;
 }
 
-// The mint profile ships as one comma-joined light rule and one dark rule.
-// Pull each rule's declaration block out by selector, brace-matched, so the
-// audit reads the same values the renderer resolves at runtime.
-function mintBlock(css, theme) {
-  const selector = `[data-ui-theme=mint][data-theme=${theme}]`;
-  const start = css.indexOf(selector);
-  assert.notEqual(start, -1, `mint ${theme} block missing from the design-system stylesheet`);
-  const open = css.indexOf("{", start);
+function tokenValue(values, name) {
+  const value = values.get(name);
+  assert.ok(value, `expected ${name} as a hex value in the resolved mint tokens`);
+  return value;
+}
+
+// CSS source formatting varies between authored CSS and the minified bundle:
+// values may be quoted, unquoted, separated by CRLF, or adjacent. Locate the
+// actual selector rather than assuming one serialization.
+function declarationBlock(css, selector, label) {
+  const match = selector.exec(css);
+  assert.ok(match, `${label} block missing from stylesheet`);
+  const open = css.indexOf("{", match.index);
   let depth = 0;
   for (let i = open; i < css.length; i += 1) {
     if (css[i] === "{") depth += 1;
@@ -52,22 +60,45 @@ function mintBlock(css, theme) {
       if (depth === 0) return css.slice(open + 1, i);
     }
   }
-  assert.fail(`unbalanced braces in the mint ${theme} block`);
+  assert.fail(`unbalanced braces in the ${label} block`);
+}
+
+function themeBlock(css, theme) {
+  return declarationBlock(
+    css,
+    new RegExp(`\\[\\s*data-theme\\s*=\\s*(?:["']${theme}["']|${theme})\\s*\\]\\s*\\{`),
+    `${theme} shared token`,
+  );
+}
+
+function mintOverlayBlock(css, theme) {
+  return declarationBlock(
+    css,
+    new RegExp(
+      `\\[\\s*data-ui-theme\\s*=\\s*(?:["']mint["']|mint)\\s*\\]\\s*` +
+      `\\[\\s*data-theme\\s*=\\s*(?:["']${theme}["']|${theme})\\s*\\]\\s*\\{`,
+    ),
+    `mint ${theme} overlay`,
+  );
 }
 
 function mintBlocks() {
-  const css = fs.readFileSync(require.resolve("@fullstack-ai-infra/ui/styles.css"), "utf8");
-  return [["light", mintBlock(css, "light")], ["dark", mintBlock(css, "dark")]];
+  const shared = fs.readFileSync(require.resolve("@fullstack-ai-infra/ui/styles.css"), "utf8");
+  const skin = fs.readFileSync(path.join(__dirname, "..", "renderer", "src", "antd-skin.css"), "utf8");
+  return ["light", "dark"].map((theme) => [
+    theme,
+    tokenValues(themeBlock(shared, theme), mintOverlayBlock(skin, theme)),
+  ]);
 }
 
 const SURFACE_TOKENS = ["--ui-surface", "--ui-surface-raised", "--ui-surface-inset", "--ui-canvas", "--ui-canvas-subtle"];
 const AA_NORMAL_TEXT = 4.5;
 
 test("--ui-foreground-subtle clears WCAG AA (4.5:1) against every surface, both themes", () => {
-  for (const [theme, block] of mintBlocks()) {
-    const subtle = tokenValue(block, "--ui-foreground-subtle");
+  for (const [theme, tokens] of mintBlocks()) {
+    const subtle = tokenValue(tokens, "--ui-foreground-subtle");
     for (const surfaceToken of SURFACE_TOKENS) {
-      const surface = tokenValue(block, surfaceToken);
+      const surface = tokenValue(tokens, surfaceToken);
       const ratio = contrastRatio(subtle, surface);
       assert.ok(
         ratio >= AA_NORMAL_TEXT,
@@ -77,10 +108,9 @@ test("--ui-foreground-subtle clears WCAG AA (4.5:1) against every surface, both 
   }
 });
 
-// antd-skin.css no longer carries palette values (#248); it aliases the three
-// state-control foregrounds to the profile's primary foreground. Pin that
-// glue, then audit the resolved pairs, so the readable-foreground promise
-// survives the palette's move to the design system.
+// antd-skin.css aliases the three state-control foregrounds to the profile's
+// primary foreground. Pin that glue, then audit the resolved pairs so the
+// readable-foreground promise covers both the shared map and mint overlay.
 test("solid controls keep readable foregrounds in normal and hover states, both themes", () => {
   const aliases = fs.readFileSync(
     path.join(__dirname, "..", "renderer", "src", "antd-skin.css"),
@@ -93,11 +123,11 @@ test("solid controls keep readable foregrounds in normal and hover states, both 
     );
   }
 
-  for (const [theme, block] of mintBlocks()) {
-    const primaryForeground = tokenValue(block, "--ui-primary-foreground");
+  for (const [theme, tokens] of mintBlocks()) {
+    const primaryForeground = tokenValue(tokens, "--ui-primary-foreground");
     const foregrounds = {
       primary: primaryForeground,
-      ai: tokenValue(block, "--ui-ai-foreground"),
+      ai: tokenValue(tokens, "--ui-ai-foreground"),
       success: primaryForeground,
       warning: primaryForeground,
       danger: primaryForeground,
@@ -105,7 +135,7 @@ test("solid controls keep readable foregrounds in normal and hover states, both 
     for (const [role, second] of [["primary", "hover"], ["ai", "hover"], ["success", "strong"], ["warning", "strong"], ["danger", "strong"]]) {
       const foreground = foregrounds[role];
       for (const backgroundToken of [`--ui-${role}`, `--ui-${role}-${second}`]) {
-        const background = tokenValue(block, backgroundToken);
+        const background = tokenValue(tokens, backgroundToken);
         const ratio = contrastRatio(foreground, background);
         assert.ok(ratio >= AA_NORMAL_TEXT,
           `${theme} ${role} foreground ${foreground} on ${backgroundToken} ${background} is ${ratio.toFixed(2)}:1, below AA 4.5:1`);

@@ -101,7 +101,7 @@ test("resource verifier rejects linked roots, linked parents, and file symlinks"
   fs.renameSync(fixture.resources, originalResources);
   fs.symlinkSync(originalResources, fixture.resources, "dir");
   assert.throws(() => fixture.validate(), /symlink or junction/);
-  fs.rmSync(fixture.resources);
+  fs.unlinkSync(fixture.resources);
   fs.renameSync(originalResources, fixture.resources);
 
   const externalCandidate = path.join(external, "candidate");

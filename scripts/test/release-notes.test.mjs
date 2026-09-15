@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const source = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8");
+const source = fs.readFileSync(path.join(root, ".github/workflows/release.yml"), "utf8").replace(/\r\n/g, "\n");
 const version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
 const notes = `# RoleWeave ${version}\n\nLiteral quotes: "double", 'single'.\n$(touch notes-executed) and \`touch notes-executed\` stay text.\nUnicode: 并发任务。\n\n`;
 

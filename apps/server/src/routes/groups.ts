@@ -27,6 +27,7 @@ import { assertPositionExists, assertTurnWorkspace, executeTurn, type GroupEvent
 import { createTurnEnvelope } from "../turns/envelope.js";
 import { compactThreadContextHandoff, type SupplementalContext } from "../turns/thread-context.js";
 import { compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
+import { resolvePositionAgentEngine } from "../agent-binding.js";
 
 const MAX_INPUT_BYTES = MAX_GROUP_INPUT_BYTES;
 
@@ -76,7 +77,19 @@ function parseAddMember(raw: unknown): string {
   return raw.positionId;
 }
 
-function parseGroupTurn(raw: unknown): { input: string; engine: TurnEngine; mentions: string[]; mode: GroupExecutionMode; goalId?: string; branchId?: string } {
+interface GroupTurnBody {
+  input: string;
+  /** Legacy/first-use fallback. Bound employees ignore it. */
+  engine: TurnEngine;
+  /** Optional per-mentioned-member first-use fallbacks from the renderer. */
+  engines?: Record<string, TurnEngine>;
+  mentions: string[];
+  mode: GroupExecutionMode;
+  goalId?: string;
+  branchId?: string;
+}
+
+function parseGroupTurn(raw: unknown): GroupTurnBody {
   if (!isRecord(raw)) {
     throw new OrgApiError(
       errorCodes.group_request_invalid,
@@ -84,12 +97,12 @@ function parseGroupTurn(raw: unknown): { input: string; engine: TurnEngine; ment
       "group turn request must be a JSON object",
     );
   }
-  const allowedKeys = new Set(["input", "engine", "mentions", "mode", "goalId", "branchId"]);
+  const allowedKeys = new Set(["input", "engine", "engines", "mentions", "mode", "goalId", "branchId"]);
   if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
     throw new OrgApiError(
       errorCodes.group_request_invalid,
       400,
-      "group turn accepts input, engine, mentions, and optional mode, goalId, branchId",
+      "group turn accepts input, engine, optional engines, mentions, and optional mode, goalId, branchId",
     );
   }
   if (
@@ -120,6 +133,26 @@ function parseGroupTurn(raw: unknown): { input: string; engine: TurnEngine; ment
       "mentions must be a non-empty unique positionId list; broadcast is not allowed",
     );
   }
+  let engines: Record<string, TurnEngine> | undefined;
+  const suppliedEngines = raw.engines;
+  if (suppliedEngines !== undefined) {
+    if (!isRecord(suppliedEngines)) {
+      throw new OrgApiError(errorCodes.group_request_invalid, 400, "engines must map every mention to a supported engine");
+    }
+    const mentions = raw.mentions as string[];
+    const keys = Object.keys(suppliedEngines);
+    if (keys.length !== mentions.length || keys.some((key) => !mentions.includes(key))) {
+      throw new OrgApiError(errorCodes.group_request_invalid, 400, "engines must map exactly the mentioned positions");
+    }
+    engines = {};
+    for (const mention of mentions) {
+      const engine = suppliedEngines[mention];
+      if (typeof engine !== "string" || !turnEngines.includes(engine as TurnEngine)) {
+        throw new OrgApiError(errorCodes.turn_engine_unsupported, 400, `engine for ${mention} must be ${turnEngines.join(" or ")}`);
+      }
+      engines[mention] = engine as TurnEngine;
+    }
+  }
   if (raw.mode !== undefined && raw.mode !== "parallel" && raw.mode !== "relay") {
     throw new OrgApiError(errorCodes.group_request_invalid, 400, "mode must be parallel or relay");
   }
@@ -133,6 +166,7 @@ function parseGroupTurn(raw: unknown): { input: string; engine: TurnEngine; ment
   return {
     input: raw.input,
     engine: raw.engine as TurnEngine,
+    ...(engines !== undefined ? { engines } : {}),
     mentions: raw.mentions as string[],
     mode: raw.mode ?? "parallel",
     ...(raw.goalId !== undefined ? { goalId: raw.goalId } : {}),
@@ -230,11 +264,21 @@ export async function handleGroupTurnPost(
     }
     assertPositionExists(ctx, mention);
   }
-  const now = new Date().toISOString();
-  const spawns = body.mentions.map((positionId) => ({
+  // Resolve and persist every member's binding before accepting the group
+  // message. This makes the 202 spawn identities self-contained: a later
+  // relay/recovery cannot be redirected by a global host selection.
+  const spawns = await Promise.all(body.mentions.map(async (positionId) => ({
     turnId: crypto.randomUUID(),
     positionId,
-  }));
+    engine: await resolvePositionAgentEngine(
+      workspace,
+      positionId,
+      body.engines?.[positionId] ?? body.engine,
+      ctx.turnStore,
+      ctx.sessionStore,
+    ),
+  })));
+  const now = new Date().toISOString();
   const messageId = crypto.randomUUID();
   // Claim recovery ownership before the acceptance file can become visible.
   // Atomic rename precedes fsync/close and promise completion.
@@ -247,6 +291,8 @@ export async function handleGroupTurnPost(
       mentions: body.mentions,
       mode: body.mode,
       spawns,
+      // Retained as the old-message fallback; new spawns carry their own
+      // resolved engine so mixed-Agent groups remain faithfully attributable.
       engine: body.engine,
       createdAt: now,
     });
@@ -263,7 +309,7 @@ export async function handleGroupTurnPost(
         messageId: message.messageId,
         turnId: spawn.turnId,
         positionId: spawn.positionId,
-        engine: body.engine,
+        engine: spawn.engine,
       };
       ctx.bus.publish("group.turn.spawned", { ...attribution, workspacePath: workspace.dir });
       try {
@@ -272,7 +318,11 @@ export async function handleGroupTurnPost(
         if (ctx.workspace.active !== workspace) {
           return await persistUnexecutedTurn(ctx, workspace.dir, body.input, attribution, "group_workspace_changed", message.createdAt);
         }
-        return await executeTurn(ctx, detachedResponse(), { ...body, positionId: spawn.positionId }, undefined, attribution, handoffs, workspace);
+        return await executeTurn(ctx, detachedResponse(), {
+          ...body,
+          positionId: spawn.positionId,
+          engine: spawn.engine,
+        }, undefined, attribution, handoffs, workspace);
       } catch (error) {
         return await persistUnexecutedTurn(ctx, workspace.dir, body.input, attribution,
           error instanceof OrgApiError && error.code === errorCodes.session_conflict ? "group_employee_busy" : "group_spawn_failed", message.createdAt);
@@ -289,7 +339,7 @@ export async function handleGroupTurnPost(
       if (blocked) {
         await persistUnexecutedTurn(ctx, workspace.dir, body.input, {
           groupRef: ref, messageId: message.messageId, turnId: spawn.turnId,
-          positionId: spawn.positionId, engine: body.engine,
+          positionId: spawn.positionId, engine: spawn.engine,
         }, "group_relay_blocked", message.createdAt);
         continue;
       }
@@ -302,7 +352,7 @@ export async function handleGroupTurnPost(
     // Existing terminal records remain authoritative; no engine is replayed.
     for (const spawn of spawns) {
       await persistUnexecutedTurn(ctx, workspace.dir, body.input, {
-        groupRef: ref, messageId: message.messageId, ...spawn, engine: body.engine,
+        groupRef: ref, messageId: message.messageId, ...spawn, engine: spawn.engine,
       }, "group_spawn_failed", message.createdAt);
     }
   }).finally(releaseDispatch);
@@ -419,7 +469,7 @@ export async function handleGroupTimeline(
       // control plane stopped before it could start this step. Never replay.
       const interrupted = await persistUnexecutedTurn(ctx, workspace.dir, message.input, {
         ...spawn, groupRef: ref, messageId: message.messageId,
-        engine: message.engine ?? "qoder",
+        engine: spawn.engine ?? message.engine ?? "qoder",
       }, "group_dispatch_interrupted", message.createdAt);
       if (interrupted !== null) appendTurn(interrupted);
     }

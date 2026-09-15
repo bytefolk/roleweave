@@ -15,6 +15,7 @@ const CONTEXT_EXPORT_ROOT = [".digital-employee", "workbench", "context-exports"
 export async function buildContextSources(
   workspaceDir: string,
   role: OrgRole,
+  services?: { memConfigured: boolean },
 ): Promise<ContextSourceSummary[]> {
   const positionDir = resolvePositionPackageDir(workspaceDir, role);
   let documentCount = 0;
@@ -25,7 +26,7 @@ export async function buildContextSources(
     documentsReadable = false;
   }
 
-  const memConfigured = nonEmptyEnv("MEM_URL") || nonEmptyEnv("ORG_WORKBENCH_MEM_URL");
+  const memConfigured = services?.memConfigured ?? (nonEmptyEnv("MEM_URL") || nonEmptyEnv("ORG_WORKBENCH_MEM_URL"));
   const contextConfigured = nonEmptyEnv("CONTEXT_VAULT") && nonEmptyEnv("CONTEXT_RUNTIME_TOKEN");
   const contextExportCount = await countContextExports(workspaceDir, role.id);
 

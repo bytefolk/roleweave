@@ -95,6 +95,7 @@ function totalTokens(record: ApiTurnRecord): number | undefined {
   for (let index = record.events.length - 1; index >= 0; index -= 1) {
     const event = record.events[index];
     if (event?.type === "usage" && event.totalTokens !== undefined) return event.totalTokens;
+    if (event?.type === "usage" && event.inputTokens !== undefined && event.outputTokens !== undefined) return event.inputTokens + event.outputTokens;
   }
   return undefined;
 }
@@ -116,6 +117,7 @@ export function adaptTurnRecord(
     positionId: record.positionId,
     positionName,
     engine: record.engine,
+    ...(record.model === undefined ? {} : { model: record.model }),
     input: record.input,
     status: record.status,
     createdAt: record.createdAt,

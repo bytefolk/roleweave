@@ -8,7 +8,12 @@ import type {
   TurnRunRequest,
   TurnRunResult,
 } from "@roleweave/shared";
-import { POSITION_ID_PATTERN, turnEngines } from "@roleweave/shared";
+import {
+  AGENT_BINDING_RELATIVE_PATH,
+  AGENT_BINDING_SCHEMA_VERSION,
+  POSITION_ID_PATTERN,
+  turnEngines,
+} from "@roleweave/shared";
 import { api, assertPosixMode, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import {
   TurnStore,
@@ -180,7 +185,7 @@ test("POST /turns remains bearer protected", async () => {
 // under a name describing neither half, so a failure pointed at the wrong one.
 // Driving `turnEngines` rather than naming engines keeps it true by
 // construction, the same rule the fix in this PR applies to persistence.
-test("POST /turns accepts every engine in the shared contract and rejects the rest", async () => {
+test("POST /turns accepts every engine in the shared contract as a legacy first-use binding and rejects the rest", async () => {
   const turnDriver = new FakeTurnDriver();
   const server = await startTestServer(undefined, turnDriver);
   const workspace = await copyExampleWorkspace();
@@ -199,17 +204,60 @@ test("POST /turns accepts every engine in the shared contract and rejects the re
     assert.equal(turnDriver.calls.length, 0, "a rejected engine must never reach the driver");
 
     // Guards against the contract going empty and silently emptying this loop.
+    // Each old workspace gets a fresh position, because its first accepted
+    // engine is now deliberately persisted rather than being a per-turn knob.
     assert.ok(turnEngines.length > 0);
     for (const engine of turnEngines) {
-      const accepted = await api(server.baseUrl, "/turns", {
-        method: "POST",
-        token: server.token,
-        body: { positionId: "repo-owner", input: "hello", engine },
-      });
-      assert.equal(accepted.status, 200, `${engine} must be accepted`);
-      assert.equal((accepted.body as { engine: TurnEngine }).engine, engine);
+      const freshWorkspace = await copyExampleWorkspace();
+      try {
+        await openWorkspace(server.baseUrl, server.token, freshWorkspace);
+        const accepted = await api(server.baseUrl, "/turns", {
+          method: "POST",
+          token: server.token,
+          body: { positionId: "repo-owner", input: "hello", engine },
+        });
+        assert.equal(accepted.status, 200, `${engine} must be accepted`);
+        assert.equal((accepted.body as { engine: TurnEngine }).engine, engine);
+      } finally {
+        await fs.rm(freshWorkspace, { recursive: true, force: true });
+      }
     }
     assert.equal(turnDriver.calls.length, turnEngines.length);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /turns uses a persisted position Agent instead of a request-level host", async () => {
+  const turnDriver = new FakeTurnDriver();
+  const server = await startTestServer(undefined, turnDriver);
+  const workspace = await copyExampleWorkspace();
+  try {
+    const bindingFile = path.join(
+      workspace,
+      "positions",
+      "repo-owner",
+      ...AGENT_BINDING_RELATIVE_PATH.split("/"),
+    );
+    await fs.mkdir(path.dirname(bindingFile), { recursive: true, mode: 0o700 });
+    await fs.writeFile(bindingFile, `${JSON.stringify({
+      schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
+      engine: "codex-local",
+    })}\n`, { mode: 0o600 });
+    await openWorkspace(server.baseUrl, server.token, workspace);
+
+    const response = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "use the employee binding", engine: "qoder" },
+    });
+    assert.equal(response.status, 200);
+    assert.equal((response.body as { engine: TurnEngine }).engine, "codex-local");
+    assert.equal(turnDriver.calls[0]?.engine, "codex-local");
+
+    const position = await api(server.baseUrl, "/positions/repo-owner", { token: server.token });
+    assert.equal(position.status, 200);
+    assert.equal((position.body as { agentEngine?: TurnEngine }).agentEngine, "codex-local");
   } finally {
     await server.close();
   }

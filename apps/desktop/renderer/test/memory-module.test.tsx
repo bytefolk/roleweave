@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { PositionCardData } from "@roleweave/ui";
 import { MemoryModule } from "../src/memory/MemoryModule";
+import type { DocsFileResponse } from "@roleweave/shared";
 import type { OwbBridge } from "../src/owb";
 
 const position: PositionCardData = {
@@ -58,7 +59,7 @@ function installBridge() {
         files: [{ path: "SKILL.md", kind: "file", size: 32, modifiedAt: "2026-08-27T00:00:00.000Z" }],
       },
     }),
-    positionDocFile: vi.fn().mockResolvedValue({ status: 200, body: null }),
+    positionDocFile: vi.fn().mockResolvedValue({ status: 200, body: null as DocsFileResponse | null }),
     drive: {
       list: vi.fn().mockResolvedValue({
         status: 200,
@@ -94,7 +95,7 @@ describe("员工记忆模块", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "员工记忆" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "记忆与协作" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开 岗位文档 记忆来源" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "打开 岗位文档 记忆来源" })).toHaveTextContent("2");
     expect(screen.queryByText("岗位运行上下文")).not.toBeInTheDocument();
@@ -104,4 +105,24 @@ describe("员工记忆模块", () => {
     expect(await screen.findByText("社区周报.md")).toBeInTheDocument();
     await waitFor(() => expect(bridge.drive.list).toHaveBeenCalledWith(""));
   });
+  it("收起来源和专注阅读时保留当前文档，不重复加载", async () => {
+    const bridge = installBridge();
+    bridge.positionDocFile.mockResolvedValue({ status: 200, body: {
+      schemaVersion: "docs-file.v1", positionId: position.id, path: "SKILL.md", version: "v1", content: "# 岗位职责\n保持当前文档。",
+    } });
+    render(<MemoryModule workspaceOpen positions={[{ id: position.id, name: position.name }]}
+      selectedPositionId={position.id} position={position} />);
+    expect(await screen.findByRole("heading", { name: "岗位职责" })).toBeInTheDocument();
+    const reader = screen.getByRole("heading", { name: "岗位职责" });
+    fireEvent.click(screen.getByRole("button", { name: "收起来源菜单" }));
+    expect(screen.getByRole("button", { name: "展开来源菜单" })).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "专注阅读" }));
+    expect(screen.getByRole("button", { name: "退出专注阅读" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "退出专注阅读" }));
+    expect(screen.getByRole("heading", { name: "岗位职责" })).toBe(reader);
+    expect(screen.getByRole("button", { name: "展开来源菜单" })).toHaveAttribute("aria-expanded", "false");
+    expect(bridge.positionDocFile).toHaveBeenCalledTimes(1);
+    expect(bridge.positionDocs).toHaveBeenCalledTimes(1);
+  });
+
 });
