@@ -22,20 +22,20 @@ Its organizing principle is simple: **the file tree is the org chart.** Roles li
 
 For example, an open-source maintenance team can have a repository owner with three supporting roles: an issue researcher, a community operator, and a release engineer. The repository includes an [example workspace](examples/oss-maintainer) with this structure and role budgets.
 
-The v0.1.2 source includes bounded conversation context, independent employee dispatch, and explicit parallel/relay group execution. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.1.1 installers do not include these features.
+The v0.2.0 source adds a goal-centered collaboration spine, a Windows WSL runtime for projects and Agent hosts, employee avatars, and local doc/mem service surfaces, on top of the bounded conversation context, independent employee dispatch, and explicit parallel/relay group execution shipped in v0.1.2. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.1.2 installers do not include these features.
 
-Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior is a post-v0.1.2 change and is not included in the v0.1.2 installers.
+Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior ships with v0.2.0.
 
 ## Download
 
-RoleWeave is an **early preview**. This source targets **v0.1.2**. The versioned downloads below become available when the release is published; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
+RoleWeave is an **early preview**. This source targets **v0.2.0**. The versioned downloads below become available when the release is published; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
 
 | Platform | Download |
 | --- | --- |
-| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.1.2/roleweave-0.1.2-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.1.2/roleweave-0.1.2-arm64.zip) |
-| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.1.2/roleweave-0.1.2-x64.exe) |
+| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.2.0/roleweave-0.2.0-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.2.0/roleweave-0.2.0-arm64.zip) |
+| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.2.0/roleweave-0.2.0-x64.exe) |
 
-See the [v0.1.2 release notes](docs/releases/v0.1.2.md) for this candidate's changes and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
+See the [v0.2.0 release notes](docs/releases/v0.2.0.md) for this candidate's changes and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
 
 **Installation notes:** macOS packages are not Apple Developer ID-signed or notarized, and the Windows installer is not Authenticode-signed. Your operating system may show a security prompt on installation or first launch. The macOS update manifest has a separate cryptographic signature; this does not provide Apple code-signing trust. Users of older Org Workbench development builds need to install RoleWeave manually once.
 
@@ -51,7 +51,7 @@ If the host is unavailable, follow the engine status guidance. For a custom Qode
 
 ### Windows with local WSL Agents
 
-The current source can keep the Windows interface while running the project backend and Agents in a local WSL distribution. This is a post-v0.1.2 change. Linux Node.js 22 or newer and the chosen Agent CLI must already be installed in that distribution.
+The current source can keep the Windows interface while running the project backend and Agents in a local WSL distribution. This ships with the v0.2.0 release. Linux Node.js 22 or newer and the chosen Agent CLI must already be installed in that distribution.
 
 To make WSL the default on one machine, place `runtime-settings.json` in RoleWeave's Electron user-data directory (normally `%APPDATA%\RoleWeave`):
 
