@@ -124,7 +124,12 @@ function ChartNode({
         onClick={() => onSelect?.(node.id)}
       >
         <span className="owb-org-chart__card-head">
-          <span className={`owb-led owb-org-chart__led${running ? " owb-led--running" : ""}`} aria-hidden="true" />
+          <span
+            className={`owb-led owb-org-chart__led${running ? " owb-led--running" : ""}`}
+            role="img"
+            aria-label={running ? t("pos.running") : t("pos.ready")}
+            title={running ? t("pos.running") : t("pos.ready")}
+          />
           <PositionAvatar
             colors={avatarColors}
             sources={avatarUrls}
@@ -138,7 +143,6 @@ function ChartNode({
           </span>
         </span>
         <span className="owb-org-chart__card-meta">
-          <span className={`owb-org-chart__state${running ? " is-running" : ""}`}>{running ? t("tree.chartRunningLabel") : t("tree.chartReadyLabel")}</span>
           <span className="owb-org-chart__reports"><UsersRound aria-hidden="true" size={11} />{t("tree.chartDirectReports", { count: node.children.length })}</span>
         </span>
         <span className="owb-org-chart__budget">

@@ -1401,10 +1401,6 @@ function AppInner({
                   consumption={selectedBudgetRatio}
                   running={selectedId !== null && runningPositionIds.has(selectedId)}
                   organization={selectedPosition ? {
-                    reportToName: selectedPosition.reportTo
-                      ? positionNames[selectedPosition.reportTo] ?? selectedPosition.reportTo
-                      : undefined,
-                    directReportCount: selectedNode?.children.length,
                     reportTo: selectedPosition.reportTo ? {
                       id: selectedPosition.reportTo,
                       name: positionNames[selectedPosition.reportTo] ?? selectedPosition.reportTo,

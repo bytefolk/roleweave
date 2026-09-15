@@ -944,6 +944,14 @@ test("qoder-engine turn run: claude-local preserves OAuth discovery without unre
   const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
   assert.equal(events.at(-1)?.type, "run.completed");
 
+  const claudeArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.equal(claudeArgs.includes("--bare"), false, "bare mode disables OAuth login");
+  assert.equal(claudeArgs[claudeArgs.indexOf("--setting-sources") + 1], "user", "read local login settings only");
+  assert.deepEqual(JSON.parse(claudeArgs[claudeArgs.indexOf("--settings") + 1]!), { disableAllHooks: true });
+  assert.equal(claudeArgs[claudeArgs.indexOf("--tools") + 1], "");
+  assert.ok(claudeArgs.includes("--strict-mcp-config"));
+  assert.ok(claudeArgs.includes("--no-session-persistence"));
+
   const claudeEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
   assert.equal(claudeEnv.ANTHROPIC_API_KEY, undefined, "claude-local must not receive ANTHROPIC_API_KEY");
   assert.equal(claudeEnv.ANTHROPIC_BASE_URL, undefined, "claude-local must not receive ANTHROPIC_BASE_URL");
@@ -951,9 +959,6 @@ test("qoder-engine turn run: claude-local preserves OAuth discovery without unre
   assert.equal(claudeEnv.OPENAI_API_KEY, undefined);
   assert.equal(claudeEnv.CLAUDE_CONFIG_DIR, EMPTY_PROVIDER_CONFIG);
   assert.equal(claudeEnv.DIGITAL_EMPLOYEE_CLAUDE_COMMAND, fakeClaude, "claude-local receives the binary override");
-  const args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
-  assert.equal(args.includes("--bare"), false, "bare would disable native OAuth credential discovery");
-  assert.equal(args[args.indexOf("--setting-sources") + 1], "");
 });
 
 test("claude-local projects user Bearer connection and model mappings without loading hooks", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -105,7 +105,7 @@ test("non-file or symlink settings cannot silently fall back to official", { ski
   const f = fixture(t, ".claude");
   symlinkSync(path.join(f.dir, "nonexistent"), f.file);
   rejectsConfig(() => resolveClaudeProviderConfig({ CLAUDE_CONFIG_DIR: f.config }));
-  rmSync(f.file);
+  unlinkSync(f.file);
   mkdirSync(f.file);
   rejectsConfig(() => resolveClaudeProviderConfig({ CLAUDE_CONFIG_DIR: f.config }));
 });

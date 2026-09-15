@@ -602,8 +602,10 @@ test("Qoder readiness requires a genuine boolean CLI login status and never retu
   // budget still completes the actual status check instead of declaring ready.
   await fs.writeFile(bin, qoderProbeFixture().replace("then printf '%s\\n' '{\"logged_in\":true}'", "then /bin/sleep 3.1; printf '%s\\n' '{\"logged_in\":true}'"), { mode: 0o755 });
   assert.equal((await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin })).authenticated, true);
-  const timedOut = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin }, 50);
+  // Leave time for version/help so the delayed status command owns the timeout.
+  const timedOut = await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin }, 1000);
   assert.equal(timedOut.failure, "timed_out");
+  assert.equal(timedOut.supported, true);
   assert.equal(timedOut.authenticated, false);
 });
 

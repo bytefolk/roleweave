@@ -20,11 +20,9 @@ export interface PositionCardProps {
   /** Live turn in flight for this position: header status light breathes. */
   running?: boolean;
   /** Organization relationships resolved by the application from its tree.
-   * The position endpoint owns `reportTo`; a friendly manager name and direct
-   * report count require the current org snapshot and must never be guessed. */
+   * The position endpoint owns `reportTo`; the lineage section renders only
+   * what the caller resolved against the current snapshot. */
   organization?: {
-    reportToName?: string;
-    directReportCount?: number;
     reportTo?: { id: string; name: string };
     directReports?: Array<{ id: string; name: string }>;
   };

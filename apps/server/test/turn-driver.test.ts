@@ -190,7 +190,7 @@ test("run-as-node crosses only the exact packaged bundled-engine boundary", asyn
   }
 });
 
-test("Qoder runtime reaches only selected Qoder while adapter controls require the bundled boundary", async () => {
+test("Host runtime reaches every selected engine while Qoder controls remain scoped", async () => {
   const qoderRuntimeEnvironment = {
     LOGNAME: "qoder-user",
     TMP: "/tmp/qoder-tmp",
@@ -218,7 +218,7 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
   };
   try {
     const cases: Array<{
-      engine: "qoder" | "claude-code";
+      engine: "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
       bundled: boolean;
       permissionMode: string;
       expectedBin: string | undefined;
@@ -264,9 +264,19 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
       expectedBin: undefined,
       expectedPermissionMode: undefined,
       expectedQoderCommand: undefined,
-        expectQoderRuntime: false,
-        label: "Claude receives shared proxy/TLS runtime but no Qoder controls",
+        expectQoderRuntime: true,
+        label: "Claude service receives runtime but no Qoder controls",
       },
+      ...(["claude-local", "codex", "codex-local"] as const).map((engine) => ({
+        engine,
+        bundled: true,
+        permissionMode: "auto",
+        expectedBin: undefined,
+        expectedPermissionMode: undefined,
+        expectedQoderCommand: undefined,
+        expectQoderRuntime: true,
+        label: `${engine} receives local runtime, proxy and CA settings without Qoder controls`,
+      })),
     ];
     for (const testCase of cases) {
       process.env.ORG_WORKBENCH_QODER_BIN = "/opt/qoder/bin/qodercli";
@@ -282,8 +292,7 @@ test("Qoder runtime reaches only selected Qoder while adapter controls require t
         if (process.env.DIGITAL_EMPLOYEE_QODER_COMMAND !== ${JSON.stringify(testCase.expectedQoderCommand)}) process.exit(7);
         const expectedRuntime = ${JSON.stringify(qoderRuntimeEnvironment)};
         for (const [key, value] of Object.entries(expectedRuntime)) {
-          const sharedClaudeRuntime = ${JSON.stringify(testCase.engine === "claude-code" && testCase.bundled)} && /^(?:HTTPS?_PROXY|NO_PROXY|https?_proxy|no_proxy|NODE_EXTRA_CA_CERTS|SSL_CERT_FILE|SSL_CERT_DIR)$/.test(key);
-          const expected = ${JSON.stringify(testCase.expectQoderRuntime)} || sharedClaudeRuntime ? value : undefined;
+          const expected = ${JSON.stringify(testCase.expectQoderRuntime)} ? value : undefined;
           if (process.env[key] !== expected) process.exit(4);
         }
         const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
@@ -394,12 +403,16 @@ test("codex-local turn env forwards login state and drops relay credentials at t
     model: process.env.OPENAI_MODEL,
     apiKey: process.env.OPENAI_API_KEY,
     baseUrl: process.env.OPENAI_BASE_URL,
+    nodeMarker: process.env.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE,
+    arbitrary: process.env.ROLEWEAVE_TEST_UNRELATED_SECRET,
   };
   process.env.DIGITAL_EMPLOYEE_CODEX_COMMAND = "/opt/codex/bin/codex";
   process.env.CODEX_HOME = "/opt/codex/home";
   process.env.OPENAI_MODEL = "gpt-5.2";
   process.env.OPENAI_API_KEY = "sk-must-not-leak";
   process.env.OPENAI_BASE_URL = "https://relay.example.com/v1";
+  process.env.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE = "1";
+  process.env.ROLEWEAVE_TEST_UNRELATED_SECRET = "must-not-cross";
   try {
     const command = await fixtureCli(`
       let input = "";
@@ -411,6 +424,8 @@ test("codex-local turn env forwards login state and drops relay credentials at t
       if (process.env.DIGITAL_EMPLOYEE_CODEX_COMMAND !== "/opt/codex/bin/codex") process.exit(5);
       if (process.env.CODEX_HOME !== "/opt/codex/home") process.exit(4);
       if (process.env.OPENAI_MODEL !== "gpt-5.2") process.exit(3);
+      if (process.env.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE !== undefined) process.exit(9);
+      if (process.env.ROLEWEAVE_TEST_UNRELATED_SECRET !== undefined) process.exit(10);
       const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
       console.log(JSON.stringify({ ...base, type: "run.started" }));
       console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
@@ -430,6 +445,8 @@ test("codex-local turn env forwards login state and drops relay credentials at t
         model: "OPENAI_MODEL",
         apiKey: "OPENAI_API_KEY",
         baseUrl: "OPENAI_BASE_URL",
+        nodeMarker: "ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE",
+        arbitrary: "ROLEWEAVE_TEST_UNRELATED_SECRET",
       }[key]!;
       if (value === undefined) delete process.env[environmentKey];
       else process.env[environmentKey] = value;
