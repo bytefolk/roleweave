@@ -70,7 +70,7 @@ entitlement or billing. Final-head reruns and CI results are recorded on the PR.
 
 ## Remaining acceptance
 
-- Human review of the A1/B1 choices and final PR head.
+- Human review of the A1/B1 choices, exact-version qualification policy and final PR head.
 - A real WorkBuddy provider turn with an authorized account, including failure
   behavior and no credential disclosure.
 - Native packaged-app acceptance. Native Windows intentionally remains
