@@ -592,6 +592,13 @@ ipcMain.handle("owb:group:get", async (_event, conversationRef) => {
   return apiRequest(pathname);
 });
 
+ipcMain.handle("owb:group:dismiss", async (_event, conversationRef) => {
+  if (!validateConversationRef(conversationRef)) {
+    return { status: 400, body: { code: "group_request_invalid", message: "conversationRef is invalid", retryable: false } };
+  }
+  return apiRequest(`/groups/${encodeURIComponent(conversationRef)}`, { method: "DELETE" });
+});
+
 ipcMain.handle("owb:group:member:add", async (_event, request) => {
   const validated = validateGroupAddMemberRequest(request);
   if (!validated.ok) return validated.response;

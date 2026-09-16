@@ -561,6 +561,15 @@ export const enCatalog: Record<string, string> = {
   "grp.send": "Send group message",
   "grp.hintRoute": "Choose who should receive the message, then send",
   "grp.hintMentions": "The message will be sent to {count} selected members",
+  "grp.dismissAction": "Dismiss group",
+  "grp.dismissTitle": "Dismiss {name}?",
+  "grp.dismissDesc": "The group will be moved to a backup directory. Member turn records are unaffected. It can be restored from backup.",
+  "grp.dismissConfirm": "Dismiss",
+  "grp.dismissCancel": "Cancel",
+  "grp.dismissFail": "Failed to dismiss the group",
+  "grp.dismissFailOffline": "Failed to dismiss the group (offline)",
+  "grp.busy": "Turns are running; wait for them to settle before dismissing",
+  "grp.expandOutput": "Click to read the full message",
 
   // Docs
   "docs.listFail": "Failed to read the document list",

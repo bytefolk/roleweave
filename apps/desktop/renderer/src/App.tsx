@@ -179,6 +179,9 @@ function AppInner({
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
+  /** When true, the next org.updated SSE event skips its refresh() because
+   * applyOrg already fetched the updated tree (#263: avoids double reload). */
+  const skipNextOrgRefresh = useRef(false);
   /** Approvals whose verdict was already sealed into a resume turn. The
    * server record never persists pendingApproval, so this client-side set is
    * the only source for settling the verdict card into a terminal state. */
@@ -384,6 +387,18 @@ function AppInner({
     }
   }, [loadBackups, loadReports, t]);
 
+  /** Lightweight tree-only refresh for post-apply updates (#263): fetches the
+   * org tree without the per-position name/color fan-out, since moves and
+   * reorders do not change position data. Sets skipNextOrgRefresh so the
+   * SSE org.updated event does not trigger a second full reload. */
+  const refreshTree = useCallback(async () => {
+    const treeRes = await window.owb.orgTree();
+    if (treeRes.status === 200) {
+      setSnapshot(treeRes.body as OrgTreeSnapshot);
+      skipNextOrgRefresh.current = true;
+    }
+  }, []);
+
   const loadPosition = useCallback(async (id: string) => {
     const version = selectionVersion.current;
     setCard({ loading: true, data: null, notFound: false });
@@ -523,6 +538,10 @@ function AppInner({
     const offEvent = window.owb.onEvent((event) => {
       const envelope = event as { type?: string };
       if (envelope?.type === "org.updated") {
+        if (skipNextOrgRefresh.current) {
+          skipNextOrgRefresh.current = false;
+          return;
+        }
         void refresh();
         return;
       }
@@ -823,7 +842,7 @@ function AppInner({
         return false;
       }
       setOrgFeedback({ tone: "info", text: successMessage });
-      await refresh();
+      await refreshTree();
       return true;
     } catch {
       setOrgFeedback({ tone: "warn", text: t("org.applyUncertain") });
@@ -831,7 +850,7 @@ function AppInner({
     } finally {
       setOrgBusy(false);
     }
-  }, [refresh, t]);
+  }, [refreshTree, t]);
 
   const movePosition = useCallback(async (id: string, reportTo: string | null) => {
     if (!snapshot) return false;

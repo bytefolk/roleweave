@@ -564,6 +564,15 @@ export const zhCatalog: Record<string, string> = {
   "grp.send": "发送群消息",
   "grp.hintRoute": "先选择要通知的成员，再发送消息",
   "grp.hintMentions": "消息将发送给 {count} 名已选择的成员",
+  "grp.dismissAction": "解散群聊",
+  "grp.dismissTitle": "解散 {name}？",
+  "grp.dismissDesc": "群聊会被收起至备份目录，成员回合记录不受影响。可从备份恢复。",
+  "grp.dismissConfirm": "解散",
+  "grp.dismissCancel": "取消",
+  "grp.dismissFail": "群聊解散失败",
+  "grp.dismissFailOffline": "群聊解散失败（离线）",
+  "grp.busy": "有回合执行中，请等待结束后再试",
+  "grp.expandOutput": "点击阅读完整消息",
 
   // 文档
   "docs.listFail": "文档列表读取失败",

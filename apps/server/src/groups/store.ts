@@ -12,7 +12,7 @@
  * 过渡债：conversationRef 为工作台侧本地 uuid；缺口① v1alpha2 契约级回链
  * 合入后切换并清账。
  */
-import crypto from "node:crypto";
+import crypto, { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -30,6 +30,7 @@ import type {
   GroupMessage,
 } from "@roleweave/shared";
 import { assertSessionId } from "../sessions/store.js";
+import { PerKeyLock } from "../per-key-lock.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations, parseRfc3339Instant, compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 
 const GROUPS_ROOT = path.join(".digital-employee", "workbench", "groups");
@@ -198,23 +199,13 @@ function isGroupMessage(value: unknown): value is GroupMessage {
 
 export class GroupStore {
   private readonly activeDispatches = new Set<string>();
-  private readonly spawnRecoveryLocks = new Map<string, Promise<void>>();
+  private readonly spawnRecoveryLocks = new PerKeyLock();
 
   /** Serialize the complete check/create/finish operation across timeline
    * polls, releasing failed attempts so a later read can retry persistence. */
   async withSpawnRecovery<T>(workspace: string, positionId: string, turnId: string, operation: () => Promise<T>): Promise<T> {
     const key = `${path.resolve(workspace)}\0${positionId}\0${turnId}`;
-    const previous = this.spawnRecoveryLocks.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => held);
-    this.spawnRecoveryLocks.set(key, tail);
-    await previous;
-    try { return await operation(); }
-    finally {
-      release();
-      if (this.spawnRecoveryLocks.get(key) === tail) this.spawnRecoveryLocks.delete(key);
-    }
+    return this.spawnRecoveryLocks.run(key, operation);
   }
 
   beginDispatch(workspace: string, conversationRef: string, messageId: string): () => void {
@@ -225,6 +216,14 @@ export class GroupStore {
 
   hasActiveDispatch(workspace: string, conversationRef: string, messageId: string): boolean {
     return this.activeDispatches.has(this.dispatchKey(workspace, conversationRef, messageId));
+  }
+
+  hasAnyActiveDispatch(workspace: string, conversationRef: string): boolean {
+    const prefix = `${path.resolve(workspace)}\0${conversationRef}\0`;
+    for (const key of this.activeDispatches) {
+      if (key.startsWith(prefix)) return true;
+    }
+    return false;
   }
 
   private dispatchKey(workspace: string, conversationRef: string, messageId: string): string {
@@ -309,9 +308,15 @@ export class GroupStore {
     const groups: GroupConversation[] = [];
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.isSymbolicLink() || !REF_PATTERN.test(entry.name)) {
-        throw storageError("local group root contains an unsafe entry");
+        continue;
       }
-      groups.push(await this.get(workspace, entry.name));
+      try {
+        groups.push(await this.get(workspace, entry.name));
+      } catch (error) {
+        if (error instanceof OrgApiError && error.code === errorCodes.group_missing) {
+          continue;
+        }
+      }
     }
     groups.sort((left, right) => compareRfc3339Instants(right.updatedAt, left.updatedAt) ||
       compareCodeUnitOrdinal(left.conversationRef, right.conversationRef));
@@ -347,6 +352,36 @@ export class GroupStore {
       throw storageError("local group record could not be persisted atomically", error);
     }
     return updated;
+  }
+
+  async dismiss(workspace: string, conversationRef: string): Promise<{ conversationRef: string; dismissed: true }> {
+    const ref = assertConversationRef(conversationRef);
+    if (this.hasAnyActiveDispatch(workspace, ref)) {
+      throw new OrgApiError(
+        errorCodes.group_busy,
+        409,
+        "group has active turn dispatches; wait for them to settle before dismissing",
+      );
+    }
+    const source = groupDir(workspace, ref);
+    try {
+      await fs.access(source);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new OrgApiError(errorCodes.group_missing, 404, `group not found: ${ref}`);
+      }
+      throw storageError("local group state is unreadable");
+    }
+    const backupRoot = path.join(workspace, ".digital-employee", "backup", "groups");
+    await fs.mkdir(backupRoot, { recursive: true, mode: 0o700 });
+    const stamp = `${Date.now()}-${randomBytes(3).toString("hex")}`;
+    const destination = path.join(backupRoot, `${ref}-${stamp}`);
+    try {
+      await fs.rename(source, destination);
+    } catch (error) {
+      throw storageError("local group could not be moved to backup", error);
+    }
+    return { conversationRef: ref, dismissed: true };
   }
 
   async appendMessage(workspace: string, conversationRef: string, message: Omit<GroupMessage, "schemaVersion" | "conversationRef">): Promise<GroupMessage> {
@@ -429,7 +464,11 @@ export class GroupStore {
       throw storageError("local group root is unreadable");
     }
     if (entries.filter((entry) => entry.isDirectory()).length >= MAX_GROUPS) {
-      throw storageError("local group count reached the bounded limit");
+      throw new OrgApiError(
+        errorCodes.group_quota_reached,
+        409,
+        "group quota reached; dismiss a group before creating another",
+      );
     }
   }
 
@@ -443,7 +482,11 @@ export class GroupStore {
       throw storageError("local group messages are unreadable");
     }
     if (names.length >= MAX_GROUP_MESSAGES) {
-      throw storageError("local group messages reached the bounded record count");
+      throw new OrgApiError(
+        errorCodes.group_message_quota_reached,
+        409,
+        "group message quota reached; dismiss the group or wait for messages to age out",
+      );
     }
   }
 }
