@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { DocPlaneDetailResponse, DocPlaneListResponse } from "@roleweave/shared";
 import {
@@ -92,7 +92,7 @@ describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
     expect(document.querySelector(".owb-doc-plane__list-pane")).toBeTruthy();
     expect(document.querySelector(".owb-doc-plane__reader-pane")).toBeTruthy();
     expect(screen.getByText("First response steps.")).toBeTruthy();
-    expect(screen.getByText("版本 2026-08-27T00:00:00.000Z")).toBeTruthy();
+    expect(document.querySelector('time[datetime="2026-08-27T00:00:00.000Z"]')).toHaveTextContent("更新于");
   });
 
   it("re-lists with the user query when the search button is pressed", async () => {
@@ -143,5 +143,33 @@ describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
     await waitFor(() => expect(readDoc).toHaveBeenCalled());
     expect(await screen.findByText("upstream doc plane unreachable")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Runbook" })).toBeNull();
+  });
+});
+
+describe("Shared document request ordering (#294)", () => {
+  it("discards late details and offers retry for rejected reads", async () => {
+    let resolveOld!: (value: DocPlaneDetailLoadResult) => void;
+    const readDoc = vi.fn().mockReturnValueOnce(new Promise<DocPlaneDetailLoadResult>((resolve) => { resolveOld = resolve; })).mockRejectedValueOnce(new Error("offline"));
+    render(<DocPlanePanel listDocs={vi.fn().mockResolvedValue(okList())} readDoc={readDoc} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Runbook/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Onboarding/ }));
+    await screen.findByText("offline");
+    await act(async () => resolveOld(okDetail()));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Runbook" })).not.toBeInTheDocument());
+    readDoc.mockResolvedValue({ kind: "ok", response: { ...DETAIL_RESPONSE, id: "doc-2", title: "Onboarding", content: "# Onboarding" } });
+    fireEvent.click(screen.getByRole("button", { name: /重\s?试/ }));
+    await screen.findByRole("heading", { name: "Onboarding" });
+  });
+
+  it("keeps the latest search results when an earlier request returns late", async () => {
+    let resolveOld!: (value: DocPlaneListLoadResult) => void;
+    const listDocs = vi.fn().mockReturnValueOnce(new Promise<DocPlaneListLoadResult>((resolve) => { resolveOld = resolve; })).mockResolvedValue({ kind: "ok", response: { ...LIST_RESPONSE, entries: [] } });
+    render(<DocPlanePanel listDocs={listDocs} readDoc={vi.fn()} />);
+    const input = screen.getByLabelText("搜索外部文档");
+    fireEvent.change(input, { target: { value: "missing" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter", charCode: 13 });
+    await screen.findByText("未找到包含“missing”的文档");
+    await act(async () => resolveOld(okList()));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Runbook/ })).not.toBeInTheDocument());
   });
 });

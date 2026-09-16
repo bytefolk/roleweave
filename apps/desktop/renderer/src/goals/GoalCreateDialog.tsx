@@ -1,19 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button as AntButton, Drawer, Input } from "antd";
 import { Target, Plus, Trash2 } from "lucide-react";
+import { validateGoalCreateRequest } from "@roleweave/shared/goals";
 import { useT } from "@roleweave/ui";
 
 interface GoalCreateDialogProps {
   open: boolean;
   onClose: () => void;
+  onCreated?: (goalId: string) => void;
 }
 
-export function GoalCreateDialog({ open, onClose }: GoalCreateDialogProps) {
+export function GoalCreateDialog({
+  open,
+  onClose,
+  onCreated,
+}: GoalCreateDialogProps) {
   const t = useT();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [criteria, setCriteria] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const creating = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,7 +39,14 @@ export function GoalCreateDialog({ open, onClose }: GoalCreateDialogProps) {
     setError(null);
   }, [open]);
 
-  const formValid = title.trim().length > 0 && description.trim().length > 0;
+  const request = {
+    title: title.trim(),
+    description: description.trim(),
+    acceptanceCriteria: criteria
+      .map((criterion) => criterion.trim())
+      .filter(Boolean),
+  };
+  const formValid = validateGoalCreateRequest(request).ok;
 
   const addCriterion = () => {
     if (criteria.length >= 16) return;
@@ -43,47 +64,74 @@ export function GoalCreateDialog({ open, onClose }: GoalCreateDialogProps) {
   };
 
   const create = async () => {
-    if (!formValid || busy) return;
+    if (!formValid || creating.current) return;
+    creating.current = true;
     setBusy(true);
     setError(null);
     try {
-      const filtered = criteria.map((c) => c.trim()).filter((c) => c.length > 0);
+      const filtered = criteria
+        .map((c) => c.trim())
+        .filter((c) => c.length > 0);
       const response = await window.owb.createGoal({
         title: title.trim(),
         description: description.trim(),
         ...(filtered.length > 0 ? { acceptanceCriteria: filtered } : {}),
       });
+      if (!alive.current) return;
       if (response.status !== 201) {
         const body = response.body as { message?: unknown };
-        setError(typeof body?.message === "string" ? body.message : t("goals.createFail"));
+        setError(
+          typeof body?.message === "string"
+            ? body.message
+            : t("goals.createFail"),
+        );
         return;
       }
+      onCreated?.(response.body.goalId);
       onClose();
     } catch {
-      setError(t("goals.createFail"));
+      if (alive.current) setError(t("goals.createFail"));
     } finally {
-      setBusy(false);
+      creating.current = false;
+      if (alive.current) setBusy(false);
     }
   };
 
   return (
     <Drawer
       title={t("goals.createTitle")}
+      rootClassName="owb-goal-create-drawer"
+      footer={
+        <footer className="owb-goal-create__footer">
+          <AntButton onClick={onClose} disabled={busy}>
+            {t("dlg.cancel")}
+          </AntButton>
+          <AntButton
+            type="primary"
+            onClick={() => void create()}
+            loading={busy}
+            disabled={!formValid}
+            icon={<Target aria-hidden="true" size={14} />}
+          >
+            {t("goals.createAction")}
+          </AntButton>
+        </footer>
+      }
       width="min(560px, calc(100vw - 24px))"
       open={open}
-      onClose={() => { if (!busy) onClose(); }}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
       destroyOnHidden
     >
       <div className="owb-goal-create">
-        <section className="owb-goal-create__hero">
-          <div className="owb-goal-create__icon"><Target aria-hidden="true" size={20} /></div>
-          <div>
-            <h3>{t("goals.createTitle")}</h3>
-            <p>{t("goals.descPh")}</p>
-          </div>
-        </section>
+        <p className="owb-goal-create__hint">{t("goals.descPh")}</p>
 
-        <section className="owb-goal-create__form" aria-label={t("goals.createTitle")}>
+        <fieldset
+          disabled={busy}
+          className="owb-goal-create__form"
+          aria-label={t("goals.createTitle")}
+        >
           <label>
             <span>{t("goals.titleField")}</span>
             <Input
@@ -135,15 +183,13 @@ export function GoalCreateDialog({ open, onClose }: GoalCreateDialogProps) {
               </AntButton>
             )}
           </div>
-        </section>
+        </fieldset>
 
-        {error ? <p className="owb-goal-create__error" role="alert">{error}</p> : null}
-        <footer className="owb-goal-create__footer">
-          <AntButton onClick={onClose} disabled={busy}>{t("dlg.cancel")}</AntButton>
-          <AntButton type="primary" onClick={() => void create()} loading={busy} disabled={!formValid} icon={<Target aria-hidden="true" size={14} />}>
-            {t("goals.createAction")}
-          </AntButton>
-        </footer>
+        {error ? (
+          <p className="owb-goal-create__error" role="alert">
+            {error}
+          </p>
+        ) : null}
       </div>
     </Drawer>
   );

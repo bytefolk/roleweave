@@ -13,6 +13,7 @@ interface PaneBounds {
 
 export interface OrgWorkspaceSplitProps {
   hidden?: boolean;
+  focused?: boolean;
   ariaLabel: string;
   left: ReactNode;
   resetTitle: string;
@@ -39,7 +40,7 @@ function computeBounds(host: HTMLDivElement | null): PaneBounds {
  * resized window always gets a sensible balanced starting point and no
  * machine-specific width leaks into project data.
  */
-export function OrgWorkspaceSplit({ hidden = false, ariaLabel, left, resetTitle, right, valueText }: OrgWorkspaceSplitProps) {
+export function OrgWorkspaceSplit({ hidden = false, focused = false, ariaLabel, left, resetTitle, right, valueText }: OrgWorkspaceSplitProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [ratio, setRatio] = useState(DEFAULT_RATIO);
   const [dragging, setDragging] = useState(false);
@@ -72,7 +73,7 @@ export function OrgWorkspaceSplit({ hidden = false, ariaLabel, left, resetTitle,
     <div
       ref={hostRef}
       hidden={hidden}
-      className="owb-org-module"
+      className={`owb-org-module${focused ? " is-conversation-focused" : ""}`}
       data-dragging={dragging ? "true" : undefined}
       style={ratio === DEFAULT_RATIO ? undefined : ({ "--owb-org-left-width": `${ratio * 100}%` } as CSSProperties)}
     >

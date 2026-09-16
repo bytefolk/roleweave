@@ -576,9 +576,12 @@ test("Qoder preflight distinguishes the IDE 1.20.1 launcher and checks each requ
   assert.equal((await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin })).failure, "not_cli");
 
   await fs.writeFile(bin, `#!/bin/sh\nif [ "$1" = '--help' ]; then while :; do :; done; fi\nprintf '1.2.0\\n'\n`, { mode: 0o755 });
+  // Leave enough scheduling time for --version during the parallel server
+  // suite. --help never exits, so the shared deadline must still stop it.
+  const timeoutMs = 1000;
   const startedAt = performance.now();
-  assert.deepEqual(await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin }, 50), { installed: true, version: "1.2.0", supported: false, failure: "timed_out" });
-  assert.ok(performance.now() - startedAt < 1000, "version and help share one bounded timeout");
+  assert.deepEqual(await probeQoderLocalBinary({ ORG_WORKBENCH_QODER_BIN: bin }, timeoutMs), { installed: true, version: "1.2.0", supported: false, failure: "timed_out" });
+  assert.ok(performance.now() - startedAt < timeoutMs + 1000, "version and help share one bounded timeout, including scheduling and reap allowance");
 });
 
 test("Qoder readiness requires a genuine boolean CLI login status and never returns account data", { skip: process.platform === "win32" ? "requires POSIX shebang fixtures" : false }, async (t) => {

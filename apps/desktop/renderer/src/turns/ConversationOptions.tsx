@@ -5,6 +5,7 @@ import { useT } from "@roleweave/ui";
 import { isQoderModelId } from "@roleweave/shared/model-selection";
 import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption, WorkbenchSession } from "@roleweave/shared";
 import type { TurnRecord } from "./types";
+import { useConversationCopy } from "../locales/conversation";
 import "./model-connection.css";
 
 const popoverClassNames = { root: "owb-conversation-popover" };
@@ -67,13 +68,15 @@ function CustomModelEntry({ onModel }: { onModel: (model: string) => void | Prom
   </div>;
 }
 
-export function ConversationOptions({ config, saving, disabled, session, turns, onModel, onContext }: {
+export function ConversationOptions({ config, saving, disabled, loading = false, running = false, error, notice, onReload, session, turns, onModel, onContext }: {
   config?: EmployeeModelConfig; saving: boolean; disabled: boolean;
+  loading?: boolean; running?: boolean; error?: string; notice?: string; onReload?: () => void;
   session: WorkbenchSession | null; turns: TurnRecord[];
   onModel?: (model: string) => void | Promise<void>;
   onContext?: (sessionId: string, enabled: boolean) => void | Promise<void>;
 }) {
   const t = useT();
+  const copy = useConversationCopy();
   const completed = turns.filter((turn) => !turn.provisional && turn.status !== "running");
   const reported = completed.filter((turn) => turn.totalTokens !== undefined);
   const total = reported.reduce((sum, turn) => sum + turn.totalTokens!, 0);
@@ -96,7 +99,7 @@ export function ConversationOptions({ config, saving, disabled, session, turns, 
   }));
   const modelDetail = (model: EmployeeModelOption) => {
     const details: string[] = [];
-    if (model.resolvedModel) details.push(t("model.resolvedModel", { model: model.resolvedModel }));
+    if (model.resolvedModel) details.push(`${copy.mapping}: ${model.resolvedModel}`);
     else if (model.id !== "provider-default") details.push(t("model.modelId", { model: model.id }));
     if (model.connectionLabel) details.push(model.connectionLabel);
     const billing = model.billing ?? connection?.billing;
@@ -108,12 +111,15 @@ export function ConversationOptions({ config, saving, disabled, session, turns, 
     }
     return details;
   };
+  const unavailable = loading ? copy.modelLoading : saving ? copy.modelSaving : running ? copy.modelRunning
+    : error ? error : !config ? copy.modelMissing : connectionInvalid ? t("model.connection.invalid") : !config.editable || !onModel ? copy.modelReadonly : undefined;
   return <div className="owb-conversation-options owb-model-connection">
+    <span className="owb-model-picker__label">{copy.model}</span>
     {config ? <div className="owb-model-connection__model">
       <Select className="owb-model-picker" size="small" variant="borderless"
-        aria-label={t("model.select")} showSearch={{ optionFilterProp: "search" }}
-        value={config.selected} options={options} loading={saving}
-        disabled={disabled || saving || connectionInvalid || !config.editable || !onModel}
+        aria-label={t("model.select")} title={unavailable} showSearch={{ optionFilterProp: "search" }}
+        value={config.selected} options={options} loading={saving || loading}
+        disabled={disabled || saving || loading || Boolean(error) || connectionInvalid || !config.editable || !onModel}
         popupMatchSelectWidth={300}
         onChange={(value) => void onModel?.(value)}
         optionRender={(option) => {
@@ -139,7 +145,7 @@ export function ConversationOptions({ config, saving, disabled, session, turns, 
           <ConnectionSummary connection={connection} />
         </Button>
       </Popover> : null}
-    </div> : <span className="owb-model-picker__pending">{t("model.agentDefault")}</span>}
+    </div> : <span className="owb-model-picker__pending">{loading ? copy.modelLoading : t("model.agentDefault")}</span>}
     <Popover classNames={popoverClassNames} trigger="click" placement="topRight" title={t("model.contextTitle")} content={
       <div className="owb-context-details">
         <div className="owb-conversation-popover__section">
@@ -164,5 +170,9 @@ export function ConversationOptions({ config, saving, disabled, session, turns, 
     }><Button type="text" size="small" icon={<Gauge size={13} />} aria-label={t("model.usageTitle")}>
       {reported.length ? `${total.toLocaleString()}${partial ? "+" : ""} tokens` : t("model.usageUnknown")}
     </Button></Popover>
+    {(unavailable || notice) ? <div className={`owb-model-picker__state${error ? " is-error" : ""}`}>
+      <span role={error ? "alert" : undefined}>{unavailable ?? notice}</span>
+      {(error || (!config && !loading)) && onReload ? <Button type="link" size="small" onClick={onReload}>{copy.modelRetry}</Button> : null}
+    </div> : null}
   </div>;
 }

@@ -36,6 +36,10 @@
     "./capabilities": {
       "types": "./dist/capabilities.d.ts",
       "import": "./dist/capabilities.js"
+    },
+    "./goals": {
+      "types": "./dist/goals.d.ts",
+      "import": "./dist/goals.js"
     }
   },
   "files": [

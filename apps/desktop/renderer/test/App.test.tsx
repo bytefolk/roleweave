@@ -956,7 +956,7 @@ describe("App docs module wiring (#35 S3)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "handbook.md" }));
     expect(await screen.findByRole("heading", { name: "Handbook" })).toBeInTheDocument();
     expect(screen.getByText("正文内容")).toBeInTheDocument();
-    expect(screen.getByText("版本 2026-08-27T00:00:00.000Z")).toBeInTheDocument();
+    expect(document.querySelector('time[datetime="2026-08-27T00:00:00.000Z"]')).toHaveTextContent("更新于");
     expect(positionDocFile).toHaveBeenCalledWith("repo-owner", "handbook.md");
   });
 });
@@ -1015,7 +1015,10 @@ it("runs A/B/C independently and keeps late responses, streams and cancellation 
   expect(await screen.findByText("live-release-engineer")).toBeInTheDocument();
   expect(screen.queryByText("B failed")).not.toBeInTheDocument();
   await act(async () => finish.get(employees["release-engineer"]!.sessionId)!({ status: 500, body: { message: "C failed" } }));
-});
+  // Three simultaneous turns, six employee selections, streamed updates and
+  // cancellation share one test budget. Keep each wait/assertion unchanged;
+  // slower CI workers need more than the default five seconds for the full flow.
+}, 10_000);
 
 it("keeps B usable during A's delayed automatic session creation, then restores A", async () => {
   const employeeB = { ...activeSession, positionId: "docs-writer", sessionId: "22222222-2222-4222-8222-222222222222" };
@@ -1449,4 +1452,28 @@ it("does not restore a pre-save model when a status check finishes after saving"
   const picker = screen.getByRole("combobox", { name: "员工模型" }).closest('.ant-select')!;
   expect(picker).toHaveTextContent("New model");
   expect(screen.queryByText("检查失败，请重试")).not.toBeInTheDocument();
+});
+
+it("keeps a failed model selection on the old value, exposes retry, and retains the employee session", async () => {
+  const config = { selected: "provider-default", recommended: "provider-default", editable: true, source: "default", options: [
+    { id: "provider-default", name: "Agent default", tier: "default" }, { id: "new-model", name: "New model", tier: "default" },
+  ] };
+  const bridge = openedBridge({
+    position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine: "qoder", agentLocked: true, modelConfig: config } }),
+    setPositionModel: vi.fn().mockResolvedValue({ status: 500, body: { message: "PRIVATE_DIAGNOSTIC" } }),
+  });
+  render(<App />); await selectRepoOwner();
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "员工模型" })).toBeEnabled());
+  const sessionReads = vi.mocked(bridge.sessions).mock.calls.length;
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "Keep this draft" } });
+  pickSelectOption("员工模型", "New model");
+  expect(await screen.findByText("模型未能保存，仍使用原来的模型，请重试。")).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "员工模型" }).closest('.ant-select')).toHaveTextContent("跟随 Agent 默认");
+  expect(document.body.innerHTML).not.toContain("PRIVATE_DIAGNOSTIC");
+  fireEvent.click(screen.getByRole("button", { name: "重新加载模型" }));
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "员工模型" })).toBeEnabled());
+  expect(screen.getByLabelText("下达任务")).toHaveValue("Keep this draft");
+  expect(bridge.sessions).toHaveBeenCalledTimes(sessionReads);
+  expect(bridge.createSession).not.toHaveBeenCalled();
+  expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
 });

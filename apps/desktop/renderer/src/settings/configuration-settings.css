@@ -1,0 +1,46 @@
+/* Settings-only organization; keep the approved application frame and theme. */
+.owb-config-settings { display:flex; flex-direction:column; min-height:0; height:100%; overflow:hidden; }
+.owb-config-tabs { display:flex; flex-wrap:wrap; gap:4px; padding:0 24px 12px; border-bottom:1px solid var(--ui-border,#e5e7eb); }
+.owb-config-tabs button { border:0; border-radius:6px; padding:8px 12px; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.owb-config-tabs button[aria-selected="true"] { background:var(--ui-primary-soft); color:var(--ui-foreground); font-weight:600; }
+.owb-config-tabs button:focus-visible { outline:2px solid var(--ui-primary,#1677ff); outline-offset:2px; }
+.owb-config-content { flex:1; min-height:0; overflow:auto; padding:16px 24px 24px; }
+.owb-config-content > [role="tabpanel"] { max-width:960px; }
+.owb-config-content [hidden] { display:none !important; }
+.owb-config-content .ant-alert { margin-bottom:12px; }
+.owb-config-content fieldset { margin:0 0 24px; padding:0; border:0; min-width:0; }
+.owb-config-content legend { font-size:15px; font-weight:600; margin:0 0 16px; }
+.owb-config-field { display:grid; grid-template-columns:180px minmax(160px,1fr); gap:12px; align-items:center; margin:12px 0; max-width:720px; }
+.owb-config-field .ant-select { min-width:0; width:100%; }
+.owb-config-field input { min-height:36px; }
+.owb-config-checkbox { display:flex; align-items:center; gap:8px; margin:12px 0; font-size:13px; }
+.owb-config-checkbox input { accent-color:var(--ui-primary,#1677ff); }
+.owb-config-host { border:1px solid var(--ui-border,#e5e7eb); border-radius:8px; padding:0 16px; margin:12px 0; }
+.owb-config-host summary { display:flex; align-items:center; gap:16px; cursor:pointer; min-height:52px; }
+.owb-config-host summary span { font-size:12px; color:var(--ui-foreground-muted); }
+.owb-config-host summary .owb-config-edit { margin-left:auto; }
+.owb-config-host fieldset { padding-top:8px; margin-bottom:16px; }
+.owb-config-secret { display:grid; gap:8px; max-width:720px; margin:16px 0; }
+.owb-config-secret input.ant-input { min-height:36px; }
+.owb-config-secret .owb-config-checkbox { margin:0; }
+.owb-config-service { padding:12px 0 20px; border-bottom:1px solid var(--ui-border,#e5e7eb); }
+.owb-config-service h3 { margin:0; font-size:15px; }
+.owb-config-savebar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 24px; border-top:1px solid var(--ui-border,#e5e7eb); }
+.owb-config-savebar > span { flex:1; font-size:12px; }
+.owb-config-file-head { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.owb-config-file-head h2 { font-size:15px; margin:0 0 8px; }
+.owb-config-file-head p { overflow-wrap:anywhere; }
+.owb-config-view,.owb-config-file-actions { display:flex; gap:8px; margin:16px 0; }
+.owb-config-editor-label { display:block; margin:12px 0; font-size:12px; }
+.owb-config-editor.ant-input { height:440px; min-height:240px; font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace; resize:vertical; tab-size:2; }
+.owb-config-summary > div { display:grid; grid-template-columns:100px minmax(0,1fr); gap:12px; padding:8px 0; }
+.owb-config-summary dd { margin:0; overflow-wrap:anywhere; font-size:12px; }
+.owb-config-diff { display:grid; gap:6px; border-bottom:1px solid var(--ui-border,#e5e7eb); padding:10px 0; overflow-wrap:anywhere; }
+.owb-config-diff code { font-size:12px; }
+.owb-config-diff span { white-space:pre-wrap; }
+.owb-config-errors { border:1px solid var(--ui-danger,#cf1322); border-radius:6px; padding:12px; margin:12px 0; font-size:12px; }
+.owb-config-errors p { margin:0 0 8px; }
+.owb-config-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.owb-config-settings .owb-settings-module { height:auto; }
+@media(max-width:760px) { .owb-config-field { grid-template-columns:1fr; gap:8px; } .owb-config-tabs { padding-inline:16px; } .owb-config-content { padding:16px; } .owb-config-savebar { padding:12px 16px; } .owb-config-host summary { flex-wrap:wrap; gap:8px; } }
+@media(prefers-reduced-motion:reduce) { .owb-config-settings * { transition:none !important; } }

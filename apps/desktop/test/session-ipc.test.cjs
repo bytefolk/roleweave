@@ -54,3 +54,14 @@ test("group dispatch IPC forwards validated explicit modes and preserves recipie
   assert.equal(validateGroupTurnRequest({ ...value, mode: "automatic" }).ok, false);
   assert.equal(validateGroupTurnRequest({ ...value, principal: "admin" }).ok, false);
 });
+
+test("session retry IPC forwards only a bounded server turn identity", () => {
+  const retryOf = "22222222-2222-4222-8222-222222222222";
+  assert.deepEqual(validateSessionTurnRequest({ sessionId, input: "try again", engine: "qoder", retryOf }), {
+    ok: true, sessionId, request: { input: "try again", engine: "qoder", retryOf },
+  });
+  for (const invalid of ["", "../escape", "\\escape", "x".repeat(257), null, 7]) {
+    assert.equal(validateSessionTurnRequest({ sessionId, input: "try again", engine: "qoder", retryOf: invalid }).ok, false);
+  }
+  assert.equal(validateSessionTurnRequest({ sessionId, input: "try again", engine: "qoder", retryOf, principal: "admin" }).ok, false);
+});

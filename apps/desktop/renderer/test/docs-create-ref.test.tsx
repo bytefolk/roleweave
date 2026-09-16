@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocsCreateResponse, DocsFileListResponse } from "@roleweave/shared";
 import { DocsModule } from "../src/docs/DocsModule";
@@ -20,7 +20,7 @@ const listBody: DocsFileListResponse = {
 const createBody: DocsCreateResponse = {
   schemaVersion: "docs-create.v1",
   positionId: "repo-owner",
-  path: "runbook.md",
+  path: "knowledge/runbook.md",
   version: "2026-08-27T01:00:00.000Z",
   size: 10,
   assetId: "0e2f4a6b-8c0d-4e1f-9a2b-3c4d5e6f7081",
@@ -58,12 +58,12 @@ describe("DocsModule create + copy-reference face (#35 S4)", () => {
     await waitFor(() =>
       expect(bridge.createPositionDoc).toHaveBeenCalledWith({
         positionId: "repo-owner",
-        path: "runbook.md",
+        path: "knowledge/runbook.md",
         content: "",
       }),
     );
     await waitFor(() => expect(bridge.positionDocs).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("已创建 runbook.md")).toBeTruthy();
+    expect(await screen.findByText("已创建 knowledge/runbook.md")).toBeTruthy();
   });
 
   it("surfaces the docs_exists conflict without closing the modal", async () => {
@@ -102,4 +102,44 @@ describe("DocsModule create + copy-reference face (#35 S4)", () => {
     expect(await screen.findByText("引用已复制")).toBeTruthy();
   });
 
+});
+
+describe("Document create integrity (#294)", () => {
+  it("reads the returned path and suppresses repeat creation while pending", async () => {
+    let complete!: (value: { status: number; body: DocsCreateResponse }) => void;
+    const bridge = installBridge({
+      createPositionDoc: vi.fn().mockReturnValue(new Promise((resolve) => { complete = resolve; })),
+      positionDocFile: vi.fn().mockResolvedValue({ status: 200, body: { ...createBody, schemaVersion: "docs-file.v1", content: "# New document", modifiedAt: createBody.version } }),
+    });
+    render(<DocsModule workspaceOpen positions={positions} selectedPositionId="repo-owner" />);
+    fireEvent.click(await screen.findByRole("button", { name: "新建文档" }));
+    fireEvent.change(screen.getByLabelText("新文档文件名"), { target: { value: "runbook.md" } });
+    fireEvent.change(screen.getByLabelText("文档内容"), { target: { value: "# New document" } });
+    const create = screen.getByRole("button", { name: /^创\s?建$/ });
+    fireEvent.click(create);
+    fireEvent.click(create);
+    expect(bridge.createPositionDoc).toHaveBeenCalledTimes(1);
+    await act(async () => complete({ status: 201, body: createBody }));
+    await waitFor(() => expect(bridge.positionDocFile).toHaveBeenCalledWith("repo-owner", createBody.path));
+    await screen.findByRole("heading", { name: "New document" });
+  });
+
+  it("validates path and UTF-8 byte limits without discarding the draft", async () => {
+    const bridge = installBridge();
+    render(<DocsModule workspaceOpen positions={positions} selectedPositionId="repo-owner" />);
+    fireEvent.click(await screen.findByRole("button", { name: "新建文档" }));
+    const input = screen.getByLabelText("新文档文件名");
+    fireEvent.change(input, { target: { value: "../private.md" } });
+    fireEvent.click(screen.getByRole("button", { name: /^创\s?建$/ }));
+    expect(await screen.findByText(/请输入安全的相对路径/)).toBeInTheDocument();
+    expect(bridge.createPositionDoc).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "notes.md" } });
+    const content = screen.getByLabelText("文档内容");
+    const large = "汉".repeat(90_000);
+    fireEvent.change(content, { target: { value: large } });
+    fireEvent.click(screen.getByRole("button", { name: /^创\s?建$/ }));
+    expect(await screen.findByText("初始内容不得超过256 KiB。")).toBeInTheDocument();
+    expect(content).toHaveValue(large);
+    expect(bridge.createPositionDoc).not.toHaveBeenCalled();
+  });
 });

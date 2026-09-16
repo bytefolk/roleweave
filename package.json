@@ -36,7 +36,7 @@
     "preview:full": "node scripts/dev.mjs preview --mode full",
     "build:renderer": "vite build --config apps/desktop/vite.config.ts",
     "clean:package:staging": "node scripts/clean-package-output.mjs",
-    "prepare:updater": "node scripts/bundle-updater.mjs",
+    "prepare:updater": "node scripts/bundle-updater.mjs && node scripts/bundle-configuration.mjs",
     "prepare:electron:staging": "node node_modules/electron/install.js",
     "prepare:electron:macos": "npm run prepare:electron:staging",
     "sign:macos:update": "node scripts/sign-macos-update.mjs",
@@ -69,6 +69,7 @@
     "electron-updater": "6.8.9",
     "esbuild": "0.25.12",
     "tar": "7.5.22",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "jsonc-parser": "3.3.1"
   }
 }

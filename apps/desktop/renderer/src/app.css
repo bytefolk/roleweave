@@ -8359,3 +8359,49 @@ body,
 .owb-host-credentials__input { flex: 1 1 220px; min-width: 0; padding: 6px 10px; color: var(--ui-foreground); background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 6px; }
 .owb-host-credentials__input:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 .owb-host-credentials__input:disabled { opacity: .6; }
+
+/* #294: local conversation affordances; the default app frame and pane ratio
+   remain unchanged. Focus is an explicit operator choice. */
+.owb-app.is-conversation-focused .ui-app-shell { --ui-sidebar-width: 0px; }
+.owb-app.is-conversation-focused .ui-app-shell__sidebar { display: none; }
+.owb-org-module.is-conversation-focused { display: grid; grid-template-columns: minmax(0, 1fr); }
+.owb-org-module.is-conversation-focused > :is(.owb-org-module__pane--left, .owb-org-module__splitter) { display: none; }
+.owb-org-module.is-conversation-focused .owb-org-module__pane--right { min-width: 0; min-height: 0; }
+.owb-conversation-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
+.owb-agent-locked { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border: 1px solid var(--ui-border); border-radius: 4px; color: var(--ui-foreground-muted); font-size: 11px; white-space: nowrap; }
+.owb-conversation-identity__copy { min-width: 0; }
+.owb-conversation-identity__copy p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.owb-session-history { display: grid; min-width: 240px; max-height: 360px; overflow: auto; gap: 4px; }
+.owb-session-history button { display: grid; gap: 4px; padding: 8px 12px; text-align: left; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--ui-foreground); font: inherit; cursor: pointer; }
+.owb-session-history button.is-selected, .owb-session-history button:hover { background: var(--ui-primary-soft); border-color: var(--ui-border); }
+.owb-session-history small { color: var(--ui-foreground-muted); }
+/* Beat the theme's readable-source overflow rule only for collapsed user text. */
+.owb-app .owb-turn-thread .owb-bubble--operator .owb-bubble__text.owb-message-collapsible {
+  display: block;
+  max-height: 21em;
+  overflow: hidden;
+}
+.owb-message-expand, .owb-message-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
+.owb-message-expand:hover, .owb-message-actions button:hover { background: color-mix(in srgb, currentColor 9%, transparent); }
+.owb-message-actions { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; color: var(--ui-foreground-muted); }
+.owb-message-actions span { font-size: 11px; }
+.owb-message-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; margin-top: 6px; font-size: 10px; }
+.owb-bubble--operator .owb-message-actions { color: inherit; }
+.owb-bubble--operator .owb-bubble__text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.owb-turn-conclusion-label { margin: 12px 0 8px; font-size: 11px; font-weight: 600; color: var(--ui-foreground-muted); }
+.owb-turn-panel .owb-markdown { font-size: inherit; }
+.owb-turn-panel .owb-tc__out { max-width: 100%; }
+.owb-turn-panel .owb-bubble__error { white-space: pre-wrap; overflow-wrap: anywhere; }
+.owb-thread-latest { align-self: center; flex: none; margin: -4px 0 8px; border: 1px solid var(--ui-border); border-radius: 16px; background: var(--ui-surface); color: var(--ui-foreground); box-shadow: 0 2px 8px #0001; padding: 4px 12px; font: inherit; font-size: 11px; cursor: pointer; }
+.owb-model-picker__label { font-size: 11px; color: var(--ui-foreground-muted); }
+.owb-model-picker__state { display: flex; align-items: center; gap: 6px; flex: 1 0 100%; min-width: 0; font-size: 11px; color: var(--ui-foreground-muted); }
+.owb-model-picker__state.is-error, .owb-conversation-error { color: var(--ui-danger-strong); }
+.owb-conversation-error { margin: 4px 16px; font-size: 12px; }
+.owb-turn-thread--loading { display: flex; flex-direction: column; gap: 16px; padding: 24px; }
+.owb-turn-thread--loading span { display: block; min-height: 48px; width: 72%; background: var(--ui-surface); border-radius: 8px; }
+.owb-turn-thread--loading span:nth-child(2) { align-self: flex-end; width: 50%; }
+.owb-turn-thread--loading span:last-child { min-height: 96px; }
+.owb-message-actions button:focus-visible, .owb-message-expand:focus-visible, .owb-thread-latest:focus-visible, .owb-session-history button:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .owb-turn-panel *, .owb-org-module__splitter::before { animation: none !important; transition: none !important; } }
+
+.owb-turn-panel .owb-tc-head__eng { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }

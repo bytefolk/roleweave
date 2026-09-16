@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DocsPanel } from "../src/docs/DocsPanel";
 import type { DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
@@ -50,7 +50,7 @@ describe("DocsPanel (#35 S2 file routing surface)", () => {
     expect(document.querySelector(".owb-docs-panel__list-pane")).toBeTruthy();
     expect(document.querySelector(".owb-docs-panel__reader-pane")).toBeTruthy();
     expect(screen.getByText("Owns the repository.")).toBeTruthy();
-    expect(screen.getByText("版本 2026-08-27T00:00:00.000Z")).toBeTruthy();
+    expect(document.querySelector('time[datetime="2026-08-27T00:00:00.000Z"]')).toHaveTextContent("更新于");
   });
 
   it("shows an honest empty state and never invents documents", async () => {
@@ -75,5 +75,65 @@ describe("DocsPanel (#35 S2 file routing surface)", () => {
     });
     expect(readDoc).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("heading", { name: "Repo Owner" })).toBeNull();
+  });
+});
+
+describe("Document reader integrity (#294)", () => {
+  it("discards stale reads, keeps per-file scroll and list state through refresh", async () => {
+    let finishOld!: (doc: DocsFileResponse) => void;
+    const old = new Promise<DocsFileResponse>((resolve) => { finishOld = resolve; });
+    const second = { ...DOC, path: "knowledge/README.md", content: "# Second document" };
+    const readDoc = vi.fn().mockReturnValueOnce(old).mockResolvedValue(second);
+    const listDocs = vi.fn().mockResolvedValue(LIST);
+    const { rerender } = render(<DocsPanel positionId="repo-owner" listDocs={listDocs} readDoc={readDoc} />);
+    fireEvent.click(await screen.findByRole("button", { name: "SKILL.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "knowledge/README.md" }));
+    await screen.findByRole("heading", { name: "Second document" });
+    await act(async () => finishOld(DOC));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Repo Owner" })).not.toBeInTheDocument());
+    const reader = screen.getByLabelText("文档阅读区");
+    reader.scrollTop = 320;
+    fireEvent.scroll(reader);
+    readDoc.mockResolvedValueOnce(DOC);
+    fireEvent.click(screen.getByRole("button", { name: "SKILL.md" }));
+    await screen.findByRole("heading", { name: "Repo Owner" });
+    readDoc.mockResolvedValueOnce(second);
+    fireEvent.click(screen.getByRole("button", { name: "knowledge/README.md" }));
+    await screen.findByRole("heading", { name: "Second document" });
+    expect(reader.scrollTop).toBe(320);
+    rerender(<DocsPanel positionId="repo-owner" listDocs={listDocs} readDoc={readDoc} reloadToken={1} />);
+    await waitFor(() => expect(listDocs).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("heading", { name: "Second document" })).toBeInTheDocument();
+    expect(reader.scrollTop).toBe(320);
+  });
+
+  it("rejects old employee reads and retries the failed new employee list", async () => {
+    let finish!: (doc: DocsFileResponse) => void;
+    const readDoc = vi.fn().mockReturnValue(new Promise<DocsFileResponse>((resolve) => { finish = resolve; }));
+    const listDocs = vi.fn().mockResolvedValueOnce(LIST).mockRejectedValueOnce(new Error("Forbidden")).mockResolvedValue(LIST);
+    const view = render(<DocsPanel positionId="repo-owner" listDocs={listDocs} readDoc={readDoc} />);
+    fireEvent.click(await screen.findByRole("button", { name: "SKILL.md" }));
+    view.rerender(<DocsPanel positionId="second-owner" listDocs={listDocs} readDoc={readDoc} />);
+    await screen.findByText("Forbidden");
+    await act(async () => finish(DOC));
+    expect(screen.queryByRole("heading", { name: "Repo Owner" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /重\s?试/ }));
+    await screen.findByRole("button", { name: "SKILL.md" });
+    expect(listDocs).toHaveBeenLastCalledWith("second-owner");
+  });
+
+  it("separates search-empty from no documents and retries failed reads on request", async () => {
+    const listDocs = vi.fn().mockResolvedValue(LIST);
+    const readDoc = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(DOC);
+    render(<DocsPanel positionId="repo-owner" listDocs={listDocs} readDoc={readDoc} />);
+    fireEvent.click(await screen.findByRole("button", { name: "SKILL.md" }));
+    await screen.findByText("offline");
+    fireEvent.click(screen.getByRole("button", { name: /重\s?试/ }));
+    await screen.findByRole("heading", { name: "Repo Owner" });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "not-found" } });
+    expect(screen.getByText("未找到包含“not-found”的文档")).toBeInTheDocument();
+    expect(screen.queryByText("该岗位暂无文档")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+    expect(screen.getByRole("button", { name: "SKILL.md" })).toBeInTheDocument();
   });
 });

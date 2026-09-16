@@ -186,6 +186,8 @@ export interface ThreadContextMetadata {
 }
 
 export interface TurnRecord {
+  /** Explicit user retry of a failed/unknown turn in this same session. */
+  retryOf?: string;
   /** Requested model/alias, not an unverified provider routing result. */
   model?: string;
   schemaVersion: typeof TURN_RECORD_SCHEMA_VERSION;

@@ -118,6 +118,7 @@ export function adaptTurnRecord(
     positionName,
     engine: record.engine,
     ...(record.model === undefined ? {} : { model: record.model }),
+    ...(record.retryOf === undefined ? {} : { retryOf: record.retryOf }),
     input: record.input,
     status: record.status,
     createdAt: record.createdAt,

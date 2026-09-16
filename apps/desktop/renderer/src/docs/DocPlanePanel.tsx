@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Alert, Button, Empty, Input, List, Space, Spin, Tag } from "antd";
 import { FileText } from "lucide-react";
 import { useT } from "@roleweave/ui";
@@ -39,10 +45,20 @@ export type DocPlaneDetailLoadResult =
 export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
   const t = useT();
   const readerRef = useRef<HTMLDivElement>(null);
+  const listVersion = useRef(0);
+  const readVersion = useRef(0);
+  const scrollPositions = useRef(new Map<string, number>());
+  useEffect(
+    () => () => {
+      listVersion.current += 1;
+      readVersion.current += 1;
+    },
+    [],
+  );
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<DocPlaneListEntry[]>([]);
   const [source, setSource] = useState<"upstream" | "mock" | null>(null);
-  const [listing, setListing] = useState(false);
+  const [listing, setListing] = useState(true);
   const [listStatus, setListStatus] = useState<
     | { kind: "idle" }
     | { kind: "unconfigured"; message: string }
@@ -56,14 +72,21 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
 
   const runList = useCallback(
     async (search: string) => {
+      const version = ++listVersion.current;
       setListing(true);
       setListStatus({ kind: "idle" });
       try {
         const result = await listDocs(search);
+        if (version !== listVersion.current) return;
         if (result.kind === "ok") {
           setEntries(result.response.entries);
           setSource(result.response.source);
         } else if (result.kind === "unconfigured") {
+          readVersion.current += 1;
+          setDetail(null);
+          setSelectedId(null);
+          setReading(false);
+          setReadError(null);
           setEntries([]);
           setSource(null);
           setListStatus({ kind: "unconfigured", message: result.message });
@@ -72,8 +95,14 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
           setSource(null);
           setListStatus({ kind: "error", message: result.message });
         }
+      } catch (error) {
+        if (version === listVersion.current)
+          setListStatus({
+            kind: "error",
+            message: error instanceof Error ? error.message : String(error),
+          });
       } finally {
-        setListing(false);
+        if (version === listVersion.current) setListing(false);
       }
     },
     [listDocs],
@@ -85,17 +114,30 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
 
   const openEntry = (id: string) => {
     setSelectedId(id);
-    if (readerRef.current) readerRef.current.scrollTop = 0;
+    const version = ++readVersion.current;
     setDetail(null);
     setReadError(null);
     setReading(true);
     readDoc(id)
       .then((result) => {
+        if (version !== readVersion.current) return;
         if (result.kind === "ok") setDetail(result.response);
         else setReadError(result.message);
       })
-      .finally(() => setReading(false));
+      .catch((error) => {
+        if (version === readVersion.current)
+          setReadError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (version === readVersion.current) setReading(false);
+      });
   };
+
+  useLayoutEffect(() => {
+    if (detail && readerRef.current && selectedId)
+      readerRef.current.scrollTop =
+        scrollPositions.current.get(selectedId) ?? 0;
+  }, [detail, selectedId]);
 
   return (
     <section className="owb-doc-plane" aria-label={t("docs.planeAria")}>
@@ -123,7 +165,9 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
               <div className="owb-doc-plane__source" role="status">
                 <span>{t("docs.planeSource")}</span>
                 <Tag color={source === "upstream" ? "green" : "gold"}>
-                  {source === "upstream" ? t("docs.planeSourceUpstream") : t("docs.planeSourceMock")}
+                  {source === "upstream"
+                    ? t("docs.planeSourceUpstream")
+                    : t("docs.planeSourceMock")}
                 </Tag>
               </div>
             ) : null}
@@ -135,7 +179,15 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
             </div>
           ) : null}
           {listStatus.kind === "error" ? (
-            <Alert type="error" message={listStatus.message} />
+            <Alert
+              type="error"
+              message={listStatus.message}
+              action={
+                <Button onClick={() => void runList(query.trim())}>
+                  {t("hire.retry")}
+                </Button>
+              }
+            />
           ) : null}
           {listing ? <Spin aria-label={t("docs.planeListLoading")} /> : null}
           {!listing && listStatus.kind === "idle" ? (
@@ -143,7 +195,23 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
               className="owb-doc-plane__list"
               size="small"
               dataSource={entries}
-              locale={{ emptyText: t("docs.planeEmpty") }}
+              locale={{
+                emptyText: query ? (
+                  <div>
+                    <p>{t("reading.docs.searchNone", { query })}</p>
+                    <Button
+                      onClick={() => {
+                        setQuery("");
+                        void runList("");
+                      }}
+                    >
+                      {t("reading.clearFilters")}
+                    </Button>
+                  </div>
+                ) : (
+                  t("docs.planeEmpty")
+                ),
+              }}
               renderItem={(entry) => (
                 <List.Item
                   key={entry.id}
@@ -163,21 +231,53 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
                     aria-pressed={selectedId === entry.id}
                     onClick={() => openEntry(entry.id)}
                   >
-                    <span aria-hidden="true">{entry.icon ?? "📄"}</span> {entry.title}
+                    <span aria-hidden="true">{entry.icon ?? "📄"}</span>{" "}
+                    {entry.title}
                   </button>
                 </List.Item>
               )}
             />
           ) : null}
         </div>
-        <div ref={readerRef} className="owb-doc-plane__reader-pane" aria-label={t("docs.readerAria")}>
+        <div
+          ref={readerRef}
+          onScroll={() => {
+            if (detail && selectedId && readerRef.current)
+              scrollPositions.current.set(
+                selectedId,
+                readerRef.current.scrollTop,
+              );
+          }}
+          className="owb-doc-plane__reader-pane"
+          aria-label={t("docs.readerAria")}
+        >
           {reading ? <Spin aria-label={t("docs.planeLoading")} /> : null}
-          {readError !== null ? <Alert type="error" message={readError} /> : null}
+          {readError !== null ? (
+            <Alert
+              type="error"
+              message={t("docs.readFail")}
+              description={readError}
+              action={
+                <Button onClick={() => selectedId && openEntry(selectedId)}>
+                  {t("hire.retry")}
+                </Button>
+              }
+            />
+          ) : null}
           {detail !== null ? (
-            <DocViewer source={detail.content} version={detail.updatedAt} title={detail.title} />
+            <DocViewer
+              source={detail.content}
+              updatedAt={detail.updatedAt}
+              title={detail.title}
+            />
           ) : null}
           {detail === null && !reading && readError === null ? (
-            <Empty image={<FileText aria-hidden="true" size={28} strokeWidth={1.5} />} description={t("docs.readerEmpty")} />
+            <Empty
+              image={
+                <FileText aria-hidden="true" size={28} strokeWidth={1.5} />
+              }
+              description={t("docs.readerEmpty")}
+            />
           ) : null}
         </div>
       </div>

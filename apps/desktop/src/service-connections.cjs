@@ -44,9 +44,28 @@ function encryptionAvailable(safeStorage) {
  * when Electron's Linux basic_text backend claims encryption is available. */
 function createConnectionStore({ userDataPath, safeStorage }) {
   const file = path.join(userDataPath, "service-connections.json");
-  function read() {
+  function metadata() {
     if (!fs.existsSync(file)) return {};
-    const payload = JSON.parse(fs.readFileSync(file, "utf8"));
+    const fd = fs.openSync(file, "r");
+    let payload;
+    try { if (fs.fstatSync(fd).size > 128 * 1024) throw new Error("service_storage_unavailable"); payload = JSON.parse(fs.readFileSync(fd, "utf8")); }
+    finally { fs.closeSync(fd); }
+    if (payload.version !== 1 || !payload.connections || typeof payload.connections !== "object" || Array.isArray(payload.connections)) throw new Error("service_storage_unavailable");
+    return payload.connections;
+  }
+  function readMetadata() {
+    const entries = {};
+    for (const [kind, value] of Object.entries(metadata())) {
+      if (!KINDS.includes(kind)) throw new Error("service_storage_unavailable");
+      if (value === null) { entries[kind] = null; continue; }
+      const { encryptedToken, token, ...fields } = value;
+      if (token !== undefined || (encryptedToken !== undefined && typeof encryptedToken !== "string")) throw new Error("service_storage_unavailable");
+      entries[kind] = { ...normalizeConnection({ ...fields, kind }), tokenConfigured: !!encryptedToken };
+    }
+    return entries;
+  }
+  function read() {
+    const payload = { version: 1, connections: metadata() };
     if (payload.version !== 1 || !payload.connections || typeof payload.connections !== "object") throw new Error("service_storage_unavailable");
     const connections = {};
     for (const kind of KINDS) {
@@ -80,10 +99,10 @@ function createConnectionStore({ userDataPath, safeStorage }) {
       if (fs.existsSync(temp)) fs.unlinkSync(temp);
     }
   }
-  return { read, write };
+  return { read, write, readMetadata };
 }
 
-function createServiceConnections({ store, apiRequest }) {
+function createServiceConnections({ store, apiRequest, reloadBeforeUpdate = false }) {
   let saved = {};
   let storageError = false;
   let restoreError = false;
@@ -97,7 +116,7 @@ function createServiceConnections({ store, apiRequest }) {
     return result;
   };
   async function initialize() {
-    try { saved = store.read(); storageError = false; } catch { storageError = true; return; }
+    try { saved = store.read(); storageError = false; } catch { storageError = true; return false; }
     restoreError = false;
     for (const kind of KINDS) {
       try {
@@ -107,6 +126,7 @@ function createServiceConnections({ store, apiRequest }) {
         if (response && (response.status < 200 || response.status >= 300)) restoreError = true;
       } catch { restoreError = true; }
     }
+    return !storageError && !restoreError;
   }
   async function update(input, disconnect) {
     if (storageError) return failure(503, "service_storage_unavailable");
@@ -147,8 +167,8 @@ function createServiceConnections({ store, apiRequest }) {
       if (restoreError) return failure(503, "service_restore_unavailable");
       return apiRequest("/services");
     }),
-    configure: (input) => serial(() => update(input, false)),
-    disconnect: (kind) => serial(() => update({ kind }, true)),
+    configure: (input) => serial(async () => { if (reloadBeforeUpdate) await initialize(); return update(input, false); }),
+    disconnect: (kind) => serial(async () => { if (reloadBeforeUpdate) await initialize(); return update({ kind }, true); }),
     probe: (kind) => apiRequest(`/services/probe?kind=${kind}`),
     release: (kind) => apiRequest(`/services/release?kind=${kind}`),
   };

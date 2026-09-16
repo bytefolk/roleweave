@@ -55,7 +55,7 @@ describe("DocsModule (#35 S3)", () => {
     fireEvent.click(file);
     await waitFor(() => expect(bridge.positionDocFile).toHaveBeenCalledWith("repo-owner", "handbook.md"));
     expect(await screen.findByRole("heading", { name: "Handbook" })).toBeTruthy();
-    expect(screen.getByText("版本 2026-08-27T00:00:00.000Z")).toBeTruthy();
+    expect(document.querySelector('time[datetime="2026-08-27T00:00:00.000Z"]')).toHaveTextContent("更新于");
   });
 
   it("surfaces the server error message when the listing fails", async () => {

@@ -1,223 +1,541 @@
-import { useCallback, useEffect, useState } from "react";
-import { Button as AntButton, Select } from "antd";
-import { Trash2, Target } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button as AntButton, Dropdown, Input, Select } from "antd";
+import { ArrowLeft, MoreHorizontal, Target } from "lucide-react";
 import { useT } from "@roleweave/ui";
-import { type GoalDetail, type GoalStatus, type GoalSummary } from "@roleweave/shared";
+import {
+  canTransitionGoalStatus,
+  goalStatuses,
+  type GoalDetail,
+  type GoalStatus,
+  type GoalSummary,
+} from "@roleweave/shared/goals";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
-
-const GOAL_STATUSES: GoalStatus[] = ["open", "in_progress", "completed", "cancelled"];
 
 interface GoalsModuleProps {
   workspaceOpen: boolean;
+  workspaceKey?: string;
 }
-
+const rememberedSelection = new Map<string, string>();
 const STATUS_BADGE: Record<string, string> = {
   open: "owb-badge--info",
   in_progress: "owb-badge--warn",
   completed: "owb-badge--ok",
   cancelled: "owb-badge--muted",
 };
-
 const HEALTH_DOT: Record<string, string> = {
   on_track: "owb-health--ok",
   at_risk: "owb-health--warn",
   blocked: "owb-health--bad",
   unknown: "owb-health--unknown",
 };
+function errorMessage(body: unknown, fallback: string) {
+  return body &&
+    typeof body === "object" &&
+    "message" in body &&
+    typeof body.message === "string"
+    ? body.message
+    : fallback;
+}
 
-export function GoalsModule({ workspaceOpen }: GoalsModuleProps) {
+export function GoalsModule(props: GoalsModuleProps) {
+  return (
+    <GoalsWorkspace
+      key={`${props.workspaceOpen}:${props.workspaceKey ?? ""}`}
+      {...props}
+    />
+  );
+}
+
+function GoalsWorkspace({ workspaceOpen, workspaceKey }: GoalsModuleProps) {
   const t = useT();
   const [goals, setGoals] = useState<GoalSummary[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    workspaceKey ? (rememberedSelection.get(workspaceKey) ?? null) : null,
+  );
+  const selectedRef = useRef(selectedId);
   const [detail, setDetail] = useState<GoalDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(workspaceOpen);
   const [error, setError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [mutating, setMutating] = useState(false);
+  const mutationLock = useRef(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<GoalStatus | "all">("all");
+  const [mobileDetail, setMobileDetail] = useState(false);
+  const alive = useRef(true);
+  const listVersion = useRef(0);
+  const detailVersion = useRef(0);
 
-  const loadGoals = useCallback(async () => {
-    if (!workspaceOpen) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await window.owb.goals();
-      if (response.status === 200) {
-        setGoals(response.body.goals);
-      } else {
-        setError((response.body as { message?: string })?.message ?? t("goals.loadError"));
-      }
-    } catch {
-      setError(t("goals.loadError"));
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceOpen, t]);
-
-  const loadDetail = useCallback(async (goalId: string) => {
-    try {
-      const response = await window.owb.goal(goalId);
-      if (response.status === 200) {
-        setDetail(response.body);
-      }
-    } catch {
-      // Detail load failure is non-fatal; list stays visible.
-    }
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      listVersion.current += 1;
+      detailVersion.current += 1;
+    };
   }, []);
+
+  const selectGoal = useCallback(
+    (id: string | null) => {
+      if (id !== selectedRef.current) {
+        detailVersion.current += 1;
+        setDetail(null);
+        setDetailError(null);
+        setActionError(null);
+      }
+      selectedRef.current = id;
+      setSelectedId(id);
+      if (workspaceKey) {
+        if (id) rememberedSelection.set(workspaceKey, id);
+        else rememberedSelection.delete(workspaceKey);
+        if (rememberedSelection.size > 50)
+          rememberedSelection.delete(rememberedSelection.keys().next().value!);
+      }
+    },
+    [workspaceKey],
+  );
+
+  const loadGoals = useCallback(
+    async (preferredId?: string) => {
+      if (!workspaceOpen) return;
+      const version = ++listVersion.current;
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await window.owb.goals();
+        if (!alive.current || version !== listVersion.current) return;
+        if (response.status !== 200)
+          throw new Error(errorMessage(response.body, t("goals.loadError")));
+        const next = response.body.goals;
+        setGoals(next);
+        const wanted = preferredId ?? selectedRef.current;
+        selectGoal(
+          next.some((goal) => goal.goalId === wanted)
+            ? wanted!
+            : (next[0]?.goalId ?? null),
+        );
+      } catch (cause) {
+        if (alive.current && version === listVersion.current)
+          setError(
+            cause instanceof Error ? cause.message : t("goals.loadError"),
+          );
+      } finally {
+        if (alive.current && version === listVersion.current) setLoading(false);
+      }
+    },
+    [workspaceOpen, selectGoal, t],
+  );
+
+  const loadDetail = useCallback(
+    async (goalId: string) => {
+      const version = ++detailVersion.current;
+      setDetail(null);
+      setDetailError(null);
+      try {
+        const response = await window.owb.goal(goalId);
+        if (
+          !alive.current ||
+          version !== detailVersion.current ||
+          selectedRef.current !== goalId
+        )
+          return;
+        if (response.status !== 200)
+          throw new Error(errorMessage(response.body, t("goals.loadError")));
+        setDetail(response.body);
+      } catch (cause) {
+        if (
+          alive.current &&
+          version === detailVersion.current &&
+          selectedRef.current === goalId
+        )
+          setDetailError(
+            cause instanceof Error ? cause.message : t("goals.loadError"),
+          );
+      }
+    },
+    [t],
+  );
 
   useEffect(() => {
     void loadGoals();
   }, [loadGoals]);
-
   useEffect(() => {
     if (selectedId) void loadDetail(selectedId);
-    else setDetail(null);
   }, [selectedId, loadDetail]);
-
   useEffect(() => {
-    const off = window.owb.onEvent((event: unknown) => {
+    if (!workspaceOpen) return;
+    return window.owb.onEvent((event: unknown) => {
       const e = event as { type?: string };
-      if (e.type === "goal.created" || e.type === "goal.updated") {
+      if (
+        e.type === "goal.created" ||
+        e.type === "goal.updated" ||
+        e.type === "goal.deleted"
+      ) {
         void loadGoals();
-        if (selectedId) void loadDetail(selectedId);
+        if (selectedRef.current) void loadDetail(selectedRef.current);
       }
     });
-    return off;
-  }, [loadGoals, loadDetail, selectedId]);
+  }, [workspaceOpen, loadGoals, loadDetail]);
 
   const changeStatus = async (status: GoalStatus) => {
-    if (!selectedId) return;
+    const id = selectedRef.current;
+    if (
+      !id ||
+      !detail ||
+      mutationLock.current ||
+      !canTransitionGoalStatus(detail.goal.status, status) ||
+      status === detail.goal.status
+    )
+      return;
+    mutationLock.current = true;
+    setMutating(true);
+    setActionError(null);
     try {
-      await window.owb.updateGoal({ goalId: selectedId, status });
-    } catch {
-      setError(t("goals.statusChangeFail"));
+      const response = await window.owb.updateGoal({ goalId: id, status });
+      if (!alive.current || selectedRef.current !== id) return;
+      if (response.status !== 200)
+        throw new Error(
+          errorMessage(response.body, t("goals.statusChangeFail")),
+        );
+      await Promise.all([loadGoals(), loadDetail(id)]);
+    } catch (cause) {
+      if (alive.current && selectedRef.current === id)
+        setActionError(
+          cause instanceof Error ? cause.message : t("goals.statusChangeFail"),
+        );
+    } finally {
+      mutationLock.current = false;
+      if (alive.current) setMutating(false);
     }
   };
 
   const deleteGoal = async () => {
-    if (!selectedId) return;
-    if (!window.confirm(t("goals.deleteConfirm"))) return;
-    setDeleting(true);
+    const id = selectedRef.current;
+    if (!id || !detail || mutationLock.current) return;
+    if (
+      !window.confirm(
+        t("reading.goals.deleteNamed", { title: detail.goal.title }),
+      )
+    )
+      return;
+    mutationLock.current = true;
+    setMutating(true);
+    setActionError(null);
     try {
-      const response = await window.owb.deleteGoal(selectedId);
-      if (response.status === 200) {
-        setSelectedId(null);
-        setDetail(null);
-      } else {
-        setError(t("goals.deleteFail"));
-      }
-    } catch {
-      setError(t("goals.deleteFail"));
+      const response = await window.owb.deleteGoal(id);
+      if (!alive.current) return;
+      if (response.status !== 200 || !response.body.deleted)
+        throw new Error(errorMessage(response.body, t("goals.deleteFail")));
+      const index = goals.findIndex((goal) => goal.goalId === id);
+      const remaining = goals.filter((goal) => goal.goalId !== id);
+      setGoals(remaining);
+      if (selectedRef.current === id)
+        selectGoal(
+          remaining[index]?.goalId ?? remaining[index - 1]?.goalId ?? null,
+        );
+      await loadGoals();
+    } catch (cause) {
+      if (alive.current && selectedRef.current === id)
+        setActionError(
+          cause instanceof Error ? cause.message : t("goals.deleteFail"),
+        );
     } finally {
-      setDeleting(false);
+      mutationLock.current = false;
+      if (alive.current) setMutating(false);
     }
   };
 
-  if (!workspaceOpen) {
-    return (
-      <section className="owb-goals-module" aria-label={t("goals.moduleAria")}>
-        <header className="owb-module-header"><h1>{t("goals.title")}</h1></header>
-        <p className="owb-empty">{t("tree.notOpened")}</p>
-      </section>
-    );
-  }
-
+  const filtered = goals.filter(
+    (goal) =>
+      goal.title
+        .toLocaleLowerCase()
+        .includes(query.trim().toLocaleLowerCase()) &&
+      (statusFilter === "all" || statusFilter === goal.status),
+  );
+  const clearFilters = () => {
+    setQuery("");
+    setStatusFilter("all");
+  };
+  const empty = !loading && !error && goals.length === 0;
+  const createButton = (
+    <AntButton
+      type="primary"
+      icon={<Target aria-hidden="true" size={16} />}
+      onClick={() => setShowCreate(true)}
+    >
+      {t("goals.create")}
+    </AntButton>
+  );
   return (
     <section className="owb-goals-module" aria-label={t("goals.moduleAria")}>
       <header className="owb-module-header">
         <h1>{t("goals.title")}</h1>
-        <span className="owb-module-header__count">{t("goals.count", { count: goals.length })}</span>
-        <AntButton type="primary" size="small" icon={<Target aria-hidden="true" size={14} />} onClick={() => setShowCreate(true)}>
-          {t("goals.create")}
-        </AntButton>
+        {workspaceOpen && (
+          <>
+            {((!loading && !error) || goals.length > 0) && (
+              <span className="owb-module-header__count">
+                {t("goals.count", { count: goals.length })}
+              </span>
+            )}
+            {!empty && createButton}
+          </>
+        )}
       </header>
-
-      {error && <p className="owb-goals-error" role="alert">{error}</p>}
-
-      <div className="owb-goals-layout">
-        <ul className="owb-goals-list" role="listbox" aria-label={t("goals.listAria")}>
-          {loading && goals.length === 0 && <li className="owb-goals-loading">{t("misc.loading")}</li>}
-          {!loading && goals.length === 0 && <li className="owb-goals-empty">{t("goals.empty")}</li>}
-          {goals.map((goal) => (
-            <li
-              key={goal.goalId}
-              role="option"
-              aria-selected={goal.goalId === selectedId}
-              className={`owb-goals-list__item${goal.goalId === selectedId ? " owb-goals-list__item--active" : ""}`}
-              onClick={() => setSelectedId(goal.goalId)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(goal.goalId); } }}
-              tabIndex={0}
-            >
-              <span className={`owb-health-dot ${HEALTH_DOT[goal.health] ?? "owb-health--unknown"}`} aria-hidden="true" />
-              <span className="owb-goals-list__title">{goal.title}</span>
-              <span className={`owb-badge ${STATUS_BADGE[goal.status] ?? ""}`}>{t(`goals.status.${goal.status}`)}</span>
-            </li>
-          ))}
-        </ul>
-
-        <aside className="owb-goals-detail" aria-live="polite">
-          {!selectedId && <p className="owb-goals-empty">{t("goals.selectPrompt")}</p>}
-          {selectedId && !detail && <p className="owb-goals-loading">{t("misc.loading")}</p>}
-          {detail && (
-            <div className="owb-goals-detail__content">
-              <div className="owb-goals-detail__head">
-                <h2>{detail.goal.title}</h2>
-                <AntButton
-                  type="text"
-                  size="small"
-                  danger
-                  icon={<Trash2 aria-hidden="true" size={14} />}
-                  loading={deleting}
-                  onClick={() => void deleteGoal()}
-                >
-                  {t("goals.deleteAction")}
-                </AntButton>
-              </div>
-              <div className="owb-goals-detail__meta">
-                <Select
-                  value={detail.goal.status}
-                  onChange={(value) => void changeStatus(value as GoalStatus)}
-                  size="small"
-                  options={GOAL_STATUSES.map((s) => ({ value: s, label: t(`goals.status.${s}`) }))}
-                  aria-label={t("goals.statusChange")}
-                />
-                <span className={`owb-health-dot ${HEALTH_DOT[detail.goal.health] ?? "owb-health--unknown"}`}>{t(`goals.health.${detail.goal.health}`)}</span>
-              </div>
-              <p className="owb-goals-detail__desc">{detail.goal.description}</p>
-              {detail.goal.acceptanceCriteria.length > 0 && (
-                <div>
-                  <h3>{t("goals.criteria")}</h3>
-                  <ul>{detail.goal.acceptanceCriteria.map((c, i) => <li key={i}>{c}</li>)}</ul>
-                </div>
-              )}
-              {detail.goal.branches.length > 0 && (
-                <div>
-                  <h3>{t("goals.branches")}</h3>
-                  <ul>{detail.goal.branches.map((b) => (
-                    <li key={b.branchId}>
-                      <span className={`owb-badge ${STATUS_BADGE[b.status] ?? ""}`}>{t(`goals.status.${b.status}`)}</span>
-                      {" "}{b.title}
-                    </li>
-                  ))}</ul>
-                </div>
-              )}
-              <div>
-                <h3>{t("goals.activity")}</h3>
-                <ol className="owb-goals-activity">
-                  {detail.activity.map((a) => (
-                    <li key={a.activityId}>
-                      <time>{new Date(a.createdAt).toLocaleString()}</time>
-                      <span className={`owb-goals-activity__kind owb-goals-activity__kind--${a.kind}`}>{t(`goals.activityKind.${a.kind}`)}</span>
-                      <span>{a.detail}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
+      {!workspaceOpen ? (
+        <div className="owb-goals-global-state">
+          <p>{t("tree.notOpened")}</p>
+        </div>
+      ) : (
+        <>
+          {error && (
+            <div className="owb-goals-error" role="alert">
+              {error}{" "}
+              <AntButton onClick={() => void loadGoals()}>
+                {t("hire.retry")}
+              </AntButton>
             </div>
           )}
-        </aside>
-      </div>
-
-      <GoalCreateDialog open={showCreate} onClose={() => setShowCreate(false)} />
+          {loading && goals.length === 0 && (
+            <div className="owb-goals-global-state" role="status">
+              {t("misc.loading")}
+            </div>
+          )}
+          {empty && (
+            <div className="owb-goals-global-state">
+              <Target size={36} aria-hidden="true" />
+              <h2>{t("reading.goals.emptyTitle")}</h2>
+              <p>{t("reading.goals.emptyHint")}</p>
+              {createButton}
+            </div>
+          )}
+          {goals.length > 0 && (
+            <div className="owb-goals-layout" data-mobile-detail={mobileDetail}>
+              <div className="owb-goals-list-pane">
+                <div className="owb-goals-filters">
+                  <Input
+                    aria-label={t("reading.goals.search")}
+                    placeholder={t("reading.goals.search")}
+                    value={query}
+                    allowClear
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                  <Select
+                    aria-label={t("reading.goals.filter")}
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    options={[
+                      { value: "all", label: t("reading.goals.all") },
+                      ...goalStatuses.map((status) => ({
+                        value: status,
+                        label: t(`goals.status.${status}`),
+                      })),
+                    ]}
+                  />
+                </div>
+                {filtered.length === 0 ? (
+                  <div className="owb-goals-empty">
+                    <p>{t("reading.goals.noResults")}</p>
+                    <AntButton onClick={clearFilters}>
+                      {t("reading.clearFilters")}
+                    </AntButton>
+                  </div>
+                ) : (
+                  <ul
+                    className="owb-goals-list"
+                    role="listbox"
+                    aria-label={t("goals.listAria")}
+                  >
+                    {filtered.map((goal) => (
+                      <li
+                        key={goal.goalId}
+                        role="option"
+                        aria-selected={goal.goalId === selectedId}
+                        className={`owb-goals-list__item${goal.goalId === selectedId ? " owb-goals-list__item--active" : ""}`}
+                        onClick={() => {
+                          selectGoal(goal.goalId);
+                          setMobileDetail(true);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            selectGoal(goal.goalId);
+                            setMobileDetail(true);
+                          }
+                        }}
+                        tabIndex={0}
+                      >
+                        <span
+                          className="owb-goals-list__title"
+                          title={goal.title}
+                        >
+                          {goal.title}
+                        </span>
+                        <span className="owb-goals-list__meta">
+                          <span
+                            className={`owb-badge ${STATUS_BADGE[goal.status]}`}
+                          >
+                            {t(`goals.status.${goal.status}`)}
+                          </span>
+                          <span
+                            className={`owb-health-dot ${HEALTH_DOT[goal.health]}`}
+                            title={t(`goals.health.${goal.health}`)}
+                            aria-label={t(`goals.health.${goal.health}`)}
+                          />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <aside className="owb-goals-detail" aria-live="polite">
+                <AntButton
+                  className="owb-goals-back"
+                  icon={<ArrowLeft size={16} />}
+                  onClick={() => setMobileDetail(false)}
+                >
+                  {t("reading.backToList")}
+                </AntButton>
+                {detailError ? (
+                  <div className="owb-goals-error" role="alert">
+                    <p>{t("goals.loadError")}</p>
+                    <p>
+                      {detailError !== t("goals.loadError")
+                        ? detailError
+                        : null}
+                    </p>
+                    <AntButton
+                      onClick={() => selectedId && void loadDetail(selectedId)}
+                    >
+                      {t("hire.retry")}
+                    </AntButton>
+                  </div>
+                ) : selectedId && !detail ? (
+                  <p className="owb-goals-loading" role="status">
+                    {t("misc.loading")}
+                  </p>
+                ) : null}
+                {detail && (
+                  <div className="owb-goals-detail__content">
+                    <div className="owb-goals-detail__head">
+                      <h2>{detail.goal.title}</h2>
+                      <Dropdown
+                        trigger={["click"]}
+                        menu={{
+                          items: [
+                            {
+                              key: "delete",
+                              label: t("goals.deleteAction"),
+                              danger: true,
+                              disabled: mutating,
+                            },
+                          ],
+                          onClick: () => void deleteGoal(),
+                        }}
+                      >
+                        <AntButton
+                          aria-label={t("reading.more")}
+                          icon={<MoreHorizontal size={16} />}
+                          loading={mutating}
+                        />
+                      </Dropdown>
+                    </div>
+                    <div className="owb-goals-detail__meta">
+                      <Select
+                        value={detail.goal.status}
+                        disabled={mutating}
+                        onChange={(value) => void changeStatus(value)}
+                        options={goalStatuses
+                          .filter((status) =>
+                            canTransitionGoalStatus(detail.goal.status, status),
+                          )
+                          .map((status) => ({
+                            value: status,
+                            label: t(`goals.status.${status}`),
+                          }))}
+                        aria-label={t("goals.statusChange")}
+                      />
+                      <span
+                        className={`owb-health-dot ${HEALTH_DOT[detail.goal.health]}`}
+                      >
+                        {t("reading.goals.health")}:{" "}
+                        {t(`goals.health.${detail.goal.health}`)}
+                      </span>
+                    </div>
+                    {actionError && (
+                      <p className="owb-goals-error" role="alert">
+                        {actionError}
+                      </p>
+                    )}
+                    <section>
+                      <h3>{t("goals.descField")}</h3>
+                      <p className="owb-goals-detail__desc">
+                        {detail.goal.description}
+                      </p>
+                    </section>
+                    {detail.goal.acceptanceCriteria.length > 0 && (
+                      <section>
+                        <h3>{t("goals.criteria")}</h3>
+                        <ol>
+                          {detail.goal.acceptanceCriteria.map(
+                            (criterion, index) => (
+                              <li key={index}>{criterion}</li>
+                            ),
+                          )}
+                        </ol>
+                      </section>
+                    )}
+                    {detail.goal.branches.length > 0 && (
+                      <section>
+                        <h3>{t("goals.branches")}</h3>
+                        <ul>
+                          {detail.goal.branches.map((branch) => (
+                            <li key={branch.branchId}>
+                              <span
+                                className={`owb-badge ${STATUS_BADGE[branch.status]}`}
+                              >
+                                {t(`goals.status.${branch.status}`)}
+                              </span>{" "}
+                              {branch.title}
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+                    <section>
+                      <h3>{t("goals.activity")}</h3>
+                      <ol className="owb-goals-activity">
+                        {detail.activity.map((activity) => (
+                          <li key={activity.activityId}>
+                            <time dateTime={activity.createdAt}>
+                              {new Date(activity.createdAt).toLocaleString()}
+                            </time>
+                            <span className="owb-goals-activity__kind">
+                              {t(`goals.activityKind.${activity.kind}`)}
+                            </span>
+                            <span>{activity.detail}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </section>
+                  </div>
+                )}
+              </aside>
+            </div>
+          )}
+          <GoalCreateDialog
+            open={showCreate}
+            onClose={() => setShowCreate(false)}
+            onCreated={(id) => {
+              clearFilters();
+              setMobileDetail(true);
+              selectGoal(id);
+              void loadGoals(id);
+            }}
+          />
+        </>
+      )}
     </section>
   );
 }

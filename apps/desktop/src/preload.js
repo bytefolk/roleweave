@@ -2,6 +2,24 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("owb", {
+  configuration: {
+    get: () => ipcRenderer.invoke("owb:configuration:get"),
+    getPreferences: () => ipcRenderer.invoke("owb:configuration:get-preferences"),
+    validate: (text) => ipcRenderer.invoke("owb:configuration:validate", text),
+    save: (request) => ipcRenderer.invoke("owb:configuration:save", request),
+    preferences: (patch) => ipcRenderer.invoke("owb:configuration:preferences", patch),
+    migratePreferences: (legacy) => ipcRenderer.invoke("owb:configuration:migrate-preferences", legacy),
+    restore: (revision) => ipcRenderer.invoke("owb:configuration:restore", revision),
+    openLocation: () => ipcRenderer.invoke("owb:configuration:open-location"),
+    setDirty: (dirty) => ipcRenderer.invoke("owb:configuration:dirty", dirty),
+    confirmClose: () => ipcRenderer.invoke("owb:configuration:confirm-close"),
+    onCloseRequested: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on("owb:configuration:close-requested", listener);
+      return () => ipcRenderer.removeListener("owb:configuration:close-requested", listener);
+    },
+  },
+  openExternalUrl: (url) => ipcRenderer.invoke("owb:external:open", url),
   status: () => ipcRenderer.invoke("owb:status"),
   stopControlPlane: () => ipcRenderer.invoke("owb:control-plane:stop"),
   openWorkspace: () => ipcRenderer.invoke("owb:workspace:open"),

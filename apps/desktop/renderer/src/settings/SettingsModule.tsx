@@ -15,6 +15,7 @@ import { Download, ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type { UpdateEvent, UpdateStatus } from "@roleweave/shared";
 import { ServiceConnections } from "./ServiceConnections";
+import { ConfigurationSettings } from "./ConfigurationSettings";
 import { HostCredentials } from "./HostCredentials";
 import {
   stateMessage,
@@ -24,6 +25,10 @@ import {
 } from "./update-copy";
 
 export function SettingsModule() {
+  return window.owb.configuration ? <ConfigurationSettings updates={<LegacySettingsModule onlyUpdates />} /> : <LegacySettingsModule />;
+}
+
+function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }) {
   const t = useT();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [statusRead, setStatusRead] = useState(false);
@@ -89,9 +94,9 @@ export function SettingsModule() {
 
   return (
     <section className="owb-settings-module" aria-label={t("settings.moduleAria")}>
-      <header className="owb-settings-module__header">
+      {!onlyUpdates ? <header className="owb-settings-module__header">
         <h1>{t("settings.title")}</h1>
-      </header>
+      </header> : null}
 
       {runtime ? (
         <section className="owb-settings-module__pane" aria-label={t("settings.runtimeTitle")}>
@@ -102,8 +107,7 @@ export function SettingsModule() {
           <p className="owb-settings-module__hint">{t("settings.runtimeHint")}</p>
         </section>
       ) : null}
-      <HostCredentials />
-      <ServiceConnections />
+      {!onlyUpdates ? <><HostCredentials /><ServiceConnections /></> : null}
 
       <section className="owb-settings-module__pane" aria-label={t("settings.updateTitle")}>
         <header className="owb-settings-module__pane-header">

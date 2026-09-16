@@ -1,3 +1,4 @@
+import { persistApplicationPreference, preferenceError } from './configuration-preferences';
 /** #146 locale 持久化：与 theme-mode 同款套路——渲染前 seed，切换即落盘。
  * 默认 zh-CN；只接受两个合法值，其余一律回退（不信任存储内容）。 */
 import { isOwbLocale, type OwbLocale } from "@roleweave/ui";
@@ -14,6 +15,7 @@ export function seedLocale(): OwbLocale {
 }
 
 export function persistLocale(locale: OwbLocale): void {
+  if (window.owb?.configuration) { void persistApplicationPreference({ appearance: { locale } }).catch(preferenceError); return; }
   try {
     window.localStorage.setItem(STORAGE_KEY, locale);
   } catch {

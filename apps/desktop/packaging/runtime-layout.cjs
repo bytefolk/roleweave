@@ -31,11 +31,14 @@ const DESKTOP_RUNTIME_FILES = [
   "src/runtime-settings.cjs",
   "src/service-connections.cjs",
   "src/credential-settings.cjs",
-  // The app's only third-party runtime dependency, bundled to one file by
+  "src/configuration.cjs",
+  "src/configuration-ipc.cjs",
+  // The updater's third-party runtime dependencies are bundled to one file by
   // scripts/bundle-updater.mjs. Shipping electron-updater as a package would add
   // 16 packages and 325 files to a tree that asserts 189 files byte-exact, and
   // the filters below must not become a node_modules-wide glob.
   "src/vendor/electron-updater.cjs",
+  "src/vendor/jsonc-parser.cjs",
   "src/session-ipc.cjs",
   "src/turn-ipc.cjs",
   "src/update-trust.cjs",
