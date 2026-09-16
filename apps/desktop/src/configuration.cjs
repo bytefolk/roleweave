@@ -125,7 +125,13 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     if(instrument)beforeWrite(name);
     fs.mkdirSync(userDataPath,{recursive:true,mode:0o700});
     const destination=path.join(userDataPath,name), temp=`${destination}.${randomUUID()}.tmp`;
-    try { fs.writeFileSync(temp,raw,{flag:'wx',mode:0o600}); const fd=fs.openSync(temp,'r'); try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);} fs.renameSync(temp,destination); }
+    try {
+      // Windows FlushFileBuffers requires write access. Keep the exclusive
+      // writable descriptor through the flush, then close it before rename.
+      const fd=fs.openSync(temp,'wx',0o600);
+      try {fs.writeFileSync(fd,raw);fs.fsyncSync(fd);} finally {fs.closeSync(fd);}
+      fs.renameSync(temp,destination);
+    }
     finally { try {fs.unlinkSync(temp);}catch{} }
   }
   function recover() {

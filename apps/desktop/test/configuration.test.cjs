@@ -189,3 +189,25 @@ test('preference-only migration retains encrypted references and defers legacy e
  assert.equal(settings.config.appearance.locale,'en');assert.equal(settings.storageAvailable,true);
  assert.equal(h.store.hostEnvironment({}).OPENAI_API_KEY,'dummy-deferred-key');
 });
+test('Windows startup migration and rollback flush a writable temporary descriptor before rename',t=>{
+ const h=setup(t,{platform:'win32'}),descriptors=new Map();
+ const open=fs.openSync,close=fs.closeSync,flush=fs.fsyncSync;let flushed=0,failNextFlush=false;
+ t.mock.method(fs,'openSync',(...args)=>{const fd=open(...args);descriptors.set(fd,{file:String(args[0]),flags:args[1]});return fd;});
+ t.mock.method(fs,'closeSync',fd=>{descriptors.delete(fd);return close(fd);});
+ t.mock.method(fs,'fsyncSync',fd=>{
+  // Windows FlushFileBuffers requires GENERIC_WRITE, unlike POSIX fsync.
+  const entry=descriptors.get(fd);
+  if(entry?.flags!=='wx')throw Object.assign(Error('FlushFileBuffers requires a writable handle'),{code:'EPERM'});
+  if(failNextFlush&&!entry.file.includes('.transaction.')){failNextFlush=false;throw Object.assign(Error('injected disk failure'),{code:'EIO'});}
+  flushed++;return flush(fd);
+ });
+ const inherited=Object.freeze({PATH:'windows-path'});
+ assert.deepEqual(h.store.runtimeEnvironment(inherited),inherited);
+ const original=h.store.getPreferences(),changed=structuredClone(original.config);changed.appearance.mode='dark';
+ const saved=h.store.save({text:text(changed),revision:original.revision});assert.equal(saved.ok,true);
+ const previous=fs.readFileSync(h.file,'utf8');changed.appearance.mode='light';failNextFlush=true;
+ assert.equal(h.store.save({text:text(changed),revision:saved.revision}).ok,false);
+ assert.equal(fs.readFileSync(h.file,'utf8'),previous);assert.equal(h.store.getPreferences().ok,true);
+ assert.ok(flushed>=5);assert.equal(descriptors.size,0);
+ assert.equal(fs.readdirSync(h.dir).some(name=>name.endsWith('.tmp')||name.endsWith('.transaction')),false);
+});
