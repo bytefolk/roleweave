@@ -139,7 +139,6 @@ export function ConversationOptions({ config, saving, disabled, session, turns, 
           <ConnectionSummary connection={connection} />
         </Button>
       </Popover> : null}
-      {connectionInvalid ? <p className="owb-model-connection__error" role="alert">{connection.message || t("model.connection.invalid")}</p> : null}
     </div> : <span className="owb-model-picker__pending">{t("model.agentDefault")}</span>}
     <Popover classNames={popoverClassNames} trigger="click" placement="topRight" title={t("model.contextTitle")} content={
       <div className="owb-context-details">

@@ -402,7 +402,10 @@ describe("App runtime bridge", () => {
 
     render(<App />);
     await selectRepoOwner();
-    expect((await screen.findAllByText("Qoder 凭据未配置")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Qoder 暂不可用，请检查配置。")).toBeVisible();
+    expect(screen.getByText("Qoder 凭据未配置")).not.toBeVisible();
+    fireEvent.click(screen.getByText("排查详情"));
+    expect(screen.getByText("Qoder 凭据未配置")).toBeVisible();
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 

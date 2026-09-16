@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button as AntButton, ConfigProvider } from "antd";
+import { DiagnosticDetails } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
 import { OwbI18nProvider, useT, type OwbLocale } from "@roleweave/ui";
@@ -1043,7 +1044,7 @@ function AppInner({
       configured: health?.hosts?.["codex-local"]?.configured === true,
       ready: health?.hosts?.["codex-local"]?.ready === true,
       // Keep the same product-level language as the hosted runtime.
-      reason: t("misc.codexHostUnknown"),
+      reason: health?.hosts?.["codex-local"]?.nextStep ?? t("misc.codexHostUnknown"),
       modelPinnable: health?.hosts?.["codex-local"]?.modelPinnable,
       model: health?.hosts?.["codex-local"]?.model,
     },
@@ -1316,7 +1317,8 @@ function AppInner({
           <Alert type="info" showIcon role="status" title={t("misc.sseReconnecting")} />
         ) : null}
         {health && !engineOk ? (
-          <Alert type="warning" showIcon role="status" title={health.engine?.nextStep ?? t("misc.engineUnavailable")} />
+          <Alert type="warning" showIcon role="status" title={t("misc.engineUnavailable")}
+            description={health.engine?.nextStep ? <DiagnosticDetails diagnostic={health.engine.nextStep} /> : undefined} />
         ) : null}
         {turnError ? (
           <Alert type="warning" showIcon role="alert" title={turnError} />

@@ -106,21 +106,27 @@ export function TurnPanel({
   const sessionMode = sessions !== undefined;
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
 
-  const disabledReason = useMemo(() => {
-    if (modelSaving) return t("model.saving");
-    if (!workspaceOpen) return t("turn.emptyOpenFirst");
-    if (positions.length === 0) return t("turn.noPositions");
-    if (!selectedPosition) return t("turn.emptyPick");
-    if (sessionMode && sessionBusy) return t("turn.sessionPreparing");
-    if (sessionMode && !selectedSession) return t("turn.emptySession");
-    if (sessionMode && selectedSession?.status !== "active") return t("turn.sessionReadOnly");
-    if (modelConfig?.connection?.status === "invalid") return modelConfig.connection.message ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
+  const disabledState = useMemo(() => {
+    const blocked = (reason: string, summary = reason, diagnostic?: string) => ({ reason, summary, diagnostic });
+    if (modelSaving) return blocked(t("model.saving"));
+    if (!workspaceOpen) return blocked(t("turn.emptyOpenFirst"));
+    if (positions.length === 0) return blocked(t("turn.noPositions"));
+    if (!selectedPosition) return blocked(t("turn.emptyPick"));
+    if (sessionMode && sessionBusy) return blocked(t("turn.sessionPreparing"));
+    if (sessionMode && !selectedSession) return blocked(t("turn.emptySession"));
+    if (sessionMode && selectedSession?.status !== "active") return blocked(t("turn.sessionReadOnly"));
+    if (modelConfig?.connection?.status === "invalid") return blocked(
+      modelConfig.connection.message ?? t("turn.engineNotReady", { engine: engineLabel(engine) }),
+      t("turn.modelConnectionNotReady"), modelConfig.connection.message,
+    );
     if (!engineAvailability[engine].ready) {
-      return engineAvailability[engine].reason ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
+      const summary = t("turn.engineNotReady", { engine: engineLabel(engine) });
+      return blocked(engineAvailability[engine].reason ?? summary, summary, engineAvailability[engine].reason);
     }
-    if (busy || employeeBusy || sending || sessionBusy) return t("turn.updating");
+    if (busy || employeeBusy || sending || sessionBusy) return blocked(t("turn.updating"));
     return null;
   }, [busy, employeeBusy, engine, engineAvailability, engineLabel, modelConfig, modelSaving, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
+  const disabledReason = disabledState?.reason ?? null;
 
   const dispatchTurn = async (): Promise<void> => {
     const trimmed = input.trim();
@@ -182,6 +188,9 @@ export function TurnPanel({
         value={input}
         placeholder={selectedPosition ? t("turn.composeTo", { name: selectedPosition.name }) : t("turn.composePlaceholder")}
         disabledReason={disabledReason}
+        disabledSummary={disabledState?.summary}
+        disabledDiagnostic={disabledState?.diagnostic}
+        diagnosticKey={`${selectedPositionId}:${selectedSessionId ?? ""}:${engine}`}
         running={runningTurn}
         cancelling={cancelling}
         canCancel={selectedPosition !== null}

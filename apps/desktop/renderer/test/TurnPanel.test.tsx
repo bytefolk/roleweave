@@ -263,7 +263,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getAllByText("Qoder 凭据未配置").length).toBeGreaterThan(0);
+    expect(screen.getByText("Qoder 暂不可用，请检查配置。")).toBeVisible();
+    expect(screen.getByText("Qoder 凭据未配置")).not.toBeVisible();
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
@@ -342,6 +343,21 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     });
     expect(document.querySelector('[data-turn-id="turn-uncertain"]')).toBeInTheDocument();
   });
+});
+
+it("keeps invalid model diagnostics collapsed and blocks sending even when the host is ready", () => {
+  const createTurn = vi.fn();
+  render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner"
+    engine="qoder" engineAvailability={availability} turns={[]} onCreateTurn={createTurn}
+    modelConfig={{ selected: "provider-default", recommended: "provider-default", editable: true, source: "local-config",
+      options: [], connection: { source: "local-config", kind: "gateway", billing: "unknown", status: "invalid", message: "QODER_CONFIG_DIR contains an invalid provider field" } }} />);
+  expect(screen.getByText("模型连接暂不可用，请检查配置。")).toBeVisible();
+  expect(screen.getByText("QODER_CONFIG_DIR contains an invalid provider field")).not.toBeVisible();
+  expect(screen.getByLabelText("下达任务")).toBeDisabled();
+  fireEvent.click(screen.getByText("排查详情"));
+  expect(screen.getByText("QODER_CONFIG_DIR contains an invalid provider field")).toBeVisible();
+  fireEvent.submit(screen.getByLabelText("下达任务").closest("form")!);
+  expect(createTurn).not.toHaveBeenCalled();
 });
 describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
   it("replaces the send button with an interrupt while a turn is running", async () => {
@@ -514,4 +530,36 @@ describe("TurnThread #234 — preserve conversation viewport on employee switch"
     const olC = document.querySelector("ol.owb-turn-thread") as HTMLOListElement;
     expect(olC.scrollTop).toBe(0);
   });
+});
+
+it.each([
+  ["qoder", "Qoder"], ["claude-code", "Claude Code"], ["claude-local", "Claude Code"],
+  ["codex", "Codex"], ["codex-local", "Codex"],
+] as const)("keeps %s diagnostics collapsed without weakening send guards", async (engine, label) => {
+  const createTurn = vi.fn();
+  const reason = "Check PATH or CONFIG_ENV before starting the runtime";
+  const props: TurnPanelProps = { workspaceOpen: true, positions, selectedPositionId: "repo-owner",
+    engine, engineAvailability: availability, turns: [], onCreateTurn: createTurn };
+  const { rerender } = render(<TurnPanel {...props} />);
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "keep my draft" } });
+  rerender(<TurnPanel {...props} engineAvailability={{ ...availability, [engine]: { configured: true, ready: false, reason } }} />);
+  expect(screen.getByRole("status")).toHaveTextContent(`${label} 暂不可用，请检查配置。`);
+  const diagnostic = screen.getByText(reason);
+  expect(diagnostic).not.toBeVisible();
+  expect(screen.getByLabelText("下达任务")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "发送任务" })).toBeDisabled();
+  fireEvent.click(screen.getByText("排查详情"));
+  expect(diagnostic).toBeVisible();
+  fireEvent.submit(screen.getByLabelText("下达任务").closest("form")!);
+  expect(createTurn).not.toHaveBeenCalled();
+
+  // A different engine with the same diagnostic must start collapsed again.
+  const nextEngine = engine === "qoder" ? "claude-code" : "qoder";
+  rerender(<TurnPanel {...props} engine={nextEngine} engineAvailability={{ ...availability, [nextEngine]: { configured: false, ready: false, reason } }} />);
+  expect(screen.getByText(reason)).not.toBeVisible();
+  rerender(<TurnPanel {...props} />);
+  expect(screen.queryByText(reason)).not.toBeInTheDocument();
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+  await waitFor(() => expect(createTurn).toHaveBeenCalledWith({ positionId: "repo-owner", engine, input: "keep my draft" }));
 });
