@@ -3,10 +3,11 @@ import { configurationText } from './locales/configuration';
  * 菜单形态）。账号、组织等条目等登录体系落地后再加，现在不摆空入口。
  * 触发钮复用 .owb-wintitle__theme 皮肤（含 -webkit-app-region: no-drag）。 */
 import { useEffect, useRef, useState } from "react";
-import { Languages, Palette, Settings2 } from "lucide-react";
+import { Languages, Palette, Settings2, SwatchBook } from "lucide-react";
 import { useT, type OwbLocale } from "@roleweave/ui";
 import { usePreferenceSaveError } from "./configuration-preferences";
 import { setThemeMode, setThemeProfile, type ThemeMode, type ThemeProfile } from "./theme-mode";
+import { ThemeSettings } from "./theme-settings";
 
 export function PrefsMenu({
   locale,
@@ -22,6 +23,7 @@ export function PrefsMenu({
   const t = useT();
   const saveFailed = usePreferenceSaveError();
   const [open, setOpen] = useState(false);
+  const [themeSettingsOpen, setThemeSettingsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -96,6 +98,31 @@ export function PrefsMenu({
               {mode === "dark" ? t("prefs.themeDark") : t("prefs.themeLight")}
             </span>
           </button>
+          {/* The label must stay distinguishable from the `prefs.theme` row above:
+              both start with 主题 in Chinese, and the theme-toggle specs query that
+              row by accessible name. */}
+          <button
+            type="button"
+            role="menuitem"
+            className="owb-prefs__item"
+            onClick={() => { setOpen(false); setThemeSettingsOpen(true); }}
+          >
+            <SwatchBook aria-hidden="true" size={14} strokeWidth={1.8} />
+            <span>{t("theme.title")}</span>
+          </button>
+        </div>
+      ) : null}
+      {themeSettingsOpen ? (
+        // The panel is a modal surface, not a menu row: it needs the overlay for
+        // fixed positioning, stacking above the workbench, and a dialog role.
+        // Without this wrapper the panel rendered inline in the prefs dropdown.
+        <div
+          className="owb-theme-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("theme.settings.title")}
+        >
+          <ThemeSettings onClose={() => setThemeSettingsOpen(false)} />
         </div>
       ) : null}
     </div>
