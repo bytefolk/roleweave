@@ -210,6 +210,36 @@ test("failed, indeterminate, malformed, and mismatched turns never reach the ada
   assert.equal(adapter.calls.length, 0);
 });
 
+test("invalid sessions fail before export state or adapter access", async (t) => {
+  const paddedTimestamp = `${" ".repeat(65)}2026-08-24`;
+  assert.ok(Number.isFinite(Date.parse(paddedTimestamp)), "fixture must remain parseable despite exceeding the timestamp bound");
+  const cases = {
+    "overlong timestamp": { createdAt: paddedTimestamp },
+    "UUID coerced from an array": { workspaceInstanceId: [session().workspaceInstanceId] },
+    "explicitly undefined thread context flag": { threadContextEnabled: undefined },
+    "active session with a rotation target": { rotatedTo: session().sessionId },
+  };
+  for (const [label, overrides] of Object.entries(cases)) {
+    await t.test(label, async () => {
+      const workspace = await copyExampleWorkspace();
+      const adapter = new RecordingAdapter();
+      const exporter = new ContextExportService(adapter);
+      const sourceSession = { ...session(), ...overrides } as unknown as WorkbenchSession;
+
+      await assert.rejects(
+        () => exporter.enqueueCompletedTurn(workspace, sourceSession, completedTurn()),
+        { name: "ContextExportError", message: "context export session is invalid" },
+      );
+      await exporter.waitForIdle();
+      assert.equal(adapter.calls.length, 0);
+      await assert.rejects(
+        () => fs.stat(path.join(workspace, ".digital-employee", "workbench", "context-exports")),
+        { code: "ENOENT" },
+      );
+    });
+  }
+});
+
 test("CLI adapter passes only runtime Context authority through environment", async () => {
   const fixture = fileURLToPath(new URL("../../test/fixtures/context-adapter-fixture.mjs", import.meta.url));
   const environment: NodeJS.ProcessEnv = {

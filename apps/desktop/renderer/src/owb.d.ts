@@ -66,6 +66,12 @@ interface OwbStatusResponse {
 }
 
 export interface OwbBridge {
+  /** Credential reads contain only status and a four-character suffix. */
+  settings: {
+    get(): Promise<import("./settings/credential-settings").SettingsSnapshot>;
+    set(key: import("./settings/credential-settings").CredentialKey, value: string): Promise<import("./settings/credential-settings").SettingsResult>;
+    clear(key: import("./settings/credential-settings").CredentialKey): Promise<import("./settings/credential-settings").SettingsResult>;
+  };
   setPositionModel?(request: { positionId: string; model: string }): Promise<OwbApiResponse<import("@roleweave/shared").EmployeeModelConfig>>;
   status(): Promise<OwbStatusResponse>;
   stopControlPlane(): Promise<{ ok: boolean; state: "stopped"; forced: boolean; exitCode: number | null; signalCode: string | null }>;

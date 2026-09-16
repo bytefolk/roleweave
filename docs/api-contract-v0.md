@@ -48,7 +48,8 @@
     "claude-code": { "configured": false, "ready": false, "nextStep": "设置 ANTHROPIC_API_KEY 后重启工作台" },
     "claude-local": { "configured": false, "ready": false, "nextStep": "安装 Claude Code 并确保 claude 在 PATH 上…" },
     "codex": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 OPENAI_API_KEY…" },
-    "codex-local": { "configured": true, "ready": true, "modelPinnable": true, "model": "gpt-5.6-sol" }
+    "codex-local": { "configured": true, "ready": true, "modelPinnable": true, "model": "gpt-5.6-sol" },
+    "workbuddy": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 CODEBUDDY_API_KEY 和 CODEBUDDY_MODEL…" }
   },
   "workspace": { "open": false }
 }
@@ -56,9 +57,11 @@
 
 约束：`engine.available` 为对已配置引擎命令的 `--version` 探针结果；不可用时必须给出可执行的 `nextStep`（"失败也有路"）。普通 `digital-employee` 的 Qoder model port 保持 service-token 门禁：`configured` 仅表示 `QODER_PERSONAL_ACCESS_TOKEN` 非空。仅当引擎精确宣布 `qoder-engine <semver>` 时，Qoder Host 才使用与 turn adapter 相同的无 shell executable resolver：非空 `ORG_WORKBENCH_QODER_BIN` 优先，其次为 `DIGITAL_EMPLOYEE_QODER_COMMAND`（无效显式覆盖均 fail closed），否则查 PATH 的 `qodercli` / `qoderclicn` / `qoder` 与 macOS 已支持的精确用户安装位置；符号链接的最终目标必须是可执行普通文件。解析出的绝对路径接受共享 8 秒超时预算的 `--version`、`--help` 和 `status -o json` 探针；探针以 CLI 主进程退出为完成条件，不等待后代继承的 stdio，并在超时或异常时清理独立进程组。版本需为 1.x 且不低于 1.1.0，同时必须具备员工对话所需的 `--print`、`--output-format`、`--cwd`、`--agent`、`--permission-mode`、`--no-session-persistence` 参数及 `dont_ask` 模式；本机 Qoder CLI 1.1.51 已通过能力预检。Qoder 编辑器的同名启动器由版本指纹或编辑器帮助参数识别，并提示安装原生 CLI；缺失、不可执行、超时、无法解析、版本越界或缺少对话参数均 fail closed。adapter spawn 同一绝对路径并保持继承 PATH 不变；Finder 登录 PATH 恢复和打包验收由 #110 的 macOS arm64 foundation partial 承接，不是本修复的完成依赖。登录状态由原生 CLI 的 `status -o json` 返回，控制平面只接收严格布尔值 `logged_in`，不读取凭据存储、不返回账号详情。未登录、返回格式异常或超时均不会报告 ready；`ready` 表示本地执行能力与 CLI 登录前置满足，不代表远端 provider 接受了账号或具备 entitlement；一次真实回合仍是唯一的运行证据，CLI 零退出但缺少终结 `result` 不会被计为成功。响应只含布尔值与非敏感 `nextStep`，绝不返回凭据值、绝对 Qoder 路径或原始探针输出。Claude 各 Host 的判定独立，不得成为 bundled Qoder ready 的门槛。客户端必须以 Host 状态控制选择和发送，不得以 `engine.available` 代替 Host ready。
 
-可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，只有两个 Codex Host 传 `true`，其余三个不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
+WorkBuddy 的 `workbuddy` Host 使用服务凭据 `CODEBUDDY_API_KEY` 和显式 `CODEBUDDY_MODEL`。本地预检与回合共用 executable resolver、环境过滤和精确版本配置，只接受审计后的 2.106.4 / 2.137.1；原生 Windows 当前以 `workbuddy.platform_not_verified` 保持 not-ready。`ready` 只代表本地前置满足；真实 provider 成功回合和原生打包验收分别记录。所有提示保持非敏感，不包含凭据、绝对 CLI 路径或原始输出。详见 [本地连接说明](local-agent-connections.md#workbuddy-codebuddy-code)。
 
-可选的 `hosts[].model` 表示控制面会为该 Host 固定的 LLM 模型，只有两个 Codex Host 有这个旋钮，取值来自 `OPENAI_MODEL`。只有 `modelPinnable` 为 `true` 时该字段才有意义：在无旋钮的 Host 上，`model` 缺失代表能力不存在，而不是未设置偏好。字段缺失即控制面不固定模型：引擎不会传 `--model`，由 Host 自己的 CLI 决定，而 Codex CLI 不向调用方报告它选中的模型（`--json` 事件流无此字段，`codex debug models` 也不标注默认项），因此缺失时必须如实呈现为"未指定"，不得推断出一个名字。Codex 回合一律带 `--ignore-user-config`，操作员 `~/.codex/config.toml` 里的 `model` 不参与决策，不能据此展示。`OPENAI_MODEL` 若不是合法模型标识（首字符为字母或数字，其余限 `A-Z a-z 0-9 . _ : / -`，长度 ≤ 256），引擎会在 spawn 前失败，故两个 Codex Host 一律 fail closed（`configured` 与 `ready` 均为 false 并给出 `nextStep`），且该值绝不回显为 `model`。
+可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，Codex 与 WorkBuddy Host 传 `true`，其余不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
+
+可选的 `hosts[].model` 表示控制面会为该 Host 固定的 LLM 模型，Codex 与 WorkBuddy Host 有这个旋钮，取值分别来自 `OPENAI_MODEL` 与 `CODEBUDDY_MODEL`。只有 `modelPinnable` 为 `true` 时该字段才有意义：在无旋钮的 Host 上，`model` 缺失代表能力不存在，而不是未设置偏好。Codex 字段缺失即控制面不固定模型：引擎不会传 `--model`，由 Host 自己的 CLI 决定。WorkBuddy 要求显式 `CODEBUDDY_MODEL`；缺失时 `configured` / `ready` 均为 false，不能回退到本地登录或默认模型。Codex 回合一律带 `--ignore-user-config`，操作员 `~/.codex/config.toml` 里的 `model` 不参与决策，不能据此展示。`OPENAI_MODEL` 或 `CODEBUDDY_MODEL` 若不是合法模型标识（首字符为字母或数字，其余限 `A-Z a-z 0-9 . _ : / -`，长度 ≤ 256），引擎会在 spawn 前失败，故这些 Host 一律 fail closed（`configured` 与 `ready` 均为 false 并给出 `nextStep`），且该值绝不回显为 `model`。
 
 ### 2.2 `GET /workspace` — 当前工作区信息
 
@@ -298,7 +301,7 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 { "positionId": "repo-owner", "input": "Summarize the open issues.", "engine": "qoder" }
 ```
 
-- `engine` 只允许 `qoder` / `claude-code` / `claude-local`；不接受凭据字段，凭据只从控制面进程环境的对应变量传给子进程。
+- `engine` 只允许 `qoder` / `claude-code` / `claude-local` / `codex` / `codex-local` / `workbuddy`；不接受凭据字段，凭据只从控制面进程环境的对应变量传给子进程。
 - 控制面构造 `turn-envelope.v1`，其 `envelopeDigest` 与 digital-employee canonical JSON + SHA-256 算法逐字节一致。
 - 唯一调用形态：`digital-employee turn run <workspace> --position <id> --stdin`；信封从 stdin 输入，凭据和用户输入均不进 argv。
 - stdout 必须是严格、同 runId、以 `run.started` 开始且恰有一个末尾终态的 `engine.v1` NDJSON；UTF-8 按流解码，模型文本边界镜像上游 1,048,576 字符；未知字段、超界行、多个终态或终态后事件均产生 `indeterminate`。
@@ -369,7 +372,7 @@ POST /sessions                         {"positionId":"repo-owner"}
 GET  /sessions?positionId=repo-owner
 GET  /sessions/:sessionId
 POST /sessions/:sessionId/rotate       {}
-POST /sessions/:sessionId/turns        {"input":"...","engine":"qoder|claude-code|claude-local"}
+POST /sessions/:sessionId/turns        {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy"}
 GET  /sessions/:sessionId/turns
 ```
 
@@ -453,7 +456,7 @@ GET  /groups
 GET  /groups/:conversationRef
 DELETE /groups/:conversationRef
 POST /groups/:conversationRef/members         {"positionId":"issue-researcher"}
-POST /groups/:conversationRef/turns           {"input":"...","engine":"qoder|claude-code|claude-local","mentions":["repo-owner"]}
+POST /groups/:conversationRef/turns           {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy","mentions":["repo-owner"]}
 GET  /groups/:conversationRef/turns
 ```
 

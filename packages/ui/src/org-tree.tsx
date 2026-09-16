@@ -3,6 +3,7 @@ import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type
 import { cn } from "@fullstack-ai-infra/ui";
 import { useT } from "./i18n";
 import { type OrgTreeNodeV1, type OrgTreeSnapshot } from "./types";
+import { createOrgTreeDragState, useOrgTreeDragState, type DropZone, type OrgTreeDragState } from "./org-tree-drag";
 
 /**
  * ByteFolk “Open Herd” mark, cropped from the supplied organization logo
@@ -82,6 +83,7 @@ export interface OrgTreeProps {
 }
 
 export interface OrgTreeNodeProps {
+  dragState?: OrgTreeDragState;
   decorate?: (row: ReactNode) => ReactNode;
   actions?: ReactNode;
   node: OrgTreeNodeV1;
@@ -123,6 +125,7 @@ export interface OrgTreeNodeProps {
 }
 
 export const OrgTreeNode = memo(function OrgTreeNode({
+  dragState,
   decorate,
   actions,
   node,
@@ -151,6 +154,11 @@ export const OrgTreeNode = memo(function OrgTreeNode({
   onGroupEntry,
 }: OrgTreeNodeProps) {
   const t = useT();
+  const dragRowState = useOrgTreeDragState(dragState, node.id);
+  if (dragState) {
+    dropDenied = dragRowState === "denied";
+    dropZone = dragRowState === "denied" ? undefined : dragRowState;
+  }
   const row = (
     <div
       role="treeitem"
@@ -254,7 +262,11 @@ export const OrgTreeNode = memo(function OrgTreeNode({
 });
 
 const ENTERPRISE_ID = "__enterprise__";
-const EMPTY_SET: ReadonlySet<string> = new Set();
+
+function EnterpriseDropTarget({ state, children }: { state: OrgTreeDragState; children: (zone: DropZone | undefined) => ReactNode }) {
+  const zone = useOrgTreeDragState(state, null);
+  return children(zone === "denied" ? undefined : zone);
+}
 
 /** Stable avatar hue for positions without a declared color. Exported so
  * other surfaces (#53 group roster) keep avatar hues consistent. */
@@ -323,14 +335,6 @@ function buildInsertion(
     parentId: anchor.reportTo,
     order: [...ids.slice(0, insertAt), sourceId, ...ids.slice(insertAt)],
   };
-}
-
-type DropZone = "before" | "after" | "body";
-
-interface DropHint {
-  /** Row the hint anchors to; null = enterprise root row. */
-  anchorId: string | null;
-  zone: DropZone;
 }
 
 interface FlatNode {
@@ -424,32 +428,10 @@ export function OrgTree({
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(allParentIds));
   const [focusedId, setFocusedId] = useState<string | null>(selectedId ?? null);
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dropHint, setDropHint] = useState<DropHint | undefined>(undefined);
+  const [dragState] = useState(createOrgTreeDragState);
   /** Light inline toast for refused releases; auto-hides. */
   const [toast, setToast] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  /** Set when a dragover lands on an invalid target during the current drag.
-   * The source row's dragend reads (and clears) it to surface the refusal
-   * toast; a ref keeps this off the render path (#263 perf goal). */
-  const deniedRef = useRef(false);
-
-  /** Pre-computed descendants of the dragged node — these are invalid drop
-   * targets (would create a cycle). Computed once per drag, not per event. */
-  const invalidDropTargetIds = useMemo<ReadonlySet<string>>(() => {
-    if (!draggedId) return EMPTY_SET;
-    const ids = new Set<string>();
-    ids.add(draggedId);
-    const collect = (node: OrgTreeNodeV1): void => {
-      for (const child of node.children) {
-        ids.add(child.id);
-        collect(child);
-      }
-    };
-    const dragged = findInTree(snapshot.tree, draggedId);
-    if (dragged) collect(dragged);
-    return ids;
-  }, [draggedId, snapshot.tree]);
 
   useEffect(() => {
     if (toast === null) return;
@@ -644,22 +626,13 @@ export function OrgTree({
     );
   }
 
-  const resetDragState = (): void => {
-    setDraggedId(null);
-    setDropHint(undefined);
-    deniedRef.current = false;
-  };
-
-  const getDropZone = (nodeId: string): "before" | "after" | "body" | undefined =>
-    dropHint?.anchorId === nodeId ? dropHint.zone : undefined;
-
   const renderPosition = (node: OrgTreeNodeV1, depth: number, isLast: boolean): ReactNode => {
     const hasChildren = node.children.length > 0;
     const isExpanded = hasChildren && expanded.has(node.id);
-    const dropZone = getDropZone(node.id);
     return (
       <Fragment key={node.id}>
         <OrgTreeNode
+          dragState={dragState}
           decorate={decorateRow ? (row) => decorateRow(node.id, row) : undefined}
           actions={rowActions?.(node.id)}
           node={node}
@@ -678,32 +651,30 @@ export function OrgTree({
           onToggle={() => toggleNode(node.id)}
           onFocus={() => setFocusedId(node.id)}
           draggable={!moveDisabled && node.id !== snapshot.owner}
-          dropZone={dropZone}
-          dropDenied={invalidDropTargetIds.has(node.id)}
+          dropDenied={false}
           onDragStart={(event) => {
             event.dataTransfer.effectAllowed = "move";
             event.dataTransfer.setData("application/x-org-workbench-position-id", node.id);
-            deniedRef.current = false;
-            setDraggedId(node.id);
+            dragState.start(node);
           }}
           onDragEnd={() => {
             // dragend fires on the source row, so node.id always equals
             // draggedId; the refusal has to be recorded by the rejected
             // dragover, not inferred here.
-            if (deniedRef.current) setToast(t("tree.selfDropToast"));
-            resetDragState();
+            if (dragState.denied) setToast(t("tree.selfDropToast"));
+            dragState.reset();
           }}
           onDragOver={(event) => {
-            if (!draggedId || moveDisabled) return;
-            if (invalidDropTargetIds.has(node.id)) {
+            if (!dragState.draggedId || moveDisabled) return;
+            if (dragState.isInvalid(node.id)) {
               event.dataTransfer.dropEffect = "none";
-              deniedRef.current = true;
-              setDropHint((current) => current === undefined ? current : undefined);
+              dragState.denied = true;
+              dragState.setHint();
               return;
             }
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
-            deniedRef.current = false;
+            dragState.denied = false;
             const rect = event.currentTarget.getBoundingClientRect();
             const y = event.clientY - rect.top;
             const zone: DropZone =
@@ -712,15 +683,13 @@ export function OrgTree({
                 : rect.height > 0 && y > rect.height * 0.75
                   ? "after"
                   : "body";
-            setDropHint((current) =>
-              current?.anchorId === node.id && current.zone === zone ? current : { anchorId: node.id, zone },
-            );
+            dragState.setHint(node.id, zone);
           }}
           onDrop={(event) => {
             event.preventDefault();
-            const source = draggedId || event.dataTransfer.getData("application/x-org-workbench-position-id");
-            const zone = dropZone ?? "body";
-            resetDragState();
+            const source = dragState.draggedId || event.dataTransfer.getData("application/x-org-workbench-position-id");
+            const zone = dragState.getRowState(node.id) ?? "body";
+            dragState.reset();
             if (!source || isInvalidDropTarget(snapshot.tree, source, node.id)) return;
             if (zone === "before" || zone === "after") {
               const drop = buildInsertion(snapshot.tree, topLevel, node, zone, source);
@@ -754,17 +723,17 @@ export function OrgTree({
     >
       {useEnterpriseRoot ? (
         <Fragment>
-          {(decorateRow ?? ((_id, row) => row))(null, <div
+          <EnterpriseDropTarget state={dragState}>{(dropZone) => (decorateRow ?? ((_id, row) => row))(null, <div
             role="treeitem"
             data-org-node-id={ENTERPRISE_ID}
-            data-drop-zone={dropHint?.anchorId === null ? dropHint.zone : undefined}
+            data-drop-zone={dropZone}
             aria-level={1}
             aria-expanded={enterpriseExpanded}
             tabIndex={focusedId === ENTERPRISE_ID ? 0 : -1}
             className={cn(
               "ui-org-tree__row",
               "ui-org-tree__row--enterprise",
-              dropHint?.anchorId === null && dropHint.zone === "body" && "is-drop-target",
+              dropZone === "body" && "is-drop-target",
             )}
             style={{ "--d": 0 } as CSSProperties}
             onClick={() => {
@@ -772,19 +741,17 @@ export function OrgTree({
             }}
             onFocus={() => setFocusedId(ENTERPRISE_ID)}
             onDragOver={(event) => {
-              if (!draggedId || moveDisabled) return;
+              if (!dragState.draggedId || moveDisabled) return;
               event.preventDefault();
               event.dataTransfer.dropEffect = "move";
-              deniedRef.current = false;
-              setDropHint((current) =>
-                current?.anchorId === null && current.zone === "body" ? current : { anchorId: null, zone: "body" },
-              );
+              dragState.denied = false;
+              dragState.setHint(null, "body");
             }}
-            onDragLeave={() => setDropHint(undefined)}
+            onDragLeave={() => dragState.setHint()}
             onDrop={(event) => {
               event.preventDefault();
-              const source = draggedId || event.dataTransfer.getData("application/x-org-workbench-position-id");
-              resetDragState();
+              const source = dragState.draggedId || event.dataTransfer.getData("application/x-org-workbench-position-id");
+              dragState.reset();
               if (source) onMove?.(source, null);
             }}
           >
@@ -813,7 +780,7 @@ export function OrgTree({
               <span className="ui-org-tree__name">{enterpriseName}</span>
             </span>
             {rowActions?.(null)}
-          </div>)}
+          </div>)}</EnterpriseDropTarget>
           {enterpriseExpanded
             ? topLevel.map((node, index) =>
                 renderPosition(node, 1, index === topLevel.length - 1),

@@ -47,6 +47,57 @@ sources and MCP, and limits built-in tools to the employee's explicit grants.
 MCP grant references are currently unsupported by this adapter and fail closed
 instead of loading global MCP servers.
 
+## WorkBuddy (CodeBuddy Code)
+
+Select **WorkBuddy** in project creation or employee hiring. Its durable engine
+id is `workbuddy`; an existing employee keeps that binding when the app
+reopens. When it is the only ready Host, it is also the default for a new
+binding. There is one service-credential variant.
+
+Set both `CODEBUDDY_API_KEY` and `CODEBUDDY_MODEL` in the control-plane process
+environment, then restart RoleWeave. A personal WorkBuddy login is not reused.
+`CODEBUDDY_BASE_URL` is optional; it accepts HTTPS endpoints and HTTP loopback
+endpoints for local verification. Turn requests with invalid credentials,
+model identifiers or URLs fail before their CLI probe or execution. Health
+uses a separate isolated, credential-free version probe. Health readiness verifies
+local prerequisites; provider credentials, entitlement and billing still
+require a successful real-provider turn.
+
+The resolver checks the authoritative `DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND`
+override, PATH (`codebuddy`, `codebuddy-code`, `cbc`), then known WorkBuddy
+application locations. The desktop distribution's CLI is under
+`app.asar.unpacked/cli/bin/codebuddy`, and may be absent from PATH. Invalid
+explicit overrides fail closed. Native Windows currently reports not-ready
+(`workbuddy.platform_not_verified`): its extensionless Node launcher and
+process-tree cleanup have not completed native qualification.
+
+Only exact CLI versions **2.106.4** and **2.137.1** have audited tool profiles
+(53 and 60 deny entries respectively). Other versions fail closed; a version
+number inside the same major release is insufficient. The adapter creates
+private temporary HOME/config/XDG/tmp directories and a `0600` settings file,
+disables hooks, restricts settings sources, provides a strict empty MCP
+configuration, and disables all tools using the version-specific deny list.
+It checks the actual initialization frame for empty tools/MCP, the expected
+session, workspace, model and permission mode before accepting model text.
+Unexpected tool events, malformed streams or missing terminal results fail
+the turn; zero process exit alone does not mean completion.
+
+### Reproduce local CLI qualification
+
+With an already installed audited CLI and repository dependencies available:
+
+```sh
+node scripts/verify-workbuddy-cli.mjs --command "/path/to/codebuddy"
+```
+
+The verifier runs the bundled adapter and the selected CLI against a local
+simulated OpenAI-compatible provider using a synthetic key. It checks one
+model request with no tool definitions, matching streamed text and terminal
+output, and no surviving owned processes. Its summary distinguishes an
+omitted provider `tools` field from an empty array. It does not download a CLI,
+read real credentials, or qualify a real provider account. See
+[issue #275 evidence and remaining acceptance](evidence/issue-275/README.md).
+
 ## Status and cost
 
 The menu shows the local connection source, hostname, mapped model identifier
@@ -57,6 +108,9 @@ Reported tokens are usage receipts, not a price quote or a hard spending cap.
 
 ## References
 
+- [CodeBuddy CLI environment variables](https://www.codebuddy.ai/docs/cli/env-vars)
+- [CodeBuddy CLI tools](https://www.codebuddy.ai/docs/cli/tools-reference)
+- [CodeBuddy 2.137.1 release notes](https://www.codebuddy.ai/docs/cli/release-notes/v2.137.1)
 - [Claude Code settings](https://code.claude.com/docs/en/settings)
 - [Qoder configuration and precedence](https://docs.qoder.com/cli/settings)
 - [Qoder CLI parameters](https://docs.qoder.com/cli/cli-reference)

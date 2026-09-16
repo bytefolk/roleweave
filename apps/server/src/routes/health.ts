@@ -7,6 +7,8 @@ import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
 import { resolveCodexExecutable, validatedCodexModel } from "../codex-binary.js";
+import { resolveWorkbuddyExecutable } from "../workbuddy-binary.js";
+import { probeWorkbuddyExecutable, workbuddyConfiguration, workbuddyVersionProfile } from "../workbuddy-runtime.js";
 import { createLauncherSpawnSpec } from "../windows-launcher.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 import { LocalProviderConfigError, resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../local-provider-config.js";
@@ -26,6 +28,14 @@ export interface ClaudeLocalBinaryState {
 export interface CodexBinaryState {
   installed: boolean;
   version: string | null;
+}
+
+export interface WorkbuddyBinaryState {
+  installed: boolean;
+  version: string | null;
+  supported: boolean;
+  /** Stable local reason only; never retain probe stderr or executable paths. */
+  failure?: string;
 }
 
 export type QoderLocalProbeFailure = "unavailable" | "timed_out" | "unsupported_version" | "not_cli" | "unsupported_cli" | "not_authenticated" | "auth_check_failed";
@@ -162,6 +172,8 @@ export interface HostHealthInput {
   qoderLocal?: QoderLocalBinaryState;
   claudeLocal?: ClaudeLocalBinaryState;
   codex?: CodexBinaryState;
+  workbuddy?: WorkbuddyBinaryState;
+  platform?: NodeJS.Platform;
 }
 
 function compareParts(parts: readonly [number, number, number], bound: readonly [number, number, number]): number {
@@ -388,6 +400,33 @@ export const __codexVersionProbeSpec = (
 ): { command: string; args: string[]; options: Record<string, unknown> } =>
   createLauncherSpawnSpec(command, ["--version"], env, platform);
 
+/** Version and isolation policy are shared with the actual WorkBuddy launcher. */
+export function probeWorkbuddyBinary(
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 3000,
+  platform: NodeJS.Platform = process.platform,
+): WorkbuddyBinaryState {
+  const command = resolveWorkbuddyExecutable(env, platform);
+  if (command === null) {
+    return { installed: false, version: null, supported: false, failure: "workbuddy.binary_unavailable" };
+  }
+  const probe = probeWorkbuddyExecutable(command, env, { timeoutMs, platform });
+  return {
+    installed: true,
+    version: probe.version ?? null,
+    supported: probe.ready,
+    ...(!probe.ready ? { failure: probe.code } : {}),
+  };
+}
+
+function workbuddyConfigurationNextStep(code: string): string {
+  if (code.includes("api_key") || code.includes("credential")) return "设置有效的 CODEBUDDY_API_KEY 服务凭据后重启工作台；个人 WorkBuddy 登录状态不会被复用";
+  if (code.includes("model")) return "设置有效的 CODEBUDDY_MODEL 后重启工作台；模型标识须以字母或数字开头，仅含字母、数字及 . _ : / -，长度不超过 256";
+  if (code.includes("base_url")) return "更正 CODEBUDDY_BASE_URL：使用 HTTPS，或本机回环 HTTP；地址不得包含用户名、密码、查询或片段";
+  if (code.includes("internet_environment")) return "将 CODEBUDDY_INTERNET_ENVIRONMENT 设为 external、internal、ioa、selfhosted 或 cloudhosted 后重启工作台";
+  return "检查 WorkBuddy 的 CODEBUDDY_API_KEY、CODEBUDDY_MODEL 与服务端点配置后重启工作台";
+}
+
 function isBundledQoderEngine(version: string | undefined): boolean {
   return typeof version === "string" && /^qoder-engine\s+\d+\.\d+\.\d+$/.test(version.trim());
 }
@@ -426,6 +465,8 @@ export function hostHealth({
   qoderLocal = { installed: false, version: null, supported: false, failure: "unavailable" },
   claudeLocal = { installed: false, version: null, supported: false },
   codex = { installed: false, version: null },
+  workbuddy = { installed: false, version: null, supported: false },
+  platform = process.platform,
 }: HostHealthInput): HealthResponse["hosts"] {
   const bundledQoder = isBundledQoderEngine(engineVersion);
   const qoderServiceTokenConfigured = typeof env.QODER_PERSONAL_ACCESS_TOKEN === "string" && env.QODER_PERSONAL_ACCESS_TOKEN.length > 0;
@@ -547,6 +588,34 @@ export function hostHealth({
               ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
               : {}),
     },
+    workbuddy: (() => {
+      // Health describes local configuration, not authentication, model quota,
+      // or a completed turn. Per-turn model overrides are not server defaults.
+      const configuration = workbuddyConfiguration({ ...env, ROLEWEAVE_TURN_MODEL: undefined });
+      const profile = workbuddyVersionProfile(workbuddy.version ?? "");
+      const configured = workbuddy.installed && workbuddy.supported && profile !== null && configuration.ready;
+      let nextStep: string | undefined;
+      if (!bundledElectronEngine || !engineAvailable) {
+        nextStep = "WorkBuddy 需要 RoleWeave 内置 bundled qoder-engine；请恢复内置引擎或修复其本地启动配置";
+      } else if (platform === "win32" || workbuddy.failure?.includes("platform_not_verified")) {
+        nextStep = "WorkBuddy Windows 进程树清理尚未完成验证，当前禁止派活；请使用受支持的 macOS/Linux CLI，等待 Windows 验证完成后更新 RoleWeave";
+      } else if (!workbuddy.installed) {
+        nextStep = "安装 WorkBuddy / CodeBuddy Code CLI，或将 DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND 指向桌面安装目录中 app.asar.unpacked/cli/bin/codebuddy；然后重启工作台";
+      } else if (!workbuddy.supported || profile === null) {
+        nextStep = workbuddy.failure?.includes("timed_out")
+          ? "WorkBuddy CLI 本地版本探测超时；检查本机进程，或用 DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND 指定可执行 CLI 后重启"
+          : "安装已审计的 CodeBuddy Code CLI 2.106.4 或 2.137.1；用 DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND 指定该 CLI 后重启工作台";
+      } else if (!configuration.ready) {
+        nextStep = workbuddyConfigurationNextStep(configuration.code);
+      }
+      return {
+        configured,
+        ready: configured && nextStep === undefined,
+        modelPinnable: true,
+        ...(configuration.ready && configuration.model ? { model: configuration.model } : {}),
+        ...(nextStep ? { nextStep } : {}),
+      };
+    })(),
   };
 }
 
@@ -575,6 +644,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
   });
   const claudeLocal = probeClaudeLocalBinary(process.env);
   const codex = probeCodexBinary(process.env);
+  const workbuddy = probeWorkbuddyBinary(process.env);
   const qoderLocal = isBundledQoderEngine(probe.version)
     ? await probeQoderLocalBinary(process.env)
     : undefined;
@@ -587,6 +657,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
     ...(qoderLocal !== undefined ? { qoderLocal } : {}),
     claudeLocal,
     codex,
+    workbuddy,
   });
   const body: HealthResponse = {
     status: "ok",

@@ -14,6 +14,7 @@ const availability: TurnPanelProps["engineAvailability"] = {
   "claude-local": { configured: true, ready: true },
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
+  workbuddy: { configured: true, ready: true },
 };
 
 function ControlledPanel({ onCreateTurn }: { onCreateTurn: (request: CreateTurnRequest) => void }) {
@@ -534,7 +535,7 @@ describe("TurnThread #234 — preserve conversation viewport on employee switch"
 
 it.each([
   ["qoder", "Qoder"], ["claude-code", "Claude Code"], ["claude-local", "Claude Code"],
-  ["codex", "Codex"], ["codex-local", "Codex"],
+  ["codex", "Codex"], ["codex-local", "Codex"], ["workbuddy", "WorkBuddy"],
 ] as const)("keeps %s diagnostics collapsed without weakening send guards", async (engine, label) => {
   const createTurn = vi.fn();
   const reason = "Check PATH or CONFIG_ENV before starting the runtime";

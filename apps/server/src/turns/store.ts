@@ -15,6 +15,7 @@ import type { EngineEvent, TurnTerminalReason } from "@roleweave/shared";
 import { assertSessionId, readAuthoritativeSessionIndex } from "../sessions/store.js";
 import { PerKeyLock } from "../per-key-lock.js";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
+import { MAX_TURNS_PER_POSITION } from "../history-limits.js";
 
 import { isThreadContextMetadata } from "./thread-context.js";
 
@@ -25,7 +26,6 @@ const SESSION_CONVERSATIONS_ROOT = path.join(
   "sessions",
   "conversations",
 );
-const MAX_TURNS_PER_POSITION = 256;
 const MAX_REPORT_CONVERSATIONS = 1024;
 const MAX_REPORT_RECORDS = MAX_REPORT_CONVERSATIONS * MAX_TURNS_PER_POSITION;
 const MAX_TURN_TEMP_FILES = MAX_TURNS_PER_POSITION;

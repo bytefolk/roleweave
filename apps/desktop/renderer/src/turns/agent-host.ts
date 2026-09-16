@@ -1,12 +1,12 @@
 import type { TurnEngine, TurnEngineAvailability } from "./types";
 
 /**
- * The three products operators choose between. The five `TurnEngine` values
+ * The four products operators choose between. The six `TurnEngine` values
  * remain an implementation detail because a local configuration can use an
  * official sign-in or a gateway, and the variants have different credential
  * and process-isolation requirements.
  */
-export const AGENT_HOSTS = ["qoder", "claude-code", "codex"] as const;
+export const AGENT_HOSTS = ["qoder", "claude-code", "codex", "workbuddy"] as const;
 
 export type AgentHost = (typeof AGENT_HOSTS)[number];
 
@@ -14,14 +14,16 @@ export const AGENT_HOST_LABEL: Record<AgentHost, string> = {
   qoder: "Qoder",
   "claude-code": "Claude Code",
   codex: "Codex",
+  workbuddy: "WorkBuddy",
 };
 
 const RUNTIME_CANDIDATES: Record<AgentHost, readonly TurnEngine[]> = {
   qoder: ["qoder"],
   // Prefer the ready local configuration (official sign-in or gateway) while
-  // the product choice remains “Claude Code”.
+  // the product choice remains "Claude Code".
   "claude-code": ["claude-local", "claude-code"],
   codex: ["codex-local", "codex"],
+  workbuddy: ["workbuddy"],
 };
 
 export function isAgentHost(value: unknown): value is AgentHost {
@@ -31,6 +33,7 @@ export function isAgentHost(value: unknown): value is AgentHost {
 export function agentHostForEngine(engine: TurnEngine): AgentHost {
   if (engine === "claude-code" || engine === "claude-local") return "claude-code";
   if (engine === "codex" || engine === "codex-local") return "codex";
+  if (engine === "workbuddy") return "workbuddy";
   return "qoder";
 }
 

@@ -30,6 +30,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/runtime-paths.cjs",
   "src/runtime-settings.cjs",
   "src/service-connections.cjs",
+  "src/credential-settings.cjs",
   // The app's only third-party runtime dependency, bundled to one file by
   // scripts/bundle-updater.mjs. Shipping electron-updater as a package would add
   // 16 packages and 325 files to a tree that asserts 189 files byte-exact, and
@@ -50,6 +51,8 @@ const SERVER_RUNTIME_FILES = [
   "src/qoder-binary.js",
   "src/claude-binary.js",
   "src/codex-binary.js",
+  "src/workbuddy-binary.js",
+  "src/workbuddy-runtime.js",
   "src/local-provider-config.js",
   "src/windows-launcher.js",
   "dist/src/agent-binding.js",
@@ -69,6 +72,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/engine/process-environment.js",
   "dist/src/goals/store.js",
   "dist/src/groups/store.js",
+  "dist/src/history-limits.js",
   "dist/src/http.js",
   "dist/src/index.js",
   "dist/src/local-provider-config.js",
@@ -109,6 +113,8 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/turns/store.js",
   "dist/src/turns/thread-context.js",
   "dist/src/windows-launcher.js",
+  "dist/src/workbuddy-binary.js",
+  "dist/src/workbuddy-runtime.js",
   "dist/src/workspace-state.js",
 ];
 
@@ -214,6 +220,10 @@ const APP_RESOURCE_REQUIRED_ENTRIES = [
   "apps/server/dist/src/stable-read.js",
   "apps/server/bin/qoder-engine.mjs",
   "apps/server/src/qoder-binary.js",
+  "apps/server/src/workbuddy-binary.js",
+  "apps/server/src/workbuddy-runtime.js",
+  "apps/server/dist/src/workbuddy-binary.js",
+  "apps/server/dist/src/workbuddy-runtime.js",
   "node_modules/@roleweave/shared/package.json",
   "node_modules/@roleweave/shared/dist/index.js",
   "node_modules/@roleweave/shared/dist/agent-binding.js",

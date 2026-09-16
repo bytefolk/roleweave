@@ -5,6 +5,9 @@ const { validateCreateTurnRequest } = require("../src/turn-ipc.cjs");
 const { validateSessionTurnRequest } = require("../src/session-ipc.cjs");
 const { validateGroupTurnRequest } = require("../src/group-ipc.cjs");
 
+const { validateHireRequest } = require("../src/hire-ipc.cjs");
+const { validateWorkspaceCreateRequest } = require("../src/workspace-ipc.cjs");
+
 const SESSION_ID = "00000000-0000-4000-8000-000000000000";
 
 /**
@@ -63,4 +66,16 @@ test("the rejection message names the contracted engines", () => {
   assert.equal(turnEngineMessage(["a"]), "a");
   assert.equal(turnEngineMessage(["a", "b"]), "a or b");
   assert.equal(turnEngineMessage(["a", "b", "c"]), "a, b, or c");
+});
+
+test("WorkBuddy is accepted by project, hiring, and per-employee group bindings", () => {
+  assert.ok(TURN_ENGINE_IDS.includes("workbuddy"));
+  assert.equal(validateWorkspaceCreateRequest({ projectId: "workbuddy-team", business: "Research", description: "", agentEngine: "workbuddy" }).ok, true);
+  assert.equal(validateHireRequest({ positionId: "researcher", name: "Researcher", description: "Research", reportTo: null, mode: "read_only", budget: {}, agentEngine: "workbuddy" }).ok, true);
+  const group = validateGroupTurnRequest({ conversationRef: "team-answer", input: "ship", engine: "workbuddy", engines: { "repo-owner": "workbuddy" }, mentions: ["repo-owner"] });
+  assert.equal(group.ok, true);
+  assert.equal(group.request.engines["repo-owner"], "workbuddy");
+  for (const engine of ["codebuddy", "workbuddy-local"]) {
+    assert.equal(validateWorkspaceCreateRequest({ projectId: "test", business: "Research", description: "", agentEngine: engine }).ok, false);
+  }
 });

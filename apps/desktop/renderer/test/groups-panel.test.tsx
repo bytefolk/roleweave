@@ -67,7 +67,7 @@ function renderPanel(
     createGroup?: () => Promise<{ status: number; body: unknown }>;
     addGroupMember?: () => Promise<{ status: number; body: unknown }>;
     createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
-    engineForPosition?: (positionId: string) => "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
+    engineForPosition?: (positionId: string) => TurnEngine;
     engineAvailability?: Partial<Record<TurnEngine, TurnEngineAvailability>>;
     onReconcileTimeline?: (timeline: GroupTimeline) => void;
   } = {},
@@ -94,6 +94,7 @@ function renderPanel(
         "claude-local": readyAvailability,
         codex: readyAvailability,
         "codex-local": readyAvailability,
+        workbuddy: readyAvailability,
         ...extra.engineAvailability,
       }}
       engineForPosition={extra.engineForPosition}
@@ -571,18 +572,18 @@ it("does not reconcile an abandoned workspace timeline into shared App state", a
   expect(onReconcileTimeline).not.toHaveBeenCalled();
 });
 
-it("blocks a mixed-recipient group while keeping host diagnostics behind disclosure", async () => {
+it.each([["codex-local", "Codex"], ["workbuddy", "WorkBuddy"]] as const)("blocks a mixed-recipient group with unavailable %s while keeping diagnostics behind disclosure", async (engine, label) => {
   const reason = "Set CODEX_HOME before starting this runtime";
   const { bridge } = renderPanel({
     createGroupTurn: async () => ({ status: 202, body: {} }),
-    engineForPosition: id => id === "release-engineer" ? "codex-local" : "qoder",
-    engineAvailability: { "codex-local": { configured: true, ready: false, reason } },
+    engineForPosition: id => id === "release-engineer" ? engine : "qoder",
+    engineAvailability: { [engine]: { configured: true, ready: false, reason } },
   });
   await screen.findByRole("combobox", { name: "选择要 @ 的成员" });
   fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), { target: { value: "keep this group draft" } });
   pickSelectOption("选择要 @ 的成员", "Repo Owner");
   pickSelectOption("选择要 @ 的成员", "Release Engineer");
-  expect(screen.getByText("Codex 暂不可用，请检查配置。")).toBeVisible();
+  expect(screen.getByText(`${label} 暂不可用，请检查配置。`)).toBeVisible();
   expect(screen.getByText(reason)).not.toBeVisible();
   expect(screen.getByRole("textbox", { name: "群聊消息" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "发送群消息" })).toBeDisabled();
