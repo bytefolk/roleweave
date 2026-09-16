@@ -84,6 +84,34 @@ describe("conversation interaction refinements without a frame redesign", () => 
     expect(input).toHaveValue("你好");
     expect(create).toHaveBeenCalledTimes(1);
   });
+  it("blocks retry while a model save is unresolved and preserves its original input after saving", async () => {
+    let finishSave!: () => void;
+    const save = new Promise<void>(resolve => { finishSave = resolve; });
+    const create = vi.fn().mockResolvedValue(true);
+    const failed = { ...finished, status: "failed" as const, error: "Task failed" };
+    const panelProps = props({ turns: [failed], onCreateTurn: create });
+    const { rerender } = render(<TurnPanel {...panelProps} modelSaving />);
+    const saved = save.then(() => rerender(<TurnPanel {...panelProps} modelSaving={false} />));
+    const retry = screen.getByRole("button", { name: "创建新回合重试" });
+    expect(retry).toBeDisabled();
+    fireEvent.click(retry);
+    expect(create).not.toHaveBeenCalled();
+    await act(async () => { finishSave(); await saved; });
+    expect(retry).toBeEnabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(create).toHaveBeenCalledExactlyOnceWith({
+      positionId: "owner", engine: "codex-local", input: "Original task", retryOf: "turn-1",
+    }));
+    expect(screen.getByText("Original task")).toBeInTheDocument();
+  });
+  it.each(["sessionBusy", "historyLoading"] as const)("blocks retry while %s keeps session state incomplete", async (pending) => {
+    const create = vi.fn();
+    render(<TurnPanel {...props({ turns: [{ ...finished, status: "failed", error: "Task failed" }], onCreateTurn: create, [pending]: true })} />);
+    const retry = screen.getByRole("button", { name: "创建新回合重试" });
+    expect(retry).toBeDisabled();
+    fireEvent.click(retry);
+    expect(create).not.toHaveBeenCalled();
+  });
   it("keeps the same thread and splitter geometry while manually focusing", () => {
     const create = vi.fn();
     const panel = <TurnPanel {...props({ onCreateTurn: create })} />;

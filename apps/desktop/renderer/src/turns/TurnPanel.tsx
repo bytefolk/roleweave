@@ -209,8 +209,12 @@ export function TurnPanel({
     }
   };
 
+  const retryBusy = runningTurn || busy || employeeBusy || sending || modelSaving || sessionBusy || historyLoading;
+  const canRetry = (turn: TurnRecord) => !retryBusy && workspaceOpen
+    && selectedPosition?.id === turn.positionId && engineAvailability[turn.engine].ready
+    && modelConfig?.connection?.status !== "invalid" && (!sessionMode || selectedSession?.status === "active");
   const retry = async (turn: TurnRecord) => {
-    if (runningTurn || busy || employeeBusy || sendingRef.current.has(draftKey) || !workspaceOpen || !engineAvailability[turn.engine].ready || modelConfig?.connection?.status === "invalid") return;
+    if (!canRetry(turn) || sendingRef.current.has(draftKey)) return;
     setSending(true);
     try {
       await onCreateTurn({
@@ -259,10 +263,10 @@ export function TurnPanel({
         loading={historyLoading || sessionBusy}
         onEdit={edit}
         viewportMemory={conversationMemory.viewports}
-        retrying={busy || employeeBusy || sending}
+        retrying={retryBusy}
         emptyPrompt={selectedPosition ? t("turn.emptySelected") : !workspaceOpen ? t("project.welcomeTitle") : positions.length === 0 ? t("turn.emptyAddEmployee") : t("turn.emptyChooseEmployee")}
         emptyDescription={selectedPosition ? t("turn.emptySelectedBody") : !workspaceOpen ? t("turn.emptyOpenFirst") : positions.length === 0 ? t("turn.emptyAddEmployeeBody") : t("turn.emptyChooseEmployeeBody")}
-        canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && modelConfig?.connection?.status !== "invalid" && (!sessionMode || selectedSession?.status === "active")}
+        canRetry={canRetry}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
         decidedApprovalIds={decidedApprovalIds}
