@@ -13,7 +13,7 @@ describe("shared Markdown reading contract", () => {
     expect(markdownToPlainText(raw)).toContain("**代码内容 **");
   });
   it("renders GFM tables and read-only task lists, nested lists, headings and quotes", () => {
-    const { container } = render(<Markdown content={"# Title\n\n> Quote\n\n- [x] finished\n- [ ] pending\n  - nested\n\n| a | b |\n|---|---|\n| one | two |"} />);
+    const { container } = render(<Markdown headingPrefix="rw-heading" content={"# Title\n\n> Quote\n\n- [x] finished\n- [ ] pending\n  - nested\n\n| a | b |\n|---|---|\n| one | two |"} />);
     expect(screen.getByRole("heading", { name: "Title" })).toHaveAttribute("id", "rw-heading-1");
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getAllByRole("checkbox").every(input => input.hasAttribute("disabled"))).toBe(true);
@@ -27,6 +27,9 @@ describe("shared Markdown reading contract", () => {
     fireEvent.click(screen.getByRole("button", { name: "复制" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('const example = "**raw **";'));
     expect(screen.getByText("已复制")).toBeInTheDocument();
+    writeText.mockRejectedValueOnce(new Error("unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+    await waitFor(() => expect(screen.getByText("复制失败")).toBeInTheDocument());
   });
   it("blocks dangerous protocols, local paths, raw HTML and authenticated URLs", () => {
     const { container } = render(<Markdown content={'[bad](javascript:alert%281%29)\n\n[local](file:///etc/passwd)\n\n[good](https://example.com)\n\n<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>'} />);
@@ -46,4 +49,10 @@ describe("shared Markdown reading contract", () => {
     expect(container.querySelector("strong")).toHaveTextContent("Finished");
     expect(container.querySelector("pre")).not.toHaveTextContent("Finished");
   });
+});
+
+it("isolates heading anchors between simultaneous messages", () => {
+  render(<><Markdown content="# One" /><Markdown content="# Two" /></>);
+  const headings = screen.getAllByRole("heading");
+  expect(headings[0]!.id).not.toBe(headings[1]!.id);
 });

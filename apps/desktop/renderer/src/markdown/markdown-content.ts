@@ -36,10 +36,11 @@ export const remarkReadableEmphasis: Plugin<[], Root> = () => (tree, file) => {
   visit(tree);
 };
 
-export const remarkHeadingIds: Plugin<[], Root> = () => tree => {
+export const remarkHeadingIds: Plugin<[{ prefix?: string }?], Root> = (options) => tree => {
+  const prefix = options?.prefix ?? "rw-heading";
   let index = 0;
   function visit(node: Root | RootContent) {
-    if (node.type === "heading") node.data = { ...node.data, hProperties: { ...node.data?.hProperties, id: `rw-heading-${++index}` } };
+    if (node.type === "heading") node.data = { ...node.data, hProperties: { ...node.data?.hProperties, id: `${prefix}-${++index}` } };
     if ("children" in node) for (const child of node.children) visit(child as RootContent);
   }
   visit(tree);
@@ -57,10 +58,10 @@ function textOf(node: Root | RootContent): string {
   return node.children.map(child => textOf(child as RootContent)).join(separator);
 }
 export function markdownToPlainText(content: string): string { return textOf(parsed(content)); }
-export function markdownHeadings(content: string): Array<{ id: string; text: string; level: number }> {
+export function markdownHeadings(content: string, prefix = "rw-heading"): Array<{ id: string; text: string; level: number }> {
   const result: Array<{ id: string; text: string; level: number }> = [];
   function visit(node: Root | RootContent) {
-    if (node.type === "heading") result.push({ id: String(node.data?.hProperties?.id), text: textOf(node), level: node.depth });
+    if (node.type === "heading") result.push({ id: `${prefix}-${result.length + 1}`, text: textOf(node), level: node.depth });
     if ("children" in node) for (const child of node.children) visit(child as RootContent);
   }
   visit(parsed(content));

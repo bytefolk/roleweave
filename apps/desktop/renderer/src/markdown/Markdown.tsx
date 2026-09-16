@@ -1,4 +1,4 @@
-import { Children, isValidElement, useState, type ReactNode } from "react";
+import { Children, isValidElement, useId, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check } from "lucide-react";
@@ -37,11 +37,13 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   return failed || !src ? <span className="owb-markdown-image-error" role="img" aria-label={alt || copy.imageFailed}>{copy.imageFailed}{alt ? ` · ${alt}` : ""}</span>
     : <img src={src} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
 }
-export function Markdown({ content, className = "" }: { content: string; className?: string }) {
+export function Markdown({ content, className = "", headingPrefix }: { content: string; className?: string; headingPrefix?: string }) {
   const copy = useConversationCopy();
+  const instance = useId();
+  const prefix = headingPrefix ?? `rw-${instance.replace(/:/g, "")}-heading`;
   const [linkFailed, setLinkFailed] = useState(false);
   return <div className={`owb-markdown ${className}`}>
-    <ReactMarkdown skipHtml remarkPlugins={[remarkGfm, remarkReadableEmphasis, remarkHeadingIds]} urlTransform={safeMarkdownUrl}
+    <ReactMarkdown skipHtml remarkPlugins={[remarkGfm, remarkReadableEmphasis, [remarkHeadingIds, { prefix }]]} urlTransform={safeMarkdownUrl}
       components={{
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
         table: ({ children }) => <div className="owb-markdown-table" tabIndex={0}><table>{children}</table></div>,
