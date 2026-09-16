@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { DocPlaneDetailResponse, DocPlaneListResponse } from "@roleweave/shared";
 import {
@@ -154,7 +154,7 @@ describe("Shared document request ordering (#294)", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Runbook/ }));
     fireEvent.click(screen.getByRole("button", { name: /Onboarding/ }));
     await screen.findByText("offline");
-    resolveOld(okDetail());
+    await act(async () => resolveOld(okDetail()));
     await waitFor(() => expect(screen.queryByRole("heading", { name: "Runbook" })).not.toBeInTheDocument());
     readDoc.mockResolvedValue({ kind: "ok", response: { ...DETAIL_RESPONSE, id: "doc-2", title: "Onboarding", content: "# Onboarding" } });
     fireEvent.click(screen.getByRole("button", { name: /重\s?试/ }));
@@ -169,7 +169,7 @@ describe("Shared document request ordering (#294)", () => {
     fireEvent.change(input, { target: { value: "missing" } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter", charCode: 13 });
     await screen.findByText("未找到包含“missing”的文档");
-    resolveOld(okList());
+    await act(async () => resolveOld(okList()));
     await waitFor(() => expect(screen.queryByRole("button", { name: /Runbook/ })).not.toBeInTheDocument());
   });
 });

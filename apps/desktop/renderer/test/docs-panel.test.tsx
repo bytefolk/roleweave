@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DocsPanel } from "../src/docs/DocsPanel";
 import type { DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
@@ -89,7 +89,7 @@ describe("Document reader integrity (#294)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "SKILL.md" }));
     fireEvent.click(screen.getByRole("button", { name: "knowledge/README.md" }));
     await screen.findByRole("heading", { name: "Second document" });
-    finishOld(DOC);
+    await act(async () => finishOld(DOC));
     await waitFor(() => expect(screen.queryByRole("heading", { name: "Repo Owner" })).not.toBeInTheDocument());
     const reader = screen.getByLabelText("文档阅读区");
     reader.scrollTop = 320;
@@ -115,7 +115,7 @@ describe("Document reader integrity (#294)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "SKILL.md" }));
     view.rerender(<DocsPanel positionId="second-owner" listDocs={listDocs} readDoc={readDoc} />);
     await screen.findByText("Forbidden");
-    finish(DOC);
+    await act(async () => finish(DOC));
     expect(screen.queryByRole("heading", { name: "Repo Owner" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /重\s?试/ }));
     await screen.findByRole("button", { name: "SKILL.md" });

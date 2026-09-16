@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocsCreateResponse, DocsFileListResponse } from "@roleweave/shared";
 import { DocsModule } from "../src/docs/DocsModule";
@@ -119,7 +119,7 @@ describe("Document create integrity (#294)", () => {
     fireEvent.click(create);
     fireEvent.click(create);
     expect(bridge.createPositionDoc).toHaveBeenCalledTimes(1);
-    complete({ status: 201, body: createBody });
+    await act(async () => complete({ status: 201, body: createBody }));
     await waitFor(() => expect(bridge.positionDocFile).toHaveBeenCalledWith("repo-owner", createBody.path));
     await screen.findByRole("heading", { name: "New document" });
   });
