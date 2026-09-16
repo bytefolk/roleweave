@@ -1015,7 +1015,10 @@ it("runs A/B/C independently and keeps late responses, streams and cancellation 
   expect(await screen.findByText("live-release-engineer")).toBeInTheDocument();
   expect(screen.queryByText("B failed")).not.toBeInTheDocument();
   await act(async () => finish.get(employees["release-engineer"]!.sessionId)!({ status: 500, body: { message: "C failed" } }));
-});
+  // Three simultaneous turns, six employee selections, streamed updates and
+  // cancellation share one test budget. Keep each wait/assertion unchanged;
+  // slower CI workers need more than the default five seconds for the full flow.
+}, 10_000);
 
 it("keeps B usable during A's delayed automatic session creation, then restores A", async () => {
   const employeeB = { ...activeSession, positionId: "docs-writer", sessionId: "22222222-2222-4222-8222-222222222222" };
