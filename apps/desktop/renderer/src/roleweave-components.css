@@ -288,6 +288,137 @@
 :is([data-theme="light"], [data-theme="dark"]) :is(.owb-hire-capability__options b, .owb-hire-mcp__select b) { font-size: 13px; font-weight: 500; }
 :is([data-theme="light"], [data-theme="dark"]) :is(.owb-hire-capability__options small, .owb-hire-mcp__select small) { font: 400 12px/1.5 var(--ui-font-sans); }
 
+/* Creation keeps one surface per step. Scope these refinements to this drawer:
+ * the permissions and capability controls are also used by employee editing. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-shell__scroll {
+  padding: 16px 20px 24px;
+  background: var(--ui-surface-inset);
+  scroll-padding-block: 16px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-drawer--conversation { gap: 16px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create :is(.owb-hire-design-section, .owb-hire-draft-card, .owb-hire-capability-panel) {
+  min-width: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create :is(.owb-hire-draft-card, .owb-hire-capability-panel) { padding: 16px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-agent-picker {
+  grid-template-columns: minmax(0, 1fr) 176px;
+  align-items: start;
+  padding: 16px;
+  background: transparent;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-eyebrow {
+  margin-bottom: 5px;
+  color: var(--ui-primary);
+  font-size: 11px;
+  font-weight: 500;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-agent-picker p:not(.owb-hire-eyebrow) { line-height: 1.6; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-agent-binding { gap: 6px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-conversation {
+  grid-template-rows: auto auto auto;
+  border: 0;
+  border-top: 1px solid var(--ui-border);
+  border-radius: 0 0 10px 10px;
+  background: transparent;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-conversation__meta {
+  padding: 12px 16px 0;
+  border: 0;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-conversation__empty {
+  min-height: 0;
+  padding: 6px 16px 0;
+  place-items: start;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-conversation__messages { padding: 12px 16px 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-prompt {
+  gap: 8px;
+  padding: 12px 16px 16px;
+  border: 0;
+  background: transparent;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-prompt__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-prompt__heading button {
+  min-height: 26px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-prompt__heading button:hover { background: var(--ui-surface-inset); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-prompt textarea.ant-input {
+  height: auto;
+  padding: 9px 11px;
+  background: var(--ui-surface-inset);
+  font-size: 12px;
+  line-height: 1.65;
+  scrollbar-width: thin;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-prompt__footer { gap: 8px 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-draft-card__heading { align-items: center; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-draft-card__status {
+  max-width: 45%;
+  text-align: right;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-basic-grid { gap: 14px; margin-top: 16px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-avatar-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-avatar-picker strong { font-weight: 500; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-avatar-picker p { font-size: 12px; line-height: 1.5; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-avatar-picker__choices { justify-content: flex-start; gap: 8px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create :is(.owb-hire-avatar-picker__choices button, .owb-hire-avatar-picker__upload) {
+  width: 40px;
+  height: 40px;
+  border-radius: 7px;
+  background: var(--ui-surface-inset);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-avatar-picker__upload { width: 56px; font-size: 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create :is(.owb-hire-avatar-picker__choices button, .owb-hire-avatar-picker__upload):hover { border-color: var(--ui-border-strong); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create :is(.owb-hire-prompt__heading button, .owb-hire-avatar-picker__choices button, .owb-hire-advanced > summary):focus-visible,
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-avatar-picker__upload:focus-within {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 3px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-summary-row {
+  gap: 8px 16px;
+  margin-top: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--ui-border);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-advanced { margin-top: 4px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-advanced > summary { min-height: 40px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-advanced > summary:focus-visible { outline-offset: -2px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-footer { padding: 12px 20px; }
+
+@media (max-width: 720px) {
+  :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-shell__scroll { padding: 12px 14px 20px; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-agent-picker { grid-template-columns: 1fr; gap: 12px; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-agent-binding { grid-template-columns: minmax(0, 1fr) minmax(150px, 220px); }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-agent-binding .ant-select { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-basic-grid { grid-template-columns: 1fr; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-summary-row { grid-template-columns: 1fr; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-summary-row > span:last-child { text-align: left; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-footer { flex-wrap: wrap; padding: 12px 14px; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-footer > span { flex-basis: 100%; }
+}
+
 /* Workspace picker: a compact, centered desktop dialog — not a side drawer. */
 :is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog .ant-modal-content {
   overflow: hidden;
