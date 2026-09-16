@@ -197,11 +197,16 @@ test("runtime description and native dialogs use the saved Windows distribution"
 
 test("main uses one cloned desktop environment and retains service startup wiring", () => {
   const source = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
-  assert.equal((source.match(/runtimeEnvironment\(process\.env, app\.getPath\("userData"\)\)/g) ?? []).length, 1);
+  assert.equal((source.match(/desktopEnv = configurationStore\(\)\.runtimeEnvironment\(process\.env\)/g) ?? []).length, 1);
+  assert.match(source, /const configurationStore = \(\) => configuration \?\?= createConfigurationStore\(\{ userDataPath: app\.getPath\("userData"\), safeStorage \}\)/);
+  assert.doesNotMatch(source, /runtimeEnvironment\(process\.env, app\.getPath/);
+  assert.match(source, /const env = configurationStore\(\)\.hostEnvironment\(\{\s*\.\.\.desktopEnv,/);
   assert.match(source, /return bundledEngineCommand\(enginePath, desktopEnv\)/);
   assert.doesNotMatch(source, /Object\.assign\(process\.env/);
   assert.match(source, /readyTimeoutMs: controlPlaneMode\(desktopEnv\) === "wsl" \? 45000 : DEFAULT_READY_TIMEOUT_MS/);
   assert.match(source, /const serviceConnections = createServiceConnections\(/);
+  assert.match(source, /read: \(\) => configurationStore\(\)\.readServices\(\)/);
+  assert.match(source, /write: \(connections\) => configurationStore\(\)\.writeServices\(connections\)/);
   assert.match(source, /registerServiceIpc\(\{\s*ipcMain, manager: serviceConnections/);
   assert.match(source, /controlPlane = await startControlPlane\(\);[\s\S]*await serviceConnections\.initialize\(\);[\s\S]*await openDefaultWorkspace\(/);
 });

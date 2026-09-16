@@ -63,8 +63,11 @@ test('inherited host settings win as a group; runtime overrides preserve operato
   const h=setup(t,{env:{OPENAI_BASE_URL:'https://operator.example',ROLEWEAVE_WSL_DISTRO:'Operator'},platform:'win32'});
   const a=h.store.get(),c=a.config; c.hosts.codex={baseUrl:'https://saved.example',apiKeyRef:'secret:host/OPENAI_API_KEY'};
   c.runtime={mode:'wsl',distro:'Saved'}; assert.equal(h.store.save({text:text(c),revision:a.revision,hostChanges:{OPENAI_API_KEY:'dummy-private-key'}}).ok,true);
-  assert.deepEqual(h.store.hostEnvironment({OPENAI_BASE_URL:'https://operator.example'}),{OPENAI_BASE_URL:'https://operator.example'});
-  assert.equal(h.store.runtimeEnvironment({ROLEWEAVE_WSL_DISTRO:'Operator'}).ROLEWEAVE_WSL_DISTRO,'Operator');
+  const hostSource=Object.freeze({OPENAI_BASE_URL:'https://operator.example'}),hostEnv=h.store.hostEnvironment(hostSource);
+  assert.deepEqual(hostEnv,{OPENAI_BASE_URL:'https://operator.example'});assert.notEqual(hostEnv,hostSource);
+  const runtimeSource=Object.freeze({PATH:'original-path',ROLEWEAVE_WSL_DISTRO:'Operator'}),runtimeEnv=h.store.runtimeEnvironment(runtimeSource);
+  assert.notEqual(runtimeEnv,runtimeSource);assert.deepEqual(runtimeEnv,{...runtimeSource,ROLEWEAVE_CONTROL_PLANE_MODE:'wsl'});
+  runtimeEnv.PATH='child-only';assert.deepEqual(runtimeSource,{PATH:'original-path',ROLEWEAVE_WSL_DISTRO:'Operator'});
   assert.equal(h.store.get().sources['hosts.codex'],'environment');
   c.workspace={agent:'other'}; assert.equal(h.store.save({text:text(c),revision:h.store.get().revision}).ok,false);
 });
