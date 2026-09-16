@@ -34,6 +34,9 @@ import type {
 } from "@roleweave/shared";
 import { BrainCircuit, Cog, FileChartColumn, FolderOpen, Network, PencilLine, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
+import { useTheme, ThemeProvider } from "./theme-context";
+import { themeToAntdSeed } from "./theme-resolution";
+import { DEFAULT_PRESET_ID } from "./theme-presets";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
 import {
@@ -94,7 +97,16 @@ interface PositionCardState {
  * (org.updated drives refresh; the UI never polls).
  */
 export function App() {
-  return <AppRoot />;
+  // The theme provider lives here, not in main.tsx, for the same reason the antd
+  // ConfigProvider does: `App.test.tsx` renders `<App />` on its own in 30+ cases,
+  // so the harness and production have to run the identical configuration.
+  // Wrapping in main.tsx instead left every direct render throwing
+  // "useTheme must be used within a ThemeProvider".
+  return (
+    <ThemeProvider>
+      <AppRoot />
+    </ThemeProvider>
+  );
 }
 
 /** #146 i18n 根：locale 状态住在 Provider 之上；恰好两个 locale，
@@ -123,6 +135,7 @@ function AppInner({
   locale: OwbLocale;
   onChangeLocale: (next: OwbLocale) => void;
 }) {
+  const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
     "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "settings"
   >("org");
@@ -1314,19 +1327,48 @@ function AppInner({
     else setActiveModule("org");
   };
   const managedNode = typeof managementTarget === "string" && snapshot ? findNodeById(snapshot.tree, managementTarget) : null;
+
+  // ADR-0002 / #246: Ant Design consumes the same semantic skin as the custom
+  // layout, including the user's own colours. The two providers are not rivals:
+  // `DSProvider` owns `mode` (and therefore the algorithm) plus the selected
+  // design-system profile, and this nested `ConfigProvider` layers the resolved
+  // palette on top as token overrides — exactly the nesting main already uses for
+  // the "mint" profile below, just driven by a full token set instead of one key.
+  // Keeping `algorithm` out of this layer leaves a single owner for light/dark.
+  // Same activation rule as the CSS side in theme-context: the palette only
+  // layers over AntD once the user departs from the shipped defaults, so an
+  // untouched install keeps the profile-derived seed values it had before this
+  // PR and keeps the `mint` colourPrimary override meaningful.
+  const paletteActive = themeContext.custom !== null || themeContext.presetId !== DEFAULT_PRESET_ID;
+  const antdToken = useMemo(() => ({
+    ...(paletteActive ? themeToAntdSeed(themeContext.effective, themeContext.mode) : {}),
+    fontSize: 13,
+    borderRadius: 8,
+    motionDurationFast: "0.12s",
+    motionDurationMid: "0.16s",
+    motionDurationSlow: "0.24s",
+    motionEaseInOut: "cubic-bezier(0.22, 0.61, 0.36, 1)",
+    motionEaseOut: "cubic-bezier(0.22, 0.61, 0.36, 1)",
+    controlHeight: 32,
+    controlHeightSM: 26,
+    controlHeightLG: 36,
+    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
+    // #285 expanded the mint palette to hover / active / disabled keys. Keep the
+    // whole set here so the unification survives the palette layer: it only
+    // displaces these values once the user actually departs from the defaults.
+    ...(paletteActive ? {} : themeProfile === "mint" ? {
+      colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64",
+      colorPrimaryHover: themeMode === "dark" ? "#78c9b0" : "#236d58",
+      colorPrimaryActive: themeMode === "dark" ? "#64bca2" : "#236d58",
+      colorTextLightSolid: themeMode === "dark" ? "#14151b" : "#ffffff",
+      colorTextDisabled: themeMode === "dark" ? "#90a098" : "#5e6b65",
+    } : {}),
+  }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
+
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
-      theme={{ token: {
-        fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
-        ...(themeProfile === "mint" ? {
-          colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64",
-          colorPrimaryHover: themeMode === "dark" ? "#78c9b0" : "#236d58",
-          colorPrimaryActive: themeMode === "dark" ? "#64bca2" : "#236d58",
-          colorTextLightSolid: themeMode === "dark" ? "#14151b" : "#ffffff",
-          colorTextDisabled: themeMode === "dark" ? "#90a098" : "#5e6b65",
-        } : {}),
-      } }}>
+      theme={{ token: antdToken }}>
     <div className={`owb-app${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`}>
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
         targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
