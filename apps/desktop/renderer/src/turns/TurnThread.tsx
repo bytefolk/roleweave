@@ -285,7 +285,14 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, emptyDescript
               : turn.status === "indeterminate"
                 ? "is-indeterminate"
                 : "";
-        const isProvisional = (turn.status === "running" || turn.status === "indeterminate") && Boolean(turn.output);
+        // #142 AC-002: "provisional" is specifically the *live* state — text that
+        // is still arriving and will be replaced by the verified output. An
+        // interrupted turn also carries buffered text, but that text is frozen
+        // and unconfirmed: it keeps the "unconfirmed output" region label and
+        // must not take the provisional treatment, which would present the
+        // interrupted stream as if more were still coming. The two states are
+        // pinned by turn-provisional.test.tsx and turn-progress-interaction.
+        const isProvisional = turn.status === "running" && Boolean(turn.output);
         return (
           <li className={`owb-turn ${stateClass}`} key={turn.id} data-turn-id={turn.id}>
             {/* #248 R2 ④：D3 升级为对话界面——操作员下达（右）与岗位回复（左）成对成线程。 */}
