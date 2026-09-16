@@ -995,10 +995,10 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
 
   const safeInput = (input || "Execute your position duties for this turn.").replace(/@/g, "\\u0040");
   const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n`;
+  const localLogin = engineModel === "claude-local" && !childEnv.ANTHROPIC_API_KEY && !childEnv.ANTHROPIC_AUTH_TOKEN;
   const selectedModel = process.env.ROLEWEAVE_TURN_MODEL || provider.selectedDefault;
   const args = [
-    // Bare deliberately bypasses OAuth discovery. Use it only when we have
-    // projected an explicit provider key/token into this child environment.
+    // Bare bypasses OAuth discovery, so enable it only with explicit credentials.
     ...(childEnv.ANTHROPIC_API_KEY || childEnv.ANTHROPIC_AUTH_TOKEN ? ["--bare"] : []),
     "--print",
     "--input-format", "text",
@@ -1007,7 +1007,8 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     "--include-partial-messages",
     "--permission-mode", "dontAsk",
     "--tools", "",
-    "--setting-sources", "",
+    "--setting-sources", localLogin ? "user" : "",
+    ...(localLogin ? ["--settings", '{"disableAllHooks":true}'] : []),
     "--strict-mcp-config",
     "--disable-slash-commands",
     "--no-chrome",

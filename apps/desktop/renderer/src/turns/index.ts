@@ -10,8 +10,6 @@ export {
   visibleAgentHosts,
   type AgentHost,
 } from "./agent-host";
-export { ConversationControls, type ConversationControlsProps } from "./ConversationControls";
-export { SessionContext, type SessionContextProps } from "./SessionContext";
 export { TurnComposer, type TurnComposerProps } from "./TurnComposer";
 export { TurnPanel, type TurnPanelProps } from "./TurnPanel";
 export { TurnThread, type TurnThreadProps } from "./TurnThread";

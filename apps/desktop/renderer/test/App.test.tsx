@@ -306,6 +306,43 @@ describe("App runtime bridge", () => {
     expect(screen.queryByRole("switch", { name: "启用会话上下文" })).not.toBeInTheDocument();
   });
 
+  it.each(["qoder", "claude-code"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
+    window.localStorage.setItem("owb-turn-engine", "codex-local");
+    try {
+      for (let mount = 0; mount < 2; mount += 1) {
+        const bridge = openedBridge({
+          position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine } }),
+          createSessionTurn: vi.fn().mockResolvedValue({ status: 200, body: apiTurn({ engine: agentEngine, input: "使用员工绑定" }) }),
+        });
+        const view = render(<App />);
+        try {
+          await selectRepoOwner();
+          await waitFor(() => expect(bridge.sessionTurnHistory).toHaveBeenCalled());
+          expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
+          if (agentEngine === "qoder") {
+            await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+            fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "使用员工绑定" } });
+            fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+            await waitFor(() => expect(bridge.createSessionTurn).toHaveBeenCalledWith({
+              sessionId: activeSession.sessionId, engine: agentEngine, input: "使用员工绑定",
+            }));
+            await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+          } else {
+            // Other hosts are ready, but this employee must not silently migrate.
+            expect((await screen.findAllByText("设置 ANTHROPIC_API_KEY 后重启工作台")).length).toBeGreaterThan(0);
+            expect(screen.getByLabelText("下达任务")).toBeDisabled();
+            expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+          }
+          expect(window.localStorage.getItem("owb-turn-engine")).toBe("codex-local");
+        } finally {
+          view.unmount();
+        }
+      }
+    } finally {
+      window.localStorage.removeItem("owb-turn-engine");
+    }
+  });
+
   it("opens a workspace, selects an employee in the tree, loads local history, sends, and reads persisted history back", async () => {
     const existing = apiTurn();
     const created = apiTurn({

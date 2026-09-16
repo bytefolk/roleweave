@@ -26,7 +26,6 @@ const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { rendererEntryPath } = require("./runtime-paths.cjs");
-const { runtimeEnvironment, runtimeDescription } = require("./runtime-settings.cjs");
 const { recoverMacGuiPath } = require("./macos-login-path.cjs");
 const {
   reservePackagedSmokeRequests,
@@ -95,6 +94,7 @@ const {
   validateGoalUpdateRequest,
 } = require("./goal-ipc.cjs");
 const { openWorkspaceWithPicker, createWorkspaceWithPicker } = require("./workspace-ipc.cjs");
+const { runtimeEnvironment, runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createConnectionStore, createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
 
@@ -157,6 +157,7 @@ function startControlPlane() {
   controlPlaneState = "starting";
   controlPlaneError = null;
   return startControlPlaneProcess({
+    // A stopped WSL distribution needs time to boot before Node can announce readiness.
     readyTimeoutMs: controlPlaneMode(desktopEnv) === "wsl" ? 45000 : DEFAULT_READY_TIMEOUT_MS,
     createChild: () => {
       const child = createControlPlaneChild({

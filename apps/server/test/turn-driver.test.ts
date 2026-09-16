@@ -261,9 +261,9 @@ test("Host runtime reaches every selected engine while Qoder controls remain sco
         engine: "claude-code",
         bundled: true,
         permissionMode: "auto",
-        expectedBin: undefined,
-        expectedPermissionMode: undefined,
-        expectedQoderCommand: undefined,
+      expectedBin: undefined,
+      expectedPermissionMode: undefined,
+      expectedQoderCommand: undefined,
         expectQoderRuntime: true,
         label: "Claude service receives runtime but no Qoder controls",
       },
@@ -403,12 +403,16 @@ test("codex-local turn env forwards login state and drops relay credentials at t
     model: process.env.OPENAI_MODEL,
     apiKey: process.env.OPENAI_API_KEY,
     baseUrl: process.env.OPENAI_BASE_URL,
+    nodeMarker: process.env.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE,
+    arbitrary: process.env.ROLEWEAVE_TEST_UNRELATED_SECRET,
   };
   process.env.DIGITAL_EMPLOYEE_CODEX_COMMAND = "/opt/codex/bin/codex";
   process.env.CODEX_HOME = "/opt/codex/home";
   process.env.OPENAI_MODEL = "gpt-5.2";
   process.env.OPENAI_API_KEY = "sk-must-not-leak";
   process.env.OPENAI_BASE_URL = "https://relay.example.com/v1";
+  process.env.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE = "1";
+  process.env.ROLEWEAVE_TEST_UNRELATED_SECRET = "must-not-cross";
   try {
     const command = await fixtureCli(`
       let input = "";
@@ -420,6 +424,8 @@ test("codex-local turn env forwards login state and drops relay credentials at t
       if (process.env.DIGITAL_EMPLOYEE_CODEX_COMMAND !== "/opt/codex/bin/codex") process.exit(5);
       if (process.env.CODEX_HOME !== "/opt/codex/home") process.exit(4);
       if (process.env.OPENAI_MODEL !== "gpt-5.2") process.exit(3);
+      if (process.env.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE !== undefined) process.exit(9);
+      if (process.env.ROLEWEAVE_TEST_UNRELATED_SECRET !== undefined) process.exit(10);
       const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
       console.log(JSON.stringify({ ...base, type: "run.started" }));
       console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
@@ -439,6 +445,8 @@ test("codex-local turn env forwards login state and drops relay credentials at t
         model: "OPENAI_MODEL",
         apiKey: "OPENAI_API_KEY",
         baseUrl: "OPENAI_BASE_URL",
+        nodeMarker: "ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE",
+        arbitrary: "ROLEWEAVE_TEST_UNRELATED_SECRET",
       }[key]!;
       if (value === undefined) delete process.env[environmentKey];
       else process.env[environmentKey] = value;
