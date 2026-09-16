@@ -25,7 +25,7 @@ const display=(value:unknown)=>value===null?'—':typeof value==='object'?JSON.s
 export function ConfigurationSettings({updates}:{updates:ReactNode}) {
  const t=useT();const[snapshot,setSnapshot]=useState<ConfigurationSnapshot|null>(null),[text,setText]=useState('');
  const[category,setCategory]=useState<Category>('general'),[view,setView]=useState<'form'|'file'>('form');
- const[issues,setIssues]=useState<ConfigurationIssue[]>([]),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
+ const[issues,setIssues]=useState<ConfigurationIssue[]>([]),[validatedText,setValidatedText]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  const[error,setError]=useState<string|null>(null),[notice,setNotice]=useState<string|null>(null),[conflict,setConflict]=useState<ConfigurationSnapshot|null>(null);
  const[preview,setPreview]=useState(false),[leaveOpen,setLeaveOpen]=useState(false),[secretVersion,setSecretVersion]=useState(0);
  const[clearKeys,setClearKeys]=useState<Set<string>>(new Set());
@@ -33,7 +33,8 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
  const validationSequence=useRef(0),saving=useRef(false),latestSave=useRef<()=>Promise<boolean>>(async()=>false);
  const parsed=useMemo(()=>{const errors:ParseError[]=[];const value=parse(text,errors,{allowTrailingComma:true}) as ApplicationConfiguration|undefined;return{value,errors};},[text]);
  const object=(value:unknown)=>value!==null&&typeof value==='object'&&!Array.isArray(value);
- const formShape=parsed.errors.length===0&&object(parsed.value?.appearance)&&object(parsed.value?.chat)&&object(parsed.value?.hosts)&&object(parsed.value?.hosts?.qoder)&&object(parsed.value?.hosts?.claude)&&object(parsed.value?.hosts?.codex)&&object(parsed.value?.services)&&object(parsed.value?.runtime);
+ const strings=(value:unknown)=>object(value)&&Object.values(value as Record<string,unknown>).every(v=>typeof v==='string');
+ const formShape=parsed.errors.length===0&&object(parsed.value?.appearance)&&['system','light','dark'].includes(parsed.value?.appearance?.mode??'')&&['mint','default'].includes(parsed.value?.appearance?.profile??'')&&['en','zh-CN'].includes(parsed.value?.appearance?.locale??'')&&object(parsed.value?.chat)&&['enter','mod-enter'].includes(parsed.value?.chat?.sendShortcut??'')&&typeof parsed.value?.chat?.rememberLayout==='boolean'&&strings(parsed.value?.hosts?.qoder)&&strings(parsed.value?.hosts?.claude)&&strings(parsed.value?.hosts?.codex)&&object(parsed.value?.services)&&Object.values(parsed.value?.services??{}).every(v=>v===null||strings(v))&&strings(parsed.value?.runtime);
  const config=formShape?parsed.value:snapshot?.config;
  const english=(config??snapshot?.config)?.appearance.locale==='en';const copy=(en:string)=>configurationText(english,en);
  const hasSecretChanges=useMemo(()=>secretVersion>=0&&([...secretInputs.current.values()].some(input=>!!input.value)||clearKeys.size>0),[secretVersion,clearKeys]);
@@ -43,7 +44,7 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
  const formInvalid=parsed.errors.length>0||issues.length>0||!config;
  const formBlocked=!formShape;
  function resetSecrets(){for(const input of secretInputs.current.values())input.value='';setClearKeys(new Set());setSecretVersion(v=>v+1);}
- const accept=useCallback((next:ConfigurationSnapshot)=>{setSnapshot(next);setText(next.text);setIssues([]);setConflict(null);setError(null);},[]);
+ const accept=useCallback((next:ConfigurationSnapshot)=>{setSnapshot(next);setText(next.text);setValidatedText(next.text);setIssues([]);setConflict(null);setError(null);},[]);
  const reload=useCallback(async()=>{
   setLoading(true);setError(null);
   try{const result=await window.owb.configuration!.get();if(!result.ok)throw Error();accept(result);resetSecrets();}
@@ -52,7 +53,7 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
  useEffect(()=>{void reload();},[reload]);
  useEffect(()=>{
   if(!snapshot)return;const sequence=++validationSequence.current;
-  const timer=window.setTimeout(()=>{void window.owb.configuration!.validate(text).then(result=>{if(sequence===validationSequence.current)setIssues(result.ok?[]:result.errors??[]);}).catch(()=>{if(sequence===validationSequence.current)setError('validate');});},140);
+  const timer=window.setTimeout(()=>{void window.owb.configuration!.validate(text).then(result=>{if(sequence===validationSequence.current){setIssues(result.ok?[]:result.errors??[]);setValidatedText(result.ok?text:'');}}).catch(()=>{if(sequence===validationSequence.current)setError('validate');});},140);
   return()=>window.clearTimeout(timer);
  },[text,snapshot]);
  useEffect(()=>{void window.owb.configuration?.setDirty(dirty);},[dirty]);
@@ -79,7 +80,7 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
    const result=await window.owb.configuration!.save({...request(),...(revision?{revision}:{})});
    if(!result.ok){if(result.code==='conflict'&&result.current)setConflict(result.current);else{setIssues(result.errors??[]);setError(result.code);}return false;}
    accept(result);resetSecrets();applyConfiguration(result);
-   setNotice(result.servicesApplied===false?'services-pending':result.pendingRestart?'restart':'saved');
+   setNotice(result.servicesRestartRequired?'services-restart':result.servicesApplied===false?'services-pending':result.pendingRestart?'restart':'saved');
    if(result.servicesChanged)window.dispatchEvent(new Event('owb:services-changed'));
    return true;
   }catch{setError('storage_unavailable');return false;}finally{saving.current=false;setBusy(false);}
@@ -133,12 +134,12 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
     </section>
     <section id="settings-panel-services" role="tabpanel" aria-labelledby="settings-tab-services" hidden={category!=='services'}>
      <fieldset disabled={busy||formBlocked}><legend>{copy("Docs and memory configuration")}</legend>
-      {(['doc','mem'] as const).map(kind=>{const entry=config.services[kind],name=kind==='doc'?'Doc':'Mem',key=`service:${kind}`;return <section key={kind} className="owb-config-service"><h3>{name}</h3><p className="owb-settings-module__hint">{snapshot.sources[`services.${kind}`]==='configuration'?copy("Saved connection settings"):copy("Launch environment defaults; enter an address to save an override")}</p>
+      {(['doc','mem'] as const).map(kind=>{const entry=config.services[kind],name=kind==='doc'?'Doc':'Mem',key=`service:${kind}`;return <section key={kind} className="owb-config-service"><h3>{name}</h3><p className="owb-settings-module__hint">{snapshot.sources[`services.${kind}`]==='environment-after-restart'?copy('Launch defaults apply after restart; the current connection is retained'):snapshot.sources[`services.${kind}`]==='configuration'?copy("Saved connection settings"):copy("Launch environment defaults; enter an address to save an override")}</p>
        <label className="owb-config-field"><span>{name} API URL</span><Input value={entry?.apiUrl??''} onChange={e=>{if(e.target.value)field(['services',kind],{...(entry??{}),apiUrl:e.target.value});else field(['services',kind],null);}} placeholder={kind==='doc'?'http://localhost:3100':'http://localhost:8080'} spellCheck={false}/></label>
-       {entry?<>{input(`${name} Web URL`,['services',kind,'webUrl'],entry.webUrl)}{kind==='mem'?input('Mem workspace UUID',['services','mem','workspaceId'],entry.workspaceId):null}
-        <div className="owb-config-secret"><label htmlFor={`config-${kind}-token`}>{name} Token</label><span className="owb-settings-module__hint">{entry.tokenRef?copy("Encrypted credential reference"):copy("No credential reference")}</span><input id={`config-${kind}-token`} ref={node=>{if(node)secretInputs.current.set(key,node);else secretInputs.current.delete(key);}} className="ant-input" type="password" autoComplete="new-password" maxLength={8192} disabled={busy||!snapshot.storageAvailable||clearKeys.has(key)} placeholder={copy("Leave blank to retain")} onInput={()=>secretChanged(key,['services',kind,'tokenRef'],`secret:service/${kind}`)}/>
-         {snapshot.config.services[kind]?.tokenRef?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(key)} onChange={()=>clearSecret(key,['services',kind,'tokenRef'],snapshot.config.services[kind]?.tokenRef)}/>{copy("Explicitly clear token")}</label>:null}</div></>:null}
-       {entry?<Button onClick={()=>field(['services',kind],null)}>{copy('Disconnect {name} on save').replace('{name}',name)}</Button>:<Button onClick={()=>field(['services',kind],undefined)}>{copy("Restore launch defaults")}</Button>}
+       {entry?<>{input(`${name} Web URL`,['services',kind,'webUrl'],entry.webUrl)}{kind==='mem'?input('Mem workspace UUID',['services','mem','workspaceId'],entry.workspaceId):null}</>:null}
+        <div className="owb-config-secret"><label htmlFor={`config-${kind}-token`}>{name} Token</label><span className="owb-settings-module__hint">{entry?.tokenRef?copy("Encrypted credential reference"):copy("No credential reference")}</span><input id={`config-${kind}-token`} ref={node=>{if(node)secretInputs.current.set(key,node);else secretInputs.current.delete(key);}} className="ant-input" type="password" autoComplete="new-password" maxLength={8192} disabled={busy||!snapshot.storageAvailable||clearKeys.has(key)||!entry||formBlocked} placeholder={copy("Leave blank to retain")} onInput={()=>secretChanged(key,['services',kind,'tokenRef'],`secret:service/${kind}`)}/>
+         {snapshot.config.services[kind]?.tokenRef?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(key)} onChange={()=>clearSecret(key,['services',kind,'tokenRef'],snapshot.config.services[kind]?.tokenRef)}/>{copy("Explicitly clear token")}</label>:null}</div>
+       {entry?<Button onClick={()=>field(['services',kind],null)}>{copy('Disconnect {name} on save').replace('{name}',name)}</Button>:<Button onClick={()=>field(['services',kind],undefined)}>{copy("Restore launch defaults after restart")}</Button>}
       </section>;})}
       <p className="owb-settings-module__hint">{copy("Service forms and the file view share this draft. Save before checking connectivity. Changing an API URL requires updating or clearing its token.")}</p>
      </fieldset>
@@ -155,7 +156,7 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
     </section>
    </>:null}
   </div>
-  {snapshot?<footer className="owb-config-savebar"><span role="status">{notice==='restart'?copy("Saved · Runtime / Host changes require restart"):notice==='services-pending'?copy("Saved. Live services are unavailable; check or retry the connection."):notice==='saved'?copy("Configuration saved"):notice==='valid'?copy("Configuration valid"):dirty?copy("Unsaved changes"):copy("Configuration is up to date")}</span><Button disabled={busy||!dirty||formInvalid} onClick={()=>setPreview(true)}>{copy("Preview changes")}</Button><Button type="primary" disabled={busy||!dirty} loading={busy} onClick={()=>void save()}>{copy("Save configuration")}</Button></footer>:null}
+  {snapshot?<footer className="owb-config-savebar"><span role="status">{notice==='services-restart'?copy('Saved · Launch default connections apply after restart; current connections are retained'):notice==='restart'?copy("Saved · Runtime / Host changes require restart"):notice==='services-pending'?copy("Saved. Live services are unavailable; check or retry the connection."):notice==='saved'?copy("Configuration saved"):notice==='valid'?copy("Configuration valid"):dirty?copy("Unsaved changes"):snapshot.servicesRestartRequired?copy('Saved · Launch default connections apply after restart; current connections are retained'):snapshot.pendingRestart?copy("Saved · Runtime / Host changes require restart"):copy("Configuration is up to date")}</span><Button disabled={busy||!dirty||formInvalid||validatedText!==text} onClick={()=>setPreview(true)}>{copy("Preview changes")}</Button><Button type="primary" disabled={busy||!dirty} loading={busy} onClick={()=>void save()}>{copy("Save configuration")}</Button></footer>:null}
   <Modal open={preview} title={copy("Preview changes")} onCancel={()=>setPreview(false)} footer={<Button onClick={()=>setPreview(false)}>{copy("Back to editing")}</Button>} width={720}>
    {changes.map(row=><div className="owb-config-diff" key={row.field}><code>{row.field}</code><span>{display(row.before)} → {display(row.after)}</span></div>)}
    {[...secretInputs.current].map(([key,input])=><div key={key} className="owb-config-diff"><code>{key}</code><span>{clearKeys.has(key)?copy("Clear"):input.value?copy("Update"):copy("Retain")}</span></div>)}

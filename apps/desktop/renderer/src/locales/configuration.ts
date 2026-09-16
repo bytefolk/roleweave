@@ -1,5 +1,8 @@
 // Settings-specific catalog; the existing app locale still owns the shell.
 const zh: Record<string, string> = {
+  "Launch defaults apply after restart; the current connection is retained": "重启后使用启动默认值；当前连接保留",
+  "Restore launch defaults after restart": "恢复启动默认值（重启后生效）",
+  "Saved · Launch default connections apply after restart; current connections are retained": "已保存 · 恢复启动默认连接需重启；当前连接保留",
   "The API URL changed. Update or explicitly clear its token before saving.": "服务地址已改变。请明确更新或清除该服务的 Token 后保存，避免把旧凭据发送到新地址。",
   "Fix the marked fields. The active configuration has not changed.": "配置无效，请修正下面标出的字段。有效配置保持不变。",
   "Could not read or save configuration. Your draft is retained; retry.": "配置未能读取或保存。草稿已保留，请重试。",

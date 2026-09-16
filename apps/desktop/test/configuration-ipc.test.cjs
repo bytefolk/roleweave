@@ -18,3 +18,8 @@ test('external links refuse executable schemes, credentials, controls and untrus
  assert.equal((await open({trusted:true},'file:///tmp/example')).ok,false);assert.equal(calls.length,0);
  assert.equal((await open({trusted:true},'https://example.com')).ok,true);assert.equal(calls.length,1);
 });
+test('a saved removal of service overrides never claims live environment defaults applied',async()=>{
+ const handlers=new Map();registerConfigurationIpc({ipcMain:{handle:(n,f)=>handlers.set(n,f)},isTrusted:()=>true,
+  getStore:()=>({save:()=>({ok:true,servicesChanged:true,servicesRestartRequired:true})}),onSaved:async()=>true,shell:{},setDirty:()=>{},close:()=>{}});
+ const result=await handlers.get('owb:configuration:save')({},{});assert.equal(result.ok,true);assert.equal(result.servicesApplied,false);assert.equal(result.servicesRestartRequired,true);
+});

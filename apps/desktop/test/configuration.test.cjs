@@ -107,3 +107,30 @@ test('oversized configuration and locked credentials do not prevent unrelated lo
  fs.writeFileSync(h.file,'x'.repeat(2*1024*1024));assert.equal(h.store.get().ok,true);assert.equal(h.store.get().config.appearance.mode,'system');
  assert.equal(h.store.save({text:text(c),revision:h.store.get().revision}).ok,false);
 });
+test('near-limit escaped JSONC and encrypted data roll back through a bounded readable journal',t=>{
+ let fail=false;const h=setup(t,{beforeWrite:name=>{if(fail&&name==='roleweave.config.jsonc')throw Error('disk');}});
+ let a=h.store.get();const c=a.config;c.hosts.codex={apiKeyRef:'secret:host/OPENAI_API_KEY'};
+ const prefix=text(c)+'\n// ',big=prefix+'\\'.repeat(256*1024-Buffer.byteLength(prefix)-4);
+ let result=h.store.save({text:big,revision:a.revision,hostChanges:{OPENAI_API_KEY:'d'.repeat(6000)}});assert.equal(result.ok,true);
+ result=h.store.save({text:big+'\n',revision:result.revision});assert.equal(result.ok,true);
+ const before=fs.readFileSync(h.file,'utf8'),cipher=fs.readFileSync(path.join(h.dir,'host-credentials.json'),'utf8');
+ fail=true;const rejected=h.store.save({text:big+'\n\n',revision:result.revision,hostChanges:{OPENAI_API_KEY:'dummy-replacement'}});
+ assert.equal(rejected.ok,false);assert.equal(h.store.get().ok,true);assert.equal(fs.readFileSync(h.file,'utf8'),before);assert.equal(fs.readFileSync(path.join(h.dir,'host-credentials.json'),'utf8'),cipher);
+ assert.equal(fs.existsSync(path.join(h.dir,'roleweave.config.jsonc.transaction')),false);
+});
+test('removing a saved service override truthfully remains pending restart across later saves',t=>{
+ const h=setup(t),a=h.store.get(),c=a.config;c.services.doc={apiUrl:'https://saved.example'};
+ const b=h.store.save({text:text(c),revision:a.revision});assert.equal(b.ok,true);delete c.services.doc;
+ const d=h.store.save({text:text(c),revision:b.revision});assert.equal(d.ok,true);assert.equal(d.pendingRestart,true);assert.equal(d.servicesRestartRequired,true);assert.equal(d.sources['services.doc'],'environment-after-restart');
+ c.appearance.mode='dark';const e=h.store.save({text:text(c),revision:d.revision});assert.equal(e.servicesRestartRequired,true);
+ const restarted=createConfigurationStore({userDataPath:h.dir,safeStorage:h.safeStorage,env:{}});assert.equal(restarted.get().servicesRestartRequired,false);assert.deepEqual(restarted.readServices(),{});
+});
+test('external missing encrypted references cannot replace valid effective preferences',t=>{
+ const h=setup(t),a=h.store.get(),c=a.config;c.appearance.mode='dark';assert.equal(h.store.save({text:text(c),revision:a.revision}).ok,true);
+ const invalid=structuredClone(c);invalid.appearance.mode='light';invalid.hosts.codex.apiKeyRef='secret:host/OPENAI_API_KEY';fs.writeFileSync(h.file,text(invalid));
+ const current=h.store.get();assert.equal(current.ok,true);assert.equal(current.config.appearance.mode,'dark');assert.ok(current.warnings.length);assert.ok(current.errors.length);
+});
+test('an unrelated malformed encrypted store does not block noncredential preference edits',t=>{
+ const h=setup(t),a=h.store.get();fs.writeFileSync(path.join(h.dir,'host-credentials.json'),'{malformed');
+ const c=a.config;c.appearance.mode='dark';const result=h.store.save({text:text(c),revision:a.revision});assert.equal(result.ok,true);assert.equal(result.config.appearance.mode,'dark');
+});

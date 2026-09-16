@@ -30,7 +30,7 @@ describe('shared settings draft',()=>{
  it('keeps failed grouped credential input and redacts preview; only successful save clears it',async()=>{
   const api=install();api.save.mockResolvedValueOnce({ok:false,code:'storage_unavailable'} as never);await show();fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
   const password=document.getElementById('config-OPENAI_API_KEY') as HTMLInputElement;fireEvent.input(password,{target:{value:'dummy-settings-secret'}});
-  fireEvent.click(screen.getByRole('button',{name:'预览修改'}));expect(screen.getByText('更新',{exact:true})).toBeInTheDocument();expect(screen.queryByText('dummy-settings-secret')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'返回编辑'}));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'预览修改'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'预览修改'}));expect(screen.getByText('更新',{exact:true})).toBeInTheDocument();expect(screen.queryByText('dummy-settings-secret')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'返回编辑'}));
   fireEvent.click(footerSave());await screen.findByText('配置未能读取或保存。草稿已保留，请重试。');expect(password.value).toBe('dummy-settings-secret');
   fireEvent.click(footerSave());await screen.findByText('配置已保存');expect(password.value).toBe('');
   expect((api.save.mock.calls[1]![0] as unknown as {hostChanges:Record<string,string>}).hostChanges.OPENAI_API_KEY).toBe('dummy-settings-secret');
@@ -51,4 +51,14 @@ describe('shared settings draft',()=>{
   expect(next).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'继续编辑'}));expect(next).not.toHaveBeenCalled();
   act(()=>requestSettingsLeave(next));fireEvent.click(screen.getByRole('button',{name:'保存并离开'}));await waitFor(()=>expect(next).toHaveBeenCalledTimes(1));expect(api.save).toHaveBeenCalledTimes(1);
  });
+ it('retains an unsaved service token through temporarily invalid JSONC and category changes',async()=>{
+  const api=install();await show();fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));
+  fireEvent.change(screen.getByRole('textbox',{name:'Doc API URL'}),{target:{value:'https://doc.example'}});
+  const token=document.getElementById('config-doc-token') as HTMLInputElement;fireEvent.input(token,{target:{value:'dummy-uncommitted-token'}});
+  const editor=await fileView(),valid=(editor as HTMLTextAreaElement).value;
+  fireEvent.change(editor,{target:{value:'{ broken'}});expect(document.getElementById('config-doc-token')).toBe(token);expect(token.value).toBe('dummy-uncommitted-token');
+  fireEvent.change(editor,{target:{value:valid}});fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));expect(token.value).toBe('dummy-uncommitted-token');
+  fireEvent.click(footerSave());await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1));expect((api.save.mock.calls[0]![0] as unknown as {serviceChanges:{doc:string}}).serviceChanges.doc).toBe('dummy-uncommitted-token');
+ });
+
 });

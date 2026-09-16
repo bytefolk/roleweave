@@ -3,12 +3,16 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
-const jsonc = require('jsonc-parser');
+const jsonc = require('./vendor/jsonc-parser.cjs');
 const { createCredentialStore, HOST_FIELDS, validValue } = require('./credential-settings.cjs');
 const { createConnectionStore, normalizeConnection } = require('./service-connections.cjs');
 const { validateRuntimeSettings } = require('./runtime-settings.cjs');
 const FILE = 'roleweave.config.jsonc';
 const MAX_BYTES = 256 * 1024;
+const MAX_STORED_BYTES = MAX_BYTES * 4;
+// Four bounded source files can each expand sixfold when JSON-stringified.
+// Recovery must accept every journal the transaction writer can produce.
+const MAX_JOURNAL_BYTES = 4 * MAX_STORED_BYTES * 6 + 4096;
 const REF_FIELDS = { qoder: { personalAccessTokenRef: 'QODER_PERSONAL_ACCESS_TOKEN' },
   claude: { apiKeyRef: 'ANTHROPIC_API_KEY', authTokenRef: 'ANTHROPIC_AUTH_TOKEN' }, codex: { apiKeyRef: 'OPENAI_API_KEY' } };
 const HOST_URLS = { claude: 'ANTHROPIC_BASE_URL', codex: 'OPENAI_BASE_URL' };
@@ -107,11 +111,12 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
   const transactionFiles = [FILE, `${FILE}.bak`, 'host-credentials.json', 'service-connections.json'];
   let migrationWarnings = [], lastGood = null;
   let activationBaseline = null, credentialsPendingRestart = false;
+  const servicesPendingRestart = new Set();
   const activationKey = config => JSON.stringify({ runtime: config.runtime, hosts: config.hosts });
-  const pendingRestart = config => credentialsPendingRestart || (activationBaseline !== null && activationKey(config) !== activationBaseline);
+  const pendingRestart = config => credentialsPendingRestart || servicesPendingRestart.size>0 || (activationBaseline !== null && activationKey(config) !== activationBaseline);
   const readRaw = name => {
     let fd;
-    try { fd=fs.openSync(path.join(userDataPath,name),'r'); if(fs.fstatSync(fd).size>MAX_BYTES*4) throw Error(); return fs.readFileSync(fd,'utf8'); }
+    try { fd=fs.openSync(path.join(userDataPath,name),'r'); if(fs.fstatSync(fd).size>(name===`${FILE}.transaction`?MAX_JOURNAL_BYTES:MAX_STORED_BYTES)) throw Error(); return fs.readFileSync(fd,'utf8'); }
     catch (e) { if(e.code==='ENOENT')return null; throw Error('storage_unavailable'); }
     finally { if(fd!==undefined)fs.closeSync(fd); }
   };
@@ -129,14 +134,16 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     if(value.version!==1||!plain(value.files)||Object.keys(value.files).sort().join('|')!==[...transactionFiles].sort().join('|'))throw Error('storage_unavailable');
     for(const [name,contents] of Object.entries(value.files)) {
       if(contents===null) {try{fs.unlinkSync(path.join(userDataPath,name));}catch(e){if(e.code!=='ENOENT')throw e;}}
-      else if(typeof contents==='string'&&Buffer.byteLength(contents)<MAX_BYTES*4)writeAtomic(name,contents,false);
+      else if(typeof contents==='string'&&Buffer.byteLength(contents)<=MAX_STORED_BYTES)writeAtomic(name,contents,false);
       else throw Error('storage_unavailable');
     }
     fs.unlinkSync(journal); migrationWarnings.push('An interrupted save was rolled back.');
   }
   function transaction(write) {
     recover(); const files=Object.fromEntries(transactionFiles.map(name=>[name,readRaw(name)]));
-    writeAtomic(`${FILE}.transaction`,serialize({version:1,files}));
+    const journalText=serialize({version:1,files});
+    if(Buffer.byteLength(journalText)>MAX_JOURNAL_BYTES)throw Error('storage_unavailable');
+    writeAtomic(`${FILE}.transaction`,journalText);
     try { write(); fs.unlinkSync(journal); }
     catch { recover(); throw Error('storage_unavailable'); }
   }
@@ -176,7 +183,12 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
       const current=lastGood??(fallback.ok?{text:saved,config:fallback.config}:{text:serialize(defaults()),config:defaults()});
       return{...current,raw:'<unreadable>',warnings:[...migrationWarnings,'The configuration file cannot be read. Using the last valid configuration; repair the file before saving.'],errors:[]};
     }
-    const parsed=validateConfigurationText(raw);
+    let parsed=validateConfigurationText(raw);
+    if(parsed.ok){
+      let validReferences=false;
+      try{validReferences=referencesExist(parsed.config,{},{});}catch{}
+      if(!validReferences)parsed={ok:false,errors:[{field:'hosts / services',line:1,column:1,message:'An encrypted reference is missing or does not match its service endpoint. Repair the reference or enter credentials in the form.'}]};
+    }
     if(parsed.ok){
       let text=raw,config=parsed.config;
       if(config.migration?.pendingHostUrls?.length){
@@ -193,7 +205,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     }
     const saved=readRaw(`${FILE}.bak`), fallback=validateConfigurationText(saved);
     const current=lastGood??(fallback.ok?{text:saved,config:fallback.config}:{text:serialize(defaults()),config:defaults()});
-    return{...current,raw,warnings:[...migrationWarnings,'The configuration file is invalid. The last valid configuration remains active. Repair and save to replace it.'],errors:parsed.errors};
+    return{...current,raw,warnings:[...migrationWarnings,'The configuration file is invalid or references unavailable credentials. The last valid configuration remains active. Repair and save to replace it.'],errors:parsed.errors};
   }
   function sources(config) {
     const result={};
@@ -201,7 +213,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     for(const[host,keys]of Object.entries(HOST_FIELDS))result[`hosts.${host}`]=[...keys,...(host==='claude'?['ANTHROPIC_CUSTOM_HEADERS']:[])].some(contains)?'environment':Object.keys(config.hosts[host]).length?'configuration':'host-default';
     for(const[field,names]of Object.entries({mode:['ROLEWEAVE_CONTROL_PLANE_MODE','ORG_WORKBENCH_CONTROL_PLANE'],distro:['ROLEWEAVE_WSL_DISTRO'],nodePath:['ROLEWEAVE_WSL_NODE_PATH'],homePath:['ROLEWEAVE_WSL_HOME']}))result[`runtime.${field}`]=names.some(contains)?'environment':config.runtime[field]!==undefined?'configuration':'default';
     // Service connections already have explicit saved-over-environment precedence.
-    for(const kind of ['doc','mem'])result[`services.${kind}`]=Object.hasOwn(config.services,kind)?'configuration':'environment-or-default';
+    for(const kind of ['doc','mem'])result[`services.${kind}`]=servicesPendingRestart.has(kind)?'environment-after-restart':Object.hasOwn(config.services,kind)?'configuration':'environment-or-default';
     return result;
   }
   function get() {
@@ -210,15 +222,16 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
       return {ok:true,config:clone(current.config),text:current.text,revision:revision(current.raw),filePath:file,
         warnings:current.warnings,errors:current.errors??[],sources:sources(current.config),
         storageAvailable:credentials.ok&&credentials.storageAvailable,credentials:credentials.ok?credentials.credentials:[],
-        platform,canRestore:readRaw(`${FILE}.bak`)!==null,pendingRestart:pendingRestart(current.config)};
+        platform,canRestore:readRaw(`${FILE}.bak`)!==null,pendingRestart:pendingRestart(current.config),servicesRestartRequired:servicesPendingRestart.size>0};
     }catch{return fail('storage_unavailable');}
   }
   function referencesExist(config,hostChanges,serviceChanges) {
-    const keys=hostStore().configuredKeys();
+    const hasHostRefs=Object.entries(REF_FIELDS).some(([host,refs])=>Object.keys(refs).some(field=>config.hosts[host][field]));
+    const keys=hasHostRefs?hostStore().configuredKeys():[];
     for(const[host,refs]of Object.entries(REF_FIELDS))for(const[field,key]of Object.entries(refs))if(config.hosts[host][field] && (hostChanges[key]===null || (!hostChanges[key]&&!keys.includes(key))))return false;
     if(Object.values(config.services).some(entry=>entry?.tokenRef)) {
       const saved=serviceStore().readMetadata();
-      for(const kind of ['doc','mem'])if(config.services[kind]?.tokenRef&&(serviceChanges[kind]===null||(!serviceChanges[kind]&&!saved[kind]?.tokenConfigured)))return false;
+      for(const kind of ['doc','mem'])if(config.services[kind]?.tokenRef&&(serviceChanges[kind]===null||(!serviceChanges[kind]&&(!saved[kind]?.tokenConfigured||saved[kind]?.apiUrl!==config.services[kind].apiUrl))))return false;
     }
     return true;
   }
@@ -243,7 +256,11 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     try {
       const current=readEffective();
       if(request.revision!==revision(current.raw))return{ok:false,code:'conflict',current:get()};
-      if(!referencesExist(parsed.config,hostChanges,serviceChanges))return{ok:false,code:'invalid_configuration',errors:[{field:'hosts / services',line:1,column:1,message:'A credential reference has no encrypted value. Enter a credential or remove the reference.'}]};
+      if(!referencesExist(parsed.config,hostChanges,serviceChanges)) {
+        const metadata=serviceStore().readMetadata();
+        if(['doc','mem'].some(kind=>parsed.config.services[kind]?.tokenRef&&!serviceChanges[kind]&&metadata[kind]?.apiUrl!==parsed.config.services[kind].apiUrl))return fail('service_endpoint_changed');
+        return{ok:false,code:'invalid_configuration',errors:[{field:'hosts / services',line:1,column:1,message:'A credential reference has no encrypted value. Enter a credential or remove the reference.'}]};
+      }
       const changed=changesBetween(current.config,parsed.config);
       if(parsed.config.migration?.pendingHostUrls?.length){
         const pending=parsed.config.migration.pendingHostUrls.filter(host=>!changed.some(row=>row.field.startsWith(`hosts.${host}`)));
@@ -260,6 +277,10 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
       });
       lastGood={text:request.text,config:parsed.config}; migrationWarnings=[];
       if(Object.values(hostChanges).some(value=>value!==''))credentialsPendingRestart=true;
+      for(const kind of ['doc','mem']){
+        if(Object.hasOwn(current.config.services,kind)&&!Object.hasOwn(parsed.config.services,kind))servicesPendingRestart.add(kind);
+        else if(Object.hasOwn(parsed.config.services,kind))servicesPendingRestart.delete(kind);
+      }
       return {...get(),changes:changed,pendingRestart:pendingRestart(parsed.config),servicesChanged:changedServices};
     }catch(error){return fail(error.message==='service_endpoint_changed'?'service_endpoint_changed':'storage_unavailable');}
   }

@@ -8,7 +8,7 @@ function registerConfigurationIpc({ ipcMain, getStore, isTrusted, shell, onSaved
     if(args.length!==arity)return failure('invalid_request');
     return serial(async()=>{try{return await handler(...args);}catch{return failure('storage_unavailable');}});
   });
-  const saved=async(result)=>{if(result.ok&&result.servicesChanged){const live=await onSaved();return{...result,servicesApplied:live===true};}return result;};
+  const saved=async(result)=>{if(result.ok&&result.servicesChanged){const live=await onSaved();return{...result,servicesApplied:live===true&&!result.servicesRestartRequired};}return result;};
   register('get',0,()=>getStore().get());
   register('validate',1,text=>validateConfigurationText(text));
   register('save',1,request=>saved(getStore().save(request)));
