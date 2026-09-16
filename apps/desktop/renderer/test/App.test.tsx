@@ -582,13 +582,26 @@ describe("App runtime bridge", () => {
     expect(await screen.findByText("没有可撤销的组织调整")).toBeInTheDocument();
   });
 
-  it("binds an Agent once while creating an employee and sends it through POST /hire", async () => {
+  it.each(["codex", "codex-local"] as const)("binds the ready %s runtime in HireDrawer and sends it through POST /hire", async (agentEngine) => {
     const hire = vi.fn().mockResolvedValue({
       status: 200,
-      body: { status: "hired", positionId: "docs-writer", agentEngine: "codex-local", version: { seq: 6, updatedAt: "2026-08-26T00:00:00.000Z" } },
+      body: { status: "hired", positionId: "docs-writer", agentEngine, version: { seq: 6, updatedAt: "2026-08-26T00:00:00.000Z" } },
     });
     const orgApply = vi.fn().mockResolvedValue({ status: 200, body: { status: "applied" } });
-    openedBridge({ hire, orgApply, turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
+    const bridge = openedBridge({ hire, orgApply, turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
+    const status = await bridge.status();
+    if (!status.health) throw new Error("fixture must expose engine health");
+    vi.mocked(bridge.status).mockResolvedValue({
+      ...status,
+      health: {
+        ...status.health,
+        hosts: {
+          ...status.health.hosts,
+          codex: { configured: true, ready: agentEngine === "codex" },
+          "codex-local": { configured: true, ready: agentEngine === "codex-local" },
+        },
+      },
+    });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "创建员工" }));
     expect(await screen.findByRole("button", { name: "开始创建" })).toBeDisabled();
@@ -620,7 +633,7 @@ describe("App runtime bridge", () => {
         mcpServers: [],
       },
       prompt: expect.any(String),
-      agentEngine: "codex-local",
+      agentEngine,
     }));
     expect(orgApply).not.toHaveBeenCalled();
     expect(await screen.findByText("文档负责人 已加入团队")).toBeInTheDocument();
