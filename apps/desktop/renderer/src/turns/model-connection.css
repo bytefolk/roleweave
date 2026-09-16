@@ -24,7 +24,7 @@
 .owb-model-connection__error {
   flex-basis: 100%;
   margin: 1px 0 0;
-  color: var(--ui-error, #bd3d3d);
+  color: var(--owb-error-foreground, var(--ui-danger-strong));
   font-size: 11px;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -98,4 +98,55 @@
   line-height: 1.55;
 }
 
-.owb-model-custom-form p.owb-model-custom-form__error { color: var(--ui-error, #bd3d3d); }
+.owb-model-custom-form p.owb-model-custom-form__error { color: var(--owb-error-foreground, var(--ui-danger-strong)); }
+
+/* Default dark's error hue needs a little more light on raised surfaces.
+ * Limit this adapter to these small error labels; keep the shared palette. */
+[data-ui-theme="default"][data-theme="dark"] :is(.owb-model-connection__error,
+  .owb-model-custom-form__error, .owb-hire-avatar-picker__error, .owb-management-avatar__error) {
+  --owb-error-foreground: color-mix(in srgb, var(--ui-danger-strong) 85%, var(--ui-foreground));
+}
+
+/* Keep the four conversation overlays in the themed body portal. Their
+ * content shares a readable measure and scrolls within small windows. */
+.owb-conversation-popover { max-width: calc(100vw - var(--ui-space-8)); }
+
+.owb-conversation-popover .ant-popover-container {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--ui-space-8));
+  border: 1px solid var(--ui-border);
+  padding: var(--ui-space-4);
+}
+
+.owb-conversation-popover .ant-popover-title { flex: none; margin-bottom: var(--ui-space-3); }
+
+.owb-conversation-popover .ant-popover-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.owb-conversation-popover :is(.owb-context-details, .owb-model-connection__details, .owb-model-custom-form) {
+  width: min(20rem, calc(100vw - var(--ui-space-8) * 2));
+  max-width: 100%;
+  font-size: var(--ui-text-sm);
+  line-height: var(--ui-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.owb-conversation-popover :is(.owb-context-details, .owb-conversation-popover__section, .owb-model-custom-form) {
+  display: grid;
+  gap: var(--ui-space-2);
+}
+
+.owb-conversation-popover .owb-context-details p { margin: 0; }
+
+.owb-conversation-popover .owb-context-details__stat { color: var(--ui-foreground); }
+
+.owb-conversation-popover__section + .owb-conversation-popover__section {
+  border-top: 1px solid var(--ui-border);
+  padding-top: var(--ui-space-3);
+}
+
+.owb-conversation-popover .owb-model-custom-form :is(label, p) { font-size: inherit; }
