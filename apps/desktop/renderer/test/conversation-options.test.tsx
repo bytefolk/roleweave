@@ -1,4 +1,4 @@
-import { createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConversationOptions } from "../src/turns/ConversationOptions";
 import { adaptTurnRecord } from "../src/turns/adapter";
@@ -18,11 +18,36 @@ it("switches the employee model from the composer and exposes context and honest
       { id: "efficient", name: "Efficient", tier: "economy" }, { id: "performance", name: "Performance", tier: "balanced" },
     ] }} />);
   pickSelectOption("员工模型", "Performance");
-  expect(change).toHaveBeenCalledWith("performance");
+  expect(change).toHaveBeenCalledExactlyOnceWith("performance");
   expect(screen.getByText("用量待回报")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "上下文详情" }));
   expect(await screen.findByText(/最多 12 轮、64 KB/)).toBeInTheDocument();
   expect(screen.getByRole("switch", { name: "携带会话历史" })).toBeDisabled();
+});
+
+it("keeps the current model selected when opening and dismissing the menu, then selects with the keyboard", async () => {
+  const change = vi.fn();
+  render(<ConversationOptions saving={false} disabled={false} session={null} turns={[]} onModel={change}
+    config={{ selected: "efficient", recommended: "performance", editable: true, source: "provider-tiers", options: [
+      { id: "efficient", name: "Efficient", tier: "economy" }, { id: "performance", name: "Performance", tier: "balanced" },
+    ] }} />);
+  const select = screen.getByRole("combobox", { name: "员工模型" });
+  fireEvent.mouseDown(select);
+  expect(select).toHaveAttribute("aria-expanded", "true");
+  expect(await screen.findByRole("option", { name: "Efficient", selected: true })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Performance", selected: false })).toBeInTheDocument();
+  expect(change).not.toHaveBeenCalled();
+
+  fireEvent.keyDown(select, { key: "Escape", code: "Escape", keyCode: 27 });
+  await waitFor(() => expect(select).toHaveAttribute("aria-expanded", "false"));
+  expect(change).not.toHaveBeenCalled();
+
+  fireEvent.mouseDown(select);
+  fireEvent.keyDown(select, { key: "ArrowDown", code: "ArrowDown", keyCode: 40 });
+  expect(change).not.toHaveBeenCalled();
+  fireEvent.keyDown(select, { key: "Enter", code: "Enter", keyCode: 13 });
+  expect(change).toHaveBeenCalledExactlyOnceWith("performance");
+  await waitFor(() => expect(select).toHaveAttribute("aria-expanded", "false"));
 });
 
 it("does not reuse an older context receipt when the newest turn has none", async () => {
@@ -164,4 +189,39 @@ it("submits only a valid Qoder custom model identifier and never asks for a key"
   fireEvent.change(input, { target: { value: "custom/研发 小模型 (BYOK)" } });
   fireEvent.click(screen.getByRole("button", { name: "使用此模型" }));
   expect(change).toHaveBeenCalledWith("custom/研发 小模型 (BYOK)");
+});
+
+it.each(["saving", "running", "read-only", "loading", "error"])("closes an already open custom model editor and rejects submission after %s", async state => {
+  const change = vi.fn();
+  const config: EmployeeModelConfig = {
+    selected: "auto", recommended: "auto", editable: true, allowCustomModel: true, source: "local-config",
+    options: [{ id: "auto", name: "Auto · Qoder", tier: "auto" }],
+  };
+  const base = { config, saving: false, disabled: false, session: null, turns: [], onModel: change };
+  const { rerender } = render(<ConversationOptions {...base} />);
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "员工模型" }));
+  fireEvent.click(await screen.findByRole("button", { name: "使用已配置模型…" }));
+  const input = await screen.findByLabelText("模型标识");
+  fireEvent.change(input, { target: { value: "custom/already-entered" } });
+  const form = input.closest("form")!;
+  const submit = screen.getByRole("button", { name: "使用此模型" });
+
+  rerender(<ConversationOptions {...base} saving={state === "saving"} running={state === "running"}
+    disabled={state === "running"} loading={state === "loading"} error={state === "error" ? "加载模型失败" : undefined}
+    config={{ ...config, editable: state !== "read-only" }} />);
+  expect(screen.getByRole("combobox", { name: "员工模型" })).toBeDisabled();
+  // A portal can outlive its disabled Select during the close animation.
+  // Neither its button nor an Enter/form submit may bypass that guard.
+  fireEvent.click(submit);
+  fireEvent.submit(form);
+  expect(change).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.queryByRole("button", { name: "使用此模型" })).not.toBeInTheDocument());
+
+  rerender(<ConversationOptions {...base} />);
+  expect(screen.queryByRole("button", { name: "使用此模型" })).not.toBeInTheDocument();
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "员工模型" }));
+  fireEvent.click(await screen.findByRole("button", { name: "使用已配置模型…" }));
+  expect(await screen.findByLabelText("模型标识")).toHaveValue("custom/already-entered");
+  fireEvent.click(screen.getByRole("button", { name: "使用此模型" }));
+  expect(change).toHaveBeenCalledExactlyOnceWith("custom/already-entered");
 });

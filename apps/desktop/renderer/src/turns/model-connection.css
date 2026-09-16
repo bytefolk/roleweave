@@ -13,6 +13,41 @@
   max-width: none;
 }
 
+.owb-conversation-options .owb-model-connection__model .owb-model-picker {
+  min-height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.owb-conversation-options .owb-model-picker:not(.ant-select-disabled):is(:hover, .ant-select-open) {
+  border-color: var(--ui-border);
+  background: var(--ui-surface-inset);
+}
+
+.owb-conversation-options .owb-model-picker.ant-select-focused:not(.ant-select-disabled) {
+  box-shadow: 0 0 0 2px var(--ui-focus);
+}
+
+.owb-model-select-popup {
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.owb-model-select-popup .owb-model-choice { min-width: 0; padding: 0; }
+.owb-model-select-popup .owb-model-choice > span { flex-wrap: wrap; white-space: normal; overflow-wrap: anywhere; }
+.owb-model-select-popup .owb-model-choice p { line-height: 1.5; }
+.owb-model-select-popup .ant-select-item-option-state { color: var(--ui-brand); }
+
+/* rc-trigger briefly moves a popup to measure it. A reduced-motion duration
+ * applied to every element otherwise animates that position from offscreen,
+ * so its synchronous measurement can leave the menu outside the window. */
+@media (prefers-reduced-motion: reduce) {
+  .owb-model-select-popup,
+  .owb-conversation-popover { transition-property: none !important; }
+}
+
 .owb-model-connection__summary {
   flex: 0 1 auto;
   max-width: 170px;

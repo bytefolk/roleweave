@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Input, Popover, Select, Switch } from "antd";
-import { CircleHelp, Gauge, Layers3 } from "lucide-react";
+import { Check, CircleHelp, Gauge, Layers3 } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import { isQoderModelId } from "@roleweave/shared/model-selection";
 import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption, WorkbenchSession } from "@roleweave/shared";
@@ -9,6 +9,12 @@ import { useConversationCopy } from "../locales/conversation";
 import "./model-connection.css";
 
 const popoverClassNames = { root: "owb-conversation-popover" };
+// Context updates cross rc-trigger's cached dropdown content, so an already
+// open editor still sees the current guard and callback when Select closes.
+const ModelSelectionContext = createContext<{
+  disabled: boolean;
+  onModel?: (model: string) => void | Promise<void>;
+}>({ disabled: true });
 
 function ConnectionDetails({ connection }: { connection: EmployeeModelConnection }) {
   const t = useT();
@@ -35,13 +41,21 @@ function ConnectionSummary({ connection }: { connection: EmployeeModelConnection
   return <>{source} · {t(`model.billing.${connection.billing}`)}</>;
 }
 
-function CustomModelEntry({ onModel }: { onModel: (model: string) => void | Promise<void> }) {
+function CustomModelEntry() {
   const t = useT();
+  const selection = useContext(ModelSelectionContext);
+  const currentSelection = useRef(selection);
+  currentSelection.current = selection;
+  const { disabled } = selection;
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [invalid, setInvalid] = useState(false);
+  useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    // The closing Popover can still retain a form's previous event handler.
+    const { disabled: currentlyDisabled, onModel } = currentSelection.current;
+    if (currentlyDisabled || !onModel) return;
     const model = value.trim();
     if (!isQoderModelId(model)) {
       setInvalid(true);
@@ -53,17 +67,18 @@ function CustomModelEntry({ onModel }: { onModel: (model: string) => void | Prom
     void onModel(model);
   };
   return <div className="owb-model-menu__custom">
-    <Popover classNames={popoverClassNames} trigger="click" placement="bottomLeft" open={open} onOpenChange={setOpen} title={t("model.customTitle")} content={
+    {/* This nested editor sits above its Select popup (z-index 1050). */}
+    <Popover classNames={popoverClassNames} trigger="click" placement="topLeft" autoAdjustOverflow zIndex={1060} fresh open={open && !disabled} onOpenChange={(next) => setOpen(next && !disabled)} title={t("model.customTitle")} content={
       <form className="owb-model-custom-form" onSubmit={submit}>
         <label htmlFor="owb-custom-model-id">{t("model.customLabel")}</label>
-        <Input id="owb-custom-model-id" value={value} autoComplete="off" aria-invalid={invalid}
+        <Input id="owb-custom-model-id" value={value} disabled={disabled} autoComplete="off" aria-invalid={invalid}
           placeholder={t("model.customPlaceholder")} onChange={(event) => { setValue(event.target.value); setInvalid(false); }} />
         <p>{t("model.customHelp")}</p>
         {invalid ? <p className="owb-model-custom-form__error" role="alert">{t("model.customInvalid")}</p> : null}
-        <Button htmlType="submit" type="primary" size="small">{t("model.customApply")}</Button>
+        <Button htmlType="submit" type="primary" size="small" disabled={disabled}>{t("model.customApply")}</Button>
       </form>
     }>
-      <Button type="text" size="small" onMouseDown={(event) => event.preventDefault()}>{t("model.useConfigured")}</Button>
+      <Button type="text" size="small" disabled={disabled} onMouseDown={(event) => event.preventDefault()}>{t("model.useConfigured")}</Button>
     </Popover>
   </div>;
 }
@@ -113,14 +128,19 @@ export function ConversationOptions({ config, saving, disabled, loading = false,
   };
   const unavailable = loading ? copy.modelLoading : saving ? copy.modelSaving : running ? copy.modelRunning
     : error ? error : !config ? copy.modelMissing : connectionInvalid ? t("model.connection.invalid") : !config.editable || !onModel ? copy.modelReadonly : undefined;
+  const modelDisabled = disabled || saving || loading || running || Boolean(error) || connectionInvalid || !config?.editable || !onModel;
   return <div className="owb-conversation-options owb-model-connection">
     <span className="owb-model-picker__label">{copy.model}</span>
     {config ? <div className="owb-model-connection__model">
+      <ModelSelectionContext.Provider value={{ disabled: modelDisabled, onModel }}>
       <Select className="owb-model-picker" size="small" variant="borderless"
+        classNames={{ popup: { root: "owb-conversation-select-popup owb-model-select-popup" } }}
         aria-label={t("model.select")} title={unavailable} showSearch={{ optionFilterProp: "search" }}
         value={config.selected} options={options} loading={saving || loading}
-        disabled={disabled || saving || loading || Boolean(error) || connectionInvalid || !config.editable || !onModel}
+        disabled={modelDisabled}
         popupMatchSelectWidth={300}
+        placement="topLeft" listHeight={240}
+        menuItemSelectedIcon={<Check aria-hidden="true" size={14} strokeWidth={2} />}
         onChange={(value) => void onModel?.(value)}
         optionRender={(option) => {
           const model = option.data.model as EmployeeModelOption | undefined;
@@ -136,10 +156,11 @@ export function ConversationOptions({ config, saving, disabled, loading = false,
             {connection ? <span><ConnectionSummary connection={connection} /></span> : null}
           </div>
           {menu}
-          {config.allowCustomModel && !connectionInvalid && onModel ? <CustomModelEntry onModel={onModel} /> : null}
+          {config.allowCustomModel && !connectionInvalid && onModel ? <CustomModelEntry /> : null}
           <p>{t("model.switchHint")}</p>
         </div>}
       />
+      </ModelSelectionContext.Provider>
       {connection ? <Popover classNames={popoverClassNames} trigger="click" placement="topRight" title={t("model.connectionDetails")} content={<ConnectionDetails connection={connection} />}>
         <Button className="owb-model-connection__summary" type="text" size="small" icon={<CircleHelp size={13} />} aria-label={t("model.connectionDetails")}>
           <ConnectionSummary connection={connection} />
