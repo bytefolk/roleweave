@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Tag } from "antd";
 import { useT } from "@roleweave/ui";
 import { Markdown, markdownHeadings } from "../markdown/Markdown";
@@ -28,6 +28,7 @@ export function DocViewer({
   actions,
 }: DocViewerProps) {
   const t = useT();
+  const headingPrefix = `document-${useId().replaceAll(":", "")}`;
   const extension = path?.split(".").pop()?.toLowerCase();
   const isMarkdown =
     !extension || extension === "md" || extension === "markdown";
@@ -40,7 +41,7 @@ export function DocViewer({
       };
   const heading = title ?? data.name ?? t("docs.untitled");
   const metaEntries = Object.entries(data).filter(([key]) => key !== "name");
-  const headings = isMarkdown ? markdownHeadings(body) : [];
+  const headings = isMarkdown ? markdownHeadings(body, headingPrefix) : [];
   const time =
     updatedAt ??
     (version && Number.isFinite(Date.parse(version)) ? version : undefined);
@@ -104,7 +105,7 @@ export function DocViewer({
         )}
         <div className="owb-doc-viewer__body">
           {isMarkdown ? (
-            <Markdown content={body} />
+            <Markdown content={body} headingPrefix={headingPrefix} />
           ) : extension === "txt" ? (
             <div className="owb-doc-viewer__text">{source}</div>
           ) : (
