@@ -572,6 +572,7 @@ export const zhCatalog: Record<string, string> = {
   "grp.dismissFail": "群聊解散失败",
   "grp.dismissFailOffline": "群聊解散失败（离线）",
   "grp.busy": "有回合执行中，请等待结束后再试",
+  "grp.expandOutput": "点击阅读完整消息",
 
   // 文档
   "docs.listFail": "文档列表读取失败",
