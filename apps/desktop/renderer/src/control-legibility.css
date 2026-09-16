@@ -4,6 +4,13 @@
   text-align: center;
 }
 
+/* Opposite foreground/background pairs cross through unreadable colors when
+ * Ant animates both during disabled -> ready or theme changes. Switch the
+ * pair together; keep non-text border and shadow feedback animated. */
+[data-ui-theme][data-theme] .ant-btn {
+  transition-property: border-color, box-shadow;
+}
+
 [data-theme] :is(.ant-modal-title, .ant-drawer-title, .ant-popover-title,
   .owb-doc-viewer .ant-card-head-title,
   .owb-modal__header h2, .owb-management-modal h2, .owb-management-modal h3,
