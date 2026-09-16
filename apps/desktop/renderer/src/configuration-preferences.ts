@@ -72,7 +72,7 @@ export function useWorkspaceFocus(workspaceId:string):[boolean,(focused:boolean)
     // from other workspaces. A failed disk save keeps the current layout.
     edits=edits.then(async()=>{
       const api=window.owb.configuration;if(!api)return;
-      const snapshot=await api.get();if(!snapshot.ok)throw Error();
+      const snapshot=await (api.getPreferences?.()??api.get());if(!snapshot.ok)throw Error();
       const entries={...snapshot.config.layouts.focusByWorkspace,[workspaceId]:value};
       const keys=Object.keys(entries);for(const key of keys.slice(0,Math.max(0,keys.length-256)))delete entries[key];
       const result=await api.preferences({layouts:{focusByWorkspace:entries}});

@@ -100,7 +100,7 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
    {loading?<div role="status"><Spin size="small" /> {copy("Loading settings…")}</div>:null}
    {error?<Alert type="error" showIcon title={errorCopy} action={!snapshot?<Button onClick={()=>void reload()}>{copy("Retry")}</Button>:undefined}/>:null}
    {snapshot?.warnings.map(message=><Alert key={message} type="warning" showIcon title={copy("Configuration recovery")} description={message}/>)}
-   {snapshot&&!snapshot.storageAvailable?<Alert type="warning" showIcon title={copy("OS encrypted storage is unavailable. General preferences remain editable; unlock your keychain to change credentials.")}/>:null}
+   {snapshot?.storageAvailable===false?<Alert type="warning" showIcon title={copy("OS encrypted storage is unavailable. General preferences remain editable; unlock your keychain to change credentials.")}/>:null}
    {issues.length?<div role="alert" className="owb-config-errors">{issues.map((issue,i)=><p key={`${issue.field}-${i}`}>{copy("Line ")} {issue.line}:{issue.column} · <code>{issue.field}</code> — {issue.message}</p>)}</div>:null}
    {snapshot&&config?<>
     <section id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={category!=='general'}>

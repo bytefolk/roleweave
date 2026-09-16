@@ -147,7 +147,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     try { write(); fs.unlinkSync(journal); }
     catch { recover(); throw Error('storage_unavailable'); }
   }
-  function migrate() {
+  function migrate({resolveHostUrls=true}={}) {
     recover(); if(fs.existsSync(file))return;
     const config=defaults();
     try {const raw=readRaw('runtime-settings.json'); if(raw!==null) config.runtime=validateRuntimeSettings(JSON.parse(raw));}catch{migrationWarnings.push('Legacy runtime settings could not be imported.');}
@@ -155,9 +155,11 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
       const keys=hostStore().configuredKeys();
       for(const [host,refs]of Object.entries(REF_FIELDS))for(const [field,key]of Object.entries(refs))if(keys.includes(key))config.hosts[host][field]=`secret:host/${key}`;
       config.migration.pendingHostUrls=Object.entries(HOST_URLS).filter(([,key])=>keys.includes(key)).map(([host])=>host);
-      const values=hostStore().environment({});
-      for(const [host,key] of Object.entries(HOST_URLS))if(values[key])config.hosts[host].baseUrl=values[key];
-      config.migration.pendingHostUrls=[];
+      if(resolveHostUrls&&config.migration.pendingHostUrls.length){
+        const values=hostStore().environment({});
+        for(const [host,key] of Object.entries(HOST_URLS))if(values[key])config.hosts[host].baseUrl=values[key];
+        config.migration.pendingHostUrls=[];
+      }
     }catch{migrationWarnings.push('Encrypted Agent storage is unavailable; unlock the OS keychain before using saved connections.');}
     try {
       for(const [kind,entry]of Object.entries(serviceStore().readMetadata())){
@@ -187,8 +189,8 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     return current?{...current,notice:'The last valid configuration remains active.'}
       :{text:serialize(defaults()),config:defaults(),notice:'No usable saved configuration remains. Application defaults are active.'};
   }
-  function readEffective() {
-    migrate();
+  function readEffective({resolveHostUrls=true}={}) {
+    migrate({resolveHostUrls});
     let raw;
     try { raw=readRaw(FILE); }
     catch {
@@ -201,7 +203,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     }
     if(parsed.ok){
       let text=raw,config=parsed.config;
-      if(config.migration?.pendingHostUrls?.length){
+      if(resolveHostUrls&&config.migration?.pendingHostUrls?.length){
         try {
           const values=hostStore().environment({});
           for(const host of config.migration.pendingHostUrls)if(!config.hosts[host].baseUrl&&values[HOST_URLS[host]])text=jsonc.applyEdits(text,jsonc.modify(text,['hosts',host,'baseUrl'],values[HOST_URLS[host]],{}));
@@ -225,15 +227,21 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     for(const kind of ['doc','mem'])result[`services.${kind}`]=servicesPendingRestart.has(kind)?'environment-after-restart':Object.hasOwn(config.services,kind)?'configuration':'environment-or-default';
     return result;
   }
-  function get() {
+  function get({includeCredentialStatus=true}={}) {
     try {
-      const current=readEffective(), credentials=hostStore().get();
+      const current=readEffective({resolveHostUrls:includeCredentialStatus});
+      // Electron's native credential backend can synchronously wait for OS UI.
+      // Appearance/bootstrap callers must never enter that backend merely to
+      // discover availability. Null means it has not been queried.
+      const credentials=includeCredentialStatus?hostStore().get():{ok:true,storageAvailable:null,credentials:[]};
       return {ok:true,config:clone(current.config),text:current.text,revision:revision(current.raw),filePath:file,
         warnings:[...new Set(current.warnings)],errors:current.errors??[],repairRequired:current.repairRequired===true,sources:sources(current.config),
         storageAvailable:credentials.ok&&credentials.storageAvailable,credentials:credentials.ok?credentials.credentials:[],
         platform,canRestore:usableBackup()!==null,pendingRestart:pendingRestart(current.config),servicesRestartRequired:servicesPendingRestart.size>0};
     }catch{return fail('storage_unavailable');}
   }
+  const preferenceRead={includeCredentialStatus:false};
+  function getPreferences(){return get(preferenceRead);}
   function referencesExist(config,hostChanges,serviceChanges) {
     const hasHostRefs=Object.entries(REF_FIELDS).some(([host,refs])=>Object.keys(refs).some(field=>config.hosts[host][field]));
     const keys=hasHostRefs?hostStore().configuredKeys():[];
@@ -257,14 +265,14 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     }
     return entries;
   }
-  function save(request) {
+  function save(request,readOptions={}) {
     if(!plain(request)||Object.keys(request).some(k=>!['text','revision','hostChanges','serviceChanges'].includes(k))||typeof request.revision!=='string')return fail('invalid_request');
     const parsed=validateConfigurationText(request.text); if(!parsed.ok)return parsed;
     const hostChanges=request.hostChanges??{},serviceChanges=request.serviceChanges??{};
     if(!plain(hostChanges)||!plain(serviceChanges)||Object.entries(hostChanges).some(([key,value])=>!Object.values(REF_FIELDS).some(refs=>Object.values(refs).includes(key))||(value!==null&&value!==''&&!validValue(key,value)))||Object.entries(serviceChanges).some(([kind,value])=>!['doc','mem'].includes(kind)||(value!==null&&(typeof value!=='string'||value.length>8192||/[\x00-\x20\x7f]/.test(value)))))return fail('invalid_request');
     try {
-      const current=readEffective();
-      if(request.revision!==revision(current.raw))return{ok:false,code:'conflict',current:get()};
+      const current=readEffective({resolveHostUrls:readOptions.includeCredentialStatus!==false});
+      if(request.revision!==revision(current.raw))return{ok:false,code:'conflict',current:get(readOptions)};
       if(!referencesExist(parsed.config,hostChanges,serviceChanges)) {
         const metadata=serviceStore().readMetadata();
         if(['doc','mem'].some(kind=>parsed.config.services[kind]?.tokenRef&&!serviceChanges[kind]&&metadata[kind]?.apiUrl!==parsed.config.services[kind].apiUrl))return fail('service_endpoint_changed');
@@ -290,26 +298,26 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
         if(Object.hasOwn(current.config.services,kind)&&!Object.hasOwn(parsed.config.services,kind))servicesPendingRestart.add(kind);
         else if(Object.hasOwn(parsed.config.services,kind))servicesPendingRestart.delete(kind);
       }
-      return {...get(),changes:changed,pendingRestart:pendingRestart(parsed.config),servicesChanged:changedServices};
+      return {...get(readOptions),changes:changed,pendingRestart:pendingRestart(parsed.config),servicesChanged:changedServices};
     }catch(error){return fail(error.message==='service_endpoint_changed'?'service_endpoint_changed':'storage_unavailable');}
   }
   function patchPreferences(patch) {
     if(!plain(patch)||Object.keys(patch).some(k=>!['appearance','chat','layouts'].includes(k)))return fail('invalid_request');
-    const current=get();if(!current.ok)return current;if(current.repairRequired)return fail('invalid_configuration');
+    const current=getPreferences();if(!current.ok)return current;if(current.repairRequired)return fail('invalid_configuration');
     let text=current.text;
     for(const[section,fields]of Object.entries(patch)){
       if(!plain(fields))return fail('invalid_request');
       for(const[key,value]of Object.entries(fields))text=jsonc.applyEdits(text,jsonc.modify(text,[section,key],value,{formattingOptions:{insertSpaces:true,tabSize:2}}));
     }
-    return save({text,revision:current.revision});
+    return save({text,revision:current.revision},preferenceRead);
   }
   function migratePreferences(legacy) {
-    const current=get();if(!current.ok||current.repairRequired||current.config.migration?.rendererPreferences)return current;
+    const current=getPreferences();if(!current.ok||current.repairRequired||current.config.migration?.rendererPreferences)return current;
     if(!plain(legacy))return fail('invalid_request');
     let text=current.text;
     for(const[key,values]of Object.entries({mode:['light','dark','system'],profile:['mint','default'],locale:['en','zh-CN']}))if(values.includes(legacy[key]))text=jsonc.applyEdits(text,jsonc.modify(text,['appearance',key],legacy[key],{}));
     text=jsonc.applyEdits(text,jsonc.modify(text,['migration','rendererPreferences'],true,{}));
-    return save({text,revision:current.revision});
+    return save({text,revision:current.revision},preferenceRead);
   }
   function writeServices(connections) {
     const current=get();if(!current.ok)throw Error('service_storage_unavailable');
@@ -346,7 +354,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
   function restore(rev) {
     try { const raw=readRaw(`${FILE}.bak`);if(raw===null)return fail('storage_unavailable');return save({text:raw,revision:rev}); }catch{return fail('storage_unavailable');}
   }
-  return {get,save,setCredential,patchPreferences,migratePreferences,restore,runtimeEnvironment,
+  return {get,getPreferences,save,setCredential,patchPreferences,migratePreferences,restore,runtimeEnvironment,
     hostEnvironment:source=>{
       try{return hostStore().environment(source,readEffective().config.hosts);}
       catch{migrationWarnings.push('Saved Host credentials are unavailable. Unlock or repair encrypted storage; local workspace features remain available.');return{...source};}

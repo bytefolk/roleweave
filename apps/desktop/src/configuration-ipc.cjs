@@ -10,12 +10,13 @@ function registerConfigurationIpc({ ipcMain, getStore, isTrusted, shell, onSaved
   });
   const saved=async(result)=>{if(result.ok&&result.servicesChanged){const live=await onSaved();return{...result,servicesApplied:live===true&&!result.servicesRestartRequired};}return result;};
   register('get',0,()=>getStore().get());
+  register('get-preferences',0,()=>getStore().getPreferences());
   register('validate',1,text=>validateConfigurationText(text));
   register('save',1,request=>saved(getStore().save(request)));
   register('preferences',1,request=>getStore().patchPreferences(request));
   register('migrate-preferences',1,request=>getStore().migratePreferences(request));
   register('restore',1,revision=>saved(getStore().restore(revision)));
-  register('open-location',0,()=>{const current=getStore().get();if(!current.ok)return current;shell.showItemInFolder(current.filePath);return{ok:true};});
+  register('open-location',0,()=>{const current=getStore().getPreferences();if(!current.ok)return current;shell.showItemInFolder(current.filePath);return{ok:true};});
   register('dirty',1,value=>{if(typeof value!=='boolean')return failure('invalid_request');setDirty(value);return{ok:true};});
   register('confirm-close',0,()=>{setDirty(false);close();return{ok:true};});
 }

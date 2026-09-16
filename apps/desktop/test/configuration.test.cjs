@@ -159,3 +159,33 @@ test('recovery never reactivates backup or in-process references whose encrypted
  createCredentialStore({userDataPath:h.dir,safeStorage:h.safeStorage}).clear('OPENAI_API_KEY');fs.writeFileSync(h.file,'{corrupt');
  assert.equal(live.get().config.hosts.codex.apiKeyRef,undefined);
 });
+test('bootstrap and ordinary preferences never probe the native credential backend',t=>{
+ const h=setup(t,{platform:'win32'});let nativeCalls=0;
+ h.safeStorage.isEncryptionAvailable=()=>{nativeCalls++;throw Error('native backend must not be called');};
+ // Main constructs the runtime/Host environment and starts services before
+ // mounting App. None of those paths needs native storage without references.
+ assert.deepEqual(h.store.runtimeEnvironment({PATH:'fixture-path'}),{PATH:'fixture-path'});
+ assert.deepEqual(h.store.hostEnvironment({PATH:'fixture-path'}),{PATH:'fixture-path'});
+ assert.deepEqual(h.store.readServices(),{});
+ const boot=h.store.migratePreferences({mode:'dark',locale:'en'});
+ assert.equal(boot.ok,true);assert.equal(boot.config.appearance.mode,'dark');assert.equal(boot.storageAvailable,null);
+ const saved=h.store.patchPreferences({chat:{sendShortcut:'mod-enter'}});
+ assert.equal(saved.ok,true);assert.equal(saved.config.chat.sendShortcut,'mod-enter');
+ assert.equal(h.store.getPreferences().ok,true);assert.equal(nativeCalls,0);
+ // Opening credential settings remains an explicit backend check.
+ assert.equal(h.store.get().storageAvailable,false);assert.ok(nativeCalls>0);
+});
+test('preference-only migration retains encrypted references and defers legacy endpoint decryption',t=>{
+ const h=setup(t),host=createCredentialStore({userDataPath:h.dir,safeStorage:h.safeStorage});
+ host.set('OPENAI_API_KEY','dummy-deferred-key');host.set('OPENAI_BASE_URL','https://deferred.example');
+ const available=h.safeStorage.isEncryptionAvailable;let nativeCalls=0;
+ h.safeStorage.isEncryptionAvailable=()=>{nativeCalls++;throw Error('native backend must not be called');};
+ const boot=h.store.migratePreferences({mode:'dark'});
+ assert.equal(boot.ok,true);assert.equal(boot.config.hosts.codex.apiKeyRef,'secret:host/OPENAI_API_KEY');
+ assert.deepEqual(boot.config.migration.pendingHostUrls,['codex']);
+ assert.equal(h.store.patchPreferences({appearance:{locale:'en'}}).ok,true);assert.equal(nativeCalls,0);
+ h.safeStorage.isEncryptionAvailable=available;
+ const settings=h.store.get();assert.equal(settings.config.hosts.codex.baseUrl,'https://deferred.example');
+ assert.equal(settings.config.appearance.locale,'en');assert.equal(settings.storageAvailable,true);
+ assert.equal(h.store.hostEnvironment({}).OPENAI_API_KEY,'dummy-deferred-key');
+});

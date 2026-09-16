@@ -2,12 +2,16 @@ const {test}=require('node:test');const assert=require('node:assert/strict');
 const {registerConfigurationIpc,registerExternalUrlIpc,safeExternalUrl}=require('../src/configuration-ipc.cjs');
 test('configuration IPC is enumerated, trusted, and rejects malformed arity before storage',async()=>{
  const handlers=new Map(),calls=[];
- registerConfigurationIpc({ipcMain:{handle:(n,f)=>handlers.set(n,f)},getStore:()=>({get:()=>{calls.push('get');return{ok:true};}}),isTrusted:e=>e.trusted,shell:{},setDirty:()=>{},close:()=>{}});
- assert.equal(handlers.size,9);
+ registerConfigurationIpc({ipcMain:{handle:(n,f)=>handlers.set(n,f)},getStore:()=>({get:()=>{calls.push('get');return{ok:true};},getPreferences:()=>{calls.push('preferences');return{ok:true};}}),isTrusted:e=>e.trusted,shell:{},setDirty:()=>{},close:()=>{}});
+ assert.equal(handlers.size,10);
  assert.deepEqual(await handlers.get('owb:configuration:get')({trusted:false}),{ok:false,code:'untrusted_sender'});
  assert.deepEqual(await handlers.get('owb:configuration:get')({trusted:true},'extra'),{ok:false,code:'invalid_request'});
  assert.deepEqual(calls,[]);
  assert.equal((await handlers.get('owb:configuration:get')({trusted:true})).ok,true);
+ assert.deepEqual(await handlers.get('owb:configuration:get-preferences')({trusted:false}),{ok:false,code:'untrusted_sender'});
+ assert.deepEqual(await handlers.get('owb:configuration:get-preferences')({trusted:true},'extra'),{ok:false,code:'invalid_request'});
+ assert.equal((await handlers.get('owb:configuration:get-preferences')({trusted:true})).ok,true);
+ assert.deepEqual(calls,['get','preferences']);
  assert.deepEqual(await handlers.get('owb:configuration:dirty')({trusted:true},'true'),{ok:false,code:'invalid_request'});
 });
 test('external links refuse executable schemes, credentials, controls and untrusted frames',async()=>{

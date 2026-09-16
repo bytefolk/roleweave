@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("owb", {
   configuration: {
     get: () => ipcRenderer.invoke("owb:configuration:get"),
+    getPreferences: () => ipcRenderer.invoke("owb:configuration:get-preferences"),
     validate: (text) => ipcRenderer.invoke("owb:configuration:validate", text),
     save: (request) => ipcRenderer.invoke("owb:configuration:save", request),
     preferences: (patch) => ipcRenderer.invoke("owb:configuration:preferences", patch),
