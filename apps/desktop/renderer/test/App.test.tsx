@@ -290,9 +290,10 @@ describe("App runtime bridge", () => {
     expect(screen.queryByRole("dialog", { name: "选择工作区" })).not.toBeInTheDocument();
   });
 
-  it("opens the selected employee's direct conversation without duplicate recipient or Agent controls", async () => {
+  it("opens the selected employee's direct conversation with one Agent picker and no duplicate session controls", async () => {
     // The organization tree is the only recipient selector.  A click opens
-    // that employee's durable conversation; runtime/session plumbing must not
+    // that employee's durable conversation; the conversation header carries
+    // exactly one Agent picker (#288), and runtime/session plumbing must not
     // reappear as a second choice in the right pane.
     openedBridge();
 
@@ -302,7 +303,7 @@ describe("App runtime bridge", () => {
     expect(screen.getByLabelText("下达任务")).toHaveAttribute("placeholder", "向 @代码库负责人 下达任务…");
     expect(screen.queryByRole("combobox", { name: "选择对话岗位" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "选择本地会话" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("combobox", { name: "选择 Agent Host" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "轮换当前会话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "启用会话上下文" })).not.toBeInTheDocument();
   });
@@ -319,7 +320,7 @@ describe("App runtime bridge", () => {
         try {
           await selectRepoOwner();
           await waitFor(() => expect(bridge.sessionTurnHistory).toHaveBeenCalled());
-          expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
+          expect(screen.getAllByRole("combobox", { name: "选择 Agent Host" })).toHaveLength(1);
           if (agentEngine !== "claude-code") {
             await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
             fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "使用员工绑定" } });

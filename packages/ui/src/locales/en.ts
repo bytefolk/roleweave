@@ -206,6 +206,7 @@ export const enCatalog: Record<string, string> = {
   "turn.live": "live",
   "turn.panelAria": "Position conversation",
   "turn.pickHost": "Pick Agent Host",
+  "turn.agentLocked": "Agent is locked after selection",
   "turn.pickPositionAria": "Pick the conversation position",
   "turn.pickPositionPh": "Pick a position",
   "turn.noPositions": "No conversable positions in the org yet",

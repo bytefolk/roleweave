@@ -5,7 +5,7 @@ import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
 import type { AvailabilityCheck } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
-import { useEngineLabel } from "./engine-select";
+import { EngineSelect, TURN_ENGINES, useEngineLabel } from "./engine-select";
 import { TurnThread } from "./TurnThread";
 import { PositionAvatar } from "../PositionAvatar";
 import type {
@@ -29,6 +29,8 @@ export interface TurnPanelProps {
   positions: PositionMentionOption[];
   selectedPositionId: string | null;
   engine: TurnEngine;
+  /** The initial runtime selection locks an employee to one runtime. */
+  engineLocked?: boolean;
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
   turns: TurnRecord[];
   busy?: boolean;
@@ -41,7 +43,7 @@ export interface TurnPanelProps {
    * that share the old panel contract; this panel deliberately has no second
    * recipient picker. */
   onSelectPosition?: (positionId: string) => void;
-  /** An employee's agent is bound at creation time, not selected per turn. */
+  /** The employee's durable Agent setting, shown in the conversation header. */
   onSelectEngine?: (engine: TurnEngine) => void;
   onCreateTurn: (request: CreateTurnRequest) => void | boolean | Promise<void | boolean>;
   /** Operator interrupt for the in-flight turn of the selected position. */
@@ -62,10 +64,12 @@ export function TurnPanel({
   modelSaving = false,
   onSelectModel,
   onSetSessionContext,
+  onSelectEngine,
   workspaceOpen,
   positions,
   selectedPositionId,
   engine,
+  engineLocked = false,
   engineAvailability,
   turns,
   busy = false,
@@ -168,10 +172,16 @@ export function TurnPanel({
           {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
           <div className="owb-conversation-identity__copy">
             <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
-            {selectedPosition ? <p>{engineLabel(engine)}</p> : null}
+            {selectedPosition ? <p>{`${engineLabel(engine)}${engineLocked ? ` · ${t("turn.agentLocked")}` : ""}`}</p> : null}
           </div>
         </div>
-        {selectedPosition ? <span className="owb-conversation-kind">{t("turn.title")}</span> : null}
+        {selectedPosition ? <span title={engineLocked ? t("turn.agentLocked") : undefined}><EngineSelect
+          engines={TURN_ENGINES}
+          engineAvailability={engineAvailability}
+          value={engine}
+          disabled={engineLocked || busy || employeeBusy || sending || modelSaving}
+          onChange={(next) => onSelectEngine?.(next)}
+        /></span> : null}
       </header>
 
       <TurnThread

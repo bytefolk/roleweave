@@ -209,6 +209,7 @@ export const zhCatalog: Record<string, string> = {
   "turn.live": "live",
   "turn.panelAria": "岗位对话",
   "turn.pickHost": "选择 Agent Host",
+  "turn.agentLocked": "已选定，Agent 已锁定",
   "turn.pickPositionAria": "选择对话岗位",
   "turn.pickPositionPh": "选择岗位",
   "turn.noPositions": "组织中暂无可对话岗位",
