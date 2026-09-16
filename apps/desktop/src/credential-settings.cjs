@@ -37,12 +37,18 @@ function createCredentialStore({ userDataPath, safeStorage }) {
   }
   function read() {
     let raw;
+    let handle;
     try {
-      if (fs.statSync(file).size > MAX_FILE_BYTES) throw new Error();
-      raw = fs.readFileSync(file, "utf8");
+      // Size-check and read the same descriptor so a concurrently replaced
+      // path cannot bypass the bound between stat and read (TOCTOU).
+      handle = fs.openSync(file, "r");
+      if (fs.fstatSync(handle).size > MAX_FILE_BYTES) throw new Error();
+      raw = fs.readFileSync(handle, "utf8");
     } catch (error) {
       if (error.code === "ENOENT") return {};
       throw new Error("Credential storage unavailable");
+    } finally {
+      if (handle !== undefined) try { fs.closeSync(handle); } catch { /* fd already closed */ }
     }
     try {
       const payload = JSON.parse(raw);
