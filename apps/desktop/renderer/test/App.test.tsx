@@ -243,7 +243,7 @@ describe("App runtime bridge", () => {
   it("shows a single project welcome state when no workspace is open", async () => {
     installBridge();
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "打开一个项目，开始协作" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "开始项目协作" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "打开或新建项目" })).toBeEnabled());
     expect(document.querySelector(".owb-org-module")).toBeNull();
   });

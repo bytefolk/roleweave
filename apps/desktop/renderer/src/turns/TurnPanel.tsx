@@ -166,7 +166,7 @@ export function TurnPanel({
         turns={turns}
         retrying={busy || employeeBusy || sending}
         emptyPrompt={selectedPosition ? t("turn.emptySelected") : !workspaceOpen ? t("project.welcomeTitle") : positions.length === 0 ? t("turn.emptyAddEmployee") : t("turn.emptyChooseEmployee")}
-        emptyDescription={selectedPosition ? t("turn.emptySelectedBody") : !workspaceOpen ? t("project.welcomeDescription") : positions.length === 0 ? t("turn.emptyAddEmployeeBody") : t("turn.emptyChooseEmployeeBody")}
+        emptyDescription={selectedPosition ? t("turn.emptySelectedBody") : !workspaceOpen ? t("turn.emptyOpenFirst") : positions.length === 0 ? t("turn.emptyAddEmployeeBody") : t("turn.emptyChooseEmployeeBody")}
         canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && modelConfig?.connection?.status !== "invalid" && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}

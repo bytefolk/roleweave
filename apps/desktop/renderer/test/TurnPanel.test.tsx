@@ -51,7 +51,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       engine="qoder" engineAvailability={availability} turns={[]} onCreateTurn={createTurn} />);
 
     expect(screen.getByRole("heading", { name: "开始一次协作" })).toBeInTheDocument();
-    expect(screen.getByText("从左侧选择一位员工，讨论任务或继续上次对话。")).toBeInTheDocument();
+    expect(screen.getByText("选择一位员工，开始对话。")).toBeInTheDocument();
     expect(screen.queryByText("从左侧选择一位员工")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("下达任务")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "发送任务" })).not.toBeInTheDocument();
@@ -206,7 +206,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "打开一个项目，开始协作" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "开始项目协作" })).toBeInTheDocument();
+    expect(screen.getByText("打开工作区后才能开始对话")).toBeInTheDocument();
     expect(screen.queryByLabelText("下达任务")).not.toBeInTheDocument();
   });
 
