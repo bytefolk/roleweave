@@ -1101,7 +1101,7 @@ function AppInner({
   const managedNode = typeof managementTarget === "string" && snapshot ? findNodeById(snapshot.tree, managementTarget) : null;
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
-    <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }}
+    <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: {
         fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
         ...(themeProfile === "mint" ? {

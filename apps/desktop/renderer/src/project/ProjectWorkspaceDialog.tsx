@@ -94,6 +94,10 @@ export function ProjectWorkspaceDialog({
       open={open}
       footer={null}
       width="min(560px, calc(100vw - 32px))"
+      styles={{
+        container: { maxHeight: "calc(100dvh - 32px)", display: "flex", flexDirection: "column" },
+        body: { minHeight: 0, overflowY: "auto" },
+      }}
       onCancel={() => { if (!createBusy) onClose(); }}
       mask={{ closable: !createBusy }}
       keyboard={!createBusy}
