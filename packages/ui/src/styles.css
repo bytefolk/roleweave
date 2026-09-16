@@ -569,6 +569,36 @@
   text-align: center;
 }
 
+.ui-org-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 28rem;
+  margin: auto;
+  padding: var(--ui-space-12, 48px) var(--ui-space-6, 24px);
+  text-align: center;
+}
+.ui-org-empty-state--compact { padding: var(--ui-space-6, 24px) var(--ui-space-4, 16px); }
+.ui-org-empty-state__icon {
+  display: inline-flex;
+  margin-bottom: var(--ui-space-3, 12px);
+  color: var(--ui-foreground-muted);
+}
+.ui-org-empty-state__title {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-sm, 14px);
+  font-weight: 600;
+  line-height: var(--ui-leading-normal, 1.5);
+}
+.ui-org-empty-state .ui-org-empty-state__description {
+  margin: var(--ui-space-2, 8px) 0 0;
+  color: var(--ui-foreground-muted);
+  font-size: var(--ui-text-sm, 14px);
+  line-height: var(--ui-leading-normal, 1.5);
+  text-wrap: pretty;
+}
+
 .ui-org-position-card--notice [data-radix-collection-item],
 .ui-org-position-card--notice p {
   display: flex;

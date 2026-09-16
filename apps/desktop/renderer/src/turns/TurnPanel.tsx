@@ -3,6 +3,7 @@ import { MessagesSquare } from "lucide-react";
 import type { EmployeeModelConfig, WorkbenchSession } from "@roleweave/shared";
 import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
+import type { AvailabilityCheck } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
 import { EngineSelect, TURN_ENGINES, useEngineLabel } from "./engine-select";
 import { TurnThread } from "./TurnThread";
@@ -18,6 +19,8 @@ import type {
 export { EngineSelect, useEngineLabel } from "./engine-select";
 
 export interface TurnPanelProps {
+  active?: boolean;
+  availabilityCheck?: AvailabilityCheck;
   modelConfig?: EmployeeModelConfig;
   avatarUrls?: Record<string, string>;
   modelSaving?: boolean;
@@ -54,6 +57,8 @@ export interface TurnPanelProps {
 }
 
 export function TurnPanel({
+  active = true,
+  availabilityCheck,
   modelConfig,
   avatarUrls,
   modelSaving = false,
@@ -97,6 +102,7 @@ export function TurnPanel({
   );
 
   useEffect(() => {
+    if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.metaKey || event.key !== ".") return;
       if (!runningTurn || cancelling || !selectedPosition) return;
@@ -105,26 +111,32 @@ export function TurnPanel({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cancelling, onCancelTurn, runningTurn, selectedPosition]);
+  }, [active, cancelling, onCancelTurn, runningTurn, selectedPosition]);
 
   const sessionMode = sessions !== undefined;
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
 
-  const disabledReason = useMemo(() => {
-    if (modelSaving) return t("model.saving");
-    if (!workspaceOpen) return t("turn.emptyOpenFirst");
-    if (positions.length === 0) return t("turn.noPositions");
-    if (!selectedPosition) return t("turn.emptyPick");
-    if (sessionMode && sessionBusy) return t("turn.sessionPreparing");
-    if (sessionMode && !selectedSession) return t("turn.emptySession");
-    if (sessionMode && selectedSession?.status !== "active") return t("turn.sessionReadOnly");
-    if (modelConfig?.connection?.status === "invalid") return modelConfig.connection.message ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
+  const disabledState = useMemo(() => {
+    const blocked = (reason: string, summary = reason, diagnostic?: string, canRecheck = false) => ({ reason, summary, diagnostic, canRecheck });
+    if (modelSaving) return blocked(t("model.saving"));
+    if (!workspaceOpen) return blocked(t("turn.emptyOpenFirst"));
+    if (positions.length === 0) return blocked(t("turn.noPositions"));
+    if (!selectedPosition) return blocked(t("turn.emptyPick"));
+    if (sessionMode && sessionBusy) return blocked(t("turn.sessionPreparing"));
+    if (sessionMode && !selectedSession) return blocked(t("turn.emptySession"));
+    if (sessionMode && selectedSession?.status !== "active") return blocked(t("turn.sessionReadOnly"));
+    if (modelConfig?.connection?.status === "invalid") return blocked(
+      modelConfig.connection.message ?? t("turn.engineNotReady", { engine: engineLabel(engine) }),
+      t("turn.modelConnectionNotReady"), modelConfig.connection.message, true,
+    );
     if (!engineAvailability[engine].ready) {
-      return engineAvailability[engine].reason ?? t("turn.engineNotReady", { engine: engineLabel(engine) });
+      const summary = t("turn.engineNotReady", { engine: engineLabel(engine) });
+      return blocked(engineAvailability[engine].reason ?? summary, summary, engineAvailability[engine].reason, true);
     }
-    if (busy || employeeBusy || sending || sessionBusy) return t("turn.updating");
+    if (busy || employeeBusy || sending || sessionBusy) return blocked(t("turn.updating"));
     return null;
   }, [busy, employeeBusy, engine, engineAvailability, engineLabel, modelConfig, modelSaving, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
+  const disabledReason = disabledState?.reason ?? null;
 
   const dispatchTurn = async (): Promise<void> => {
     const trimmed = input.trim();
@@ -160,7 +172,7 @@ export function TurnPanel({
           {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
           <div className="owb-conversation-identity__copy">
             <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
-            <p>{selectedPosition ? `${engineLabel(engine)}${engineLocked ? ` · ${t("turn.agentLocked")}` : ""}` : t("turn.pickEmployeeHint")}</p>
+            {selectedPosition ? <p>{`${engineLabel(engine)}${engineLocked ? ` · ${t("turn.agentLocked")}` : ""}`}</p> : null}
           </div>
         </div>
         {selectedPosition ? <span title={engineLocked ? t("turn.agentLocked") : undefined}><EngineSelect
@@ -175,10 +187,8 @@ export function TurnPanel({
       <TurnThread
         turns={turns}
         retrying={busy || employeeBusy || sending}
-        // The thread has one stable empty-state message. Concrete blockers
-        // stay next to the input so the conversation area never oscillates
-        // between "create a session" and "start from a clear task".
-        emptyPrompt={selectedPosition ? t("turn.emptySelected") : t("turn.emptyStart")}
+        emptyPrompt={selectedPosition ? t("turn.emptySelected") : !workspaceOpen ? t("project.welcomeTitle") : positions.length === 0 ? t("turn.emptyAddEmployee") : t("turn.emptyChooseEmployee")}
+        emptyDescription={selectedPosition ? t("turn.emptySelectedBody") : !workspaceOpen ? t("turn.emptyOpenFirst") : positions.length === 0 ? t("turn.emptyAddEmployeeBody") : t("turn.emptyChooseEmployeeBody")}
         canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && modelConfig?.connection?.status !== "invalid" && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
@@ -186,14 +196,18 @@ export function TurnPanel({
         scrollKey={`${selectedPositionId ?? ""}:${selectedSessionId ?? ""}`}
       />
 
-      <TurnComposer
-        options={selectedPosition && (modelConfig || onSetSessionContext) ? <ConversationOptions
+      {selectedPosition ? <TurnComposer
+        options={active && selectedPosition && (modelConfig || onSetSessionContext) ? <ConversationOptions
           config={modelConfig} saving={modelSaving} disabled={busy || employeeBusy || sending || sessionBusy}
           session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
         /> : undefined}
         value={input}
         placeholder={selectedPosition ? t("turn.composeTo", { name: selectedPosition.name }) : t("turn.composePlaceholder")}
         disabledReason={disabledReason}
+        disabledSummary={disabledState?.summary}
+        disabledDiagnostic={disabledState?.diagnostic}
+        availabilityCheck={disabledState?.canRecheck ? availabilityCheck : undefined}
+        diagnosticKey={`${selectedPositionId}:${selectedSessionId ?? ""}:${engine}`}
         running={runningTurn}
         cancelling={cancelling}
         canCancel={selectedPosition !== null}
@@ -202,7 +216,7 @@ export function TurnPanel({
         onCancel={() => {
           if (selectedPosition) return onCancelTurn?.(selectedPosition.id);
         }}
-      />
+      /> : null}
     </section>
   );
 }

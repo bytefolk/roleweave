@@ -15,7 +15,7 @@ export default defineConfig({
       "react-dom": reactDomDir,
       "react/jsx-runtime": `${reactDir}/jsx-runtime`,
     },
-    dedupe: ["react", "react-dom"],
+    dedupe: ["react", "react-dom", "antd"],
   },
   test: {
     root: here("."),

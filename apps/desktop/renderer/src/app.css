@@ -3099,7 +3099,7 @@
 .owb-hire-avatar-picker__choices img { width: 100%; height: 100%; object-fit: contain; }
 .owb-hire-avatar-picker__generate { display: grid; gap: 1px; color: var(--ui-primary); font-size: 9px; font-weight: 650; }
 .owb-hire-avatar-picker__generate:disabled { opacity: .58; cursor: wait; }
-.owb-hire-avatar-picker__error { color: var(--ui-error, #bd3d3d) !important; }
+.owb-hire-avatar-picker__error { color: var(--owb-error-foreground, var(--ui-danger-strong)) !important; }
 .owb-hire-avatar-picker__choices button:first-child span { position: absolute; right: 2px; bottom: 1px; padding: 0 2px; border-radius: 3px; background: rgba(0,0,0,.55); color: #fff; font-size: 9px; }
 .owb-hire-avatar-picker__upload { color: var(--ui-primary); font-size: 10px; font-weight: 600; }
 .owb-hire-avatar-picker__upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
@@ -3344,7 +3344,7 @@
   }
 }
 
-/* ============================================================================
+/* =====================================================================
  * #73 Control Plane v2 结构层 —— 完全对齐 docs/design/control-plane-v2-preview.html
  * 的骨架：40px 自定义标题栏 + 54px 模块导轨 + 300px 侧栏 + 48px topbar，
  * 主区为自定义 .owb-panel（不再是 antd Card），回合流为时间线（不是气泡）。
@@ -5033,18 +5033,13 @@ body,
  * 走线色取 --ui-border-strong（两主题都有定义）；卡面沿用暖纸色阶与
  * 6/10 圆角、120ms ease-out 动效纪律（与 DS-73-001 同口径）。 */
 
-/* #137 左列：组织图保持内容高度，岗位档案卡吃掉左列剩余高度，
- * 使左列始终填满模块行（与右列对话面板对齐）。 */
+/* The employee record fills the workbench left column. */
 .owb-org-module__left {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
   min-height: 0;
-}
-
-.owb-org-module__left > .owb-org-chart {
-  flex: none;
 }
 
 .owb-org-module__left > .owb-position-column {
@@ -5771,7 +5766,7 @@ body,
   color: var(--ui-foreground-subtle);
   font-size: 11px;
 }
-/* ================================================================
+/* =========================================================
    Turn / 审计时间线（AuditTimeline）— design-spec §6
    Read-only, evidence-only stream grouped by runId.
    ================================================================ */
@@ -7379,12 +7374,6 @@ body,
   overflow: hidden;
 }
 
-.owb-org-module__left > .owb-org-chart {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
 .owb-org-chart__body {
   contain: paint;
   overflow: hidden;
@@ -8337,6 +8326,31 @@ body,
 .owb-thread-context code { overflow-wrap: anywhere; }
 .owb-group-dispatch-mode { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .owb-group-dispatch-mode .ant-select { min-width: 170px; }
+
+/* Organization views share navigation, while the mounted workbench retains
+   drafts, session scroll and pane size during an overview visit. */
+.owb-org-views {
+  display: flex;
+  flex: none;
+  gap: var(--ui-space-2);
+  align-items: center;
+}
+
+.owb-org-module[hidden] { display: none; }
+
+.owb-main > .owb-org-chart--overview {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.owb-org-chart--overview .owb-org-chart__body {
+  flex: 1;
+  min-height: 0;
+}
+
 /* Credential values stay in native password controls, outside React state. */
 .owb-host-credentials__host { margin-block-start: 24px; }
 .owb-host-credentials__field { margin-block: 16px; }

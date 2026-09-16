@@ -19,7 +19,9 @@ export default defineConfig({
       "react-dom": reactDomDir,
       "react/jsx-runtime": `${reactDir}/jsx-runtime`,
     },
-    dedupe: ["react", "react-dom"],
+    // The file-linked design system has its own install. Its ConfigProvider
+    // and the desktop's Ant controls must share one context in packaged builds.
+    dedupe: ["react", "react-dom", "antd"],
   },
   build: {
     outDir: fileURLToPath(new URL("./dist/renderer", import.meta.url)),

@@ -5,7 +5,7 @@ import { GroupsPanel } from "../src/groups/GroupsPanel";
 import type { OwbBridge } from "../src/owb";
 import type { GroupConversation, GroupTimeline, TurnRecord } from "@roleweave/shared";
 import type { LiveRunState } from "../src/turns/turnStream";
-import type { TurnEngineAvailability } from "../src/turns/types";
+import type { TurnEngine, TurnEngineAvailability } from "../src/turns/types";
 
 /** #53 S3 collaboration visuals: the avatar stack and member roster consume
  * the existing /groups* bridge surface — no new channel is introduced. */
@@ -67,7 +67,8 @@ function renderPanel(
     createGroup?: () => Promise<{ status: number; body: unknown }>;
     addGroupMember?: () => Promise<{ status: number; body: unknown }>;
     createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
-    engineForPosition?: (positionId: string) => "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
+    engineForPosition?: (positionId: string) => TurnEngine;
+    engineAvailability?: Partial<Record<TurnEngine, TurnEngineAvailability>>;
     onReconcileTimeline?: (timeline: GroupTimeline) => void;
   } = {},
 ) {
@@ -93,6 +94,8 @@ function renderPanel(
         "claude-local": readyAvailability,
         codex: readyAvailability,
         "codex-local": readyAvailability,
+        workbuddy: readyAvailability,
+        ...extra.engineAvailability,
       }}
       engineForPosition={extra.engineForPosition}
       liveRuns={extra.liveRuns ?? {}}
@@ -567,4 +570,24 @@ it("does not reconcile an abandoned workspace timeline into shared App state", a
   unmount();
   await act(async () => finish({ status: 200, body: { schemaVersion: "group-timeline.v1", conversationRef: group.conversationRef, items: [{ kind: "member", turn: completedTurn() }] } }));
   expect(onReconcileTimeline).not.toHaveBeenCalled();
+});
+
+it.each([["codex-local", "Codex"], ["workbuddy", "WorkBuddy"]] as const)("blocks a mixed-recipient group with unavailable %s without rendering raw diagnostics", async (engine, label) => {
+  const reason = "Set CODEX_HOME before starting this runtime";
+  const { bridge } = renderPanel({
+    createGroupTurn: async () => ({ status: 202, body: {} }),
+    engineForPosition: id => id === "release-engineer" ? engine : "qoder",
+    engineAvailability: { [engine]: { configured: true, ready: false, reason } },
+  });
+  await screen.findByRole("combobox", { name: "选择要 @ 的成员" });
+  fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), { target: { value: "keep this group draft" } });
+  pickSelectOption("选择要 @ 的成员", "Repo Owner");
+  pickSelectOption("选择要 @ 的成员", "Release Engineer");
+  expect(screen.getByText(`${label} 暂时无法使用。`)).toBeVisible();
+  expect(screen.queryByText(reason)).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "群聊消息" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "发送群消息" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "复制诊断" })).toBeEnabled();
+  fireEvent.submit(screen.getByRole("textbox", { name: "群聊消息" }).closest("form")!);
+  expect(bridge.createGroupTurn).not.toHaveBeenCalled();
 });

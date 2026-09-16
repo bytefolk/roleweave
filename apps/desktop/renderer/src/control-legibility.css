@@ -1,0 +1,205 @@
+/* Alignment follows content roles: reading and identity start at the leading
+ * edge; compact actions center their labels; comparable values end-align. */
+[data-theme] :is(.ant-btn, .ui-button, .ant-segmented-item-label, .ant-tag) {
+  text-align: center;
+}
+
+/* Opposite foreground/background pairs cross through unreadable colors when
+ * Ant animates both during disabled -> ready or theme changes. Switch the
+ * pair together; keep non-text border and shadow feedback animated. */
+[data-ui-theme][data-theme] .ant-btn {
+  transition-property: border-color, box-shadow;
+}
+
+[data-theme] :is(.ant-modal-title, .ant-drawer-title, .ant-popover-title,
+  .owb-doc-viewer .ant-card-head-title,
+  .owb-modal__header h2, .owb-management-modal h2, .owb-management-modal h3,
+  .owb-project-dialog__description, .owb-hire-agent-picker h3,
+  .owb-hire-draft-card h3, .owb-hire-capability-panel__head h3) {
+  text-align: start;
+}
+
+[data-theme] .owb-app :is(.owb-side-head__title, .owb-sidebar-header,
+  .owb-panel-head h2, .owb-turn-panel__header h2, .owb-groups__list-header h2,
+  .owb-groups__panel-title h3, .owb-memory-module__title,
+  .owb-memory-workspace__header h1, .owb-memory-workspace__header h2,
+  .owb-memory-sources__heading h2, .owb-drive-module__list-header h2,
+  .owb-memory-location h2, .owb-docs-module__header h1,
+  .owb-docs-panel__header h2,
+  .owb-drive-module__detail-header h2, .owb-reports__hero h1,
+  .owb-approval-queue__hero h1, .owb-settings-module__header h1,
+  .owb-settings-module__section h2, .owb-module-header h1,
+  .owb-module-header h2, .owb-goals-detail h2,
+  .ui-org-tree__label, .owb-org-chart__name,
+  .owb-project-switcher__copy, .owb-groups__item-name) {
+  text-align: start;
+}
+
+[data-theme] .owb-app :is(.owb-panel-head h2, .owb-conversation-identity,
+  .owb-settings-module__pane-header, .owb-org-chart__head-title,
+  .owb-groups__list-header h2, .owb-groups__panel-title h3) {
+  justify-content: flex-start;
+  text-align: start;
+}
+
+[data-theme] .owb-app .owb-conversation-identity { flex: 1; }
+
+[data-theme] .owb-app :is(.owb-settings-module__pane-header h2,
+  .owb-service-connection__header h3, .owb-memory-source__label,
+  .owb-service-connection__fields label > span) { text-align: start; }
+
+[data-theme] .owb-app :is(.owb-report-tabs button,
+  .owb-report-subtabs button, .owb-turn__approval-grant,
+  .owb-turn__approval-deny, .owb-turn__retry, .owb-groups__create summary,
+  .owb-badge, .owb-tag) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Portraits must stay inside the existing avatar slots so they cannot cover
+ * message text or intercept a group's expand control. */
+[data-theme] .owb-app :is(.owb-groups__avatar, .owb-bubble__avatar) > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+}
+
+[data-theme] :is(.owb-project-workspace-action:disabled,
+  .owb-turn__approval-grant:disabled, .owb-turn__approval-deny:disabled,
+  .owb-turn__retry:disabled, .owb-session-controls button:disabled) {
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-subtle);
+  opacity: 1;
+}
+
+/* Secondary copy must follow a disabled card's readable foreground too. */
+[data-theme] .owb-project-workspace-action:disabled :is(small,
+  .owb-project-workspace-action__icon) {
+  color: inherit;
+}
+
+/* Ant Design and native controls consume the same filled color pairs.
+ * The default profile's bright hover steps need a darker surface for white
+ * labels; derive it from the existing hue without changing the link palette. */
+[data-theme] {
+  --owb-solid-primary: var(--ui-primary);
+  --owb-solid-primary-hover: var(--ui-primary-hover);
+  --owb-solid-ai: var(--ui-ai);
+  --owb-solid-ai-hover: var(--ui-ai-hover);
+  --owb-solid-danger: var(--ui-danger);
+  --owb-solid-danger-hover: var(--ui-danger-strong);
+  --owb-solid-danger-foreground: #ffffff;
+}
+
+[data-ui-theme="mint"][data-theme="dark"] {
+  --owb-solid-danger-foreground: #14151b;
+}
+
+[data-ui-theme="default"][data-theme] {
+  --ui-foreground-subtle: var(--ui-foreground-muted);
+  --ui-success-foreground: #14151b;
+  --ui-warning-foreground: #14151b;
+  --ui-danger-foreground: #14151b;
+  --owb-solid-primary: color-mix(in srgb, var(--ui-primary) 85%, #000);
+  --owb-solid-primary-hover: color-mix(in srgb, var(--ui-primary-hover) 70%, #000);
+  --owb-solid-ai: color-mix(in srgb, var(--ui-ai) 85%, #000);
+  --owb-solid-ai-hover: color-mix(in srgb, var(--ui-ai-hover) 75%, #000);
+  --owb-solid-danger: color-mix(in srgb, var(--ui-danger) 70%, #000);
+  --owb-solid-danger-hover: color-mix(in srgb, var(--ui-danger-strong) 85%, #000);
+}
+
+[data-ui-theme][data-theme] :is(.ant-btn-color-primary.ant-btn-variant-solid,
+  .owb-turn__approval-grant):not(:disabled),
+[data-ui-theme][data-theme] .owb-app .owb-turn-composer__surface .ant-btn-primary:not(:disabled) {
+  background: var(--owb-solid-primary);
+  border-color: var(--owb-solid-primary);
+  color: var(--ui-primary-foreground);
+}
+
+[data-ui-theme][data-theme] :is(.ant-btn-color-primary.ant-btn-variant-solid,
+  .owb-turn__approval-grant):not(:disabled):hover,
+[data-ui-theme][data-theme] .owb-app .owb-turn-composer__surface .ant-btn-primary:not(:disabled):hover {
+  background: var(--owb-solid-primary-hover);
+  border-color: var(--owb-solid-primary-hover);
+}
+
+[data-ui-theme][data-theme] .ui-button--ai.ant-btn:not(:disabled) {
+  background: var(--owb-solid-ai);
+  border-color: var(--owb-solid-ai);
+  color: var(--ui-ai-foreground);
+}
+[data-ui-theme][data-theme] .ui-button--ai.ant-btn:not(:disabled):hover {
+  background: var(--owb-solid-ai-hover);
+  border-color: var(--owb-solid-ai-hover);
+}
+
+[data-ui-theme][data-theme] .ant-btn-dangerous.ant-btn-variant-solid:not(:disabled) {
+  background: var(--owb-solid-danger);
+  border-color: var(--owb-solid-danger);
+  color: var(--owb-solid-danger-foreground);
+}
+[data-ui-theme][data-theme] .ant-btn-dangerous.ant-btn-variant-solid:not(:disabled):hover {
+  background: var(--owb-solid-danger-hover);
+  border-color: var(--owb-solid-danger-hover);
+}
+
+[data-ui-theme][data-theme] .ant-btn:disabled {
+  color: var(--ui-foreground-subtle);
+  background: var(--ui-surface-inset);
+  opacity: 1;
+}
+
+[data-ui-theme][data-theme] .ant-input::placeholder {
+  color: var(--ui-foreground-subtle);
+}
+
+[data-ui-theme][data-theme] .ant-select .ant-select-placeholder {
+  color: var(--ui-foreground-subtle);
+}
+
+/* Populated readers expose secondary metadata and starred document badges.
+ * Use their semantic text roles instead of Ant's faint preset palette. */
+[data-theme] .owb-doc-viewer__meta .ant-typography-secondary {
+  color: var(--ui-foreground-muted);
+}
+
+[data-ui-theme][data-theme] .owb-doc-plane .ant-tag.ant-tag-gold {
+  color: var(--ui-warning-strong);
+  background: var(--ui-warning-soft);
+}
+
+[data-ui-theme="default"][data-theme="light"] .owb-doc-viewer__body a {
+  color: var(--owb-solid-primary);
+}
+
+[data-ui-theme="default"][data-theme="light"] .owb-doc-viewer__body a:hover {
+  color: var(--owb-solid-primary-hover);
+}
+
+/* Selection stays visible in the surface and weight; its label needs the
+ * readable foreground, especially on the default profile's blue surface. */
+[data-theme] .owb-app :is(.ui-org-tree__row.is-selected .ui-org-tree__name,
+  .owb-memory-source[aria-pressed="true"],
+  .owb-report-tabs button[aria-pressed="true"] span) {
+  color: var(--ui-foreground);
+}
+
+[data-ui-theme][data-theme] .owb-app .owb-turn-progress.is-failed .owb-turn-progress__title {
+  color: var(--ui-danger-strong);
+}
+
+[data-ui-theme="default"][data-theme="light"] .owb-app .owb-docs-panel__copy-ref,
+[data-ui-theme="default"][data-theme="light"] .owb-app .owb-tc__out--markdown a,
+[data-ui-theme="default"][data-theme="light"] .ant-btn.ant-btn-variant-link:not(:disabled):not(.ant-btn-dangerous) {
+  color: var(--owb-solid-primary);
+}
+
+[data-ui-theme="default"][data-theme="dark"] .owb-app .owb-docs-panel__copy-ref,
+[data-ui-theme="default"][data-theme="dark"] .owb-app .owb-tc__out--markdown a,
+[data-ui-theme="default"][data-theme="dark"] .ant-btn.ant-btn-variant-link:not(:disabled):not(.ant-btn-dangerous) {
+  color: color-mix(in srgb, var(--ui-primary-hover) 70%, #fff);
+}

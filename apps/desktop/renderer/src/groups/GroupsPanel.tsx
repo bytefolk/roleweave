@@ -3,6 +3,7 @@ import { Button as AntButton, Input, Select as AntSelect } from "antd";
 import { ArrowUp, Plus, Search, Trash2, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
 import { PositionAvatar } from "../PositionAvatar";
+import { DiagnosticNotice, type AvailabilityCheck } from "../DiagnosticNotice";
 import { ProgressTrail, TypingIndicator } from "../turns/TurnThread";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@roleweave/shared";
 import { useEngineLabel } from "../turns/engine-select";
@@ -39,6 +40,7 @@ function GroupBubbleExpand({ summaryClassName, summaryTitle, summaryChildren, bo
 }
 
 export interface GroupsPanelProps {
+  availabilityCheck?: AvailabilityCheck;
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
   positionNames: Record<string, string>;
@@ -124,6 +126,7 @@ function timeShort(iso: string): string {
  * when v1alpha2 conversation refs land).
  */
 export function GroupsPanel({
+  availabilityCheck,
   workspaceOpen,
   positions,
   positionNames,
@@ -910,14 +913,15 @@ export function GroupsPanel({
                   icon={<ArrowUp aria-hidden="true" size={15} />}
                 />
               </div>
-              <p className="owb-turn-composer__hint" role="status">
-                {mentions.size === 0
+              <DiagnosticNotice className="owb-turn-composer__hint"
+                message={mentions.size === 0
                   ? t("grp.hintRoute")
                   : mentionsReady
                     ? t("grp.hintMentions", { count: mentions.size })
-                    : engineAvailability[unavailableMention!.engine]?.reason
-                      ?? t("turn.engineNotReady", { engine: engineLabel(unavailableMention!.engine) })}
-              </p>
+                    : t("turn.engineNotReady", { engine: engineLabel(unavailableMention!.engine) })}
+                availabilityCheck={mentions.size > 0 && !mentionsReady ? availabilityCheck : undefined}
+                diagnostic={mentions.size > 0 && !mentionsReady ? engineAvailability[unavailableMention!.engine]?.reason : undefined}
+                diagnosticKey={`${selectedGroup?.conversationRef}:${unavailableMention?.positionId}:${unavailableMention?.engine}`} />
             </form>
           </>
         )}

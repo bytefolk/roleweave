@@ -244,7 +244,7 @@ describe("App runtime bridge", () => {
   it("shows a single project welcome state when no workspace is open", async () => {
     installBridge();
     render(<App />);
-    expect(await screen.findByRole("heading", { name: "打开一个项目，开始协作" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "开始项目协作" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "打开或新建项目" })).toBeEnabled());
     expect(document.querySelector(".owb-org-module")).toBeNull();
   });
@@ -330,7 +330,8 @@ describe("App runtime bridge", () => {
             await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
           } else {
             // Other hosts are ready, but this employee must not silently migrate.
-            expect((await screen.findAllByText("设置 ANTHROPIC_API_KEY 后重启工作台")).length).toBeGreaterThan(0);
+            expect(await screen.findByText("Claude Code 暂时无法使用。")).toBeVisible();
+            expect(screen.queryByText("设置 ANTHROPIC_API_KEY 后重启工作台")).not.toBeInTheDocument();
             expect(screen.getByLabelText("下达任务")).toBeDisabled();
             expect(bridge.createSessionTurn).not.toHaveBeenCalled();
           }
@@ -403,7 +404,9 @@ describe("App runtime bridge", () => {
 
     render(<App />);
     await selectRepoOwner();
-    expect((await screen.findAllByText("Qoder 凭据未配置")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Qoder 暂时无法使用。")).toBeVisible();
+    expect(screen.queryByText("Qoder 凭据未配置")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新检查" })).toBeEnabled();
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
@@ -1224,4 +1227,225 @@ it.each(["history", "sessions"])("ignores A %s rejection after opening B with th
   await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
   await act(async () => rejectA(new Error("old A history request failure")));
   expect(screen.queryByText(kind === "history" ? "本地历史读取失败：本地服务不可用" : "会话列表读取失败：本地服务不可用")).not.toBeInTheDocument();
+});
+
+it("keeps the employee workbench mounted while the overview handles organization navigation", async () => {
+  const bridge = openedBridge();
+  const { container } = render(<App />);
+  await selectRepoOwner();
+  const input = screen.getByRole("textbox", { name: "下达任务" });
+  await waitFor(() => expect(input).toBeEnabled());
+  fireEvent.change(input, { target: { value: "draft stays with this employee" } });
+  const split = container.querySelector<HTMLElement>(".owb-org-module")!;
+  fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowRight" });
+  const ratio = split.style.getPropertyValue("--owb-org-left-width");
+  expect(container.querySelector(".owb-org-chart")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "上下文详情", exact: true }));
+  await waitFor(() => expect(screen.getByText("携带会话历史")).toBeVisible());
+  // Keyboard activation does not produce the outside mousedown that normally closes a portal.
+  screen.getByRole("button", { name: "组织概览", exact: true }).focus();
+  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  await waitFor(() => expect(screen.queryByText("携带会话历史")).not.toBeInTheDocument());
+  expect(screen.getByRole("region", { name: "组织图" })).toBeVisible();
+  expect(input).not.toBeVisible();
+  expect(split).toHaveAttribute("hidden");
+  expect(screen.queryByRole("button", { name: "折叠组织图" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "员工工作台", exact: true }));
+  expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(input);
+  expect(input).toHaveValue("draft stays with this employee");
+  expect(split.style.getPropertyValue("--owb-org-left-width")).toBe(ratio);
+
+  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  fireEvent.click(container.querySelector('[data-org-chart-node="repo-owner"]')!);
+  expect(input).toBeVisible();
+  expect(input).toHaveValue("draft stays with this employee");
+  expect(screen.getByRole("button", { name: "员工工作台", exact: true })).toHaveFocus();
+  expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  fireEvent.click(screen.getByRole("tree").querySelector('[data-org-node-id="repo-owner"]')!);
+  expect(input).toBeVisible();
+  expect(container.querySelector(".owb-org-chart")).toBeNull();
+});
+
+it("returns to the workbench after leaving the organization module", async () => {
+  openedBridge();
+  const { container } = render(<App />);
+  await selectRepoOwner();
+  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "审批", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "组织", exact: true }));
+  expect(container.querySelector(".owb-org-chart")).toBeNull();
+  expect(screen.getByRole("button", { name: "员工工作台", exact: true })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("rechecks health without rebuilding the workspace or losing the selected conversation draft", async () => {
+  const bridge = openedBridge();
+  const ready = await bridge.status();
+  const unavailable = { ...ready, health: { ...ready.health!, engine: { ...ready.health!.engine, available: false, nextStep: "RAW_ENGINE_PATH" } } };
+  vi.mocked(bridge.status).mockReset().mockResolvedValue(unavailable);
+  await act(async () => { render(<App />); });
+  await selectRepoOwner();
+  const input = await screen.findByLabelText("下达任务");
+  await waitFor(() => expect(input).toBeEnabled());
+  fireEvent.change(input, { target: { value: "keep the actual draft" } });
+  const treeReads = vi.mocked(bridge.orgTree).mock.calls.length;
+  const workspaceReads = vi.mocked(bridge.workspace).mock.calls.length;
+  const sessionReads = vi.mocked(bridge.sessions).mock.calls.length;
+  let finish!: (value: Awaited<ReturnType<OwbBridge["status"]>>) => void;
+  vi.mocked(bridge.status).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const recheck = screen.getByRole("button", { name: "重新检查" });
+  fireEvent.click(recheck);
+  fireEvent.click(recheck);
+  expect(screen.getByRole("button", { name: "检查中…" })).toBeDisabled();
+  expect(bridge.status).toHaveBeenCalledTimes(2);
+  expect(document.body.innerHTML).not.toContain("RAW_ENGINE_PATH");
+  await act(async () => finish(ready));
+  expect(screen.queryByRole("button", { name: "重新检查" })).not.toBeInTheDocument();
+  expect(screen.getByLabelText("下达任务")).toBe(input);
+  expect(input).toHaveValue("keep the actual draft");
+  expect(input).toBeEnabled();
+  expect(bridge.orgTree).toHaveBeenCalledTimes(treeReads);
+  expect(bridge.workspace).toHaveBeenCalledTimes(workspaceReads);
+  expect(bridge.sessions).toHaveBeenCalledTimes(sessionReads);
+  expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+});
+
+it.each(["valid", "legacy"] as const)("refreshes an invalid cached model connection after a %s position read", async mode => {
+  const modelConfig = { selected: "provider-default", recommended: "provider-default", editable: true, source: "local-config", options: [],
+    connection: { source: "local-config", kind: "gateway", billing: "unknown", status: "invalid", message: "RAW_CONFIG_ERROR" } };
+  const bridge = openedBridge({ position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine: "qoder", modelConfig } }) });
+  await act(async () => { render(<App />); });
+  await selectRepoOwner();
+  expect(await screen.findByText("模型连接需要检查。")).toBeVisible();
+  expect(screen.getByLabelText("下达任务")).toBeDisabled();
+  expect(document.body.innerHTML).not.toContain("RAW_CONFIG_ERROR");
+  vi.mocked(bridge.position).mockResolvedValue({ status: 200, body: { position, agentEngine: "qoder", ...(mode === "valid" ? { modelConfig: { ...modelConfig, connection: { ...modelConfig.connection, status: "valid", message: undefined } } } : {}) } });
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新检查" })));
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  expect(screen.queryByText("模型连接需要检查。")).not.toBeInTheDocument();
+});
+
+it.each(["offline", "missing-health", "degraded", "position-failed"])("keeps availability guards and reports a short recheck failure for %s", async failure => {
+  const bridge = openedBridge();
+  const ready = await bridge.status();
+  const unavailable = { ...ready, health: { ...ready.health!, hosts: { ...ready.health!.hosts!, qoder: { configured: true, ready: false, nextStep: "RAW_PATH" } } } };
+  vi.mocked(bridge.status).mockReset().mockResolvedValue(unavailable);
+  await act(async () => { render(<App />); });
+  await selectRepoOwner();
+  await screen.findByText("Qoder 暂时无法使用。");
+  if (failure === "offline") vi.mocked(bridge.status).mockRejectedValueOnce(new Error("PRIVATE_PATH"));
+  if (failure === "missing-health") vi.mocked(bridge.status).mockResolvedValueOnce({ running: true });
+  if (failure === "degraded") vi.mocked(bridge.status).mockResolvedValueOnce({ ...ready, health: { ...ready.health!, status: "degraded" } });
+  if (failure === "position-failed") {
+    vi.mocked(bridge.status).mockResolvedValueOnce(ready);
+    vi.mocked(bridge.position).mockResolvedValueOnce({ status: 503, body: {} });
+  }
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新检查" })));
+  expect(screen.getByText("检查失败，请重试")).toBeVisible();
+  expect(screen.getByLabelText("下达任务")).toBeDisabled();
+  expect(document.body.innerHTML).not.toMatch(/RAW_PATH|PRIVATE_PATH/);
+  expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+});
+
+it.each(["employee", "workspace"])("ignores a late availability response after changing %s", async change => {
+  let workspace = "A";
+  const second = { ...position, id: "writer", name: "文档员工" };
+  const bridge = openedBridge({
+    workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/fixture/${workspace}`, business: workspace } })),
+    orgTree: vi.fn().mockResolvedValue({ status: 200, body: { ...snapshot, tree: [...snapshot.tree, { ...snapshot.tree[0], id: "writer" }] } }),
+    position: vi.fn(async id => ({ status: 200, body: { position: id === "writer" ? second : position, agentEngine: "qoder" } })),
+  });
+  const ready = await bridge.status();
+  const unavailable = { ...ready, health: { ...ready.health!, hosts: { ...ready.health!.hosts!, qoder: { configured: true, ready: false, nextStep: "RAW_PATH" } } } };
+  vi.mocked(bridge.status).mockReset().mockResolvedValue(unavailable);
+  await act(async () => { render(<App />); });
+  await selectRepoOwner();
+  await screen.findByText("Qoder 暂时无法使用。");
+  let finish!: (value: Awaited<ReturnType<OwbBridge["status"]>>) => void;
+  vi.mocked(bridge.status).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
+  if (change === "employee") {
+    await act(async () => fireEvent.click(screen.getByRole("tree").querySelector('[data-org-node-id="writer"]')!));
+  } else {
+    workspace = "B";
+    await chooseExistingWorkspace();
+  }
+  await act(async () => finish(ready));
+  expect(screen.getByLabelText("下达任务")).toBeDisabled();
+  expect(screen.getByText("Qoder 暂时无法使用。")).toBeVisible();
+  expect(screen.queryByText("检查失败，请重试")).not.toBeInTheDocument();
+  expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+});
+
+it.each(["success", "failure"])("finishes an overlapping employee card read without restoring stale availability after recheck %s", async outcome => {
+  const bridge = openedBridge();
+  const ready = await bridge.status();
+  const unavailable = { ...ready, health: { ...ready.health!, hosts: { ...ready.health!.hosts!, qoder: { configured: true, ready: false, nextStep: "RAW_PATH" } } } };
+  vi.mocked(bridge.status).mockReset().mockResolvedValue(unavailable);
+  await act(async () => { render(<App />); });
+  let finishPosition!: (value: Awaited<ReturnType<OwbBridge["position"]>>) => void;
+  vi.mocked(bridge.position).mockImplementationOnce(() => new Promise(resolve => { finishPosition = resolve; }));
+  await selectRepoOwner();
+  await screen.findByText("Qoder 暂时无法使用。");
+  if (outcome === "success") vi.mocked(bridge.status).mockResolvedValueOnce(ready);
+  else vi.mocked(bridge.status).mockRejectedValueOnce(new Error("check failed"));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新检查" })));
+  await act(async () => finishPosition({ status: 200, body: { position, agentEngine: "claude-code", modelConfig: {
+    selected: "provider-default", recommended: "provider-default", editable: true, source: "local-config", options: [],
+    connection: { source: "local-config", kind: "gateway", billing: "unknown", status: "invalid", message: "STALE_CONFIG" },
+  } } }));
+  expect(screen.getByText("负责开源仓库")).toBeVisible();
+  expect(screen.queryByText("模型连接需要检查。")).not.toBeInTheDocument();
+  expect(screen.queryByText("Claude Code 暂时无法使用。")).not.toBeInTheDocument();
+  if (outcome === "success") expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  else expect(screen.getByLabelText("下达任务")).toBeDisabled();
+});
+
+it("does not let an older ordinary health refresh overwrite a newer availability check", async () => {
+  let eventListener: (event: unknown) => void = () => {};
+  const bridge = openedBridge({ onEvent: vi.fn(listener => { eventListener = listener; return () => {}; }) });
+  const ready = await bridge.status();
+  const unavailable = { ...ready, health: { ...ready.health!, hosts: { ...ready.health!.hosts!, qoder: { configured: true, ready: false, nextStep: "RAW_PATH" } } } };
+  vi.mocked(bridge.status).mockReset().mockResolvedValue(unavailable);
+  await act(async () => { render(<App />); });
+  await selectRepoOwner();
+  await screen.findByText("Qoder 暂时无法使用。");
+  let finishRefresh!: (value: Awaited<ReturnType<OwbBridge["status"]>>) => void;
+  vi.mocked(bridge.status).mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve; })).mockResolvedValueOnce(ready);
+  await act(async () => eventListener({ type: "org.updated", payload: { workspace: "/fixture/workspace", version: { seq: 8 }, changes: [] } }));
+  expect(bridge.status).toHaveBeenCalledTimes(2);
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新检查" })));
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  await act(async () => finishRefresh(unavailable));
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  expect(screen.queryByText("Qoder 暂时无法使用。")).not.toBeInTheDocument();
+});
+
+it("does not restore a pre-save model when a status check finishes after saving", async () => {
+  const config = { selected: "provider-default", recommended: "provider-default", editable: true, source: "host-default", options: [
+    { id: "provider-default", name: "Agent default", tier: "default" }, { id: "new-model", name: "New model", tier: "default" },
+  ] };
+  let finishSave!: (value: unknown) => void;
+  const bridge = openedBridge({
+    position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine: "qoder", modelConfig: config } }),
+    setPositionModel: vi.fn(() => new Promise(resolve => { finishSave = resolve; })),
+  });
+  const ready = await bridge.status();
+  const engineWarning = { ...ready, health: { ...ready.health!, engine: { ...ready.health!.engine, available: false } } };
+  vi.mocked(bridge.status).mockReset().mockResolvedValue(engineWarning);
+  await act(async () => { render(<App />); });
+  await selectRepoOwner();
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "员工模型" })).toBeEnabled());
+  pickSelectOption("员工模型", "New model");
+  expect(bridge.setPositionModel).toHaveBeenCalledTimes(1);
+  let finishCheck!: (value: Awaited<ReturnType<OwbBridge["status"]>>) => void;
+  vi.mocked(bridge.status).mockImplementationOnce(() => new Promise(resolve => { finishCheck = resolve; }));
+  fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
+  await act(async () => finishSave({ status: 200, body: { ...config, selected: "new-model" } }));
+  await act(async () => finishCheck(ready));
+  const picker = screen.getByRole("combobox", { name: "员工模型" }).closest('.ant-select')!;
+  expect(picker).toHaveTextContent("New model");
+  expect(screen.queryByText("检查失败，请重试")).not.toBeInTheDocument();
 });

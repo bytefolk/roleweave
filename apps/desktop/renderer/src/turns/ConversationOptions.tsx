@@ -7,6 +7,8 @@ import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption,
 import type { TurnRecord } from "./types";
 import "./model-connection.css";
 
+const popoverClassNames = { root: "owb-conversation-popover" };
+
 function ConnectionDetails({ connection }: { connection: EmployeeModelConnection }) {
   const t = useT();
   const source = connection.kind === "unknown"
@@ -20,7 +22,7 @@ function ConnectionDetails({ connection }: { connection: EmployeeModelConnection
       {connection.endpointHost ? <div><dt>{t("model.connection.host")}</dt><dd>{connection.endpointHost}</dd></div> : null}
       <div><dt>{t("model.connection.status")}</dt><dd>{t(`model.connection.status.${connection.status}`)}</dd></div>
     </dl>
-    {connection.status === "invalid" ? <p className="owb-model-connection__error" role="alert">{connection.message || t("model.connection.invalid")}</p> : null}
+    {connection.status === "invalid" ? <p className="owb-model-connection__error" role="alert">{t("model.connection.invalid")}</p> : null}
   </div>;
 }
 
@@ -50,7 +52,7 @@ function CustomModelEntry({ onModel }: { onModel: (model: string) => void | Prom
     void onModel(model);
   };
   return <div className="owb-model-menu__custom">
-    <Popover trigger="click" placement="bottomLeft" open={open} onOpenChange={setOpen} title={t("model.customTitle")} content={
+    <Popover classNames={popoverClassNames} trigger="click" placement="bottomLeft" open={open} onOpenChange={setOpen} title={t("model.customTitle")} content={
       <form className="owb-model-custom-form" onSubmit={submit}>
         <label htmlFor="owb-custom-model-id">{t("model.customLabel")}</label>
         <Input id="owb-custom-model-id" value={value} autoComplete="off" aria-invalid={invalid}
@@ -132,26 +134,30 @@ export function ConversationOptions({ config, saving, disabled, session, turns, 
           <p>{t("model.switchHint")}</p>
         </div>}
       />
-      {connection ? <Popover trigger="click" placement="topRight" title={t("model.connectionDetails")} content={<ConnectionDetails connection={connection} />}>
+      {connection ? <Popover classNames={popoverClassNames} trigger="click" placement="topRight" title={t("model.connectionDetails")} content={<ConnectionDetails connection={connection} />}>
         <Button className="owb-model-connection__summary" type="text" size="small" icon={<CircleHelp size={13} />} aria-label={t("model.connectionDetails")}>
           <ConnectionSummary connection={connection} />
         </Button>
       </Popover> : null}
-      {connectionInvalid ? <p className="owb-model-connection__error" role="alert">{connection.message || t("model.connection.invalid")}</p> : null}
     </div> : <span className="owb-model-picker__pending">{t("model.agentDefault")}</span>}
-    <Popover trigger="click" placement="topRight" title={t("model.contextTitle")} content={
+    <Popover classNames={popoverClassNames} trigger="click" placement="topRight" title={t("model.contextTitle")} content={
       <div className="owb-context-details">
-        <div className="owb-context-details__toggle"><span>{t("model.history")}</span><Switch size="small"
-          aria-label={t("model.history")} checked={enabled} disabled={disabled || !session || !onContext}
-          onChange={(checked) => { if (session) void onContext?.(session.sessionId, checked); }} /></div>
-        <p>{t("model.contextLimit")}</p>
-        {latest ? <p>{t("model.lastContext", { count: latest.sourceTurnCount, bytes: latest.contextBytes.toLocaleString() })}</p> : <p>{t("model.noContextReceipt")}</p>}
-        {latest?.truncated ? <p className="owb-context-details__warning">{t("model.contextTrimmed", { count: latest.omittedTurnCount })}</p> : null}
-        <p>{t("model.contextScope")}</p>
+        <div className="owb-conversation-popover__section">
+          <div className="owb-context-details__toggle"><span>{t("model.history")}</span><Switch size="small"
+            aria-label={t("model.history")} checked={enabled} disabled={disabled || !session || !onContext}
+            onChange={(checked) => { if (session) void onContext?.(session.sessionId, checked); }} /></div>
+          <p>{t("model.contextLimit")}</p>
+          <p>{t("model.contextOffHint")}</p>
+        </div>
+        <div className="owb-conversation-popover__section">
+          <p className="owb-context-details__stat">{latest ? t("model.lastContext", { count: latest.sourceTurnCount, bytes: latest.contextBytes.toLocaleString() }) : t("model.noContextReceipt")}</p>
+          {latest?.truncated ? <p className="owb-context-details__warning">{t("model.contextTrimmed", { count: latest.omittedTurnCount })}</p> : null}
+        </div>
+        <div className="owb-conversation-popover__section"><p>{t("model.contextScope")}</p></div>
       </div>
     }><Button type="text" size="small" icon={<Layers3 size={13} />} aria-label={t("model.contextTitle")}>{t(enabled ? "model.contextOn" : "model.contextOff")}</Button></Popover>
-    <Popover trigger="click" placement="topRight" title={t("model.usageTitle")} content={
-      <div className="owb-context-details"><p>{t("model.usageCount", { count: reported.length, total: completed.length })}</p>
+    <Popover classNames={popoverClassNames} trigger="click" placement="topRight" title={t("model.usageTitle")} content={
+      <div className="owb-context-details"><p className="owb-context-details__stat">{t("model.usageCount", { count: reported.length, total: completed.length })}</p>
         <p>{t("model.usageHint")}</p>
         {completed.at(-1)?.model ? <p>{t("model.lastModel", { model: completed.at(-1)!.model! })}</p> : null}
       </div>
