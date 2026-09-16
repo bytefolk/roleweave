@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button as AntButton, Drawer, Input } from "antd";
 import { Target, Plus, Trash2 } from "lucide-react";
-import { validateGoalCreateRequest } from "@roleweave/shared";
+import { validateGoalCreateRequest } from "@roleweave/shared/goals";
 import { useT } from "@roleweave/ui";
 
 interface GoalCreateDialogProps {

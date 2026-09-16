@@ -8,7 +8,7 @@ import {
   type GoalDetail,
   type GoalStatus,
   type GoalSummary,
-} from "@roleweave/shared";
+} from "@roleweave/shared/goals";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
 
 interface GoalsModuleProps {
