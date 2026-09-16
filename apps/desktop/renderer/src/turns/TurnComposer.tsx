@@ -2,7 +2,7 @@ import type { FormEvent, ReactNode } from "react";
 import { Button as AntButton, Input } from "antd";
 import { ArrowUp, Square } from "lucide-react";
 import { useT } from "@roleweave/ui";
-import { DiagnosticNotice } from "../DiagnosticNotice";
+import { DiagnosticNotice, type AvailabilityCheck } from "../DiagnosticNotice";
 
 export interface TurnComposerProps {
   options?: ReactNode;
@@ -12,6 +12,7 @@ export interface TurnComposerProps {
   disabledSummary?: string;
   disabledDiagnostic?: string;
   diagnosticKey?: string;
+  availabilityCheck?: AvailabilityCheck;
   running: boolean;
   cancelling?: boolean;
   canCancel: boolean;
@@ -31,6 +32,7 @@ export function TurnComposer({
   disabledSummary,
   disabledDiagnostic,
   diagnosticKey,
+  availabilityCheck,
   running,
   cancelling = false,
   canCancel,
@@ -94,6 +96,7 @@ export function TurnComposer({
               : t("turn.running")
             : disabledSummary ?? disabledReason!}
           diagnostic={running ? undefined : disabledDiagnostic}
+          availabilityCheck={running ? undefined : availabilityCheck}
           diagnosticKey={diagnosticKey} />
       ) : <p className="owb-turn-composer__shortcut">{t("turn.keyboardHint")}</p>}
     </form>

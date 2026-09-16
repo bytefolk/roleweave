@@ -22,7 +22,7 @@ function ConnectionDetails({ connection }: { connection: EmployeeModelConnection
       {connection.endpointHost ? <div><dt>{t("model.connection.host")}</dt><dd>{connection.endpointHost}</dd></div> : null}
       <div><dt>{t("model.connection.status")}</dt><dd>{t(`model.connection.status.${connection.status}`)}</dd></div>
     </dl>
-    {connection.status === "invalid" ? <p className="owb-model-connection__error" role="alert">{connection.message || t("model.connection.invalid")}</p> : null}
+    {connection.status === "invalid" ? <p className="owb-model-connection__error" role="alert">{t("model.connection.invalid")}</p> : null}
   </div>;
 }
 

@@ -264,8 +264,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getByText("Qoder 暂不可用，请检查配置。")).toBeVisible();
-    expect(screen.getByText("Qoder 凭据未配置")).not.toBeVisible();
+    expect(screen.getByText("Qoder 暂时无法使用。")).toBeVisible();
+    expect(screen.queryByText("Qoder 凭据未配置")).not.toBeInTheDocument();
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
   });
 
@@ -346,17 +346,16 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
   });
 });
 
-it("keeps invalid model diagnostics collapsed and blocks sending even when the host is ready", () => {
+it("never renders invalid model diagnostics and blocks sending even when the host is ready", () => {
   const createTurn = vi.fn();
   render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner"
     engine="qoder" engineAvailability={availability} turns={[]} onCreateTurn={createTurn}
     modelConfig={{ selected: "provider-default", recommended: "provider-default", editable: true, source: "local-config",
       options: [], connection: { source: "local-config", kind: "gateway", billing: "unknown", status: "invalid", message: "QODER_CONFIG_DIR contains an invalid provider field" } }} />);
-  expect(screen.getByText("模型连接暂不可用，请检查配置。")).toBeVisible();
-  expect(screen.getByText("QODER_CONFIG_DIR contains an invalid provider field")).not.toBeVisible();
+  expect(screen.getByText("模型连接需要检查。")).toBeVisible();
+  expect(screen.queryByText("QODER_CONFIG_DIR contains an invalid provider field")).not.toBeInTheDocument();
   expect(screen.getByLabelText("下达任务")).toBeDisabled();
-  fireEvent.click(screen.getByText("排查详情"));
-  expect(screen.getByText("QODER_CONFIG_DIR contains an invalid provider field")).toBeVisible();
+  expect(screen.getByRole("button", { name: "复制诊断" })).toBeEnabled();
   fireEvent.submit(screen.getByLabelText("下达任务").closest("form")!);
   expect(createTurn).not.toHaveBeenCalled();
 });
@@ -536,7 +535,7 @@ describe("TurnThread #234 — preserve conversation viewport on employee switch"
 it.each([
   ["qoder", "Qoder"], ["claude-code", "Claude Code"], ["claude-local", "Claude Code"],
   ["codex", "Codex"], ["codex-local", "Codex"], ["workbuddy", "WorkBuddy"],
-] as const)("keeps %s diagnostics collapsed without weakening send guards", async (engine, label) => {
+] as const)("never renders %s diagnostics without weakening send guards", async (engine, label) => {
   const createTurn = vi.fn();
   const reason = "Check PATH or CONFIG_ENV before starting the runtime";
   const props: TurnPanelProps = { workspaceOpen: true, positions, selectedPositionId: "repo-owner",
@@ -544,20 +543,18 @@ it.each([
   const { rerender } = render(<TurnPanel {...props} />);
   fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "keep my draft" } });
   rerender(<TurnPanel {...props} engineAvailability={{ ...availability, [engine]: { configured: true, ready: false, reason } }} />);
-  expect(screen.getByRole("status")).toHaveTextContent(`${label} 暂不可用，请检查配置。`);
-  const diagnostic = screen.getByText(reason);
-  expect(diagnostic).not.toBeVisible();
+  expect(screen.getByRole("status")).toHaveTextContent(`${label} 暂时无法使用。`);
+  expect(screen.queryByText(reason)).not.toBeInTheDocument();
   expect(screen.getByLabelText("下达任务")).toBeDisabled();
   expect(screen.getByRole("button", { name: "发送任务" })).toBeDisabled();
-  fireEvent.click(screen.getByText("排查详情"));
-  expect(diagnostic).toBeVisible();
+  expect(screen.getByRole("button", { name: "复制诊断" })).toBeEnabled();
   fireEvent.submit(screen.getByLabelText("下达任务").closest("form")!);
   expect(createTurn).not.toHaveBeenCalled();
 
-  // A different engine with the same diagnostic must start collapsed again.
+  // A different engine must never insert the raw diagnostic into the DOM.
   const nextEngine = engine === "qoder" ? "claude-code" : "qoder";
   rerender(<TurnPanel {...props} engine={nextEngine} engineAvailability={{ ...availability, [nextEngine]: { configured: false, ready: false, reason } }} />);
-  expect(screen.getByText(reason)).not.toBeVisible();
+  expect(screen.queryByText(reason)).not.toBeInTheDocument();
   rerender(<TurnPanel {...props} />);
   expect(screen.queryByText(reason)).not.toBeInTheDocument();
   expect(screen.getByLabelText("下达任务")).toBeEnabled();

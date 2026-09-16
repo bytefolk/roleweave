@@ -3,6 +3,7 @@ import { MessagesSquare } from "lucide-react";
 import type { EmployeeModelConfig, WorkbenchSession } from "@roleweave/shared";
 import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
+import type { AvailabilityCheck } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
 import { useEngineLabel } from "./engine-select";
 import { TurnThread } from "./TurnThread";
@@ -19,6 +20,7 @@ export { EngineSelect, useEngineLabel } from "./engine-select";
 
 export interface TurnPanelProps {
   active?: boolean;
+  availabilityCheck?: AvailabilityCheck;
   modelConfig?: EmployeeModelConfig;
   avatarUrls?: Record<string, string>;
   modelSaving?: boolean;
@@ -54,6 +56,7 @@ export interface TurnPanelProps {
 
 export function TurnPanel({
   active = true,
+  availabilityCheck,
   modelConfig,
   avatarUrls,
   modelSaving = false,
@@ -110,7 +113,7 @@ export function TurnPanel({
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
 
   const disabledState = useMemo(() => {
-    const blocked = (reason: string, summary = reason, diagnostic?: string) => ({ reason, summary, diagnostic });
+    const blocked = (reason: string, summary = reason, diagnostic?: string, canRecheck = false) => ({ reason, summary, diagnostic, canRecheck });
     if (modelSaving) return blocked(t("model.saving"));
     if (!workspaceOpen) return blocked(t("turn.emptyOpenFirst"));
     if (positions.length === 0) return blocked(t("turn.noPositions"));
@@ -120,11 +123,11 @@ export function TurnPanel({
     if (sessionMode && selectedSession?.status !== "active") return blocked(t("turn.sessionReadOnly"));
     if (modelConfig?.connection?.status === "invalid") return blocked(
       modelConfig.connection.message ?? t("turn.engineNotReady", { engine: engineLabel(engine) }),
-      t("turn.modelConnectionNotReady"), modelConfig.connection.message,
+      t("turn.modelConnectionNotReady"), modelConfig.connection.message, true,
     );
     if (!engineAvailability[engine].ready) {
       const summary = t("turn.engineNotReady", { engine: engineLabel(engine) });
-      return blocked(engineAvailability[engine].reason ?? summary, summary, engineAvailability[engine].reason);
+      return blocked(engineAvailability[engine].reason ?? summary, summary, engineAvailability[engine].reason, true);
     }
     if (busy || employeeBusy || sending || sessionBusy) return blocked(t("turn.updating"));
     return null;
@@ -193,6 +196,7 @@ export function TurnPanel({
         disabledReason={disabledReason}
         disabledSummary={disabledState?.summary}
         disabledDiagnostic={disabledState?.diagnostic}
+        availabilityCheck={disabledState?.canRecheck ? availabilityCheck : undefined}
         diagnosticKey={`${selectedPositionId}:${selectedSessionId ?? ""}:${engine}`}
         running={runningTurn}
         cancelling={cancelling}

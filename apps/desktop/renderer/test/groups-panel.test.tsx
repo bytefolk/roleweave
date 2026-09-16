@@ -572,7 +572,7 @@ it("does not reconcile an abandoned workspace timeline into shared App state", a
   expect(onReconcileTimeline).not.toHaveBeenCalled();
 });
 
-it.each([["codex-local", "Codex"], ["workbuddy", "WorkBuddy"]] as const)("blocks a mixed-recipient group with unavailable %s while keeping diagnostics behind disclosure", async (engine, label) => {
+it.each([["codex-local", "Codex"], ["workbuddy", "WorkBuddy"]] as const)("blocks a mixed-recipient group with unavailable %s without rendering raw diagnostics", async (engine, label) => {
   const reason = "Set CODEX_HOME before starting this runtime";
   const { bridge } = renderPanel({
     createGroupTurn: async () => ({ status: 202, body: {} }),
@@ -583,12 +583,11 @@ it.each([["codex-local", "Codex"], ["workbuddy", "WorkBuddy"]] as const)("blocks
   fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), { target: { value: "keep this group draft" } });
   pickSelectOption("选择要 @ 的成员", "Repo Owner");
   pickSelectOption("选择要 @ 的成员", "Release Engineer");
-  expect(screen.getByText(`${label} 暂不可用，请检查配置。`)).toBeVisible();
-  expect(screen.getByText(reason)).not.toBeVisible();
+  expect(screen.getByText(`${label} 暂时无法使用。`)).toBeVisible();
+  expect(screen.queryByText(reason)).not.toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "群聊消息" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "发送群消息" })).toBeDisabled();
-  fireEvent.click(screen.getByText("排查详情"));
-  expect(screen.getByText(reason)).toBeVisible();
+  expect(screen.getByRole("button", { name: "复制诊断" })).toBeEnabled();
   fireEvent.submit(screen.getByRole("textbox", { name: "群聊消息" }).closest("form")!);
   expect(bridge.createGroupTurn).not.toHaveBeenCalled();
 });

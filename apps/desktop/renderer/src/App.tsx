@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button as AntButton, ConfigProvider } from "antd";
-import { DiagnosticDetails } from "./DiagnosticNotice";
+import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
 import { OwbI18nProvider, useT, type OwbLocale } from "@roleweave/ui";
@@ -124,6 +124,11 @@ function AppInner({
    */
   const [approvalItems] = useState<ApprovalQueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const healthReadVersion = useRef(0);
+  const positionReadVersion = useRef(0);
+  const availabilityOperation = useRef<symbol | null>(null);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
+  const [availabilityCheckFailed, setAvailabilityCheckFailed] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const [orgOverview, setOrgOverview] = useState(false);
@@ -305,9 +310,10 @@ function AppInner({
   }, [t]);
 
   const refresh = useCallback(async (reusePositionMetadata = false) => {
+    const healthRead = ++healthReadVersion.current;
     try {
     const statusRes = await window.owb.status();
-    setHealth(statusRes.health ?? null);
+    if (healthRead === healthReadVersion.current) setHealth(statusRes.health ?? null);
     if (!statusRes.running) {
       setStartupError(t("misc.serviceFailed"));
       return;
@@ -406,20 +412,22 @@ function AppInner({
 
   const loadPosition = useCallback(async (id: string) => {
     const version = selectionVersion.current;
+    const read = ++positionReadVersion.current;
     setCard({ loading: true, data: null, notFound: false });
     const res = await window.owb.position(id);
     if (version !== selectionVersion.current || selectedIdRef.current !== id) return;
     const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown; modelConfig?: EmployeeModelConfig };
-    if (body.modelConfig) setPositionModels((current) => ({ ...current, [id]: body.modelConfig! }));
+    const currentAvailability = read === positionReadVersion.current;
+    if (currentAvailability && body.modelConfig) setPositionModels((current) => ({ ...current, [id]: body.modelConfig! }));
     if (res.status === 404 || body?.code === "position_missing") {
       setCard({ loading: false, data: null, notFound: true });
-      setPositionEngines((current) => {
+      if (currentAvailability) setPositionEngines((current) => {
         const { [id]: _removed, ...rest } = current;
         return rest;
       });
       return;
     }
-    if (isTurnEngine(body.agentEngine)) {
+    if (currentAvailability && isTurnEngine(body.agentEngine)) {
       const agentEngine = body.agentEngine;
       setPositionEngines((current) => current[id] === agentEngine ? current : { ...current, [id]: agentEngine });
     }
@@ -429,6 +437,67 @@ function AppInner({
       notFound: false,
     });
   }, []);
+
+  // A status check only refreshes availability. Never reload the workspace,
+  // organization, sessions or drafts. Both reads commit as one scoped result.
+  useEffect(() => {
+    availabilityOperation.current = null;
+    setCheckingAvailability(false);
+    setAvailabilityCheckFailed(false);
+    return () => {
+      availabilityOperation.current = null;
+      healthReadVersion.current += 1;
+      positionReadVersion.current += 1;
+    };
+  }, [groupWorkspaceScope, selectedId]);
+
+  const recheckAvailability = useCallback(async () => {
+    if (availabilityOperation.current) return;
+    const operation = Symbol();
+    availabilityOperation.current = operation;
+    const scope = latestGroupWorkspaceScope.current;
+    const version = selectionVersion.current;
+    const id = selectedIdRef.current;
+    const healthRead = ++healthReadVersion.current;
+    const positionRead = ++positionReadVersion.current;
+    const isCurrent = () => availabilityOperation.current === operation
+      && latestGroupWorkspaceScope.current === scope && selectionVersion.current === version
+      && selectedIdRef.current === id;
+    const isCurrentRead = () => isCurrent() && healthRead === healthReadVersion.current && positionRead === positionReadVersion.current;
+    setCheckingAvailability(true);
+    setAvailabilityCheckFailed(false);
+    try {
+      const [status, positionResponse] = await Promise.all([
+        window.owb.status(),
+        id ? window.owb.position(id) : undefined,
+      ]);
+      if (!isCurrentRead()) return;
+      if (!status.running || status.health?.status !== "ok" || (id && positionResponse?.status !== 200)) throw new Error("Availability check failed");
+      const body = positionResponse?.body as { modelConfig?: EmployeeModelConfig; agentEngine?: unknown } | undefined;
+      if (id && body) {
+        setPositionModels(current => {
+          const next = { ...current };
+          // A successful legacy response without config invalidates its old cache.
+          if (body.modelConfig) next[id] = body.modelConfig; else delete next[id];
+          return next;
+        });
+        if (isTurnEngine(body.agentEngine)) {
+          const engine = body.agentEngine;
+          setPositionEngines(current => ({ ...current, [id]: engine }));
+        }
+      }
+      setHealth(status.health);
+    } catch {
+      if (isCurrentRead()) setAvailabilityCheckFailed(true);
+    } finally {
+      if (availabilityOperation.current === operation) {
+        availabilityOperation.current = null;
+        setCheckingAvailability(false);
+      }
+    }
+  }, []);
+
+  const availabilityCheck = { onRecheck: recheckAvailability, checking: checkingAvailability, failed: availabilityCheckFailed };
 
   const loadTurnHistory = useCallback(async (id: string, sessionId = selectedSessionIdRef.current) => {
     if (selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
@@ -711,17 +780,23 @@ function AppInner({
   const changeEmployeeModel = useCallback(async (model: string) => {
     const id = selectedIdRef.current;
     const workspace = workspacePathRef.current;
+    const scope = latestGroupWorkspaceScope.current;
     if (!id || !window.owb.setPositionModel || modelSavingId !== null) return;
+    positionReadVersion.current += 1;
     setModelSavingId(id);
     try {
       const response = await window.owb.setPositionModel({ positionId: id, model });
-      if (workspacePathRef.current !== workspace) return;
+      if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
       if (response.status !== 200) { setTurnError(t("model.saveFailed")); return; }
       setPositionModels((current) => ({ ...current, [id]: response.body }));
       setTurnError(null);
     } catch {
-      if (workspacePathRef.current === workspace) setTurnError(t("model.saveFailed"));
-    } finally { setModelSavingId(null); }
+      if (workspacePathRef.current === workspace && latestGroupWorkspaceScope.current === scope) setTurnError(t("model.saveFailed"));
+    } finally {
+      // A check started during this save may have read the previous model.
+      if (workspacePathRef.current === workspace && latestGroupWorkspaceScope.current === scope && selectedIdRef.current === id) positionReadVersion.current += 1;
+      setModelSavingId(null);
+    }
   }, [modelSavingId, t]);
 
   /** Group spawn (#52): the 202 spawn list carries pre-assigned turnIds; seed
@@ -1329,8 +1404,8 @@ function AppInner({
           <Alert type="info" showIcon role="status" title={t("misc.sseReconnecting")} />
         ) : null}
         {health && !engineOk ? (
-          <Alert type="warning" showIcon role="status" title={t("misc.engineUnavailable")}
-            description={health.engine?.nextStep ? <DiagnosticDetails diagnostic={health.engine.nextStep} /> : undefined} />
+          <Alert type="warning" showIcon title={<DiagnosticNotice message={t("misc.engineUnavailable")}
+            diagnostic={health.engine?.nextStep} availabilityCheck={availabilityCheck} />} />
         ) : null}
         {turnError ? (
           <Alert type="warning" showIcon role="alert" title={turnError} />
@@ -1374,6 +1449,7 @@ function AppInner({
           />
         ) : activeModule === "groups" ? (
           <GroupsPanel
+            availabilityCheck={availabilityCheck}
             key={`${workspaceInfo?.open}:${workspaceInfo?.path}`}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
@@ -1454,6 +1530,7 @@ function AppInner({
             </div>
           }
           right={<TurnPanel
+            availabilityCheck={availabilityCheck}
             key={workspaceInfo?.path}
             active={!orgOverview}
             avatarUrls={avatarUrls}

@@ -1,19 +1,21 @@
-.owb-diagnostic-notice.owb-turn-composer__hint,
-.owb-diagnostic-details {
+.owb-diagnostic-notice,
+.owb-diagnostic-notice.owb-turn-composer__hint {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--ui-space-1) var(--ui-space-2);
+  min-width: 0;
   color: var(--ui-foreground-muted);
   font-family: var(--ui-font-sans);
   font-size: var(--ui-text-xs);
   line-height: var(--ui-leading-normal);
 }
 
-.owb-diagnostic-notice > p { margin: 0; }
-.owb-diagnostic-details { margin-top: var(--ui-space-1); }
-.owb-diagnostic-details summary { width: fit-content; cursor: pointer; }
-.owb-diagnostic-details pre {
-  max-height: 16rem;
-  overflow: auto;
-  margin: var(--ui-space-2) 0 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-size: inherit;
+.owb-diagnostic-notice > p { margin: 0; overflow-wrap: anywhere; }
+.owb-diagnostic-notice__actions {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--ui-space-1);
 }
+.owb-diagnostic-notice__feedback { flex-basis: 100%; }
