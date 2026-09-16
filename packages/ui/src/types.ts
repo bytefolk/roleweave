@@ -30,6 +30,28 @@ export interface PositionCardData {
   metadata: Record<string, string>;
 }
 
+/**
+ * Presentation-only localized copy carried in workspace-org.v1 metadata.
+ * Metadata is deliberately used here because it is the schema's additive
+ * extension point: older digital-employee engines retain it without needing
+ * to understand a new role field. The canonical name and description remain
+ * the safe fallback (and the values used by the execution engine).
+ */
+export function localizePositionCard(
+  position: PositionCardData,
+  locale: "zh-CN" | "en",
+): PositionCardData {
+  const localized = (field: "name" | "description", fallback: string) => {
+    const value = position.metadata[`roleweave.i18n.${locale}.${field}`];
+    return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
+  };
+  return {
+    ...position,
+    name: localized("name", position.name),
+    description: localized("description", position.description),
+  };
+}
+
 export function primaryCap(caps: BudgetCaps | null | undefined): number | null {
   if (!caps) return null;
   return caps.tokens ?? caps.iterations ?? null;
