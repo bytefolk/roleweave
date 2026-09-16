@@ -10,6 +10,7 @@
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
 const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage } = require("electron");
+const { TURN_ENGINE_IDS } = require("@roleweave/shared/turn-engines");
 // Keep the development window and the packaged bundle aligned on the public
 // product name. The old IPC/package identifiers below remain compatibility
 // contracts, but users should only see RoleWeave.
@@ -430,6 +431,17 @@ ipcMain.handle("owb:position:model", async (event, request) => {
     return { status: 400, body: { message: "Invalid employee model selection" } };
   }
   return apiRequest(`/positions/${encodeURIComponent(request.positionId)}/model`, { method: "PATCH", body: { model: request.model } });
+});
+
+ipcMain.handle("owb:position:agent-engine", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  if (!request || typeof request !== "object" || Array.isArray(request) ||
+      Object.keys(request).length !== 2 || typeof request.positionId !== "string" ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(request.positionId) ||
+      typeof request.engine !== "string" || !TURN_ENGINE_IDS.includes(request.engine)) {
+    return { status: 400, body: { message: "Invalid employee Agent selection" } };
+  }
+  return apiRequest(`/positions/${encodeURIComponent(request.positionId)}/agent-engine`, { method: "PATCH", body: { engine: request.engine } });
 });
 
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.

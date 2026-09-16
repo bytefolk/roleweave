@@ -632,6 +632,7 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
   const agentBinding = {
     schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
     engine: role.agentEngine ?? DEFAULT_AGENT_ENGINE,
+    locked: true,
   };
   return new Map<string, string>([
     ["employee.json", `${JSON.stringify(employee, null, 2)}\n`],

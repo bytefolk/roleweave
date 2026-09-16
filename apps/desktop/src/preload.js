@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("owb", {
   generateAvatar: (request) => ipcRenderer.invoke("owb:avatar:generate", request),
   reports: () => ipcRenderer.invoke("owb:reports:get"),
   position: (positionId) => ipcRenderer.invoke("owb:position:get", positionId),
+  setPositionAgentEngine: (request) => ipcRenderer.invoke("owb:position:agent-engine", request),
   setPositionModel: (request) => ipcRenderer.invoke("owb:position:model", request),
   positionDocs: (positionId) => ipcRenderer.invoke("owb:position:docs:list", positionId),
   positionDocFile: (positionId, filePath) => ipcRenderer.invoke("owb:position:docs:read", positionId, filePath),

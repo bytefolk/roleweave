@@ -73,6 +73,7 @@ export interface OwbBridge {
     clear(key: import("./settings/credential-settings").CredentialKey): Promise<import("./settings/credential-settings").SettingsResult>;
   };
   setPositionModel?(request: { positionId: string; model: string }): Promise<OwbApiResponse<import("@roleweave/shared").EmployeeModelConfig>>;
+  setPositionAgentEngine?(request: { positionId: string; engine: TurnEngine }): Promise<OwbApiResponse<{ agentEngine: TurnEngine; agentLocked: true; modelConfig: import("@roleweave/shared").EmployeeModelConfig }>>;
   status(): Promise<OwbStatusResponse>;
   stopControlPlane(): Promise<{ ok: boolean; state: "stopped"; forced: boolean; exitCode: number | null; signalCode: string | null }>;
   openWorkspace(): Promise<OwbApiResponse>;

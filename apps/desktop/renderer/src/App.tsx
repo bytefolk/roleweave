@@ -146,8 +146,10 @@ function AppInner({
    * enforcement; this local projection lets the renderer show accurate
    * readiness and seed a legacy employee's first durable binding. */
   const [positionEngines, setPositionEngines] = useState<Record<string, TurnEngine>>({});
+  const [lockedAgentPositions, setLockedAgentPositions] = useState<Record<string, boolean>>({});
   const [positionModels, setPositionModels] = useState<Record<string, EmployeeModelConfig>>({});
   const [modelSavingId, setModelSavingId] = useState<string | null>(null);
+  const [engineSavingId, setEngineSavingId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
   const [busyPositions, setBusyPositions] = useState<Record<string, boolean>>({});
@@ -368,6 +370,7 @@ function AppInner({
         setPositionNames({});
         setPositionColors({});
         setPositionEngines({});
+        setLockedAgentPositions({});
       }
     } else {
       setSnapshot(null);
@@ -375,6 +378,7 @@ function AppInner({
       setPositionNames({});
       setPositionColors({});
       setPositionEngines({});
+      setLockedAgentPositions({});
       setSelectedId(null);
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
@@ -405,7 +409,7 @@ function AppInner({
     setCard({ loading: true, data: null, notFound: false });
     const res = await window.owb.position(id);
     if (version !== selectionVersion.current || selectedIdRef.current !== id) return;
-    const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown; modelConfig?: EmployeeModelConfig };
+    const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown; agentLocked?: unknown; modelConfig?: EmployeeModelConfig };
     if (body.modelConfig) setPositionModels((current) => ({ ...current, [id]: body.modelConfig! }));
     if (res.status === 404 || body?.code === "position_missing") {
       setCard({ loading: false, data: null, notFound: true });
@@ -419,6 +423,7 @@ function AppInner({
       const agentEngine = body.agentEngine;
       setPositionEngines((current) => current[id] === agentEngine ? current : { ...current, [id]: agentEngine });
     }
+    setLockedAgentPositions((current) => current[id] === (body.agentLocked === true) ? current : { ...current, [id]: body.agentLocked === true });
     setCard({
       loading: false,
       data: body?.position ? normalizePositionForDisplay(body.position) : null,
@@ -651,6 +656,9 @@ function AppInner({
           ? current
           : { ...current, [request.positionId]: resolvedEngine });
       }
+      if (workspacePathRef.current === workspacePath) {
+        setLockedAgentPositions((current) => current[request.positionId] === true ? current : { ...current, [request.positionId]: true });
+      }
       if (isSelected()) {
         historyRequest.current += 1;
         const returned = adaptTurnRecord(
@@ -718,6 +726,24 @@ function AppInner({
       if (workspacePathRef.current === workspace) setTurnError(t("model.saveFailed"));
     } finally { setModelSavingId(null); }
   }, [modelSavingId, t]);
+
+  const changeEmployeeAgentEngine = useCallback(async (engine: TurnEngine) => {
+    const id = selectedIdRef.current;
+    const workspace = workspacePathRef.current;
+    if (!id || !window.owb.setPositionAgentEngine || engineSavingId !== null) return;
+    setEngineSavingId(id);
+    try {
+      const response = await window.owb.setPositionAgentEngine({ positionId: id, engine });
+      if (workspacePathRef.current !== workspace) return;
+      if (response.status !== 200) { setTurnError(apiErrorMessage(response.body, t("turn.createFail"))); return; }
+      setPositionEngines((current) => ({ ...current, [id]: response.body.agentEngine }));
+      setLockedAgentPositions((current) => ({ ...current, [id]: true }));
+      setPositionModels((current) => ({ ...current, [id]: response.body.modelConfig }));
+      setTurnError(null);
+    } catch {
+      if (workspacePathRef.current === workspace) setTurnError(t("turn.createFailOffline"));
+    } finally { setEngineSavingId(null); }
+  }, [engineSavingId, t]);
 
   /** Group spawn (#52): the 202 spawn list carries pre-assigned turnIds; seed
    * one live buffer per mentioned member so SSE deltas aggregate per member. */
@@ -1441,12 +1467,14 @@ function AppInner({
             avatarUrls={avatarUrls}
             workspaceOpen={workspaceInfo?.open === true}
             modelConfig={selectedId ? positionModels[selectedId] : undefined}
-            modelSaving={modelSavingId !== null && modelSavingId === selectedId}
+            modelSaving={(modelSavingId !== null && modelSavingId === selectedId) || (engineSavingId !== null && engineSavingId === selectedId)}
             onSelectModel={changeEmployeeModel}
+            onSelectEngine={changeEmployeeAgentEngine}
             onSetSessionContext={setSessionContext}
             positions={positions}
             selectedPositionId={selectedId}
             engine={selectedId === null ? defaultTurnEngine : engineForPosition(selectedId)}
+            engineLocked={selectedId !== null && lockedAgentPositions[selectedId] === true}
             engineAvailability={engineAvailability}
             turns={displayTurns}
             busy={turnBusy}
