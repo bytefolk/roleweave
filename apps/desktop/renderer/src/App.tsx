@@ -62,6 +62,9 @@ import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
 import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
+import { useConfigurationBootstrap, useSendShortcut, useWorkspaceFocus, requestSettingsLeave, persistApplicationPreference, preferenceError } from "./configuration-preferences";
+import { createConversationMemory } from "./turns/conversation-memory";
+import { useConversationCopy } from "./locales/conversation";
 import { OrgWorkspaceSplit } from "./org/OrgWorkspaceSplit";
 import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh-coordinator";
 import { GroupsPanel } from "./groups/GroupsPanel";
@@ -95,7 +98,12 @@ export function App() {
  * 持久化，默认 zh-CN。antd 的 ConfigProvider locale 同步切换。 */
 function AppRoot() {
   const [locale, setLocale] = useState<OwbLocale>(() => seedLocale());
+  useConfigurationBootstrap(setLocale);
   const changeLocale = useCallback((next: OwbLocale) => {
+    if (window.owb?.configuration) {
+      void persistApplicationPreference({ appearance: { locale: next } }).catch(preferenceError);
+      return;
+    }
     setLocale(next);
     persistLocale(next);
   }, []);
@@ -112,9 +120,13 @@ function AppInner({
   locale: OwbLocale;
   onChangeLocale: (next: OwbLocale) => void;
 }) {
-  const [activeModule, setActiveModule] = useState<
+  const [activeModule, setActiveModuleRaw] = useState<
     "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "settings"
   >("org");
+  const setActiveModule = useCallback((next: typeof activeModule) => {
+    if (next === "settings") setActiveModuleRaw(next);
+    else requestSettingsLeave(() => setActiveModuleRaw(next));
+  }, []);
   const [memorySource, setMemorySource] = useState<MemorySource>("docs");
   /**
    * DATA GAP (TODO, v0): v0 has no dedicated `/approvals` stream. The P0
@@ -132,6 +144,9 @@ function AppInner({
   const [startupError, setStartupError] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const [orgOverview, setOrgOverview] = useState(false);
+  const [conversationFocused, setConversationFocused] = useWorkspaceFocus(workspaceInfo?.path ?? "");
+  const sendShortcut = useSendShortcut();
+  const conversationMemory = useRef(createConversationMemory());
   const workbenchButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => setOrgOverview(false), [activeModule, workspaceInfo?.path, workspaceInfo?.open]);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
@@ -157,7 +172,10 @@ function AppInner({
   const [positionEngines, setPositionEngines] = useState<Record<string, TurnEngine>>({});
   const [lockedAgentPositions, setLockedAgentPositions] = useState<Record<string, boolean>>({});
   const [positionModels, setPositionModels] = useState<Record<string, EmployeeModelConfig>>({});
-  const [modelSavingId, setModelSavingId] = useState<string | null>(null);
+  const [modelStates, setModelStates] = useState<Record<string, { loading?: boolean; error?: string; notice?: string }>>({});
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [modelSavingIds, setModelSavingIds] = useState<Record<string, boolean>>({});
+  const modelSaveOperations = useRef(new Set<string>());
   const [engineSavingId, setEngineSavingId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
@@ -210,6 +228,7 @@ function AppInner({
   const themeProfile = useThemeProfile();
   /** #146：界面文案唯一入口；数据层文案不经过这里。 */
   const t = useT();
+  const conversationCopy = useConversationCopy();
 
   const updateWorkspaceStream = useCallback((path: string, update: (state: TurnStreamState) => TurnStreamState) => {
     const next = update(workspaceStreams.current.get(path) ?? EMPTY_TURN_STREAM);
@@ -236,7 +255,8 @@ function AppInner({
     setPositionModels({});
     selectionVersion.current += 1;
     historyRequest.current += 1;
-    selectedSessions.current = {};
+    setModelStates({});
+    setHistoryLoading(false);
     sessionOperations.current.clear();
     setBusyPositions(workspaceBusy.current.get(workspaceInfo?.path ?? "") ?? {});
     setCancellingPositions(workspaceCancelling.current.get(workspaceInfo?.path ?? "") ?? {});
@@ -418,11 +438,20 @@ function AppInner({
     const version = selectionVersion.current;
     const read = ++positionReadVersion.current;
     setCard({ loading: true, data: null, notFound: false });
+    setModelStates(current => ({ ...current, [id]: { loading: true } }));
+    try {
     const res = await window.owb.position(id);
     if (version !== selectionVersion.current || selectedIdRef.current !== id) return;
     const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown; agentLocked?: unknown; modelConfig?: EmployeeModelConfig };
     const currentAvailability = read === positionReadVersion.current;
-    if (currentAvailability && body.modelConfig) setPositionModels((current) => ({ ...current, [id]: body.modelConfig! }));
+    if (currentAvailability) {
+      setModelStates(current => ({ ...current, [id]: res.status === 200 ? {} : { error: conversationCopy.modelFailed } }));
+      setPositionModels(current => {
+        const next = { ...current };
+        if (res.status === 200 && body.modelConfig) next[id] = body.modelConfig; else delete next[id];
+        return next;
+      });
+    }
     if (res.status === 404 || body?.code === "position_missing") {
       setCard({ loading: false, data: null, notFound: true });
       if (currentAvailability) setPositionEngines((current) => {
@@ -441,7 +470,12 @@ function AppInner({
       data: body?.position ? normalizePositionForDisplay(body.position, locale) : null,
       notFound: false,
     });
-  }, [locale]);
+    } catch {
+      if (version !== selectionVersion.current || selectedIdRef.current !== id || read !== positionReadVersion.current) return;
+      setCard({ loading: false, data: null, notFound: false });
+      setModelStates(current => ({ ...current, [id]: { error: conversationCopy.modelFailed } }));
+    }
+  }, [locale, conversationCopy]);
 
   // A status check only refreshes availability. Never reload the workspace,
   // organization, sessions or drafts. Both reads commit as one scoped result.
@@ -480,6 +514,7 @@ function AppInner({
       if (!status.running || status.health?.status !== "ok" || (id && positionResponse?.status !== 200)) throw new Error("Availability check failed");
       const body = positionResponse?.body as { modelConfig?: EmployeeModelConfig; agentEngine?: unknown } | undefined;
       if (id && body) {
+        setModelStates(current => ({ ...current, [id]: {} }));
         setPositionModels(current => {
           const next = { ...current };
           // A successful legacy response without config invalidates its old cache.
@@ -507,7 +542,9 @@ function AppInner({
   const loadTurnHistory = useCallback(async (id: string, sessionId = selectedSessionIdRef.current) => {
     if (selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
     const requestVersion = ++historyRequest.current;
+    setHistoryLoading(true);
     if (sessionId === null) {
+      setHistoryLoading(false);
       setTurns([]);
       return true;
     }
@@ -527,6 +564,8 @@ function AppInner({
         setTurnError(t("turn.historyFailOffline"));
       }
       return false;
+    } finally {
+      if (requestVersion === historyRequest.current) setHistoryLoading(false);
     }
   }, [t]);
 
@@ -544,12 +583,12 @@ function AppInner({
       }
       const list = res.body as WorkbenchSessionList;
       setSessions(list.sessions);
-      const current = selectedSessionIdRef.current ?? selectedSessions.current[id];
+      const current = selectedSessionIdRef.current ?? selectedSessions.current[JSON.stringify([workspacePathRef.current, id])];
       const next = current && list.sessions.some((session) => session.sessionId === current)
         ? current
         : list.activeSessionId;
       selectedSessionIdRef.current = next;
-      if (next) selectedSessions.current[id] = next;
+      if (next) selectedSessions.current[JSON.stringify([workspacePathRef.current, id])] = next;
       setSelectedSessionId(next);
       setTurnError(null);
       return true;
@@ -576,7 +615,7 @@ function AppInner({
         if (selectionVersion.current !== version || selectedIdRef.current !== positionId) return;
         if (res.status === 201) {
           const session = res.body as WorkbenchSession;
-          selectedSessions.current[positionId] = session.sessionId;
+          selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = session.sessionId;
           selectedSessionIdRef.current = session.sessionId;
           setSelectedSessionId(session.sessionId);
           await loadSessions(positionId);
@@ -713,6 +752,7 @@ function AppInner({
         sessionId,
         engine: request.engine,
         input: request.input,
+        ...(request.retryOf ? { retryOf: request.retryOf } : {}),
         ...(request.pendingApproval !== undefined
           ? { pendingApproval: request.pendingApproval }
           : {}),
@@ -789,23 +829,29 @@ function AppInner({
     const id = selectedIdRef.current;
     const workspace = workspacePathRef.current;
     const scope = latestGroupWorkspaceScope.current;
-    if (!id || !window.owb.setPositionModel || modelSavingId !== null) return;
+    if (!id || !window.owb.setPositionModel) return;
+    const operationKey = JSON.stringify([workspace, id]);
+    if (modelSaveOperations.current.has(operationKey)) return;
+    modelSaveOperations.current.add(operationKey);
     positionReadVersion.current += 1;
-    setModelSavingId(id);
+    setModelSavingIds(current => ({ ...current, [operationKey]: true }));
+    setModelStates(current => ({ ...current, [id]: {} }));
     try {
       const response = await window.owb.setPositionModel({ positionId: id, model });
       if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
-      if (response.status !== 200) { setTurnError(t("model.saveFailed")); return; }
+      if (response.status !== 200) { setModelStates(current => ({ ...current, [id]: { error: t("model.saveFailed") } })); return; }
       setPositionModels((current) => ({ ...current, [id]: response.body }));
+      setModelStates(current => ({ ...current, [id]: { notice: conversationCopy.modelSaved } }));
       setTurnError(null);
     } catch {
-      if (workspacePathRef.current === workspace && latestGroupWorkspaceScope.current === scope) setTurnError(t("model.saveFailed"));
+      if (workspacePathRef.current === workspace && latestGroupWorkspaceScope.current === scope) setModelStates(current => ({ ...current, [id]: { error: t("model.saveFailed") } }));
     } finally {
       // A check started during this save may have read the previous model.
       if (workspacePathRef.current === workspace && latestGroupWorkspaceScope.current === scope && selectedIdRef.current === id) positionReadVersion.current += 1;
-      setModelSavingId(null);
+      modelSaveOperations.current.delete(operationKey);
+      setModelSavingIds(current => ({ ...current, [operationKey]: false }));
     }
-  }, [modelSavingId, t]);
+  }, [conversationCopy, t]);
 
   const changeEmployeeAgentEngine = useCallback(async (engine: TurnEngine) => {
     const id = selectedIdRef.current;
@@ -886,8 +932,10 @@ function AppInner({
     try {
       const res = await window.owb.cancelTurn({ positionId, workspacePath, ...(turnId ? { turnId } : {}) });
       if (res.status !== 200 && isSelected()) setTurnError(apiErrorMessage(res.body, t("turn.cancelRejected")));
+      return res.status === 200;
     } catch {
       if (isSelected()) setTurnError(t("turn.cancelFailOffline"));
+      return false;
     } finally {
       if (cancelOperations.current.get(key) === operation) {
         cancelOperations.current.delete(key);
@@ -1231,7 +1279,7 @@ function AppInner({
           colorTextDisabled: themeMode === "dark" ? "#90a098" : "#5e6b65",
         } : {}),
       } }}>
-    <div className="owb-app">
+    <div className={`owb-app${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`}>
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
         targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
         avatar={positionAvatars[managementTarget]}
@@ -1496,14 +1544,14 @@ function AppInner({
             onReconcileTimeline={reconcileGroup}
           />
         ) : activeModule === "goals" ? (
-          <GoalsModule workspaceOpen={workspaceInfo?.open === true} />
+          <GoalsModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} />
         ) : activeModule === "settings" ? (
           <SettingsModule />
         ) : activeModule === "docs" ? (
           <MemoryModule
             key={workspaceInfo?.path}
             onCollaborate={() => setActiveModule("groups")}
-            onContinue={(id, sessionId) => { selectPosition(id); selectedSessions.current[id] = sessionId; setActiveModule("org"); }}
+            onContinue={(id, sessionId) => { selectPosition(id); selectedSessions.current[JSON.stringify([workspacePathRef.current, id])] = sessionId; setActiveModule("org"); }}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
             selectedPositionId={selectedId}
@@ -1538,6 +1586,7 @@ function AppInner({
           /> : null}
           <OrgWorkspaceSplit
           hidden={orgOverview}
+          focused={conversationFocused}
           ariaLabel={t("tree.splitPane")}
           resetTitle={t("tree.splitPaneReset")}
           valueText={(value) => t("tree.splitPaneValue", { value })}
@@ -1563,11 +1612,28 @@ function AppInner({
           right={<TurnPanel
             availabilityCheck={availabilityCheck}
             key={workspaceInfo?.path}
+            workspaceKey={workspaceInfo?.path}
+            memory={conversationMemory.current}
+            focused={conversationFocused}
+            onToggleFocus={() => setConversationFocused(!conversationFocused)}
+            sendShortcut={sendShortcut}
+            onSelectSession={(sessionId) => {
+              if (!selectedId || selectedSessionId === sessionId || !sessions.some(session => session.sessionId === sessionId)) return;
+              historyRequest.current += 1;
+              setTurns([]); setHistoryLoading(true);
+              selectedSessions.current[JSON.stringify([workspacePathRef.current, selectedId])] = sessionId;
+              selectedSessionIdRef.current = sessionId; setSelectedSessionId(sessionId);
+            }}
+            historyLoading={historyLoading}
+            modelLoading={selectedId ? modelStates[selectedId]?.loading : false}
+            modelError={selectedId ? modelStates[selectedId]?.error : undefined}
+            modelNotice={selectedId ? modelStates[selectedId]?.notice : undefined}
+            onReloadModel={() => { if (selectedId) void loadPosition(selectedId); }}
             active={!orgOverview}
             avatarUrls={avatarUrls}
             workspaceOpen={workspaceInfo?.open === true}
             modelConfig={selectedId ? positionModels[selectedId] : undefined}
-            modelSaving={(modelSavingId !== null && modelSavingId === selectedId) || (engineSavingId !== null && engineSavingId === selectedId)}
+            modelSaving={(modelSavingIds[JSON.stringify([workspaceInfo?.path, selectedId])] === true) || (engineSavingId !== null && engineSavingId === selectedId)}
             onSelectModel={changeEmployeeModel}
             onSelectEngine={changeEmployeeAgentEngine}
             onSetSessionContext={setSessionContext}

@@ -1,11 +1,14 @@
 import type { FormEvent, ReactNode } from "react";
 import { Button as AntButton, Input } from "antd";
 import { ArrowUp, Square } from "lucide-react";
+import { useConversationCopy } from "../locales/conversation";
 import { useT } from "@roleweave/ui";
 import { DiagnosticNotice, type AvailabilityCheck } from "../DiagnosticNotice";
 
 export interface TurnComposerProps {
   options?: ReactNode;
+  sendShortcut?: "enter" | "mod-enter";
+  draftDisabled?: boolean;
   value: string;
   placeholder: string;
   disabledReason: string | null;
@@ -26,6 +29,8 @@ export interface TurnComposerProps {
  * focused writing surface instead of a mixed settings form. */
 export function TurnComposer({
   options,
+  sendShortcut = "enter",
+  draftDisabled,
   value,
   placeholder,
   disabledReason,
@@ -41,9 +46,10 @@ export function TurnComposer({
   onCancel,
 }: TurnComposerProps) {
   const t = useT();
+  const copy = useConversationCopy();
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    void onSend();
+    if (!running && !disabledReason && value.trim()) void onSend();
   };
 
   return (
@@ -53,18 +59,18 @@ export function TurnComposer({
         <Input.TextArea
           id="owb-turn-input"
           value={value}
-          rows={3}
+          autoSize={{ minRows: 3, maxRows: 8 }}
           placeholder={placeholder}
-          disabled={disabledReason !== null}
+          disabled={draftDisabled ?? (disabledReason !== null && !running)}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
             // Enter sends; Shift+Enter keeps multiline input. During Chinese
             // IME composition Enter only commits the selected candidate.
             const native = event.nativeEvent as KeyboardEvent;
             if (native.isComposing || native.keyCode === 229) return;
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (event.key === "Enter" && !event.shiftKey && (sendShortcut === "enter" ? !event.metaKey && !event.ctrlKey : event.metaKey || event.ctrlKey)) {
               event.preventDefault();
-              void onSend();
+              if (!running && !disabledReason && value.trim()) void onSend();
             }
           }}
         />
@@ -73,7 +79,8 @@ export function TurnComposer({
             danger
             disabled={cancelling || !canCancel}
             aria-label={t("turn.interrupt")}
-            title={t("turn.interruptTitle")}
+            title={cancelling ? t("turn.interrupting") : t("turn.interruptTitle")}
+            loading={cancelling}
             icon={<Square aria-hidden="true" size={15} />}
             onClick={() => void onCancel()}
           />
@@ -83,6 +90,7 @@ export function TurnComposer({
             htmlType="submit"
             disabled={disabledReason !== null || value.trim().length === 0}
             aria-label={t("turn.send")}
+            title={disabledSummary ?? disabledReason ?? (value.trim() ? t("turn.send") : copy.emptySend)}
             icon={<ArrowUp aria-hidden="true" size={15} />}
           />
         )}
@@ -98,7 +106,7 @@ export function TurnComposer({
           diagnostic={running ? undefined : disabledDiagnostic}
           availabilityCheck={running ? undefined : availabilityCheck}
           diagnosticKey={diagnosticKey} />
-      ) : <p className="owb-turn-composer__shortcut">{t("turn.keyboardHint")}</p>}
+      ) : <p className="owb-turn-composer__shortcut">{sendShortcut === "mod-enter" ? copy.modEnterHint : t("turn.keyboardHint")}</p>}
     </form>
   );
 }

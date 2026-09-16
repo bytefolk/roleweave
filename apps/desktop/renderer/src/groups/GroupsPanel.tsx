@@ -10,7 +10,7 @@ import { useEngineLabel } from "../turns/engine-select";
 import { EngineIcon } from "../turns/engine-icon";
 import { adaptTurnRecord } from "../turns/adapter";
 import type { LiveRunState } from "../turns/turnStream";
-import ReactMarkdown from "react-markdown";
+import { Markdown } from "../markdown/Markdown";
 import type { PositionMentionOption, TurnEngine, TurnEngineAvailability } from "../turns/types";
 
 /** Expandable output block for group bubbles. Uses native <details>/<summary>
@@ -821,7 +821,7 @@ export function GroupsPanel({
                           summaryTitle={turn.output}
                           summaryChildren={turn.output}
                           aria-label={t("grp.expandOutput")}
-                          bodyChildren={<ReactMarkdown>{turn.output}</ReactMarkdown>}
+                          bodyChildren={<Markdown content={turn.output} />}
                         />
                       ) : isLive ? (
                         <TypingIndicator />
@@ -832,7 +832,7 @@ export function GroupsPanel({
                           summaryTitle={turn.error}
                           summaryChildren={turn.error}
                           aria-label={t("grp.expandOutput")}
-                          bodyChildren={<ReactMarkdown>{turn.error}</ReactMarkdown>}
+                          bodyChildren={<Markdown content={turn.error} />}
                         />
                       ) : null}
                       {!isLive && turn.status === "indeterminate" ? (

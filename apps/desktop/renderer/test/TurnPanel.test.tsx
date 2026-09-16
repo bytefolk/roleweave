@@ -71,7 +71,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner"
       engine="qoder" engineAvailability={availability} turns={[]} sessions={[]}
       selectedSessionId={null} sessionBusy onCreateTurn={createTurn} />);
-    expect(screen.getByRole("heading", { name: "开始第一条对话" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "开始第一条对话" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("正在加载会话…")).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("status")).toHaveTextContent("正在准备本地对话…");
     expect(screen.getByLabelText("下达任务")).toBeDisabled();
     expect(screen.getByRole("button", { name: "发送任务" })).toBeDisabled();
@@ -452,7 +453,7 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
     expect(screen.getAllByText("运行中").length).toBeGreaterThan(0);
     expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
     expect(screen.queryByText("1,280 tokens")).not.toBeInTheDocument();
-    expect(screen.queryByText("999 tokens")).not.toBeInTheDocument();
+    expect(screen.getByText("999 tokens")).toBeInTheDocument();
   });
 });
 

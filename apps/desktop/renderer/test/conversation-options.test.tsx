@@ -78,7 +78,7 @@ it("shows the inherited connection, billing, and concrete model without assignin
 
   expect(screen.getByText("跟随本地配置")).toBeInTheDocument();
   fireEvent.mouseDown(screen.getByRole("combobox", { name: "员工模型" }));
-  expect(await screen.findByText(/实际模型：team\/claude-custom/)).toBeInTheDocument();
+  expect(await screen.findByText(/配置映射: team\/claude-custom/)).toBeInTheDocument();
   expect(screen.getByText(/团队网关/)).toBeInTheDocument();
   expect(screen.queryByText("经济型 · 适合问答、整理和简单修改")).not.toBeInTheDocument();
 

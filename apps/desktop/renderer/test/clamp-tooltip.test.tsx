@@ -31,13 +31,13 @@ const shortTurn: TurnRecord = {
 
 describe("conversation readability", () => {
   // 下达任务可以压缩为摘要；最终结论必须完整可读，不能用省略号藏掉结果。
-  it("clamps long turn input but keeps the final output fully readable", () => {
+  it("removes two-line truncation from requests and keeps the final output fully readable", () => {
     const { container } = render(<TurnThread turns={[longTurn]} />);
     // #248 R2 ④: 下达任务改为操作员气泡（右），截断+title 契约不变。
-    const input = container.querySelector(".owb-bubble--operator .owb-clamp-2");
+    const input = container.querySelector(".owb-bubble--operator .owb-bubble__text");
     const output = container.querySelector(".owb-tc__out");
     expect(input).not.toBeNull();
-    expect(input?.className).toContain("owb-clamp-2");
+    expect(input?.className).not.toContain("owb-clamp-2");
     expect(input?.getAttribute("title")).toBe(LONG);
     expect(output).not.toBeNull();
     expect(output?.className).not.toContain("owb-clamp-2");
@@ -45,9 +45,9 @@ describe("conversation readability", () => {
     expect(output?.getAttribute("title")).toBe(LONG);
   });
 
-  it("keeps the clamp class on short text without altering it", () => {
+  it("keeps short request text unchanged and fully readable", () => {
     const { container } = render(<TurnThread turns={[shortTurn]} />);
-    const input = container.querySelector(".owb-bubble--operator .owb-clamp-2");
+    const input = container.querySelector(".owb-bubble--operator .owb-bubble__text");
     expect(input?.getAttribute("title")).toBe("检查发布");
     expect(input?.textContent).toBe("检查发布");
   });
@@ -124,7 +124,7 @@ describe("conversation readability", () => {
     const failed: TurnRecord = { ...shortTurn, id: "turn-fail", status: "failed", output: undefined, error: LONG };
     const { container } = render(<TurnThread turns={[failed]} />);
     const error = container.querySelector(".owb-bubble__error");
-    expect(error?.className).toContain("owb-clamp-2");
+    expect(error?.className).not.toContain("owb-clamp-2");
     expect(error?.getAttribute("title")).toBe(LONG);
   });
 

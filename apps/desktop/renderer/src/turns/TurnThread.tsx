@@ -1,6 +1,9 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronRight, LoaderCircle, MessagesSquare, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import { Markdown, markdownToPlainText } from "../markdown/Markdown";
+import { useConversationCopy } from "../locales/conversation";
+import type { ConversationViewport } from "./conversation-memory";
+import { MessageActions, OperatorMessage } from "./message-actions";
 import { EmptyState, useT } from "@roleweave/ui";
 import { useEngineLabel } from "./engine-select";
 import { EngineIcon } from "./engine-icon";
@@ -8,6 +11,9 @@ import type { TurnProgressKind, TurnRecord } from "./types";
 
 export interface TurnThreadProps {
   turns: TurnRecord[];
+  loading?: boolean;
+  onEdit?: (text: string) => void;
+  viewportMemory?: Map<string, ConversationViewport>;
   retrying?: boolean;
   /** #128 AC-002: when no turns exist, the empty-state heading is driven by
    * the caller so it can name the concrete prerequisite (e.g. "先从组织树
@@ -107,6 +113,7 @@ function ElapsedTime({ turn }: { turn: TurnRecord }) {
 
 export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRecord; approvalDecided?: boolean }) {
   const t = useT();
+  const copy = useConversationCopy();
   const stepsId = useId();
   const progress = turn.progress?.length ? turn.progress : fallbackProgress(turn);
   const awaitingApproval = turn.approvalRequest !== undefined;
@@ -119,7 +126,7 @@ export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRec
   const state = awaitingApproval ? (approvalDecided ? "decided" : "awaiting_approval") : turn.status;
   const summary = awaitingApproval
     ? t(approvalDecided ? "apr.decided" : "turn.progressAwaitingApproval")
-    : t({ running: "turn.statusRunning", completed: "turn.done", failed: "turn.failed", indeterminate: "turn.statusUnknown" }[turn.status]);
+    : turn.errorCode === "turn_cancelled" ? copy.cancelled : t({ running: "turn.statusRunning", completed: "turn.done", failed: "turn.failed", indeterminate: "turn.statusUnknown" }[turn.status]);
   const labels: Record<TurnProgressKind, string> = {
     received: t("turn.progressReceived"),
     working: t("turn.progressProcessing"),
@@ -188,7 +195,7 @@ function ApprovalCard({
         <ShieldAlert aria-hidden="true" size={13} />
         {decided ? t("apr.decided") : t("apr.pending")} · {kindCopy[request.kind] ?? request.kind}
       </p>
-      <p className="owb-turn__approval-description owb-clamp-2" title={request.description}>
+      <p className="owb-turn__approval-description" title={request.description}>
         {request.description}
       </p>
       {request.target ? (
@@ -236,41 +243,94 @@ function ApprovalCard({
 /** Append-only conversation history with collapsible public milestones.
  * Output, approvals and errors remain visible independently of the disclosure;
  * an indeterminate result is never presented as a completed response. */
-export function TurnThread({ turns, retrying = false, emptyPrompt, emptyDescription, canRetry, onRetry, onVerdict, decidedApprovalIds, scrollKey }: TurnThreadProps) {
+export function TurnThread({ turns, loading = false, onEdit, viewportMemory, retrying = false, emptyPrompt, emptyDescription, canRetry, onRetry, onVerdict, decidedApprovalIds, scrollKey }: TurnThreadProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
   const threadRef = useRef<HTMLOListElement>(null);
-  const scrollCacheRef = useRef<Record<string, number>>({});
-  const lastScrollTopRef = useRef(0);
-  const prevScrollKeyRef = useRef<string | undefined>(scrollKey);
+  const copy = useConversationCopy();
+  const localMemory = useRef(new Map<string, ConversationViewport>());
+  const memory = viewportMemory ?? localMemory.current;
+  const scope = scrollKey ?? "default";
+  const currentScope = useRef(scope);
+  const lastViewport = useRef<ConversationViewport>({ top: 0, atBottom: true });
+  const [newMessages, setNewMessages] = useState(false);
+  const [away, setAway] = useState(false);
+  const lastContent = useRef("");
+  const restoring = useRef(true);
+  const content = turns.map(turn => `${turn.id}:${turn.output ?? ""}:${turn.status}`).join("\n");
+
+  function capture(node: HTMLOListElement): ConversationViewport {
+    const edge = node.getBoundingClientRect().top;
+    const anchor = Array.from(node.querySelectorAll<HTMLElement>("[data-turn-id]")).find(item => item.getBoundingClientRect().bottom > edge);
+    return { top: node.scrollTop, atBottom: (node.scrollHeight > 0 || node.scrollTop === 0) && node.scrollHeight - node.clientHeight - node.scrollTop < 48,
+      ...(anchor ? { anchor: anchor.dataset.turnId, offset: anchor.getBoundingClientRect().top - edge } : {}) };
+  }
+  function restore(node: HTMLOListElement, saved: ConversationViewport) {
+    const anchor = saved.anchor ? Array.from(node.querySelectorAll<HTMLElement>("[data-turn-id]")).find(item => item.dataset.turnId === saved.anchor) : undefined;
+    if (saved.atBottom) node.scrollTop = Math.max(0, node.scrollHeight - node.clientHeight);
+    else if (anchor && (node.getBoundingClientRect().height > 0)) node.scrollTop += anchor.getBoundingClientRect().top - node.getBoundingClientRect().top - (saved.offset ?? 0);
+    else node.scrollTop = saved.top;
+  }
+  function goLatest() {
+    const node = threadRef.current;
+    if (!node) return;
+    node.scrollTop = Math.max(0, node.scrollHeight - node.clientHeight);
+    lastViewport.current = capture(node);
+    memory.set(scope, lastViewport.current);
+    setNewMessages(false); setAway(false);
+  }
+
+  useLayoutEffect(() => {
+    const node = threadRef.current;
+    if (!node) return;
+    if (currentScope.current !== scope) {
+      memory.set(currentScope.current, lastViewport.current);
+      currentScope.current = scope;
+      lastViewport.current = memory.get(scope) ?? { top: 0, atBottom: true };
+      restoring.current = true;
+      setNewMessages(false);
+      lastContent.current = "";
+    }
+    if (restoring.current && turns.length) {
+      const saved = memory.get(scope) ?? { top: 0, atBottom: true };
+      restore(node, saved);
+      lastViewport.current = saved;
+      setAway(!saved.atBottom);
+      restoring.current = false;
+    } else if (!restoring.current && content !== lastContent.current) {
+      if (lastViewport.current.atBottom) goLatest();
+      else if (lastContent.current) setNewMessages(true);
+    }
+    lastContent.current = content;
+  }, [scope, content, turns.length]);
 
   useEffect(() => {
     const node = threadRef.current;
     if (!node) return;
-    const onScroll = () => { lastScrollTopRef.current = node.scrollTop; };
+    const onScroll = () => {
+      // Blank loading frames must not destroy a stored reading anchor.
+      if (restoring.current || !node.querySelector("[data-turn-id]")) return;
+      lastViewport.current = capture(node);
+      memory.set(currentScope.current, lastViewport.current);
+      setAway(!lastViewport.current.atBottom);
+      if (lastViewport.current.atBottom) setNewMessages(false);
+    };
     node.addEventListener("scroll", onScroll, { passive: true });
-    return () => node.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useLayoutEffect(() => {
-    const prev = prevScrollKeyRef.current;
-    const node = threadRef.current;
-    if (prev && prev !== scrollKey && node) {
-      scrollCacheRef.current[prev] = node.scrollTop;
-    }
-    prevScrollKeyRef.current = scrollKey;
-    if (scrollKey && node && scrollCacheRef.current[scrollKey] !== undefined) {
-      node.scrollTop = scrollCacheRef.current[scrollKey];
-      lastScrollTopRef.current = scrollCacheRef.current[scrollKey];
-    } else if (node) {
-      node.scrollTop = 0;
-      lastScrollTopRef.current = 0;
-    }
-  }, [scrollKey]);
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => {
+      if (!restoring.current && node.querySelector("[data-turn-id]")) restore(node, lastViewport.current);
+    }) : undefined;
+    observer?.observe(node);
+    return () => {
+      memory.set(currentScope.current, lastViewport.current);
+      node.removeEventListener("scroll", onScroll);
+      observer?.disconnect();
+    };
+  }, [memory]);
 
   return (
     <>
-      <div className="owb-turn-thread owb-turn-thread--empty" hidden={turns.length > 0}>
+      {loading && turns.length === 0 ? <div className="owb-turn-thread owb-turn-thread--loading" aria-label={copy.preparing} aria-busy="true"><span /><span /><span /></div> : null}
+      <div className="owb-turn-thread owb-turn-thread--empty" hidden={turns.length > 0 || loading}>
         <EmptyState icon={<MessagesSquare size={32} strokeWidth={1.5} />}
           title={emptyPrompt ?? t("turn.emptyStart")} description={emptyDescription} />
       </div>
@@ -291,7 +351,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, emptyDescript
             {/* #248 R2 ④：D3 升级为对话界面——操作员下达（右）与岗位回复（左）成对成线程。 */}
             <div className="owb-bubble-row owb-bubble-row--operator">
               <article className="owb-bubble owb-bubble--operator">
-                <p className="owb-bubble__text owb-clamp-2" title={turn.input}>{turn.input}</p>
+                <OperatorMessage turn={turn} onEdit={onEdit} />
               </article>
             </div>
             <div className="owb-bubble-row owb-bubble-row--employee">
@@ -303,9 +363,9 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, emptyDescript
                 <span className="owb-tc-head__who">
                   {turn.positionName}
                 </span>
-                <span className="owb-tc-head__eng">
+                <span className="owb-tc-head__eng" title={turn.model ? `${copy.requested}: ${turn.model}` : engineLabel(turn.engine)}>
                   <EngineIcon engine={turn.engine} />
-                  {turn.model ?? engineLabel(turn.engine)}
+                  {turn.model ? `${copy.requested}: ${turn.model}` : engineLabel(turn.engine)}
                 </span>
                 {isProvisional ? (
                   <span className="owb-tc-head__provisional" aria-label={t("turn.provisionalTitle")}>
@@ -324,24 +384,26 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, emptyDescript
                   className={`owb-turn__conclusion${isProvisional ? " is-provisional" : ""}`}
                   aria-label={isProvisional ? t("turn.liveOutput") : turn.status === "completed" ? t("turn.finalConclusion") : t("turn.unconfirmedOutput")}
                 >
+                  <div className="owb-turn-conclusion-label">{isProvisional ? t("turn.liveOutput") : turn.status === "completed" ? t("turn.finalConclusion") : t("turn.unconfirmedOutput")}</div>
                   {isProvisional ? (
                     <div className="owb-tc__out owb-tc__out--markdown owb-tc__out--provisional" title={turn.output}>
-                      <ReactMarkdown>{turn.output}</ReactMarkdown>
+                      <Markdown content={turn.output} />
                     </div>
                   ) : (
                     <div className="owb-tc__out owb-tc__out--markdown" title={turn.output}>
-                      <ReactMarkdown>{turn.output}</ReactMarkdown>
+                      <Markdown content={turn.output} />
                     </div>
                   )}
                 </section>
               ) : null}
+              {turn.output ? <MessageActions raw={turn.output} plain={markdownToPlainText(turn.output)} /> : null}
               {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
 
               {turn.error ? (
-                <div className="owb-bubble__error owb-clamp-2" title={turn.error}>{turn.error}</div>
+                <div className="owb-bubble__error" title={turn.error}>{turn.error}</div>
               ) : null}
               {turn.status === "indeterminate" ? (
-                <p className="owb-turn__warning owb-clamp-2" title={t("turn.untrustedWarning")}>
+                <p className="owb-turn__warning" title={t("turn.untrustedWarning")}>
                   <ShieldQuestion aria-hidden="true" size={13} />
                   {t("turn.untrustedWarning")}
                 </p>
@@ -375,6 +437,7 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, emptyDescript
         );
       })}
     </ol>
+    {away ? <button type="button" className="owb-thread-latest" onClick={goLatest}>{newMessages ? copy.newMessages : copy.latest}</button> : null}
     </>
   );
 }
