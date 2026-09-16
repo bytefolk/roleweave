@@ -8375,7 +8375,12 @@ body,
 .owb-session-history button { display: grid; gap: 4px; padding: 8px 12px; text-align: left; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--ui-foreground); font: inherit; cursor: pointer; }
 .owb-session-history button.is-selected, .owb-session-history button:hover { background: var(--ui-primary-soft); border-color: var(--ui-border); }
 .owb-session-history small { color: var(--ui-foreground-muted); }
-.owb-message-collapsible { max-height: 21em; overflow: hidden; }
+/* Beat the theme's readable-source overflow rule only for collapsed user text. */
+.owb-app .owb-turn-thread .owb-bubble--operator .owb-bubble__text.owb-message-collapsible {
+  display: block;
+  max-height: 21em;
+  overflow: hidden;
+}
 .owb-message-expand, .owb-message-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
 .owb-message-expand:hover, .owb-message-actions button:hover { background: color-mix(in srgb, currentColor 9%, transparent); }
 .owb-message-actions { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; color: var(--ui-foreground-muted); }
