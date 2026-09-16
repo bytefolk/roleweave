@@ -100,6 +100,23 @@ export function GoalCreateDialog({
   return (
     <Drawer
       title={t("goals.createTitle")}
+      rootClassName="owb-goal-create-drawer"
+      footer={
+        <footer className="owb-goal-create__footer">
+          <AntButton onClick={onClose} disabled={busy}>
+            {t("dlg.cancel")}
+          </AntButton>
+          <AntButton
+            type="primary"
+            onClick={() => void create()}
+            loading={busy}
+            disabled={!formValid}
+            icon={<Target aria-hidden="true" size={14} />}
+          >
+            {t("goals.createAction")}
+          </AntButton>
+        </footer>
+      }
       width="min(560px, calc(100vw - 24px))"
       open={open}
       onClose={() => {
@@ -108,15 +125,7 @@ export function GoalCreateDialog({
       destroyOnHidden
     >
       <div className="owb-goal-create">
-        <section className="owb-goal-create__hero">
-          <div className="owb-goal-create__icon">
-            <Target aria-hidden="true" size={20} />
-          </div>
-          <div>
-            <h3>{t("goals.createTitle")}</h3>
-            <p>{t("goals.descPh")}</p>
-          </div>
-        </section>
+        <p className="owb-goal-create__hint">{t("goals.descPh")}</p>
 
         <fieldset
           disabled={busy}
@@ -181,20 +190,6 @@ export function GoalCreateDialog({
             {error}
           </p>
         ) : null}
-        <footer className="owb-goal-create__footer">
-          <AntButton onClick={onClose} disabled={busy}>
-            {t("dlg.cancel")}
-          </AntButton>
-          <AntButton
-            type="primary"
-            onClick={() => void create()}
-            loading={busy}
-            disabled={!formValid}
-            icon={<Target aria-hidden="true" size={14} />}
-          >
-            {t("goals.createAction")}
-          </AntButton>
-        </footer>
       </div>
     </Drawer>
   );
