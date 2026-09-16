@@ -64,6 +64,12 @@ contextBridge.exposeInMainWorld("owb", {
     open: (kind) => ipcRenderer.invoke("owb:services:open", kind),
     openRelease: (kind) => ipcRenderer.invoke("owb:services:open-release", kind),
   },
+  // Reads return only configured flags and suffix hints; values are write-only.
+  settings: {
+    get: () => ipcRenderer.invoke("owb:settings:get"),
+    set: (key, value) => ipcRenderer.invoke("owb:settings:set", key, value),
+    clear: (key) => ipcRenderer.invoke("owb:settings:clear", key),
+  },
   // #134 update surface: enumerated operations only, no generic updater
   // channel. `confirmedByUser` is passed through rather than defaulted here —
   // the service refuses an unconfirmed download or install, and that refusal is

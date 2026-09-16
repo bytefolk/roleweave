@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import test from "node:test";
 import { compactThreadContextHistory, isThreadContextMetadata, materializeThreadContext } from "../src/turns/thread-context.js";
+import { MAX_GROUP_MEMBERS, MAX_TURNS_PER_POSITION, THREAD_CONTEXT_MAX_OMITTED_TURNS } from "../src/history-limits.js";
 import type { TurnRecord } from "@roleweave/shared";
 
 function turn(id: string, input: string, output: unknown, status: TurnRecord["status"] = "completed"): TurnRecord {
@@ -65,11 +67,57 @@ test("private reasoning and structured trace fields never appear in model histor
 
 test("the maximum group history and handoff count still produces persistable context metadata", () => {
   const result = materializeThreadContext({ input: "next", enabled: true,
-    turns: Array.from({ length: 32 * 256 }, (_, index) => turn(String(index), "prior input", "prior output")),
-    supplementalContext: Array.from({ length: 32 }, (_, index) => ({ label: String(index), input: "handoff", output: "draft" })),
+    turns: Array.from({ length: MAX_GROUP_MEMBERS * MAX_TURNS_PER_POSITION }, (_, index) => turn(String(index), "prior input", "prior output")),
+    supplementalContext: Array.from({ length: MAX_GROUP_MEMBERS }, (_, index) => ({ label: String(index), input: "handoff", output: "draft" })),
   });
-  assert.equal(result.metadata.sourceTurnCount + result.metadata.omittedTurnCount, 32 * 256 + 32);
+  assert.equal(result.metadata.sourceTurnCount + result.metadata.omittedTurnCount, THREAD_CONTEXT_MAX_OMITTED_TURNS);
   assert.equal(isThreadContextMetadata(result.metadata), true);
+});
+
+test("thread context read bound preserves the current boundary and derives from both storage limits", () => {
+  assert.equal(THREAD_CONTEXT_MAX_OMITTED_TURNS, 8224);
+  assert.equal(THREAD_CONTEXT_MAX_OMITTED_TURNS, MAX_TURNS_PER_POSITION * MAX_GROUP_MEMBERS + MAX_GROUP_MEMBERS);
+  const { metadata } = materializeThreadContext({ input: "next", enabled: true, turns: [], omittedTurnCount: THREAD_CONTEXT_MAX_OMITTED_TURNS });
+  assert.equal(isThreadContextMetadata(metadata), true);
+  assert.equal(isThreadContextMetadata({ ...metadata, omittedTurnCount: THREAD_CONTEXT_MAX_OMITTED_TURNS + 1 }), false);
+});
+
+test("thread context read bound follows injected changes to either source limit", async (t) => {
+  const [limitsSource, contextSource] = await Promise.all([
+    fs.readFile(new URL("../src/history-limits.js", import.meta.url), "utf8"),
+    fs.readFile(new URL("../src/turns/thread-context.js", import.meta.url), "utf8"),
+  ]);
+  const moduleUrl = (source: string): string => `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
+  for (const [name, value] of [
+    ["MAX_TURNS_PER_POSITION", MAX_TURNS_PER_POSITION * 2],
+    ["MAX_GROUP_MEMBERS", MAX_GROUP_MEMBERS * 2],
+    ["MAX_TURNS_PER_POSITION", MAX_TURNS_PER_POSITION / 2],
+    ["MAX_GROUP_MEMBERS", MAX_GROUP_MEMBERS / 2],
+  ] as const) {
+    await t.test(`${name} = ${value}`, async () => {
+      // Inject only a source constant into isolated module copies. Keep the
+      // production derivation and validator intact, without a runtime override.
+      const injectedSource = limitsSource.replace(new RegExp(`(export const ${name} = )\\d+;`), (_, prefix: string) => `${prefix}${value};`);
+      assert.notEqual(injectedSource, limitsSource);
+      const limitsUrl = moduleUrl(injectedSource);
+      const limits = await import(limitsUrl) as typeof import("../src/history-limits.js");
+      const context = await import(moduleUrl(contextSource
+        .replace('"../history-limits.js"', JSON.stringify(limitsUrl))
+        .replace('"@roleweave/shared"', JSON.stringify(import.meta.resolve("@roleweave/shared"))))) as typeof import("../src/turns/thread-context.js");
+      const expected = limits.MAX_TURNS_PER_POSITION * limits.MAX_GROUP_MEMBERS + limits.MAX_GROUP_MEMBERS;
+      assert.equal(limits.THREAD_CONTEXT_MAX_OMITTED_TURNS, expected);
+      assert.notEqual(expected, THREAD_CONTEXT_MAX_OMITTED_TURNS);
+      const { metadata } = context.materializeThreadContext({
+        // Fill the input budget so every historical turn is omitted.
+        input: "x".repeat(256 * 1024), enabled: true,
+        turns: Array.from({ length: limits.MAX_TURNS_PER_POSITION * limits.MAX_GROUP_MEMBERS }, (_, index) => turn(String(index), "prior input", "prior output")),
+        omittedTurnCount: limits.MAX_GROUP_MEMBERS,
+      });
+      assert.equal(metadata.omittedTurnCount, expected);
+      assert.equal(context.isThreadContextMetadata(metadata), true);
+      assert.equal(context.isThreadContextMetadata({ ...metadata, omittedTurnCount: expected + 1 }), false);
+    });
+  }
 });
 
 test("group candidate projection releases traces and large outputs while counting omitted turns", () => {

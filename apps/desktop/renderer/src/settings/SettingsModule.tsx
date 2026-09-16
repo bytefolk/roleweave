@@ -15,6 +15,7 @@ import { Download, ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type { UpdateEvent, UpdateStatus } from "@roleweave/shared";
 import { ServiceConnections } from "./ServiceConnections";
+import { HostCredentials } from "./HostCredentials";
 import {
   stateMessage,
   unavailableMessage,
@@ -101,6 +102,7 @@ export function SettingsModule() {
           <p className="owb-settings-module__hint">{t("settings.runtimeHint")}</p>
         </section>
       ) : null}
+      <HostCredentials />
       <ServiceConnections />
 
       <section className="owb-settings-module__pane" aria-label={t("settings.updateTitle")}>

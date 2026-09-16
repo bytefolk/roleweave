@@ -8337,3 +8337,11 @@ body,
 .owb-thread-context code { overflow-wrap: anywhere; }
 .owb-group-dispatch-mode { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .owb-group-dispatch-mode .ant-select { min-width: 170px; }
+/* Credential values stay in native password controls, outside React state. */
+.owb-host-credentials__host { margin-block-start: 24px; }
+.owb-host-credentials__field { margin-block: 16px; }
+.owb-host-credentials__field > label { display: block; font-weight: 500; margin-block-end: 4px; }
+.owb-host-credentials__controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.owb-host-credentials__input { flex: 1 1 220px; min-width: 0; padding: 6px 10px; color: var(--ui-foreground); background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 6px; }
+.owb-host-credentials__input:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.owb-host-credentials__input:disabled { opacity: .6; }

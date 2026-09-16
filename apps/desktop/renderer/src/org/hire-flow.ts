@@ -32,8 +32,8 @@ export interface HireProposal {
 }
 
 const PROPOSAL_TOOLS = new Set(["Read", "Grep", "Glob", "Write", "Edit", "Delete", "Exec"]);
-// Memory shown and configured in v1 is intentionally limited to the two
-// human-manageable sources: workspace documents and the shared drive.
+// Memory shown and configured in v1 is intentionally limited to the three
+// human-manageable sources: position documents, workspace documents and the shared drive.
 const PROPOSAL_MEMORY = new Set<HireMemorySource["kind"]>(["position_docs", "workspace_docs", "mem_drive"]);
 const PROPOSAL_SKILLS = new Set<string>(hireSkillCatalog.map((skill) => skill.id));
 const PROPOSAL_MCP = new Map<string, (typeof hireMcpCatalog)[number]>(hireMcpCatalog.map((server) => [server.id, server]));
