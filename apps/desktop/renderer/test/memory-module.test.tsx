@@ -97,7 +97,7 @@ describe("员工记忆模块", () => {
 
     expect(screen.getByRole("heading", { name: "记忆与协作" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开 岗位文档 记忆来源" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "打开 岗位文档 记忆来源" })).toHaveTextContent("2");
+    expect(screen.getByRole("button", { name: "打开 岗位文档 记忆来源" })).not.toHaveTextContent("2");
     expect(screen.queryByText("岗位运行上下文")).not.toBeInTheDocument();
     expect(screen.queryByText("context://position/community-operator")).not.toBeInTheDocument();
 

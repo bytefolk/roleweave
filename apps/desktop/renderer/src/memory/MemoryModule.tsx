@@ -62,7 +62,6 @@ function SourceItem({ source, summary, active, onSelect }: {
       >
         <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
         <span className="owb-memory-source__label">{sourceTitle(source, t)}</span>
-        {summary?.itemCount !== undefined ? <small className="owb-memory-source__count">{summary.itemCount}</small> : null}
       </button>
     </Tooltip>
   );
@@ -201,7 +200,7 @@ export function MemoryModule({
         <section className="owb-memory-workspace" aria-label={t("memory.detailAria")}>
           <header className="owb-memory-location">
             <h2>{sourceTitle(activeSource, t)}</h2>
-            {activeSummary ? <span className="owb-memory-location__status">{sourceStatus(activeSummary, t)}{activeSummary.readOnly ? ` · ${t("pos.readOnly")}` : ""}</span> : null}
+            {activeSummary ? <span className="owb-memory-location__status">{activeSource === "docs" && (activeSummary.state === "ready" || activeSummary.state === "empty") ? t("reading.docs.readOnlyCreate") : sourceStatus(activeSummary, t)}</span> : null}
             {activeSource === "shared" ? <ServiceLaunch kind="doc" /> : activeSource === "drive" ? <ServiceLaunch kind="mem" /> : null}
             <Tooltip title={t(`memory.scope.${activeSource}`)}>
               <Button type="text" size="small" aria-label={t("memory.sourceInfo")} icon={<Info size={14} />} />

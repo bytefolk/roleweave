@@ -1,9 +1,29 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Alert, Empty, Input, List, Segmented, Spin, message } from "antd";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  Alert,
+  Button,
+  Empty,
+  Input,
+  List,
+  Segmented,
+  Spin,
+  message,
+} from "antd";
 import { Copy, FileCode2, FolderOpen, LoaderCircle } from "lucide-react";
 import { formatDocRefUri } from "@roleweave/shared/docs";
 import { useT } from "@roleweave/ui";
-import type { DocsFileEntry, DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
+import type {
+  DocsFileEntry,
+  DocsFileListResponse,
+  DocsFileResponse,
+} from "@roleweave/shared";
 import { DocViewer } from "./DocViewer";
 
 /**
@@ -21,12 +41,21 @@ export interface DocsPanelProps {
   readDoc(positionId: string, path: string): Promise<DocsFileResponse>;
   /** Bumped by the creator to force a re-list after a successful create. */
   reloadToken?: number;
+  requestedPath?: string | null;
 }
 
-export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, knowledgeFirst = false, toolbar }: DocsPanelProps) {
+export function DocsPanel({
+  positionId,
+  listDocs,
+  readDoc,
+  reloadToken = 0,
+  knowledgeFirst = false,
+  toolbar,
+  requestedPath,
+}: DocsPanelProps) {
   const t = useT();
   const [files, setFiles] = useState<DocsFileEntry[]>([]);
-  const [listing, setListing] = useState(false);
+  const [listing, setListing] = useState(positionId !== null);
   const [listError, setListError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [doc, setDoc] = useState<DocsFileResponse | null>(null);
@@ -35,8 +64,18 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
   const [query, setQuery] = useState("");
   const [fileScope, setFileScope] = useState("knowledge");
   const readVersion = useRef(0);
+  const [listRetry, setListRetry] = useState(0);
+  const requestedSelection = useRef<string | null>(null);
+  const scrollPositions = useRef(new Map<string, number>());
   const readerRef = useRef<HTMLDivElement>(null);
-  const visibleFiles = files.filter((file) => (!knowledgeFirst || fileScope === "all" || /\.(md|markdown|txt)$/i.test(file.path) || file.path.startsWith("knowledge/")) && file.path.toLowerCase().includes(query.toLowerCase()));
+  const visibleFiles = files.filter(
+    (file) =>
+      (!knowledgeFirst ||
+        fileScope === "all" ||
+        /\.(md|markdown|txt)$/i.test(file.path) ||
+        file.path.startsWith("knowledge/")) &&
+      file.path.toLowerCase().includes(query.toLowerCase()),
+  );
 
   useEffect(() => {
     readVersion.current += 1;
@@ -46,8 +85,13 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
     setSelected(null);
     setDoc(null);
     setReadError(null);
+    return () => {
+      readVersion.current += 1;
+    };
+  }, [positionId]);
+
+  useEffect(() => {
     if (positionId === null) {
-      setFiles([]);
       setListError(null);
       setListing(false);
       return;
@@ -57,36 +101,60 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
     setListError(null);
     listDocs(positionId)
       .then((response) => {
-        if (cancelled) return;
-        setFiles(response.files);
+        if (!cancelled) setFiles(response.files);
       })
       .catch((error) => {
-        if (cancelled) return;
-        setFiles([]);
-        setListError(error instanceof Error ? error.message : String(error));
+        if (!cancelled)
+          setListError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         if (!cancelled) setListing(false);
       });
     return () => {
       cancelled = true;
-      readVersion.current += 1;
     };
-  }, [positionId, listDocs, reloadToken]);
+  }, [positionId, listDocs, reloadToken, listRetry]);
 
-  const openFile = (path: string) => {
-    if (positionId === null) return;
-    setSelected(path);
-    if (readerRef.current) readerRef.current.scrollTop = 0;
-    setDoc(null);
-    setReadError(null);
-    setReading(true);
-    const version = ++readVersion.current;
-    readDoc(positionId, path)
-      .then((response) => { if (version === readVersion.current) setDoc(response); })
-      .catch((error) => { if (version === readVersion.current) setReadError(error instanceof Error ? error.message : String(error)); })
-      .finally(() => { if (version === readVersion.current) setReading(false); });
-  };
+  const openFile = useCallback(
+    (path: string) => {
+      if (positionId === null) return;
+      setSelected(path);
+      setDoc(null);
+      setReadError(null);
+      setReading(true);
+      const version = ++readVersion.current;
+      readDoc(positionId, path)
+        .then((response) => {
+          if (version === readVersion.current) setDoc(response);
+        })
+        .catch((error) => {
+          if (version === readVersion.current)
+            setReadError(
+              error instanceof Error ? error.message : String(error),
+            );
+        })
+        .finally(() => {
+          if (version === readVersion.current) setReading(false);
+        });
+    },
+    [positionId, readDoc],
+  );
+
+  useLayoutEffect(() => {
+    if (doc && readerRef.current)
+      readerRef.current.scrollTop =
+        scrollPositions.current.get(`${positionId}:${selected}`) ?? 0;
+  }, [doc, positionId, selected]);
+
+  useEffect(() => {
+    const key = `${positionId}:${reloadToken}:${requestedPath}`;
+    if (requestedPath && requestedSelection.current !== key) {
+      requestedSelection.current = key;
+      setQuery("");
+      setFileScope("all");
+      openFile(requestedPath);
+    }
+  }, [positionId, requestedPath, reloadToken, openFile]);
 
   const copyRef = async (entry: DocsFileEntry) => {
     if (positionId === null) return;
@@ -105,10 +173,11 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
   // Open useful knowledge immediately rather than an oversized empty reader.
   useEffect(() => {
     if (!knowledgeFirst || selected !== null || listing) return;
-    const first = files.find((file) => file.path === "knowledge/README.md")
-      ?? files.find((file) => /\.(md|markdown|txt)$/i.test(file.path));
+    const first =
+      files.find((file) => file.path === "knowledge/README.md") ??
+      files.find((file) => /\.(md|markdown|txt)$/i.test(file.path));
     if (first) openFile(first.path);
-  }, [files, knowledgeFirst, selected, listing]);
+  }, [files, knowledgeFirst, selected, listing, openFile]);
 
   const formatSize = (size: number): string => {
     if (size < 1024) return `${size} B`;
@@ -123,11 +192,16 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
 
   const renderFilePath = (path: string) => {
     const separator = path.lastIndexOf("/");
-    if (separator < 0) return <span className="owb-docs-panel__file-name">{path}</span>;
+    if (separator < 0)
+      return <span className="owb-docs-panel__file-name">{path}</span>;
     return (
       <>
-        <span className="owb-docs-panel__file-parent">{path.slice(0, separator)}/</span>
-        <span className="owb-docs-panel__file-name">{path.slice(separator + 1)}</span>
+        <span className="owb-docs-panel__file-name">
+          {path.slice(separator + 1)}
+        </span>
+        <span className="owb-docs-panel__file-parent">
+          {path.slice(0, separator)}/
+        </span>
       </>
     );
   };
@@ -141,12 +215,36 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
           <div className="owb-docs-panel__workspace">
             <div className="owb-docs-panel__list-pane">
               <header className="owb-docs-panel__header">
-                <span className="owb-docs-panel__count" aria-label={t("docs.fileCount", { count: visibleFiles.length })}>
+                <span
+                  className="owb-docs-panel__count"
+                  aria-label={t("docs.fileCount", {
+                    count: visibleFiles.length,
+                  })}
+                >
                   {t("docs.fileCount", { count: visibleFiles.length })}
                 </span>
                 {toolbar ?? <h2>{t("docs.listTitle")}</h2>}
               </header>
-              {knowledgeFirst ? <div className="owb-docs-filter"><Segmented aria-label={t("memory.fileScope")} value={fileScope} onChange={setFileScope} options={[{ value: "knowledge", label: t("memory.knowledge") }, { value: "all", label: t("memory.allFiles") }]} /><Input allowClear aria-label={t("memory.search")} placeholder={t("memory.search")} value={query} onChange={(event) => setQuery(event.target.value)} /></div> : null}
+              <div className="owb-docs-filter">
+                {knowledgeFirst ? (
+                  <Segmented
+                    aria-label={t("memory.fileScope")}
+                    value={fileScope}
+                    onChange={setFileScope}
+                    options={[
+                      { value: "knowledge", label: t("memory.knowledge") },
+                      { value: "all", label: t("memory.allFiles") },
+                    ]}
+                  />
+                ) : null}
+                <Input
+                  allowClear
+                  aria-label={t("memory.search")}
+                  placeholder={t("memory.search")}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </div>
               {listing ? (
                 <div className="owb-docs-panel__loading" role="status">
                   <LoaderCircle aria-hidden="true" size={15} />
@@ -154,7 +252,19 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
                   <Spin aria-label={t("docs.listing")} size="small" />
                 </div>
               ) : null}
-              {listError !== null ? <Alert className="owb-docs-panel__error" type="error" showIcon message={listError} /> : null}
+              {listError !== null ? (
+                <Alert
+                  className="owb-docs-panel__error"
+                  type="error"
+                  showIcon
+                  message={listError}
+                  action={
+                    <Button onClick={() => setListRetry((value) => value + 1)}>
+                      {t("hire.retry")}
+                    </Button>
+                  }
+                />
+              ) : null}
               {!listing && listError === null ? (
                 <List
                   className="owb-docs-panel__list"
@@ -163,11 +273,24 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
                   locale={{
                     emptyText: (
                       <div className="owb-docs-panel__empty">
-                        <span className="owb-docs-panel__empty-icon" aria-hidden="true">
+                        <span
+                          className="owb-docs-panel__empty-icon"
+                          aria-hidden="true"
+                        >
                           <FolderOpen size={18} strokeWidth={1.7} />
                         </span>
-                        <strong>{t("docs.empty")}</strong>
-                        <span>{t("docs.emptyHint")}</span>
+                        <strong>
+                          {query
+                            ? t("reading.docs.searchNone", { query })
+                            : t("docs.empty")}
+                        </strong>
+                        {query ? (
+                          <Button onClick={() => setQuery("")}>
+                            {t("reading.clearFilters")}
+                          </Button>
+                        ) : (
+                          <span>{t("docs.emptyHint")}</span>
+                        )}
                       </div>
                     ),
                   }}
@@ -177,12 +300,16 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
                       className="owb-docs-panel__item"
                     >
                       <div className="owb-docs-panel__item-main">
-                        <span className="owb-docs-panel__file-icon" aria-hidden="true">
+                        <span
+                          className="owb-docs-panel__file-icon"
+                          aria-hidden="true"
+                        >
                           <FileCode2 size={17} strokeWidth={1.8} />
                         </span>
                         <button
                           type="button"
                           className="owb-docs-panel__file"
+                          title={entry.path}
                           aria-label={entry.path}
                           aria-pressed={selected === entry.path}
                           onClick={() => openFile(entry.path)}
@@ -190,8 +317,13 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
                           {renderFilePath(entry.path)}
                         </button>
                       </div>
-                      <div className="owb-docs-panel__item-meta" aria-hidden="true">
-                        <span className="owb-docs-panel__file-type">{fileExtension(entry.path)}</span>
+                      <div
+                        className="owb-docs-panel__item-meta"
+                        aria-hidden="true"
+                      >
+                        <span className="owb-docs-panel__file-type">
+                          {fileExtension(entry.path)}
+                        </span>
                         <span>{formatSize(entry.size)}</span>
                       </div>
                       <button
@@ -209,15 +341,62 @@ export function DocsPanel({ positionId, listDocs, readDoc, reloadToken = 0, know
                 />
               ) : null}
             </div>
-            <div ref={readerRef} className="owb-docs-panel__reader-pane" aria-label={t("docs.readerAria")}>
+            <div
+              ref={readerRef}
+              onScroll={() => {
+                if (doc && selected && readerRef.current)
+                  scrollPositions.current.set(
+                    `${positionId}:${selected}`,
+                    readerRef.current.scrollTop,
+                  );
+              }}
+              className="owb-docs-panel__reader-pane"
+              aria-label={t("docs.readerAria")}
+            >
               {reading ? (
                 <div className="owb-docs-panel__reader-state" role="status">
                   <Spin aria-label={t("docs.reading")} size="small" />
                   <span>{t("docs.openingDoc")}</span>
                 </div>
               ) : null}
-              {readError !== null ? <Alert className="owb-docs-panel__error" type="error" showIcon message={readError} /> : null}
-              {doc !== null ? <DocViewer source={doc.content} version={doc.version} title={doc.path} /> : null}
+              {readError !== null ? (
+                <Alert
+                  className="owb-docs-panel__error"
+                  type="error"
+                  showIcon
+                  message={t("docs.readFail")}
+                  description={readError}
+                  action={
+                    <Button onClick={() => selected && openFile(selected)}>
+                      {t("hire.retry")}
+                    </Button>
+                  }
+                />
+              ) : null}
+              {doc !== null ? (
+                <DocViewer
+                  source={doc.content}
+                  version={doc.version}
+                  updatedAt={doc.modifiedAt}
+                  title={doc.path}
+                  path={doc.path}
+                  actions={
+                    <Button
+                      icon={<Copy size={14} />}
+                      onClick={() =>
+                        void copyRef({
+                          path: doc.path,
+                          modifiedAt: doc.version,
+                          size: doc.size,
+                          kind: "file",
+                        })
+                      }
+                    >
+                      {t("docs.copyRef")}
+                    </Button>
+                  }
+                />
+              ) : null}
               {doc === null && !reading && readError === null ? (
                 <div className="owb-docs-panel__reader-empty">
                   <FileCode2 aria-hidden="true" size={24} strokeWidth={1.6} />

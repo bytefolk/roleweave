@@ -68,10 +68,10 @@ describe("DocViewer", () => {
 
   it("shows file-level version as provenance only when provided", () => {
     const { unmount } = render(<DocViewer source={SKILL_DOC} version="sha256:abc123" />);
-    expect(screen.getByText("版本 sha256:abc123")).toBeTruthy();
+    expect(screen.getByText("引用标识 sha256:abc123")).toBeTruthy();
     unmount();
     render(<DocViewer source={SKILL_DOC} />);
-    expect(screen.queryByText(/版本/)).toBeNull();
+    expect(screen.queryByText(/引用标识/)).toBeNull();
   });
 
   it("renders plain markdown without a header meta block when no frontmatter exists", () => {
@@ -84,5 +84,26 @@ describe("DocViewer", () => {
   it("prefers an explicit title over the frontmatter name", () => {
     render(<DocViewer source={SKILL_DOC} title="岗位技能书" />);
     expect(screen.getByText("岗位技能书")).toBeTruthy();
+  });
+});
+
+describe("Type-aware document preview (#294)", () => {
+  it("preserves TXT, JSON and YAML literally without Markdown interpretation", () => {
+    for (const extension of ["txt", "json", "yaml"]) {
+      const source = "# Literal heading\n**do not format**\n---\nvalue: true";
+      const view = render(<DocViewer source={source} path={`knowledge/test.${extension}`} />);
+      expect(screen.queryByRole("heading", { name: "Literal heading" })).not.toBeInTheDocument();
+      expect(document.querySelector(".owb-doc-viewer__body")?.textContent).toBe(source);
+      view.unmount();
+    }
+  });
+
+  it("uses a collapsible table of contents only when three real headings exist", () => {
+    render(<DocViewer source={"# First\n\n## Second\n\n```txt\n# not a heading\n```\n\n### Third"} />);
+    const contents = screen.getByText("文章目录").closest("details");
+    expect(contents).not.toHaveAttribute("open");
+    const links = contents!.querySelectorAll("a");
+    expect(links).toHaveLength(3);
+    for (const link of links) expect(document.querySelector(link.getAttribute("href")!)).toBeTruthy();
   });
 });
