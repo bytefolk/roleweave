@@ -946,8 +946,8 @@ test("qoder-engine turn run: claude-local preserves OAuth discovery without unre
 
   const claudeArgs = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
   assert.equal(claudeArgs.includes("--bare"), false, "bare mode disables OAuth login");
-  assert.equal(claudeArgs[claudeArgs.indexOf("--setting-sources") + 1], "user", "read local login settings only");
-  assert.deepEqual(JSON.parse(claudeArgs[claudeArgs.indexOf("--settings") + 1]!), { disableAllHooks: true });
+  assert.equal(claudeArgs[claudeArgs.indexOf("--setting-sources") + 1], "", "no local settings sources are loaded");
+  assert.equal(claudeArgs.includes("--settings"), false, "no inline settings override is passed");
   assert.equal(claudeArgs[claudeArgs.indexOf("--tools") + 1], "");
   assert.ok(claudeArgs.includes("--strict-mcp-config"));
   assert.ok(claudeArgs.includes("--no-session-persistence"));

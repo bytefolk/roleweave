@@ -1,4 +1,4 @@
-import { constants, openSync, closeSync, fstatSync, lstatSync, readSync } from "node:fs";
+import { constants, openSync, closeSync, fstatSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -126,19 +126,18 @@ function withoutJsonComments(source) {
 function readSettings(env, variable, fallback, label, allowComments = false) {
   const file = path.join(settingsDirectory(env, variable, fallback), "settings.json");
   let fd;
-  let original;
   try {
-    original = lstatSync(file);
-    if (!original.isFile() || original.isSymbolicLink()) invalid(label, "不是普通配置文件");
+    // Open first and check via the descriptor from then on: O_NOFOLLOW refuses
+    // symlinks atomically at open time, and fstat below never re-touches the
+    // path, so there is no check-then-use window to swap the file (TOCTOU).
     fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0));
   } catch (error) {
-    if (error instanceof LocalProviderConfigError) throw error;
-    if (error?.code === "ENOENT" && !original) return {};
+    if (error?.code === "ENOENT") return {};
     invalid(label, "无法安全读取");
   }
   try {
     const before = fstatSync(fd);
-    if (!before.isFile() || before.size > MAX_SETTINGS_BYTES || before.dev !== original.dev || before.ino !== original.ino) invalid(label, "不是有效的小型配置文件");
+    if (!before.isFile() || before.size > MAX_SETTINGS_BYTES) invalid(label, "不是有效的小型配置文件");
     const buffer = Buffer.alloc(Math.min(before.size + 1, MAX_SETTINGS_BYTES + 1));
     let length = 0;
     while (length < buffer.length) {
@@ -147,11 +146,9 @@ function readSettings(env, variable, fallback, label, allowComments = false) {
       length += count;
     }
     const after = fstatSync(fd);
-    const pathname = lstatSync(file);
     if (length !== before.size || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) {
       invalid(label, "读取时发生变化");
     }
-    if (!pathname.isFile() || pathname.isSymbolicLink() || pathname.dev !== before.dev || pathname.ino !== before.ino || pathname.mtimeMs !== before.mtimeMs || pathname.ctimeMs !== before.ctimeMs) invalid(label, "读取时路径发生变化");
     let parsed;
     try {
       const source = buffer.subarray(0, length).toString("utf8");
