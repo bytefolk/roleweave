@@ -140,6 +140,7 @@ function AppInner({
   const [approvalItems] = useState<ApprovalQueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const healthReadVersion = useRef(0);
+  const refreshReadVersion = useRef(0);
   const positionReadVersion = useRef(0);
   const availabilityOperation = useRef<symbol | null>(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
@@ -210,6 +211,10 @@ function AppInner({
   const [sseState, setSseState] = useState<"connecting" | "connected">("connecting");
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [backups, setBackups] = useState<OrgBackupEntry[]>([]);
+  const [backupsStatus, setBackupsStatus] = useState<"loading" | "ready" | "error">("loading");
+  // Identity changes on every workspace transition, including A → B → A.
+  const backupWorkspace = useRef<{ path: string | null }>({ path: null });
+  const backupRead = useRef(0);
   const [reports, setReports] = useState<ReportsResponse | null>(null);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState<string | null>(null);
@@ -318,10 +323,24 @@ function AppInner({
     setTurnError(null);
   }, [locale]);
 
-  const loadBackups = useCallback(async () => {
-    const response = await window.owb.orgBackups();
-    if (response.status === 200) setBackups((response.body as OrgBackupsResponse).backups);
-    else setBackups([]);
+  const loadBackups = useCallback(async (scope = backupWorkspace.current) => {
+    if (!scope.path || scope !== backupWorkspace.current) return;
+    const read = ++backupRead.current;
+    const isCurrent = () => scope === backupWorkspace.current && read === backupRead.current;
+    setBackupsStatus("loading");
+    try {
+      const response = await window.owb.orgBackups();
+      if (!isCurrent()) return;
+      const body = response.body as OrgBackupsResponse | null;
+      if (response.status !== 200 || !Array.isArray(body?.backups)) {
+        setBackupsStatus("error");
+        return;
+      }
+      setBackups(body.backups);
+      setBackupsStatus("ready");
+    } catch {
+      if (isCurrent()) setBackupsStatus("error");
+    }
   }, []);
 
   const loadReports = useCallback(async () => {
@@ -344,26 +363,47 @@ function AppInner({
   }, [t]);
 
   const refresh = useCallback(async (reusePositionMetadata = false) => {
+    const refreshRead = ++refreshReadVersion.current;
+    const isCurrentRefresh = () => refreshRead === refreshReadVersion.current;
     const healthRead = ++healthReadVersion.current;
     try {
     const statusRes = await window.owb.status();
+    if (!isCurrentRefresh()) return;
     if (healthRead === healthReadVersion.current) setHealth(statusRes.health ?? null);
     if (!statusRes.running) {
       setStartupError(t("misc.serviceFailed"));
       return;
     }
-    // A structural refresh reads the workspace summary and tree together;
-    // ordinary startup still checks for an open workspace before reading it.
-    const [workspaceRes, refreshedTree] = await Promise.all([
-      window.owb.workspace(),
-      reusePositionMetadata ? window.owb.orgTree() : undefined,
-    ]);
+    // Publish only the latest summary: a delayed workspace read must not
+    // reset the recovery scope after a newer workspace has already opened.
+    const workspaceRead = window.owb.workspace();
+    // Structural refreshes still start both reads together. Settle a rejected
+    // tree immediately, even if a stale workspace makes us discard it later.
+    const pendingTree = reusePositionMetadata
+      ? window.owb.orgTree().then((response) => ({ response }), (error: unknown) => ({ error }))
+      : undefined;
+    const workspaceRes = await workspaceRead;
+    if (!isCurrentRefresh()) return;
     if (workspaceRes.status !== 200) throw new Error("Workspace unavailable");
     setStartupError(null);
     const ws = workspaceRes.body as WorkspaceInfoResponse | null;
+    const backupPath = ws?.open === true ? ws.path ?? null : null;
+    if (backupWorkspace.current.path !== backupPath) {
+      backupWorkspace.current = { path: backupPath };
+      backupRead.current += 1;
+      setBackups([]);
+      setBackupsStatus("loading");
+    }
+    const backupScope = backupWorkspace.current;
     setWorkspaceInfo(ws);
     if (ws?.open === true) {
-      const treeRes = refreshedTree ?? await window.owb.orgTree();
+      // Recovery is independent of the organization tree; a failed tree read
+      // must not leave this footer waiting for a request that never started.
+      const backupLoad = loadBackups(backupScope);
+      const treeResult = pendingTree ? await pendingTree : { response: await window.owb.orgTree() };
+      if (!isCurrentRefresh()) return;
+      if ("error" in treeResult) throw treeResult.error;
+      const treeRes = treeResult.response;
       if (treeRes.status === 200) {
         const nextSnapshot = treeRes.body as OrgTreeSnapshot;
         setSnapshot(nextSnapshot);
@@ -388,6 +428,7 @@ function AppInner({
               // budget and permissions belong to the selected position record.
             }];
           }));
+          if (!isCurrentRefresh()) return;
           const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
           positionNamesRef.current = names;
           setPositionNames(names);
@@ -405,7 +446,7 @@ function AppInner({
           }, {});
           setPositionEngines(engines);
         }
-        await Promise.all([loadBackups(), loadReports()]);
+        await Promise.all([backupLoad, loadReports()]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
@@ -413,6 +454,7 @@ function AppInner({
         setPositionColors({});
         setPositionEngines({});
         setLockedAgentPositions({});
+        await backupLoad;
       }
     } else {
       setSnapshot(null);
@@ -435,9 +477,9 @@ function AppInner({
       setReportsError(null);
     }
     } catch {
-      setStartupError(t("misc.serviceFailed"));
+      if (isCurrentRefresh()) setStartupError(t("misc.serviceFailed"));
     } finally {
-      setTreeLoading(false);
+      if (isCurrentRefresh()) setTreeLoading(false);
     }
   }, [loadBackups, loadReports, locale, t]);
 
@@ -1432,7 +1474,9 @@ function AppInner({
             </>
           }
           footer={
-            workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} positionNames={positionNames} onRestore={restorePosition} /> : null
+            workspaceInfo?.open === true && (backupsStatus !== "ready" || backups.length > 0)
+              ? <BackupTray key={workspaceInfo.path} backups={backups} status={backupsStatus} busy={orgBusy} positionNames={positionNames} onRestore={restorePosition} onRetry={() => void loadBackups()} />
+              : null
           }
         >
           {workspaceInfo?.open === true ? (

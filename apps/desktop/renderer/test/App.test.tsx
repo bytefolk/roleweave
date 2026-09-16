@@ -229,6 +229,199 @@ async function chooseExistingWorkspace(): Promise<void> {
   });
 }
 
+describe("App removed-employee recovery", () => {
+  const oldEmployee = {
+    backupId: "old-writer-1756000000000-abcdef",
+    positionId: "old-writer",
+    dismissedAt: "2026-08-24T06:00:00Z",
+    reportTo: "repo-owner",
+    name: "旧文档负责人",
+  };
+  const backupResponse = (backups = [oldEmployee]) => ({
+    status: 200,
+    body: { schemaVersion: "org-backups.v1", backups },
+  });
+  type BackupResponse = Awaited<ReturnType<OwbBridge["orgBackups"]>>;
+
+  it("removes the recovery region and sidebar footer only after confirming the list is empty", async () => {
+    let finish!: (value: BackupResponse) => void;
+    const orgBackups = vi.fn(() => new Promise<BackupResponse>(resolve => { finish = resolve; }));
+    openedBridge({ orgBackups });
+    await act(async () => { render(<App />); });
+    expect(orgBackups).toHaveBeenCalledOnce();
+    expect(screen.getByText("正在加载已移除员工…")).toBeVisible();
+
+    await act(async () => finish(backupResponse([])));
+    expect(screen.queryByRole("region", { name: "已移除员工" })).not.toBeInTheDocument();
+    expect(screen.queryByText("暂无可恢复岗位")).not.toBeInTheDocument();
+    expect(document.querySelector(".ui-sidebar__footer")).toBeNull();
+  });
+
+  it("starts collapsed, restores the exact backup once while busy, then hides the last recovered entry", async () => {
+    let finishRestore!: (value: Awaited<ReturnType<OwbBridge["orgRestore"]>>) => void;
+    const orgRestore = vi.fn(() => new Promise<Awaited<ReturnType<OwbBridge["orgRestore"]>>>(resolve => { finishRestore = resolve; }));
+    const orgBackups = vi.fn().mockResolvedValueOnce(backupResponse()).mockResolvedValue(backupResponse([]));
+    openedBridge({ orgBackups, orgRestore });
+    await act(async () => { render(<App />); });
+    const toggle = screen.getByRole("button", { name: "已移除员工 · 1" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "恢复" })).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const tray = screen.getByRole("region", { name: "已移除员工" });
+    expect(within(tray).getByText("旧文档负责人")).toBeVisible();
+    expect(within(tray).getByText("原汇报 代码库负责人")).toBeVisible();
+    const restore = within(tray).getByRole("button", { name: "恢复" });
+    await act(async () => { fireEvent.click(restore); });
+    expect(restore).toBeDisabled();
+    fireEvent.click(restore);
+    expect(orgRestore).toHaveBeenCalledExactlyOnceWith(oldEmployee.backupId);
+
+    await act(async () => finishRestore({ status: 200, body: { status: "applied", positionId: oldEmployee.positionId, restored: true } }));
+    expect(orgBackups).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("region", { name: "已移除员工" })).not.toBeInTheDocument();
+    expect(document.querySelector(".ui-sidebar__footer")).toBeNull();
+  });
+
+  it.each(["http", "offline"])("keeps a %s read failure visible until Retry succeeds", async failure => {
+    let finishRetry!: (value: BackupResponse) => void;
+    const orgBackups = vi.fn();
+    if (failure === "http") orgBackups.mockResolvedValueOnce({ status: 503, body: { code: "unavailable" } });
+    else orgBackups.mockRejectedValueOnce(new Error("unavailable"));
+    orgBackups.mockImplementationOnce(() => new Promise<BackupResponse>(resolve => { finishRetry = resolve; }));
+    openedBridge({ orgBackups });
+    await act(async () => { render(<App />); });
+    expect(screen.getByRole("alert")).toHaveTextContent("无法加载已移除员工");
+    expect(screen.queryByText("暂无可恢复岗位")).not.toBeInTheDocument();
+    expect(document.querySelector(".ui-sidebar__footer")).not.toBeNull();
+
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "重试" })); });
+    expect(orgBackups).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("正在加载已移除员工…")).toBeVisible();
+    await act(async () => finishRetry(backupResponse()));
+    expect(screen.queryByText("无法加载已移除员工")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "已移除员工 · 1" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it.each([
+    ["B", "success"], ["B", "failure"], ["A", "success"], ["A", "failure"],
+  ])("ignores old A recovery %s/%s after workspace navigation", async (destination, outcome) => {
+    let workspace = "A";
+    let finishOld!: (value: BackupResponse) => void;
+    let rejectOld!: (reason: Error) => void;
+    const orgBackups = vi.fn()
+      .mockImplementationOnce(() => new Promise<BackupResponse>((resolve, reject) => { finishOld = resolve; rejectOld = reject; }))
+      .mockImplementation(async () => backupResponse([{ ...oldEmployee, backupId: `current-${workspace}`, name: `Current ${workspace}` }]));
+    openedBridge({
+      orgBackups,
+      workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })),
+    });
+    await act(async () => { render(<App />); });
+    expect(orgBackups).toHaveBeenCalledOnce();
+    workspace = "B";
+    await chooseExistingWorkspace();
+    if (destination === "A") {
+      workspace = "A";
+      await chooseExistingWorkspace();
+    }
+    expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
+    fireEvent.click(screen.getByRole("button", { name: "已移除员工 · 1" }));
+    expect(screen.getByText(`Current ${destination}`)).toBeVisible();
+
+    await act(async () => {
+      if (outcome === "success") finishOld(backupResponse());
+      else rejectOld(new Error("stale workspace failure"));
+    });
+    expect(screen.getByText(`Current ${destination}`)).toBeVisible();
+    expect(screen.queryByText(oldEmployee.name)).not.toBeInTheDocument();
+    expect(screen.queryByText("无法加载已移除员工")).not.toBeInTheDocument();
+  });
+
+  it("keeps the latest same-workspace recovery read when an older read finishes last", async () => {
+    let finishOld!: (value: BackupResponse) => void;
+    const orgBackups = vi.fn()
+      .mockImplementationOnce(() => new Promise<BackupResponse>(resolve => { finishOld = resolve; }))
+      .mockResolvedValue(backupResponse([]));
+    openedBridge({ orgBackups });
+    await act(async () => { render(<App />); });
+    await chooseExistingWorkspace();
+    expect(orgBackups).toHaveBeenCalledTimes(2);
+    expect(document.querySelector(".ui-sidebar__footer")).toBeNull();
+
+    await act(async () => finishOld(backupResponse()));
+    expect(screen.queryByRole("region", { name: "已移除员工" })).not.toBeInTheDocument();
+    expect(document.querySelector(".ui-sidebar__footer")).toBeNull();
+  });
+
+  it.each(["http", "offline"])("loads removed employees even when the organization tree fails: %s", async failure => {
+    const orgTree = failure === "http"
+      ? vi.fn().mockResolvedValue({ status: 503, body: { code: "unavailable" } })
+      : vi.fn().mockRejectedValue(new Error("unavailable"));
+    const bridge = openedBridge({
+      orgTree,
+      orgBackups: vi.fn().mockResolvedValue(backupResponse()),
+    });
+    await act(async () => { render(<App />); });
+    expect(bridge.orgTree).toHaveBeenCalledOnce();
+    expect(bridge.orgBackups).toHaveBeenCalledOnce();
+    expect(screen.queryByText("正在加载已移除员工…")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "已移除员工 · 1" }));
+    expect(screen.getByText(oldEmployee.name)).toBeVisible();
+    expect(screen.getByRole("button", { name: "恢复" })).toBeEnabled();
+  });
+
+  it.each([["B", "success"], ["B", "offline"], ["A", "success"]])("ignores an old workspace summary after switching to %s when the old read ends with %s", async (destination, outcome) => {
+    let currentWorkspace = "A";
+    let listener!: (event: unknown) => void;
+    let finishOld!: (value: Awaited<ReturnType<OwbBridge["workspace"]>>) => void;
+    let rejectOld!: (reason: Error) => void;
+    const workspaceResponse = (name: string) => ({
+      status: 200,
+      body: { open: true, path: `/workspace/${name}`, business: `Workspace ${name}` },
+    });
+    const workspace = vi.fn()
+      .mockResolvedValueOnce(workspaceResponse("A"))
+      .mockImplementationOnce(() => new Promise<Awaited<ReturnType<OwbBridge["workspace"]>>>((resolve, reject) => { finishOld = resolve; rejectOld = reject; }))
+      .mockImplementation(async () => workspaceResponse(currentWorkspace));
+    const orgBackups = vi.fn()
+      .mockResolvedValueOnce(backupResponse([]))
+      .mockImplementation(async () => backupResponse([{ ...oldEmployee, backupId: `current-${currentWorkspace}`, name: `Current ${currentWorkspace}` }]));
+    openedBridge({
+      workspace,
+      orgBackups,
+      onEvent: vi.fn(callback => { listener = callback; return () => undefined; }),
+    });
+    await act(async () => { render(<App />); });
+    await act(async () => listener({ type: "org.updated", payload: {
+      workspace: "/workspace/A", version: { seq: 2, updatedAt: snapshot.updatedAt }, changes: [],
+    } }));
+    expect(workspace).toHaveBeenCalledTimes(2);
+    currentWorkspace = "B";
+    await chooseExistingWorkspace();
+    if (destination === "A") {
+      currentWorkspace = "A";
+      await chooseExistingWorkspace();
+    }
+    const expectedReads = destination === "A" ? 3 : 2;
+    expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
+    expect(orgBackups).toHaveBeenCalledTimes(expectedReads);
+    fireEvent.click(screen.getByRole("button", { name: "已移除员工 · 1" }));
+    expect(screen.getByText(`Current ${destination}`)).toBeVisible();
+    orgBackups.mockResolvedValue({ status: 503, body: { code: "unavailable" } });
+
+    await act(async () => {
+      if (outcome === "success") finishOld(workspaceResponse("A"));
+      else rejectOld(new Error("stale workspace summary unavailable"));
+    });
+    expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
+    expect(orgBackups).toHaveBeenCalledTimes(expectedReads);
+    expect(screen.getByText(`Current ${destination}`)).toBeVisible();
+    expect(screen.queryByText("无法加载已移除员工")).not.toBeInTheDocument();
+    expect(screen.queryByText(/本地服务未能连接/)).not.toBeInTheDocument();
+  });
+});
+
 describe("App runtime bridge", () => {
   it("finishes startup with a recoverable error when the local service cannot start", async () => {
     const bridge = installBridge({ status: vi.fn().mockResolvedValue({ running: false, state: "failed" }) });
@@ -792,7 +985,8 @@ describe("App runtime bridge", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认裁撤并留痕" }));
     await waitFor(() => expect(orgApply).toHaveBeenCalledWith({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "docs-writer" }] }));
 
-    fireEvent.click(screen.getByRole("button", { name: "一键恢复" }));
+    fireEvent.click(screen.getByRole("button", { name: "已移除员工 · 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "恢复" }));
     await waitFor(() => expect(orgRestore).toHaveBeenCalledWith("old-writer-1756000000000-abcdef"));
   });
 
