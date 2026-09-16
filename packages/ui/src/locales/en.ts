@@ -254,6 +254,7 @@ export const enCatalog: Record<string, string> = {
   "turn.provisional": "Provisional",
   "turn.provisionalTitle": "Provisional output, not yet verified",
   "turn.untrustedWarning": "The result is not confirmed, so the system will not retry automatically.",
+  "turn.diagnosticTitle": "Engine diagnostic",
   "turn.unrenderableOutput": "[unrenderable structured output]",
 
   // Position record card

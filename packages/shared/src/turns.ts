@@ -203,7 +203,7 @@ export interface TurnRecord {
   events: EngineEvent[];
   runId?: string;
   output?: unknown;
-  error?: { code: string; message: string; retryable: boolean };
+  error?: { code: string; message: string; retryable: boolean; diagnostic?: string };
   /** owb#63 (clearing of DS-34-001 rev-1 缺口①): contract-level back-link
    * carried by the v1alpha2 envelope; equals the group conversationRef for
    * group spawns and the sessionId for personal session turns. Absent for

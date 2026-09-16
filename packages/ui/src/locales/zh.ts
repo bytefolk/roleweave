@@ -257,6 +257,7 @@ export const zhCatalog: Record<string, string> = {
   "turn.provisional": "临时输出",
   "turn.provisionalTitle": "临时输出，未经验证",
   "turn.untrustedWarning": "结果尚未确认，为避免重复执行，系统不会自动重试。",
+  "turn.diagnosticTitle": "引擎诊断信息",
   "turn.unrenderableOutput": "[无法显示的结构化输出]",
 
   // 岗位档案卡

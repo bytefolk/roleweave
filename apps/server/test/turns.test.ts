@@ -292,11 +292,11 @@ test("exit 1 is persisted as indeterminate and is never automatically retried", 
       body: { positionId: "repo-owner", input: "hello", engine: "qoder" },
     });
     assert.equal(response.status, 200);
-    const record = response.body as { status: string; error: { code: string } };
+    const record = response.body as { status: string; error: { code: string; diagnostic?: string } };
     assert.equal(record.status, "indeterminate");
     assert.equal(record.error.code, "engine.model_unavailable");
     assert.equal(turnDriver.calls.length, 1, "indeterminate turn must not auto-retry");
-    assert.doesNotMatch(JSON.stringify(response.body), /token-super-secret-value/);
+    assert.equal(record.error.diagnostic, "digital-employee: engine.model_unavailable: token-super-secret-value");
 
     const history = await api(server.baseUrl, "/turns?positionId=repo-owner", {
       token: server.token,
@@ -750,4 +750,148 @@ test("turn store rejects a symlinked local-state path instead of writing outside
       (error as { code: string }).code === "turn_storage_failed",
   );
   assert.deepEqual(await fs.readdir(outside), []);
+});
+
+test("each indeterminate code produces a distinct message (AC-002)", async () => {
+  const codes = [
+    "turn_timeout",
+    "turn_cancelled",
+    "turn_engine_unavailable",
+    "turn_protocol_invalid",
+    "turn_driver_failure",
+  ];
+  const messages = new Set<string>();
+  for (const code of codes) {
+    const turnDriver = new FakeTurnDriver({
+      status: "indeterminate",
+      events: [],
+      diagnostic: "",
+      code,
+    });
+    const server = await startTestServer(undefined, turnDriver);
+    const workspace = await copyExampleWorkspace();
+    try {
+      await openWorkspace(server.baseUrl, server.token, workspace);
+      const response = await api(server.baseUrl, "/turns", {
+        method: "POST",
+        token: server.token,
+        body: { positionId: "repo-owner", input: "hello", engine: "qoder" },
+      });
+      const record = response.body as { error: { message: string } };
+      messages.add(record.error.message);
+    } finally {
+      await server.close();
+    }
+  }
+  assert.equal(messages.size, codes.length, "each indeterminate code must have a unique message");
+});
+
+test("turn_timeout message names the timeout and preserved output (AC-003)", async () => {
+  const turnDriver = new FakeTurnDriver({
+    status: "indeterminate",
+    events: [
+      { type: "run.started", runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" },
+      { type: "model.delta", runId: "run-1", timestamp: "2026-08-24T00:00:01.000Z", text: "partial work" },
+    ],
+    diagnostic: "engine stderr content",
+    code: "turn_timeout",
+  });
+  const server = await startTestServer(undefined, turnDriver);
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const response = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "hello", engine: "qoder" },
+    });
+    const record = response.body as { error: { code: string; message: string; retryable: boolean; diagnostic?: string }; output?: string };
+    assert.match(record.error.message, /time budget|terminated/i);
+    assert.match(record.error.message, /partial output/i);
+    assert.equal(record.error.diagnostic, "engine stderr content");
+    assert.equal(record.output, "partial work");
+  } finally {
+    await server.close();
+  }
+});
+
+test("diagnostic from engine stderr reaches the turn record (AC-004)", async () => {
+  const turnDriver = new FakeTurnDriver({
+    status: "indeterminate",
+    events: [],
+    diagnostic: "engine diagnostic details",
+    code: "turn_process_failed",
+  });
+  const server = await startTestServer(undefined, turnDriver);
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const response = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "hello", engine: "qoder" },
+    });
+    const record = response.body as { error: { diagnostic?: string } };
+    assert.equal(record.error.diagnostic, "engine diagnostic details");
+  } finally {
+    await server.close();
+  }
+});
+
+test("turn_timeout and turn_cancelled are retryable; others are not (AC-007)", async () => {
+  for (const [code, expectedRetryable] of [
+    ["turn_timeout", true],
+    ["turn_cancelled", true],
+    ["turn_engine_unavailable", false],
+    ["turn_protocol_invalid", false],
+    ["turn_driver_failure", false],
+  ] as const) {
+    const turnDriver = new FakeTurnDriver({
+      status: "indeterminate",
+      events: [],
+      diagnostic: "",
+      code,
+    });
+    const server = await startTestServer(undefined, turnDriver);
+    const workspace = await copyExampleWorkspace();
+    try {
+      await openWorkspace(server.baseUrl, server.token, workspace);
+      const response = await api(server.baseUrl, "/turns", {
+        method: "POST",
+        token: server.token,
+        body: { positionId: "repo-owner", input: "hello", engine: "qoder" },
+      });
+      const record = response.body as { error: { retryable: boolean } };
+      assert.equal(record.error.retryable, expectedRetryable, `${code} retryable must be ${expectedRetryable}`);
+    } finally {
+      await server.close();
+    }
+  }
+});
+
+test("partial delta output is populated on indeterminate records (AC-005 server half)", async () => {
+  const turnDriver = new FakeTurnDriver({
+    status: "indeterminate",
+    events: [
+      { type: "run.started", runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" },
+      { type: "model.delta", runId: "run-1", timestamp: "2026-08-24T00:00:01.000Z", text: "hello " },
+      { type: "model.delta", runId: "run-1", timestamp: "2026-08-24T00:00:02.000Z", text: "world" },
+    ],
+    diagnostic: "",
+    code: "turn_cancelled",
+  });
+  const server = await startTestServer(undefined, turnDriver);
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const response = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "hello", engine: "qoder" },
+    });
+    const record = response.body as { output?: string };
+    assert.equal(record.output, "hello world");
+  } finally {
+    await server.close();
+  }
 });

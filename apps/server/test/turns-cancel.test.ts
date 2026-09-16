@@ -61,8 +61,8 @@ test("POST /turns/cancel aborts the in-flight turn as indeterminate/turn_cancell
     assert.equal(record.status, "indeterminate");
     assert.deepEqual(record.error, {
       code: "turn_cancelled",
-      message: "the engine process ended without a trusted terminal; no automatic retry was attempted",
-      retryable: false,
+      message: "the turn was cancelled by the operator; partial output was preserved",
+      retryable: true,
     });
 
     const broadcast = JSON.parse((await indeterminate).data) as {

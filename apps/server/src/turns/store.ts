@@ -458,7 +458,7 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
         recordError.message === terminal.error.message &&
         recordError.retryable === terminal.error.retryable;
     case "indeterminate":
-      return !hasOutput && recordError !== null;
+      return recordError !== null && (!hasOutput || typeof value.output === "string");
     default:
       return false;
   }
@@ -585,17 +585,23 @@ function isOptionalIsoTimestamp(value: unknown): boolean {
 
 function validateRecordError(
   value: unknown,
-): { code: string; message: string; retryable: boolean } | null {
-  if (!isObjectRecord(value) || !hasExactKeys(value, ["code", "message", "retryable"])) {
+): { code: string; message: string; retryable: boolean; diagnostic?: string } | null {
+  if (!isObjectRecord(value) || !hasExactKeys(value, ["code", "message", "retryable"], ["diagnostic"])) {
     return null;
   }
   if (
     typeof value.code !== "string" || !ENGINE_CODE_PATTERN.test(value.code) ||
     typeof value.message !== "string" ||
     Buffer.byteLength(value.message, "utf8") > MAX_DIAGNOSTIC_BYTES ||
-    typeof value.retryable !== "boolean"
+    typeof value.retryable !== "boolean" ||
+    (Object.hasOwn(value, "diagnostic") && (typeof value.diagnostic !== "string" || Buffer.byteLength(value.diagnostic, "utf8") > MAX_DIAGNOSTIC_BYTES))
   ) return null;
-  return { code: value.code, message: value.message, retryable: value.retryable };
+  return {
+    code: value.code,
+    message: value.message,
+    retryable: value.retryable,
+    ...(Object.hasOwn(value, "diagnostic") ? { diagnostic: value.diagnostic as string } : {}),
+  };
 }
 
 function validateEngineEvent(raw: unknown): EngineEvent | null {

@@ -126,6 +126,7 @@ export function adaptTurnRecord(
     ...(record.output !== undefined ? { output: renderOutput(record.output, unrenderableOutput) } : {}),
     ...(record.runId !== undefined ? { runId: record.runId } : {}),
     ...(record.error !== undefined ? { error: record.error.message, errorCode: record.error.code } : {}),
+    ...(record.error?.diagnostic !== undefined ? { diagnostic: record.error.diagnostic } : {}),
     ...(pendingApproval !== undefined ? { approvalRequest: pendingApproval } : {}),
     envelopeDigest: record.envelopeDigest,
     ...(record.threadContext !== undefined ? { threadContext: record.threadContext } : {}),

@@ -375,16 +375,19 @@ export async function executeTurn(
     const updatedAt = new Date().toISOString();
     let record: TurnRecord;
     if (result.status === "indeterminate") {
+      const partialOutput = extractPartialOutput(result.events);
       record = {
         ...running,
         status: "indeterminate",
         updatedAt,
         events: result.events,
         ...(result.events[0] !== undefined ? { runId: result.events[0].runId } : {}),
+        ...(partialOutput !== undefined ? { output: partialOutput } : {}),
         error: {
           code: result.code,
-          message: "the engine process ended without a trusted terminal; no automatic retry was attempted",
-          retryable: false,
+          message: indeterminateMessage(result.code),
+          retryable: result.code === "turn_timeout" || result.code === "turn_cancelled",
+          ...(result.diagnostic !== "" ? { diagnostic: result.diagnostic } : {}),
         },
       };
     } else {
@@ -440,6 +443,7 @@ export async function executeTurn(
       ctx.bus.publish("turn.indeterminate", {
         code: record.error?.code ?? "turn_protocol_invalid",
         envelopeDigest: envelope.envelopeDigest,
+        ...(record.error?.diagnostic !== undefined ? { diagnostic: record.error.diagnostic } : {}),
         ...attribution,
         ...(group !== undefined ? { conversationRef: group.groupRef } : {}),
       });
@@ -465,7 +469,15 @@ export async function handleTurnHistory(
   const positionId = assertPositionId(url.searchParams.get("positionId"));
   assertPositionExists(ctx, positionId);
   const history = await ctx.turnStore.history(workspace.dir, positionId, new Date().toISOString());
-  sendJson(res, 200, history);
+  const sanitized = {
+    ...history,
+    turns: history.turns.map((turn) => {
+      if (turn.error?.diagnostic === undefined) return turn;
+      const { diagnostic: _diagnostic, ...errorWithoutDiagnostic } = turn.error;
+      return { ...turn, error: errorWithoutDiagnostic };
+    }),
+  };
+  sendJson(res, 200, sanitized);
 }
 
 /** Additive v0 route (issue #25): aborts the in-flight turn for a position.
@@ -500,4 +512,24 @@ export async function handleTurnCancel(
     throw new OrgApiError(errorCodes.not_found, 404, `no running turn: ${positionId}`);
   }
   sendJson(res, 200, { cancelled: true, positionId });
+}
+
+const INDETERMINATE_MESSAGES: Record<string, string> = {
+  turn_timeout: "the turn exceeded its time budget and was terminated; partial output was preserved",
+  turn_cancelled: "the turn was cancelled by the operator; partial output was preserved",
+  turn_engine_unavailable: "the engine process could not be started; check that the engine CLI is installed and reachable",
+  turn_protocol_invalid: "the engine output did not conform to the expected protocol; no automatic retry was attempted",
+  turn_driver_failure: "the driver encountered an internal error; no automatic retry was attempted",
+  turn_process_failed: "the engine process exited with a non-zero status; no automatic retry was attempted",
+  turn_process_exit_1: "the engine process exited with status 1; no automatic retry was attempted",
+};
+
+function indeterminateMessage(code: string): string {
+  return INDETERMINATE_MESSAGES[code] ?? `the engine process ended unexpectedly (code: ${code}); no automatic retry was attempted`;
+}
+
+function extractPartialOutput(events: EngineEvent[]): string | undefined {
+  const deltas = events.filter((e) => e.type === "model.delta");
+  if (deltas.length === 0) return undefined;
+  return deltas.map((e) => (e as EngineEvent & { type: "model.delta" }).text).join("");
 }

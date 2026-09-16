@@ -24,7 +24,7 @@ import { ContextExportService } from "./context-export/exporter.js";
 const config = resolveServerConfig(process.env, process.argv.slice(2));
 const driver = new DigitalEmployeeCliDriver(
   config.cliCommand,
-  120_000,
+  config.engineTimeoutMs,
   config.bundledElectronEngine,
 );
 const ctx: ControlPlaneContext = {

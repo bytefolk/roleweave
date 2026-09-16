@@ -648,10 +648,20 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         resolve({ ...result, events: [...result.events] });
       };
       const terminateChild = (): void => {
-        child?.kill("SIGTERM");
+        if (child === undefined) return;
+        if (process.platform !== "win32" && child.pid !== undefined) {
+          try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); }
+        } else {
+          child.kill("SIGTERM");
+        }
         if (forceKillTimer !== undefined) return;
         forceKillTimer = setTimeout(() => {
-          child?.kill("SIGKILL");
+          if (child === undefined) return;
+          if (process.platform !== "win32" && child.pid !== undefined) {
+            try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
+          } else {
+            child.kill("SIGKILL");
+          }
         }, PROCESS_KILL_GRACE_MS);
         forceKillTimer.unref();
       };
@@ -726,6 +736,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
           {
             stdio: ["pipe", "pipe", "pipe"],
             env: turnEnvironment(request.engine, this.bundledElectronEngine, request.model),
+            ...(process.platform !== "win32" ? { detached: true } : {}),
           },
         );
       } catch {
