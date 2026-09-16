@@ -1,3 +1,4 @@
+import { configurationText } from './locales/configuration';
 /** 右上角偏好抽屉：语言 / 主题两个入口收进一个浮层面板（参考钉钉偏好
  * 菜单形态）。账号、组织等条目等登录体系落地后再加，现在不摆空入口。
  * 触发钮复用 .owb-wintitle__theme 皮肤（含 -webkit-app-region: no-drag）。 */
@@ -56,7 +57,7 @@ export function PrefsMenu({
       </button>
       {open ? (
         <div className="owb-prefs__panel" role="menu" aria-label={t("prefs.trigger")}>
-          {saveFailed ? <p role="alert">{locale === "en" ? "Could not save preferences. Try again." : "偏好未保存，请重试。"}</p> : null}
+          {saveFailed ? <p role="alert">{configurationText(locale === "en", "Could not save preferences. Try again.")}</p> : null}
           <button
             type="button"
             role="menuitem"
