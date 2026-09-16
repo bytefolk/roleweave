@@ -66,6 +66,8 @@ interface OwbStatusResponse {
 }
 
 export interface OwbBridge {
+  configuration?: import("./configuration-types").ConfigurationBridge;
+  openExternalUrl?(url: string): Promise<{ ok: boolean }>;
   /** Credential reads contain only status and a four-character suffix. */
   settings: {
     get(): Promise<import("./settings/credential-settings").SettingsSnapshot>;
@@ -107,7 +109,7 @@ export interface OwbBridge {
   session(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
   sessionSetContext(request: { sessionId: string; enabled: boolean }): Promise<OwbApiResponse<WorkbenchSession>>;
   rotateSession(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
-  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval }): Promise<OwbApiResponse<TurnRecord>>;
+  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval; retryOf?: string }): Promise<OwbApiResponse<TurnRecord>>;
   sessionTurnHistory(sessionId: string): Promise<OwbApiResponse<TurnHistory>>;
   createGroup(request: { memberPositionIds: string[] }): Promise<OwbApiResponse<GroupConversation>>;
   groups(): Promise<OwbApiResponse<GroupConversationList>>;

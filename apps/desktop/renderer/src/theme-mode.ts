@@ -1,14 +1,6 @@
-/** Theme mode write path (#94).
- *
- * `antd-skin.css` already ships a complete dark `--ui-*` palette and
- * `useThemeMode()` in App.tsx already mirrors `<html data-theme>` into antd's
- * cssinjs algorithm. What was missing is this module: nothing in the repo ever
- * wrote that attribute, so the dark half of the design system was unreachable.
- *
- * Persistence is `localStorage`, deliberately not IPC. The preload bridge
- * (`owb.d.ts`) is a whitelisted control-plane/window surface; a per-user
- * display preference does not justify widening it.
- */
+/** Theme seed/cache. With the desktop bridge, the versioned configuration is
+ * authoritative; localStorage remains a compatibility cache for first paint. */
+import { persistApplicationPreference, preferenceError } from './configuration-preferences';
 
 export type ThemeMode = "light" | "dark";
 export type ThemeProfile = "default" | "mint";
@@ -94,6 +86,7 @@ export function applyThemeProfile(profile: ThemeProfile): void {
 
 /** Pins an explicit choice: apply it and remember it across restarts. */
 export function setThemeMode(mode: ThemeMode): void {
+  if (window.owb?.configuration) { void persistApplicationPreference({ appearance: { mode } }).catch(preferenceError); return; }
   applyThemeMode(mode);
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, mode);
@@ -104,6 +97,7 @@ export function setThemeMode(mode: ThemeMode): void {
 }
 
 export function setThemeProfile(profile: ThemeProfile): void {
+  if (window.owb?.configuration) { void persistApplicationPreference({ appearance: { profile } }).catch(preferenceError); return; }
   applyThemeProfile(profile);
   try {
     window.localStorage.setItem(THEME_PROFILE_STORAGE_KEY, profile);

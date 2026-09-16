@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Languages, Palette, Settings2 } from "lucide-react";
 import { useT, type OwbLocale } from "@roleweave/ui";
+import { usePreferenceSaveError } from "./configuration-preferences";
 import { setThemeMode, setThemeProfile, type ThemeMode, type ThemeProfile } from "./theme-mode";
 
 export function PrefsMenu({
@@ -18,6 +19,7 @@ export function PrefsMenu({
   profile: ThemeProfile;
 }) {
   const t = useT();
+  const saveFailed = usePreferenceSaveError();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -54,6 +56,7 @@ export function PrefsMenu({
       </button>
       {open ? (
         <div className="owb-prefs__panel" role="menu" aria-label={t("prefs.trigger")}>
+          {saveFailed ? <p role="alert">{locale === "en" ? "Could not save preferences. Try again." : "偏好未保存，请重试。"}</p> : null}
           <button
             type="button"
             role="menuitem"
