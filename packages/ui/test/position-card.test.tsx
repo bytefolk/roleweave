@@ -49,7 +49,9 @@ const POSITION: PositionCardData = {
 describe("PositionCard (D1 spec §3)", () => {
   it("shows empty guidance when no position selected", () => {
     render(<PositionCard position={null} />);
-    expect(screen.getByText("从左侧选择岗位查看档案")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "了解员工与职责" })).toBeInTheDocument();
+    expect(screen.getByText("选中员工后，查看职责、权限、预算和已配置能力。")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("renders a loading skeleton while fetching", () => {

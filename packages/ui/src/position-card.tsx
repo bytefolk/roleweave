@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { Button, Empty, Skeleton } from "antd";
+import { Button, Skeleton } from "antd";
 import { cn } from "@fullstack-ai-infra/ui";
 import { ChartNoAxesColumn, Cloud, Crosshair, FileText, Info, RefreshCw, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { BudgetBar } from "./budget-bar";
+import { EmptyState } from "./empty-state";
 import { useT, type OwbT } from "./i18n";
 import type { PositionCardData } from "./types";
 import type { ContextSourceSummary } from "@roleweave/shared";
@@ -33,7 +34,7 @@ export interface PositionCardProps {
  * title + role sub-line, a mode
  * badge and a status light on the right, then three sections — budget gauge
  * (dual lane), permission chips, context sources. antd still supplies the
- * controls (Button/Empty/Skeleton) per DL5.
+ * controls (Button/Skeleton) per DL5.
  *
  * States: empty guidance / loading skeleton / 404 after disband / record.
  */
@@ -105,7 +106,8 @@ export function PositionCard({
           </div>
         </header>
         <div className="owb-panel__notice">
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("pos.empty")} />
+          <EmptyState compact icon={<FileText size={32} strokeWidth={1.5} />}
+            title={t("pos.emptyTitle")} description={t("pos.emptyDescription")} />
         </div>
       </section>
     );

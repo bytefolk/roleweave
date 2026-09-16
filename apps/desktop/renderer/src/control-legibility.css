@@ -1,21 +1,15 @@
-/* Center control labels and interface headings across the workbench. Keep
- * transcripts, document bodies, code, paths and editable text in reading order. */
-[data-theme] :is(.ant-btn, .ui-button, .ant-segmented-item-label, .ant-tag,
-  .ant-select-selection-item, .ant-select-selection-placeholder,
-  .ant-select-placeholder, .ant-select-item-option-content,
-  .ant-select-single .ant-select-content,
-  .ant-modal-title, .ant-drawer-title, .ant-popover-title,
+/* Alignment follows content roles: reading and identity start at the leading
+ * edge; compact actions center their labels; comparable values end-align. */
+[data-theme] :is(.ant-btn, .ui-button, .ant-segmented-item-label, .ant-tag) {
+  text-align: center;
+}
+
+[data-theme] :is(.ant-modal-title, .ant-drawer-title, .ant-popover-title,
   .owb-doc-viewer .ant-card-head-title,
   .owb-modal__header h2, .owb-management-modal h2, .owb-management-modal h3,
   .owb-project-dialog__description, .owb-hire-agent-picker h3,
   .owb-hire-draft-card h3, .owb-hire-capability-panel__head h3) {
-  text-align: center;
-}
-
-/* Ant Design 6 places a single value directly in the content element. Balance
- * its trailing arrow and preserve editable search and multi-value alignment. */
-[data-theme] .ant-select-single.ant-select-show-arrow:not(:has(.ant-select-prefix)) .ant-select-content {
-  margin-inline-start: var(--ant-select-show-arrow-padding-inline-end, 18px);
+  text-align: start;
 }
 
 [data-theme] .owb-app :is(.owb-side-head__title, .owb-sidebar-header,
@@ -30,53 +24,30 @@
   .owb-settings-module__section h2, .owb-module-header h1,
   .owb-module-header h2, .owb-goals-detail h2,
   .ui-org-tree__label, .owb-org-chart__name,
-  .owb-project-switcher__copy, .owb-groups__item-name,
-  .owb-badge, .owb-tag, .owb-report-subtabs button) {
-  text-align: center;
+  .owb-project-switcher__copy, .owb-groups__item-name) {
+  text-align: start;
 }
-
-[data-theme] .owb-app :is(.owb-panel-head h2, .owb-side-head__title,
-  .owb-drive-module__list-header h2, .owb-drive-module__detail-header h2,
-  .owb-groups__list-header h2, .owb-module-header h1, .owb-module-header h2) {
-  flex: 1 1 auto;
-}
-
-[data-theme] .owb-app .owb-side-head {
-  flex-direction: column;
-  gap: 8px;
-}
-
-[data-theme] .owb-app .owb-side-head__copy { width: 100%; }
-[data-theme] .owb-app .owb-side-head__actions { margin-left: 0; }
 
 [data-theme] .owb-app :is(.owb-panel-head h2, .owb-conversation-identity,
   .owb-settings-module__pane-header, .owb-org-chart__head-title,
   .owb-groups__list-header h2, .owb-groups__panel-title h3) {
-  justify-content: center;
-  text-align: center;
+  justify-content: flex-start;
+  text-align: start;
 }
 
-[data-theme] .owb-app :is(.owb-conversation-identity,
-  .owb-org-chart__head-title, .owb-reports__hero-copy,
-  .owb-memory-location h2, .owb-docs-panel__header h2) { flex: 1; }
+[data-theme] .owb-app .owb-conversation-identity { flex: 1; }
 
 [data-theme] .owb-app :is(.owb-settings-module__pane-header h2,
   .owb-service-connection__header h3, .owb-memory-source__label,
-  .owb-service-connection__fields label > span) { text-align: center; }
+  .owb-service-connection__fields label > span) { text-align: start; }
 
-[data-theme] .owb-app .owb-service-connection__header h3 { flex: 1; }
-
-[data-theme] .owb-app :is(.owb-org-chart__card, .owb-report-tabs button,
+[data-theme] .owb-app :is(.owb-report-tabs button,
   .owb-report-subtabs button, .owb-turn__approval-grant,
-  .owb-turn__approval-deny, .owb-turn__retry, .owb-groups__create summary) {
+  .owb-turn__approval-deny, .owb-turn__retry, .owb-groups__create summary,
+  .owb-badge, .owb-tag) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
-}
-
-[data-theme] .owb-app .owb-org-chart__card-text {
-  align-items: center;
   text-align: center;
 }
 
@@ -88,21 +59,6 @@
   height: 100%;
   object-fit: cover;
   border-radius: inherit;
-}
-
-[data-theme] .owb-app .owb-report-metric {
-  align-items: center;
-  text-align: center;
-}
-
-[data-theme] .owb-project-workspace-action {
-  grid-template-columns: 1fr;
-  justify-items: center;
-  text-align: center;
-}
-
-[data-theme] .owb-project-workspace-action > span:last-child {
-  justify-items: center;
 }
 
 [data-theme] :is(.owb-project-workspace-action:disabled,

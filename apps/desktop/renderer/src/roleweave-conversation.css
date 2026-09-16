@@ -95,16 +95,6 @@
   color: var(--ui-foreground-muted);
 }
 
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread--empty .ant-empty-image {
-  display: none;
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread--empty strong {
-  color: var(--ui-foreground-muted);
-  font-size: 14px;
-  font-weight: 400;
-}
-
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread .owb-turn {
   gap: 14px;
   padding: 0 0 26px;

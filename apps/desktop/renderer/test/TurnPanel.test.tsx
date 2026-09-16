@@ -45,6 +45,38 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
 }
 
 describe("TurnPanel Issue #5 D3 behavior", () => {
+  it("#284 r2 gives an unselected conversation one next step without an unusable composer", () => {
+    const createTurn = vi.fn();
+    const { rerender } = render(<TurnPanel workspaceOpen positions={positions} selectedPositionId={null}
+      engine="qoder" engineAvailability={availability} turns={[]} onCreateTurn={createTurn} />);
+
+    expect(screen.getByRole("heading", { name: "开始一次协作" })).toBeInTheDocument();
+    expect(screen.getByText("从左侧选择一位员工，讨论任务或继续上次对话。")).toBeInTheDocument();
+    expect(screen.queryByText("从左侧选择一位员工")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("下达任务")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "发送任务" })).not.toBeInTheDocument();
+    expect(createTurn).not.toHaveBeenCalled();
+
+    rerender(<TurnPanel workspaceOpen positions={[]} selectedPositionId={null}
+      engine="qoder" engineAvailability={availability} turns={[]} onCreateTurn={createTurn} />);
+    expect(screen.getByRole("heading", { name: "添加第一位员工" })).toBeInTheDocument();
+    expect(screen.getByText("使用左侧的“创建员工”，为项目添加一位协作者。")).toBeInTheDocument();
+    expect(screen.queryByText("开始一次协作")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("下达任务")).not.toBeInTheDocument();
+  });
+
+  it("keeps a selected employee's composer blocked while its session is preparing", () => {
+    const createTurn = vi.fn();
+    render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner"
+      engine="qoder" engineAvailability={availability} turns={[]} sessions={[]}
+      selectedSessionId={null} sessionBusy onCreateTurn={createTurn} />);
+    expect(screen.getByRole("heading", { name: "开始第一条对话" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("正在准备本地对话…");
+    expect(screen.getByLabelText("下达任务")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "发送任务" })).toBeDisabled();
+    expect(createTurn).not.toHaveBeenCalled();
+  });
+
   it("keeps execution details out of a direct employee conversation", () => {
     const active = {
       schemaVersion: "workbench-session.v1" as const,
@@ -111,7 +143,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     const createTurn = vi.fn();
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
-    expect(screen.getByText("当前还没有回合记录，输入任务即可开始")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "开始第一条对话" })).toBeInTheDocument();
+    expect(screen.getByText("在下方描述你想完成的任务，或提出一个问题。")).toBeInTheDocument();
 
     const input = screen.getByLabelText("下达任务");
     fireEvent.change(input, { target: { value: "跑一次发布检查" } });
@@ -173,10 +206,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    // The conversation area has one stable empty-state message; the composer
-    // still names the concrete blocker beside the disabled input.
-    expect(screen.getByText("选择岗位后输入任务即可开始")).toBeInTheDocument();
-    expect(screen.getAllByText("打开工作区后才能开始对话").length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "打开一个项目，开始协作" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("下达任务")).not.toBeInTheDocument();
   });
 
   it("honestly disables idle states when the workspace or selected Host is unavailable", () => {
@@ -211,8 +242,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getAllByText("先从左侧组织树选择人员").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("下达任务")).toBeDisabled();
+    expect(screen.getByRole("heading", { name: "开始一次协作" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("下达任务")).not.toBeInTheDocument();
 
     rerender(
       <TurnPanel

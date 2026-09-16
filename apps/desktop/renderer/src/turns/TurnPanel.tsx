@@ -156,7 +156,7 @@ export function TurnPanel({
           {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
           <div className="owb-conversation-identity__copy">
             <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
-            <p>{selectedPosition ? engineLabel(engine) : t("turn.pickEmployeeHint")}</p>
+            {selectedPosition ? <p>{engineLabel(engine)}</p> : null}
           </div>
         </div>
         {selectedPosition ? <span className="owb-conversation-kind">{t("turn.title")}</span> : null}
@@ -165,10 +165,8 @@ export function TurnPanel({
       <TurnThread
         turns={turns}
         retrying={busy || employeeBusy || sending}
-        // The thread has one stable empty-state message. Concrete blockers
-        // stay next to the input so the conversation area never oscillates
-        // between "create a session" and "start from a clear task".
-        emptyPrompt={selectedPosition ? t("turn.emptySelected") : t("turn.emptyStart")}
+        emptyPrompt={selectedPosition ? t("turn.emptySelected") : !workspaceOpen ? t("project.welcomeTitle") : positions.length === 0 ? t("turn.emptyAddEmployee") : t("turn.emptyChooseEmployee")}
+        emptyDescription={selectedPosition ? t("turn.emptySelectedBody") : !workspaceOpen ? t("project.welcomeDescription") : positions.length === 0 ? t("turn.emptyAddEmployeeBody") : t("turn.emptyChooseEmployeeBody")}
         canRetry={(turn) => workspaceOpen && engineAvailability[turn.engine].ready && modelConfig?.connection?.status !== "invalid" && (!sessionMode || selectedSession?.status === "active")}
         onRetry={(turn) => void retry(turn)}
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
@@ -176,7 +174,7 @@ export function TurnPanel({
         scrollKey={`${selectedPositionId ?? ""}:${selectedSessionId ?? ""}`}
       />
 
-      <TurnComposer
+      {selectedPosition ? <TurnComposer
         options={selectedPosition && (modelConfig || onSetSessionContext) ? <ConversationOptions
           config={modelConfig} saving={modelSaving} disabled={busy || employeeBusy || sending || sessionBusy}
           session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
@@ -192,7 +190,7 @@ export function TurnPanel({
         onCancel={() => {
           if (selectedPosition) return onCancelTurn?.(selectedPosition.id);
         }}
-      />
+      /> : null}
     </section>
   );
 }
