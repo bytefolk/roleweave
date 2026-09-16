@@ -42,7 +42,8 @@
 .owb-management-avatar__choices { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .owb-management-avatar__choices button, .owb-management-avatar__upload { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 10px; background: transparent; cursor: pointer; }
 .owb-management-avatar__choices button:hover, .owb-management-avatar__choices button.is-selected { border-color: var(--ui-brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-brand) 16%, transparent); }
-.owb-management-avatar__choices img, .owb-management-identity img, .owb-avatar img, .owb-conversation-avatar img, .owb-org-chart__avatar img { width: 100%; height: 100%; object-fit: contain; }
+.owb-management-avatar__choices img, .owb-management-identity img, .owb-avatar img, .owb-conversation-avatar img, .owb-org-chart__avatar img, .owb-groups__avatar img, .owb-bubble__avatar img { width: 100%; height: 100%; object-fit: contain; }
+.owb-groups__avatar, .owb-bubble__avatar { overflow: hidden; }
 .owb-management-avatar__generate { gap: 1px; color: var(--ui-brand); font-size: 10px; font-weight: 650; }
 .owb-management-avatar__generate:disabled { opacity: .58; cursor: wait; }
 .owb-management-avatar__error { color: var(--ui-error, #bd3d3d) !important; }
