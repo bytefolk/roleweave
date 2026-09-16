@@ -26,11 +26,11 @@ function validateSessionTurnRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("turn_request_invalid", "session turn must be an object") };
   }
-  const allowedKeys = new Set(["sessionId", "input", "engine", "pendingApproval", "goalId", "branchId"]);
+  const allowedKeys = new Set(["sessionId", "input", "engine", "pendingApproval", "goalId", "branchId", "retryOf"]);
   if (Object.keys(value).some((k) => !allowedKeys.has(k))) {
     return {
       ok: false,
-      response: invalid("turn_request_invalid", "session turn accepts sessionId, input, engine, and optional pendingApproval, goalId, branchId"),
+      response: invalid("turn_request_invalid", "session turn accepts sessionId, input, engine, and optional pendingApproval, goalId, branchId, retryOf"),
     };
   }
   if (!validateSessionId(value.sessionId)) {
@@ -42,6 +42,9 @@ function validateSessionTurnRequest(value) {
   }
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
     return { ok: false, response: invalid("turn_engine_unsupported", `engine must be ${turnEngineMessage()}`) };
+  }
+  if (value.retryOf !== undefined && !validateSessionId(value.retryOf)) {
+    return { ok: false, response: invalid("turn_request_invalid", "retryOf must be a server-generated turn UUID") };
   }
   const GOAL_ID = /^[a-zA-Z0-9_-]{1,64}$/;
   if (value.goalId !== undefined && (typeof value.goalId !== "string" || !GOAL_ID.test(value.goalId))) {
@@ -63,6 +66,7 @@ function validateSessionTurnRequest(value) {
       input: value.input,
       engine: value.engine,
       ...(pendingApproval !== undefined ? { pendingApproval } : {}),
+      ...(value.retryOf !== undefined ? { retryOf: value.retryOf } : {}),
       ...(value.goalId !== undefined ? { goalId: value.goalId } : {}),
       ...(value.branchId !== undefined ? { branchId: value.branchId } : {}),
     },

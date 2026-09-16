@@ -27,6 +27,8 @@ import { employeeModelConfig } from "../model-selection.js";
 const MAX_INPUT_BYTES = 256 * 1024;
 
 export interface TurnPostBody {
+  /** Session retry association; never accepted by the bare or group routes. */
+  retryOf?: string;
   positionId: string;
   input: string;
   engine: TurnEngine;
@@ -185,6 +187,30 @@ export async function executeTurn(
   const turnId = group !== undefined ? group.turnId : crypto.randomUUID();
   const reservation = ctx.runningTurns.reserve(workspace.dir, body.positionId, turnId);
   try {
+    let retryHistory: TurnRecord[] | undefined;
+    if (body.retryOf !== undefined) {
+      if (session === undefined || group !== undefined) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "retry requires a personal session");
+      }
+      // Read only this server-owned session. A foreign turn id is indistinguishable
+      // from a missing id, and cannot cause a lookup in another employee's history.
+      retryHistory = (await ctx.turnStore.sessionHistory(workspace.dir, session.sessionId, session.positionId, new Date().toISOString())).turns;
+      assertTurnWorkspace(ctx, workspace);
+      const original = retryHistory.find((turn) => turn.turnId === body.retryOf);
+      if (!original || original.positionId !== session.positionId ||
+          (original.conversationRef !== undefined && original.conversationRef !== session.sessionId)) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "retry source is not available in this session");
+      }
+      if (original.status !== "failed" && original.status !== "indeterminate") {
+        throw new OrgApiError(errorCodes.session_conflict, 409, "only a failed or unknown turn can be explicitly retried");
+      }
+      if (original.error?.code === "engine.approval_required" || body.pendingApproval !== undefined) {
+        throw new OrgApiError(errorCodes.session_conflict, 409, "use the approval action to continue a turn awaiting a verdict");
+      }
+      if (body.input !== original.input) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "edited input must be submitted as a new task without retryOf");
+      }
+    }
     // The renderer's engine value is only a first-use fallback for legacy
     // positions. Once a sidecar exists it is authoritative, including for
     // session and group paths which share this executor.
@@ -220,7 +246,7 @@ export async function executeTurn(
     let historyTruncated = false;
     let historyRedacted = false;
     if (session !== undefined && session.threadContextEnabled !== false) {
-      history = (await ctx.turnStore.sessionHistory(workspace.dir, session.sessionId, session.positionId, createdAt)).turns;
+      history = retryHistory ?? (await ctx.turnStore.sessionHistory(workspace.dir, session.sessionId, session.positionId, createdAt)).turns;
     } else if (group !== undefined) {
       const groupRef = group.groupRef;
       const conversation = await ctx.groupStore.get(workspace.dir, groupRef);
@@ -296,6 +322,7 @@ export async function executeTurn(
     });
     const beginInput = {
       ...(model === undefined ? {} : { model }),
+      ...(body.retryOf !== undefined ? { retryOf: body.retryOf } : {}),
       workspace: workspace.dir,
       positionId: body.positionId,
       turnId,

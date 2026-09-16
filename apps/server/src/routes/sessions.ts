@@ -3,7 +3,7 @@ import { OrgApiError, errorCodes, turnEngines } from "@roleweave/shared";
 import type { TurnEngine } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
-import { assertSessionId } from "../sessions/store.js";
+import { assertSessionId, UUID_PATTERN } from "../sessions/store.js";
 import { assertPositionExists, assertPendingApproval, assertTurnWorkspace, executeTurn } from "./turns.js";
 import type { TurnPendingApproval } from "@roleweave/shared";
 
@@ -44,6 +44,7 @@ function parseSessionTurn(raw: unknown): {
   pendingApproval?: TurnPendingApproval;
   goalId?: string;
   branchId?: string;
+  retryOf?: string;
 } {
   if (!isRecord(raw)) {
     throw new OrgApiError(
@@ -52,12 +53,12 @@ function parseSessionTurn(raw: unknown): {
       "session turn request must be a JSON object",
     );
   }
-  const allowedKeys = new Set(["input", "engine", "pendingApproval", "goalId", "branchId"]);
+  const allowedKeys = new Set(["input", "engine", "pendingApproval", "goalId", "branchId", "retryOf"]);
   if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
     throw new OrgApiError(
       errorCodes.turn_request_invalid,
       400,
-      "session turn accepts input, engine, and optional pendingApproval, goalId, branchId",
+      "session turn accepts input, engine, and optional pendingApproval, goalId, branchId, retryOf",
     );
   }
   if (typeof raw.input !== "string" || !Object.hasOwn(raw, "engine")) {
@@ -80,6 +81,9 @@ function parseSessionTurn(raw: unknown): {
   if (typeof raw.engine !== "string" || !turnEngines.includes(raw.engine as TurnEngine)) {
     throw new OrgApiError(errorCodes.turn_engine_unsupported, 400, `engine must be ${turnEngines.join(" or ")}`);
   }
+  if (raw.retryOf !== undefined && (typeof raw.retryOf !== "string" || !UUID_PATTERN.test(raw.retryOf))) {
+    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "retryOf must be a server-generated turn UUID");
+  }
   const GOAL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
   if (raw.goalId !== undefined && (typeof raw.goalId !== "string" || !GOAL_ID_PATTERN.test(raw.goalId))) {
     throw new OrgApiError(errorCodes.turn_request_invalid, 400, "goalId must be a bounded alphanumeric string");
@@ -93,6 +97,7 @@ function parseSessionTurn(raw: unknown): {
     ...(raw.pendingApproval !== undefined
       ? { pendingApproval: assertPendingApproval(raw.pendingApproval) }
       : {}),
+    ...(raw.retryOf !== undefined ? { retryOf: raw.retryOf } : {}),
     ...(raw.goalId !== undefined ? { goalId: raw.goalId } : {}),
     ...(raw.branchId !== undefined ? { branchId: raw.branchId } : {}),
   };

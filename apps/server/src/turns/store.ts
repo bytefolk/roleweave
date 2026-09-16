@@ -391,8 +391,9 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
       "schemaVersion", "conversationId", "turnId", "positionId", "engine", "status",
       "input", "envelopeDigest", "createdAt", "updatedAt", "events",
     ],
-    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "goalId", "branchId", "model"],
+    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "goalId", "branchId", "model", "retryOf"],
   )) return false;
+  if (Object.hasOwn(value, "retryOf") && (typeof value.retryOf !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.retryOf) || value.retryOf === value.turnId)) return false;
   if (Object.hasOwn(value, "threadContext") && !isThreadContextMetadata(value.threadContext)) return false;
   if (Object.hasOwn(value, "model") && !isEngineModelId(value.model, value.engine)) return false;
   const createdInstant = parseRfc3339Instant(value.createdAt);
@@ -849,6 +850,7 @@ export class TurnStore {
 
   async beginSession(input: {
     model?: string;
+    retryOf?: string;
     workspace: string;
     sessionId: string;
     positionId: string;
@@ -890,6 +892,7 @@ export class TurnStore {
       events: [],
       ...(input.conversationRef !== undefined ? { conversationRef: input.conversationRef } : {}),
       ...(input.model === undefined ? {} : { model: input.model }),
+      ...(input.retryOf !== undefined ? { retryOf: input.retryOf } : {}),
       ...(input.goalId !== undefined ? { goalId: input.goalId } : {}),
       ...(input.branchId !== undefined ? { branchId: input.branchId } : {}),
     };
