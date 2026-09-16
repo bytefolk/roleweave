@@ -37,6 +37,8 @@ import type {
   OrgBackupsResponse,
   OrgRestoreResult,
   OrgUndoResult,
+  PositionProfilePatch,
+  PositionProfileResult,
   ReportsResponse,
   TurnEngine,
   TurnHistory,
@@ -76,6 +78,7 @@ export interface OwbBridge {
   };
   setPositionModel?(request: { positionId: string; model: string }): Promise<OwbApiResponse<import("@roleweave/shared").EmployeeModelConfig>>;
   setPositionAgentEngine?(request: { positionId: string; engine: TurnEngine }): Promise<OwbApiResponse<{ agentEngine: TurnEngine; agentLocked: true; modelConfig: import("@roleweave/shared").EmployeeModelConfig }>>;
+  updatePositionProfile?(request: PositionProfilePatch & { positionId: string }): Promise<OwbApiResponse<PositionProfileResult>>;
   status(): Promise<OwbStatusResponse>;
   stopControlPlane(): Promise<{ ok: boolean; state: "stopped"; forced: boolean; exitCode: number | null; signalCode: string | null }>;
   openWorkspace(): Promise<OwbApiResponse>;

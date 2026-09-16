@@ -37,6 +37,8 @@ export const errorCodes = {
   engine_failed: "engine_failed",
   /** A position id referenced by the route does not exist. */
   position_missing: "position_missing",
+  /** PATCH /positions/:id/profile shape violates the profile-update contract. */
+  position_profile_invalid: "position_profile_invalid",
   /** POST /turns shape or input is invalid. */
   turn_request_invalid: "turn_request_invalid",
   /** The selected Host is outside the D3 qoder/claude-code/claude-local allowlist. */

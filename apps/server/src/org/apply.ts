@@ -30,6 +30,7 @@ import type {
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { parentKey } from "./layout.js";
+import { DEFAULT_HIRE_PERMISSIONS, derivePermissionArtifacts } from "./permission-artifacts.js";
 import {
   clearUndoEntry,
   readUndoEntry,
@@ -540,21 +541,20 @@ export interface SkeletonPosition {
  * always matches the on-disk package.
  */
 export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, string> {
-  const permissions = role.permissions ?? { tools: ["Read", "Grep", "Glob"], rules: [] };
-  const skills = permissions.skills ?? [];
-  const mcpServers = permissions.mcpServers ?? [];
+  const permissions = role.permissions ?? DEFAULT_HIRE_PERMISSIONS;
   const memorySources = role.memorySources ?? [{ kind: "position_docs", locator: "./knowledge/**" }];
-  const readableResources = permissions.rules
-    .filter((rule) => (rule.effect ?? "allow") === "allow" && rule.actions.includes("read"))
-    .map((rule) => rule.resource)
-    .filter((resource) => resource.length > 0);
-  const writableResources = permissions.rules
-    .filter((rule) => (rule.effect ?? "allow") === "allow" && rule.actions.some((action) => ["create", "update", "delete"].includes(action)))
-    .map((rule) => rule.resource)
-    .filter((resource) => resource.length > 0);
-  const mcpTools = mcpServers.flatMap((server) => server.tools.map((tool) => ({ name: `${server.id}.${tool}`, requestedMode: "read" as const })));
-  const skillDefinitions = skills.map((grant) => hireSkillCatalog.find((skill) => skill.id === grant.id)).filter((skill): skill is (typeof hireSkillCatalog)[number] => skill !== undefined);
-  const mcpDefinitions = mcpServers.map((grant) => ({ grant, definition: hireMcpCatalog.find((server) => server.id === grant.id) })).filter((item): item is { grant: (typeof mcpServers)[number]; definition: (typeof hireMcpCatalog)[number] } => item.definition !== undefined);
+  // Permission -> package artifacts is shared with the profile-update surface
+  // so a re-applied permission set can never differ from a freshly hired one.
+  const {
+    readableResources,
+    writableResources,
+    mcpTools,
+    permissionsFile,
+    skillsFile,
+    mcpFile,
+    skillSection,
+    mcpSection,
+  } = derivePermissionArtifacts(permissions);
   const employee: Record<string, unknown> = {
     $schema: "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/employee-package.schema.json",
     schemaVersion: "employee-package.v1alpha1",
@@ -600,35 +600,7 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     },
   };
   const prompt = role.prompt?.trim() || `围绕“${role.description}”完成岗位职责，先说明依据，再给出可执行结论。`;
-  const skillSection = skillDefinitions.length === 0
-    ? "- 暂无附加 Skill"
-    : skillDefinitions.map((skill) => `### ${skill.name}（${skill.id}）\n\n${skill.description}\n\n执行约束：${skill.instruction}`).join("\\n\\n");
-  const mcpSection = mcpDefinitions.length === 0
-    ? "- 暂无 MCP 连接器"
-    : mcpDefinitions.map(({ grant, definition }) => `- ${definition.name}（${definition.id}）：${grant.tools.length > 0 ? grant.tools.join(", ") : "未开放工具"}`).join("\\n");
   const skill = `---\nname: ${JSON.stringify(role.id)}\ndescription: ${JSON.stringify(role.description)}\n---\n\n# ${role.name}\n\n${role.description}\n\n## 工作提示词\n\n${prompt}\n\n## 已启用 Skill\n\n${skillSection}\n\n## 已绑定 MCP\n\n${mcpSection}\n\n以上能力只代表岗位包中的绑定关系；实际调用仍必须满足 permissions.json 中对应的 skill:// / mcp:// 规则。\n\n## 记忆来源\n\n${memorySources.map((source) => `- ${source.kind}: ${source.locator}`).join("\\n")}\n`;
-  const permissionsFile = {
-    schemaVersion: "workbench-permissions.v1",
-    model: "chmod-inspired",
-    defaultEffect: "deny",
-    tools: permissions.tools,
-    rules: permissions.rules,
-    skills,
-    mcpServers,
-  };
-  const skillsFile = {
-    schemaVersion: "workbench-skills.v1",
-    defaultEffect: "deny",
-    skills: skillDefinitions.map((definition) => {
-      const grant = skills.find((item) => item.id === definition.id)!;
-      return { ...grant, name: definition.name, description: definition.description };
-    }),
-  };
-  const mcpFile = {
-    schemaVersion: "workbench-mcp.v1",
-    defaultEffect: "deny",
-    servers: mcpDefinitions.map(({ grant, definition }) => ({ id: grant.id, name: definition.name, description: definition.description, tools: grant.tools })),
-  };
   const agentBinding = {
     schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
     engine: role.agentEngine ?? DEFAULT_AGENT_ENGINE,

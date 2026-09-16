@@ -5028,6 +5028,54 @@ body,
   }
 }
 
+/* ---------- 岗位档案操作键（.owb-edit） ----------
+ * 档案卡头部的编辑入口，与裁撤（.owb-dismiss）同排。#137 已删掉二者外面的
+ * 包裹层并由 panel-parity 测试钉住不许再加回来，所以这里只提供按钮自身的
+ * 皮肤：几何与 .owb-dismiss 完全一致以保持同排基线对齐，但走中性/主色 hover
+ * ——编辑是常态操作，不该长期占用危险色。 */
+.owb-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  background: var(--ui-surface);
+  color: var(--ui-foreground-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    border-color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-edit:hover:not(:disabled),
+.owb-edit:focus-visible {
+  border-color: var(--ui-primary);
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
+}
+
+.owb-edit:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}
+
+.owb-edit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-edit {
+    transition: none;
+  }
+}
+
 /* ---------- P0 组织图可视化（.owb-org-chart） ----------
  * 汇报树节点图：纯 CSS flex + 伪元素连接线（经典族谱树走线），不引图形库。
  * 走线色取 --ui-border-strong（两主题都有定义）；卡面沿用暖纸色阶与

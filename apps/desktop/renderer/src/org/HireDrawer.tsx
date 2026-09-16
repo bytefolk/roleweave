@@ -9,14 +9,14 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button as AntButton, Checkbox, Drawer, Input, Select, Steps, message } from "antd";
-import { CheckCircle2, ChevronDown, LoaderCircle, Plus, RotateCcw, Shield, Sparkles, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronDown, LoaderCircle, RotateCcw, Sparkles, XCircle } from "lucide-react";
 import { Input as OwbInput } from "@fullstack-ai-infra/ui";
 import { useT, type OwbT } from "@roleweave/ui";
-import { hireMcpCatalog, hireSkillCatalog } from "@roleweave/shared/capabilities";
-import type { HireMcpGrant, HireSkillGrant } from "@roleweave/shared/capabilities";
-import type { HireMemorySource, HirePermissionAction, HirePermissionRule, HirePermissions } from "@roleweave/shared";
+import { hireSkillCatalog } from "@roleweave/shared/capabilities";
+import type { HireMemorySource, HirePermissions } from "@roleweave/shared";
 import { AGENT_HOST_LABEL, AGENT_HOSTS, defaultAgentHost, resolveAgentEngine, type AgentHost } from "../turns/agent-host";
 import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
+import { CapabilityPicker, PermissionPolicyEditor, replaceCapabilityRules } from "./PermissionsEditor";
 import { createHireDraft, initialHireFlow, parseHireProposal, reduceHireFlow, toHirePositionRequest } from "./hire-flow";
 import type { HireDraft } from "./hire-flow";
 import { AVATAR_PRESETS, avatarSrcFor } from "../PositionAvatar";
@@ -28,9 +28,6 @@ const PLATFORM_BUDGET_POOL = 10_000_000;
 
 const PHASE_COPY_KEYS: Record<string, string> = { validate: "hire.phaseValidate", stage: "hire.phaseStage", apply: "hire.phaseApply" };
 const FAILURE_COPY_KEYS: Record<string, string> = { hire_position_exists: "hire.errExists", hire_timeout: "hire.errTimeout", control_plane_unreachable: "hire.errOffline", engine_unavailable: "hire.errCli", engine_capability_missing: "hire.errCapability" };
-const ACTIONS: Array<{ value: HirePermissionAction; labelKey: string }> = [
-  { value: "read", labelKey: "hire.actionRead" }, { value: "create", labelKey: "hire.actionCreate" }, { value: "update", labelKey: "hire.actionUpdate" }, { value: "delete", labelKey: "hire.actionDelete" }, { value: "execute", labelKey: "hire.actionExecute" },
-];
 const MEMORY_OPTIONS: Array<{ kind: HireMemorySource["kind"]; labelKey: string; locator: string }> = [
   { kind: "position_docs", labelKey: "hire.memoryPositionDocs", locator: "./knowledge/**" },
   { kind: "workspace_docs", labelKey: "hire.memoryWorkspaceDocs", locator: "./**" },
@@ -98,84 +95,6 @@ function proposalText(record: unknown): string {
 
 function defaultPrompt(t: OwbT): string {
   return t("hire.agentPromptTemplate");
-}
-
-function toggleAction(rule: HirePermissionRule, action: HirePermissionAction): HirePermissionRule {
-  const actions = rule.actions.includes(action) ? rule.actions.filter((item) => item !== action) : [...rule.actions, action];
-  return { ...rule, actions: actions.length > 0 ? actions : ["read"] };
-}
-
-function capabilityRules(skills: HireSkillGrant[], mcpServers: HireMcpGrant[]): HirePermissionRule[] {
-  return [
-    ...skills.map((skill) => ({ scope: "position" as const, resource: `skill://${skill.id}`, actions: ["execute" as const] })),
-    ...mcpServers.map((server) => ({ scope: "workspace" as const, resource: `mcp://${server.id}`, actions: ["execute" as const], approval: true })),
-  ];
-}
-
-function replaceCapabilityRules(permissions: HirePermissions, skills: HireSkillGrant[], mcpServers: HireMcpGrant[]): HirePermissions {
-  return {
-    ...permissions,
-    skills,
-    mcpServers,
-    rules: [
-      ...permissions.rules.filter((rule) => !rule.resource.startsWith("skill://") && !rule.resource.startsWith("mcp://")),
-      ...capabilityRules(skills, mcpServers),
-    ],
-  };
-}
-
-interface CapabilityPickerProps {
-  permissions: HirePermissions;
-  onToggleSkill: (id: HireSkillGrant["id"]) => void;
-  onToggleMcpServer: (id: HireMcpGrant["id"]) => void;
-  onToggleMcpTool: (id: HireMcpGrant["id"], tool: string) => void;
-}
-
-function CapabilityPicker({ permissions, onToggleSkill, onToggleMcpServer, onToggleMcpTool }: CapabilityPickerProps) {
-  const t = useT();
-  return (
-    <section className="owb-hire-capability-panel" aria-label={t("hire.capabilityTitle")}>
-      <div className="owb-hire-capability-panel__head">
-        <div>
-          <p className="owb-hire-eyebrow">{t("hire.capabilityStep")}</p>
-          <h3>{t("hire.capabilityTitle")}</h3>
-          <p>{t("hire.capabilityHint")}</p>
-        </div>
-        <span className="owb-hire-capability-panel__count">{(permissions.skills ?? []).length + (permissions.mcpServers ?? []).length} {t("hire.capabilityCount")}</span>
-      </div>
-      <div className="owb-hire-capability-grid">
-        <section className="owb-hire-capability">
-          <div className="owb-hire-capability__head"><strong>{t("hire.skillsTitle")}</strong><span>{t("hire.skillsHint")}</span></div>
-          <div className="owb-hire-capability__options">
-            {hireSkillCatalog.map((skill) => (
-              <button type="button" className={(permissions.skills ?? []).some((item) => item.id === skill.id) ? "is-selected" : ""} key={skill.id} onClick={() => onToggleSkill(skill.id)} title={skill.description}>
-                <b>{skill.name}</b>
-              </button>
-            ))}
-          </div>
-        </section>
-        <section className="owb-hire-capability">
-          <div className="owb-hire-capability__head"><strong>{t("hire.mcpTitle")}</strong><span>{t("hire.mcpHint")}</span></div>
-          <div className="owb-hire-capability__options">
-            {hireMcpCatalog.map((server) => {
-              const grant = (permissions.mcpServers ?? []).find((item) => item.id === server.id);
-              return (
-                <div className={`owb-hire-mcp ${grant ? "is-selected" : ""}`} key={server.id}>
-                  <button type="button" className="owb-hire-mcp__select" onClick={() => onToggleMcpServer(server.id)} title={server.description}>
-                    <b>{server.name}</b><small>{grant ? t("hire.mcpBound") : t("hire.mcpAvailable")}</small>
-                  </button>
-                  {grant ? <div className="owb-hire-mcp__tools" aria-label={t("hire.mcpToolsAria")}>
-                    {server.tools.map((tool) => <button type="button" className={grant.tools.includes(tool) ? "is-selected" : ""} key={tool} onClick={() => onToggleMcpTool(server.id, tool)}>{tool}</button>)}
-                  </div> : null}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-      <p className="owb-hire-capability-note">{t("hire.capabilityPermissionHint")}</p>
-    </section>
-  );
 }
 
 export function HireDrawer({ open, workspacePath, positions, presetReportTo, engine, conversationEngine, engineAvailability, conversationHostId, conversationHostName, budgetPoolTokens = PLATFORM_BUDGET_POOL, budgetAllocatedTokens = 0, onClose, onHired }: HireDrawerProps) {
@@ -333,22 +252,6 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const retry = useCallback(() => { if (flow.phase === "failed" && flow.retryable) void submitRequest(flow.draft); }, [flow, submitRequest]);
   const stepCurrent = flow.phase === "draft" ? 0 : flow.phase === "succeeded" ? 2 : 1;
   const poolPercent = budgetPoolTokens > 0 ? Math.min(100, (allocated / budgetPoolTokens) * 100) : 100;
-  const toggleTool = (tool: string) => setPermissions((current) => ({ ...current, tools: current.tools.includes(tool) ? current.tools.filter((item) => item !== tool) : [...current.tools, tool] }));
-  const toggleSkill = (id: HireSkillGrant["id"]) => setPermissions((current) => {
-    const skills = current.skills ?? [];
-    const nextSkills = skills.some((skill) => skill.id === id) ? skills.filter((skill) => skill.id !== id) : [...skills, { id }];
-    return replaceCapabilityRules(current, nextSkills, current.mcpServers ?? []);
-  });
-  const toggleMcpServer = (id: HireMcpGrant["id"]) => setPermissions((current) => {
-    const mcpServers = current.mcpServers ?? [];
-    const existing = mcpServers.find((server) => server.id === id);
-    const nextServers = existing ? mcpServers.filter((server) => server.id !== id) : [...mcpServers, { id, tools: [...(hireMcpCatalog.find((server) => server.id === id)?.tools ?? [])] }];
-    return replaceCapabilityRules(current, current.skills ?? [], nextServers);
-  });
-  const toggleMcpTool = (id: HireMcpGrant["id"], tool: string) => setPermissions((current) => ({
-    ...current,
-    mcpServers: (current.mcpServers ?? []).map((server) => server.id !== id ? server : { ...server, tools: server.tools.includes(tool) ? server.tools.filter((item) => item !== tool) : [...server.tools, tool] }),
-  }));
   const toggleMemory = (kind: HireMemorySource["kind"]) => setMemorySources((current) => { if (current.some((source) => source.kind === kind)) return current.filter((source) => source.kind !== kind); const option = MEMORY_OPTIONS.find((item) => item.kind === kind)!; return [...current, { kind, locator: option.locator }]; });
   const chooseAvatarFile = (file: File | undefined) => {
     if (!file || !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 512 * 1024) {
@@ -432,9 +335,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
               <details open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)} className="owb-hire-advanced">
                 <summary><ChevronDown aria-hidden="true" size={15} />{t("hire.structuredConfig")}<span>{t("hire.formOnly")}</span></summary>
                 <div className="owb-hire-advanced__body">
-                  <div className="owb-hire-section-head"><div><h4><Shield aria-hidden="true" size={15} />{t("hire.permissionsTitle")}</h4><p>{t("hire.permissionsHint")}</p></div></div>
-                  <div className="owb-hire-tool-chips">{["Read", "Grep", "Glob", "Write", "Edit", "Delete", "Exec"].map((tool) => <button type="button" className={permissions.tools.includes(tool) ? "is-selected" : ""} key={tool} onClick={() => toggleTool(tool)}>{tool}</button>)}</div>
-                  <div className="owb-hire-rules">{permissions.rules.map((rule, index) => <div className="owb-hire-rule" key={`${rule.scope}-${rule.resource}-${index}`}><Select value={rule.scope} onChange={(value) => setPermissions((current) => ({ ...current, rules: current.rules.map((item, itemIndex) => itemIndex === index ? { ...item, scope: value } : item) }))} options={[{ value: "position", label: t("hire.scopePosition") }, { value: "workspace", label: t("hire.scopeWorkspace") }, { value: "project", label: t("hire.scopeProject") }]} /><OwbInput value={rule.resource} onChange={(event) => setPermissions((current) => ({ ...current, rules: current.rules.map((item, itemIndex) => itemIndex === index ? { ...item, resource: event.target.value } : item) }))} /><div className="owb-hire-action-chips">{ACTIONS.map((action) => <button type="button" className={rule.actions.includes(action.value) ? "is-selected" : ""} key={action.value} onClick={() => setPermissions((current) => ({ ...current, rules: current.rules.map((item, itemIndex) => itemIndex === index ? toggleAction(item, action.value) : item) }))}>{t(action.labelKey)}</button>)}</div><button type="button" className="owb-hire-icon-button" aria-label={t("hire.removeRule")} onClick={() => setPermissions((current) => ({ ...current, rules: current.rules.filter((_item, itemIndex) => itemIndex !== index) }))}><Trash2 aria-hidden="true" size={14} /></button></div>)}<button type="button" className="owb-hire-add-rule" onClick={() => setPermissions((current) => ({ ...current, rules: [...current.rules, { scope: "workspace", resource: "./", actions: ["read"], approval: true }] }))}><Plus aria-hidden="true" size={14} />{t("hire.addRule")}</button></div>
+                  <PermissionPolicyEditor permissions={permissions} onChange={setPermissions} />
                   <div className="owb-hire-section-head"><div><h4>{t("hire.memoryTitle")}</h4><p>{t("hire.memoryHint")}</p></div></div>
                   <div className="owb-hire-memory-chips">{MEMORY_OPTIONS.map((option) => <label key={option.kind} className={memorySources.some((source) => source.kind === option.kind) ? "is-selected" : ""}><Checkbox checked={memorySources.some((source) => source.kind === option.kind)} onChange={() => toggleMemory(option.kind)} />{t(option.labelKey)}</label>)}</div>
                   <div className="owb-hire-divider" />
@@ -443,7 +344,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
                 </div>
               </details>
             </section>
-            <CapabilityPicker permissions={permissions} onToggleSkill={toggleSkill} onToggleMcpServer={toggleMcpServer} onToggleMcpTool={toggleMcpTool} />
+            <CapabilityPicker permissions={permissions} onChange={setPermissions} />
           </div>
         </div>
         <footer className="owb-modal__footer owb-hire-footer"><span>{t("hire.finalGate")}</span><AntButton onClick={onClose}>{t("dlg.cancel")}</AntButton><AntButton type="primary" disabled={!formValid} onClick={submit}>{t("hire.start")}</AntButton></footer>

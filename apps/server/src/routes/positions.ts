@@ -2,13 +2,20 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { OrgApiError, errorCodes, isQoderModelId, turnEngines } from "@roleweave/shared";
-import type { TurnEngine } from "@roleweave/shared";
+import type { HirePermissions, PositionProfileFailure, TurnEngine } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { resolveServiceConnection } from "../services/connections.js";
 import { buildContextSources } from "../context-sources.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { readPositionAgentBinding, setPositionAgentEngine, setPositionModel } from "../agent-binding.js";
 import { employeeModelConfig } from "../model-selection.js";
+import { withOrgMutationLock } from "../org/apply.js";
+import { permissionsFromPackage } from "../org/permission-artifacts.js";
+import { applyPositionProfile, assertProfilePatch } from "../org/profile-edit.js";
+
+function failure(code: string, message: string, retryable: boolean): PositionProfileFailure {
+  return { status: "failed", code, message, retryable };
+}
 
 async function readCapabilitySummary(packageDir: string): Promise<{
   skills: Array<{ id: string; name: string }>;
@@ -28,6 +35,21 @@ async function readCapabilitySummary(packageDir: string): Promise<{
   }
 }
 
+/**
+ * The editable permission projection, not the `toolAllow/toolDeny` summary.
+ * The profile editor must prefill every rule and grant it is about to replace;
+ * a summary prefilled into a full-replacement patch would silently delete the
+ * whole resource rule set on the first save.
+ */
+async function readPermissionPolicy(packageDir: string, fallbackTools: string[]): Promise<HirePermissions> {
+  try {
+    const raw = JSON.parse(await fs.readFile(path.join(packageDir, "permissions.json"), "utf8")) as unknown;
+    return permissionsFromPackage(raw, fallbackTools);
+  } catch {
+    return permissionsFromPackage(null, fallbackTools);
+  }
+}
+
 export async function handlePositionGet(
   ctx: ControlPlaneContext,
   res: ServerResponse,
@@ -40,6 +62,7 @@ export async function handlePositionGet(
   }
   const contextSources = await buildContextSources(ws.dir, role, { memConfigured: resolveServiceConnection(ctx, "mem") !== null });
   const capabilities = await readCapabilitySummary(role.package.localReference);
+  const permissionPolicy = await readPermissionPolicy(role.package.localReference, role.toolAllow);
   // Reading a card never migrates a legacy employee. The binding is surfaced
   // only when it already exists; first-use migration remains transactional
   // with the actual turn so merely selecting someone cannot change them.
@@ -60,6 +83,9 @@ export async function handlePositionGet(
       contextScope: role.memoryScope,
       contextSources,
       permissions: { toolAllow: role.toolAllow, toolDeny: role.toolDeny },
+      /** Additive (#291): the full projection PATCH /positions/:id/profile
+       * accepts, so the editor round-trips instead of reconstructing. */
+      permissionPolicy,
       capabilities,
       budget: role.budget ?? null,
       metadata: role.metadata,
@@ -105,5 +131,75 @@ export async function handlePositionAgentEngine(ctx: ControlPlaneContext, req: I
       agentLocked: true,
       modelConfig: await employeeModelConfig(engine, undefined, ctx.config.bundledElectronEngine),
     });
+  } finally { release(); }
+}
+
+/**
+ * PATCH /positions/:id/profile — edit an existing employee's display name,
+ * approval mode and permission projection.
+ *
+ * The record an operator can create but never correct is a trap: a mis-bound
+ * Skill set used to be unfixable without deleting the position, which also
+ * discards every turn, session and group reference keyed to its id. This
+ * surface is deliberately narrow — position id, reporting line and budget stay
+ * on their own governed channels.
+ *
+ * The package edit and the engine adjudication share the same seams as
+ * move/delete/hire: one org mutation lock (so a concurrent apply cannot
+ * interleave), one execution reservation (a permission change must never land
+ * while a turn is mid-flight on the old grant), and `org apply` as the sole
+ * validator of the applied model. Without the reservation an in-flight turn
+ * would finish under a policy that no longer exists.
+ */
+export async function handlePositionProfilePatch(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+  positionId: string,
+): Promise<void> {
+  const patch = assertProfilePatch(await readJsonBody<unknown>(req));
+  const ws = ctx.workspace.requireOpen();
+  const release = ctx.runningTurns.reserveMutation(ws.dir, positionId);
+  try {
+    const outcome = await withOrgMutationLock(ws.dir, async () => {
+      const role = ws.organization.roles.find((entry) => entry.id === positionId);
+      if (!role) {
+        throw new OrgApiError(errorCodes.position_missing, 404, `position not found: ${positionId}`);
+      }
+      const updated = await applyPositionProfile(ws, role, patch);
+      const engineResult = await ctx.driver.apply(ws.dir);
+      if (engineResult.status !== "applied") {
+        // The engine is the only validator of the applied model. Leaving the
+        // edited bytes behind would make the package disagree with
+        // `.digital-employee/org.json` until the next unrelated org mutation
+        // silently published the values the operator was just told were
+        // rejected.
+        await updated.rollback();
+        if (engineResult.status === "engine_unavailable") {
+          return { status: 503, body: failure(errorCodes.engine_unavailable, engineResult.message, true) };
+        }
+        if (engineResult.status === "engine_capability_missing") {
+          return { status: 503, body: failure(errorCodes.engine_capability_missing, engineResult.message, false) };
+        }
+        return { status: 422, body: failure(engineResult.code, engineResult.message, engineResult.retryable) };
+      }
+      const version = await ctx.workspace.reloadAppliedOrganization();
+      ctx.bus.publish("org.updated", {
+        workspace: ws.dir,
+        version,
+        changes: [{ op: "update", id: positionId }],
+      });
+      return {
+        status: 200,
+        body: {
+          status: "updated" as const,
+          positionId,
+          name: updated.name,
+          mode: updated.mode,
+          version,
+        },
+      };
+    });
+    sendJson(res, outcome.status, outcome.body);
   } finally { release(); }
 }
