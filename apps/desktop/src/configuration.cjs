@@ -173,21 +173,31 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     if(!validateConfigurationText(raw).ok)throw Error('storage_unavailable');
     writeAtomic(FILE,raw); writeAtomic(`${FILE}.bak`,raw);
   }
+  function availableReferences(config) {
+    try{return referencesExist(config,{},{});}catch{return false;}
+  }
+  function usableBackup() {
+    try {
+      const text=readRaw(`${FILE}.bak`),parsed=validateConfigurationText(text);
+      return parsed.ok&&availableReferences(parsed.config)?{text,config:parsed.config}:null;
+    }catch{return null;}
+  }
+  function fallbackConfiguration() {
+    const current=(lastGood&&availableReferences(lastGood.config)?lastGood:null)??usableBackup();
+    return current?{...current,notice:'The last valid configuration remains active.'}
+      :{text:serialize(defaults()),config:defaults(),notice:'No usable saved configuration remains. Application defaults are active.'};
+  }
   function readEffective() {
     migrate();
     let raw;
     try { raw=readRaw(FILE); }
     catch {
-      let saved=null;try{saved=readRaw(`${FILE}.bak`);}catch{}
-      const fallback=validateConfigurationText(saved);
-      const current=lastGood??(fallback.ok?{text:saved,config:fallback.config}:{text:serialize(defaults()),config:defaults()});
-      return{...current,raw:'<unreadable>',repairRequired:true,warnings:[...migrationWarnings,'The configuration file cannot be read. Using the last valid configuration; repair the file before saving.'],errors:[]};
+      const current=fallbackConfiguration();
+      return{...current,raw:'<unreadable>',repairRequired:true,warnings:[...migrationWarnings,`The configuration file cannot be read. ${current.notice} Repair the file before saving.`],errors:[]};
     }
     let parsed=validateConfigurationText(raw);
     if(parsed.ok){
-      let validReferences=false;
-      try{validReferences=referencesExist(parsed.config,{},{});}catch{}
-      if(!validReferences)parsed={ok:false,errors:[{field:'hosts / services',line:1,column:1,message:'An encrypted reference is missing or does not match its service endpoint. Repair the reference or enter credentials in the form.'}]};
+      if(!availableReferences(parsed.config))parsed={ok:false,errors:[{field:'hosts / services',line:1,column:1,message:'An encrypted reference is missing or does not match its service endpoint. Repair the reference or enter credentials in the form.'}]};
     }
     if(parsed.ok){
       let text=raw,config=parsed.config;
@@ -203,9 +213,8 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
       if(activationBaseline===null)activationBaseline=activationKey(config);
       lastGood={text,config};return{...lastGood,raw:text,warnings:[...migrationWarnings]};
     }
-    const saved=readRaw(`${FILE}.bak`), fallback=validateConfigurationText(saved);
-    const current=lastGood??(fallback.ok?{text:saved,config:fallback.config}:{text:serialize(defaults()),config:defaults()});
-    return{...current,raw,repairRequired:true,warnings:[...migrationWarnings,'The configuration file is invalid or references unavailable credentials. The last valid configuration remains active. Repair and save to replace it.'],errors:parsed.errors};
+    const current=fallbackConfiguration();
+    return{...current,raw,repairRequired:true,warnings:[...migrationWarnings,`The configuration file is invalid or references unavailable credentials. ${current.notice} Repair and save to replace it.`],errors:parsed.errors};
   }
   function sources(config) {
     const result={};
@@ -222,7 +231,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
       return {ok:true,config:clone(current.config),text:current.text,revision:revision(current.raw),filePath:file,
         warnings:[...new Set(current.warnings)],errors:current.errors??[],repairRequired:current.repairRequired===true,sources:sources(current.config),
         storageAvailable:credentials.ok&&credentials.storageAvailable,credentials:credentials.ok?credentials.credentials:[],
-        platform,canRestore:readRaw(`${FILE}.bak`)!==null,pendingRestart:pendingRestart(current.config),servicesRestartRequired:servicesPendingRestart.size>0};
+        platform,canRestore:usableBackup()!==null,pendingRestart:pendingRestart(current.config),servicesRestartRequired:servicesPendingRestart.size>0};
     }catch{return fail('storage_unavailable');}
   }
   function referencesExist(config,hostChanges,serviceChanges) {

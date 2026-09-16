@@ -140,3 +140,19 @@ test('quick preferences and automatic legacy preference import never silently ov
  const boot=h.store.migratePreferences({mode:'dark'});assert.equal(boot.ok,true);assert.equal(boot.repairRequired,true);assert.equal(fs.readFileSync(h.file,'utf8'),broken);
  const repaired=h.store.save({text:text(defaults()),revision:boot.revision});assert.equal(repaired.ok,true);assert.equal(repaired.repairRequired,false);
 });
+test('recovery never reactivates backup or in-process references whose encrypted values were cleared',t=>{
+ const h=setup(t),a=h.store.get(),c=a.config;c.hosts.codex.apiKeyRef='secret:host/OPENAI_API_KEY';
+ const saved=h.store.save({text:text(c),revision:a.revision,hostChanges:{OPENAI_API_KEY:'dummy-cleared-key'}});assert.equal(saved.ok,true);
+ delete c.hosts.codex.apiKeyRef;assert.equal(h.store.save({text:text(c),revision:saved.revision,hostChanges:{OPENAI_API_KEY:null}}).ok,true);
+ for(const broken of ['{corrupt','x'.repeat(2*1024*1024)]){
+  fs.writeFileSync(h.file,broken);
+  const restarted=createConfigurationStore({userDataPath:h.dir,safeStorage:h.safeStorage,env:{}}),current=restarted.get();
+  assert.equal(current.ok,true);assert.equal(current.config.hosts.codex.apiKeyRef,undefined);assert.equal(current.canRestore,false);
+  assert.ok(current.warnings.some(message=>message.includes('defaults')));assert.deepEqual(restarted.hostEnvironment({}),{});
+ }
+ fs.writeFileSync(h.file,text(defaults()));const live=createConfigurationStore({userDataPath:h.dir,safeStorage:h.safeStorage,env:{}});
+ const original=live.get(),withRef=original.config;withRef.hosts.codex.apiKeyRef='secret:host/OPENAI_API_KEY';
+ assert.equal(live.save({text:text(withRef),revision:original.revision,hostChanges:{OPENAI_API_KEY:'dummy-removed-externally'}}).ok,true);
+ createCredentialStore({userDataPath:h.dir,safeStorage:h.safeStorage}).clear('OPENAI_API_KEY');fs.writeFileSync(h.file,'{corrupt');
+ assert.equal(live.get().config.hosts.codex.apiKeyRef,undefined);
+});
