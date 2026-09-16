@@ -91,6 +91,12 @@ Moving a role changes its reporting relationship. Archiving through the app pres
 
 ## Data and connected services
 
+For a packaged install, open **Settings → Agent Host credentials** to save Qoder,
+Claude or Codex credentials with operating-system encryption. Finish active work,
+then fully quit and reopen RoleWeave to apply saved changes. Launch-environment
+connections take precedence. See [Host credential settings](docs/host-credentials.md)
+for the supported fields, precedence and storage boundaries.
+
 Workspace files and conversation records are stored locally. **Local storage does not mean offline AI:** prompts and task context may be sent to the AI provider used by your configured host. Connected services have their own storage and access policies.
 
 These integrations are optional. In the desktop app, open **Preferences → Document and memory services** to connect doc or mem by API URL and token. Tokens are encrypted with the operating system credential facility; the full upstream editor or drive opens in its own sandboxed window. Server-only deployments can keep using environment variables:
