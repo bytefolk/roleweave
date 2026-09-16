@@ -31,6 +31,8 @@ const DESKTOP_RUNTIME_FILES = [
   "src/runtime-settings.cjs",
   "src/service-connections.cjs",
   "src/credential-settings.cjs",
+  "src/configuration.cjs",
+  "src/configuration-ipc.cjs",
   // The app's only third-party runtime dependency, bundled to one file by
   // scripts/bundle-updater.mjs. Shipping electron-updater as a package would add
   // 16 packages and 325 files to a tree that asserts 189 files byte-exact, and
@@ -185,6 +187,10 @@ const EXAMPLE_RUNTIME_FILES = [
 
 const RUNTIME_FILE_SETS = [
   { from: ".", to: ".", filter: ["package.json", "LICENSE"] },
+  { from: "node_modules/jsonc-parser", to: "node_modules/jsonc-parser", filter: [
+    "package.json", "LICENSE.md", "lib/umd/main.js", "lib/umd/impl/edit.js", "lib/umd/impl/format.js",
+    "lib/umd/impl/parser.js", "lib/umd/impl/scanner.js", "lib/umd/impl/string-intern.js",
+  ] },
   {
     from: "apps/desktop",
     to: "apps/desktop",
@@ -210,6 +216,7 @@ const RUNTIME_FILE_SETS = [
 const APP_RESOURCE_REQUIRED_ENTRIES = [
   "package.json",
   "LICENSE",
+  "node_modules/jsonc-parser/lib/umd/main.js",
   ...DESKTOP_RUNTIME_FILES
     .filter((entry) => !entry.includes("*"))
     .map((entry) => `apps/desktop/${entry}`),

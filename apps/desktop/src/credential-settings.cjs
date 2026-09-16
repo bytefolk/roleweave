@@ -112,7 +112,28 @@ function createCredentialStore({ userDataPath, safeStorage }) {
       return { ok: true };
     } catch { return failure("storage_unavailable"); }
   }
-  function environment(source) {
+  /** Validate/encrypt the whole edit before one atomic write. Empty input retains
+   * an existing value; null is an explicit clear. No partial field success. */
+  function setMany(changes) {
+    if (!changes || typeof changes !== "object" || Array.isArray(changes) ||
+        Object.entries(changes).some(([key, value]) => !KEYS.includes(key) ||
+          (value !== null && value !== "" && !validValue(key, value)))) return failure("invalid_value");
+    try {
+      const entries = read();
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === "") continue;
+        if (value === null) { delete entries[key]; continue; }
+        if (!available()) throw new Error();
+        entries[key] = safeStorage.encryptString(value).toString("base64");
+      }
+      // Verify the complete candidate before replacement, including retained data.
+      for (const [key, value] of Object.entries(entries)) decrypt(key, value);
+      write(entries);
+      return { ok: true };
+    } catch { return failure("storage_unavailable"); }
+  }
+  function configuredKeys() { return Object.keys(read()); }
+  function environment(source, configuration) {
     const entries = read();
     const result = { ...source };
     for (const [host, keys] of Object.entries(HOST_FIELDS)) {
@@ -124,12 +145,18 @@ function createCredentialStore({ userDataPath, safeStorage }) {
       if (connectionKeys.some((key) => Object.keys(source).some((entry) =>
         (process.platform === "win32" ? entry.toUpperCase() === key : entry === key) && source[entry] !== undefined))) continue;
       for (const key of keys) {
-        if (Object.hasOwn(entries, key)) result[key] = decrypt(key, entries[key]);
+        if (configuration !== undefined) {
+          if (key.endsWith("_BASE_URL")) {
+            if (configuration[host]?.baseUrl) result[key] = configuration[host].baseUrl;
+          } else if (Object.values(configuration[host] ?? {}).includes(`secret:host/${key}`) && Object.hasOwn(entries, key)) {
+            result[key] = decrypt(key, entries[key]);
+          }
+        } else if (Object.hasOwn(entries, key)) result[key] = decrypt(key, entries[key]);
       }
     }
     return result;
   }
-  return { get, set, clear, environment };
+  return { get, set, clear, setMany, configuredKeys, environment };
 }
 
 function registerSettingsIpc({ ipcMain, getStore, isTrusted }) {

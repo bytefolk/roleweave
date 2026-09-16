@@ -95,10 +95,12 @@ const {
   validateGoalUpdateRequest,
 } = require("./goal-ipc.cjs");
 const { openWorkspaceWithPicker, createWorkspaceWithPicker } = require("./workspace-ipc.cjs");
-const { runtimeEnvironment, runtimeDescription } = require("./runtime-settings.cjs");
+const { runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
-const { createConnectionStore, createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
+const { createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
 const { createCredentialStore, registerSettingsIpc, forwardCredentialSafeStderr } = require("./credential-settings.cjs");
+const { createConfigurationStore } = require("./configuration.cjs");
+const { registerConfigurationIpc, registerExternalUrlIpc } = require("./configuration-ipc.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const ROLEWEAVE_DEV_ICON = path.resolve(
@@ -128,22 +130,42 @@ let pendingFallbackNotice = null;
 let updateCheckTimer = null;
 let desktopEnv = { ...process.env };
 const credentialStore = () => createCredentialStore({ userDataPath: app.getPath("userData"), safeStorage });
+let configuration = null;
+let configurationDirty = false;
+const configurationStore = () => configuration ??= createConfigurationStore({ userDataPath: app.getPath("userData"), safeStorage });
 registerSettingsIpc({
-  ipcMain, getStore: credentialStore,
+  ipcMain, getStore: () => ({ get: () => credentialStore().get(),
+    set: (key, value) => configurationStore().setCredential(key, value),
+    clear: (key) => configurationStore().setCredential(key, null) }),
   isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
 });
 const serviceConnections = createServiceConnections({
-  apiRequest,
+  apiRequest, reloadBeforeUpdate: true,
   // Electron's secure storage is available only after app.whenReady().
   store: {
-    read: () => createConnectionStore({ userDataPath: app.getPath("userData"), safeStorage }).read(),
-    write: (connections) => createConnectionStore({ userDataPath: app.getPath("userData"), safeStorage }).write(connections),
+    read: () => configurationStore().readServices(),
+    write: (connections) => configurationStore().writeServices(connections),
   },
 });
 registerServiceIpc({
   ipcMain, manager: serviceConnections, BrowserWindow, shell,
   isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
 });
+
+registerConfigurationIpc({ ipcMain, getStore: configurationStore, shell,
+  isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
+  onSaved: () => serviceConnections.initialize(), setDirty: (value) => { configurationDirty = value; },
+  close: () => app.quit(),
+});
+registerExternalUrlIpc({ ipcMain, shell,
+  isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
+});
+function requestConfigurationClose(event) {
+  if (!configurationDirty || !mainWindow || mainWindow.isDestroyed()) return false;
+  event.preventDefault();
+  mainWindow.webContents.send("owb:configuration:close-requested");
+  return true;
+}
 
 function pinnedEngineCommandDefault() {
   const enginePath = path.join(
@@ -169,7 +191,7 @@ function startControlPlane() {
     createChild: () => {
       // Decrypted settings only enter this child environment, never desktopEnv,
       // process.env, argv, server config, or renderer status responses.
-      const env = credentialStore().environment({
+      const env = configurationStore().hostEnvironment({
         ...desktopEnv,
         ...engineRuntimeEnvironment(desktopEnv, pinnedEngineCommandDefault()),
       });
@@ -899,6 +921,7 @@ function createWindow() {
     if (!isAllowedNavigationTarget(targetUrl, trustedRendererUrl)) event.preventDefault();
   });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.on("close", (event) => { requestConfigurationClose(event); });
   mainWindow.on("closed", () => {
     mainWindow = null;
     trustedRendererUrl = null;
@@ -1028,7 +1051,7 @@ app.whenReady().then(async () => {
   // turn Qoder/MCP children) is spawned; all other inherited env is unchanged.
   process.env.PATH = await recoverMacGuiPath();
   try {
-    desktopEnv = runtimeEnvironment(process.env, app.getPath("userData"));
+    desktopEnv = configurationStore().runtimeEnvironment(process.env);
     controlPlane = await startControlPlane();
     // Optional remote services must not prevent the local workspace opening.
     try { await serviceConnections.initialize(); } catch { /* A later probe reports connectivity. */ }
@@ -1082,6 +1105,7 @@ app.on("window-all-closed", () => {
 let quitSequenceStarted = false;
 
 app.on("before-quit", (event) => {
+  if (requestConfigurationClose(event)) return;
   // If a verified macOS package was downloaded in the background, replace the
   // app as part of this normal quit. The service's installing guard prevents a
   // manual "Install and restart" click from spawning a second helper.
