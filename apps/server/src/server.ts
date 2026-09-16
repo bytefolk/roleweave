@@ -29,7 +29,7 @@ import { handleHealth } from "./routes/health.js";
 import { handleHirePost } from "./routes/hire.js";
 import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
-import { handlePositionAgentEngine, handlePositionGet, handlePositionModel } from "./routes/positions.js";
+import { handlePositionAgentEngine, handlePositionGet, handlePositionModel, handlePositionProfilePatch } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
 import {
   handleSessionCreate,
@@ -317,6 +317,19 @@ async function dispatch(
     if (pathname.startsWith(`${routes.positions}/`) && pathname.endsWith("/agent-engine") && method === "PATCH") {
       const id = decodeURIComponent(pathname.slice(routes.positions.length + 1, -13));
       await handlePositionAgentEngine(ctx, req, res, id);
+      return;
+    }
+    if (pathname.startsWith(`${routes.positions}/`) && pathname.endsWith("/profile")) {
+      if (method !== "PATCH") {
+        sendJson(
+          res,
+          405,
+          new OrgApiError(errorCodes.method_not_allowed, 405, `method ${method} not allowed`).toBody(),
+        );
+        return;
+      }
+      const id = decodeURIComponent(pathname.slice(routes.positions.length + 1, -8));
+      await handlePositionProfilePatch(ctx, req, res, id);
       return;
     }
     if (pathname.startsWith(`${routes.positions}/`) && method === "GET") {

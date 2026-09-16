@@ -23,6 +23,8 @@ import type {
   OrgBackupsResponse,
   OrgTreeNodeV1,
   OrgTreeSnapshot,
+  PositionProfilePatch,
+  PositionProfileResult,
   ReportsResponse,
   TurnHistory,
   WorkbenchSession,
@@ -30,7 +32,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { BrainCircuit, Cog, FileChartColumn, FolderOpen, Network, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
+import { BrainCircuit, Cog, FileChartColumn, FolderOpen, Network, PencilLine, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
@@ -59,6 +61,7 @@ import type {
   TurnStreamState,
 } from "./turns";
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
+import { EditEmployeeDrawer } from "./org/EditEmployeeDrawer";
 import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
 import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
@@ -216,6 +219,12 @@ function AppInner({
   const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
+  /** Employee-record editor (#292): the card's own action, never a tree entry —
+   * editing is about the selected record, not the organization shape. */
+  const [employeeEditorOpen, setEmployeeEditorOpen] = useState(false);
+  // The editor is bound to one record: switching employee or project must not
+  // leave a form open over a different employee's values.
+  useEffect(() => { setEmployeeEditorOpen(false); }, [selectedId, workspaceInfo?.path]);
   const [projectHubOpen, setProjectHubOpen] = useState(false);
   /** Org-tree group entry (#53): prefilled draft members handed to the
    * GroupsPanel create panel; nonce re-fires repeated entries. */
@@ -1050,6 +1059,36 @@ function AppInner({
   const dismissPosition = useCallback(async (id: string) =>
     applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, t("org.dismissed")), [applyOrg, t]);
 
+  /**
+   * #292: save an edited employee record.
+   *
+   * A rename is an org-model change, not just a card change — the engine
+   * rebuilds `.digital-employee/org.json` from the edited package and the tree
+   * labels follow it. So this refreshes the org the same way a hire does, then
+   * re-reads the card; reloading only the card would leave the tree showing the
+   * old name until the next unrelated refresh.
+   */
+  const saveEmployeeProfile = useCallback(async (patch: PositionProfilePatch) => {
+    const id = selectedIdRef.current;
+    const workspace = workspacePathRef.current;
+    if (!id || !window.owb.updatePositionProfile) return { ok: false as const, code: "control_plane_unreachable" };
+    try {
+      const response = await window.owb.updatePositionProfile({ positionId: id, ...patch });
+      // Discard an answer that belonged to a previous workspace selection.
+      if (workspacePathRef.current !== workspace) return { ok: false as const, code: "control_plane_unreachable" };
+      const body = response.body as PositionProfileResult & { code?: string };
+      if (response.status !== 200 || body.status !== "updated") {
+        return { ok: false as const, code: typeof body.code === "string" ? body.code : "internal" };
+      }
+      setOrgFeedback({ tone: "info", text: t("org.profileUpdated", { name: body.name }) });
+      await refresh();
+      await loadPosition(id);
+      return { ok: true as const, name: body.name };
+    } catch {
+      return { ok: false as const, code: "control_plane_unreachable" };
+    }
+  }, [loadPosition, refresh, t]);
+
   /** Same-level insertion from an insertion-line drop or ⌘↑/⌘↓ (#32): the
    * reorder op carries the final sibling order; a cross-parent insertion is
    * submitted atomically as move + reorder in one manifest. */
@@ -1443,6 +1482,15 @@ function AppInner({
               onHired={(positionId, name, avatar) => void hiredPosition(positionId, name, avatar)}
             />
           ) : null}
+          {workspaceInfo?.open === true ? (
+            <EditEmployeeDrawer
+              open={employeeEditorOpen}
+              position={card.data}
+              busy={orgBusy}
+              onClose={() => setEmployeeEditorOpen(false)}
+              onSave={saveEmployeeProfile}
+            />
+          ) : null}
           <ProjectWorkspaceDialog
             open={projectHubOpen}
             workspace={workspaceInfo}
@@ -1604,7 +1652,30 @@ function AppInner({
                     setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
                     setActiveModule("docs");
                   }}
-                  actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
+                  actions={selectedPosition && selectedId ? (
+                    <>
+                      {/* Editing the record is available on every position, the
+                          company owner included: the owner is an employee with
+                          a package, and its reporting line cannot move anyway.
+                          These go straight into the card header's action
+                          cluster — #137 deleted the `.owb-position-actions`
+                          wrapper and pinned that with a test, because the
+                          header cluster already lays its children out. */}
+                      <button
+                        type="button"
+                        className="owb-edit"
+                        onClick={() => setEmployeeEditorOpen(true)}
+                        disabled={orgBusy}
+                        title={t("profile.editTitle")}
+                      >
+                        <PencilLine aria-hidden="true" size={13} />
+                        {t("profile.edit")}
+                      </button>
+                      {selectedId !== snapshot?.owner ? (
+                        <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} />
+                      ) : null}
+                    </>
+                  ) : undefined}
                 />
               </div>
             </div>

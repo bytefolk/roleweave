@@ -72,6 +72,7 @@ const {
   validateDriveUploadRequest,
 } = require("./drive-ipc.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
+const { validatePositionProfileRequest } = require("./position-profile-ipc.cjs");
 const { validateAvatarGenerateRequest } = require("./avatar-ipc.cjs");
 const { turnHistoryPath, validateCancelRequest, validateCreateTurnRequest } = require("./turn-ipc.cjs");
 const {
@@ -464,6 +465,18 @@ ipcMain.handle("owb:position:agent-engine", async (event, request) => {
     return { status: 400, body: { message: "Invalid employee Agent selection" } };
   }
   return apiRequest(`/positions/${encodeURIComponent(request.positionId)}/agent-engine`, { method: "PATCH", body: { engine: request.engine } });
+});
+
+// Editing an existing employee's name / mode / permissions. The position id
+// travels as the route only and is never echoed into the body: the control
+// plane accepts `name | mode | permissions` and a stray id would be an unknown
+// field there.
+ipcMain.handle("owb:position:profile", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  const validated = validatePositionProfileRequest(request);
+  if (!validated.ok) return validated.response;
+  const { positionId, ...patch } = validated.request;
+  return apiRequest(`/positions/${encodeURIComponent(positionId)}/profile`, { method: "PATCH", body: patch });
 });
 
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.

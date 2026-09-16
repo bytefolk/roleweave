@@ -2,7 +2,7 @@
  * (org-tree.v1 frozen minimal shape; workspace-org.v1 roles via /positions/:id);
  * the client never invents semantics. */
 
-import type { ContextSourceSummary } from "@roleweave/shared";
+import type { ContextSourceSummary, HirePermissions } from "@roleweave/shared";
 
 export type { OrgRole, OrgTreeSnapshot, OrgTreeNodeV1 } from "@roleweave/shared";
 
@@ -22,6 +22,9 @@ export interface PositionCardData {
   /** Additive source inventory; older callers may omit it during migration. */
   contextSources?: ContextSourceSummary[];
   permissions: { toolAllow: string[]; toolDeny: string[] };
+  /** Additive (#292): the full projection PATCH /positions/:id/profile takes.
+   * `permissions` above stays the compact badge summary the card renders. */
+  permissionPolicy?: HirePermissions;
   capabilities?: {
     skills: Array<{ id: string; name: string }>;
     mcpServers: Array<{ id: string; name: string; tools: string[] }>;

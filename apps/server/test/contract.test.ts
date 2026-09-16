@@ -46,6 +46,9 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
       { path: routes.orgRestore, method: "POST" },
       { path: routes.orgUndo, method: "POST" },
       { path: `${routes.positions}/repo-owner`, method: "GET" },
+      // #291 addition: the profile write surface must be reachable and gated
+      // like every other /positions/:id/* route.
+      { path: `${routes.positions}/repo-owner/profile`, method: "PATCH" },
       { path: routes.reports, method: "GET" },
       { path: `${routes.turns}?positionId=repo-owner`, method: "GET" },
       { path: routes.turns, method: "POST" },

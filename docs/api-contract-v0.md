@@ -218,6 +218,12 @@ reorder 语义补充（#32）：兄弟顺序是 org-workbench 自治语义，不
       }
     ],
     "permissions": { "toolAllow": ["Read", "Grep", "Glob"], "toolDeny": [] },
+    "permissionPolicy": {
+      "tools": ["Read", "Grep", "Glob"],
+      "rules": [{ "scope": "position", "resource": "./knowledge/**", "actions": ["read"] }],
+      "skills": [{ "id": "issue-research" }],
+      "mcpServers": [{ "id": "workspace-drive", "tools": ["read"] }]
+    },
     "capabilities": {
       "skills": [{ "id": "issue-research", "name": "Issue 调研" }],
       "mcpServers": [{ "id": "workspace-drive", "name": "工作区网盘", "tools": ["read"] }]
@@ -497,9 +503,51 @@ GET  /groups/:conversationRef/turns
 
 输入错误返回 `400 service_request_invalid`；上游传输、响应大小或契约异常返回 `502 service_upstream_failed`（具体 probe 状态仍按上述成功响应返回）。原生窗口和凭据持久化通过受信任桌面 IPC 提供，不属于远程服务可访问的控制面能力。部署和版本策略见 [独立服务说明](design/independent-services.md)。
 
+### 2.17 `PATCH /positions/:id/profile` — 编辑员工档案（#291 加法）
+
+`POST /hire` 是唯一的**创建**通道，此前没有任何通道治理创建之后的记录：员工一旦入岗，姓名与权限即不可改，只能裁撤后重招——而裁撤会同时丢弃以该岗位 ID 归档的全部回合、会话与群聊引用。本端点补上这一格。它与既有的 `PATCH /positions/:id/model`、`PATCH /positions/:id/agent-engine` 同为 `/positions/:id/*` 写入面，并沿用同一套接缝。
+
+请求（只允许下列字段，且至少出现一个；否则 400 `position_profile_invalid`）：
+
+```json
+{
+  "name": "文档工程师",
+  "mode": "approval_required",
+  "permissions": {
+    "tools": ["Read", "Grep", "Glob", "Edit"],
+    "rules": [{ "scope": "workspace", "resource": "./reports/**", "actions": ["read", "create"], "approval": true }],
+    "skills": [{ "id": "docs-review" }],
+    "mcpServers": [{ "id": "issue-tracker", "tools": ["search"] }]
+  }
+}
+```
+
+- `name` 非空、去空白后 **≤128 字节**（与 `POST /hire` 同一上限，也是引擎接受显示名的上限）。它是 Workbench 侧元数据，写 `.workbench/identity.v1.json`，不进入 `employee.json`。
+- `mode` 只允许 `read_only` / `approval_required`；省略即保持原值。
+- `permissions` 是**整份替换**而非合并，词表与校验规则与 `POST /hire` 完全共用（`apps/server/src/org/permissions.ts`），包括 Skill / MCP 标识必须来自平台目录、`mcp://` / `skill://` 资源必须已登记。
+- `positionId` 只在路径上，不作为字段接受：它是目录名，也是回合、会话与群聊的外键，改名属于迁移而不是编辑。汇报线与预算同样不在本端点范围——它们各自已有受治理的通道（`POST /org/apply` 的 move、`budget.json` 分配），本端点不得绕开其不变量。
+
+执行序列：
+
+1. 形状闸门（400 fail-closed）→ 2. **执行预留**：该员工有回合在跑时 409 `session_conflict`，权限变更绝不落在旧授权下的执行中途 → 3. 与 move/delete/hire 共用的组织变更锁，逐文件**先暂存后提交**（写经同目录临时文件再 rename）→ 4. `digital-employee org apply <workspace> --json` 引擎裁决（bundled 包中为 `qoder-engine`）→ 5. 成功：重载 `.digital-employee/org.json`、广播 `org.updated`（`changes` 含 `{op:"update"}`）；失败：**回滚本次改动过的每个字节**并透传稳定码（503 `engine_unavailable` retryable=true / 503 `engine_capability_missing` / 422 原样透传）。
+
+回滚是必需项而非礼貌：`org apply` 是应用态模型的唯一裁决者，若引擎拒绝却把改后的岗位包留在盘上，包就会与 `.digital-employee/org.json` 自相矛盾——界面继续显示旧值，而下一次无关的组织变更会把已被拒绝的值悄悄发布出去。
+
+**两处存储必须一起移动。** 显示名与授权在岗位包里（`.workbench/identity.v1.json`、`permissions.json`、`skills.json`、`mcp.json`，并镜像进 `employee.json` 的 `policy`）；而 `organization.v1alpha1.json` 是工作区的初始**声明**，bundled 引擎按 `declaredRole?.name ?? identity.name ?? …` 解析，声明对它所列出的岗位优先于岗位包（`apps/server/bin/qoder-engine.mjs` 的 `orgApply`）。RoleWeave 创建的工作区只声明 owner，因此招聘来的员工以岗位包为准；`examples/oss-maintainer` 则声明了全部四个岗位。只改岗位包会在新项目上看起来正常、在导入工作区上静默失效，所以当岗位出现在声明中时，本端点一并更新它拥有的三个字段——`name`、`mode`、`toolAllow`——其余字段（`description`、`memoryScope`、`budget`、`package`、`toolDeny`、`metadata`）保持原样。
+
+`permissions` 变更同时重算 `employee.json` 的 `policy.filesystem.read/write`、`policy.mcpTools` 与 `entrypoints.mcp`（有 MCP 授权才保留该入口），并把 `./permissions.json`、`./skills.json`、`./mcp.json` 补进 `assets`——导入包可能早于这三个文件存在。SKILL.md 只做定点改写：改名时替换一级标题，改权限时替换「已启用 Skill」「已绑定 MCP」两节正文；手工编写的章节与工作提示词、`knowledge/**` 一律不动，Windows 检出下的 CRLF 行尾也原样保留。
+
+`GET /positions/:id` 新增加法字段 `permissionPolicy`（见 §2.8），携带本端点接受的那份完整投影，供编辑器回填后整份回写；`permissions.toolAllow/toolDeny` 仍是卡片渲染用的摘要。
+
+成功响应 200：
+
+```json
+{ "status": "updated", "positionId": "docs-writer", "name": "文档工程师", "mode": "approval_required", "version": { "seq": 7, "updatedAt": "..." } }
+```
+
 ## 3. 稳定错误码登记表
 
-控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）；hire 通道码（#33 加法）：`hire_request_invalid`（400 形状级）、`hire_position_exists`（409 重名）；群聊通道码（#52 加法）：`group_request_invalid`（400 形状级）、`group_missing`（404）、`group_conflict`（409 重复成员/成员上限）、`group_storage_failed`（500 fail-closed）。
+控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）；hire 通道码（#33 加法）：`hire_request_invalid`（400 形状级）、`hire_position_exists`（409 重名）；群聊通道码（#52 加法）：`group_request_invalid`（400 形状级）、`group_missing`（404）、`group_conflict`（409 重复成员/成员上限）、`group_storage_failed`（500 fail-closed）；员工档案通道码（#291 加法）：`position_profile_invalid`（400 形状级，含权限投影的边界校验）。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 
 ## 4. 安全基线（随契约冻结）
