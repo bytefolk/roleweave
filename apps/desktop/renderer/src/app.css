@@ -5033,18 +5033,13 @@ body,
  * 走线色取 --ui-border-strong（两主题都有定义）；卡面沿用暖纸色阶与
  * 6/10 圆角、120ms ease-out 动效纪律（与 DS-73-001 同口径）。 */
 
-/* #137 左列：组织图保持内容高度，岗位档案卡吃掉左列剩余高度，
- * 使左列始终填满模块行（与右列对话面板对齐）。 */
+/* The employee record fills the workbench left column. */
 .owb-org-module__left {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
   min-height: 0;
-}
-
-.owb-org-module__left > .owb-org-chart {
-  flex: none;
 }
 
 .owb-org-module__left > .owb-position-column {
@@ -7379,12 +7374,6 @@ body,
   overflow: hidden;
 }
 
-.owb-org-module__left > .owb-org-chart {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
 .owb-org-chart__body {
   contain: paint;
   overflow: hidden;
@@ -8337,3 +8326,27 @@ body,
 .owb-thread-context code { overflow-wrap: anywhere; }
 .owb-group-dispatch-mode { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .owb-group-dispatch-mode .ant-select { min-width: 170px; }
+
+/* Organization views share navigation, while the mounted workbench retains
+   drafts, session scroll and pane size during an overview visit. */
+.owb-org-views {
+  display: flex;
+  flex: none;
+  gap: var(--ui-space-2);
+  align-items: center;
+}
+
+.owb-org-module[hidden] { display: none; }
+
+.owb-main > .owb-org-chart--overview {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.owb-org-chart--overview .owb-org-chart__body {
+  flex: 1;
+  min-height: 0;
+}

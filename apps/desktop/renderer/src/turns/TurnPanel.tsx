@@ -18,6 +18,7 @@ import type {
 export { EngineSelect, useEngineLabel } from "./engine-select";
 
 export interface TurnPanelProps {
+  active?: boolean;
   modelConfig?: EmployeeModelConfig;
   avatarUrls?: Record<string, string>;
   modelSaving?: boolean;
@@ -52,6 +53,7 @@ export interface TurnPanelProps {
 }
 
 export function TurnPanel({
+  active = true,
   modelConfig,
   avatarUrls,
   modelSaving = false,
@@ -93,6 +95,7 @@ export function TurnPanel({
   );
 
   useEffect(() => {
+    if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.metaKey || event.key !== ".") return;
       if (!runningTurn || cancelling || !selectedPosition) return;
@@ -101,7 +104,7 @@ export function TurnPanel({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [cancelling, onCancelTurn, runningTurn, selectedPosition]);
+  }, [active, cancelling, onCancelTurn, runningTurn, selectedPosition]);
 
   const sessionMode = sessions !== undefined;
   const selectedSession = sessions?.find((session) => session.sessionId === selectedSessionId) ?? null;
@@ -181,7 +184,7 @@ export function TurnPanel({
       />
 
       {selectedPosition ? <TurnComposer
-        options={selectedPosition && (modelConfig || onSetSessionContext) ? <ConversationOptions
+        options={active && selectedPosition && (modelConfig || onSetSessionContext) ? <ConversationOptions
           config={modelConfig} saving={modelSaving} disabled={busy || employeeBusy || sending || sessionBusy}
           session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
         /> : undefined}

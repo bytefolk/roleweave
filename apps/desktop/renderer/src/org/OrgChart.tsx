@@ -66,6 +66,7 @@ export function fitOrgChartView(
 }
 
 export interface OrgChartProps {
+  collapsible?: boolean;
   /** 应用态快照；null 或空树 → 空态。 */
   snapshot: OrgTreeSnapshot | null;
   /** 加载态：骨架屏（treeLoading 同源）。 */
@@ -145,6 +146,7 @@ function ChartNode({
 /** 折叠态默认展开——收起只是把面积让给下面的对话面板，由使用者自己权衡，
  * 绝不是系统用固定高度替他做这个决定（那正是旧实现 240px 硬顶的问题）。 */
 export function OrgChart({
+  collapsible = true,
   snapshot,
   loading = false,
   displayNames,
@@ -317,7 +319,7 @@ export function OrgChart({
       aria-label={t("tree.chart")}
     >
       <header className="owb-org-chart__head">
-        <button
+        {collapsible ? <button
           type="button"
           className="owb-org-chart__toggle"
           aria-expanded={!collapsed}
@@ -329,7 +331,7 @@ export function OrgChart({
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 9l6 6 6-6" />
           </svg>
-        </button>
+        </button> : null}
         <span className="owb-org-chart__head-title">{t("tree.chart")}</span>
         {snapshot && !empty ? (
           <span className="owb-org-chart__zoom">

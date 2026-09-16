@@ -563,3 +563,19 @@ it.each([
   fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
   await waitFor(() => expect(createTurn).toHaveBeenCalledWith({ positionId: "repo-owner", engine, input: "keep my draft" }));
 });
+
+it("suspends the conversation cancel shortcut while its workbench is hidden", () => {
+  const cancelTurn = vi.fn();
+  const props = { workspaceOpen: true, positions, selectedPositionId: "repo-owner", engine: "qoder" as const,
+    engineAvailability: availability, turns: [turn({ id: "turn-live", status: "running", output: undefined })],
+    onCreateTurn: vi.fn(), onCancelTurn: cancelTurn };
+  const { rerender } = render(<TurnPanel {...props} active={false} />);
+  fireEvent.keyDown(window, { key: ".", metaKey: true });
+  expect(cancelTurn).not.toHaveBeenCalled();
+  rerender(<TurnPanel {...props} active />);
+  fireEvent.keyDown(window, { key: ".", metaKey: true });
+  expect(cancelTurn).toHaveBeenCalledExactlyOnceWith("repo-owner");
+  rerender(<TurnPanel {...props} active={false} />);
+  fireEvent.keyDown(window, { key: ".", metaKey: true });
+  expect(cancelTurn).toHaveBeenCalledTimes(1);
+});

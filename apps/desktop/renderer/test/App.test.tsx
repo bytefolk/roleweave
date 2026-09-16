@@ -1117,3 +1117,54 @@ it.each(["history", "sessions"])("ignores A %s rejection after opening B with th
   await act(async () => rejectA(new Error("old A history request failure")));
   expect(screen.queryByText(kind === "history" ? "本地历史读取失败：本地服务不可用" : "会话列表读取失败：本地服务不可用")).not.toBeInTheDocument();
 });
+
+it("keeps the employee workbench mounted while the overview handles organization navigation", async () => {
+  const bridge = openedBridge();
+  const { container } = render(<App />);
+  await selectRepoOwner();
+  const input = screen.getByRole("textbox", { name: "下达任务" });
+  await waitFor(() => expect(input).toBeEnabled());
+  fireEvent.change(input, { target: { value: "draft stays with this employee" } });
+  const split = container.querySelector<HTMLElement>(".owb-org-module")!;
+  fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowRight" });
+  const ratio = split.style.getPropertyValue("--owb-org-left-width");
+  expect(container.querySelector(".owb-org-chart")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "上下文详情", exact: true }));
+  await waitFor(() => expect(screen.getByText("携带会话历史")).toBeVisible());
+  // Keyboard activation does not produce the outside mousedown that normally closes a portal.
+  screen.getByRole("button", { name: "组织概览", exact: true }).focus();
+  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  await waitFor(() => expect(screen.queryByText("携带会话历史")).not.toBeInTheDocument());
+  expect(screen.getByRole("region", { name: "组织图" })).toBeVisible();
+  expect(input).not.toBeVisible();
+  expect(split).toHaveAttribute("hidden");
+  expect(screen.queryByRole("button", { name: "折叠组织图" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "员工工作台", exact: true }));
+  expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(input);
+  expect(input).toHaveValue("draft stays with this employee");
+  expect(split.style.getPropertyValue("--owb-org-left-width")).toBe(ratio);
+
+  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  fireEvent.click(container.querySelector('[data-org-chart-node="repo-owner"]')!);
+  expect(input).toBeVisible();
+  expect(input).toHaveValue("draft stays with this employee");
+  expect(screen.getByRole("button", { name: "员工工作台", exact: true })).toHaveFocus();
+  expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  fireEvent.click(screen.getByRole("tree").querySelector('[data-org-node-id="repo-owner"]')!);
+  expect(input).toBeVisible();
+  expect(container.querySelector(".owb-org-chart")).toBeNull();
+});
+
+it("returns to the workbench after leaving the organization module", async () => {
+  openedBridge();
+  const { container } = render(<App />);
+  await selectRepoOwner();
+  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "审批", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "组织", exact: true }));
+  expect(container.querySelector(".owb-org-chart")).toBeNull();
+  expect(screen.getByRole("button", { name: "员工工作台", exact: true })).toHaveAttribute("aria-pressed", "true");
+});

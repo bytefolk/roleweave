@@ -124,6 +124,9 @@ function AppInner({
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
+  const [orgOverview, setOrgOverview] = useState(false);
+  const workbenchButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => setOrgOverview(false), [activeModule, workspaceInfo?.path, workspaceInfo?.open]);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
   const [managementTarget, setManagementTarget] = useState<string | null | undefined>(undefined);
   const [treeLoading, setTreeLoading] = useState(true);
@@ -601,6 +604,7 @@ function AppInner({
 
   /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
   const openConversation = useCallback((positionId: string) => {
+    setOrgOverview(false);
     if (selectedIdRef.current === positionId) {
       void ensureActiveSession(positionId);
       return;
@@ -1399,26 +1403,31 @@ function AppInner({
             <AntButton type="primary" size="large" icon={<Plus size={16} aria-hidden="true" />}
               disabled={startupError !== null || health === null} onClick={() => setProjectHubOpen(true)}>{t("project.welcomeAction")}</AntButton>
           </section>
-        ) : <OrgWorkspaceSplit
+        ) : <>
+          <nav className="owb-org-views" aria-label={t("tree.views")}>
+            <AntButton ref={workbenchButtonRef} size="small" type={orgOverview ? "default" : "primary"}
+              aria-pressed={!orgOverview} onClick={() => setOrgOverview(false)}>{t("tree.workbench")}</AntButton>
+            <AntButton size="small" type={orgOverview ? "primary" : "default"} icon={<Network size={14} aria-hidden="true" />}
+              aria-pressed={orgOverview} onClick={() => setOrgOverview(true)}>{t("tree.overview")}</AntButton>
+          </nav>
+          {orgOverview ? <OrgChart
+            className="owb-org-chart--overview"
+            collapsible={false}
+            snapshot={snapshot}
+            loading={treeLoading}
+            displayNames={positionNames}
+            avatarColors={positionColors}
+            avatarUrls={avatarUrls}
+            selectedId={selectedId}
+            onSelect={(id) => { openConversation(id); workbenchButtonRef.current?.focus(); }}
+          /> : null}
+          <OrgWorkspaceSplit
+          hidden={orgOverview}
           ariaLabel={t("tree.splitPane")}
           resetTitle={t("tree.splitPaneReset")}
           valueText={(value) => t("tree.splitPaneValue", { value })}
           left={
             <div className="owb-org-module__left">
-              {/* #137 two-column workspace: the left column stacks the org chart
-                  and the position-record card (aligned, one column); the right
-                  column is owned solely by the conversation panel so the turn
-                  stream gets the full module height. */}
-              {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
-              <OrgChart
-                snapshot={snapshot}
-                loading={treeLoading}
-                displayNames={positionNames}
-                avatarColors={positionColors}
-                avatarUrls={avatarUrls}
-                selectedId={selectedId}
-                onSelect={openConversation}
-              />
               <div className="owb-position-column">
                 <PositionCard
                   position={card.data}
@@ -1438,6 +1447,7 @@ function AppInner({
           }
           right={<TurnPanel
             key={workspaceInfo?.path}
+            active={!orgOverview}
             avatarUrls={avatarUrls}
             workspaceOpen={workspaceInfo?.open === true}
             modelConfig={selectedId ? positionModels[selectedId] : undefined}
@@ -1460,7 +1470,7 @@ function AppInner({
             decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
           />}
-        />}
+        /></>}
       </div>
     </AppShell>
     </div>
