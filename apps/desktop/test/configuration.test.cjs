@@ -134,3 +134,9 @@ test('an unrelated malformed encrypted store does not block noncredential prefer
  const h=setup(t),a=h.store.get();fs.writeFileSync(path.join(h.dir,'host-credentials.json'),'{malformed');
  const c=a.config;c.appearance.mode='dark';const result=h.store.save({text:text(c),revision:a.revision});assert.equal(result.ok,true);assert.equal(result.config.appearance.mode,'dark');
 });
+test('quick preferences and automatic legacy preference import never silently overwrite a corrupt external edit',t=>{
+ const h=setup(t);h.store.get();const broken='{temporary external edit';fs.writeFileSync(h.file,broken);
+ assert.equal(h.store.patchPreferences({appearance:{mode:'dark'}}).ok,false);assert.equal(fs.readFileSync(h.file,'utf8'),broken);
+ const boot=h.store.migratePreferences({mode:'dark'});assert.equal(boot.ok,true);assert.equal(boot.repairRequired,true);assert.equal(fs.readFileSync(h.file,'utf8'),broken);
+ const repaired=h.store.save({text:text(defaults()),revision:boot.revision});assert.equal(repaired.ok,true);assert.equal(repaired.repairRequired,false);
+});

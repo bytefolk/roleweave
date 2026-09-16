@@ -14,7 +14,7 @@ export type ConfigurationChange = {field:string;before:unknown;after:unknown};
 export interface ConfigurationSnapshot {
   ok: true; config: ApplicationConfiguration; text: string; revision: string; filePath: string;
   warnings: string[]; errors: ConfigurationIssue[]; sources: Record<string,string>;
-  storageAvailable: boolean; credentials: CredentialView[]; platform: string; canRestore: boolean;
+  repairRequired?: boolean; storageAvailable: boolean; credentials: CredentialView[]; platform: string; canRestore: boolean;
   changes?: ConfigurationChange[]; pendingRestart?: boolean; servicesChanged?: boolean; servicesApplied?: boolean; servicesRestartRequired?: boolean;
 }
 export type ConfigurationFailure = {ok:false;code:string;errors?:ConfigurationIssue[];current?:ConfigurationSnapshot};

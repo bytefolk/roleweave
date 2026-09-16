@@ -181,7 +181,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
       let saved=null;try{saved=readRaw(`${FILE}.bak`);}catch{}
       const fallback=validateConfigurationText(saved);
       const current=lastGood??(fallback.ok?{text:saved,config:fallback.config}:{text:serialize(defaults()),config:defaults()});
-      return{...current,raw:'<unreadable>',warnings:[...migrationWarnings,'The configuration file cannot be read. Using the last valid configuration; repair the file before saving.'],errors:[]};
+      return{...current,raw:'<unreadable>',repairRequired:true,warnings:[...migrationWarnings,'The configuration file cannot be read. Using the last valid configuration; repair the file before saving.'],errors:[]};
     }
     let parsed=validateConfigurationText(raw);
     if(parsed.ok){
@@ -205,7 +205,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     }
     const saved=readRaw(`${FILE}.bak`), fallback=validateConfigurationText(saved);
     const current=lastGood??(fallback.ok?{text:saved,config:fallback.config}:{text:serialize(defaults()),config:defaults()});
-    return{...current,raw,warnings:[...migrationWarnings,'The configuration file is invalid or references unavailable credentials. The last valid configuration remains active. Repair and save to replace it.'],errors:parsed.errors};
+    return{...current,raw,repairRequired:true,warnings:[...migrationWarnings,'The configuration file is invalid or references unavailable credentials. The last valid configuration remains active. Repair and save to replace it.'],errors:parsed.errors};
   }
   function sources(config) {
     const result={};
@@ -220,7 +220,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     try {
       const current=readEffective(), credentials=hostStore().get();
       return {ok:true,config:clone(current.config),text:current.text,revision:revision(current.raw),filePath:file,
-        warnings:current.warnings,errors:current.errors??[],sources:sources(current.config),
+        warnings:[...new Set(current.warnings)],errors:current.errors??[],repairRequired:current.repairRequired===true,sources:sources(current.config),
         storageAvailable:credentials.ok&&credentials.storageAvailable,credentials:credentials.ok?credentials.credentials:[],
         platform,canRestore:readRaw(`${FILE}.bak`)!==null,pendingRestart:pendingRestart(current.config),servicesRestartRequired:servicesPendingRestart.size>0};
     }catch{return fail('storage_unavailable');}
@@ -286,7 +286,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
   }
   function patchPreferences(patch) {
     if(!plain(patch)||Object.keys(patch).some(k=>!['appearance','chat','layouts'].includes(k)))return fail('invalid_request');
-    const current=get();if(!current.ok)return current;
+    const current=get();if(!current.ok)return current;if(current.repairRequired)return fail('invalid_configuration');
     let text=current.text;
     for(const[section,fields]of Object.entries(patch)){
       if(!plain(fields))return fail('invalid_request');
@@ -295,7 +295,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     return save({text,revision:current.revision});
   }
   function migratePreferences(legacy) {
-    const current=get();if(!current.ok||current.config.migration?.rendererPreferences)return current;
+    const current=get();if(!current.ok||current.repairRequired||current.config.migration?.rendererPreferences)return current;
     if(!plain(legacy))return fail('invalid_request');
     let text=current.text;
     for(const[key,values]of Object.entries({mode:['light','dark','system'],profile:['mint','default'],locale:['en','zh-CN']}))if(values.includes(legacy[key]))text=jsonc.applyEdits(text,jsonc.modify(text,['appearance',key],legacy[key],{}));
