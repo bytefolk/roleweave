@@ -451,6 +451,7 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 POST /groups                                  {"memberPositionIds":["repo-owner","release-engineer"]}
 GET  /groups
 GET  /groups/:conversationRef
+DELETE /groups/:conversationRef
 POST /groups/:conversationRef/members         {"positionId":"issue-researcher"}
 POST /groups/:conversationRef/turns           {"input":"...","engine":"qoder|claude-code|claude-local","mentions":["repo-owner"]}
 GET  /groups/:conversationRef/turns
@@ -461,6 +462,7 @@ GET  /groups/:conversationRef/turns
 - `POST /groups` 返回 201 `conversation-group.v1`：`memberPositionIds` 恰为 2–32 个唯一合法 positionId，额外字段拒绝（400 `group_request_invalid`）。每个群同时绑定一个真实 #12 session（`sessionId` 服务端生成，锚定首个成员的岗位生命周期，AC-004 双形态召回）；`conversationRef` 是服务端生成的本地 uuid，满足 `[a-z0-9]+(?:-[a-z0-9]+)*`。**过渡债登记**：conversationRef 为工作台侧本地映射，缺口① v1alpha2 契约级回链合入后切换并清账。
 - 锚 session 的取得方式为**复用优先**（#116）：首个成员岗位已有 active session 时直接以该会话为锚——不轮换、不改写、不复制其生命周期，也不追加会话；仅当该岗位无 active session 时才新建。故 `POST /groups` 不再因成员已有个人会话而回 409 `session_conflict`，多个群可共用同一锚。锚只是绑定：群回合记录仍按成员落 position conversation store（见下条），不落锚会话的 session store。显式 `POST /sessions` 的 409 语义与轮换规则不变。
 - `GET /groups` 返回 `conversation-group-list.v1`（按 `updatedAt` 倒序）；`GET /groups/:conversationRef` 返回单群；不存在 404 `group_missing`，非法 ref 400 `group_request_invalid`。
+- `DELETE /groups/:conversationRef` 解散群聊（#274）：将群目录移至 `<workspace>/.digital-employee/backup/groups/<ref>-<timestamp>-<hex>`（软删除，可恢复），返回 200 `{"conversationRef","dismissed":true}`。有执行中回合时 409 `group_busy`；不存在 404 `group_missing`。解散后广播 `group.updated` SSE 事件 `{"conversationRef","deleted":true,"workspacePath"}`，renderer 立即从列表移除。成员回合记录不受影响（存于 position conversation store，仅 `groupRef` 标记失效）。群限额（64）与消息限额（256）因此可回收；限额满时返回 409 `group_quota_reached` 或 `group_message_quota_reached`，不再误报为 500 `group_storage_failed`。
 - `POST /groups/:conversationRef/members` 追加成员（已存在 409 `group_conflict`，达到 32 上限 409），返回更新后的群记录。
 - `POST /groups/:conversationRef/turns`：先持久化 `group-message.v1` 用户消息回显，再以 202 应答 `{"conversationRef","messageId","spawns":[{"turnId","positionId"}]}`；`turnId` 由服务端预分配，spawn 在后台顺序执行，逐成员记录经既有 position conversation store 持久化，`turn-record.v1` 只增一个可选字段 `groupRef`（不影响既有记录逐字节兼容）。
 - 事件面：同一条 `/events` SSE 通道新增 `group.turn.spawned`（每个被 @ 成员一条，payload `{groupRef,messageId,turnId,positionId,engine}`）；群内成员的 `turn.*` 事件 payload 附加同一组归属字段，renderer 只按 exact message/turn/position/engine 分流和结算。终态 SSE 是刷新提示；若监听晚建或断流，renderer 会以有界轮询从群时间线的持久化事实收敛，并按持久化 `turnId` 去重。不新增独立 SSE 通道、不新增广播语义。

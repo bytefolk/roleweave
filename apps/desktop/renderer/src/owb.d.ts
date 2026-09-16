@@ -105,6 +105,7 @@ export interface OwbBridge {
   createGroup(request: { memberPositionIds: string[] }): Promise<OwbApiResponse<GroupConversation>>;
   groups(): Promise<OwbApiResponse<GroupConversationList>>;
   group(conversationRef: string): Promise<OwbApiResponse<GroupConversation>>;
+  dismissGroup(conversationRef: string): Promise<OwbApiResponse<{ conversationRef: string; dismissed: true }>>;
   addGroupMember(request: { conversationRef: string; positionId: string }): Promise<OwbApiResponse<GroupConversation>>;
   createGroupTurn(request: {
     conversationRef: string;

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button as AntButton, Input, Select as AntSelect } from "antd";
-import { ArrowUp, Plus, Search, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
+import { ArrowUp, Plus, Search, Trash2, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
 import { PositionAvatar } from "../PositionAvatar";
 import { ProgressTrail, TypingIndicator } from "../turns/TurnThread";
@@ -9,7 +9,34 @@ import { useEngineLabel } from "../turns/engine-select";
 import { EngineIcon } from "../turns/engine-icon";
 import { adaptTurnRecord } from "../turns/adapter";
 import type { LiveRunState } from "../turns/turnStream";
+import ReactMarkdown from "react-markdown";
 import type { PositionMentionOption, TurnEngine, TurnEngineAvailability } from "../turns/types";
+
+/** Expandable output block for group bubbles. Uses native <details>/<summary>
+ *  for the toggle, with React-controlled conditional rendering so only one copy
+ *  of the text exists in the DOM at any time — preventing duplicate-text matches
+ *  in Testing Library. (#237) */
+function GroupBubbleExpand({ summaryClassName, summaryTitle, summaryChildren, bodyChildren, "aria-label": ariaLabel }: {
+  summaryClassName: string;
+  summaryTitle: string;
+  summaryChildren: React.ReactNode;
+  bodyChildren: React.ReactNode;
+  "aria-label"?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details className="owb-bubble__expand" aria-label={ariaLabel} open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className={summaryClassName} title={summaryTitle}>
+        {open ? null : <span className="owb-bubble__expand-text">{summaryChildren}</span>}
+      </summary>
+      {open && (
+        <div className="owb-bubble__expand-body owb-tc__out owb-tc__out--markdown">
+          {bodyChildren}
+        </div>
+      )}
+    </details>
+  );
+}
 
 export interface GroupsPanelProps {
   workspaceOpen: boolean;
@@ -172,6 +199,8 @@ export function GroupsPanel({
   const sendingGroupsRef = useRef(new Set<string>());
   const sending = sendingGroups[draftKey] === true;
   const [panelError, setPanelError] = useState<string | null>(null);
+  const [dismissOpen, setDismissOpen] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
 
   useEffect(() => {
     selectedRefRef.current = selectedRef;
@@ -281,6 +310,20 @@ export function GroupsPanel({
     };
   }, [loadTimeline]);
 
+  // SSE: remove dismissed groups from the list immediately.
+  useEffect(() => {
+    const off = window.owb.onEvent((event) => {
+      const envelope = event as { type?: string; payload?: unknown };
+      if (envelope?.type !== "group.updated") return;
+      const payload = envelope.payload as { conversationRef?: unknown; deleted?: unknown } | null;
+      if (payload?.deleted !== true || typeof payload.conversationRef !== "string") return;
+      const ref = payload.conversationRef;
+      setGroups((current) => current.filter((group) => group.conversationRef !== ref));
+      if (selectedRefRef.current === ref) setSelectedRef(null);
+    });
+    return off;
+  }, []);
+
   const selectedReconcileSignature = useMemo(() => {
     const live = Object.values(liveRuns)
       .filter((run) => run.groupRef === selectedRef)
@@ -368,6 +411,35 @@ export function GroupsPanel({
     }
   }, [captureScope, loadGroups, loadTimeline, t]);
 
+  const dismissGroup = useCallback(async () => {
+    const isCurrent = captureScope();
+    if (!isCurrent()) return;
+    const ref = selectedRefRef.current;
+    if (ref === null || dismissing) return;
+    setDismissing(true);
+    setPanelError(null);
+    try {
+      const res = await window.owb.dismissGroup(ref);
+      if (!isCurrent()) return;
+      if (res.status !== 200) {
+        const body = res.body as { code?: string } | null;
+        if (body?.code === "group_busy") {
+          setPanelError(t("grp.busy"));
+        } else {
+          setPanelError(apiErrorMessage(res.body, t("grp.dismissFail")));
+        }
+        return;
+      }
+      setDismissOpen(false);
+      setGroups((current) => current.filter((group) => group.conversationRef !== ref));
+      if (selectedRefRef.current === ref) setSelectedRef(null);
+    } catch {
+      if (isCurrent()) setPanelError(t("grp.dismissFailOffline"));
+    } finally {
+      if (isCurrent()) setDismissing(false);
+    }
+  }, [captureScope, dismissing, t]);
+
   const send = useCallback(async () => {
     const isCurrent = captureScope();
     if (!isCurrent()) return;
@@ -428,34 +500,51 @@ export function GroupsPanel({
     t,
   ]);
 
-  /** Merge persisted timeline with live SSE buffers for this group. A run
-   * whose turnId is already persisted is suppressed — the record wins. */
-  const displayItems = useMemo(() => {
+  const unrenderableOutput = t("turn.unrenderableOutput");
+
+  /** Merge persisted timeline with live SSE buffers for this group into a single
+   *  render list keyed by turnId. A live run whose turnId is already persisted
+   *  is suppressed — the record wins. Using a single array with stable keys
+   *  ensures React preserves DOM nodes (and <details open> state) when a live
+   *  run transitions to persisted. (#237) */
+  const timelineItems = useMemo(() => {
+    const persisted = timeline?.items ?? [];
     const persistedTurnIds = new Set(
-      timeline?.items.filter((item) => item.kind === "member").map((item) => item.turn.turnId) ?? [],
+      persisted.filter((item) => item.kind === "member").map((item) => item.turn.turnId),
     );
-    const live = Object.entries(liveRuns)
+    const liveEntries = Object.entries(liveRuns)
       .filter(([runId, run]) =>
         run.groupRef === selectedRef && !persistedTurnIds.has(run.turnId ?? runId),
       )
-      .map(([runId, run]) => ({
-        key: `live-${runId}`,
-        turn: {
-          id: runId,
-          positionId: run.positionId,
-          positionName: displayPositionName(run.positionId),
-          engine: run.engine,
-          input: run.input,
-          status: "running" as const,
-          createdAt: run.startedAt,
-          ...(run.text !== "" ? { output: run.text } : {}),
-          ...(run.totalTokens !== null ? { totalTokens: run.totalTokens } : {}),
-        },
-      }));
-    const persisted = timeline?.items ?? [];
-    return { persisted, live };
-  }, [liveRuns, positionNames, selectedRef, t, timeline]);
-  const unrenderableOutput = t("turn.unrenderableOutput");
+      .map(([runId, run]) => {
+        const turnId = run.turnId ?? runId;
+        return {
+          kind: "member" as const,
+          key: turnId,
+          isLive: true,
+          turn: {
+            id: turnId,
+            positionId: run.positionId,
+            positionName: displayPositionName(run.positionId),
+            engine: run.engine,
+            input: run.input,
+            status: "running" as const,
+            createdAt: run.startedAt,
+            errorCode: undefined,
+            ...(run.text !== "" ? { output: run.text } : {}),
+            ...(run.totalTokens !== null ? { totalTokens: run.totalTokens } : {}),
+          },
+        };
+      });
+    const persistedEntries = persisted.map((item) => {
+      if (item.kind === "user") {
+        return { kind: "user" as const, key: item.messageId, item };
+      }
+      const turn = adaptTurnRecord(item.turn, displayPositionName(item.turn.positionId), unrenderableOutput);
+      return { kind: "member" as const, key: turn.id, isLive: false, turn };
+    });
+    return [...persistedEntries, ...liveEntries];
+  }, [liveRuns, positionNames, selectedRef, t, timeline, unrenderableOutput]);
 
   /** Members with an in-flight run in this group — drives the roster LED and
    * the header 状态灯 (设计稿 .roster .rdot / .src)。 */
@@ -610,6 +699,16 @@ export function GroupsPanel({
                   </span>
                 )}
               </span>
+              <button
+                type="button"
+                className="owb-dismiss"
+                onClick={() => setDismissOpen(true)}
+                disabled={runningMembers.size > 0}
+                title={t("grp.dismissAction")}
+              >
+                <Trash2 aria-hidden="true" size={13} />
+                {t("grp.dismissAction")}
+              </button>
             </header>
 
             <div className="owb-groups__panel-body">
@@ -663,97 +762,84 @@ export function GroupsPanel({
               </aside>
 
               <div className="owb-groups__timeline" aria-label={t("grp.timeline")} aria-busy={timelineLoading}>
-              {displayItems.persisted.map((item) =>
-                item.kind === "user" ? (
-                  <div className="owb-bubble-turn" key={item.messageId}>
-                    <div className="owb-bubble-row owb-bubble-row--operator">
-                      <article className="owb-bubble owb-bubble--operator">
-                        <header className="owb-bubble__header">
-                          <span className="owb-bubble__avatar owb-bubble__avatar--operator" title={t("grp.operator")} aria-hidden="true">
-                            <UserRound size={11} />
-                          </span>
-                          <b className="owb-bubble__name">{t("grp.you")}</b>
-                          <span className="owb-bubble__role">{t("grp.operator")}</span>
-                          <time className="owb-bubble__time" dateTime={item.createdAt} title={new Date(item.createdAt).toLocaleString()}>
-                            {timeShort(item.createdAt)}
-                          </time>
-                        </header>
-                        <p className="owb-bubble__text">{renderMentionText(item.input)}</p>
-                        <p className="owb-turn-composer__hint">{t(item.mode === "relay" ? "grp.modeRelay" : "grp.modeParallel")} · {item.mentions.map(displayPositionName).join(item.mode === "relay" ? " → " : nameSep)}</p>
-                      </article>
-                    </div>
-                  </div>
-                ) : (
-                  (() => {
-                    const turn = adaptTurnRecord(
-                      item.turn,
-                      displayPositionName(item.turn.positionId),
-                      unrenderableOutput,
-                    );
-                    return (
-                      <div className="owb-bubble-row owb-bubble-row--employee" key={turn.id}>
-                        <article className={`owb-bubble owb-bubble--employee is-${turn.status}`}>
+              {timelineItems.map((entry) => {
+                if (entry.kind === "user") {
+                  const item = entry.item;
+                  return (
+                    <div className="owb-bubble-turn" key={entry.key}>
+                      <div className="owb-bubble-row owb-bubble-row--operator">
+                        <article className="owb-bubble owb-bubble--operator">
                           <header className="owb-bubble__header">
-                            <PositionAvatar
-                              colors={positionColors}
-                              sources={avatarUrls}
-                              id={turn.positionId}
-                              name={turn.positionName}
-                              className="owb-bubble__avatar"
-                            />
-                            <b className="owb-bubble__name">@{turn.positionName}</b>
-                            <span className="owb-bubble__eng">
-                              <EngineIcon engine={turn.engine} />
-                              {engineLabel(turn.engine)}
+                            <span className="owb-bubble__avatar owb-bubble__avatar--operator" title={t("grp.operator")} aria-hidden="true">
+                              <UserRound size={11} />
                             </span>
-                            <time className="owb-bubble__time" dateTime={turn.createdAt} title={new Date(turn.createdAt).toLocaleString()}>
-                              {timeShort(turn.createdAt)}
+                            <b className="owb-bubble__name">{t("grp.you")}</b>
+                            <span className="owb-bubble__role">{t("grp.operator")}</span>
+                            <time className="owb-bubble__time" dateTime={item.createdAt} title={new Date(item.createdAt).toLocaleString()}>
+                              {timeShort(item.createdAt)}
                             </time>
                           </header>
-                          {turn.errorCode !== "group_relay_blocked" ? <ProgressTrail turn={turn} /> : null}
-                          {turn.output ? (
-                            <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
-                          ) : null}
-                          {(turn.status === "failed" || turn.status === "indeterminate") && turn.error ? (
-                            <p className="owb-turn__error owb-clamp-2" title={turn.error}>{turn.error}</p>
-                          ) : null}
-                          {turn.status === "indeterminate" ? (
-                            <p className="owb-turn__warning owb-clamp-2">{t(turn.errorCode === "group_relay_blocked" ? "grp.relayBlocked" : "grp.untrustedWarning")}</p>
-                          ) : null}
+                          <p className="owb-bubble__text">{renderMentionText(item.input)}</p>
+                          <p className="owb-turn-composer__hint">{t(item.mode === "relay" ? "grp.modeRelay" : "grp.modeParallel")} · {item.mentions.map(displayPositionName).join(item.mode === "relay" ? " → " : nameSep)}</p>
                         </article>
                       </div>
-                    );
-                  })()
-                ),
-              )}
-              {displayItems.live.map(({ key, turn }) => (
-                <div className="owb-bubble-row owb-bubble-row--employee" key={key} aria-live="polite">
-                  <article className="owb-bubble owb-bubble--employee is-running">
-                    <header className="owb-bubble__header">
-                      <PositionAvatar
-                        colors={positionColors}
-                        sources={avatarUrls}
-                        id={turn.positionId}
-                        name={turn.positionName}
-                        className="owb-bubble__avatar"
-                      />
-                      <b className="owb-bubble__name">@{turn.positionName}</b>
-                      <span className="owb-bubble__eng">
-                        <EngineIcon engine={turn.engine} />
-                        {engineLabel(turn.engine)}
-                      </span>
-                      <span className="owb-led owb-led--running" aria-label={t("grp.turnInProgress")} />
-                    </header>
-                    <ProgressTrail turn={turn} />
-                    {turn.output ? (
-                      <p className="owb-turn__output owb-clamp-2" title={turn.output}>{turn.output}</p>
-                    ) : (
-                      <TypingIndicator />
-                    )}
-                  </article>
-                </div>
-              ))}
-              {!timelineLoading && displayItems.persisted.length === 0 && displayItems.live.length === 0 ? (
+                    </div>
+                  );
+                }
+                const { turn, isLive } = entry;
+                return (
+                  <div className="owb-bubble-row owb-bubble-row--employee" key={entry.key} {...(isLive ? { "aria-live": "polite" } : {})}>
+                    <article className={`owb-bubble owb-bubble--employee ${isLive ? "is-running" : `is-${turn.status}`}`}>
+                      <header className="owb-bubble__header">
+                        <PositionAvatar
+                          colors={positionColors}
+                          sources={avatarUrls}
+                          id={turn.positionId}
+                          name={turn.positionName}
+                          className="owb-bubble__avatar"
+                        />
+                        <b className="owb-bubble__name">@{turn.positionName}</b>
+                        <span className="owb-bubble__eng">
+                          <EngineIcon engine={turn.engine} />
+                          {engineLabel(turn.engine)}
+                        </span>
+                        {isLive ? (
+                          <span className="owb-led owb-led--running" aria-label={t("grp.turnInProgress")} />
+                        ) : (
+                          <time className="owb-bubble__time" dateTime={turn.createdAt} title={new Date(turn.createdAt).toLocaleString()}>
+                            {timeShort(turn.createdAt)}
+                          </time>
+                        )}
+                      </header>
+                      {isLive ? <ProgressTrail turn={turn} /> : turn.errorCode !== "group_relay_blocked" ? <ProgressTrail turn={turn} /> : null}
+                      {turn.output ? (
+                        <GroupBubbleExpand
+                          summaryClassName="owb-turn__output owb-clamp-2"
+                          summaryTitle={turn.output}
+                          summaryChildren={turn.output}
+                          aria-label={t("grp.expandOutput")}
+                          bodyChildren={<ReactMarkdown>{turn.output}</ReactMarkdown>}
+                        />
+                      ) : isLive ? (
+                        <TypingIndicator />
+                      ) : null}
+                      {!isLive && (turn.status === "failed" || turn.status === "indeterminate") && turn.error ? (
+                        <GroupBubbleExpand
+                          summaryClassName="owb-turn__error owb-clamp-2"
+                          summaryTitle={turn.error}
+                          summaryChildren={turn.error}
+                          aria-label={t("grp.expandOutput")}
+                          bodyChildren={<ReactMarkdown>{turn.error}</ReactMarkdown>}
+                        />
+                      ) : null}
+                      {!isLive && turn.status === "indeterminate" ? (
+                        <p className="owb-turn__warning owb-clamp-2">{t(turn.errorCode === "group_relay_blocked" ? "grp.relayBlocked" : "grp.untrustedWarning")}</p>
+                      ) : null}
+                    </article>
+                  </div>
+                );
+              })}
+              {!timelineLoading && timelineItems.length === 0 ? (
                 <p className="owb-muted">{t("grp.emptyTimeline")}</p>
               ) : null}
               </div>
@@ -836,6 +922,69 @@ export function GroupsPanel({
           </>
         )}
       </div>
+      {selectedGroup !== null && (
+        <DismissGroupModal
+          open={dismissOpen}
+          groupName={groupLabel(selectedGroup)}
+          busy={dismissing}
+          onOpenChange={setDismissOpen}
+          onConfirm={dismissGroup}
+        />
+      )}
     </section>
+  );
+}
+
+function DismissGroupModal({
+  open,
+  groupName,
+  busy,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  groupName: string;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  const t = useT();
+  const titleId = useId();
+  const descriptionId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onOpenChange(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onOpenChange, open]);
+
+  if (!open) return null;
+  return (
+    <div className="owb-modal" role="presentation" onMouseDown={(event) => {
+      if (event.currentTarget === event.target) onOpenChange(false);
+    }}>
+      <section
+        className="owb-modal__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+      >
+        <header className="owb-modal__header">
+          <div>
+            <h2 id={titleId}>{t("grp.dismissTitle", { name: groupName })}</h2>
+            <p id={descriptionId}>{t("grp.dismissDesc")}</p>
+          </div>
+          <button type="button" className="owb-modal__close" aria-label={t("dlg.close")} onClick={() => onOpenChange(false)}>×</button>
+        </header>
+        <footer className="owb-modal__footer">
+          <AntButton disabled={busy} onClick={() => onOpenChange(false)}>{t("grp.dismissCancel")}</AntButton>
+          <AntButton danger disabled={busy} onClick={onConfirm}>{t("grp.dismissConfirm")}</AntButton>
+        </footer>
+      </section>
+    </div>
   );
 }
