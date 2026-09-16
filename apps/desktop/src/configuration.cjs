@@ -106,6 +106,9 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
   const serviceStore = () => createConnectionStore({userDataPath,safeStorage});
   const transactionFiles = [FILE, `${FILE}.bak`, 'host-credentials.json', 'service-connections.json'];
   let migrationWarnings = [], lastGood = null;
+  let activationBaseline = null, credentialsPendingRestart = false;
+  const activationKey = config => JSON.stringify({ runtime: config.runtime, hosts: config.hosts });
+  const pendingRestart = config => credentialsPendingRestart || (activationBaseline !== null && activationKey(config) !== activationBaseline);
   const readRaw = name => {
     let fd;
     try { fd=fs.openSync(path.join(userDataPath,name),'r'); if(fs.fstatSync(fd).size>MAX_BYTES*4) throw Error(); return fs.readFileSync(fd,'utf8'); }
@@ -138,7 +141,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     catch { recover(); throw Error('storage_unavailable'); }
   }
   function migrate() {
-    recover(); if(readRaw(FILE)!==null)return;
+    recover(); if(fs.existsSync(file))return;
     const config=defaults();
     try {const raw=readRaw('runtime-settings.json'); if(raw!==null) config.runtime=validateRuntimeSettings(JSON.parse(raw));}catch{migrationWarnings.push('Legacy runtime settings could not be imported.');}
     try {
@@ -164,7 +167,16 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     writeAtomic(FILE,raw); writeAtomic(`${FILE}.bak`,raw);
   }
   function readEffective() {
-    migrate(); const raw=readRaw(FILE), parsed=validateConfigurationText(raw);
+    migrate();
+    let raw;
+    try { raw=readRaw(FILE); }
+    catch {
+      let saved=null;try{saved=readRaw(`${FILE}.bak`);}catch{}
+      const fallback=validateConfigurationText(saved);
+      const current=lastGood??(fallback.ok?{text:saved,config:fallback.config}:{text:serialize(defaults()),config:defaults()});
+      return{...current,raw:'<unreadable>',warnings:[...migrationWarnings,'The configuration file cannot be read. Using the last valid configuration; repair the file before saving.'],errors:[]};
+    }
+    const parsed=validateConfigurationText(raw);
     if(parsed.ok){
       let text=raw,config=parsed.config;
       if(config.migration?.pendingHostUrls?.length){
@@ -176,6 +188,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
           config=validateConfigurationText(text).config;
         }catch { migrationWarnings=['Agent endpoint migration is pending until encrypted storage is available.']; }
       }
+      if(activationBaseline===null)activationBaseline=activationKey(config);
       lastGood={text,config};return{...lastGood,raw:text,warnings:[...migrationWarnings]};
     }
     const saved=readRaw(`${FILE}.bak`), fallback=validateConfigurationText(saved);
@@ -197,7 +210,7 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
       return {ok:true,config:clone(current.config),text:current.text,revision:revision(current.raw),filePath:file,
         warnings:current.warnings,errors:current.errors??[],sources:sources(current.config),
         storageAvailable:credentials.ok&&credentials.storageAvailable,credentials:credentials.ok?credentials.credentials:[],
-        platform,canRestore:readRaw(`${FILE}.bak`)!==null};
+        platform,canRestore:readRaw(`${FILE}.bak`)!==null,pendingRestart:pendingRestart(current.config)};
     }catch{return fail('storage_unavailable');}
   }
   function referencesExist(config,hostChanges,serviceChanges) {
@@ -246,7 +259,8 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
         writeAtomic(FILE,request.text);
       });
       lastGood={text:request.text,config:parsed.config}; migrationWarnings=[];
-      return {...get(),changes:changed,pendingRestart:changed.some(row=>row.field.startsWith('runtime')||row.field.startsWith('hosts'))||Object.values(hostChanges).some(v=>v!==''),servicesChanged:changedServices};
+      if(Object.values(hostChanges).some(value=>value!==''))credentialsPendingRestart=true;
+      return {...get(),changes:changed,pendingRestart:pendingRestart(parsed.config),servicesChanged:changedServices};
     }catch(error){return fail(error.message==='service_endpoint_changed'?'service_endpoint_changed':'storage_unavailable');}
   }
   function patchPreferences(patch) {
@@ -303,6 +317,9 @@ function createConfigurationStore({ userDataPath, safeStorage, env = process.env
     try { const raw=readRaw(`${FILE}.bak`);if(raw===null)return fail('storage_unavailable');return save({text:raw,revision:rev}); }catch{return fail('storage_unavailable');}
   }
   return {get,save,setCredential,patchPreferences,migratePreferences,restore,runtimeEnvironment,
-    hostEnvironment:source=>hostStore().environment(source,readEffective().config.hosts),readServices:()=>resolvedServices(),writeServices};
+    hostEnvironment:source=>{
+      try{return hostStore().environment(source,readEffective().config.hosts);}
+      catch{migrationWarnings.push('Saved Host credentials are unavailable. Unlock or repair encrypted storage; local workspace features remain available.');return{...source};}
+    },readServices:()=>resolvedServices(),writeServices};
 }
 module.exports={createConfigurationStore,validateConfigurationText,changesBetween,defaults,REF_FIELDS,HOST_URLS,FILE};

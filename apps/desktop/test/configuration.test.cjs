@@ -86,3 +86,24 @@ test('corrupt external edits retain the most recently effective in-process confi
   assert.equal(h.store.save({text:text(c),revision:a.revision}).ok,true);
   fs.writeFileSync(h.file,'{corrupt');assert.equal(h.store.get().config.appearance.mode,'dark');
 });
+test('pending restart remains visible after subsequent appearance-only saves', t => {
+ const h=setup(t),a=h.store.get(),c=a.config;c.hosts.codex={apiKeyRef:'secret:host/OPENAI_API_KEY'};
+ const b=h.store.save({text:text(c),revision:a.revision,hostChanges:{OPENAI_API_KEY:'dummy-new-key'}});assert.equal(b.pendingRestart,true);
+ c.appearance.mode='dark';const d=h.store.save({text:text(c),revision:b.revision});assert.equal(d.pendingRestart,true);assert.equal(h.store.get().pendingRestart,true);
+ const restarted=createConfigurationStore({userDataPath:h.dir,safeStorage:h.safeStorage,env:{}});assert.equal(restarted.get().pendingRestart,false);
+});
+test('a service token cannot follow a changed endpoint without an explicit update or clear',t=>{
+ const h=setup(t),a=h.store.get(),c=a.config;c.services.doc={apiUrl:'https://first.example',tokenRef:'secret:service/doc'};
+ const b=h.store.save({text:text(c),revision:a.revision,serviceChanges:{doc:'dummy-service-key'}});assert.equal(b.ok,true);
+ c.services.doc.apiUrl='https://second.example';assert.equal(h.store.save({text:text(c),revision:b.revision}).code,'service_endpoint_changed');
+ assert.equal(h.store.readServices().doc.apiUrl,'https://first.example');delete c.services.doc.tokenRef;
+ const d=h.store.save({text:text(c),revision:b.revision,serviceChanges:{doc:null}});assert.equal(d.ok,true);assert.equal(h.store.readServices().doc.token,'');
+});
+test('oversized configuration and locked credentials do not prevent unrelated local features from booting',t=>{
+ const h=setup(t),a=h.store.get(),c=a.config;c.hosts.codex={apiKeyRef:'secret:host/OPENAI_API_KEY'};
+ assert.equal(h.store.save({text:text(c),revision:a.revision,hostChanges:{OPENAI_API_KEY:'dummy-locked-key'}}).ok,true);
+ h.safeStorage.isEncryptionAvailable=()=>false;
+ assert.deepEqual(h.store.hostEnvironment({PATH:'/test/bin'}),{PATH:'/test/bin'});
+ fs.writeFileSync(h.file,'x'.repeat(2*1024*1024));assert.equal(h.store.get().ok,true);assert.equal(h.store.get().config.appearance.mode,'system');
+ assert.equal(h.store.save({text:text(c),revision:h.store.get().revision}).ok,false);
+});

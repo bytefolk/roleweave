@@ -18,7 +18,7 @@ export function serviceErrorKey(body: unknown): string {
   return "services.failed";
 }
 
-function ConnectionForm({ connection, onChange }: { connection: ServiceConnectionView; onChange: (view: ServiceConnectionView) => void }) {
+function ConnectionForm({ connection, onChange, operationsOnly = false }: { connection: ServiceConnectionView; onChange: (view: ServiceConnectionView) => void; operationsOnly?: boolean }) {
   const t = useT();
   const kind = connection.kind;
   const name = kind === "doc" ? "Doc" : "Mem";
@@ -52,12 +52,9 @@ function ConnectionForm({ connection, onChange }: { connection: ServiceConnectio
         ...(kind === "mem" ? { workspaceId: workspaceId.trim() } : {}),
         ...(clearToken ? { token: "" } : token ? { token } : {}),
       });
-    } finally {
-      // Never retain a submitted PAT, including when the IPC call fails.
-      setToken("");
-    }
+    } catch { setNotice({ type: "error", key: "services.failed" }); return; }
     if (response.status !== 200) { setNotice({ type: "error", key: serviceErrorKey(response.body) }); return; }
-    setProbe(null); onChange(response.body);
+    setToken(""); setProbe(null); onChange(response.body);
     setNotice({ type: "success", key: "services.saved" });
     window.dispatchEvent(new Event(SERVICES_CHANGED));
   }
@@ -92,7 +89,7 @@ function ConnectionForm({ connection, onChange }: { connection: ServiceConnectio
         onClick={() => void run("open", open)}>{t("services.open", { name })}</Button>
     </header>
     <p className="owb-settings-module__hint">{t(`services.${kind}Description`)}</p>
-    <div className="owb-service-connection__fields">
+    {!operationsOnly ? <><div className="owb-service-connection__fields">
       <label htmlFor={`service-${kind}-api`}>
         <span>{t("services.apiUrl")}</span>
         <Input id={`service-${kind}-api`} value={apiUrl} required disabled={!!busy}
@@ -119,12 +116,13 @@ function ConnectionForm({ connection, onChange }: { connection: ServiceConnectio
     {connection.tokenConfigured ? <Checkbox checked={clearToken} disabled={!!busy}
       onChange={(event) => { setClearToken(event.target.checked); setToken(""); }}>{t("services.clearToken")}</Checkbox> : null}
     <p className="owb-settings-module__hint">{t("services.addressHint")}</p>
+    </> : null}
     <div className="owb-settings-module__actions">
-      <Button htmlType="submit" type="primary" icon={<Save size={14} aria-hidden="true" />} loading={busy === "save"} disabled={!!busy || !apiUrl.trim()}>{t("services.save")}</Button>
+      {!operationsOnly ? <Button htmlType="submit" type="primary" icon={<Save size={14} aria-hidden="true" />} loading={busy === "save"} disabled={!!busy || !apiUrl.trim()}>{t("services.save")}</Button> : null}
       <Button icon={<Link2 size={14} aria-hidden="true" />} loading={busy === "probe"} disabled={!!busy || !connection.configured}
         onClick={() => void run("probe", check)}>{t("services.check")}</Button>
-      <Button icon={<Unplug size={14} aria-hidden="true" />} disabled={!!busy || !connection.configured}
-        onClick={() => void run("disconnect", disconnect)}>{t("services.disconnect")}</Button>
+      {!operationsOnly ? <Button icon={<Unplug size={14} aria-hidden="true" />} disabled={!!busy || !connection.configured}
+        onClick={() => void run("disconnect", disconnect)}>{t("services.disconnect")}</Button> : null}
     </div>
     {notice ? <Alert showIcon type={notice.type} title={t(notice.key)} /> : null}
     {probe ? <Alert showIcon type={probe.state === "ready" ? "success" : "warning"}
@@ -146,19 +144,20 @@ function ConnectionForm({ connection, onChange }: { connection: ServiceConnectio
   </form>;
 }
 
-export function ServiceConnections({ kind }: { kind?: ExternalServiceKind }) {
+export function ServiceConnections({ kind, operationsOnly = false }: { kind?: ExternalServiceKind; operationsOnly?: boolean }) {
   const t = useT();
   const [connections, setConnections] = useState<ServiceConnectionView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     if (!window.owb.services) return;
-    void window.owb.services.list().then((response) => {
+    const refresh = () => { void window.owb.services.list().then((response) => {
       if (cancelled) return;
-      if (response.status === 200) setConnections(response.body.connections);
+      if (response.status === 200) { setConnections(response.body.connections); setError(null); }
       else setError(serviceErrorKey(response.body));
-    }).catch(() => { if (!cancelled) setError("services.failed"); });
-    return () => { cancelled = true; };
+    }).catch(() => { if (!cancelled) setError("services.failed"); }); };
+    refresh(); window.addEventListener(SERVICES_CHANGED, refresh);
+    return () => { cancelled = true; window.removeEventListener(SERVICES_CHANGED, refresh); };
   }, []);
   // Older packaged shells and existing preview fixtures may lack this bridge.
   if (!window.owb.services) return null;
@@ -167,7 +166,7 @@ export function ServiceConnections({ kind }: { kind?: ExternalServiceKind }) {
     <p className="owb-settings-module__hint">{t("services.description")}</p>
     {error ? <Alert showIcon type="error" title={t(error)} /> : connections === null ? <Spin /> :
       (kind ? [kind] : ["doc", "mem"] as const).map((serviceKind) =>
-        <ConnectionForm key={serviceKind} connection={connections.find((view) => view.kind === serviceKind) ?? emptyConnection(serviceKind)}
+        <ConnectionForm key={serviceKind} operationsOnly={operationsOnly} connection={connections.find((view) => view.kind === serviceKind) ?? emptyConnection(serviceKind)}
           onChange={(view) => setConnections((current) => [...(current ?? []).filter((entry) => entry.kind !== view.kind), view])} />)}
   </section>;
 }
