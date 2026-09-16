@@ -114,15 +114,41 @@
   cursor: no-drop;
 }
 
-/* #32 §1: 2px insertion line for same-level drops, indented to align with
- * the anchored row's content (row padding 8px + 20px toggle + 4px gap). */
-.ui-org-tree__drop-line {
-  flex: none;
+/* #32 §1: 2px insertion indicator via absolutely-positioned pseudo-elements
+ * on the anchored row (#263: no longer in flex flow, so toggling the indicator
+ * does not shift sibling rows or cause reflow feedback loops). */
+.ui-org-tree__row::before,
+.ui-org-tree__row::after {
+  content: none;
+  position: absolute;
+  left: 32px;
+  right: var(--ui-space-2, 8px);
   height: 2px;
-  margin-left: 32px;
-  margin-right: var(--ui-space-2, 8px);
   border-radius: 1px;
   background: var(--ui-primary);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ui-org-tree__row::before {
+  top: -3px;
+}
+
+.ui-org-tree__row::after {
+  bottom: -3px;
+}
+
+.ui-org-tree__row[data-drop-zone="before"]::before {
+  content: "";
+}
+
+.ui-org-tree__row[data-drop-zone="after"]::after {
+  content: "";
+}
+
+.ui-org-tree__row[data-drop-zone="body"]::before,
+.ui-org-tree__row[data-drop-zone="body"]::after {
+  content: "";
 }
 
 /* Light inline toast for refused releases (#32 §1 invalid-drop feedback). */
@@ -541,6 +567,36 @@
 .ui-org-position-card--notice {
   color: var(--ui-foreground-muted);
   text-align: center;
+}
+
+.ui-org-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 28rem;
+  margin: auto;
+  padding: var(--ui-space-12, 48px) var(--ui-space-6, 24px);
+  text-align: center;
+}
+.ui-org-empty-state--compact { padding: var(--ui-space-6, 24px) var(--ui-space-4, 16px); }
+.ui-org-empty-state__icon {
+  display: inline-flex;
+  margin-bottom: var(--ui-space-3, 12px);
+  color: var(--ui-foreground-muted);
+}
+.ui-org-empty-state__title {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: var(--ui-text-sm, 14px);
+  font-weight: 600;
+  line-height: var(--ui-leading-normal, 1.5);
+}
+.ui-org-empty-state .ui-org-empty-state__description {
+  margin: var(--ui-space-2, 8px) 0 0;
+  color: var(--ui-foreground-muted);
+  font-size: var(--ui-text-sm, 14px);
+  line-height: var(--ui-leading-normal, 1.5);
+  text-wrap: pretty;
 }
 
 .ui-org-position-card--notice [data-radix-collection-item],

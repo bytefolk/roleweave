@@ -304,6 +304,7 @@ test("POST /hire persists the selected Agent outside employee package assets and
     assert.deepEqual(binding, {
       schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
       engine: "codex-local",
+      locked: true,
     });
     const employee = await readJson<{ assets: string[] }>(path.join(packageDir, "employee.json"));
     assert.equal(employee.assets.includes(`./${AGENT_BINDING_RELATIVE_PATH}`), false,

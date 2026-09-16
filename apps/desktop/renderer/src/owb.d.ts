@@ -66,7 +66,14 @@ interface OwbStatusResponse {
 }
 
 export interface OwbBridge {
+  /** Credential reads contain only status and a four-character suffix. */
+  settings: {
+    get(): Promise<import("./settings/credential-settings").SettingsSnapshot>;
+    set(key: import("./settings/credential-settings").CredentialKey, value: string): Promise<import("./settings/credential-settings").SettingsResult>;
+    clear(key: import("./settings/credential-settings").CredentialKey): Promise<import("./settings/credential-settings").SettingsResult>;
+  };
   setPositionModel?(request: { positionId: string; model: string }): Promise<OwbApiResponse<import("@roleweave/shared").EmployeeModelConfig>>;
+  setPositionAgentEngine?(request: { positionId: string; engine: TurnEngine }): Promise<OwbApiResponse<{ agentEngine: TurnEngine; agentLocked: true; modelConfig: import("@roleweave/shared").EmployeeModelConfig }>>;
   status(): Promise<OwbStatusResponse>;
   stopControlPlane(): Promise<{ ok: boolean; state: "stopped"; forced: boolean; exitCode: number | null; signalCode: string | null }>;
   openWorkspace(): Promise<OwbApiResponse>;
@@ -105,6 +112,7 @@ export interface OwbBridge {
   createGroup(request: { memberPositionIds: string[] }): Promise<OwbApiResponse<GroupConversation>>;
   groups(): Promise<OwbApiResponse<GroupConversationList>>;
   group(conversationRef: string): Promise<OwbApiResponse<GroupConversation>>;
+  dismissGroup(conversationRef: string): Promise<OwbApiResponse<{ conversationRef: string; dismissed: true }>>;
   addGroupMember(request: { conversationRef: string; positionId: string }): Promise<OwbApiResponse<GroupConversation>>;
   createGroupTurn(request: {
     conversationRef: string;

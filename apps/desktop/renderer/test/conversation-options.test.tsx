@@ -120,7 +120,7 @@ it("uses the Agent default outside local configuration and leaves session contex
   expect(setContext).not.toHaveBeenCalled();
 });
 
-it("makes an invalid inherited connection explicit and prevents model changes", () => {
+it("shows a localized invalid connection summary and prevents model changes", async () => {
   const change = vi.fn();
   render(<ConversationOptions saving={false} disabled={false} session={null} turns={[]} onModel={change}
     config={{ selected: "provider-default", recommended: "provider-default", editable: true, source: "local-config", connection: {
@@ -128,7 +128,10 @@ it("makes an invalid inherited connection explicit and prevents model changes", 
     }, options: [{ id: "provider-default", name: "Agent default", tier: "default" }] }} />);
 
   expect(screen.getByRole("combobox", { name: "员工模型" })).toBeDisabled();
-  expect(screen.getByRole("alert")).toHaveTextContent("本地网关配置缺少模型地址");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "模型连接详情" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("模型连接配置无效，暂时不能切换模型。");
+  expect(document.body.innerHTML).not.toContain("本地网关配置缺少模型地址");
   expect(change).not.toHaveBeenCalled();
 });
 

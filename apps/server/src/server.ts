@@ -12,6 +12,7 @@ import { handleEvents } from "./routes/events.js";
 import {
   handleGroupAddMember,
   handleGroupCreate,
+  handleGroupDismiss,
   handleGroupGet,
   handleGroupList,
   handleGroupTimeline,
@@ -28,7 +29,7 @@ import { handleHealth } from "./routes/health.js";
 import { handleHirePost } from "./routes/hire.js";
 import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
-import { handlePositionGet, handlePositionModel } from "./routes/positions.js";
+import { handlePositionAgentEngine, handlePositionGet, handlePositionModel } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
 import {
   handleSessionCreate,
@@ -186,6 +187,10 @@ async function dispatch(
         await handleGroupGet(ctx, res, conversationRef);
         return;
       }
+      if (operation === undefined && method === "DELETE") {
+        await handleGroupDismiss(ctx, res, conversationRef);
+        return;
+      }
       if (operation === "members" && method === "POST") {
         await handleGroupAddMember(ctx, req, res, conversationRef);
         return;
@@ -307,6 +312,11 @@ async function dispatch(
     if (pathname.startsWith(`${routes.positions}/`) && pathname.endsWith("/model") && method === "PATCH") {
       const id = decodeURIComponent(pathname.slice(routes.positions.length + 1, -6));
       await handlePositionModel(ctx, req, res, id);
+      return;
+    }
+    if (pathname.startsWith(`${routes.positions}/`) && pathname.endsWith("/agent-engine") && method === "PATCH") {
+      const id = decodeURIComponent(pathname.slice(routes.positions.length + 1, -13));
+      await handlePositionAgentEngine(ctx, req, res, id);
       return;
     }
     if (pathname.startsWith(`${routes.positions}/`) && method === "GET") {

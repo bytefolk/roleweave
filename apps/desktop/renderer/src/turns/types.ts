@@ -1,5 +1,5 @@
 import type { EmployeeModelConnection, TurnRecord as ApiTurnRecord } from "@roleweave/shared";
-export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
+export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
 

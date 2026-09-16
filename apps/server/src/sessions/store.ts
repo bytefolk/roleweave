@@ -9,6 +9,7 @@ import {
   isPositionId,
 } from "@roleweave/shared";
 import type { WorkbenchSession, WorkbenchSessionList } from "@roleweave/shared";
+import { PerKeyLock } from "../per-key-lock.js";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 
@@ -24,7 +25,7 @@ const MAX_SESSIONS_PER_POSITION = 128;
 const MAX_POSITION_TEMP_FILES = MAX_POSITIONS;
 const MAX_POSITION_DIRECTORY_ENTRIES = MAX_POSITIONS + MAX_POSITION_TEMP_FILES;
 const MAX_AUTHORITATIVE_POSITION_BYTES = 64 * 1024 * 1024;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 interface WorkspaceInstanceRecord {
   schemaVersion: typeof WORKSPACE_SCHEMA_VERSION;
@@ -119,7 +120,7 @@ function isWorkspaceRecord(value: unknown): value is WorkspaceInstanceRecord {
     validTimestamp(record.createdAt);
 }
 
-function isWorkbenchSession(value: unknown): value is WorkbenchSession {
+export function isWorkbenchSession(value: unknown): value is WorkbenchSession {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   const base = { ...record };
@@ -393,12 +394,12 @@ export async function readAuthoritativeSessionIndex(
 }
 
 export class SessionStore {
-  private readonly locks = new Map<string, Promise<void>>();
+  private readonly locks = new PerKeyLock();
   private readonly activeTurns = new Map<string, number>();
 
   async create(workspace: string, positionId: string, now = new Date().toISOString()): Promise<WorkbenchSession> {
     assertPositionId(positionId);
-    return this.exclusive(`position\0${path.resolve(workspace)}\0${positionId}`, async () => {
+    return this.locks.run(`position\0${path.resolve(workspace)}\0${positionId}`, async () => {
       const identity = await this.workspaceIdentity(workspace, now);
       const existing = await this.readPositionStateIfPresent(workspace, positionId, identity.workspaceInstanceId);
       if (existing?.activeSessionId !== null && existing?.activeSessionId !== undefined) {
@@ -417,7 +418,7 @@ export class SessionStore {
     now = new Date().toISOString(),
   ): Promise<WorkbenchSession> {
     assertPositionId(positionId);
-    return this.exclusive(`position\0${path.resolve(workspace)}\0${positionId}`, async () => {
+    return this.locks.run(`position\0${path.resolve(workspace)}\0${positionId}`, async () => {
       const identity = await this.workspaceIdentity(workspace, now);
       const existing = await this.readPositionStateIfPresent(workspace, positionId, identity.workspaceInstanceId);
       const active = existing?.sessions.find((session) => session.status === "active");
@@ -494,7 +495,7 @@ export class SessionStore {
     now = new Date().toISOString(),
   ): Promise<RotateResult> {
     assertSessionId(sessionId);
-    return this.exclusive(`session\0${path.resolve(workspace)}\0${sessionId}`, async () => {
+    return this.locks.run(`session\0${path.resolve(workspace)}\0${sessionId}`, async () => {
       if ((this.activeTurns.get(this.turnKey(workspace, sessionId)) ?? 0) > 0) {
         throw sessionConflict("session has a running turn and cannot be rotated");
       }
@@ -550,7 +551,7 @@ export class SessionStore {
 
   async setThreadContext(workspace: string, sessionId: string, enabled: boolean): Promise<WorkbenchSession> {
     assertSessionId(sessionId);
-    return this.exclusive(`session\0${path.resolve(workspace)}\0${sessionId}`, async () => {
+    return this.locks.run(`session\0${path.resolve(workspace)}\0${sessionId}`, async () => {
       if ((this.activeTurns.get(this.turnKey(workspace, sessionId)) ?? 0) > 0) {
         throw sessionConflict("session context policy cannot change during a running turn");
       }
@@ -566,7 +567,7 @@ export class SessionStore {
 
   async reserveTurn(workspace: string, sessionId: string): Promise<WorkbenchSession> {
     assertSessionId(sessionId);
-    return this.exclusive(`session\0${path.resolve(workspace)}\0${sessionId}`, async () => {
+    return this.locks.run(`session\0${path.resolve(workspace)}\0${sessionId}`, async () => {
       const session = await this.get(workspace, sessionId);
       if (session.status !== "active") throw sessionConflict("rotated sessions are read-only");
       const key = this.turnKey(workspace, sessionId);
@@ -588,7 +589,7 @@ export class SessionStore {
   }
 
   private async workspaceIdentity(workspace: string, now = new Date().toISOString()): Promise<WorkspaceInstanceRecord> {
-    return this.exclusive(`workspace\0${path.resolve(workspace)}`, async () => {
+    return this.locks.run(`workspace\0${path.resolve(workspace)}`, async () => {
       await ensureRealDirectories(workspace);
       const file = path.join(sessionsRoot(workspace), WORKSPACE_RECORD);
       try {
@@ -660,20 +661,5 @@ export class SessionStore {
       if (session && state) return { session, state };
     }
     return null;
-  }
-
-  private async exclusive<T>(key: string, action: () => Promise<T>): Promise<T> {
-    const previous = this.locks.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const tail = previous.then(() => gate);
-    this.locks.set(key, tail);
-    await previous;
-    try {
-      return await action();
-    } finally {
-      release();
-      if (this.locks.get(key) === tail) this.locks.delete(key);
-    }
   }
 }

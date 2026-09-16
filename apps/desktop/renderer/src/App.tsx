@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button as AntButton, ConfigProvider } from "antd";
+import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
 import { OwbI18nProvider, useT, type OwbLocale } from "@roleweave/ui";
@@ -43,6 +44,7 @@ import {
   beginGroupRun,
   beginPendingTurn,
   defaultAgentHost,
+  TURN_ENGINES,
   reconcileGroupTimeline,
   resolveAgentEngine,
   resetStreamSeq,
@@ -61,6 +63,7 @@ import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
 import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
 import { OrgWorkspaceSplit } from "./org/OrgWorkspaceSplit";
+import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh-coordinator";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
@@ -121,8 +124,16 @@ function AppInner({
    */
   const [approvalItems] = useState<ApprovalQueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const healthReadVersion = useRef(0);
+  const positionReadVersion = useRef(0);
+  const availabilityOperation = useRef<symbol | null>(null);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
+  const [availabilityCheckFailed, setAvailabilityCheckFailed] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
+  const [orgOverview, setOrgOverview] = useState(false);
+  const workbenchButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => setOrgOverview(false), [activeModule, workspaceInfo?.path, workspaceInfo?.open]);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
   const [managementTarget, setManagementTarget] = useState<string | null | undefined>(undefined);
   const [treeLoading, setTreeLoading] = useState(true);
@@ -144,8 +155,10 @@ function AppInner({
    * enforcement; this local projection lets the renderer show accurate
    * readiness and seed a legacy employee's first durable binding. */
   const [positionEngines, setPositionEngines] = useState<Record<string, TurnEngine>>({});
+  const [lockedAgentPositions, setLockedAgentPositions] = useState<Record<string, boolean>>({});
   const [positionModels, setPositionModels] = useState<Record<string, EmployeeModelConfig>>({});
   const [modelSavingId, setModelSavingId] = useState<string | null>(null);
+  const [engineSavingId, setEngineSavingId] = useState<string | null>(null);
   const [turns, setTurns] = useState<TurnRecord[]>([]);
   const [turnStream, setTurnStream] = useState<TurnStreamState>(EMPTY_TURN_STREAM);
   const [busyPositions, setBusyPositions] = useState<Record<string, boolean>>({});
@@ -178,6 +191,7 @@ function AppInner({
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
+  const [orgRefreshes] = useState(createOrgRefreshCoordinator);
   /** Approvals whose verdict was already sealed into a resume turn. The
    * server record never persists pendingApproval, so this client-side set is
    * the only source for settling the verdict card into a terminal state. */
@@ -297,58 +311,68 @@ function AppInner({
     }
   }, [t]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (reusePositionMetadata = false) => {
+    const healthRead = ++healthReadVersion.current;
     try {
     const statusRes = await window.owb.status();
-    setHealth(statusRes.health ?? null);
+    if (healthRead === healthReadVersion.current) setHealth(statusRes.health ?? null);
     if (!statusRes.running) {
       setStartupError(t("misc.serviceFailed"));
       return;
     }
-    const workspaceRes = await window.owb.workspace();
+    // A structural refresh reads the workspace summary and tree together;
+    // ordinary startup still checks for an open workspace before reading it.
+    const [workspaceRes, refreshedTree] = await Promise.all([
+      window.owb.workspace(),
+      reusePositionMetadata ? window.owb.orgTree() : undefined,
+    ]);
     if (workspaceRes.status !== 200) throw new Error("Workspace unavailable");
     setStartupError(null);
     const ws = workspaceRes.body as WorkspaceInfoResponse | null;
     setWorkspaceInfo(ws);
     if (ws?.open === true) {
-      const treeRes = await window.owb.orgTree();
+      const treeRes = refreshedTree ?? await window.owb.orgTree();
       if (treeRes.status === 200) {
         const nextSnapshot = treeRes.body as OrgTreeSnapshot;
         setSnapshot(nextSnapshot);
         const positionIds = flattenPositionIds(nextSnapshot.tree);
         setSelectedId((current) => current && positionIds.includes(current) ? current : null);
-        const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; agentEngine?: TurnEngine }]> => {
-          const response = await window.owb.position(id);
-          const body = response.body as { position?: PositionCardData; agentEngine?: unknown };
-          const position = response.status === 200 && body.position
-            ? normalizePositionForDisplay(body.position)
-            : undefined;
-          const color = position?.metadata?.color;
-          const agentEngine = isTurnEngine(body.agentEngine) ? body.agentEngine : undefined;
-          return [id, {
-            name: position?.name ?? t("org.unknownPosition"),
-            ...(typeof color === "string" && color.length > 0 ? { color } : {}),
-            ...(agentEngine === undefined ? {} : { agentEngine }),
-            // The org chart only needs a human name and optional color. Mode,
-            // budget and permissions belong to the selected position record.
-          }];
-        }));
-        const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
-        positionNamesRef.current = names;
-        setPositionNames(names);
-        const avatars = assignDefaultAvatars(positionIds, ws.path ? {
-          ...readAvatarPreferences(window.localStorage, ws.path),
-          ...workspaceAvatars.current.get(ws.path),
-        } : {});
-        if (ws.path) workspaceAvatars.current.set(ws.path, avatars);
-        try { if (ws.path) window.localStorage.setItem(`roleweave:position-avatars:${ws.path}`, JSON.stringify(avatars)); } catch { /* assignments remain available for this session */ }
-        setPositionAvatars(avatars);
-        setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
-        const engines = cardEntries.reduce<Record<string, TurnEngine>>((next, [id, entry]) => {
-          if (entry.agentEngine !== undefined) next[id] = entry.agentEngine;
-          return next;
-        }, {});
-        setPositionEngines(engines);
+        // Moves/reorders keep the sidebar's names, avatars and engines. Other
+        // mutations (especially deletion/hire) still reconcile all metadata.
+        if (!reusePositionMetadata) {
+          const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; agentEngine?: TurnEngine }]> => {
+            const response = await window.owb.position(id);
+            const body = response.body as { position?: PositionCardData; agentEngine?: unknown };
+            const position = response.status === 200 && body.position
+              ? normalizePositionForDisplay(body.position)
+              : undefined;
+            const color = position?.metadata?.color;
+            const agentEngine = isTurnEngine(body.agentEngine) ? body.agentEngine : undefined;
+            return [id, {
+              name: position?.name ?? t("org.unknownPosition"),
+              ...(typeof color === "string" && color.length > 0 ? { color } : {}),
+              ...(agentEngine === undefined ? {} : { agentEngine }),
+              // The org chart only needs a human name and optional color. Mode,
+              // budget and permissions belong to the selected position record.
+            }];
+          }));
+          const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
+          positionNamesRef.current = names;
+          setPositionNames(names);
+          const avatars = assignDefaultAvatars(positionIds, ws.path ? {
+            ...readAvatarPreferences(window.localStorage, ws.path),
+            ...workspaceAvatars.current.get(ws.path),
+          } : {});
+          if (ws.path) workspaceAvatars.current.set(ws.path, avatars);
+          try { if (ws.path) window.localStorage.setItem(`roleweave:position-avatars:${ws.path}`, JSON.stringify(avatars)); } catch { /* assignments remain available for this session */ }
+          setPositionAvatars(avatars);
+          setPositionColors(Object.fromEntries(cardEntries.filter(([, entry]) => "color" in entry).map(([id, entry]) => [id, (entry as { color: string }).color])));
+          const engines = cardEntries.reduce<Record<string, TurnEngine>>((next, [id, entry]) => {
+            if (entry.agentEngine !== undefined) next[id] = entry.agentEngine;
+            return next;
+          }, {});
+          setPositionEngines(engines);
+        }
         await Promise.all([loadBackups(), loadReports()]);
       } else {
         setSnapshot(null);
@@ -356,6 +380,7 @@ function AppInner({
         setPositionNames({});
         setPositionColors({});
         setPositionEngines({});
+        setLockedAgentPositions({});
       }
     } else {
       setSnapshot(null);
@@ -363,6 +388,7 @@ function AppInner({
       setPositionNames({});
       setPositionColors({});
       setPositionEngines({});
+      setLockedAgentPositions({});
       setSelectedId(null);
       setCard({ loading: false, data: null, notFound: false });
       setTurns([]);
@@ -383,31 +409,100 @@ function AppInner({
     }
   }, [loadBackups, loadReports, t]);
 
+  const refreshOrg = useCallback((workspace: unknown, version: unknown, changes: unknown) =>
+    orgRefreshes.run(workspace, version, () => refresh(onlyMovesAndReorders(changes))), [orgRefreshes, refresh]);
+
+  useEffect(() => { orgRefreshes.clear(); }, [orgRefreshes, workspaceInfo?.path]);
+
   const loadPosition = useCallback(async (id: string) => {
     const version = selectionVersion.current;
+    const read = ++positionReadVersion.current;
     setCard({ loading: true, data: null, notFound: false });
     const res = await window.owb.position(id);
     if (version !== selectionVersion.current || selectedIdRef.current !== id) return;
-    const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown; modelConfig?: EmployeeModelConfig };
-    if (body.modelConfig) setPositionModels((current) => ({ ...current, [id]: body.modelConfig! }));
+    const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown; agentLocked?: unknown; modelConfig?: EmployeeModelConfig };
+    const currentAvailability = read === positionReadVersion.current;
+    if (currentAvailability && body.modelConfig) setPositionModels((current) => ({ ...current, [id]: body.modelConfig! }));
     if (res.status === 404 || body?.code === "position_missing") {
       setCard({ loading: false, data: null, notFound: true });
-      setPositionEngines((current) => {
+      if (currentAvailability) setPositionEngines((current) => {
         const { [id]: _removed, ...rest } = current;
         return rest;
       });
       return;
     }
-    if (isTurnEngine(body.agentEngine)) {
+    if (currentAvailability && isTurnEngine(body.agentEngine)) {
       const agentEngine = body.agentEngine;
       setPositionEngines((current) => current[id] === agentEngine ? current : { ...current, [id]: agentEngine });
     }
+    if (currentAvailability) setLockedAgentPositions((current) => current[id] === (body.agentLocked === true) ? current : { ...current, [id]: body.agentLocked === true });
     setCard({
       loading: false,
       data: body?.position ? normalizePositionForDisplay(body.position) : null,
       notFound: false,
     });
   }, []);
+
+  // A status check only refreshes availability. Never reload the workspace,
+  // organization, sessions or drafts. Both reads commit as one scoped result.
+  useEffect(() => {
+    availabilityOperation.current = null;
+    setCheckingAvailability(false);
+    setAvailabilityCheckFailed(false);
+    return () => {
+      availabilityOperation.current = null;
+      healthReadVersion.current += 1;
+      positionReadVersion.current += 1;
+    };
+  }, [groupWorkspaceScope, selectedId]);
+
+  const recheckAvailability = useCallback(async () => {
+    if (availabilityOperation.current) return;
+    const operation = Symbol();
+    availabilityOperation.current = operation;
+    const scope = latestGroupWorkspaceScope.current;
+    const version = selectionVersion.current;
+    const id = selectedIdRef.current;
+    const healthRead = ++healthReadVersion.current;
+    const positionRead = ++positionReadVersion.current;
+    const isCurrent = () => availabilityOperation.current === operation
+      && latestGroupWorkspaceScope.current === scope && selectionVersion.current === version
+      && selectedIdRef.current === id;
+    const isCurrentRead = () => isCurrent() && healthRead === healthReadVersion.current && positionRead === positionReadVersion.current;
+    setCheckingAvailability(true);
+    setAvailabilityCheckFailed(false);
+    try {
+      const [status, positionResponse] = await Promise.all([
+        window.owb.status(),
+        id ? window.owb.position(id) : undefined,
+      ]);
+      if (!isCurrentRead()) return;
+      if (!status.running || status.health?.status !== "ok" || (id && positionResponse?.status !== 200)) throw new Error("Availability check failed");
+      const body = positionResponse?.body as { modelConfig?: EmployeeModelConfig; agentEngine?: unknown } | undefined;
+      if (id && body) {
+        setPositionModels(current => {
+          const next = { ...current };
+          // A successful legacy response without config invalidates its old cache.
+          if (body.modelConfig) next[id] = body.modelConfig; else delete next[id];
+          return next;
+        });
+        if (isTurnEngine(body.agentEngine)) {
+          const engine = body.agentEngine;
+          setPositionEngines(current => ({ ...current, [id]: engine }));
+        }
+      }
+      setHealth(status.health);
+    } catch {
+      if (isCurrentRead()) setAvailabilityCheckFailed(true);
+    } finally {
+      if (availabilityOperation.current === operation) {
+        availabilityOperation.current = null;
+        setCheckingAvailability(false);
+      }
+    }
+  }, []);
+
+  const availabilityCheck = { onRecheck: recheckAvailability, checking: checkingAvailability, failed: availabilityCheckFailed };
 
   const loadTurnHistory = useCallback(async (id: string, sessionId = selectedSessionIdRef.current) => {
     if (selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
@@ -522,7 +617,8 @@ function AppInner({
     const offEvent = window.owb.onEvent((event) => {
       const envelope = event as { type?: string };
       if (envelope?.type === "org.updated") {
-        void refresh();
+        const payload = (event as { payload?: { workspace?: unknown; version?: unknown; changes?: unknown } }).payload;
+        void refreshOrg(payload?.workspace, payload?.version, payload?.changes);
         return;
       }
       if (typeof envelope?.type === "string" && envelope.type.startsWith("turn.")) {
@@ -550,6 +646,7 @@ function AppInner({
       // A reconnect restarts the server-side seq space; drop the replay guard
       // so new events are not suppressed by a stale high-water mark.
       if (state === "connecting") {
+        orgRefreshes.clear();
         for (const path of workspaceStreams.current.keys()) updateWorkspaceStream(path, resetStreamSeq);
       }
     };
@@ -564,7 +661,7 @@ function AppInner({
       offSse();
       offFallback();
     };
-  }, [loadReports, loadTurnHistory, refresh, updateWorkspaceStream]);
+  }, [loadReports, loadTurnHistory, orgRefreshes, refresh, refreshOrg, updateWorkspaceStream]);
 
   const selectPosition = useCallback((id: string) => {
     if (selectedIdRef.current === id) return;
@@ -581,6 +678,7 @@ function AppInner({
 
   /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
   const openConversation = useCallback((positionId: string) => {
+    setOrgOverview(false);
     if (selectedIdRef.current === positionId) {
       void ensureActiveSession(positionId);
       return;
@@ -631,6 +729,9 @@ function AppInner({
         setPositionEngines((current) => current[request.positionId] === resolvedEngine
           ? current
           : { ...current, [request.positionId]: resolvedEngine });
+      }
+      if (workspacePathRef.current === workspacePath) {
+        setLockedAgentPositions((current) => current[request.positionId] === true ? current : { ...current, [request.positionId]: true });
       }
       if (isSelected()) {
         historyRequest.current += 1;
@@ -687,18 +788,47 @@ function AppInner({
   const changeEmployeeModel = useCallback(async (model: string) => {
     const id = selectedIdRef.current;
     const workspace = workspacePathRef.current;
+    const scope = latestGroupWorkspaceScope.current;
     if (!id || !window.owb.setPositionModel || modelSavingId !== null) return;
+    positionReadVersion.current += 1;
     setModelSavingId(id);
     try {
       const response = await window.owb.setPositionModel({ positionId: id, model });
-      if (workspacePathRef.current !== workspace) return;
+      if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
       if (response.status !== 200) { setTurnError(t("model.saveFailed")); return; }
       setPositionModels((current) => ({ ...current, [id]: response.body }));
       setTurnError(null);
     } catch {
-      if (workspacePathRef.current === workspace) setTurnError(t("model.saveFailed"));
-    } finally { setModelSavingId(null); }
+      if (workspacePathRef.current === workspace && latestGroupWorkspaceScope.current === scope) setTurnError(t("model.saveFailed"));
+    } finally {
+      // A check started during this save may have read the previous model.
+      if (workspacePathRef.current === workspace && latestGroupWorkspaceScope.current === scope && selectedIdRef.current === id) positionReadVersion.current += 1;
+      setModelSavingId(null);
+    }
   }, [modelSavingId, t]);
+
+  const changeEmployeeAgentEngine = useCallback(async (engine: TurnEngine) => {
+    const id = selectedIdRef.current;
+    const workspace = workspacePathRef.current;
+    const scope = latestGroupWorkspaceScope.current;
+    if (!id || !window.owb.setPositionAgentEngine || engineSavingId !== null) return;
+    positionReadVersion.current += 1;
+    setEngineSavingId(id);
+    try {
+      const response = await window.owb.setPositionAgentEngine({ positionId: id, engine });
+      if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
+      if (response.status !== 200) { setTurnError(apiErrorMessage(response.body, t("turn.createFail"))); return; }
+      setPositionEngines((current) => ({ ...current, [id]: response.body.agentEngine }));
+      setLockedAgentPositions((current) => ({ ...current, [id]: true }));
+      setPositionModels((current) => ({ ...current, [id]: response.body.modelConfig }));
+      setTurnError(null);
+    } catch {
+      if (workspacePathRef.current === workspace && latestGroupWorkspaceScope.current === scope) setTurnError(t("turn.createFailOffline"));
+    } finally {
+      if (workspacePathRef.current === workspace && latestGroupWorkspaceScope.current === scope && selectedIdRef.current === id) positionReadVersion.current += 1;
+      setEngineSavingId(null);
+    }
+  }, [engineSavingId, t]);
 
   /** Group spawn (#52): the 202 spawn list carries pre-assigned turnIds; seed
    * one live buffer per mentioned member so SSE deltas aggregate per member. */
@@ -813,6 +943,7 @@ function AppInner({
   }, [refresh, t]);
 
   const applyOrg = useCallback(async (manifest: ChangeManifest, successMessage: string) => {
+    const workspace = workspacePathRef.current;
     setOrgBusy(true);
     setOrgFeedback(null);
     try {
@@ -822,7 +953,7 @@ function AppInner({
         return false;
       }
       setOrgFeedback({ tone: "info", text: successMessage });
-      await refresh();
+      await refreshOrg(workspace, (response.body as { version?: unknown }).version, manifest.changes);
       return true;
     } catch {
       setOrgFeedback({ tone: "warn", text: t("org.applyUncertain") });
@@ -830,7 +961,7 @@ function AppInner({
     } finally {
       setOrgBusy(false);
     }
-  }, [refresh, t]);
+  }, [refreshOrg, t]);
 
   const movePosition = useCallback(async (id: string, reportTo: string | null) => {
     if (!snapshot) return false;
@@ -1024,9 +1155,16 @@ function AppInner({
       configured: health?.hosts?.["codex-local"]?.configured === true,
       ready: health?.hosts?.["codex-local"]?.ready === true,
       // Keep the same product-level language as the hosted runtime.
-      reason: t("misc.codexHostUnknown"),
+      reason: health?.hosts?.["codex-local"]?.nextStep ?? t("misc.codexHostUnknown"),
       modelPinnable: health?.hosts?.["codex-local"]?.modelPinnable,
       model: health?.hosts?.["codex-local"]?.model,
+    },
+    workbuddy: {
+      configured: health?.hosts?.workbuddy?.configured === true,
+      ready: health?.hosts?.workbuddy?.ready === true,
+      reason: health?.hosts?.workbuddy?.nextStep ?? t("misc.workbuddyHostUnknown"),
+      modelPinnable: health?.hosts?.workbuddy?.modelPinnable,
+      model: health?.hosts?.workbuddy?.model,
     },
   }), [health, t]);
 
@@ -1081,11 +1219,17 @@ function AppInner({
   };
   const managedNode = typeof managementTarget === "string" && snapshot ? findNodeById(snapshot.tree, managementTarget) : null;
   return (
-    <DSProvider mode={themeMode}>
-    <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }}
+    <DSProvider mode={themeMode} profile={themeProfile}>
+    <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: {
         fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
-        ...(themeProfile === "mint" ? { colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64" } : {}),
+        ...(themeProfile === "mint" ? {
+          colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64",
+          colorPrimaryHover: themeMode === "dark" ? "#78c9b0" : "#236d58",
+          colorPrimaryActive: themeMode === "dark" ? "#64bca2" : "#236d58",
+          colorTextLightSolid: themeMode === "dark" ? "#14151b" : "#ffffff",
+          colorTextDisabled: themeMode === "dark" ? "#90a098" : "#5e6b65",
+        } : {}),
       } }}>
     <div className="owb-app">
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
@@ -1291,7 +1435,8 @@ function AppInner({
           <Alert type="info" showIcon role="status" title={t("misc.sseReconnecting")} />
         ) : null}
         {health && !engineOk ? (
-          <Alert type="warning" showIcon role="status" title={health.engine?.nextStep ?? t("misc.engineUnavailable")} />
+          <Alert type="warning" showIcon title={<DiagnosticNotice message={t("misc.engineUnavailable")}
+            diagnostic={health.engine?.nextStep} availabilityCheck={availabilityCheck} />} />
         ) : null}
         {turnError ? (
           <Alert type="warning" showIcon role="alert" title={turnError} />
@@ -1335,6 +1480,7 @@ function AppInner({
           />
         ) : activeModule === "groups" ? (
           <GroupsPanel
+            availabilityCheck={availabilityCheck}
             key={`${workspaceInfo?.open}:${workspaceInfo?.path}`}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
@@ -1372,26 +1518,31 @@ function AppInner({
             <AntButton type="primary" size="large" icon={<Plus size={16} aria-hidden="true" />}
               disabled={startupError !== null || health === null} onClick={() => setProjectHubOpen(true)}>{t("project.welcomeAction")}</AntButton>
           </section>
-        ) : <OrgWorkspaceSplit
+        ) : <>
+          <nav className="owb-org-views" aria-label={t("tree.views")}>
+            <AntButton ref={workbenchButtonRef} size="small" type={orgOverview ? "default" : "primary"}
+              aria-pressed={!orgOverview} onClick={() => setOrgOverview(false)}>{t("tree.workbench")}</AntButton>
+            <AntButton size="small" type={orgOverview ? "primary" : "default"} icon={<Network size={14} aria-hidden="true" />}
+              aria-pressed={orgOverview} onClick={() => setOrgOverview(true)}>{t("tree.overview")}</AntButton>
+          </nav>
+          {orgOverview ? <OrgChart
+            className="owb-org-chart--overview"
+            collapsible={false}
+            snapshot={snapshot}
+            loading={treeLoading}
+            displayNames={positionNames}
+            avatarColors={positionColors}
+            avatarUrls={avatarUrls}
+            selectedId={selectedId}
+            onSelect={(id) => { openConversation(id); workbenchButtonRef.current?.focus(); }}
+          /> : null}
+          <OrgWorkspaceSplit
+          hidden={orgOverview}
           ariaLabel={t("tree.splitPane")}
           resetTitle={t("tree.splitPaneReset")}
           valueText={(value) => t("tree.splitPaneValue", { value })}
           left={
             <div className="owb-org-module__left">
-              {/* #137 two-column workspace: the left column stacks the org chart
-                  and the position-record card (aligned, one column); the right
-                  column is owned solely by the conversation panel so the turn
-                  stream gets the full module height. */}
-              {/* P0 组织图：应用态汇报树节点图（纯展示，数据与侧栏树同源）。 */}
-              <OrgChart
-                snapshot={snapshot}
-                loading={treeLoading}
-                displayNames={positionNames}
-                avatarColors={positionColors}
-                avatarUrls={avatarUrls}
-                selectedId={selectedId}
-                onSelect={openConversation}
-              />
               <div className="owb-position-column">
                 <PositionCard
                   position={card.data}
@@ -1410,16 +1561,20 @@ function AppInner({
             </div>
           }
           right={<TurnPanel
+            availabilityCheck={availabilityCheck}
             key={workspaceInfo?.path}
+            active={!orgOverview}
             avatarUrls={avatarUrls}
             workspaceOpen={workspaceInfo?.open === true}
             modelConfig={selectedId ? positionModels[selectedId] : undefined}
-            modelSaving={modelSavingId !== null && modelSavingId === selectedId}
+            modelSaving={(modelSavingId !== null && modelSavingId === selectedId) || (engineSavingId !== null && engineSavingId === selectedId)}
             onSelectModel={changeEmployeeModel}
+            onSelectEngine={changeEmployeeAgentEngine}
             onSetSessionContext={setSessionContext}
             positions={positions}
             selectedPositionId={selectedId}
             engine={selectedId === null ? defaultTurnEngine : engineForPosition(selectedId)}
+            engineLocked={selectedId !== null && lockedAgentPositions[selectedId] === true}
             engineAvailability={engineAvailability}
             turns={displayTurns}
             busy={turnBusy}
@@ -1433,7 +1588,7 @@ function AppInner({
             decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
           />}
-        />}
+        /></>}
       </div>
     </AppShell>
     </div>
@@ -1467,11 +1622,7 @@ function replaceTurn(turns: TurnRecord[], next: TurnRecord): TurnRecord[] {
 }
 
 function isTurnEngine(value: unknown): value is TurnEngine {
-  return value === "qoder"
-    || value === "claude-code"
-    || value === "claude-local"
-    || value === "codex"
-    || value === "codex-local";
+  return typeof value === "string" && (TURN_ENGINES as readonly string[]).includes(value);
 }
 
 function apiErrorMessage(body: unknown, fallback: string): string {

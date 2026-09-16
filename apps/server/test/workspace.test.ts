@@ -132,7 +132,7 @@ test("workspace: create a blank project with a generated owner and never overwri
     assert.equal(owner.roles[0]?.reportTo, null);
     assert.deepEqual(
       JSON.parse(await fs.readFile(path.join(project, "positions", "content-ops-owner", ...AGENT_BINDING_RELATIVE_PATH.split("/")), "utf8")),
-      { schemaVersion: AGENT_BINDING_SCHEMA_VERSION, engine: "qoder" },
+      { schemaVersion: AGENT_BINDING_SCHEMA_VERSION, engine: "qoder", locked: true },
       "the generated project owner gets the same durable default Agent binding as a hired employee",
     );
 
@@ -178,7 +178,7 @@ test("workspace: persist the selected Agent for the generated project owner", as
         path.join(parent, "release-notes", "positions", body.owner, ...AGENT_BINDING_RELATIVE_PATH.split("/")),
         "utf8",
       )),
-      { schemaVersion: AGENT_BINDING_SCHEMA_VERSION, engine: "codex-local" },
+      { schemaVersion: AGENT_BINDING_SCHEMA_VERSION, engine: "codex-local", locked: true },
     );
   } finally {
     await server.close();

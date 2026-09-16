@@ -1,8 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { Empty } from "antd";
-import { AlertTriangle, Check, ChevronRight, LoaderCircle, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, LoaderCircle, MessagesSquare, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { useT } from "@roleweave/ui";
+import { EmptyState, useT } from "@roleweave/ui";
 import { useEngineLabel } from "./engine-select";
 import { EngineIcon } from "./engine-icon";
 import type { TurnProgressKind, TurnRecord } from "./types";
@@ -15,6 +14,7 @@ export interface TurnThreadProps {
    * 或 @ 选择器选择岗位") rather than a generic "start from a clear task"
    * that contradicts the disabled composer hint below. */
   emptyPrompt?: string;
+  emptyDescription?: string;
   canRetry?: (turn: TurnRecord) => boolean;
   onRetry?: (turn: TurnRecord) => void;
   /** Operator verdict for a turn settled as engine.approval_required. */
@@ -236,7 +236,7 @@ function ApprovalCard({
 /** Append-only conversation history with collapsible public milestones.
  * Output, approvals and errors remain visible independently of the disclosure;
  * an indeterminate result is never presented as a completed response. */
-export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onRetry, onVerdict, decidedApprovalIds, scrollKey }: TurnThreadProps) {
+export function TurnThread({ turns, retrying = false, emptyPrompt, emptyDescription, canRetry, onRetry, onVerdict, decidedApprovalIds, scrollKey }: TurnThreadProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
   const threadRef = useRef<HTMLOListElement>(null);
@@ -271,12 +271,8 @@ export function TurnThread({ turns, retrying = false, emptyPrompt, canRetry, onR
   return (
     <>
       <div className="owb-turn-thread owb-turn-thread--empty" hidden={turns.length > 0}>
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            <strong>{emptyPrompt ?? t("turn.emptyStart")}</strong>
-          }
-        />
+        <EmptyState icon={<MessagesSquare size={32} strokeWidth={1.5} />}
+          title={emptyPrompt ?? t("turn.emptyStart")} description={emptyDescription} />
       </div>
       <ol ref={threadRef} className={`owb-turn-thread${turns.length === 0 ? " owb-turn-thread--empty" : ""}`} role="log" aria-live="polite" aria-label={t("turn.threadAria")} hidden={turns.length === 0}>
         {turns.map((turn) => {

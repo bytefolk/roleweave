@@ -219,6 +219,28 @@ export async function setPositionModel(workspace: OpenWorkspace, positionId: str
   });
 }
 
+/** The one-time operator choice for an imported employee. The selection is
+ * durable immediately, before a task is sent, so no employee can be bounced
+ * between runtimes after an operator has made its initial choice. */
+export async function setPositionAgentEngine(
+  workspace: OpenWorkspace,
+  positionId: string,
+  engine: TurnEngine,
+): Promise<void> {
+  const paths = resolvePaths(workspace, positionId);
+  await withBindingLock(`${path.resolve(workspace.dir)}\0${positionId}`, async () => {
+    const existing = await readBindingAt(paths);
+    if (existing?.locked === true) {
+      throw new OrgApiError(errorCodes.session_conflict, 409, "Agent is locked after its initial selection; create a new employee to use another Agent");
+    }
+    await writeBindingAt(paths, {
+      schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
+      engine,
+      locked: true,
+    });
+  });
+}
+
 /**
  * Resolves the one engine a position may use. A pre-binding employee is
  * migrated exactly once: prefer its newest durable turn so an upgrade cannot
@@ -235,12 +257,15 @@ export async function resolvePositionAgentEngine(
 ): Promise<TurnEngine> {
   const paths = resolvePaths(workspace, positionId);
   const existing = await readBindingAt(paths);
-  if (existing !== null) return existing.engine;
+  if (existing?.locked === true) return existing.engine;
 
   const lockKey = `${path.resolve(workspace.dir)}\0${positionId}`;
   return withBindingLock(lockKey, async () => {
     const afterWait = await readBindingAt(paths);
-    if (afterWait !== null) return afterWait.engine;
+    if (afterWait !== null) {
+      if (afterWait.locked !== true) await writeBindingAt(paths, { ...afterWait, locked: true });
+      return afterWait.engine;
+    }
     const engine = await legacyEngineFromHistory(
       workspace,
       positionId,
@@ -250,6 +275,7 @@ export async function resolvePositionAgentEngine(
     await writeBindingAt(paths, {
       schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
       engine,
+      locked: true,
     });
     return engine;
   });

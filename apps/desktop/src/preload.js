@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("owb", {
   generateAvatar: (request) => ipcRenderer.invoke("owb:avatar:generate", request),
   reports: () => ipcRenderer.invoke("owb:reports:get"),
   position: (positionId) => ipcRenderer.invoke("owb:position:get", positionId),
+  setPositionAgentEngine: (request) => ipcRenderer.invoke("owb:position:agent-engine", request),
   setPositionModel: (request) => ipcRenderer.invoke("owb:position:model", request),
   positionDocs: (positionId) => ipcRenderer.invoke("owb:position:docs:list", positionId),
   positionDocFile: (positionId, filePath) => ipcRenderer.invoke("owb:position:docs:read", positionId, filePath),
@@ -39,6 +40,7 @@ contextBridge.exposeInMainWorld("owb", {
   createGroup: (request) => ipcRenderer.invoke("owb:group:create", request),
   groups: () => ipcRenderer.invoke("owb:group:list"),
   group: (conversationRef) => ipcRenderer.invoke("owb:group:get", conversationRef),
+  dismissGroup: (conversationRef) => ipcRenderer.invoke("owb:group:dismiss", conversationRef),
   addGroupMember: (request) => ipcRenderer.invoke("owb:group:member:add", request),
   createGroupTurn: (request) => ipcRenderer.invoke("owb:group:turn:create", request),
   groupTimeline: (conversationRef) => ipcRenderer.invoke("owb:group:timeline", conversationRef),
@@ -62,6 +64,12 @@ contextBridge.exposeInMainWorld("owb", {
     release: (kind) => ipcRenderer.invoke("owb:services:release", kind),
     open: (kind) => ipcRenderer.invoke("owb:services:open", kind),
     openRelease: (kind) => ipcRenderer.invoke("owb:services:open-release", kind),
+  },
+  // Reads return only configured flags and suffix hints; values are write-only.
+  settings: {
+    get: () => ipcRenderer.invoke("owb:settings:get"),
+    set: (key, value) => ipcRenderer.invoke("owb:settings:set", key, value),
+    clear: (key) => ipcRenderer.invoke("owb:settings:clear", key),
   },
   // #134 update surface: enumerated operations only, no generic updater
   // channel. `confirmedByUser` is passed through rather than defaulted here —

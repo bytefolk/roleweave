@@ -374,6 +374,18 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, mod
     if (source.DIGITAL_EMPLOYEE_CODEX_COMMAND !== undefined) {
       environment.DIGITAL_EMPLOYEE_CODEX_COMMAND = source.DIGITAL_EMPLOYEE_CODEX_COMMAND;
     }
+  } else if (engine === "workbuddy") {
+    if (source.CODEBUDDY_API_KEY !== undefined) environment.CODEBUDDY_API_KEY = source.CODEBUDDY_API_KEY;
+    if (source.CODEBUDDY_BASE_URL !== undefined) environment.CODEBUDDY_BASE_URL = source.CODEBUDDY_BASE_URL;
+    if (source.CODEBUDDY_MODEL !== undefined) environment.CODEBUDDY_MODEL = source.CODEBUDDY_MODEL;
+    if (source.CODEBUDDY_INTERNET_ENVIRONMENT !== undefined) {
+      environment.CODEBUDDY_INTERNET_ENVIRONMENT = source.CODEBUDDY_INTERNET_ENVIRONMENT;
+    }
+    // Installation discovery belongs to the bundled resolver. These keys
+    // cross this one boundary and are removed before the actual CLI starts.
+    for (const key of ["DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND", "ProgramFiles", "PROGRAMFILES", "LOCALAPPDATA", "PATHEXT", "SystemRoot", "WINDIR"]) {
+      if (source[key] !== undefined) environment[key] = source[key];
+    }
   } else {
     // The external engine's historical claude-local contract remains login
     // only. The bundled adapter below also supports the operator's own local
@@ -606,6 +618,12 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
   }
 
   turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
+    // An external digital-employee CLI cannot execute this bundled-only Host.
+    // Reject before even starting the external engine so identity cannot fall
+    // through to a different Host or leak a WorkBuddy service credential.
+    if (request.engine === "workbuddy" && !this.bundledElectronEngine) {
+      return Promise.resolve({ status: "indeterminate", events: [], diagnostic: "", code: "turn_engine_unavailable" });
+    }
     return new Promise((resolve) => {
       let settled = false;
       let acceptingOutput = true;

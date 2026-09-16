@@ -265,23 +265,19 @@ test("position content and dismiss action stay reachable under vertical pressure
   );
 });
 
-test("left column pairs the chart and the position record; conversation owns the right column (#137 AC-001/003)", () => {
+test("workbench gives employee details and conversation their own columns (#284)", () => {
   const rules = stylesheetRules();
   const viewport = VIEWPORTS.desktop;
 
   assert.equal(
     valueAt(rules, ".owb-org-module__left", "display", viewport),
     "flex",
-    "the left column is a flex stack: chart on top, position record below, same width by construction",
+    "the left column keeps the employee record stretched",
   );
   assert.equal(
     valueAt(rules, ".owb-org-module__left", "flex-direction", viewport),
     "column",
-    "chart and position record must stack vertically in one column",
-  );
-  assert.ok(
-    !flexGrows(valueAt(rules, ".owb-org-module__left > .owb-org-chart", "flex", viewport)),
-    "the chart keeps its content height inside the left column",
+    "the employee record fills the column vertically",
   );
   assert.ok(
     flexGrows(valueAt(rules, ".owb-org-module__left > .owb-position-column", "flex", viewport)),
@@ -363,7 +359,7 @@ test("the stacked Org page sizes its rows explicitly and owns its narrow-window 
   }
 });
 
-test("the org chart owns its canvas and cannot paint into the conversation row (#186)", () => {
+test("the organization overview owns a bounded canvas (#284)", () => {
   const rules = stylesheetRules();
 
   assert.equal(
@@ -399,24 +395,24 @@ test("the org chart owns its canvas and cannot paint into the conversation row (
 
   for (const viewport of [VIEWPORTS.stackedAt980, VIEWPORTS.stackedNarrow]) {
     assert.equal(
-      valueAt(rules, ".owb-org-module__left > .owb-org-chart", "width", viewport),
+      valueAt(rules, ".owb-main > .owb-org-chart--overview", "width", viewport),
       "100%",
-      `${viewport.width}px: the chart must follow the left column instead of sizing that column to the tree's max-content width`,
+      `${viewport.width}px: the overview must fit the content area rather than the tree max-content width`,
     );
     assert.equal(
-      valueAt(rules, ".owb-org-module__left > .owb-org-chart", "min-width", viewport),
+      valueAt(rules, ".owb-main > .owb-org-chart--overview", "min-width", viewport),
       "0",
       `${viewport.width}px: the flex chart item must give up its automatic min-content width`,
     );
     assert.equal(
-      valueAt(rules, ".owb-org-chart", "min-height", viewport),
-      "360px",
-      `${viewport.width}px: the stacked chart needs a real canvas height before the conversation row begins`,
+      valueAt(rules, ".owb-main > .owb-org-chart--overview", "min-height", viewport),
+      "0",
+      `${viewport.width}px: the overview must shrink inside a short window`,
     );
     assert.equal(
-      valueAt(rules, ".owb-org-chart__body", "min-height", viewport),
-      "312px",
-      `${viewport.width}px: the chart body must provide enough vertical room for the root and child tiers`,
+      valueAt(rules, ".owb-org-chart--overview .owb-org-chart__body", "min-height", viewport),
+      "0",
+      `${viewport.width}px: the canvas must fit its bounded overview frame`,
     );
   }
 });

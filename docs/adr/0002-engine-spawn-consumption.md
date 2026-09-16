@@ -22,5 +22,5 @@ spawn+stdout 结构化事件与 agent-host.v1 进程模型/NDJSON 事件流同�
 ## 后果
 
 - CLI 缺少 `org apply` 时驱动层如实返回 `engine_capability_missing`（503）；可用时严格按 JSON `status` 判断，不以退出码 0 冒充 applied。
-- D3 只接受 `qoder` / `claude-code` / `claude-local`。退出码 1 是不确定结果，不自动重试；引擎事件、输入、输出与诊断全部有界，原始 stderr 不进入本地持久化。
+- D3 只接受 `qoder` / `claude-code` / `claude-local` / `codex` / `codex-local` / `workbuddy`。退出码 1 是不确定结果，不自动重试；引擎事件、输入、输出与诊断全部有界，原始 stderr 不进入本地持久化。
 - 会话/回合是 workbench 工作区本地状态，不复用 Host 原生 resume；当前只保留 digital-employee #158 的 recall 接缝，不声称 mem recall 已完成。

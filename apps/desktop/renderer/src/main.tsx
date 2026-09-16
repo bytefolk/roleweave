@@ -19,6 +19,7 @@ import "./roleweave-conversation.css";
 import "./roleweave-data.css";
 import "./workspace-polish.css";
 import "./memory/memory-workspace.css";
+import "./control-legibility.css";
 import { App } from "./App";
 import { initThemeMode } from "./theme-mode";
 

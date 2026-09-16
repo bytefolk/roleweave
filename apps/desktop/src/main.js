@@ -10,6 +10,7 @@
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
 const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage } = require("electron");
+const { TURN_ENGINE_IDS } = require("@roleweave/shared/turn-engines");
 // Keep the development window and the packaged bundle aligned on the public
 // product name. The old IPC/package identifiers below remain compatibility
 // contracts, but users should only see RoleWeave.
@@ -97,6 +98,7 @@ const { openWorkspaceWithPicker, createWorkspaceWithPicker } = require("./worksp
 const { runtimeEnvironment, runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createConnectionStore, createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
+const { createCredentialStore, registerSettingsIpc, forwardCredentialSafeStderr } = require("./credential-settings.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const ROLEWEAVE_DEV_ICON = path.resolve(
@@ -125,6 +127,11 @@ let currentSseStatus = "connecting";
 let pendingFallbackNotice = null;
 let updateCheckTimer = null;
 let desktopEnv = { ...process.env };
+const credentialStore = () => createCredentialStore({ userDataPath: app.getPath("userData"), safeStorage });
+registerSettingsIpc({
+  ipcMain, getStore: credentialStore,
+  isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
+});
 const serviceConnections = createServiceConnections({
   apiRequest,
   // Electron's secure storage is available only after app.whenReady().
@@ -160,19 +167,17 @@ function startControlPlane() {
     // A stopped WSL distribution needs time to boot before Node can announce readiness.
     readyTimeoutMs: controlPlaneMode(desktopEnv) === "wsl" ? 45000 : DEFAULT_READY_TIMEOUT_MS,
     createChild: () => {
+      // Decrypted settings only enter this child environment, never desktopEnv,
+      // process.env, argv, server config, or renderer status responses.
+      const env = credentialStore().environment({
+        ...desktopEnv,
+        ...engineRuntimeEnvironment(desktopEnv, pinnedEngineCommandDefault()),
+      });
       const child = createControlPlaneChild({
         serverEntry: SERVER_ENTRY,
-        env: {
-          ...desktopEnv,
-          // Directly runnable: default the pinned engine to the bundled qoder
-          // adapter unless the operator pins a real digital-employee CLI.
-          ...engineRuntimeEnvironment(
-            desktopEnv,
-            pinnedEngineCommandDefault(),
-          ),
-        },
+        env,
       });
-      child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+      forwardCredentialSafeStderr(child.stderr, env, (chunk) => process.stderr.write(chunk));
       return child;
     },
   }).then((handle) => {
@@ -428,6 +433,17 @@ ipcMain.handle("owb:position:model", async (event, request) => {
   return apiRequest(`/positions/${encodeURIComponent(request.positionId)}/model`, { method: "PATCH", body: { model: request.model } });
 });
 
+ipcMain.handle("owb:position:agent-engine", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  if (!request || typeof request !== "object" || Array.isArray(request) ||
+      Object.keys(request).length !== 2 || typeof request.positionId !== "string" ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(request.positionId) ||
+      typeof request.engine !== "string" || !TURN_ENGINE_IDS.includes(request.engine)) {
+    return { status: 400, body: { message: "Invalid employee Agent selection" } };
+  }
+  return apiRequest(`/positions/${encodeURIComponent(request.positionId)}/agent-engine`, { method: "PATCH", body: { engine: request.engine } });
+});
+
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.
 ipcMain.handle("owb:position:docs:list", async (_event, positionId) => {
   const validated = validateDocsListRequest(positionId);
@@ -590,6 +606,13 @@ ipcMain.handle("owb:group:get", async (_event, conversationRef) => {
     return { status: 400, body: { code: "group_request_invalid", message: "conversationRef is invalid", retryable: false } };
   }
   return apiRequest(pathname);
+});
+
+ipcMain.handle("owb:group:dismiss", async (_event, conversationRef) => {
+  if (!validateConversationRef(conversationRef)) {
+    return { status: 400, body: { code: "group_request_invalid", message: "conversationRef is invalid", retryable: false } };
+  }
+  return apiRequest(`/groups/${encodeURIComponent(conversationRef)}`, { method: "DELETE" });
 });
 
 ipcMain.handle("owb:group:member:add", async (_event, request) => {

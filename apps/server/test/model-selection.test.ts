@@ -38,6 +38,24 @@ test("legacy engine migration ignores failed history and keeps the requested eng
   }
 });
 
+test("operator can bind an imported employee to Codex before its first task", async () => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  try {
+    assert.equal((await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: workspace } })).status, 200);
+    const select = await api(server.baseUrl, "/positions/repo-owner/agent-engine", { method: "PATCH", token: server.token, body: { engine: "codex" } });
+    assert.equal(select.status, 200);
+    assert.equal((select.body as { agentEngine: string }).agentEngine, "codex");
+    assert.equal((await readPositionAgentBinding(server.ctx.workspace.requireOpen(), "repo-owner"))?.locked, true);
+    const locked = await api(server.baseUrl, "/positions/repo-owner/agent-engine", { method: "PATCH", token: server.token, body: { engine: "qoder" } });
+    assert.equal(locked.status, 409);
+    assert.equal((await api(server.baseUrl, "/positions/repo-owner/agent-engine", { method: "PATCH", token: server.token, body: { engine: "not-an-engine" } })).status, 400);
+  } finally {
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("employee model selection persists, reaches the driver, and preserves the same session context", async () => {
   const seen: TurnRunRequest[] = [];
   const server = await startTestServer(undefined, { async turnRun(request) {

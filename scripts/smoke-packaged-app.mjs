@@ -23,6 +23,10 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+export function hostChildProcesses(processes) {
+  return processes.filter(({ command }) => /qoder(?:-engine|cli)?|claude|codex|codebuddy|workbuddy|(?:^|[\\/\s])cbc(?:[.\s]|$)/i.test(command));
+}
+
 function normalizedPath(value) {
   const resolved = path.resolve(value);
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
@@ -594,11 +598,11 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       0,
       "staged app reported no descendants while still held open",
     );
-    const liveQoderDescendants = liveDescendants.filter(({ command }) => /qoder(?:-engine|cli)?|claude/i.test(command));
+    const liveHostDescendants = hostChildProcesses(liveDescendants);
     assert.equal(
-      liveQoderDescendants.length,
+      liveHostDescendants.length,
       0,
-      `${mode} smoke left a Qoder/Claude/Host child alive after reporting`,
+      `${mode} smoke left an Agent Host child alive after reporting`,
     );
 
     // Everything that needs the tree standing has been read; let the app close.
@@ -621,7 +625,7 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       trackedControlPlanePid: true,
       externalCredentialsForwarded: false,
       liveDescendants: liveDescendants.length,
-      qoderDescendantsObservedAfterReport: liveQoderDescendants.length,
+      qoderDescendantsObservedAfterReport: liveHostDescendants.length,
       knownResidualProcesses: 0,
     };
     completedReport = mode === "static"

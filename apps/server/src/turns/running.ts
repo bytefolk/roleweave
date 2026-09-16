@@ -14,6 +14,41 @@ interface RunningTurn {
   mutationUsers?: number;
 }
 
+/**
+ * Execution bookkeeping — ownership and why these are intentionally separate.
+ *
+ * Four structures track "active" work across the control plane. They look
+ * overlapping but differ in key scope, lifetime, and cleanup semantics:
+ *
+ * - RunningTurnRegistry (this class):
+ *   Key: workspace\0positionId. Lifetime: from reserve() until release().
+ *   Holds abort hooks and cancellation state. Provides per-employee mutual
+ *   exclusion between model turns and lifecycle mutations. Cleanup: explicit
+ *   release(); mutation entries are ref-counted.
+ *
+ * - TurnStore.activeTurns (Set<string>):
+ *   Key: workspace\0positionId\0turnId or workspace\0session:id\0turnId.
+ *   Lifetime: between begin()/beginSession() and finish()/finishSession().
+ *   Detects orphaned "running" records on disk for crash recovery — if a
+ *   record is "running" but its key is absent, the control plane stopped
+ *   before reaching a terminal state. Cleanup: removed in finally blocks.
+ *
+ * - SessionStore.activeTurns (Map<string, number>):
+ *   Key: workspace\0sessionId. Lifetime: between reserveTurn() and
+ *   releaseTurn(). Ref-counted guard that blocks rotate() and
+ *   setThreadContext() while a session has active turns. Cleanup: decremented
+ *   to zero then deleted.
+ *
+ * - GroupStore.activeDispatches (Set<string>):
+ *   Key: workspace\0conversationRef\0messageId. Lifetime: from beginDispatch()
+ *   until the returned callback runs. Identifies in-flight group dispatches
+ *   so timeline reads skip recovery for spawns the dispatch still owns.
+ *   Cleanup: explicit callback in finally blocks.
+ *
+ * These are not consolidated because collapsing them would conflate distinct
+ * invariants: abort hooks vs crash-recovery detection vs lifecycle guards vs
+ * dispatch ownership. Each key scope matches its exclusion boundary.
+ */
 /** Reserves one position before asynchronous work; different employees run independently. */
 export class RunningTurnRegistry {
   private readonly turns = new Map<string, RunningTurn>();

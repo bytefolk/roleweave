@@ -5,7 +5,7 @@ import { GroupsPanel } from "../src/groups/GroupsPanel";
 import type { OwbBridge } from "../src/owb";
 import type { GroupConversation, GroupTimeline, TurnRecord } from "@roleweave/shared";
 import type { LiveRunState } from "../src/turns/turnStream";
-import type { TurnEngineAvailability } from "../src/turns/types";
+import type { TurnEngine, TurnEngineAvailability } from "../src/turns/types";
 
 /** #53 S3 collaboration visuals: the avatar stack and member roster consume
  * the existing /groups* bridge surface — no new channel is introduced. */
@@ -67,7 +67,8 @@ function renderPanel(
     createGroup?: () => Promise<{ status: number; body: unknown }>;
     addGroupMember?: () => Promise<{ status: number; body: unknown }>;
     createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
-    engineForPosition?: (positionId: string) => "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local";
+    engineForPosition?: (positionId: string) => TurnEngine;
+    engineAvailability?: Partial<Record<TurnEngine, TurnEngineAvailability>>;
     onReconcileTimeline?: (timeline: GroupTimeline) => void;
   } = {},
 ) {
@@ -93,6 +94,8 @@ function renderPanel(
         "claude-local": readyAvailability,
         codex: readyAvailability,
         "codex-local": readyAvailability,
+        workbuddy: readyAvailability,
+        ...extra.engineAvailability,
       }}
       engineForPosition={extra.engineForPosition}
       liveRuns={extra.liveRuns ?? {}}
@@ -379,7 +382,7 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
         }}
         liveRuns={{ "engine-run-owner": run }} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
     );
-    const { rerender } = render(panel(liveOwner));
+    const { rerender, container } = render(panel(liveOwner));
     const progress = await screen.findByRole("group", { name: "执行进展" });
     fireEvent.click(within(progress).getByRole("button"));
     expect(within(progress).getByRole("button")).toHaveAttribute("aria-expanded", "false");
@@ -421,6 +424,47 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
     expect(screen.getAllByRole("group", { name: "执行进展" })).toHaveLength(1);
     expect(within(screen.getByRole("group", { name: "执行进展" })).getByRole("button")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps an expanded group message open across live→persisted relocation (#237)", async () => {
+    const longOutput = "Line one.\nLine two.\nLine three.\nLine four.";
+    const liveRunWithLongOutput: LiveRunState = { ...liveOwner, text: longOutput, turnId: "turn-expand" };
+    const persistedTurn = { ...completedTurn(), turnId: "turn-expand", output: longOutput };
+    const emptyTimeline: GroupTimeline = { ...completedTimeline(), items: [completedTimeline().items[0]!] };
+    const persistedTimeline: GroupTimeline = { ...completedTimeline(), items: [completedTimeline().items[0]!, { kind: "member", turn: persistedTurn }] };
+
+    const timelineFn = vi.fn()
+      .mockResolvedValue({ status: 200, body: emptyTimeline })
+      .mockResolvedValue({ status: 200, body: persistedTimeline });
+    installBridge({ timeline: timelineFn });
+
+    const panel = (live: Record<string, LiveRunState>) => (
+      <GroupsPanel workspaceOpen positions={positions} positionNames={positionNames}
+        engine="qoder" engineAvailability={{
+          qoder: readyAvailability,
+          "claude-code": readyAvailability,
+          "claude-local": readyAvailability,
+          codex: readyAvailability,
+          "codex-local": readyAvailability,
+        }}
+        liveRuns={live} onSelectEngine={() => {}} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />
+    );
+    const { rerender } = render(panel({ "engine-run-expand": liveRunWithLongOutput }));
+
+    await waitFor(() => expect(document.querySelector(".owb-bubble__expand")).not.toBeNull(), { timeout: 3000 });
+    const detailsBefore = document.querySelector(".owb-bubble__expand") as HTMLDetailsElement;
+    expect(detailsBefore).not.toBeNull();
+    expect(detailsBefore.open).toBe(false);
+
+    fireEvent.click(detailsBefore.querySelector("summary")!);
+    expect(detailsBefore.open).toBe(true);
+
+    await act(async () => { rerender(panel({})); });
+    const detailsAfter = document.querySelector(".owb-bubble__expand") as HTMLDetailsElement;
+    expect(detailsAfter).not.toBeNull();
+    expect(detailsAfter).toBe(detailsBefore);
+    expect(detailsAfter.open).toBe(true);
+    expect(detailsAfter.querySelector(".owb-tc__out--markdown")).not.toBeNull();
   });
 });
 
@@ -477,13 +521,13 @@ it("sends explicit relay in selected order and restores mode, outputs and blocke
     { kind: "member", turn: { ...completedTurn(), output: "first step draft" } },
     { kind: "member", turn: { ...completedTurn(), turnId: "blocked", positionId: "release-engineer", status: "indeterminate", output: undefined, error: { code: "group_relay_blocked", message: "Earlier step failed", retryable: false } } },
   ] };
-  const { bridge } = renderPanel({
+  const { bridge, container } = renderPanel({
     timeline: vi.fn().mockResolvedValue({ status: 200, body: timeline }),
     createGroupTurn: vi.fn().mockResolvedValue({ status: 202, body: { conversationRef: group.conversationRef, messageId: "relay-new", spawns: [] } }),
   });
-  expect(await screen.findByText("first step draft")).toBeInTheDocument();
+  await waitFor(() => expect(document.querySelector(".owb-bubble__expand > summary")).toHaveTextContent("first step draft"));
   expect(screen.getByText("未执行：前序步骤未成功，接力已停止。")).toBeInTheDocument();
-  const blockedReply = screen.getByText("Earlier step failed").closest("article")!;
+  const blockedReply = container.querySelector(".owb-turn__error")!.closest("article")!;
   expect(within(blockedReply).queryByRole("group", { name: "执行进展" })).not.toBeInTheDocument();
   expect(within(blockedReply).queryByRole("timer")).not.toBeInTheDocument();
   expect(screen.getByText(/依次接力 · Release Engineer → Repo Owner/)).toBeInTheDocument();
@@ -526,4 +570,24 @@ it("does not reconcile an abandoned workspace timeline into shared App state", a
   unmount();
   await act(async () => finish({ status: 200, body: { schemaVersion: "group-timeline.v1", conversationRef: group.conversationRef, items: [{ kind: "member", turn: completedTurn() }] } }));
   expect(onReconcileTimeline).not.toHaveBeenCalled();
+});
+
+it.each([["codex-local", "Codex"], ["workbuddy", "WorkBuddy"]] as const)("blocks a mixed-recipient group with unavailable %s without rendering raw diagnostics", async (engine, label) => {
+  const reason = "Set CODEX_HOME before starting this runtime";
+  const { bridge } = renderPanel({
+    createGroupTurn: async () => ({ status: 202, body: {} }),
+    engineForPosition: id => id === "release-engineer" ? engine : "qoder",
+    engineAvailability: { [engine]: { configured: true, ready: false, reason } },
+  });
+  await screen.findByRole("combobox", { name: "选择要 @ 的成员" });
+  fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), { target: { value: "keep this group draft" } });
+  pickSelectOption("选择要 @ 的成员", "Repo Owner");
+  pickSelectOption("选择要 @ 的成员", "Release Engineer");
+  expect(screen.getByText(`${label} 暂时无法使用。`)).toBeVisible();
+  expect(screen.queryByText(reason)).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "群聊消息" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "发送群消息" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "复制诊断" })).toBeEnabled();
+  fireEvent.submit(screen.getByRole("textbox", { name: "群聊消息" }).closest("form")!);
+  expect(bridge.createGroupTurn).not.toHaveBeenCalled();
 });
