@@ -569,6 +569,7 @@ export const enCatalog: Record<string, string> = {
   "grp.dismissFail": "Failed to dismiss the group",
   "grp.dismissFailOffline": "Failed to dismiss the group (offline)",
   "grp.busy": "Turns are running; wait for them to settle before dismissing",
+  "grp.expandOutput": "Click to read the full message",
 
   // Docs
   "docs.listFail": "Failed to read the document list",
