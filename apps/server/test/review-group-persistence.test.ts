@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -204,16 +205,17 @@ test("group HTTP accepts a 32-member escaped 256 KiB request and rejects bodies 
   assert.equal(messages.length, 1);
   assert.equal(messages[0]?.input, input);
   assert.equal(messages[0]?.spawns?.length, 32);
-  // Rejection can arrive before this upload is consumed. Do not leave that request in
-  // fetch's keep-alive pool, where Node 22 can leave server.close() pending at teardown.
   const tooLarge = await fetch(`${server.baseUrl}/groups/${group.conversationRef}/turns`, {
     method: "POST",
-    headers: { authorization: `Bearer ${server.token}`, "content-type": "application/json", connection: "close" },
+    headers: { authorization: `Bearer ${server.token}`, "content-type": "application/json" },
     body: JSON.stringify({ input: "x" + "\u0000".repeat(256 * 1024 - 1), engine: "qoder", mentions: members, mode: "parallel" }),
   });
   assert.equal(tooLarge.status, 400);
   assert.equal((await tooLarge.json() as { code: string }).code, "body_invalid");
+  assert.equal(tooLarge.headers.get("connection"), "close", "oversize rejection must close the connection");
   assert.equal((await server.ctx.groupStore.readMessages(workspace, group.conversationRef)).length, 1, "rejected request must not create acceptance records");
+  const stillHealthy = await api(server.baseUrl, `/groups/${group.conversationRef}/turns`, { token: server.token });
+  assert.equal(stillHealthy.status, 200, "the pool must survive an oversized rejection");
 });
 
 test("failed spawn recovery releases its lock so a later timeline poll can persist the accepted identity", async (t) => {
@@ -447,4 +449,79 @@ test("single-turn restart recovery preserves timestamp ordering after clock roll
   assert.equal(recovered?.createdAt, createdAt);
   assert.ok(compareRfc3339Instants(recovered!.updatedAt, createdAt) >= 0);
   assert.deepEqual(await restarted.readPositionTurn(workspace, "repo-owner", turnId, "2026-09-08T23:59:59Z"), recovered);
+});
+
+function sendChunkedPost(url: string, token: string, bodyBytes: number, chunkSize = 65536): Promise<{ status: number; body: string; aborted: boolean }> {
+  return new Promise((resolve) => {
+    const parsed = new URL(url);
+    const req = http.request({
+      hostname: parsed.hostname,
+      port: parsed.port,
+      path: parsed.pathname,
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "transfer-encoding": "chunked" },
+    });
+    let body = "";
+    let aborted = false;
+    req.on("response", (res) => {
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => { body += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body, aborted: false }));
+    });
+    req.on("abort", () => { aborted = true; });
+    req.on("error", () => resolve({ status: 0, body: "", aborted }));
+    let sent = 0;
+    const payload = Buffer.alloc(chunkSize, "x");
+    const timer = setInterval(() => {
+      if (sent >= bodyBytes) { clearInterval(timer); req.end(); return; }
+      const remaining = bodyBytes - sent;
+      const toSend = Math.min(chunkSize, remaining);
+      req.write(toSend < chunkSize ? payload.subarray(0, toSend) : payload);
+      sent += toSend;
+    }, 1);
+  });
+}
+
+test("oversize chunked upload without content-length is rejected and keep-alive survives", async (t) => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  t.after(async () => { await server.close(); await fs.rm(workspace, { recursive: true, force: true }); });
+  assert.equal((await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: workspace } })).status, 200);
+  const result = await sendChunkedPost(`${server.baseUrl}/groups`, server.token, 2 * 1024 * 1024);
+  assert.equal(result.status, 400);
+  assert.equal(JSON.parse(result.body).code, "body_invalid");
+  const healthy = await api(server.baseUrl, "/groups", { token: server.token });
+  assert.equal(healthy.status, 200, "keep-alive pool must survive a chunked oversize rejection");
+});
+
+test("chunked upload exceeding the 4 MiB safety cap is rejected after full consumption", async (t) => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  t.after(async () => { await server.close(); await fs.rm(workspace, { recursive: true, force: true }); });
+  assert.equal((await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: workspace } })).status, 200);
+  const result = await sendChunkedPost(`${server.baseUrl}/groups`, server.token, 5 * 1024 * 1024, 256 * 1024);
+  assert.equal(result.status, 400);
+  assert.equal(JSON.parse(result.body).code, "body_invalid");
+  const healthy = await api(server.baseUrl, "/groups", { token: server.token });
+  assert.equal(healthy.status, 200, "keep-alive pool must survive a >4 MiB chunked oversize");
+});
+
+test("stalled chunked upload is destroyed after the drain deadline", async (t) => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  t.after(async () => { await server.close(); await fs.rm(workspace, { recursive: true, force: true }); });
+  assert.equal((await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: workspace } })).status, 200);
+  const parsed = new URL(`${server.baseUrl}/groups`);
+  const result = await new Promise<{ aborted: boolean; status: number }>((resolve) => {
+    const req = http.request({
+      hostname: parsed.hostname, port: parsed.port, path: parsed.pathname, method: "POST",
+      headers: { authorization: `Bearer ${server.token}`, "content-type": "application/json", "transfer-encoding": "chunked" },
+    });
+    let aborted = false;
+    req.on("response", (res) => { res.resume(); res.on("end", () => resolve({ aborted: false, status: res.statusCode ?? 0 })); });
+    req.on("abort", () => { aborted = true; });
+    req.on("error", () => resolve({ aborted, status: 0 }));
+    req.write(Buffer.alloc(256 * 1024, "x"));
+  });
+  assert.ok(result.aborted || result.status === 0, "a stalled upload must be destroyed, not held indefinitely");
 });

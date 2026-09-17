@@ -48,9 +48,12 @@ import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceOpen } from "
  * Auth: every endpoint except /health requires `Authorization: Bearer <boot-token>`.
  */
 export function createControlPlane(ctx: ControlPlaneContext): http.Server {
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     void dispatch(ctx, req, res);
   });
+  server.requestTimeout = 30000;
+  server.headersTimeout = 10000;
+  return server;
 }
 
 async function dispatch(
@@ -360,6 +363,9 @@ async function dispatch(
     );
   } catch (err) {
     try {
+      if (err instanceof OrgApiError && err.code === errorCodes.body_invalid) {
+        res.setHeader("connection", "close");
+      }
       sendError(res, err);
     } catch {
       // Response already closed (e.g. SSE drop); nothing else to do.

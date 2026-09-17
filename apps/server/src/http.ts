@@ -7,7 +7,8 @@ import {
 } from "@roleweave/shared";
 
 const MAX_BODY_BYTES = 1024 * 1024;
-const READ_SAFETY_CAP = 4 * 1024 * 1024;
+const DRAIN_BYTE_CAP = 10 * 1024 * 1024;
+const DRAIN_TIMEOUT_MS = 2000;
 
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -32,21 +33,26 @@ export function sendError(res: ServerResponse, err: unknown): void {
 }
 
 export async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
-  const contentLength = req.headers?.["content-length"];
-  if (contentLength && Number(contentLength) > MAX_BODY_BYTES) {
-    await drainRequest(req);
-    throw new OrgApiError(errorCodes.body_invalid, 400, "request body exceeds 1 MiB limit");
+  const clHeader = req.headers?.["content-length"];
+  if (clHeader !== undefined) {
+    const cl = Number(clHeader);
+    if (Number.isSafeInteger(cl) && cl > MAX_BODY_BYTES) {
+      await drainRequest(req);
+      throw new OrgApiError(errorCodes.body_invalid, 400, "request body exceeds 1 MiB limit");
+    }
   }
 
   const chunks: Buffer[] = [];
   let size = 0;
-  for await (const chunk of req) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += buf.length;
-    chunks.push(buf);
-    if (size > READ_SAFETY_CAP) {
-      break;
+  const timer = setTimeout(() => req.destroy(), DRAIN_TIMEOUT_MS);
+  try {
+    for await (const chunk of req) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buf.length;
+      if (size <= MAX_BODY_BYTES) chunks.push(buf);
     }
+  } finally {
+    clearTimeout(timer);
   }
 
   if (size > MAX_BODY_BYTES) {
@@ -64,7 +70,32 @@ export async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
 }
 
 async function drainRequest(req: IncomingMessage): Promise<void> {
-  try {
-    for await (const _ of req) { /* consume remaining body so the client can finish uploading */ }
-  } catch { /* client may have closed; nothing to do */ }
+  return new Promise<void>((resolve) => {
+    let drained = 0;
+    const timer = setTimeout(() => {
+      req.destroy();
+      resolve();
+    }, DRAIN_TIMEOUT_MS);
+    req.on("data", (chunk: Buffer) => {
+      drained += chunk.length;
+      if (drained > DRAIN_BYTE_CAP) {
+        clearTimeout(timer);
+        req.destroy();
+        resolve();
+      }
+    });
+    req.on("end", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    req.on("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    req.on("error", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    req.resume();
+  });
 }
