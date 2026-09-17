@@ -40,7 +40,7 @@ it("renders a loading state, then all unconfigured fields and exact env-variable
   expect(screen.getByText("Loading credential settings…")).toBeInTheDocument();
   expect(screen.queryByRole("form")).not.toBeInTheDocument();
   await act(async () => resolve(snapshot()));
-  expect(screen.getAllByText("Not configured")).toHaveLength(6);
+  expect(screen.getAllByText("Not configured")).toHaveLength(CREDENTIAL_FIELDS.length);
   for (const { key } of CREDENTIAL_FIELDS) expect(screen.getByText(key)).toBeInTheDocument();
   for (const button of screen.getAllByRole("button", { name: "Clear" })) expect(button).toBeDisabled();
   expect(screen.getByText(/Launch-environment settings take precedence/)).toBeInTheDocument();
@@ -76,7 +76,7 @@ it("saves through the bridge once, clears typed DOM values before awaiting, and 
   expect(await screen.findByText("Configured · ••••abcd")).toBeInTheDocument();
   expect(screen.getByText("Saved securely. Applies on the next control-plane start.")).toBeInTheDocument();
   fireEvent.click(within(form()).getByRole("button", { name: "Clear" }));
-  await waitFor(() => expect(screen.getAllByText("Not configured")).toHaveLength(6));
+  await waitFor(() => expect(screen.getAllByText("Not configured")).toHaveLength(CREDENTIAL_FIELDS.length));
   expect(api.clear).toHaveBeenCalledExactlyOnceWith("QODER_PERSONAL_ACCESS_TOKEN");
   expect(view.container.innerHTML).not.toContain(SECRET);
 });

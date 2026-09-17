@@ -7,7 +7,7 @@ import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
 import { resolveCodexExecutable, validatedCodexModel } from "../codex-binary.js";
-import { resolveGeminiExecutable, validatedGeminiModel } from "../gemini-binary.js";
+import { resolveGeminiClient, validatedGeminiModel } from "../gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../workbuddy-binary.js";
 import { probeWorkbuddyExecutable, workbuddyConfiguration, workbuddyVersionProfile } from "../workbuddy-runtime.js";
 import { createLauncherSpawnSpec } from "../windows-launcher.js";
@@ -34,6 +34,7 @@ export interface CodexBinaryState {
 export interface GeminiBinaryState {
   installed: boolean;
   version: string | null;
+  client?: "gemini" | "antigravity";
 }
 
 export interface WorkbuddyBinaryState {
@@ -405,10 +406,10 @@ export function probeGeminiBinary(
   timeoutMs = 3000,
   platform: NodeJS.Platform = process.platform,
 ): GeminiBinaryState {
-  const command = resolveGeminiExecutable(env, platform);
-  if (command === null) return { installed: false, version: null };
+  const resolved = resolveGeminiClient(env, platform);
+  if (resolved === null) return { installed: false, version: null };
   let probe: ReturnType<typeof spawnSync>;
-  const spec = createLauncherSpawnSpec(command, ["--version"], runtimeExecutableEnvironment(env), platform);
+  const spec = createLauncherSpawnSpec(resolved.command, ["--version"], runtimeExecutableEnvironment(env), platform);
   try {
     probe = spawnSync(spec.command, spec.args, {
       ...spec.options, encoding: "utf8", killSignal: "SIGKILL", timeout: timeoutMs, windowsHide: true,
@@ -421,7 +422,7 @@ export function probeGeminiBinary(
     ? probe.stdout
     : typeof probe.stderr === "string" ? probe.stderr : "";
   const match = /(\d+\.\d+(?:\.\d+)?)/.exec(announced);
-  return { installed: true, version: match ? match[1]! : null };
+  return { installed: true, version: match ? match[1]! : null, client: resolved.client };
 }
 
 /** Exported for the #221 review B4 regression only. */
@@ -540,8 +541,11 @@ export function hostHealth({
   const codexLocalConfigured = codex.installed && codexModelUsable;
   const geminiModel = validatedGeminiModel(env.GEMINI_MODEL);
   const geminiModelUsable = geminiModel !== null;
-  const geminiCredentialConfigured = typeof env.GEMINI_API_KEY === "string" && env.GEMINI_API_KEY.trim().length > 0;
-  const geminiConfigured = gemini.installed && geminiCredentialConfigured && geminiModelUsable;
+  // Both supported Google clients can reuse a cached local account in
+  // headless mode. As with codex-local and claude-local, health checks only
+  // local prerequisites; the first real turn remains the authentication and
+  // entitlement proof. GEMINI_API_KEY is an optional alternate connection.
+  const geminiConfigured = gemini.installed && geminiModelUsable;
   const claudeCodeConfigured = bundledQoder
     ? (claudeLocal.installed && claudeLocal.supported && claudeConfigured)
     : claudeConfigured;
@@ -662,10 +666,8 @@ export function hostHealth({
       ...(!bundledElectronEngine
         ? { nextStep: "Gemini 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Gemini 回合" }
         : !gemini.installed
-          ? { nextStep: "安装 Gemini CLI 并确保 gemini 在 PATH 上（或用 DIGITAL_EMPLOYEE_GEMINI_COMMAND 指定二进制路径）" }
-          : !geminiCredentialConfigured
-            ? { nextStep: "设置 GEMINI_API_KEY 后重启工作台" }
-            : !geminiModelUsable
+          ? { nextStep: "安装 Gemini CLI（gemini）或 Antigravity CLI（agy）并确保它在 PATH 上；也可用 DIGITAL_EMPLOYEE_GEMINI_COMMAND 指定兼容客户端" }
+          : !geminiModelUsable
               ? { nextStep: "GEMINI_MODEL 不是合法的模型标识（首字符为字母或数字，其余限 A-Z a-z 0-9 . _ : / -，长度 ≤ 256）；请更正或清空后重启工作台" }
               : !engineAvailable
                 ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }

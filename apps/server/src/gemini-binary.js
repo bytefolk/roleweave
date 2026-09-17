@@ -31,6 +31,46 @@ function findOnPath(name, env, platform) {
   return null;
 }
 
+/** @typedef {"gemini" | "antigravity"} GeminiClientKind */
+
+/** @param {string} command @returns {GeminiClientKind} */
+function inferredClientKind(command) {
+  const base = path.basename(command).replace(/\.(?:cmd|bat|exe)$/i, "").toLowerCase();
+  return base === "agy" || base === "antigravity" ? "antigravity" : "gemini";
+}
+
+/**
+ * Resolve either supported Google Agent client. Gemini CLI remains the first
+ * choice when both are installed; Antigravity CLI is discovered through its
+ * official `agy` launcher (plus the documented legacy `antigravity` alias).
+ * An explicit command may select its protocol with
+ * DIGITAL_EMPLOYEE_GEMINI_CLIENT=gemini|antigravity; otherwise its basename is
+ * used. This keeps arbitrary wrapper scripts usable without executing --help.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @param {NodeJS.Platform} [platform]
+ * @returns {{ command: string, client: GeminiClientKind } | null}
+ */
+export function resolveGeminiClient(env, platform = process.platform) {
+  const explicit = (env.DIGITAL_EMPLOYEE_GEMINI_COMMAND ?? "").trim();
+  if (explicit) {
+    if (/[\u0000-\u001f\u007f]/.test(explicit)) return null;
+    const pathLike = path.isAbsolute(explicit) || explicit.includes("/") || explicit.includes("\\");
+    const command = pathLike ? executableTarget(path.resolve(explicit)) : findOnPath(explicit, env, platform);
+    if (command === null) return null;
+    const selected = env.DIGITAL_EMPLOYEE_GEMINI_CLIENT;
+    if (selected !== undefined && selected !== "gemini" && selected !== "antigravity") return null;
+    return { command, client: selected ?? inferredClientKind(explicit) };
+  }
+  const gemini = findOnPath("gemini", env, platform);
+  if (gemini !== null) return { command: gemini, client: "gemini" };
+  for (const name of ["agy", "antigravity"]) {
+    const command = findOnPath(name, env, platform);
+    if (command !== null) return { command, client: "antigravity" };
+  }
+  return null;
+}
+
 /**
  * Resolve Gemini CLI without a shell. An explicit override is authoritative:
  * it must resolve to an executable, rather than falling back to an unrelated
@@ -41,13 +81,7 @@ function findOnPath(name, env, platform) {
  * @returns {string | null}
  */
 export function resolveGeminiExecutable(env, platform = process.platform) {
-  const explicit = (env.DIGITAL_EMPLOYEE_GEMINI_COMMAND ?? "").trim();
-  if (explicit) {
-    if (/[\u0000-\u001f\u007f]/.test(explicit)) return null;
-    const pathLike = path.isAbsolute(explicit) || explicit.includes("/") || explicit.includes("\\");
-    return pathLike ? executableTarget(path.resolve(explicit)) : findOnPath(explicit, env, platform);
-  }
-  return findOnPath("gemini", env, platform);
+  return resolveGeminiClient(env, platform)?.command ?? null;
 }
 
 /**

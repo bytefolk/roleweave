@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { OrgApiError, errorCodes, isQoderModelId, turnEngines } from "@roleweave/shared";
+import { OrgApiError, errorCodes, isEngineModelId, turnEngines } from "@roleweave/shared";
 import type { HirePermissions, PositionProfileFailure, TurnEngine } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { resolveServiceConnection } from "../services/connections.js";
@@ -119,7 +119,7 @@ export async function handlePositionModel(ctx: ControlPlaneContext, req: Incomin
     const engine = existing?.engine ?? requestedEngine;
     if (!engine) throw new OrgApiError(errorCodes.turn_request_invalid, 400, "An Agent engine is required before choosing its model");
     const config = await employeeModelConfig(engine, existing?.model, true, process.env, "cached");
-    if (!config.options.some((m) => m.id === body.model) && !(config.allowCustomModel && isQoderModelId(body.model))) {
+    if (!config.options.some((m) => m.id === body.model) && !(config.allowCustomModel && isEngineModelId(body.model, engine))) {
       throw new OrgApiError(errorCodes.turn_request_invalid, 400, "Model is not in this Agent's catalog");
     }
     await setPositionModel(ws, positionId, body.model, existing ? undefined : requestedEngine);

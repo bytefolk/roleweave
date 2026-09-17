@@ -18,7 +18,7 @@ import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
 import { resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
-import { resolveGeminiExecutable, validatedGeminiModel } from "../src/gemini-binary.js";
+import { resolveGeminiClient, validatedGeminiModel } from "../src/gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../src/workbuddy-binary.js";
 import { workbuddyConfiguration, workbuddyEnvironment, workbuddyVersionProfile, probeWorkbuddyExecutable, workbuddyTurnArgs, createWorkbuddyParser } from "../src/workbuddy-runtime.js";
 import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
@@ -744,6 +744,16 @@ async function turnRunGemini(workspaceDir, positionId, input) {
     if (root) { try { rmSync(root, { recursive: true, force: true }); } catch { /* owned temporary root */ } }
   };
   process.once("exit", cleanup);
+  // driver-cli terminates the adapter process group on cancellation/timeout,
+  // while the Google client deliberately owns a separate group so its own
+  // descendants can be reaped. Relay graceful termination across that group
+  // boundary; otherwise a SIGKILL fallback leaves `agy` running indefinitely.
+  const terminate = () => {
+    cleanup();
+    process.exit(143);
+  };
+  process.once("SIGTERM", terminate);
+  process.once("SIGINT", terminate);
   const finish = (event) => {
     if (terminalEmitted) return;
     terminalEmitted = true;
@@ -752,11 +762,10 @@ async function turnRunGemini(workspaceDir, positionId, input) {
   };
   const fail = (code, retryable = false) => finish({
     type: "run.failed", runId, timestamp: now(),
-    error: { code, message: `Gemini request failed (${code}); check Gemini CLI and GEMINI_API_KEY.`, retryable, terminalReason: "engine_internal_error" },
+    error: { code, message: `Gemini request failed (${code}); check the selected Google CLI and its local login or GEMINI_API_KEY.`, retryable, terminalReason: "engine_internal_error" },
   });
-  if (!process.env.GEMINI_API_KEY?.trim()) { fail("gemini.credential_missing"); return; }
-  const executable = resolveGeminiExecutable(process.env);
-  if (executable === null) { fail("gemini.binary_unresolved"); return; }
+  const resolved = resolveGeminiClient(process.env);
+  if (resolved === null) { fail("gemini.binary_unresolved"); return; }
   const model = validatedGeminiModel(process.env.ROLEWEAVE_TURN_MODEL ?? process.env.GEMINI_MODEL);
   if (model === null) { fail("gemini.model_invalid"); return; }
   try {
@@ -771,21 +780,121 @@ async function turnRunGemini(workspaceDir, positionId, input) {
     // so allowing even a read-only tool would bypass a position's policy.
     await fs.writeFile(path.join(policyDir, "roleweave.toml"), '[[rule]]\ntoolName = "*"\ndecision = "deny"\npriority = 999\n', { mode: 0o600 });
     const prompt = `[Position: ${positionId}]\n\n${input || "Execute your position duties for this turn."}`;
-    const args = ["--prompt", prompt, "--output-format", "json", "--approval-mode", "plan", "--extensions", "", "--admin-policy", policyDir];
+    let args;
+    if (resolved.client === "antigravity") {
+      // Antigravity keeps account credentials in the native keyring. Give it a
+      // clean settings root so operator plugins/hooks/permissions cannot enter
+      // the turn, while the shared keyring login remains available. Linux may
+      // use its private 0600 token file when no Secret Service is available;
+      // copy only that credential into the disposable root, never settings,
+      // plugins, conversations, hooks, or skills. API-key mode additionally
+      // requires modelProvider=gemini in this settings file.
+      const settingsDir = path.join(home, ".gemini", "antigravity-cli");
+      await fs.mkdir(settingsDir, { recursive: true, mode: 0o700 });
+      const operatorHome = process.env.HOME || process.env.USERPROFILE || os.homedir();
+      let operatorModel;
+      // A fresh Antigravity home has no selected model. Recent clients can
+      // finish authentication and then wait forever before the first model
+      // request in that state. Import only the inert, bounded model label from
+      // the operator settings; plugins, hooks, skills and permissions remain
+      // excluded from the disposable home.
+      try {
+        const settingsHandle = await fs.open(
+          path.join(operatorHome, ".gemini", "antigravity-cli", "settings.json"),
+          fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0),
+        );
+        try {
+          const settingsStat = await settingsHandle.stat();
+          if (settingsStat.isFile() && settingsStat.size > 0 && settingsStat.size <= 64 * 1024) {
+            const operatorSettings = JSON.parse(await settingsHandle.readFile("utf8"));
+            if (typeof operatorSettings?.model === "string" &&
+                /^[A-Za-z0-9][A-Za-z0-9 ._:/()+-]{0,255}$/.test(operatorSettings.model)) {
+              operatorModel = operatorSettings.model;
+            }
+          }
+        } finally {
+          await settingsHandle.close();
+        }
+      } catch {
+        // An explicit GEMINI_MODEL can still select a model without settings.
+      }
+      if (!process.env.GEMINI_API_KEY?.trim()) {
+        const sourceToken = path.join(operatorHome, ".gemini", "antigravity-cli", "antigravity-oauth-token");
+        const targetToken = path.join(settingsDir, "antigravity-oauth-token");
+        let tokenHandle;
+        try {
+          tokenHandle = await fs.open(sourceToken, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
+          const tokenStat = await tokenHandle.stat();
+          if (tokenStat.isFile() && tokenStat.size > 0 && tokenStat.size <= 64 * 1024) {
+            const token = await tokenHandle.readFile();
+            if (token.length > 0 && token.length <= 64 * 1024) {
+              await fs.writeFile(targetToken, token, { mode: 0o600, flag: "wx" });
+            }
+          }
+        } catch {
+          // Native keyring-backed installs do not have a token file.
+        } finally {
+          try { await tokenHandle?.close(); } catch { /* already closed */ }
+        }
+      }
+      const settings = {
+        ...(process.env.GEMINI_API_KEY?.trim() ? { modelProvider: "gemini" } : {}),
+        ...(model === undefined && operatorModel !== undefined ? { model: operatorModel } : {}),
+        permissions: {
+          deny: [
+            "command(*)", "unsandboxed(*)", "read_file(*)", "write_file(*)",
+            "read_url(*)", "execute_url(*)", "mcp(*)",
+          ],
+        },
+      };
+      await fs.writeFile(path.join(settingsDir, "settings.json"), `${JSON.stringify(settings)}\n`, { mode: 0o600 });
+      // Do not add --sandbox here: enabling Antigravity's terminal sandbox can
+      // bootstrap an external runtime and stall otherwise tool-free turns.
+      // Plan mode plus the explicit deny policy is the deterministic boundary.
+      args = ["--prompt", prompt, "--output-format", "json", "--mode=plan", "--disable-slash-commands"];
+    } else {
+      args = ["--prompt", prompt, "--output-format", "json", "--approval-mode", "plan", "--extensions", "", "--admin-policy", policyDir];
+    }
     if (model !== undefined) args.push("--model", model);
-    const spec = createLauncherSpawnSpec(executable, args, {
+    const operatorGeminiHome = process.env.GEMINI_CLI_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir();
+    const spec = createLauncherSpawnSpec(resolved.command, args, {
       PATH: process.env.PATH,
       PATHEXT: process.env.PATHEXT,
       SYSTEMROOT: process.env.SYSTEMROOT,
       SystemRoot: process.env.SystemRoot,
       WINDIR: process.env.WINDIR,
       ComSpec: process.env.ComSpec,
+      DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS,
+      XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR,
+      // Google provider calls must use the same bounded network environment
+      // that driver-cli admitted into this adapter. Dropping these values made
+      // local authentication succeed while loadCodeAssist silently waited on
+      // an unreachable direct connection until the outer 120s timeout.
+      HTTP_PROXY: process.env.HTTP_PROXY,
+      HTTPS_PROXY: process.env.HTTPS_PROXY,
+      NO_PROXY: process.env.NO_PROXY,
+      http_proxy: process.env.http_proxy,
+      https_proxy: process.env.https_proxy,
+      no_proxy: process.env.no_proxy,
+      NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS,
+      SSL_CERT_FILE: process.env.SSL_CERT_FILE,
+      SSL_CERT_DIR: process.env.SSL_CERT_DIR,
+      LANG: process.env.LANG,
+      LC_ALL: process.env.LC_ALL,
+      LC_CTYPE: process.env.LC_CTYPE,
       HOME: home,
       USERPROFILE: home,
       TMPDIR: root,
       TMP: root,
       TEMP: root,
-      GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+      // Gemini CLI stores its cached Google login below GEMINI_CLI_HOME. In
+      // API-key mode use the isolated home so no operator configuration is
+      // loaded; in local-login mode expose only this documented config root.
+      ...(resolved.client === "gemini" ? {
+        GEMINI_CLI_HOME: process.env.GEMINI_API_KEY?.trim() ? home : operatorGeminiHome,
+      } : {}),
+      ...(process.env.GEMINI_API_KEY !== undefined ? { GEMINI_API_KEY: process.env.GEMINI_API_KEY } : {}),
+      ...(process.env.GOOGLE_GEMINI_BASE_URL !== undefined ? { GOOGLE_GEMINI_BASE_URL: process.env.GOOGLE_GEMINI_BASE_URL } : {}),
     });
     child = spawn(spec.command, spec.args, {
       ...spec.options,
@@ -804,8 +913,21 @@ async function turnRunGemini(workspaceDir, positionId, input) {
       if (code !== 0) { fail("gemini.exit_nonzero", true); return; }
       try {
         const result = JSON.parse(stdout);
-        if (typeof result?.response !== "string" || result.error) throw new Error();
+        if (typeof result?.response !== "string" || result.error || (resolved.client === "antigravity" && result.status !== "SUCCESS")) throw new Error();
         emit({ type: "model.delta", runId, timestamp: now(), text: result.response });
+        const usage = resolved.client === "antigravity" ? result.usage : result.stats;
+        if (usage && typeof usage === "object") {
+          const inputTokens = usage.input_tokens ?? usage.inputTokens;
+          const outputTokens = usage.output_tokens ?? usage.outputTokens;
+          const totalTokens = usage.total_tokens ?? usage.totalTokens;
+          if ([inputTokens, outputTokens, totalTokens].some((value) => Number.isSafeInteger(value) && value >= 0)) {
+            emit({ type: "usage", runId, timestamp: now(),
+              ...(Number.isSafeInteger(inputTokens) && inputTokens >= 0 ? { inputTokens } : {}),
+              ...(Number.isSafeInteger(outputTokens) && outputTokens >= 0 ? { outputTokens } : {}),
+              ...(Number.isSafeInteger(totalTokens) && totalTokens >= 0 ? { totalTokens } : {}),
+            });
+          }
+        }
         finish({ type: "run.completed", runId, timestamp: now(), output: result.response, terminalReason: "goal_met" });
       } catch { fail("gemini.response_invalid", true); }
     });

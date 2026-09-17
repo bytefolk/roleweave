@@ -106,12 +106,19 @@ test("environment connections and explicit empty values win as a unit; CLI pins 
 test("WSL transports stored credentials over stdin, preserving connection isolation and no secret argv", (t) => {
   const h = setup(t);
   h.store().set("OPENAI_API_KEY", TOKEN);
+  h.store().set("GEMINI_API_KEY", `${TOKEN}-gemini`);
   const env = h.store().environment({ ROLEWEAVE_WSL_DISTRO: "Ubuntu-22.04" });
   const spec = wslLaunchSpec({ serverEntry: "C:\\app\\server.js", bootstrapEntry: "C:\\app\\wsl-bootstrap.cjs", env });
   assert.equal(spec.args.join(" ").includes(TOKEN), false);
-  const actual = serverEnvironment(parseConfiguration(spec.input), { HOME: "/home/test", OPENAI_BASE_URL: "https://other-provider.example" }, "/usr/bin/node");
+  const actual = serverEnvironment(parseConfiguration(spec.input), {
+    HOME: "/home/test",
+    OPENAI_BASE_URL: "https://other-provider.example",
+    GOOGLE_GEMINI_BASE_URL: "https://other-gemini.example",
+  }, "/usr/bin/node");
   assert.equal(actual.OPENAI_API_KEY, TOKEN);
   assert.equal(actual.OPENAI_BASE_URL, undefined);
+  assert.equal(actual.GEMINI_API_KEY, `${TOKEN}-gemini`);
+  assert.equal(actual.GOOGLE_GEMINI_BASE_URL, undefined);
 });
 
 test("Windows environment matching is case-insensitive and does not add a duplicate key", (t) => {
