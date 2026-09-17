@@ -936,6 +936,9 @@ export const enCatalog: Record<string, string> = {
   "prefs.paletteDefault": "Ant Blue",
   // #134 settings surface + update pane
   "rail.settings": "Settings",
+  // 2026-09-17 design review: rail expand/collapse toggle names
+  "rail.expand": "Expand navigation",
+  "rail.collapse": "Collapse navigation",
   "settings.title": "Settings",
   "settings.moduleAria": "Settings",
   "settings.runtimeTitle": "Project and Agent environment",

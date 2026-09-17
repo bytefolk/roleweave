@@ -32,7 +32,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { BrainCircuit, Cog, FileChartColumn, FolderOpen, Network, PencilLine, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
+import { Brain, ChartColumn, ChevronsLeft, ChevronsRight, ClipboardCheck, Flag, FolderOpen, Network, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -144,6 +144,16 @@ function AppInner({
   const setActiveModule = useCallback((next: typeof activeModule) => {
     if (next === "settings") setActiveModuleRaw(next);
     else requestSettingsLeave(() => setActiveModuleRaw(next));
+  }, []);
+  /** 2026-09-17 设计评审：导轨默认收拢只出图标（hover 浮名字），展开后
+   * icon+名字；选择写 localStorage，下次启动照旧。 */
+  const [railExpanded, setRailExpanded] = useState<boolean>(() => seedRailExpanded());
+  const toggleRailExpanded = useCallback(() => {
+    setRailExpanded((current) => {
+      const next = !current;
+      persistRailExpanded(next);
+      return next;
+    });
   }, []);
   const [memorySource, setMemorySource] = useState<MemorySource>("docs");
   /**
@@ -1435,7 +1445,7 @@ function AppInner({
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
-    <div className={`owb-app${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`}>
+    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`}>
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
         targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
         avatar={positionAvatars[managementTarget]}
@@ -1473,7 +1483,8 @@ function AppInner({
           items={[
             { id: "org", label: t("rail.org"), icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
             { id: "groups", label: t("rail.groups"), icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
-            { id: "reports", label: t("rail.reports"), icon: <FileChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
+            // 2026-09-17 设计评审排序：审批是待办（带角标、卡着员工干活），
+            // 排在只读的上报中心前面；记忆/目标/设置按频率沉底。
             {
               id: "approvals",
               label: t("rail.approvals"),
@@ -1485,22 +1496,34 @@ function AppInner({
                   offset={[6, -2]}
                   color="var(--ui-primary)"
                 >
-                  <ShieldAlert aria-hidden="true" size={16} />
+                  <ClipboardCheck aria-hidden="true" size={16} />
                 </Badge>
               ),
               active: activeModule === "approvals",
               onSelect: () => setActiveModule("approvals"),
             },
+            { id: "reports", label: t("rail.reports"), icon: <ChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
             // mem and position documents are two sources in one employee-memory
             // surface. Keep one entry here so the user does not have to choose
             // between two implementation-owned data planes.
-            { id: "docs", label: t("rail.memory"), icon: <BrainCircuit aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => { setMemorySource("docs"); setActiveModule("docs"); } },
+            { id: "docs", label: t("rail.memory"), icon: <Brain aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => { setMemorySource("docs"); setActiveModule("docs"); } },
             // #134: the update pane needs room for a version, live progress and
             // a changelog link, so it is a module rather than a third row in
             // the prefs drawer (#174), which stays two quick toggles.
-            { id: "goals", label: t("rail.goals"), icon: <Target aria-hidden="true" size={16} />, active: activeModule === "goals", onSelect: () => setActiveModule("goals") },
-            { id: "settings", label: t("rail.settings"), icon: <Cog aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
+            { id: "goals", label: t("rail.goals"), icon: <Flag aria-hidden="true" size={16} />, active: activeModule === "goals", onSelect: () => setActiveModule("goals") },
+            { id: "settings", label: t("rail.settings"), icon: <Settings aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
           ]}
+          footer={
+            <button
+              type="button"
+              className="owb-rail-toggle"
+              aria-label={railExpanded ? t("rail.collapse") : t("rail.expand")}
+              title={railExpanded ? t("rail.collapse") : t("rail.expand")}
+              onClick={toggleRailExpanded}
+            >
+              {railExpanded ? <ChevronsLeft aria-hidden="true" size={14} /> : <ChevronsRight aria-hidden="true" size={14} />}
+            </button>
+          }
         />
       }
       sidebar={
@@ -1889,6 +1912,25 @@ function replaceTurn(turns: TurnRecord[], next: TurnRecord): TurnRecord[] {
 
 function isTurnEngine(value: unknown): value is TurnEngine {
   return typeof value === "string" && (TURN_ENGINES as readonly string[]).includes(value);
+}
+
+/** 导轨展开态持久化：写不了（隐私窗口/被禁）就只保留本次启动的内存选择。 */
+const RAIL_EXPANDED_STORAGE_KEY = "owb.railExpanded";
+
+function seedRailExpanded(): boolean {
+  try {
+    return window.localStorage.getItem(RAIL_EXPANDED_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistRailExpanded(expanded: boolean): void {
+  try {
+    window.localStorage.setItem(RAIL_EXPANDED_STORAGE_KEY, expanded ? "1" : "0");
+  } catch {
+    // 存储不可用时静默降级为会话内记忆。
+  }
 }
 
 function apiErrorMessage(body: unknown, fallback: string): string {

@@ -939,6 +939,9 @@ export const zhCatalog: Record<string, string> = {
   "prefs.paletteDefault": "Ant 蓝",
   // #134 设置面与更新面板
   "rail.settings": "设置",
+  // 2026-09-17 设计评审：导轨展开/收拢切换钮的名字
+  "rail.expand": "展开导航",
+  "rail.collapse": "收起导航",
   "settings.title": "设置",
   "settings.moduleAria": "设置",
   "settings.runtimeTitle": "项目与 Agent 运行环境",

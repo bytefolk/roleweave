@@ -3723,6 +3723,102 @@ body,
   padding: 6px 0 4px;
 }
 
+/* ---------- 导轨展开/收拢 + 收拢 hover 浮名（2026-09-17 设计评审） ---------- */
+
+/* 收拢态只出图标：hover / 键盘聚焦时在图标右侧浮出名字。content 取
+   aria-label——浮名与可及名同源，永远不会漂移；停一会儿才显形，
+   指针扫过导轨不会一路闪名字。 */
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item::after {
+  content: attr(aria-label);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 80;
+  padding: 4px 8px;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  color: var(--ui-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  box-shadow: var(--ui-shadow-md, 0 4px 12px rgb(0 0 0 / 0.12));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item:hover::after,
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item:focus-visible::after {
+  opacity: 1;
+  transition-delay: 0.35s;
+}
+
+/* 展开态：icon + 名字横排，导轨放宽到 148px（三级断点里收窄的是收拢态
+   宽度，展开态固定，避免名字被截断）。 */
+.owb-app.is-rail-expanded .ui-app-shell {
+  --ui-rail-width: 148px;
+}
+
+.owb-app.is-rail-expanded .ui-module-rail {
+  padding: 10px 8px;
+}
+
+.owb-app.is-rail-expanded .ui-module-rail__items {
+  gap: 2px;
+}
+
+.owb-app.is-rail-expanded .ui-module-rail__item {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+.owb-app.is-rail-expanded .ui-module-rail__label {
+  display: block;
+  width: auto;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.owb-app.is-rail-expanded .ui-module-rail__item.is-active::before {
+  top: 6px;
+  bottom: 6px;
+}
+
+/* 展开/收拢切换钮：钉在导轨底部，与条目同宽；收拢态是双箭头朝右。 */
+.owb-app .owb-rail-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  color: var(--ui-foreground-muted);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-app .owb-rail-toggle:hover {
+  color: var(--ui-foreground);
+  background: color-mix(in srgb, var(--ui-surface-raised) 58%, transparent);
+}
+
+.owb-app.is-rail-expanded .owb-rail-toggle {
+  justify-content: flex-start;
+  padding: 0 10px;
+}
+
 /* ---------- 侧栏：head + workspace strip + tree + backups ---------- */
 
 .owb-app .ui-sidebar {
