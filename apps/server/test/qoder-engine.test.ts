@@ -38,6 +38,9 @@ function runAdapter(
         ANTHROPIC_DEFAULT_HAIKU_MODEL: undefined,
         ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
         ANTHROPIC_DEFAULT_OPUS_MODEL: undefined,
+        GEMINI_API_KEY: undefined,
+        GEMINI_MODEL: undefined,
+        DIGITAL_EMPLOYEE_GEMINI_COMMAND: undefined,
         ...options.env,
       },
       stdio: ["pipe", "pipe", "pipe"],
@@ -920,6 +923,54 @@ test("qoder-engine turn run: claude-code dispatches to Claude binary, never Qode
 
   const stdinContent = await fs.readFile(stdinFile, "utf8");
   assert.ok(stdinContent.includes("hello from test"), "input is piped to Claude stdin");
+});
+
+test("qoder-engine turn run: Gemini uses its isolated, tool-free JSON CLI surface", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-gemini-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const argsFile = path.join(fixture, "args.json");
+  const envFile = path.join(fixture, "env.json");
+  const policyFile = path.join(fixture, "policy.toml");
+  const fakeGemini = path.join(fixture, "gemini.cjs");
+  await fs.writeFile(fakeGemini, `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(args));
+fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));
+fs.writeFileSync(${JSON.stringify(policyFile)}, fs.readFileSync(args[args.indexOf("--admin-policy") + 1] + "/roleweave.toml", "utf8"));
+process.stdout.write(JSON.stringify({ response: "Gemini output", stats: { inputTokens: 3 } }));
+`, { mode: 0o755 });
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "Gemini fixture question" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "gemini",
+      DIGITAL_EMPLOYEE_GEMINI_COMMAND: fakeGemini,
+      GEMINI_API_KEY: "gemini-fixture-secret",
+      GEMINI_MODEL: "gemini-2.5-pro",
+      OPENAI_API_KEY: "must-not-leak",
+      QODER_PERSONAL_ACCESS_TOKEN: "must-not-leak",
+    },
+  });
+  assert.equal(result.code, 0, result.stderr);
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.equal(events.at(-1)?.type, "run.completed");
+  assert.equal(events.at(-1)?.output, "Gemini output");
+  assert.equal(events.find((event) => event.type === "model.delta")?.text, "Gemini output");
+  assert.doesNotMatch(result.stdout + result.stderr, /gemini-fixture-secret|must-not-leak/);
+
+  const args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.equal(args[args.indexOf("--output-format") + 1], "json");
+  assert.equal(args[args.indexOf("--approval-mode") + 1], "plan");
+  assert.equal(args[args.indexOf("--extensions") + 1], "");
+  assert.equal(args[args.indexOf("--model") + 1], "gemini-2.5-pro");
+  const childEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
+  assert.equal(childEnv.GEMINI_API_KEY, "gemini-fixture-secret");
+  assert.equal(childEnv.OPENAI_API_KEY, undefined);
+  assert.equal(childEnv.QODER_PERSONAL_ACCESS_TOKEN, undefined);
+  assert.notEqual(childEnv.HOME, process.env.HOME);
+  assert.match(await fs.readFile(policyFile, "utf8"), /toolName = "\*"\ndecision = "deny"/);
 });
 
 test("qoder-engine turn run: claude-local preserves OAuth discovery without unrelated service credentials", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {

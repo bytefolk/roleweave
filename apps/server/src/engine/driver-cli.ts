@@ -386,6 +386,9 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, mod
     for (const key of ["DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND", "ProgramFiles", "PROGRAMFILES", "LOCALAPPDATA", "PATHEXT", "SystemRoot", "WINDIR"]) {
       if (source[key] !== undefined) environment[key] = source[key];
     }
+  } else if (engine === "gemini") {
+    if (source.GEMINI_API_KEY !== undefined) environment.GEMINI_API_KEY = source.GEMINI_API_KEY;
+    if (source.DIGITAL_EMPLOYEE_GEMINI_COMMAND !== undefined) environment.DIGITAL_EMPLOYEE_GEMINI_COMMAND = source.DIGITAL_EMPLOYEE_GEMINI_COMMAND;
   } else {
     // The external engine's historical claude-local contract remains login
     // only. The bundled adapter below also supports the operator's own local

@@ -925,6 +925,7 @@ export const zhCatalog: Record<string, string> = {
   "misc.claudeHostUnknown": "Claude Code 当前不可用",
   "misc.codexHostUnknown": "Codex 当前不可用",
   "misc.workbuddyHostUnknown": "WorkBuddy 当前不可用",
+  "misc.geminiHostUnknown": "Gemini 当前不可用",
   "misc.workspaceClosedBc": "未打开工作区",
   "misc.lastWorkspaceFallback": "上次打开的工作区无法访问：{path}。请重新打开或新建项目。",
   "prefs.trigger": "偏好设置",

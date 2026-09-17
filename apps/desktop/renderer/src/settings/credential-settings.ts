@@ -5,6 +5,7 @@ export const CREDENTIAL_FIELDS = [
   { host: "Claude", key: "ANTHROPIC_BASE_URL", label: "credentials.baseUrl" },
   { host: "Codex", key: "OPENAI_API_KEY", label: "credentials.apiKey" },
   { host: "Codex", key: "OPENAI_BASE_URL", label: "credentials.baseUrl" },
+  { host: "Gemini", key: "GEMINI_API_KEY", label: "credentials.apiKey" },
 ] as const;
 
 export type CredentialKey = typeof CREDENTIAL_FIELDS[number]["key"];

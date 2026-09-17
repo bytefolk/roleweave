@@ -30,6 +30,8 @@ export interface TurnHostHealth {
    */
   model?: string;
   connection?: EmployeeModelConnection;
+  /** Optional, display-safe result of a local CLI preflight. */
+  localProbe?: { installed: boolean; supported: boolean; version?: string | null; failure?: string };
 }
 
 export interface HealthResponse {

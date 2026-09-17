@@ -2,6 +2,7 @@ import claudeIcon from "../assets/claude.svg";
 import codexIcon from "../assets/codex.png";
 import qoderIcon from "../assets/qoder.png";
 import workbuddyIcon from "../assets/workbuddy.png";
+import geminiIcon from "../assets/gemini.svg";
 import type { TurnEngine } from "./types";
 
 const ENGINE_ICON_SRC: Record<TurnEngine, string> = {
@@ -11,6 +12,7 @@ const ENGINE_ICON_SRC: Record<TurnEngine, string> = {
   codex: codexIcon,
   "codex-local": codexIcon,
   workbuddy: workbuddyIcon,
+  gemini: geminiIcon,
 };
 
 /** Per-agent-host brand mark (#57): Qoder app mark / Claude starburst.

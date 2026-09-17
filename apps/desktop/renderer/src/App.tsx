@@ -1418,6 +1418,13 @@ function AppInner({
       modelPinnable: health?.hosts?.workbuddy?.modelPinnable,
       model: health?.hosts?.workbuddy?.model,
     },
+    gemini: {
+      configured: health?.hosts?.gemini?.configured === true,
+      ready: health?.hosts?.gemini?.ready === true,
+      reason: health?.hosts?.gemini?.nextStep ?? t("misc.geminiHostUnknown"),
+      modelPinnable: health?.hosts?.gemini?.modelPinnable,
+      model: health?.hosts?.gemini?.model,
+    },
   }), [health, t]);
 
   /** A visible conversation has exactly one employee-selected runtime. For

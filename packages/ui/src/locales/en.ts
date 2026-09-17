@@ -922,6 +922,7 @@ export const enCatalog: Record<string, string> = {
   "misc.claudeHostUnknown": "Claude Code is currently unavailable",
   "misc.codexHostUnknown": "Codex is currently unavailable",
   "misc.workbuddyHostUnknown": "WorkBuddy is currently unavailable",
+  "misc.geminiHostUnknown": "Gemini is currently unavailable",
   "misc.workspaceClosedBc": "No workspace open",
   "misc.lastWorkspaceFallback": "The last opened workspace is not accessible: {path}. Open a workspace or create a project.",
   "prefs.trigger": "Preferences",

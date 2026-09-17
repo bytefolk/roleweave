@@ -18,6 +18,7 @@ import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
 import { resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
+import { resolveGeminiExecutable, validatedGeminiModel } from "../src/gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../src/workbuddy-binary.js";
 import { workbuddyConfiguration, workbuddyEnvironment, workbuddyVersionProfile, probeWorkbuddyExecutable, workbuddyTurnArgs, createWorkbuddyParser } from "../src/workbuddy-runtime.js";
 import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
@@ -720,10 +721,95 @@ function turnRun(workspaceDir, positionId) {
         return turnRunCodex(workspaceDir, positionId, input, engineModel);
       case "workbuddy":
         return turnRunWorkbuddy(workspaceDir, positionId, input);
+      case "gemini":
+        return turnRunGemini(workspaceDir, positionId, input);
       default:
         return turnRunQoder(workspaceDir, positionId, input);
     }
   });
+}
+
+async function turnRunGemini(workspaceDir, positionId, input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+  let terminalEmitted = false;
+  let child;
+  let root;
+  const cleanup = () => {
+    if (child?.pid !== undefined) {
+      try { if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL"); else child.kill("SIGKILL"); } catch {
+        try { child.kill("SIGKILL"); } catch { /* process already exited */ }
+      }
+    }
+    if (root) { try { rmSync(root, { recursive: true, force: true }); } catch { /* owned temporary root */ } }
+  };
+  process.once("exit", cleanup);
+  const finish = (event) => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
+    cleanup();
+    process.stdout.write(`${JSON.stringify(event)}\n`, () => process.exit(0));
+  };
+  const fail = (code, retryable = false) => finish({
+    type: "run.failed", runId, timestamp: now(),
+    error: { code, message: `Gemini request failed (${code}); check Gemini CLI and GEMINI_API_KEY.`, retryable, terminalReason: "engine_internal_error" },
+  });
+  if (!process.env.GEMINI_API_KEY?.trim()) { fail("gemini.credential_missing"); return; }
+  const executable = resolveGeminiExecutable(process.env);
+  if (executable === null) { fail("gemini.binary_unresolved"); return; }
+  const model = validatedGeminiModel(process.env.ROLEWEAVE_TURN_MODEL ?? process.env.GEMINI_MODEL);
+  if (model === null) { fail("gemini.model_invalid"); return; }
+  try {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-gemini-"));
+    await fs.chmod(root, 0o700);
+    const home = path.join(root, "home");
+    const policyDir = path.join(root, "policies");
+    await fs.mkdir(home, { mode: 0o700 });
+    await fs.mkdir(policyDir, { mode: 0o700 });
+    // Gemini CLI's supplemental admin policy removes every tool from the
+    // model-visible surface. This adapter has no engine.v1 approval bridge,
+    // so allowing even a read-only tool would bypass a position's policy.
+    await fs.writeFile(path.join(policyDir, "roleweave.toml"), '[[rule]]\ntoolName = "*"\ndecision = "deny"\npriority = 999\n', { mode: 0o600 });
+    const prompt = `[Position: ${positionId}]\n\n${input || "Execute your position duties for this turn."}`;
+    const args = ["--prompt", prompt, "--output-format", "json", "--approval-mode", "plan", "--extensions", "", "--admin-policy", policyDir];
+    if (model !== undefined) args.push("--model", model);
+    const spec = createLauncherSpawnSpec(executable, args, {
+      PATH: process.env.PATH,
+      PATHEXT: process.env.PATHEXT,
+      SYSTEMROOT: process.env.SYSTEMROOT,
+      SystemRoot: process.env.SystemRoot,
+      WINDIR: process.env.WINDIR,
+      ComSpec: process.env.ComSpec,
+      HOME: home,
+      USERPROFILE: home,
+      TMPDIR: root,
+      TMP: root,
+      TEMP: root,
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    });
+    child = spawn(spec.command, spec.args, {
+      ...spec.options,
+      cwd: workspaceDir, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+      if (Buffer.byteLength(stdout) > 4 * 1024 * 1024) fail("gemini.output_limit", true);
+    });
+    child.stderr.resume();
+    child.on("error", () => fail("gemini.spawn_failed", true));
+    child.on("close", async (code) => {
+      if (terminalEmitted) return;
+      try { await fs.rm(root, { recursive: true, force: true }); } catch { /* owned temp directory */ }
+      if (code !== 0) { fail("gemini.exit_nonzero", true); return; }
+      try {
+        const result = JSON.parse(stdout);
+        if (typeof result?.response !== "string" || result.error) throw new Error();
+        emit({ type: "model.delta", runId, timestamp: now(), text: result.response });
+        finish({ type: "run.completed", runId, timestamp: now(), output: result.response, terminalReason: "goal_met" });
+      } catch { fail("gemini.response_invalid", true); }
+    });
+  } catch { cleanup(); fail("gemini.setup_failed", true); }
 }
 
 async function turnRunQoder(workspaceDir, positionId, input) {

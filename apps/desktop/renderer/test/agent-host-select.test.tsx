@@ -15,9 +15,10 @@ const availability: Record<TurnEngine, TurnEngineAvailability> = {
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
+  gemini: { configured: true, ready: true },
 };
 
-const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"];
+const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini"];
 
 function Picker({ initial }: { initial: TurnEngine }) {
   const [engine, setEngine] = useState<TurnEngine>(initial);
@@ -57,10 +58,11 @@ describe("Agent Host picker (#94)", () => {
       "Claude Code",
       "Codex",
       "WorkBuddy",
+      "Gemini",
     ]);
   });
 
-  it.each(["Claude Code", "WorkBuddy"])("selects %s and the trigger follows the new host", (label) => {
+  it.each(["Claude Code", "WorkBuddy", "Gemini"])("selects %s and the trigger follows the new host", (label) => {
     render(<Picker initial="qoder" />);
     expect(triggerText()).toBe("Qoder");
 
