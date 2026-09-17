@@ -260,13 +260,16 @@ describe("App runtime bridge", () => {
     });
   });
 
-  it("shows the local workspace path in the topbar context", async () => {
-    openedBridge();
+  it("reveals the local workspace path in the file manager from the topbar context", async () => {
+    const revealWorkspace = vi.fn().mockResolvedValue({ opened: true, path: "/fixture/workspace" });
+    openedBridge({ revealWorkspace });
 
     render(<App />);
 
-    expect(await screen.findByLabelText("/fixture/workspace")).toBeInTheDocument();
-    expect(screen.getAllByTitle("/fixture/workspace").length).toBeGreaterThan(0);
+    const chip = await screen.findByRole("button", { name: /\/fixture\/workspace$/ });
+    expect(chip.getAttribute("title")).toContain("/fixture/workspace");
+    fireEvent.click(chip);
+    await waitFor(() => expect(revealWorkspace).toHaveBeenCalledTimes(1));
   });
 
   it("opens a centered workspace chooser from the organization sidebar", async () => {
