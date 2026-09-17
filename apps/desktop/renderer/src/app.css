@@ -3857,7 +3857,7 @@ body,
     0 2px 8px -2px rgb(0 0 0 / 0.18),
     0 1px 4px -1px rgb(0 0 0 / 0.14),
     0 0 1px 0 rgb(0 0 0 / 0.16);
-  cursor: ns-resize;
+  cursor: pointer;
   touch-action: none;
   transition:
     color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
