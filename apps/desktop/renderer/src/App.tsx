@@ -184,7 +184,6 @@ function AppInner({
     const startBottom = clampRailChipBottom(railChipBottomRef.current, bounds);
     railChipDrag.current = { pointerId: event.pointerId, startY: event.clientY, startBottom, bounds };
     railChipMoved.current = false;
-    setRailChipDragging(true);
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
@@ -199,6 +198,7 @@ function AppInner({
     const delta = drag.startY - currentY;
     if (Math.abs(delta) > RAIL_CHIP_DRAG_THRESHOLD) {
       railChipMoved.current = true;
+      setRailChipDragging(true);
       event.preventDefault();
     }
     updateRailChipBottom(clampRailChipBottom(drag.startBottom + delta, drag.bounds));

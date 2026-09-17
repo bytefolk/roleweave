@@ -239,9 +239,13 @@ describe("rail collapse control", () => {
     const toggle = await screen.findByRole("button", { name: "展开导航" });
     expect(toggle).toHaveAttribute("data-rail-chip-bottom", "72");
     fireEvent(toggle, new MouseEvent("pointerdown", { bubbles: true, button: 0, clientY: 500 }));
-    expect(toggle).toHaveClass("is-dragging");
+    expect(toggle).not.toHaveClass("is-dragging");
+    fireEvent(toggle, new MouseEvent("pointermove", { bubbles: true, clientY: 497 }));
+    expect(toggle).not.toHaveClass("is-dragging");
     fireEvent(toggle, new MouseEvent("pointermove", { bubbles: true, clientY: 420 }));
+    expect(toggle).toHaveClass("is-dragging");
     fireEvent(toggle, new MouseEvent("pointerup", { bubbles: true, clientY: 420 }));
+    expect(toggle).not.toHaveClass("is-dragging");
     expect(toggle).toHaveAttribute("data-rail-chip-bottom", "152");
     expect(window.localStorage.getItem("owb.railChipBottom")).toBe("152");
 
