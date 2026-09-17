@@ -3521,12 +3521,11 @@ body,
   outline-offset: 2px;
 }
 
-/* 标题栏常显图标按钮（#94 主题读数 + 导轨宽窄开关）。.owb-wctl 的「平时是
-   干净的三点、hover 才显形」口径在这里不适用——这两个图标本身就是控件要
-   报告的状态。其余（hairline 描边 / inset 底 / 焦点环）与窗口控制同一套
-   语义 token。 */
-.owb-wintitle__theme,
-.owb-wintitle__rail {
+/* 主题切换（#94）：标题栏里唯一常显图标的按钮。.owb-wctl 的「平时是干净的
+   三点、hover 才显形」口径在这里不适用——图标本身就是当前主题的读数，藏起来
+   等于藏掉这个控件要报告的状态。其余（hairline 描边 / inset 底 / 焦点环）
+   与窗口控制同一套语义 token。 */
+.owb-wintitle__theme {
   -webkit-app-region: no-drag;
   display: grid;
   place-items: center;
@@ -3545,8 +3544,7 @@ body,
     color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
-.owb-wintitle__theme:hover,
-.owb-wintitle__rail:hover {
+.owb-wintitle__theme:hover {
   border-color: var(--ui-border-strong);
   background: var(--ui-surface-raised);
   color: var(--ui-foreground);
@@ -3730,7 +3728,8 @@ body,
 /* 收拢态只出图标：hover / 键盘聚焦时在图标右侧浮出名字。content 取
    aria-label——浮名与可及名同源，永远不会漂移；停一会儿才显形，
    指针扫过导轨不会一路闪名字。 */
-.owb-app:not(.is-rail-expanded) .ui-module-rail__item::after {
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item::after,
+.owb-app:not(.is-rail-expanded) .owb-rail-foot::after {
   content: attr(aria-label);
   position: absolute;
   left: calc(100% + 10px);
@@ -3752,7 +3751,9 @@ body,
 }
 
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item:hover::after,
-.owb-app:not(.is-rail-expanded) .ui-module-rail__item:focus-visible::after {
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item:focus-visible::after,
+.owb-app:not(.is-rail-expanded) .owb-rail-foot:hover::after,
+.owb-app:not(.is-rail-expanded) .owb-rail-foot:focus-visible::after {
   opacity: 1;
   transition-delay: 0.35s;
 }
@@ -3791,6 +3792,57 @@ body,
 .owb-app.is-rail-expanded .ui-module-rail__item.is-active::before {
   top: 6px;
   bottom: 6px;
+}
+
+/* 导轨宽窄开关：住在导轨自己的底部槽位（VS Code 活动栏齿轮位 = 窗口
+   左下角）。收拢态是和导航项同规格的图标槽（44px 居中、hover 浮名同套），
+   展开态长成导航行（icon + 名字）；不画多余线、不占导航序。 */
+.owb-app .ui-module-rail__footer {
+  padding-top: 8px;
+}
+
+.owb-app .owb-rail-foot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  color: var(--ui-foreground-muted);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition:
+    color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-app .owb-rail-foot:hover {
+  color: var(--ui-foreground);
+}
+
+.owb-app .owb-rail-foot__label {
+  display: none;
+}
+
+.owb-app.is-rail-expanded .owb-rail-foot {
+  justify-content: flex-start;
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: 8px;
+}
+
+.owb-app.is-rail-expanded .owb-rail-foot__label {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- 侧栏：head + workspace strip + tree + backups ---------- */

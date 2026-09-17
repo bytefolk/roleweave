@@ -1478,18 +1478,6 @@ function AppInner({
         <WindowControls />
         <span className="owb-wintitle__name">RoleWeave</span>
         <span className="owb-wintitle__spacer" />
-        {/* 导轨宽窄是窗口级 chrome（Figma / Linear 把侧栏开关放顶栏），
-            不进导轨自己；⌘B 同效。 */}
-        <button
-          type="button"
-          className="owb-wintitle__rail"
-          aria-label={railExpanded ? t("rail.collapse") : t("rail.expand")}
-          title={railExpanded ? t("rail.collapse") : t("rail.expand")}
-          aria-expanded={railExpanded}
-          onClick={toggleRailExpanded}
-        >
-          {railExpanded ? <PanelLeftClose aria-hidden="true" size={14} strokeWidth={1.8} /> : <PanelLeftOpen aria-hidden="true" size={14} strokeWidth={1.8} />}
-        </button>
         <PrefsMenu
           locale={locale}
           onChangeLocale={onChangeLocale}
@@ -1538,6 +1526,24 @@ function AppInner({
             { id: "goals", label: t("rail.goals"), icon: <Flag aria-hidden="true" size={16} />, active: activeModule === "goals", onSelect: () => setActiveModule("goals") },
             { id: "settings", label: t("rail.settings"), icon: <Settings aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
           ]}
+          footer={
+            /* 导轨宽窄开关住在导轨自己的底部槽位（VS Code 活动栏齿轮位 =
+               窗口左下角）：收拢态是和导航项同规格的图标槽，展开态长成
+               导航行；⌘B 同效。 */
+            <button
+              type="button"
+              className="owb-rail-foot"
+              aria-label={railExpanded ? t("rail.collapse") : t("rail.expand")}
+              title={railExpanded ? t("rail.collapse") : t("rail.expand")}
+              aria-expanded={railExpanded}
+              onClick={toggleRailExpanded}
+            >
+              {railExpanded ? <PanelLeftClose aria-hidden="true" size={16} /> : <PanelLeftOpen aria-hidden="true" size={16} />}
+              <span className="owb-rail-foot__label" aria-hidden="true">
+                {railExpanded ? t("rail.collapse") : t("rail.expand")}
+              </span>
+            </button>
+          }
         />
       }
       sidebar={
