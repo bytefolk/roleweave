@@ -451,6 +451,14 @@ test("single-turn restart recovery preserves timestamp ordering after clock roll
   assert.deepEqual(await restarted.readPositionTurn(workspace, "repo-owner", turnId, "2026-09-08T23:59:59Z"), recovered);
 });
 
+function captureStderr(t: { after: (fn: () => void) => void }): string[] {
+  const lines: string[] = [];
+  const original = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: unknown) => { lines.push(String(chunk)); return true; }) as typeof process.stderr.write;
+  t.after(() => { process.stderr.write = original; });
+  return lines;
+}
+
 function sendChunkedPost(url: string, token: string, bodyBytes: number, chunkSize = 65536): Promise<{ status: number; body: string; aborted: boolean }> {
   return new Promise((resolve) => {
     const parsed = new URL(url);
@@ -511,6 +519,7 @@ test("stalled chunked upload is destroyed after the drain deadline", async (t) =
   const workspace = await copyExampleWorkspace();
   t.after(async () => { await server.close(); await fs.rm(workspace, { recursive: true, force: true }); });
   assert.equal((await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: workspace } })).status, 200);
+  const lines = captureStderr(t);
   const parsed = new URL(`${server.baseUrl}/groups`);
   const result = await new Promise<{ aborted: boolean; status: number }>((resolve) => {
     const req = http.request({
@@ -524,4 +533,24 @@ test("stalled chunked upload is destroyed after the drain deadline", async (t) =
     req.write(Buffer.alloc(256 * 1024, "x"));
   });
   assert.ok(result.aborted || result.status === 0, "a stalled upload must be destroyed, not held indefinitely");
+  assert.ok(lines.some((line) => line.includes("[http] oversized-body read aborted (timeout)") && line.includes("after 262144 bytes")), `expected a read abort line, got: ${lines.join("")}`);
+});
+
+test("stalled oversized upload with content-length reports its drain abort on stderr", async (t) => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  t.after(async () => { await server.close(); await fs.rm(workspace, { recursive: true, force: true }); });
+  assert.equal((await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: workspace } })).status, 200);
+  const lines = captureStderr(t);
+  const parsed = new URL(`${server.baseUrl}/groups`);
+  await new Promise<void>((resolve) => {
+    const req = http.request({
+      hostname: parsed.hostname, port: parsed.port, path: parsed.pathname, method: "POST",
+      headers: { authorization: `Bearer ${server.token}`, "content-type": "application/json", "content-length": String(3 * 1024 * 1024) },
+    });
+    req.on("response", (res) => { res.resume(); res.on("end", () => resolve()); });
+    req.on("error", () => resolve());
+    req.write(Buffer.alloc(256 * 1024, "x"));
+  });
+  assert.ok(lines.some((line) => line.includes("[http] oversized-body drain aborted (timeout)") && line.includes("after 262144 bytes")), `expected a drain abort line, got: ${lines.join("")}`);
 });

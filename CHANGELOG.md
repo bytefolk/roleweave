@@ -7,6 +7,8 @@
 
 ### Added
 
+- #309 后续：控制面拒绝超大请求体时，drain 或读取被中止（2 秒截止、10 MiB drain 上限、对端断开）会向 stderr 写一行原因与字节数，现场 EPIPE / 连接复位事故从此可归因；同步 docs/api-contract-v0.md：1 MiB 上限补记先读后拒行为、drain 上限与截止、server requestTimeout / headersTimeout，以及拒绝响应携带 Connection: close。附测试：stall 的超大上传在 drain 与 read 两条路径都断言中止行。
+
 - #302：新增随仓库版本化的 GitHub 运营员工组织 `examples/github-ops/`：打开该目录即得到「问题调研 / PR 提交 / 合并把关」三个岗位。调研岗负责查重、复现并按模板建 issue；提交岗负责实现改动与提 PR；把关岗只在「存在非作者的批准、该 head 上必需检查全绿、无未解决对话、非 draft」时 squash 合并，合并前一刻重读 head SHA，禁用管理员绕过与 dismiss 他人的变更请求。三者均通过 `Bash` 调用 `gh`，不使用 MCP（内置宿主会以 `qoder.mcp_binding_unsupported` 拒绝员工 MCP 绑定）。注意：岗位包里的 `policy.network` / `policy.filesystem` / `policy.mode` 目前只被记录、不被执行，真正生效的是 `permissions.json` 的工具白名单，因此该员工在 GitHub 上的能力边界由所用凭据决定——建议用独立机器身份的细粒度 PAT，且不要授予 Administration。随附测试守护：声明与包一致（含 digest）、内置引擎能 `org apply`、控制面能打开并供出岗位卡。
 
 - #305：对话选项条新增「新对话」入口：确认后把当前会话轮换进历史并自动挂接后继会话，聊天线程即刻清空，旧对话仍可在会话历史中只读回看；仅当前会话可用，运行中回合与忙碌状态下禁用。

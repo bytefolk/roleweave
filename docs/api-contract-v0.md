@@ -15,7 +15,7 @@
 
 - 绑定面：仅 `127.0.0.1`。v1 不暴露 LAN；远程访问不在 v0 范围。
 - 鉴权：`Authorization: Bearer <boot-token>`。token 为每次启动生成的 32 字节随机十六进制串；仅 `/health` 免 token（供壳探活）。
-- 内容类型：请求/响应均为 UTF-8 JSON；请求体上限 1 MiB。
+- 内容类型：请求/响应均为 UTF-8 JSON；请求体上限 1 MiB。超限时服务端先读完已声明的请求体（drain 受 10 MiB 字节上限与 2 秒截止约束）再回 400 `body_invalid`，避免客户端在上传途中收到 EPIPE；拒绝响应携带 `Connection: close`。无 `Content-Length`（chunked）的请求超过 1 MiB 后只计数不保留，读完或触及 2 秒读取截止后拒绝；服务端另受 requestTimeout 30 s / headersTimeout 10 s 全局约束，超时或超过读取上限后连接关闭、不复用。drain 或读取被中止时，服务端向 stderr 写一行原因与字节数。
 - 版本头：所有响应携带 `X-OrgWorkbench-API: v0`。
 - 事件：走 SSE（`/events`），事件体带版本戳（seq），断线重连按版本戳补拉。
 - 错误体（全端点统一）：
@@ -410,7 +410,7 @@ Workbench 只 spawn 钉定 `context@f63f57f`（或兼容后续 main）的公共 
 
 不同员工可并行执行；同一 workspace/position 的重叠执行返回 409 `session_conflict`。取消句柄按 workspace/position 和执行归属管理，旧执行结束不能删除新执行的取消句柄。SSE 控制面包装携带原 `workspacePath`，个人事件还带岗位、引擎、回合和会话归属，供客户端隔离并行流；持久化的原始 engine 事件不增加这些控制面字段。
 
-群 `POST /groups/:conversationRef/turns` 另接受可选 `mode: "parallel" | "relay"`，省略时为 `parallel`；`mentions` 是明确选择的接收人和接力顺序。群消息持久化 mode、engine 及预分配 spawns 后返回 202。 256 KiB 输入与最多 32 个成员的元数据按 JSON 转义后的字节数预留存储空间；原始 HTTP JSON 请求仍受既有 1 MiB 上限约束，超过该传输边界返回 400。并行模式同时启动各成员；接力模式只在前序可信完成后传递有界结果。后续未执行步骤用可读回的 `indeterminate` 记录及 `group_relay_blocked` 标明；不会伪造引擎事件。忙碌员工显示 `group_employee_busy`，切换 workspace 导致的未执行步骤显示 `group_workspace_changed`。重启后已接受但未启动的步骤恢复为 `group_dispatch_interrupted`，不自动重跑。
+群 `POST /groups/:conversationRef/turns` 另接受可选 `mode: "parallel" | "relay"`，省略时为 `parallel`；`mentions` 是明确选择的接收人和接力顺序。群消息持久化 mode、engine 及预分配 spawns 后返回 202。 256 KiB 输入与最多 32 个成员的元数据按 JSON 转义后的字节数预留存储空间；原始 HTTP JSON 请求仍受既有 1 MiB 上限约束，超过该传输边界返回 400；超限拒绝按 §1 通用约定先读后拒并携带 `Connection: close`。并行模式同时启动各成员；接力模式只在前序可信完成后传递有界结果。后续未执行步骤用可读回的 `indeterminate` 记录及 `group_relay_blocked` 标明；不会伪造引擎事件。忙碌员工显示 `group_employee_busy`，切换 workspace 导致的未执行步骤显示 `group_workspace_changed`。重启后已接受但未启动的步骤恢复为 `group_dispatch_interrupted`，不自动重跑。
 
 本节取代下方早期 #52 的顺序派发行为；旧消息仍兼容。完整用户说明、数据边界及回滚注意事项见 [Thread Context 与协作](thread-context-and-collaboration.md)。
 
