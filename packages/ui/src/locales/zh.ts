@@ -898,6 +898,8 @@ export const zhCatalog: Record<string, string> = {
   "tree.workspaceFallback": "工作区",
   "misc.engineAvailable": "引擎可用",
   "misc.engineOffline": "引擎离线",
+  "misc.workspaceRevealHint": "在文件管理器中打开",
+  "misc.workspaceRevealFailed": "无法在文件管理器中打开工作区目录",
   "misc.modules": "模块",
   "misc.sseReconnecting": "事件流重连中…",
   "misc.engineUnavailable": "引擎不可用",

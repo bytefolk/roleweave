@@ -7,6 +7,8 @@
 
 ### Added
 
+- 顶栏工作区路径条改为可点击：点击后通过新增的 `owb:workspace:reveal` IPC 在系统文件管理器中打开当前工作区目录（macOS Finder / Windows 资源管理器）。main 进程自行向控制面回读已打开的工作区，renderer 全程不传路径；WSL 模式把 Linux 路径映射为与文件夹选择器一致的 `\\wsl.localhost\<distro>\...` 共享路径，映射前拒绝 `..` 穿越与未配置发行版；打开失败给出简短警告。附 workspace-ipc 单测覆盖原生/WSL 映射、工作区未打开、shell 失败与穿越拒绝。
+
 - #294：在原有工作台中补齐消息复制、重新编辑、会话历史与手动专注对话；保留各工作区、员工和会话的草稿与阅读位置，显式重试保存到原失败回合的关联。设置模块使用统一 JSONC 草稿与加密凭据引用，支持变更预览、冲突处理、恢复和重启提示。
 
 - #292：员工档案在创建之后可编辑：新增 `PATCH /positions/:id/profile`，可改员工姓名、执行模式与权限（工具、资源规则、Skill 与 MCP 绑定），岗位卡片头部新增「编辑」入口，`GET /positions/:id` 新增加法字段 `permissionPolicy` 供编辑器整份回填。改动写入岗位包（`.workbench/identity.v1.json`、`permissions.json`、`skills.json`、`mcp.json` 与 `employee.json` 的 `policy`）并由引擎重新裁决，因此卡片与组织树上的名字会跟着变；引擎拒绝时逐字节回滚，员工有回合在跑时返回 409 且不落盘。岗位 ID、汇报线与预算不在此范围，仍走各自既有的受治理通道。此前唯一的补救办法是裁撤后重招，而那会一并丢弃以该岗位 ID 归档的全部回合、会话与群聊引用。

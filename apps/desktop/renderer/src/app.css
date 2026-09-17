@@ -4067,6 +4067,31 @@ body,
   max-width: min(42vw, 460px);
   gap: 6px;
   color: var(--ui-foreground-subtle);
+  /* The location is a button: clicking it reveals the workspace directory in
+     the OS file manager, so it needs the reset and the hover affordance. */
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 3px 8px;
+  font: inherit;
+  text-align: left;
+}
+
+.owb-workspace-location:hover {
+  color: var(--ui-foreground);
+  background: var(--ui-surface-inset);
+  border-color: var(--ui-border);
+}
+
+.owb-workspace-location:hover .owb-workspace-location__path {
+  color: var(--ui-foreground);
+}
+
+.owb-workspace-location:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
 }
 
 .owb-workspace-location > svg {

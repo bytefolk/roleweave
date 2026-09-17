@@ -895,6 +895,8 @@ export const enCatalog: Record<string, string> = {
   "tree.workspaceFallback": "workspace",
   "misc.engineAvailable": "engine available",
   "misc.engineOffline": "engine offline",
+  "misc.workspaceRevealHint": "Open in file manager",
+  "misc.workspaceRevealFailed": "Could not open the workspace folder in your file manager",
   "misc.modules": "Modules",
   "misc.sseReconnecting": "Reconnecting the event stream…",
   "misc.engineUnavailable": "Engine unavailable",

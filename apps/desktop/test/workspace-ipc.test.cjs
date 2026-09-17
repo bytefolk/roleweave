@@ -3,7 +3,7 @@ const test = require("node:test");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { validateWorkspaceCreateRequest, openWorkspaceWithPicker, createWorkspaceWithPicker } = require("../src/workspace-ipc.cjs");
+const { validateWorkspaceCreateRequest, openWorkspaceWithPicker, createWorkspaceWithPicker, nativePathForServerPath, revealWorkspaceInFileManager } = require("../src/workspace-ipc.cjs");
 const { readLastWorkspacePath } = require("../src/last-workspace.cjs");
 const { runtimeEnvironment } = require("../src/runtime-settings.cjs");
 const { openDefaultWorkspace } = require("../src/auto-open-workspace.cjs");
@@ -198,4 +198,84 @@ test("a different WSL distribution is rejected before a workspace request", asyn
   assert.equal((await openWorkspaceWithPicker(f)).status, 400);
   assert.deepEqual(f.calls, []);
   assert.equal(readLastWorkspacePath(f.userDataPath), null);
+});
+
+function withPlatform(t, platform) {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { ...descriptor, value: platform });
+  t.after(() => Object.defineProperty(process, "platform", descriptor));
+}
+
+function revealFixture({ body, status = 200, env = {}, failure = "" }) {
+  const routes = [];
+  const opened = [];
+  return {
+    routes, opened,
+    env,
+    apiRequest: async (route) => { routes.push(route); return { status, body }; },
+    openPath: async (target) => { opened.push(target); return failure; },
+  };
+}
+
+test("reveal opens the native workspace path without any renderer-supplied argument", async () => {
+  const f = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });
+  const result = await revealWorkspaceInFileManager(f);
+  assert.deepEqual(f.routes, ["/workspace"]);
+  assert.deepEqual(f.opened, ["/tmp/projects/local-team"]);
+  assert.deepEqual(result, { opened: true, path: "/tmp/projects/local-team" });
+});
+
+test("reveal maps a WSL workspace onto its distribution share for Windows Explorer", async (t) => {
+  withPlatform(t, "win32");
+  const f = revealFixture({
+    body: { open: true, path: "/home/tester/projects/local-team" },
+    env: { ROLEWEAVE_CONTROL_PLANE_MODE: "wsl", ROLEWEAVE_WSL_DISTRO: "Ubuntu-22.04" },
+  });
+  const result = await revealWorkspaceInFileManager(f);
+  assert.deepEqual(f.opened, ["\\\\wsl.localhost\\Ubuntu-22.04\\home\\tester\\projects\\local-team"]);
+  assert.equal(result.opened, true);
+});
+
+test("reveal keeps native paths native while the control plane runs natively on Windows", async (t) => {
+  withPlatform(t, "win32");
+  const f = revealFixture({ body: { open: true, path: "D:\\projects\\local-team" } });
+  await revealWorkspaceInFileManager(f);
+  assert.deepEqual(f.opened, ["D:\\projects\\local-team"]);
+});
+
+test("reveal refuses closed workspaces and surfaces shell failures without retrying", async () => {
+  for (const body of [{ open: false, path: "/tmp/projects/local-team" }, { open: true, path: "" }, { open: true }, {}]) {
+    const closed = revealFixture({ body });
+    assert.deepEqual(await revealWorkspaceInFileManager(closed), { opened: false, reason: "workspace_not_open" });
+    assert.deepEqual(closed.opened, []);
+  }
+  const failed = revealFixture({ body: { open: true, path: "/tmp/gone" }, failure: "Failed to open path" });
+  assert.deepEqual(await revealWorkspaceInFileManager(failed), { opened: false, reason: "Failed to open path" });
+  assert.deepEqual(failed.opened, ["/tmp/gone"]);
+});
+
+test("reveal rejects traversal-shaped and unconfigured WSL paths before touching the shell", async (t) => {
+  withPlatform(t, "win32");
+  const wsl = (body, env = { ROLEWEAVE_CONTROL_PLANE_MODE: "wsl", ROLEWEAVE_WSL_DISTRO: "Ubuntu-22.04" }) => revealFixture({ body, env });
+  const traversal = wsl({ open: true, path: "/home/tester/../../etc" });
+  const traversalResult = await revealWorkspaceInFileManager(traversal);
+  assert.equal(traversalResult.opened, false);
+  assert.match(traversalResult.reason, /traverse/);
+  assert.deepEqual(traversal.opened, []);
+  const relative = wsl({ open: true, path: "home/tester" });
+  assert.equal((await revealWorkspaceInFileManager(relative)).opened, false);
+  assert.deepEqual(relative.opened, []);
+  const noDistro = revealFixture({
+    body: { open: true, path: "/home/tester/projects/local-team" },
+    env: { ROLEWEAVE_CONTROL_PLANE_MODE: "wsl" },
+  });
+  const noDistroResult = await revealWorkspaceInFileManager(noDistro);
+  assert.equal(noDistroResult.opened, false);
+  assert.match(noDistroResult.reason, /distribution/);
+  assert.deepEqual(noDistro.opened, []);
+});
+
+test("nativePathForServerPath is the identity outside WSL mode", () => {
+  assert.equal(nativePathForServerPath("/tmp/projects", {}), "/tmp/projects");
+  assert.equal(nativePathForServerPath("/tmp/projects", { ROLEWEAVE_CONTROL_PLANE_MODE: "native" }), "/tmp/projects");
 });

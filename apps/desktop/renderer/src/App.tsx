@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button as AntButton, ConfigProvider } from "antd";
+import { Alert, Badge, Button as AntButton, ConfigProvider, message } from "antd";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
@@ -1910,17 +1910,25 @@ function Breadcrumbs({
 }: {
   workspace: WorkspaceInfoResponse | null;
 }) {
+  const t = useT();
   if (workspace?.open !== true || !workspace.path) return null;
+  const revealInFileManager = async () => {
+    if (!window.owb.revealWorkspace) return;
+    const result = await window.owb.revealWorkspace();
+    if (result.opened !== true) message.warning(t("misc.workspaceRevealFailed"));
+  };
   return (
     <span className="owb-topbar-context">
-      <span
+      <button
+        type="button"
         className="owb-workspace-location"
-        title={workspace.path}
-        aria-label={workspace.path}
+        title={`${workspace.path} · ${t("misc.workspaceRevealHint")}`}
+        aria-label={`${t("misc.workspaceRevealHint")}: ${workspace.path}`}
+        onClick={() => void revealInFileManager()}
       >
         <FolderOpen aria-hidden="true" size={12} />
         <span className="owb-workspace-location__path">{workspace.path}</span>
-      </span>
+      </button>
     </span>
   );
 }
