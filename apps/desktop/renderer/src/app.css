@@ -3689,15 +3689,26 @@ body,
   justify-content: flex-start;
   gap: 8px;
   min-height: 44px;
-  padding: 0 19px;
   border: none;
-  border-radius: 0;
   background: transparent;
   box-shadow: none;
   transition:
     padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
+    margin var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
     color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
     background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+/* 收拢态：条目两侧内缩 6px 成圆角槽丸（评审确认的高亮形态），图标靠
+   13px 内边距居中；活跃左竖条在收拢态让位给丸形，展开态保留。内缩随
+   morph 一起滑出滑入。 */
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item {
+  margin-inline: 6px;
+  padding: 0 13px;
+}
+
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item.is-active::before {
+  content: none;
 }
 
 /* 名字常驻 DOM：收拢态 opacity 0（浮名与可及名仍同源 aria-label）；展开
@@ -3802,6 +3813,7 @@ body,
 
 .owb-app.is-rail-expanded .ui-module-rail__item {
   min-height: 38px;
+  margin-inline: 0;
   padding: 0 10px;
   border-radius: 8px;
 }
