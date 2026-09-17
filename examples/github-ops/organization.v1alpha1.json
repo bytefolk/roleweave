@@ -1,0 +1,108 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace-org.schema.json",
+  "schemaVersion": "workspace-org.v1",
+  "business": "github-ops",
+  "description": "GitHub 运营组织：合并把关岗统领，问题调研与 PR 提交分工；创建与合并的权限分置于不同岗位。",
+  "owner": "pr-gatekeeper",
+  "roles": [
+    {
+      "id": "pr-gatekeeper",
+      "name": "合并把关",
+      "description": "在「独立批准 + 必需检查全绿」的前提下合并他人的 PR；不写代码、不提自己的 PR。",
+      "reportTo": null,
+      "package": {
+        "name": "pr-gatekeeper",
+        "version": "0.1.0",
+        "digest": "sha256:3b20ed33330338610b3a78665b97787b99121537215200b985d310b100b9a83b",
+        "localReference": "./positions/pr-gatekeeper"
+      },
+      "mode": "approval_required",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "toolDeny": [],
+      "metadata": {},
+      "budget": {
+        "perTask": {
+          "tokens": 40000,
+          "iterations": 12
+        },
+        "perDay": {
+          "tokens": 400000,
+          "iterations": 96
+        }
+      }
+    },
+    {
+      "id": "issue-triage",
+      "name": "问题调研",
+      "description": "查重、复现并分流 issue，按仓库模板创建新 issue 并给出证据分级。",
+      "reportTo": "pr-gatekeeper",
+      "package": {
+        "name": "issue-triage",
+        "version": "0.1.0",
+        "digest": "sha256:5af42c77b99e0937acd3e8a0805aeee0eb40403deb2c565c8d526c21e1ee540a",
+        "localReference": "./positions/pr-gatekeeper/issue-triage"
+      },
+      "mode": "approval_required",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "toolDeny": [],
+      "metadata": {},
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "pr-author",
+      "name": "PR 提交",
+      "description": "按 issue 实现改动、提交 PR 并按评审意见修改，直到通过评审；不合并任何 PR。",
+      "reportTo": "pr-gatekeeper",
+      "package": {
+        "name": "pr-author",
+        "version": "0.1.0",
+        "digest": "sha256:698e73dc81f43965ac42f47f14eb23bcf5295df49a317c20ad290c3440e8357d",
+        "localReference": "./positions/pr-gatekeeper/pr-author"
+      },
+      "mode": "approval_required",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Write",
+        "Edit",
+        "Grep",
+        "Glob",
+        "Bash"
+      ],
+      "toolDeny": [],
+      "metadata": {},
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    }
+  ],
+  "updatedAt": "2026-09-17T00:30:00.000Z"
+}

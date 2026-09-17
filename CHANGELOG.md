@@ -7,6 +7,8 @@
 
 ### Added
 
+- #302：新增随仓库版本化的 GitHub 运营员工组织 `examples/github-ops/`：打开该目录即得到「问题调研 / PR 提交 / 合并把关」三个岗位。调研岗负责查重、复现并按模板建 issue；提交岗负责实现改动与提 PR；把关岗只在「存在非作者的批准、该 head 上必需检查全绿、无未解决对话、非 draft」时 squash 合并，合并前一刻重读 head SHA，禁用管理员绕过与 dismiss 他人的变更请求。三者均通过 `Bash` 调用 `gh`，不使用 MCP（内置宿主会以 `qoder.mcp_binding_unsupported` 拒绝员工 MCP 绑定）。注意：岗位包里的 `policy.network` / `policy.filesystem` / `policy.mode` 目前只被记录、不被执行，真正生效的是 `permissions.json` 的工具白名单，因此该员工在 GitHub 上的能力边界由所用凭据决定——建议用独立机器身份的细粒度 PAT，且不要授予 Administration。随附测试守护：声明与包一致（含 digest）、内置引擎能 `org apply`、控制面能打开并供出岗位卡。
+
 - #294：在原有工作台中补齐消息复制、重新编辑、会话历史与手动专注对话；保留各工作区、员工和会话的草稿与阅读位置，显式重试保存到原失败回合的关联。设置模块使用统一 JSONC 草稿与加密凭据引用，支持变更预览、冲突处理、恢复和重启提示。
 
 - #292：员工档案在创建之后可编辑：新增 `PATCH /positions/:id/profile`，可改员工姓名、执行模式与权限（工具、资源规则、Skill 与 MCP 绑定），岗位卡片头部新增「编辑」入口，`GET /positions/:id` 新增加法字段 `permissionPolicy` 供编辑器整份回填。改动写入岗位包（`.workbench/identity.v1.json`、`permissions.json`、`skills.json`、`mcp.json` 与 `employee.json` 的 `policy`）并由引擎重新裁决，因此卡片与组织树上的名字会跟着变；引擎拒绝时逐字节回滚，员工有回合在跑时返回 409 且不落盘。岗位 ID、汇报线与预算不在此范围，仍走各自既有的受治理通道。此前唯一的补救办法是裁撤后重招，而那会一并丢弃以该岗位 ID 归档的全部回合、会话与群聊引用。

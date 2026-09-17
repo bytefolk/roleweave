@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace.schema.json",
+  "schemaVersion": "workspace.v1alpha1",
+  "name": "github-ops",
+  "description": "GitHub 运营组织：合并把关岗统领，问题调研与 PR 提交分工；创建与合并的权限分置于不同岗位。",
+  "template": "github-ops-zh",
+  "createdAt": "2026-09-17T00:30:00.000Z",
+  "organization": "./organization.v1alpha1.json",
+  "positions": "./positions",
+  "context": "./context"
+}
