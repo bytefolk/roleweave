@@ -548,6 +548,20 @@ describe("App runtime bridge", () => {
     expect(screen.getByRole("dialog", { name: "选择工作区" })).toBeInTheDocument();
   });
 
+  it("offers to initialize the selected directory when opening finds no workspace markers", async () => {
+    const openWorkspace = vi.fn().mockResolvedValue({
+      status: 422,
+      body: { message: "workspace.json 缺失" },
+      workspacePath: "/tmp/source-tree",
+    });
+    openedBridge({ openWorkspace });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "项目入口" }));
+    const dialog = screen.getByRole("dialog", { name: "选择工作区" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ }));
+    expect(await within(dialog).findByRole("button", { name: /在此目录初始化项目/ })).toBeInTheDocument();
+  });
+
   it("opens the selected employee's direct conversation with a fixed Agent identity and no duplicate session controls", async () => {
     // The organization tree is the only recipient selector.  A click opens
     // that employee's durable conversation; the conversation header carries

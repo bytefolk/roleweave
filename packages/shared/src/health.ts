@@ -82,6 +82,12 @@ export interface WorkspaceCreateRequest {
   agentEngine?: TurnEngine;
 }
 
+/** User-confirmed bootstrap request for an existing directory. The directory
+ * itself is never selected by the renderer; the native shell supplies it. */
+export interface WorkspaceInitializeRequest extends Omit<WorkspaceCreateRequest, "parentPath"> {
+  path: string;
+}
+
 /** Result of creating a blank project with its platform-owned root owner. */
 export interface WorkspaceCreateResponse extends WorkspaceInfoResponse {
   open: true;

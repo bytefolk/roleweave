@@ -40,6 +40,7 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
       { path: `${routes.servicesRelease}?kind=invalid`, method: "GET" },
       { path: routes.workspace, method: "GET" },
       { path: routes.workspaceOpen, method: "POST" },
+      { path: routes.workspaceInitialize, method: "POST" },
       { path: routes.orgTree, method: "GET" },
       { path: routes.orgApply, method: "POST" },
       { path: routes.orgBackups, method: "GET" },
@@ -92,6 +93,7 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
 
 function minimalBody(path: string): unknown {
   if (path === routes.workspaceOpen) return { path: "." };
+  if (path === routes.workspaceInitialize) return { path: "/definitely/not/a/roleweave-workspace", projectId: "project", business: "Project", description: "" };
   if (path === routes.turns) {
     return { positionId: "repo-owner", input: "hello", engine: "qoder" };
   }

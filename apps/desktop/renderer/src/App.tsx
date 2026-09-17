@@ -370,6 +370,7 @@ function AppInner({
   const [projectHubOpen, setProjectHubOpen] = useState(false);
   const [workspaceOpening, setWorkspaceOpening] = useState(false);
   const [workspaceOpenError, setWorkspaceOpenError] = useState<string | null>(null);
+  const [workspaceOpenCandidatePath, setWorkspaceOpenCandidatePath] = useState<string | null>(null);
   useEffect(() => {
     if (projectHubOpen) setWorkspaceOpenError(null);
   }, [projectHubOpen]);
@@ -1246,10 +1247,12 @@ function AppInner({
     if (workspaceOpening) return;
     setWorkspaceOpening(true);
     setWorkspaceOpenError(null);
+    setWorkspaceOpenCandidatePath(null);
     try {
       const response = await window.owb.openWorkspace();
       if ("canceled" in response && response.canceled === true) {
         setProjectHubOpen(false);
+        setWorkspaceOpenCandidatePath(null);
         // A native picker cancel does not change the workspace, but keeping
         // the existing refresh preserves the same read-after-picker contract
         // used by workspace switches and catches an external change made
@@ -1259,10 +1262,12 @@ function AppInner({
       }
       if (response.status !== 200) {
         setWorkspaceOpenError(apiErrorMessage(response.body, t("project.openFailed")));
+        setWorkspaceOpenCandidatePath(typeof response.workspacePath === "string" ? response.workspacePath : null);
         return;
       }
       const opened = response.body as WorkspaceInfoResponse | null;
       if (opened?.open === true) setWorkspaceInfo(opened);
+      setWorkspaceOpenCandidatePath(null);
       setTreeLoading(true);
       await refresh();
       setProjectHubOpen(false);
@@ -1865,7 +1870,11 @@ function AppInner({
             disabled={orgBusy}
             opening={workspaceOpening}
             openError={workspaceOpenError}
-            onClose={() => setProjectHubOpen(false)}
+            initializePath={workspaceOpenCandidatePath}
+            onClose={() => {
+              setProjectHubOpen(false);
+              setWorkspaceOpenCandidatePath(null);
+            }}
             onOpenWorkspace={() => void openWorkspace()}
             onCreated={(created) => void onProjectCreated(created)}
           />

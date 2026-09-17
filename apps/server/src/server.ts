@@ -41,7 +41,7 @@ import {
   handleSessionTurnPost,
 } from "./routes/sessions.js";
 import { handleTurnCancel, handleTurnHistory, handleTurnPost } from "./routes/turns.js";
-import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceOpen } from "./routes/workspace.js";
+import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceInitialize, handleWorkspaceOpen } from "./routes/workspace.js";
 
 /**
  * Loopback-only control-plane HTTP server (frozen v0 contract).
@@ -91,6 +91,10 @@ async function dispatch(
     }
     if (pathname === routes.workspaceCreate && method === "POST") {
       await handleWorkspaceCreate(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.workspaceInitialize && method === "POST") {
+      await handleWorkspaceInitialize(ctx, req, res);
       return;
     }
     if (pathname === routes.orgTree && method === "GET") {

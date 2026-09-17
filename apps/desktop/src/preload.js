@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("owb", {
   status: () => ipcRenderer.invoke("owb:status"),
   stopControlPlane: () => ipcRenderer.invoke("owb:control-plane:stop"),
   openWorkspace: () => ipcRenderer.invoke("owb:workspace:open"),
+  initializeWorkspace: (request) => ipcRenderer.invoke("owb:workspace:initialize", request),
   createWorkspace: (request) => ipcRenderer.invoke("owb:workspace:create", request),
   workspace: () => ipcRenderer.invoke("owb:workspace:get"),
   revealWorkspace: () => ipcRenderer.invoke("owb:workspace:reveal"),

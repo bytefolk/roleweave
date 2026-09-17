@@ -80,8 +80,26 @@ WorkBuddy 的 `workbuddy` Host 使用服务凭据 `CODEBUDDY_API_KEY` 和显式 
 ### 2.3 `POST /workspace/open` — 打开/切换工作区
 
 请求：`{ "path": "/abs/dir" }`。
-目录必须含合法骨架：`workspace.json`（workspace.v1alpha1）＋ `organization.v1alpha1.json`（workspace-org.v1）＋ `positions/` 目录，否则 422 `workspace_invalid`。
+目录必须含合法骨架：`workspace.json`（workspace.v1alpha1）＋ `organization.v1alpha1.json`（workspace-org.v1）＋ `positions/` 目录，否则 422 `workspace_invalid`。组织声明为空（`roles: []`）同样拒绝打开，并提示先初始化或创建项目负责人。
 成功响应 200（同 2.2 已打开形状）；成功后广播一次 `org.updated`。
+
+### 2.3.1 `POST /workspace/initialize` — 在已有目录初始化工作区
+
+请求：
+
+```json
+{
+  "path": "/abs/dir",
+  "projectId": "source-tree",
+  "business": "源代码项目",
+  "description": "",
+  "agentEngine": "qoder"
+}
+```
+
+这是操作者在打开目录被拒绝后主动选择的补救动作。`path` 必须是已存在的真实目录，且不能已经包含 `workspace.json`、`organization.v1alpha1.json`、`positions/` 或 `.digital-employee`。控制面只在该目录写入工作区清单、组织声明、项目上下文目录和一个只读的「项目负责人」岗位包；目录中原有的业务文件保持不变。
+
+成功返回 201，与 `POST /workspace` 创建响应相同（`created: true`、`next: "create_employee"`），并广播一次 `org.updated`。目录已有任一 RoleWeave 标记、路径不存在、引擎不可用或 apply 被拒时，返回对应的 `workspace_invalid` / 引擎错误；初始化失败会清理本次生成的文件，保留原有目录内容。
 
 ### 2.4 `GET /org/tree` — 组织树快照
 

@@ -8,7 +8,7 @@ import {
   AGENT_BINDING_SCHEMA_VERSION,
 } from "@roleweave/shared";
 import type { OrgTreeSnapshot } from "@roleweave/shared";
-import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { FakeDriver, api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 test("workspace: open example, org-tree.v1 snapshot, invalid skeleton rejected", async () => {
   const server = await startTestServer();
@@ -85,8 +85,104 @@ test("workspace: open example, org-tree.v1 snapshot, invalid skeleton rejected",
     });
     assert.equal(invalid.status, 422);
     assert.equal((invalid.body as { code: string }).code, "workspace_invalid");
+
+    const emptyOrganizationDir = await copyExampleWorkspace();
+    try {
+      const organizationFile = path.join(emptyOrganizationDir, "organization.v1alpha1.json");
+      const organization = JSON.parse(await fs.readFile(organizationFile, "utf8")) as { roles: unknown[] };
+      organization.roles = [];
+      await fs.writeFile(organizationFile, `${JSON.stringify(organization)}\n`, "utf8");
+      const emptyOrganization = await api(server.baseUrl, "/workspace/open", {
+        method: "POST",
+        token: server.token,
+        body: { path: emptyOrganizationDir },
+      });
+      assert.equal(emptyOrganization.status, 422);
+      assert.match((emptyOrganization.body as { message: string }).message, /no employees/);
+    } finally {
+      await fs.rm(emptyOrganizationDir, { recursive: true, force: true });
+    }
   } finally {
     await server.close();
+  }
+});
+
+test("workspace: initialize an existing source directory without overwriting its files", async () => {
+  const server = await startTestServer();
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-source-tree-"));
+  const sourceFile = path.join(dir, "README.md");
+  try {
+    await fs.writeFile(sourceFile, "# Existing source\n", "utf8");
+    const initialized = await api(server.baseUrl, "/workspace/initialize", {
+      method: "POST",
+      token: server.token,
+      body: {
+        path: dir,
+        projectId: "source-tree",
+        business: "源代码项目",
+        description: "在已有目录中启用 RoleWeave。",
+        agentEngine: "codex-local",
+      },
+    });
+    assert.equal(initialized.status, 201);
+    const body = initialized.body as { open: boolean; created: boolean; owner: string; path: string; agentEngine: string };
+    assert.equal(body.open, true);
+    assert.equal(body.created, true);
+    assert.equal(body.owner, "source-tree-owner");
+    assert.equal(body.agentEngine, "codex-local");
+    assert.equal(body.path, await fs.realpath(dir));
+    assert.equal(await fs.readFile(sourceFile, "utf8"), "# Existing source\n");
+    for (const file of [
+      "workspace.json",
+      "organization.v1alpha1.json",
+      "positions/source-tree-owner/employee.json",
+      "positions/source-tree-owner/SKILL.md",
+      "positions/source-tree-owner/budget.json",
+      "context/README.md",
+    ]) await fs.stat(path.join(dir, file));
+
+    const conflict = await api(server.baseUrl, "/workspace/initialize", {
+      method: "POST",
+      token: server.token,
+      body: {
+        path: dir,
+        projectId: "another-project",
+        business: "不能二次初始化",
+        description: "",
+      },
+    });
+    assert.equal(conflict.status, 422);
+    assert.match((conflict.body as { message: string }).message, /already contains RoleWeave/);
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("workspace: failed in-place initialization rolls back generated metadata only", async () => {
+  const server = await startTestServer(new FakeDriver({
+    status: "failed",
+    code: "workspace_org_invalid",
+    message: "invalid organization",
+    retryable: false,
+  }));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-source-tree-failed-"));
+  const sourceFile = path.join(dir, "README.md");
+  try {
+    await fs.writeFile(sourceFile, "# Existing source\n", "utf8");
+    const failed = await api(server.baseUrl, "/workspace/initialize", {
+      method: "POST",
+      token: server.token,
+      body: { path: dir, projectId: "source-tree", business: "源代码项目", description: "" },
+    });
+    assert.equal(failed.status, 422);
+    assert.equal(await fs.readFile(sourceFile, "utf8"), "# Existing source\n");
+    for (const file of ["workspace.json", "organization.v1alpha1.json", "positions", "context", ".digital-employee"]) {
+      await assert.rejects(fs.lstat(path.join(dir, file)), { code: "ENOENT" });
+    }
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
   }
 });
 

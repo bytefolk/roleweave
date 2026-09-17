@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Modal } from "antd";
-import { ArrowLeft, Check, FolderOpen, FolderPlus, LoaderCircle } from "lucide-react";
+import { ArrowLeft, Check, FolderOpen, FolderPlus, LoaderCircle, Wrench } from "lucide-react";
 import type { WorkspaceCreateResponse, WorkspaceInfoResponse } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
 import { ProjectCreateForm } from "./ProjectCreateForm";
@@ -14,12 +14,13 @@ interface ProjectWorkspaceDialogProps {
   disabled?: boolean;
   opening?: boolean;
   openError?: string | null;
+  initializePath?: string | null;
   onClose: () => void;
   onOpenWorkspace: () => void;
   onCreated: (workspace: WorkspaceCreateResponse) => void;
 }
 
-type WorkspaceDialogPage = "choose" | "create";
+type WorkspaceDialogPage = "choose" | "create" | "initialize";
 
 function WorkspaceAction({
   icon,
@@ -74,6 +75,7 @@ export function ProjectWorkspaceDialog({
   disabled = false,
   opening = false,
   openError = null,
+  initializePath = null,
   onClose,
   onOpenWorkspace,
   onCreated,
@@ -88,11 +90,12 @@ export function ProjectWorkspaceDialog({
 
   const openExisting = () => { onOpenWorkspace(); };
   const dialogBusy = disabled || createBusy || opening;
+  const initializeBusiness = initializePath?.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
 
   return (
     <Modal
       className="owb-project-dialog"
-      title={page === "choose" ? t("project.chooseTitle") : t("project.createTitle")}
+      title={page === "choose" ? t("project.chooseTitle") : page === "create" ? t("project.createTitle") : t("project.initializeTitle")}
       open={open}
       footer={null}
       width="min(560px, calc(100vw - 32px))"
@@ -131,9 +134,18 @@ export function ProjectWorkspaceDialog({
               disabled={dialogBusy}
               onClick={() => setPage("create")}
             />
+            {initializePath ? (
+              <WorkspaceAction
+                icon={<Wrench size={18} />}
+                title={t("project.initializeAction")}
+                description={t("project.initializeActionHint")}
+                disabled={dialogBusy}
+                onClick={() => setPage("initialize")}
+              />
+            ) : null}
           </div>
         </div>
-      ) : (
+      ) : page === "create" ? (
         <div className="owb-project-dialog__create">
           <button type="button" className="owb-project-dialog__back" disabled={dialogBusy} onClick={() => setPage("choose")}>
             <ArrowLeft aria-hidden="true" size={15} />
@@ -142,6 +154,25 @@ export function ProjectWorkspaceDialog({
           <p className="owb-project-dialog__description">{t("project.createDescription")}</p>
           <ProjectCreateForm
             engineAvailability={engineAvailability}
+            onBusyChange={setCreateBusy}
+            onCancel={() => setPage("choose")}
+            onCreated={(created) => {
+              onCreated(created);
+              onClose();
+            }}
+          />
+        </div>
+      ) : (
+        <div className="owb-project-dialog__create">
+          <button type="button" className="owb-project-dialog__back" disabled={dialogBusy} onClick={() => setPage("choose")}>
+            <ArrowLeft aria-hidden="true" size={15} />
+            {t("project.back")}
+          </button>
+          <p className="owb-project-dialog__description">{t("project.initializeDescription")}</p>
+          <ProjectCreateForm
+            engineAvailability={engineAvailability}
+            targetPath={initializePath ?? undefined}
+            initialBusiness={initializeBusiness}
             onBusyChange={setCreateBusy}
             onCancel={() => setPage("choose")}
             onCreated={(created) => {
