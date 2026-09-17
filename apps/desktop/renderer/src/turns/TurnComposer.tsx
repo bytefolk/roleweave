@@ -1,9 +1,11 @@
-import { useLayoutEffect, useRef, type FormEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ChangeEvent, type ClipboardEvent, type FormEvent, type ReactNode } from "react";
 import { Button as AntButton, Input } from "antd";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Paperclip, Square } from "lucide-react";
 import { useConversationCopy } from "../locales/conversation";
 import { useT } from "@roleweave/ui";
 import { DiagnosticNotice, type AvailabilityCheck, type NoticeAction } from "../DiagnosticNotice";
+import type { PendingAttachment } from "./types";
+import { PendingAttachmentCard } from "./AttachmentCard";
 
 export interface TurnComposerProps {
   options?: ReactNode;
@@ -26,11 +28,17 @@ export interface TurnComposerProps {
   onChange: (value: string) => void;
   onSend: () => void | Promise<void>;
   onCancel: () => void | Promise<void>;
+  attachments?: PendingAttachment[];
+  onAddAttachments?: (files: FileList) => void;
+  onRemoveAttachment?: (id: string) => void;
 }
 
-/** The composer deliberately owns only drafting and dispatching. Session and
- * host choices live in the scope bar above the thread, so this remains a
- * focused writing surface instead of a mixed settings form. */
+const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
+
+function isAcceptedFile(file: File): boolean {
+  return ACCEPTED_TYPES.includes(file.type);
+}
+
 export function TurnComposer({
   options,
   sendShortcut = "enter",
@@ -51,11 +59,16 @@ export function TurnComposer({
   onChange,
   onSend,
   onCancel,
+  attachments = [],
+  onAddAttachments,
+  onRemoveAttachment,
 }: TurnComposerProps) {
   const t = useT();
   const copy = useConversationCopy();
   const composing = useRef(false);
   const pendingCaret = useRef<{ input: HTMLTextAreaElement; value: string; offset: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasContent = value.trim().length > 0 || attachments.some((a) => a.status === "ready");
   useLayoutEffect(() => {
     const pending = pendingCaret.current;
     pendingCaret.current = null;
@@ -65,13 +78,39 @@ export function TurnComposer({
   });
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!running && !disabledReason && value.trim()) void onSend();
+    if (!running && !disabledReason && hasContent) void onSend();
+  };
+
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!onAddAttachments) return;
+    const files = event.clipboardData.files;
+    if (files.length === 0) return;
+    const accepted = Array.from(files).filter(isAcceptedFile);
+    if (accepted.length === 0) return;
+    event.preventDefault();
+    const dt = new DataTransfer();
+    for (const file of accepted) dt.items.add(file);
+    onAddAttachments(dt.files);
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0 && onAddAttachments) {
+      onAddAttachments(event.target.files);
+      event.target.value = "";
+    }
   };
 
   return (
     <form className="owb-turn-composer" onSubmit={submit}>
       <label className="owb-sr-only" htmlFor="owb-turn-input">{t("turn.compose")}</label>
       <div className="owb-turn-composer__surface">
+        {attachments.length > 0 ? (
+          <div className="owb-attachment-strip">
+            {attachments.map((att) => (
+              <PendingAttachmentCard key={att.id} attachment={att} onRemove={(id) => onRemoveAttachment?.(id)} />
+            ))}
+          </div>
+        ) : null}
         <Input.TextArea
           id="owb-turn-input"
           value={value}
@@ -81,6 +120,7 @@ export function TurnComposer({
           onChange={(event) => onChange(event.target.value)}
           onCompositionStart={() => { composing.current = true; }}
           onCompositionEnd={() => { composing.current = false; }}
+          onPaste={handlePaste}
           onKeyDown={(event) => {
             // Preserve the configured send shortcut and native Shift+Enter.
             // IME confirmation must neither send nor insert an extra newline.
@@ -100,10 +140,20 @@ export function TurnComposer({
             }
             if (event.key === "Enter" && !event.shiftKey && (sendShortcut === "enter" ? !event.metaKey && !event.ctrlKey : event.metaKey || event.ctrlKey)) {
               event.preventDefault();
-              if (!running && !disabledReason && value.trim()) void onSend();
+              if (!running && !disabledReason && hasContent) void onSend();
             }
           }}
         />
+        {onAddAttachments ? (
+          <AntButton
+            type="text"
+            aria-label={t("turn.addAttachment")}
+            title={t("turn.addAttachment")}
+            icon={<Paperclip aria-hidden="true" size={15} />}
+            onClick={() => fileInputRef.current?.click()}
+          />
+        ) : null}
+        <input ref={fileInputRef} type="file" accept={ACCEPTED_TYPES.join(",")} multiple style={{ display: "none" }} onChange={handleFileChange} />
         {running ? (
           <AntButton
             danger
@@ -118,9 +168,9 @@ export function TurnComposer({
           <AntButton
             type="primary"
             htmlType="submit"
-            disabled={disabledReason !== null || value.trim().length === 0}
+            disabled={disabledReason !== null || !hasContent}
             aria-label={t("turn.send")}
-            title={disabledSummary ?? disabledReason ?? (value.trim() ? t("turn.send") : copy.emptySend)}
+            title={disabledSummary ?? disabledReason ?? (hasContent ? t("turn.send") : copy.emptySend)}
             icon={<ArrowUp aria-hidden="true" size={15} />}
           />
         )}

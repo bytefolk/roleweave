@@ -14,11 +14,13 @@ import { TurnThread } from "./TurnThread";
 import { PositionAvatar } from "../PositionAvatar";
 import type {
   CreateTurnRequest,
+  PendingAttachment,
   PositionMentionOption,
   TurnEngine,
   TurnEngineAvailability,
   TurnRecord,
 } from "./types";
+import { ATTACHMENT_ALLOWED_MIME_TYPES, ATTACHMENT_MAX_COUNT, ATTACHMENT_MAX_SINGLE_BYTES, ATTACHMENT_MAX_TOTAL_BYTES } from "@roleweave/shared";
 
 export { EngineSelect, useEngineLabel } from "./engine-select";
 
@@ -132,6 +134,7 @@ export function TurnPanel({
   const [editRequest, setEditRequest] = useState<{ key: string; text: string } | null>(null);
   const [sendErrors, setSendErrors] = useState<Record<string, string>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const input = conversationMemory.drafts.get(draftKey) ?? "";
   const sending = sendingKeys[draftKey] === true;
   const setInput = (value: string, key = draftKey) => {
@@ -203,14 +206,79 @@ export function TurnPanel({
   }, [runningTurn, busy, employeeBusy, engine, engineAvailability, engineLabel, modelConfig, modelSaving, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
   const disabledReason = disabledState?.reason ?? null;
 
+  const handleAddAttachments = async (files: FileList): Promise<void> => {
+    if (!selectedSessionId) return;
+    const fileArray = Array.from(files);
+    const accepted = fileArray.filter((f) => (ATTACHMENT_ALLOWED_MIME_TYPES as readonly string[]).includes(f.type));
+    if (accepted.length === 0) return;
+
+    const currentTotal = pendingAttachments.reduce((sum, a) => sum + a.sizeBytes, 0);
+    const newTotal = accepted.reduce((sum, f) => sum + f.size, 0);
+    if (currentTotal + newTotal > ATTACHMENT_MAX_TOTAL_BYTES) {
+      setSendErrors((c) => ({ ...c, [draftKey]: t("turn.attachmentTotalSizeError") }));
+      return;
+    }
+    if (pendingAttachments.length + accepted.length > ATTACHMENT_MAX_COUNT) {
+      setSendErrors((c) => ({ ...c, [draftKey]: t("turn.attachmentCountError") }));
+      return;
+    }
+
+    const newPending: PendingAttachment[] = accepted.map((f) => ({
+      id: crypto.randomUUID(),
+      fileName: f.name,
+      mimeType: f.type,
+      sizeBytes: f.size,
+      status: "pending" as const,
+    }));
+    setPendingAttachments((prev) => [...prev, ...newPending]);
+
+    for (const pending of newPending) {
+      const file = accepted.find((f) => f.name === pending.fileName && f.size === pending.sizeBytes);
+      if (!file) continue;
+      setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "uploading" as const } : a));
+      try {
+        const buffer = await file.arrayBuffer();
+        const dataBase64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+        const res = await window.owb.uploadAttachment({
+          sessionId: selectedSessionId,
+          fileName: pending.fileName,
+          mimeType: pending.mimeType,
+          dataBase64,
+        });
+        if (res.status !== 200 || !res.body?.attachment) {
+          setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "error" as const, error: "upload failed" } : a));
+          continue;
+        }
+        setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "ready" as const, serverId: res.body.attachment.id } : a));
+      } catch {
+        setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "error" as const, error: "upload failed" } : a));
+      }
+    }
+  };
+
+  const handleRemoveAttachment = (id: string): void => {
+    setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
+
   const dispatchTurn = async (): Promise<void> => {
     const trimmed = input.trim();
-    if (!trimmed || disabledReason || !selectedPosition || sendingRef.current.has(draftKey)) return;
+    const readyAttachments = pendingAttachments.filter((a) => a.status === "ready" && a.serverId);
+    const hasContent = trimmed.length > 0 || readyAttachments.length > 0;
+    if (!hasContent || disabledReason || !selectedPosition || sendingRef.current.has(draftKey)) return;
     setSending(true);
     setSendErrors(current => ({ ...current, [draftKey]: "" }));
     try {
-      const created = await onCreateTurn({ positionId: selectedPosition.id, engine, input: trimmed });
-      if (created !== false && conversationMemory.drafts.get(draftKey) === input) setInput("", draftKey);
+      const attachmentIds = readyAttachments.length > 0 ? readyAttachments.map((a) => a.serverId!) : undefined;
+      const created = await onCreateTurn({
+        positionId: selectedPosition.id,
+        engine,
+        input: trimmed,
+        ...(attachmentIds !== undefined ? { attachmentIds } : {}),
+      });
+      if (created !== false) {
+        if (conversationMemory.drafts.get(draftKey) === input) setInput("", draftKey);
+        setPendingAttachments([]);
+      }
       if (created === false) setSendErrors(current => ({ ...current, [draftKey]: copy.sendFailed }));
     } catch {
       setSendErrors(current => ({ ...current, [draftKey]: copy.sendFailed }));
@@ -318,6 +386,9 @@ export function TurnPanel({
         onChange={setInput}
         onSend={dispatchTurn}
         onCancel={requestStop}
+        attachments={sessionMode ? pendingAttachments : []}
+        onAddAttachments={sessionMode ? (files) => void handleAddAttachments(files) : undefined}
+        onRemoveAttachment={sessionMode ? handleRemoveAttachment : undefined}
       /> : null}
       <Modal open={editRequest?.key === draftKey} title={copy.replaceTitle} okText={copy.replace} cancelText={copy.keep}
         onCancel={() => setEditRequest(null)} onOk={() => {

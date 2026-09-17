@@ -1057,6 +1057,7 @@ function AppInner({
         ...(request.pendingApproval !== undefined
           ? { pendingApproval: request.pendingApproval }
           : {}),
+        ...(request.attachmentIds !== undefined ? { attachmentIds: request.attachmentIds } : {}),
       });
       if (res.status !== 200) {
         const message = apiErrorMessage(res.body, t("turn.createFail"));

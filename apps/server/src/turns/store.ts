@@ -11,7 +11,8 @@ import {
   turnEngines,
 } from "@roleweave/shared";
 import type { ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
-import type { EngineEvent, TurnTerminalReason } from "@roleweave/shared";
+import type { EngineEvent, TurnTerminalReason, TurnAttachment, AttachmentMimeType } from "@roleweave/shared";
+import { ATTACHMENT_ALLOWED_MIME_TYPES } from "@roleweave/shared";
 import { assertSessionId, readAuthoritativeSessionIndex } from "../sessions/store.js";
 import { PerKeyLock } from "../per-key-lock.js";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
@@ -391,11 +392,12 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
       "schemaVersion", "conversationId", "turnId", "positionId", "engine", "status",
       "input", "envelopeDigest", "createdAt", "updatedAt", "events",
     ],
-    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "goalId", "branchId", "model", "retryOf"],
+    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "goalId", "branchId", "model", "retryOf", "attachments"],
   )) return false;
   if (Object.hasOwn(value, "retryOf") && (typeof value.retryOf !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.retryOf) || value.retryOf === value.turnId)) return false;
   if (Object.hasOwn(value, "threadContext") && !isThreadContextMetadata(value.threadContext)) return false;
   if (Object.hasOwn(value, "model") && !isEngineModelId(value.model, value.engine)) return false;
+  if (Object.hasOwn(value, "attachments") && !isTurnAttachmentArray(value.attachments)) return false;
   const createdInstant = parseRfc3339Instant(value.createdAt);
   const updatedInstant = parseRfc3339Instant(value.updatedAt);
   if (
@@ -567,6 +569,37 @@ function isBoundedJson(value: unknown, limit: number): boolean {
 
 function isBoundedApprovalId(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= APPROVAL_ID_MAX_LENGTH;
+}
+
+const ATTACHMENT_MIME_SET = new Set<string>(ATTACHMENT_ALLOWED_MIME_TYPES);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function isTurnAttachmentArray(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 5) return false;
+  return value.every((item) => isTurnAttachment(item));
+}
+
+function isTurnAttachment(value: unknown): boolean {
+  if (!isObjectRecord(value)) return false;
+  if (!hasExactKeys(value, ["id", "fileName", "mimeType", "sizeBytes"], ["extractedText"])) return false;
+  if (typeof value.id !== "string" || !UUID_PATTERN.test(value.id)) return false;
+  if (typeof value.fileName !== "string" || value.fileName.length === 0 || value.fileName.length > 255) return false;
+  if (typeof value.mimeType !== "string" || !ATTACHMENT_MIME_SET.has(value.mimeType)) return false;
+  if (typeof value.sizeBytes !== "number" || !Number.isSafeInteger(value.sizeBytes) || value.sizeBytes < 0) return false;
+  if (Object.hasOwn(value, "extractedText") && !isAttachmentTextLayer(value.extractedText)) return false;
+  return true;
+}
+
+function isAttachmentTextLayer(value: unknown): boolean {
+  if (!isObjectRecord(value)) return false;
+  if (value.schemaVersion !== "attachment-text.v1") return false;
+  if (!Array.isArray(value.pages)) return false;
+  for (const page of value.pages) {
+    if (!isObjectRecord(page)) return false;
+    if (typeof page.pageNumber !== "number" || !Number.isSafeInteger(page.pageNumber) || page.pageNumber < 1) return false;
+    if (typeof page.text !== "string") return false;
+  }
+  return true;
 }
 
 function isBoundedNonEmptyText(value: unknown, maxBytes: number): value is string {
@@ -806,6 +839,8 @@ export class TurnStore {
     /** Additive #222: optional goal binding. */
     goalId?: string;
     branchId?: string;
+    /** Additive #306: optional attachment manifest. */
+    attachments?: TurnAttachment[];
   }): Promise<TurnRecord> {
     assertPositionId(input.positionId);
     turnRecordFile(input.workspace, input.positionId, input.turnId);
@@ -830,6 +865,7 @@ export class TurnStore {
       ...(input.conversationRef !== undefined ? { conversationRef: input.conversationRef } : {}),
       ...(input.goalId !== undefined ? { goalId: input.goalId } : {}),
       ...(input.branchId !== undefined ? { branchId: input.branchId } : {}),
+      ...(input.attachments !== undefined ? { attachments: input.attachments } : {}),
     };
     const activeKey = this.activeTurnKey(input.workspace, input.positionId, input.turnId);
     this.activeTurns.add(activeKey);
@@ -871,6 +907,8 @@ export class TurnStore {
     /** Additive #222: optional goal binding. */
     goalId?: string;
     branchId?: string;
+    /** Additive #306: optional attachment manifest. */
+    attachments?: TurnAttachment[];
   }): Promise<TurnRecord> {
     const sessionId = assertSessionId(input.sessionId);
     assertPositionId(input.positionId);
@@ -901,6 +939,7 @@ export class TurnStore {
       ...(input.retryOf !== undefined ? { retryOf: input.retryOf } : {}),
       ...(input.goalId !== undefined ? { goalId: input.goalId } : {}),
       ...(input.branchId !== undefined ? { branchId: input.branchId } : {}),
+      ...(input.attachments !== undefined ? { attachments: input.attachments } : {}),
     };
     const activeKey = this.sessionActiveTurnKey(input.workspace, sessionId, input.turnId);
     this.activeTurns.add(activeKey);

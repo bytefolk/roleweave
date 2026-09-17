@@ -131,6 +131,18 @@ export const errorCodes = {
   goal_conflict: "goal_conflict",
   /** Workspace-local goal state failed validation or atomic persistence (#222). */
   goal_storage_failed: "goal_storage_failed",
+  /** Additive #306: attachment upload request shape is invalid. */
+  attachment_request_invalid: "attachment_request_invalid",
+  /** Additive #306: attachment MIME type is not in the allowlist. */
+  attachment_type_unsupported: "attachment_type_unsupported",
+  /** Additive #306: single attachment exceeds the size limit. */
+  attachment_too_large: "attachment_too_large",
+  /** Additive #306: attachment count exceeds the per-turn limit. */
+  attachment_count_exceeded: "attachment_count_exceeded",
+  /** Additive #306: total attachment size exceeds the per-turn limit. */
+  attachment_total_size_exceeded: "attachment_total_size_exceeded",
+  /** Additive #306: one or more attachment ids were not found in the session. */
+  attachment_missing: "attachment_missing",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */
