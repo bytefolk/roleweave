@@ -82,6 +82,14 @@ describe("PositionCard (D1 spec §3)", () => {
     expect(screen.getByText("未配置")).toBeInTheDocument();
   });
 
+  it("keeps declared caps visible instead of projecting turn consumption", () => {
+    render(<PositionCard position={POSITION} />);
+
+    expect(screen.getByRole("meter", { name: "单任务声明" })).toBeInTheDocument();
+    expect(screen.getByText("40,000 tokens")).toBeInTheDocument();
+    expect(screen.queryByRole("meter", { name: "单任务消耗" })).not.toBeInTheDocument();
+  });
+
   it("keeps the position header focused on the name, not the reporting line", () => {
     render(<PositionCard position={{ ...POSITION, reportTo: "community-operator" }} />);
 
