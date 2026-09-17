@@ -50,7 +50,6 @@ export async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
   }
 
   if (size > MAX_BODY_BYTES) {
-    await drainRequest(req);
     throw new OrgApiError(errorCodes.body_invalid, 400, "request body exceeds 1 MiB limit");
   }
 
