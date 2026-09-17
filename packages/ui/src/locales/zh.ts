@@ -942,6 +942,9 @@ export const zhCatalog: Record<string, string> = {
   // 2026-09-17 设计评审：导轨展开/收拢切换钮的名字
   "rail.expand": "展开导航",
   "rail.collapse": "收起导航",
+  // 展开态钮上的短文案（可及名仍用上面的长文案）
+  "rail.expandShort": "展开",
+  "rail.collapseShort": "收起",
   "settings.title": "设置",
   "settings.moduleAria": "设置",
   "settings.runtimeTitle": "项目与 Agent 运行环境",

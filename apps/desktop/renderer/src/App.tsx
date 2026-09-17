@@ -1522,6 +1522,9 @@ function AppInner({
               onClick={toggleRailExpanded}
             >
               {railExpanded ? <ChevronsLeft aria-hidden="true" size={14} /> : <ChevronsRight aria-hidden="true" size={14} />}
+              <span className="owb-rail-toggle__label" aria-hidden="true">
+                {railExpanded ? t("rail.collapseShort") : t("rail.expandShort")}
+              </span>
             </button>
           }
         />

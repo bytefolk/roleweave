@@ -3728,7 +3728,8 @@ body,
 /* 收拢态只出图标：hover / 键盘聚焦时在图标右侧浮出名字。content 取
    aria-label——浮名与可及名同源，永远不会漂移；停一会儿才显形，
    指针扫过导轨不会一路闪名字。 */
-.owb-app:not(.is-rail-expanded) .ui-module-rail__item::after {
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item::after,
+.owb-app:not(.is-rail-expanded) .owb-rail-toggle::after {
   content: attr(aria-label);
   position: absolute;
   left: calc(100% + 10px);
@@ -3750,7 +3751,9 @@ body,
 }
 
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item:hover::after,
-.owb-app:not(.is-rail-expanded) .ui-module-rail__item:focus-visible::after {
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item:focus-visible::after,
+.owb-app:not(.is-rail-expanded) .owb-rail-toggle:hover::after,
+.owb-app:not(.is-rail-expanded) .owb-rail-toggle:focus-visible::after {
   opacity: 1;
   transition-delay: 0.35s;
 }
@@ -3791,13 +3794,22 @@ body,
   bottom: 6px;
 }
 
-/* 展开/收拢切换钮：钉在导轨底部，与条目同宽；收拢态是双箭头朝右。 */
+/* 展开/收拢切换钮：钉在导轨底部，用发丝线和导航区隔开，不再是一个
+   悬在空处的裸 glyph。收拢态是 36px 居中图标钮（hover 浮名同导航项）；
+   展开态长成一条导航行：icon + 短文案，hover 出 chip。 */
+.owb-app .ui-module-rail__footer {
+  padding: 8px 0 6px;
+  border-top: 1px solid var(--ui-border-secondary, var(--ui-border));
+}
+
 .owb-app .owb-rail-toggle {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   width: 100%;
-  min-height: 32px;
+  min-height: 36px;
   padding: 0;
   color: var(--ui-foreground-muted);
   background: transparent;
@@ -3814,9 +3826,24 @@ body,
   background: color-mix(in srgb, var(--ui-surface-raised) 58%, transparent);
 }
 
+.owb-app .owb-rail-toggle__label {
+  display: none;
+}
+
 .owb-app.is-rail-expanded .owb-rail-toggle {
   justify-content: flex-start;
+  min-height: 38px;
   padding: 0 10px;
+}
+
+.owb-app.is-rail-expanded .owb-rail-toggle__label {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- 侧栏：head + workspace strip + tree + backups ---------- */
