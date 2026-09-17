@@ -32,7 +32,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { Brain, ChartColumn, ChevronsLeft, ChevronsRight, ClipboardCheck, Flag, FolderOpen, Network, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
+import { Brain, ChartColumn, ClipboardCheck, Flag, FolderOpen, Network, PanelLeftClose, PanelLeftOpen, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -156,6 +156,18 @@ function AppInner({
       return next;
     });
   }, []);
+  /** ⌘B / Ctrl+B 直接切导轨宽窄；输入框里不抢键。 */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "b") return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      event.preventDefault();
+      toggleRailExpanded();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleRailExpanded]);
   const [memorySource, setMemorySource] = useState<MemorySource>("docs");
   /**
    * DATA GAP (TODO, v0): v0 has no dedicated `/approvals` stream. The P0
@@ -1466,6 +1478,18 @@ function AppInner({
         <WindowControls />
         <span className="owb-wintitle__name">RoleWeave</span>
         <span className="owb-wintitle__spacer" />
+        {/* 导轨宽窄是窗口级 chrome（Figma / Linear 把侧栏开关放顶栏），
+            不进导轨自己；⌘B 同效。 */}
+        <button
+          type="button"
+          className="owb-wintitle__rail"
+          aria-label={railExpanded ? t("rail.collapse") : t("rail.expand")}
+          title={railExpanded ? t("rail.collapse") : t("rail.expand")}
+          aria-expanded={railExpanded}
+          onClick={toggleRailExpanded}
+        >
+          {railExpanded ? <PanelLeftClose aria-hidden="true" size={14} strokeWidth={1.8} /> : <PanelLeftOpen aria-hidden="true" size={14} strokeWidth={1.8} />}
+        </button>
         <PrefsMenu
           locale={locale}
           onChangeLocale={onChangeLocale}
@@ -1514,17 +1538,6 @@ function AppInner({
             { id: "goals", label: t("rail.goals"), icon: <Flag aria-hidden="true" size={16} />, active: activeModule === "goals", onSelect: () => setActiveModule("goals") },
             { id: "settings", label: t("rail.settings"), icon: <Settings aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
           ]}
-          footer={
-            <button
-              type="button"
-              className="owb-rail-nub"
-              aria-label={railExpanded ? t("rail.collapse") : t("rail.expand")}
-              title={railExpanded ? t("rail.collapse") : t("rail.expand")}
-              onClick={toggleRailExpanded}
-            >
-              {railExpanded ? <ChevronsLeft aria-hidden="true" size={12} /> : <ChevronsRight aria-hidden="true" size={12} />}
-            </button>
-          }
         />
       }
       sidebar={
