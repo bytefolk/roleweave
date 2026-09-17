@@ -12,6 +12,8 @@ const en = {
   modelReadonly: "Model selection is unavailable for this Host", modelMissing: "Model configuration was not provided", requested: "Requested option", actual: "Reported model",
   modEnterHint: "⌘/Ctrl+Enter sends · Shift+Enter adds a line", emptySend: "Enter a message to send", sendFailed: "Could not send. Your draft has been kept.",
   profile: "Employee details", directory: "Employee directory", close: "Close", resizeDirectory: "Resize employee directory", unavailableHistory: "No session history",
+  restart: "New conversation", restartTitle: "Start a new conversation? The current conversation moves to session history and stays readable.",
+  restartOk: "Start", restartCancel: "Not now",
 };
 const zh: typeof en = {
   copy: "复制", copied: "已复制", copyFailed: "复制失败", copyPlain: "复制纯文本", copyMarkdown: "复制原始 Markdown",
@@ -24,5 +26,7 @@ const zh: typeof en = {
   modelReadonly: "此 Host 不支持选择模型", modelMissing: "未提供模型配置", requested: "请求的选项", actual: "实际回执模型",
   modEnterHint: "⌘/Ctrl+Enter 发送 · Shift+Enter 换行", emptySend: "输入消息后可发送", sendFailed: "发送失败，已保留草稿。",
   profile: "岗位信息", directory: "员工目录", close: "关闭", resizeDirectory: "调整员工目录宽度", unavailableHistory: "暂无会话历史",
+  restart: "新对话", restartTitle: "开始新对话？当前对话会转入会话历史，仍可随时查看。",
+  restartOk: "开始", restartCancel: "先不用",
 };
 export function useConversationCopy() { return useOwbLocale() === "en" ? en : zh; }

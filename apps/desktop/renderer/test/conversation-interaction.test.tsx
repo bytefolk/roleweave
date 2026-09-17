@@ -6,6 +6,8 @@ import { ConversationOptions } from "../src/turns/ConversationOptions";
 import { createConversationMemory } from "../src/turns/conversation-memory";
 import { OrgWorkspaceSplit } from "../src/org/OrgWorkspaceSplit";
 import type { TurnRecord } from "../src/turns/types";
+import type { EmployeeModelConfig, WorkbenchSession } from "@roleweave/shared";
+import { pickSelectOption } from "./select-helper";
 
 const availability = Object.fromEntries(["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"].map(id => [id, { configured: true, ready: true }])) as TurnPanelProps["engineAvailability"];
 const finished: TurnRecord = { id: "turn-1", positionId: "owner", positionName: "Owner", input: "Original task", output: "**Done**", status: "completed", engine: "codex-local", createdAt: "2026-09-01T10:00:00Z" };
@@ -14,6 +16,21 @@ function props(overrides: Partial<TurnPanelProps> = {}): TurnPanelProps {
 }
 
 describe("conversation interaction refinements without a frame redesign", () => {
+  it.each([true, false, undefined])("shows a noninteractive branded Agent for engineLocked=%s without changing the employee or draft", (engineLocked) => {
+    const selectEngine = vi.fn();
+    const { container } = render(<TurnPanel {...props({ engineLocked, onSelectEngine: selectEngine })} />);
+    const header = container.querySelector(".owb-turn-panel__header")!;
+    const badge = header.querySelector(".owb-engine-badge")!;
+    expect(badge).toHaveTextContent("Codex");
+    expect(badge.querySelector("img")).toHaveAttribute("alt", "");
+    expect(badge.querySelector("img")).toHaveAttribute("aria-hidden", "true");
+    expect(badge.closest("button, [role=button], [tabindex]")).toBeNull();
+    expect(within(header as HTMLElement).queryByRole("combobox")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "Keep draft" } });
+    fireEvent.click(badge);
+    expect(selectEngine).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("下达任务")).toHaveValue("Keep draft");
+  });
   it("protects an existing draft and re-edits into a new task without changing history", async () => {
     const create = vi.fn().mockResolvedValue(true);
     render(<TurnPanel {...props({ onCreateTurn: create })} />);
@@ -103,6 +120,44 @@ describe("conversation interaction refinements without a frame redesign", () => 
       positionId: "owner", engine: "codex-local", input: "Original task", retryOf: "turn-1",
     }));
     expect(screen.getByText("Original task")).toBeInTheDocument();
+  });
+  it.each(["saving", "running", "read-only"])("blocks model changes while %s without replacing the draft, history, or session context", async state => {
+    const change = vi.fn();
+    const setContext = vi.fn();
+    const selectSession = vi.fn();
+    const config: EmployeeModelConfig = {
+      selected: "efficient", recommended: "efficient", editable: true, source: "provider-tiers",
+      options: [{ id: "efficient", name: "Efficient", tier: "economy" }, { id: "performance", name: "Performance", tier: "balanced" }],
+    };
+    const session: WorkbenchSession = {
+      schemaVersion: "workbench-session.v1", sessionId: "session-1", workspaceInstanceId: "workspace-1",
+      positionId: "owner", principal: "position.owner", status: "active", rotatedFrom: null, rotatedTo: null,
+      createdAt: "2026-09-13T00:00:00Z", rotatedAt: null, threadContextEnabled: false,
+    };
+    const panelProps = props({ modelConfig: config, onSelectModel: change, onSetSessionContext: setContext,
+      sessions: [session], selectedSessionId: session.sessionId, onSelectSession: selectSession });
+    const { rerender } = render(<TurnPanel {...panelProps} />);
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "Keep this draft" } });
+    rerender(<TurnPanel {...panelProps} modelSaving={state === "saving"} employeeBusy={state === "running"}
+      modelConfig={{ ...config, editable: state !== "read-only" }} />);
+    const select = screen.getByRole("combobox", { name: "员工模型" });
+    expect(select).toBeDisabled();
+    fireEvent.mouseDown(select);
+    expect(select).toHaveAttribute("aria-expanded", "false");
+    expect(change).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("下达任务")).toHaveValue("Keep this draft");
+    expect(screen.getByText("Original task")).toBeInTheDocument();
+
+    rerender(<TurnPanel {...panelProps} />);
+    expect(screen.getByRole("combobox", { name: "员工模型" })).toBeEnabled();
+    pickSelectOption("员工模型", "Performance");
+    expect(change).toHaveBeenCalledExactlyOnceWith("performance");
+    expect(screen.getByLabelText("下达任务")).toHaveValue("Keep this draft");
+    expect(screen.getByText("Original task")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "上下文详情" }));
+    expect(await screen.findByRole("switch", { name: "携带会话历史" })).toHaveAttribute("aria-checked", "false");
+    expect(setContext).not.toHaveBeenCalled();
+    expect(selectSession).not.toHaveBeenCalled();
   });
   it.each(["sessionBusy", "historyLoading"] as const)("blocks retry while %s keeps session state incomplete", async (pending) => {
     const create = vi.fn();

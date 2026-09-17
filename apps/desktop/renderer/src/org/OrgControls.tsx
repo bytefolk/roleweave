@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { Button } from "@fullstack-ai-infra/ui";
 import type { OrgBackupEntry } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
-import { ArchiveRestore, Trash2 } from "lucide-react";
+import { ArchiveRestore, ChevronDown, Trash2 } from "lucide-react";
 
 export function DismissPositionDialog({
   positionName,
@@ -52,24 +52,56 @@ export function DismissPositionDialog({
 export function BackupTray({
   backups,
   busy,
+  status = "ready",
   positionNames,
   onRestore,
+  onRetry,
 }: {
   backups: OrgBackupEntry[];
   busy: boolean;
+  status?: "loading" | "ready" | "error";
   positionNames?: Record<string, string>;
   onRestore: (backupId: string) => Promise<boolean>;
+  onRetry?: () => void;
 }) {
   const t = useT();
+  const [expanded, setExpanded] = useState(false);
+  const listId = useId();
+  if (status === "ready" && backups.length === 0) return null;
   return (
     <section className="owb-backups" aria-label={t("tree.recovery")}>
-      <header><ArchiveRestore aria-hidden="true" size={13} /><span>{t("tree.recoveryHead")}</span><strong>{backups.length}</strong></header>
-      {backups.length === 0 ? <p>{t("tree.recoveryEmpty")}</p> : backups.map((backup) => (
-        <div className="owb-backups__item" key={backup.backupId}>
-          <span><strong>{backup.name}</strong><small>{t("tree.backupOrigin", { target: backup.reportTo ? positionNames?.[backup.reportTo] ?? t("org.unknownPosition") : t("org.enterpriseRoot") })}</small></span>
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void onRestore(backup.backupId)}>{t("tree.restore")}</Button>
+      {status === "loading" ? (
+        <div className="owb-backups__status" role="status">
+          <ArchiveRestore aria-hidden="true" size={14} /><span>{t("tree.recoveryLoading")}</span>
         </div>
-      ))}
+      ) : status === "error" ? (
+        <div className="owb-backups__status" role="alert">
+          <span>{t("tree.recoveryFailed")}</span>
+          <button type="button" className="owb-backups__retry" onClick={onRetry}>{t("tree.recoveryRetry")}</button>
+        </div>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="owb-backups__toggle"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            <ArchiveRestore aria-hidden="true" size={14} />
+            <span>{t("tree.recoveryHead", { count: backups.length })}</span>
+            <ChevronDown className="owb-backups__chevron" aria-hidden="true" size={14} />
+          </button>
+          <div id={listId} className="owb-backups__list" hidden={!expanded}>
+            {backups.map((backup) => (
+              <div className="owb-backups__item" key={backup.backupId}>
+                <span><strong title={backup.name}>{backup.name}</strong><small>{t("tree.backupOrigin", { target: backup.reportTo ? positionNames?.[backup.reportTo] ?? t("org.unknownPosition") : t("org.enterpriseRoot") })}</small></span>
+                <Button size="sm" variant="secondary" disabled={busy} onClick={() => void onRestore(backup.backupId)}>{t("tree.restore")}</Button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </section>
   );
 }

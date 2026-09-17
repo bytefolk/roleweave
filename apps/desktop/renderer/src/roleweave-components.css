@@ -149,8 +149,7 @@
   background: var(--ui-border-strong);
 }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-backups {
-  border-radius: 6px;
-  background: var(--ui-surface);
+  background: transparent;
   box-shadow: none;
 }
 :is([data-theme="light"], [data-theme="dark"]) :is(.owb-modal__panel, .owb-prefs__panel) {

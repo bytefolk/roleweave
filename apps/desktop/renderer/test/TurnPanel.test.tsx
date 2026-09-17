@@ -79,7 +79,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
-  it("keeps session controls out of a direct employee conversation while retaining its Agent picker", () => {
+  it("keeps session controls out of a direct employee conversation and shows its fixed Agent identity", () => {
     const active = {
       schemaVersion: "workbench-session.v1" as const,
       sessionId: "11111111-1111-4111-8111-111111111111",
@@ -115,9 +115,61 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(document.querySelector(".owb-conversation-controls")).toBeNull();
     expect(screen.queryByLabelText("选择对话岗位")).toBeNull();
     expect(screen.queryByLabelText("选择本地会话")).toBeNull();
-    expect(screen.getByLabelText("选择 Agent Host")).toBeEnabled();
+    expect(screen.queryByLabelText("选择 Agent Host")).not.toBeInTheDocument();
+    expect(document.querySelector(".owb-engine-badge")).toHaveTextContent("Qoder");
     expect(screen.queryByRole("button", { name: "轮换当前会话" })).toBeNull();
     expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  });
+
+  it("#305 forwards the restart handler to the composer options bar and stays optional", async () => {
+    const rotate = vi.fn();
+    const active = {
+      schemaVersion: "workbench-session.v1" as const,
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      positionId: "repo-owner",
+      workspaceInstanceId: "workspace-1",
+      principal: "position.repo-owner",
+      status: "active" as const,
+      rotatedFrom: null,
+      rotatedTo: null,
+      createdAt: "2026-09-08T00:00:00Z",
+      rotatedAt: null,
+    };
+    const { rerender } = render(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[]}
+        sessions={[active]}
+        selectedSessionId={active.sessionId}
+        onRotateSession={rotate}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    // antd inserts a space between the two CJK characters of a button label.
+    fireEvent.click(await screen.findByRole("button", { name: /开\s*始$/ }));
+    await waitFor(() => expect(rotate).toHaveBeenCalledWith(active.sessionId));
+
+    // Without the handler the options bar renders without the restart control.
+    rerender(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[]}
+        sessions={[active]}
+        selectedSessionId={active.sessionId}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "新对话" })).not.toBeInTheDocument();
   });
 
   it("sends directly to the employee selected in the organization tree", async () => {
@@ -127,7 +179,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
 
     expect(screen.getByRole("heading", { name: "发布负责人" })).toBeInTheDocument();
     expect(screen.getAllByText("Claude Code").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("选择 Agent Host")).toBeEnabled();
+    expect(screen.queryByLabelText("选择 Agent Host")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "准备发布说明" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
