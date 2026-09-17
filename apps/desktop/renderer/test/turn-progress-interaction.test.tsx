@@ -18,11 +18,15 @@ function disclosure() {
 afterEach(() => vi.useRealTimers());
 
 describe("conversation progress disclosure", () => {
-  it("opens a live run, shows its elapsed time, and marks only the current milestone", () => {
+  it("opens a live run, immediately confirms receipt, shows its elapsed time, and marks only the current milestone", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-10T06:00:08.000Z"));
     render(<TurnThread turns={[turn()]} />);
     expect(disclosure()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("任务已接收")).toBeVisible();
+    expect(screen.getByText("正在处理")).toBeVisible();
+    expect(screen.getByText("任务已接收").closest("li")).toHaveClass("is-received");
+    expect(screen.getByText("正在处理").closest("li")).toHaveClass("is-current");
     expect(screen.getByRole("timer")).toHaveTextContent("8s");
     expect(document.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(screen.getByRole("region", { name: "实时进展" })).toHaveTextContent("公开的检查结果");

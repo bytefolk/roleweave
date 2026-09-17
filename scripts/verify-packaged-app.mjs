@@ -177,6 +177,17 @@ export function expectedResourceManifest(sourceRoot = projectRoot) {
   );
   addSourceEntries(
     manifest,
+    "node_modules/jsonc-parser",
+    "node_modules/jsonc-parser",
+    [
+      "package.json", "LICENSE.md", "lib/umd/main.js", "lib/umd/impl/edit.js",
+      "lib/umd/impl/format.js", "lib/umd/impl/parser.js", "lib/umd/impl/scanner.js",
+      "lib/umd/impl/string-intern.js",
+    ],
+    sourceRoot,
+  );
+  addSourceEntries(
+    manifest,
     "examples/oss-maintainer",
     "examples/oss-maintainer",
     EXAMPLE_RUNTIME_FILES,
@@ -204,6 +215,17 @@ export function verifyResourceTree(resources, expectedManifest) {
         expected.expected,
         "builder-rewritten root package metadata differs from the exact transform",
       );
+      continue;
+    }
+    if (relative === "node_modules/jsonc-parser/package.json") {
+      const sourceMetadata = JSON.parse(fs.readFileSync(expected.source, "utf8"));
+      const packagedMetadata = JSON.parse(fs.readFileSync(packaged, "utf8"));
+      // electron-builder prunes publish-only package metadata while copying
+      // runtime dependencies. Verify the runtime identity and entry points;
+      // every executable file remains byte-exact below.
+      for (const field of ["name", "version", "main", "module", "license"]) {
+        assert.equal(packagedMetadata[field], sourceMetadata[field], `packaged jsonc-parser ${field} differs from source`);
+      }
       continue;
     }
     assert.equal(expected.kind, "byte-exact", `unknown runtime verification mode for ${relative}`);

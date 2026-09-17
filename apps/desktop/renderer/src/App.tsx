@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button as AntButton, ConfigProvider, message } from "antd";
+import { Alert, Badge, Button as AntButton, ConfigProvider } from "antd";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
@@ -23,8 +23,6 @@ import type {
   OrgBackupsResponse,
   OrgTreeNodeV1,
   OrgTreeSnapshot,
-  PositionProfilePatch,
-  PositionProfileResult,
   ReportsResponse,
   TurnHistory,
   WorkbenchSession,
@@ -32,11 +30,8 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { BrainCircuit, Cog, FileChartColumn, FolderOpen, Network, PencilLine, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
+import { BrainCircuit, Cog, FileChartColumn, FolderOpen, Network, Plus, ShieldAlert, Target, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
-import { useTheme, ThemeProvider } from "./theme-context";
-import { themeToAntdSeed } from "./theme-resolution";
-import { DEFAULT_PRESET_ID } from "./theme-presets";
 import { PrefsMenu } from "./prefs-menu";
 import { persistLocale, seedLocale } from "./locale-mode";
 import {
@@ -54,9 +49,7 @@ import {
   resolveAgentEngine,
   resetStreamSeq,
   settlePendingTurn,
-  useEngineLabel,
 } from "./turns";
-import { EngineIcon } from "./turns/engine-icon";
 import type {
   CreateTurnRequest,
   PositionMentionOption,
@@ -66,11 +59,10 @@ import type {
   TurnStreamState,
 } from "./turns";
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
-import { EditEmployeeDrawer } from "./org/EditEmployeeDrawer";
 import { HireDrawer } from "./org/HireDrawer";
 import { OrgChart } from "./org/OrgChart";
 import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
-import { useConfigurationBootstrap, useSendShortcut, useWorkspaceFocus, requestSettingsLeave, persistApplicationPreference, preferenceError } from "./configuration-preferences";
+import { useConfigurationBootstrap, useWorkspaceFocus, requestSettingsLeave, persistApplicationPreference, preferenceError } from "./configuration-preferences";
 import { createConversationMemory } from "./turns/conversation-memory";
 import { useConversationCopy } from "./locales/conversation";
 import { OrgWorkspaceSplit } from "./org/OrgWorkspaceSplit";
@@ -99,16 +91,7 @@ interface PositionCardState {
  * (org.updated drives refresh; the UI never polls).
  */
 export function App() {
-  // The theme provider lives here, not in main.tsx, for the same reason the antd
-  // ConfigProvider does: `App.test.tsx` renders `<App />` on its own in 30+ cases,
-  // so the harness and production have to run the identical configuration.
-  // Wrapping in main.tsx instead left every direct render throwing
-  // "useTheme must be used within a ThemeProvider".
-  return (
-    <ThemeProvider>
-      <AppRoot />
-    </ThemeProvider>
-  );
+  return <AppRoot />;
 }
 
 /** #146 i18n 根：locale 状态住在 Provider 之上；恰好两个 locale，
@@ -137,7 +120,6 @@ function AppInner({
   locale: OwbLocale;
   onChangeLocale: (next: OwbLocale) => void;
 }) {
-  const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
     "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "settings"
   >("org");
@@ -155,7 +137,6 @@ function AppInner({
   const [approvalItems] = useState<ApprovalQueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const healthReadVersion = useRef(0);
-  const refreshReadVersion = useRef(0);
   const positionReadVersion = useRef(0);
   const availabilityOperation = useRef<symbol | null>(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
@@ -164,7 +145,6 @@ function AppInner({
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const [orgOverview, setOrgOverview] = useState(false);
   const [conversationFocused, setConversationFocused] = useWorkspaceFocus(workspaceInfo?.path ?? "");
-  const sendShortcut = useSendShortcut();
   const conversationMemory = useRef(createConversationMemory());
   const workbenchButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => setOrgOverview(false), [activeModule, workspaceInfo?.path, workspaceInfo?.open]);
@@ -189,10 +169,6 @@ function AppInner({
    * enforcement; this local projection lets the renderer show accurate
    * readiness and seed a legacy employee's first durable binding. */
   const [positionEngines, setPositionEngines] = useState<Record<string, TurnEngine>>({});
-  const positionEnginesRef = useRef<Record<string, TurnEngine>>({});
-  positionEnginesRef.current = positionEngines;
-  const positionBindingWrites = useRef<Record<string, number>>({});
-  const defaultTurnEngineRef = useRef<TurnEngine>("qoder");
   const [lockedAgentPositions, setLockedAgentPositions] = useState<Record<string, boolean>>({});
   const [positionModels, setPositionModels] = useState<Record<string, EmployeeModelConfig>>({});
   const [modelStates, setModelStates] = useState<Record<string, { loading?: boolean; error?: string; notice?: string }>>({});
@@ -227,10 +203,6 @@ function AppInner({
   const [sseState, setSseState] = useState<"connecting" | "connected">("connecting");
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [backups, setBackups] = useState<OrgBackupEntry[]>([]);
-  const [backupsStatus, setBackupsStatus] = useState<"loading" | "ready" | "error">("loading");
-  // Identity changes on every workspace transition, including A → B → A.
-  const backupWorkspace = useRef<{ path: string | null }>({ path: null });
-  const backupRead = useRef(0);
   const [reports, setReports] = useState<ReportsResponse | null>(null);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState<string | null>(null);
@@ -243,12 +215,6 @@ function AppInner({
   const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
-  /** Employee-record editor (#292): the card's own action, never a tree entry —
-   * editing is about the selected record, not the organization shape. */
-  const [employeeEditorOpen, setEmployeeEditorOpen] = useState(false);
-  // The editor is bound to one record: switching employee or project must not
-  // leave a form open over a different employee's values.
-  useEffect(() => { setEmployeeEditorOpen(false); }, [selectedId, workspaceInfo?.path]);
   const [projectHubOpen, setProjectHubOpen] = useState(false);
   /** Org-tree group entry (#53): prefilled draft members handed to the
    * GroupsPanel create panel; nonce re-fires repeated entries. */
@@ -339,24 +305,10 @@ function AppInner({
     setTurnError(null);
   }, [locale]);
 
-  const loadBackups = useCallback(async (scope = backupWorkspace.current) => {
-    if (!scope.path || scope !== backupWorkspace.current) return;
-    const read = ++backupRead.current;
-    const isCurrent = () => scope === backupWorkspace.current && read === backupRead.current;
-    setBackupsStatus("loading");
-    try {
-      const response = await window.owb.orgBackups();
-      if (!isCurrent()) return;
-      const body = response.body as OrgBackupsResponse | null;
-      if (response.status !== 200 || !Array.isArray(body?.backups)) {
-        setBackupsStatus("error");
-        return;
-      }
-      setBackups(body.backups);
-      setBackupsStatus("ready");
-    } catch {
-      if (isCurrent()) setBackupsStatus("error");
-    }
+  const loadBackups = useCallback(async () => {
+    const response = await window.owb.orgBackups();
+    if (response.status === 200) setBackups((response.body as OrgBackupsResponse).backups);
+    else setBackups([]);
   }, []);
 
   const loadReports = useCallback(async () => {
@@ -379,50 +331,26 @@ function AppInner({
   }, [t]);
 
   const refresh = useCallback(async (reusePositionMetadata = false) => {
-    const refreshRead = ++refreshReadVersion.current;
-    const isCurrentRefresh = () => refreshRead === refreshReadVersion.current;
     const healthRead = ++healthReadVersion.current;
     try {
     const statusRes = await window.owb.status();
-    if (!isCurrentRefresh()) return;
     if (healthRead === healthReadVersion.current) setHealth(statusRes.health ?? null);
     if (!statusRes.running) {
       setStartupError(t("misc.serviceFailed"));
       return;
     }
-    // Publish only the latest summary: a delayed workspace read must not
-    // reset the recovery scope after a newer workspace has already opened.
-    const workspaceRead = window.owb.workspace();
-    // Structural refreshes still start both reads together. Settle a rejected
-    // tree immediately, even if a stale workspace makes us discard it later.
-    const pendingTree = reusePositionMetadata
-      ? window.owb.orgTree().then((response) => ({ response }), (error: unknown) => ({ error }))
-      : undefined;
-    const workspaceRes = await workspaceRead;
-    if (!isCurrentRefresh()) return;
+    // A structural refresh reads the workspace summary and tree together;
+    // ordinary startup still checks for an open workspace before reading it.
+    const [workspaceRes, refreshedTree] = await Promise.all([
+      window.owb.workspace(),
+      reusePositionMetadata ? window.owb.orgTree() : undefined,
+    ]);
     if (workspaceRes.status !== 200) throw new Error("Workspace unavailable");
     setStartupError(null);
     const ws = workspaceRes.body as WorkspaceInfoResponse | null;
-    const backupPath = ws?.open === true ? ws.path ?? null : null;
-    if (backupWorkspace.current.path !== backupPath) {
-      backupWorkspace.current = { path: backupPath };
-      backupRead.current += 1;
-      setBackups([]);
-      setBackupsStatus("loading");
-      positionBindingWrites.current = {};
-      setPositionEngines({});
-      setLockedAgentPositions({});
-    }
-    const backupScope = backupWorkspace.current;
     setWorkspaceInfo(ws);
     if (ws?.open === true) {
-      // Recovery is independent of the organization tree; a failed tree read
-      // must not leave this footer waiting for a request that never started.
-      const backupLoad = loadBackups(backupScope);
-      const treeResult = pendingTree ? await pendingTree : { response: await window.owb.orgTree() };
-      if (!isCurrentRefresh()) return;
-      if ("error" in treeResult) throw treeResult.error;
-      const treeRes = treeResult.response;
+      const treeRes = refreshedTree ?? await window.owb.orgTree();
       if (treeRes.status === 200) {
         const nextSnapshot = treeRes.body as OrgTreeSnapshot;
         setSnapshot(nextSnapshot);
@@ -431,7 +359,6 @@ function AppInner({
         // Moves/reorders keep the sidebar's names, avatars and engines. Other
         // mutations (especially deletion/hire) still reconcile all metadata.
         if (!reusePositionMetadata) {
-          const bindingWritesAtRead = { ...positionBindingWrites.current };
           const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; agentEngine?: TurnEngine }]> => {
             const response = await window.owb.position(id);
             const body = response.body as { position?: PositionCardData; agentEngine?: unknown };
@@ -448,7 +375,6 @@ function AppInner({
               // budget and permissions belong to the selected position record.
             }];
           }));
-          if (!isCurrentRefresh()) return;
           const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
           positionNamesRef.current = names;
           setPositionNames(names);
@@ -464,19 +390,9 @@ function AppInner({
             if (entry.agentEngine !== undefined) next[id] = entry.agentEngine;
             return next;
           }, {});
-          setPositionEngines((current) => {
-            // A first model save or turn can bind an employee while these
-            // cards are in flight. Keep that newer confirmation per employee;
-            // later refreshes can still reconcile current server metadata.
-            for (const id of positionIds) {
-              if (positionBindingWrites.current[id] === bindingWritesAtRead[id]) continue;
-              if (current[id] !== undefined) engines[id] = current[id];
-              else delete engines[id];
-            }
-            return engines;
-          });
+          setPositionEngines(engines);
         }
-        await Promise.all([backupLoad, loadReports()]);
+        await Promise.all([loadBackups(), loadReports()]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
@@ -484,7 +400,6 @@ function AppInner({
         setPositionColors({});
         setPositionEngines({});
         setLockedAgentPositions({});
-        await backupLoad;
       }
     } else {
       setSnapshot(null);
@@ -507,9 +422,9 @@ function AppInner({
       setReportsError(null);
     }
     } catch {
-      if (isCurrentRefresh()) setStartupError(t("misc.serviceFailed"));
+      setStartupError(t("misc.serviceFailed"));
     } finally {
-      if (isCurrentRefresh()) setTreeLoading(false);
+      setTreeLoading(false);
     }
   }, [loadBackups, loadReports, locale, t]);
 
@@ -518,14 +433,13 @@ function AppInner({
 
   useEffect(() => { orgRefreshes.clear(); }, [orgRefreshes, workspaceInfo?.path]);
 
-  const loadPosition = useCallback(async (id: string, requestedEngine?: TurnEngine) => {
+  const loadPosition = useCallback(async (id: string) => {
     const version = selectionVersion.current;
     const read = ++positionReadVersion.current;
     setCard({ loading: true, data: null, notFound: false });
     setModelStates(current => ({ ...current, [id]: { loading: true } }));
     try {
-    const engine = requestedEngine ?? positionEnginesRef.current[id] ?? defaultTurnEngineRef.current;
-    const res = await window.owb.position(id, engine);
+    const res = await window.owb.position(id);
     if (version !== selectionVersion.current || selectedIdRef.current !== id) return;
     const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown; agentLocked?: unknown; modelConfig?: EmployeeModelConfig };
     const currentAvailability = read === positionReadVersion.current;
@@ -593,7 +507,7 @@ function AppInner({
     try {
       const [status, positionResponse] = await Promise.all([
         window.owb.status(),
-        id ? window.owb.position(id, positionEnginesRef.current[id] ?? defaultTurnEngineRef.current) : undefined,
+        id ? window.owb.position(id) : undefined,
       ]);
       if (!isCurrentRead()) return;
       if (!status.running || status.health?.status !== "ok" || (id && positionResponse?.status !== 200)) throw new Error("Availability check failed");
@@ -851,7 +765,6 @@ function AppInner({
       const body = res.body as { engine?: unknown; runId?: unknown; turnId?: unknown };
       if (workspacePathRef.current === workspacePath && isTurnEngine(body.engine)) {
         const resolvedEngine = body.engine;
-        positionBindingWrites.current[request.positionId] = (positionBindingWrites.current[request.positionId] ?? 0) + 1;
         setPositionEngines((current) => current[request.positionId] === resolvedEngine
           ? current
           : { ...current, [request.positionId]: resolvedEngine });
@@ -911,33 +824,6 @@ function AppInner({
     }
   }, [t]);
 
-  /** #305 Restart the conversation: rotate the attached active session into
-   * history and attach its successor. The old thread stays readable in the
-   * session-history popover; a failure keeps the current session selected. */
-  const rotateActiveSession = useCallback(async (sessionId: string) => {
-    const positionId = selectedIdRef.current;
-    if (positionId === null) return;
-    const version = selectionVersion.current;
-    const operation = Symbol();
-    sessionOperations.current.set(positionId, operation);
-    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
-    try {
-      const res = await window.owb.rotateSession(sessionId);
-      if (version !== selectionVersion.current || selectedIdRef.current !== positionId) return;
-      if (res.status !== 200 && res.status !== 201) { setTurnError(apiErrorMessage(res.body, t("turn.rotateFail"))); return; }
-      const session = res.body as WorkbenchSession;
-      selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = session.sessionId;
-      selectedSessionIdRef.current = session.sessionId;
-      setSelectedSessionId(session.sessionId);
-      await loadSessions(positionId);
-      setTurnError(null);
-    } catch {
-      if (version === selectionVersion.current && selectedIdRef.current === positionId) setTurnError(t("turn.rotateFailOffline"));
-    } finally {
-      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
-    }
-  }, [loadSessions, t]);
-
   const changeEmployeeModel = useCallback(async (model: string) => {
     const id = selectedIdRef.current;
     const workspace = workspacePathRef.current;
@@ -949,18 +835,10 @@ function AppInner({
     positionReadVersion.current += 1;
     setModelSavingIds(current => ({ ...current, [operationKey]: true }));
     setModelStates(current => ({ ...current, [id]: {} }));
-    const engine = positionEnginesRef.current[id] ?? defaultTurnEngineRef.current;
     try {
-      const response = await window.owb.setPositionModel({
-        positionId: id,
-        model,
-        engine,
-      });
+      const response = await window.owb.setPositionModel({ positionId: id, model });
       if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
       if (response.status !== 200) { setModelStates(current => ({ ...current, [id]: { error: t("model.saveFailed") } })); return; }
-      positionBindingWrites.current[id] = (positionBindingWrites.current[id] ?? 0) + 1;
-      setPositionEngines((current) => ({ ...current, [id]: engine }));
-      setLockedAgentPositions((current) => ({ ...current, [id]: true }));
       setPositionModels((current) => ({ ...current, [id]: response.body }));
       setModelStates(current => ({ ...current, [id]: { notice: conversationCopy.modelSaved } }));
       setTurnError(null);
@@ -985,7 +863,6 @@ function AppInner({
       const response = await window.owb.setPositionAgentEngine({ positionId: id, engine });
       if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
       if (response.status !== 200) { setTurnError(apiErrorMessage(response.body, t("turn.createFail"))); return; }
-      positionBindingWrites.current[id] = (positionBindingWrites.current[id] ?? 0) + 1;
       setPositionEngines((current) => ({ ...current, [id]: response.body.agentEngine }));
       setLockedAgentPositions((current) => ({ ...current, [id]: true }));
       setPositionModels((current) => ({ ...current, [id]: response.body.modelConfig }));
@@ -1172,36 +1049,6 @@ function AppInner({
   const dismissPosition = useCallback(async (id: string) =>
     applyOrg({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id }] }, t("org.dismissed")), [applyOrg, t]);
 
-  /**
-   * #292: save an edited employee record.
-   *
-   * A rename is an org-model change, not just a card change — the engine
-   * rebuilds `.digital-employee/org.json` from the edited package and the tree
-   * labels follow it. So this refreshes the org the same way a hire does, then
-   * re-reads the card; reloading only the card would leave the tree showing the
-   * old name until the next unrelated refresh.
-   */
-  const saveEmployeeProfile = useCallback(async (patch: PositionProfilePatch) => {
-    const id = selectedIdRef.current;
-    const workspace = workspacePathRef.current;
-    if (!id || !window.owb.updatePositionProfile) return { ok: false as const, code: "control_plane_unreachable" };
-    try {
-      const response = await window.owb.updatePositionProfile({ positionId: id, ...patch });
-      // Discard an answer that belonged to a previous workspace selection.
-      if (workspacePathRef.current !== workspace) return { ok: false as const, code: "control_plane_unreachable" };
-      const body = response.body as PositionProfileResult & { code?: string };
-      if (response.status !== 200 || body.status !== "updated") {
-        return { ok: false as const, code: typeof body.code === "string" ? body.code : "internal" };
-      }
-      setOrgFeedback({ tone: "info", text: t("org.profileUpdated", { name: body.name }) });
-      await refresh();
-      await loadPosition(id);
-      return { ok: true as const, name: body.name };
-    } catch {
-      return { ok: false as const, code: "control_plane_unreachable" };
-    }
-  }, [loadPosition, refresh, t]);
-
   /** Same-level insertion from an insertion-line drop or ⌘↑/⌘↓ (#32): the
    * reorder op carries the final sibling order; a cross-parent insertion is
    * submitted atomically as move + reorder in one manifest. */
@@ -1372,12 +1219,10 @@ function AppInner({
    * legacy employees this supplies the first request used by the server to
    * create their one-time binding. */
   const defaultTurnEngine = resolveAgentEngine(defaultAgentHost(engineAvailability), engineAvailability);
-  defaultTurnEngineRef.current = defaultTurnEngine;
   const engineForPosition = useCallback(
     (positionId: string): TurnEngine => positionEngines[positionId] ?? defaultTurnEngine,
     [defaultTurnEngine, positionEngines],
   );
-  const engineLabel = useEngineLabel();
 
   const displayTurns = useMemo(() => {
     const historyRunIds = new Set(turns.flatMap((turn) => (turn.runId ? [turn.runId] : [])));
@@ -1420,48 +1265,19 @@ function AppInner({
     else setActiveModule("org");
   };
   const managedNode = typeof managementTarget === "string" && snapshot ? findNodeById(snapshot.tree, managementTarget) : null;
-
-  // ADR-0002 / #246: Ant Design consumes the same semantic skin as the custom
-  // layout, including the user's own colours. The two providers are not rivals:
-  // `DSProvider` owns `mode` (and therefore the algorithm) plus the selected
-  // design-system profile, and this nested `ConfigProvider` layers the resolved
-  // palette on top as token overrides — exactly the nesting main already uses for
-  // the "mint" profile below, just driven by a full token set instead of one key.
-  // Keeping `algorithm` out of this layer leaves a single owner for light/dark.
-  // Same activation rule as the CSS side in theme-context: the palette only
-  // layers over AntD once the user departs from the shipped defaults, so an
-  // untouched install keeps the profile-derived seed values it had before this
-  // PR and keeps the `mint` colourPrimary override meaningful.
-  const paletteActive = themeContext.custom !== null || themeContext.presetId !== DEFAULT_PRESET_ID;
-  const antdToken = useMemo(() => ({
-    ...(paletteActive ? themeToAntdSeed(themeContext.effective, themeContext.mode) : {}),
-    fontSize: 13,
-    borderRadius: 8,
-    motionDurationFast: "0.12s",
-    motionDurationMid: "0.16s",
-    motionDurationSlow: "0.24s",
-    motionEaseInOut: "cubic-bezier(0.22, 0.61, 0.36, 1)",
-    motionEaseOut: "cubic-bezier(0.22, 0.61, 0.36, 1)",
-    controlHeight: 32,
-    controlHeightSM: 26,
-    controlHeightLG: 36,
-    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
-    // #285 expanded the mint palette to hover / active / disabled keys. Keep the
-    // whole set here so the unification survives the palette layer: it only
-    // displaces these values once the user actually departs from the defaults.
-    ...(paletteActive ? {} : themeProfile === "mint" ? {
-      colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64",
-      colorPrimaryHover: themeMode === "dark" ? "#78c9b0" : "#236d58",
-      colorPrimaryActive: themeMode === "dark" ? "#64bca2" : "#236d58",
-      colorTextLightSolid: themeMode === "dark" ? "#14151b" : "#ffffff",
-      colorTextDisabled: themeMode === "dark" ? "#90a098" : "#5e6b65",
-    } : {}),
-  }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
-
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
-      theme={{ token: antdToken }}>
+      theme={{ token: {
+        fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif',
+        ...(themeProfile === "mint" ? {
+          colorPrimary: themeMode === "dark" ? "#64bca2" : "#287b64",
+          colorPrimaryHover: themeMode === "dark" ? "#78c9b0" : "#236d58",
+          colorPrimaryActive: themeMode === "dark" ? "#64bca2" : "#236d58",
+          colorTextLightSolid: themeMode === "dark" ? "#14151b" : "#ffffff",
+          colorTextDisabled: themeMode === "dark" ? "#90a098" : "#5e6b65",
+        } : {}),
+      } }}>
     <div className={`owb-app${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`}>
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
         targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
@@ -1567,9 +1383,7 @@ function AppInner({
             </>
           }
           footer={
-            workspaceInfo?.open === true && (backupsStatus !== "ready" || backups.length > 0)
-              ? <BackupTray key={workspaceInfo.path} backups={backups} status={backupsStatus} busy={orgBusy} positionNames={positionNames} onRestore={restorePosition} onRetry={() => void loadBackups()} />
-              : null
+            workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} positionNames={positionNames} onRestore={restorePosition} /> : null
           }
         >
           {workspaceInfo?.open === true ? (
@@ -1587,16 +1401,6 @@ function AppInner({
                 <OrgTree
                   decorateRow={(id, row) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
                   rowActions={(id) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction} />}
-                  rowMetadata={(id) => {
-                    const bound = positionEngines[id] !== undefined;
-                    const engine = engineForPosition(id);
-                    const label = engineLabel(engine);
-                    const description = t(bound ? "tree.agentIdentity" : "tree.agentDefaultDescription", { name: label });
-                    return <span className="ui-org-tree__metadata-content" title={description} aria-label={description}>
-                      <EngineIcon engine={engine} />
-                      <span className="ui-org-tree__metadata-label">{label}{bound ? null : ` · ${t("tree.agentDefault")}`}</span>
-                    </span>;
-                  }}
                   snapshot={snapshot}
                   versionStamp={snapshot.updatedAt}
                   displayNames={positionNames}
@@ -1636,15 +1440,6 @@ function AppInner({
               budgetAllocatedTokens={hireBudgetAllocatedTokens}
               onClose={() => setTreeHireParent(undefined)}
               onHired={(positionId, name, avatar) => void hiredPosition(positionId, name, avatar)}
-            />
-          ) : null}
-          {workspaceInfo?.open === true ? (
-            <EditEmployeeDrawer
-              open={employeeEditorOpen}
-              position={card.data}
-              busy={orgBusy}
-              onClose={() => setEmployeeEditorOpen(false)}
-              onSave={saveEmployeeProfile}
             />
           ) : null}
           <ProjectWorkspaceDialog
@@ -1808,30 +1603,7 @@ function AppInner({
                     setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
                     setActiveModule("docs");
                   }}
-                  actions={selectedPosition && selectedId ? (
-                    <>
-                      {/* Editing the record is available on every position, the
-                          company owner included: the owner is an employee with
-                          a package, and its reporting line cannot move anyway.
-                          These go straight into the card header's action
-                          cluster — #137 deleted the `.owb-position-actions`
-                          wrapper and pinned that with a test, because the
-                          header cluster already lays its children out. */}
-                      <button
-                        type="button"
-                        className="owb-edit"
-                        onClick={() => setEmployeeEditorOpen(true)}
-                        disabled={orgBusy}
-                        title={t("profile.editTitle")}
-                      >
-                        <PencilLine aria-hidden="true" size={13} />
-                        {t("profile.edit")}
-                      </button>
-                      {selectedId !== snapshot?.owner ? (
-                        <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} />
-                      ) : null}
-                    </>
-                  ) : undefined}
+                  actions={selectedPosition && selectedId && selectedId !== snapshot?.owner ? <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} /> : undefined}
                 />
               </div>
             </div>
@@ -1843,7 +1615,6 @@ function AppInner({
             memory={conversationMemory.current}
             focused={conversationFocused}
             onToggleFocus={() => setConversationFocused(!conversationFocused)}
-            sendShortcut={sendShortcut}
             onSelectSession={(sessionId) => {
               if (!selectedId || selectedSessionId === sessionId || !sessions.some(session => session.sessionId === sessionId)) return;
               historyRequest.current += 1;
@@ -1864,7 +1635,6 @@ function AppInner({
             onSelectModel={changeEmployeeModel}
             onSelectEngine={changeEmployeeAgentEngine}
             onSetSessionContext={setSessionContext}
-            onRotateSession={rotateActiveSession}
             positions={positions}
             selectedPositionId={selectedId}
             engine={selectedId === null ? defaultTurnEngine : engineForPosition(selectedId)}
@@ -2016,25 +1786,17 @@ function Breadcrumbs({
 }: {
   workspace: WorkspaceInfoResponse | null;
 }) {
-  const t = useT();
   if (workspace?.open !== true || !workspace.path) return null;
-  const revealInFileManager = async () => {
-    if (!window.owb.revealWorkspace) return;
-    const result = await window.owb.revealWorkspace();
-    if (result.opened !== true) message.warning(t("misc.workspaceRevealFailed"));
-  };
   return (
     <span className="owb-topbar-context">
-      <button
-        type="button"
+      <span
         className="owb-workspace-location"
-        title={`${workspace.path} · ${t("misc.workspaceRevealHint")}`}
-        aria-label={`${t("misc.workspaceRevealHint")}: ${workspace.path}`}
-        onClick={() => void revealInFileManager()}
+        title={workspace.path}
+        aria-label={workspace.path}
       >
         <FolderOpen aria-hidden="true" size={12} />
         <span className="owb-workspace-location__path">{workspace.path}</span>
-      </button>
+      </span>
     </span>
   );
 }

@@ -79,7 +79,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
-  it("keeps session controls out of a direct employee conversation and shows its fixed Agent identity", () => {
+  it("keeps session controls out of a direct employee conversation while retaining its Agent picker", () => {
     const active = {
       schemaVersion: "workbench-session.v1" as const,
       sessionId: "11111111-1111-4111-8111-111111111111",
@@ -115,61 +115,9 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(document.querySelector(".owb-conversation-controls")).toBeNull();
     expect(screen.queryByLabelText("选择对话岗位")).toBeNull();
     expect(screen.queryByLabelText("选择本地会话")).toBeNull();
-    expect(screen.queryByLabelText("选择 Agent Host")).not.toBeInTheDocument();
-    expect(document.querySelector(".owb-engine-badge")).toHaveTextContent("Qoder");
+    expect(screen.getByLabelText("选择 Agent Host")).toBeEnabled();
     expect(screen.queryByRole("button", { name: "轮换当前会话" })).toBeNull();
     expect(screen.getByLabelText("下达任务")).toBeEnabled();
-  });
-
-  it("#305 forwards the restart handler to the composer options bar and stays optional", async () => {
-    const rotate = vi.fn();
-    const active = {
-      schemaVersion: "workbench-session.v1" as const,
-      sessionId: "11111111-1111-4111-8111-111111111111",
-      positionId: "repo-owner",
-      workspaceInstanceId: "workspace-1",
-      principal: "position.repo-owner",
-      status: "active" as const,
-      rotatedFrom: null,
-      rotatedTo: null,
-      createdAt: "2026-09-08T00:00:00Z",
-      rotatedAt: null,
-    };
-    const { rerender } = render(
-      <TurnPanel
-        workspaceOpen
-        positions={positions}
-        selectedPositionId="repo-owner"
-        engine="qoder"
-        engineAvailability={availability}
-        turns={[]}
-        sessions={[active]}
-        selectedSessionId={active.sessionId}
-        onRotateSession={rotate}
-        onCreateTurn={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
-    // antd inserts a space between the two CJK characters of a button label.
-    fireEvent.click(await screen.findByRole("button", { name: /开\s*始$/ }));
-    await waitFor(() => expect(rotate).toHaveBeenCalledWith(active.sessionId));
-
-    // Without the handler the options bar renders without the restart control.
-    rerender(
-      <TurnPanel
-        workspaceOpen
-        positions={positions}
-        selectedPositionId="repo-owner"
-        engine="qoder"
-        engineAvailability={availability}
-        turns={[]}
-        sessions={[active]}
-        selectedSessionId={active.sessionId}
-        onCreateTurn={vi.fn()}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: "新对话" })).not.toBeInTheDocument();
   });
 
   it("sends directly to the employee selected in the organization tree", async () => {
@@ -179,7 +127,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
 
     expect(screen.getByRole("heading", { name: "发布负责人" })).toBeInTheDocument();
     expect(screen.getAllByText("Claude Code").length).toBeGreaterThan(0);
-    expect(screen.queryByLabelText("选择 Agent Host")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("选择 Agent Host")).toBeEnabled();
 
     fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "准备发布说明" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
@@ -193,31 +141,31 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     });
   });
 
-  it("sends with plain Enter and keeps Shift+Enter available for multiline input", async () => {
+  it("sends with plain Enter and reserves Ctrl/Command+Enter for multiline input", async () => {
     const createTurn = vi.fn();
     render(<ControlledPanel onCreateTurn={createTurn} />);
 
     expect(screen.getByRole("heading", { name: "开始第一条对话" })).toBeInTheDocument();
     expect(screen.getByText("在下方描述你想完成的任务，或提出一个问题。")).toBeInTheDocument();
+    expect(screen.getByText("Enter 发送 · Ctrl/⌘ + Enter 换行")).toBeInTheDocument();
 
     const input = screen.getByLabelText("下达任务");
-    fireEvent.change(input, { target: { value: "跑一次发布检查" } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.change(input, { target: { value: "跑一次发布检查", selectionStart: 3, selectionEnd: 3 } });
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    expect(input).toHaveValue("跑一次\n发布检查");
+    fireEvent.change(input, { target: { value: "跑一次发布检查", selectionStart: 3, selectionEnd: 3 } });
+    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+    expect(input).toHaveValue("跑一次\n发布检查");
+    expect(createTurn).not.toHaveBeenCalled();
 
+    fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => {
       expect(createTurn).toHaveBeenCalledWith({
         positionId: "repo-owner",
         engine: "qoder",
-        input: "跑一次发布检查",
+        input: "跑一次\n发布检查",
       });
     });
-
-    // #167：空闲不再挂提示行；Enter 行为由 createTurn 断言守住。
-    expect(screen.queryByRole("status")).toBeNull();
-
-    fireEvent.change(input, { target: { value: "保留换行" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
-    expect(createTurn).toHaveBeenCalledTimes(1);
   });
 
   it("#128 AC-003: ignores Enter while a Chinese IME is composing (keyCode 229) then sends after composition ends", async () => {

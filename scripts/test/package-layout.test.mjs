@@ -126,9 +126,14 @@ test("runtime manifest is an explicit allowlist for every packaged consumer", ()
     );
   }
   assert.equal(
-    RUNTIME_FILE_SETS.some((entry) => entry.from.includes("node_modules")),
+    RUNTIME_FILE_SETS.some((entry) => entry.from.includes("node_modules") && entry.from !== "node_modules/jsonc-parser"),
     false,
   );
+  const jsoncRuntime = RUNTIME_FILE_SETS.find((entry) => entry.from === "node_modules/jsonc-parser");
+  assert.deepEqual(jsoncRuntime?.filter, [
+    "package.json", "LICENSE.md", "lib/umd/main.js", "lib/umd/impl/edit.js", "lib/umd/impl/format.js",
+    "lib/umd/impl/parser.js", "lib/umd/impl/scanner.js", "lib/umd/impl/string-intern.js",
+  ]);
   assert.deepEqual(
     RUNTIME_FILE_SETS.flatMap(({ filter }) => filter).filter((entry) => entry.includes("*")),
     ["dist/renderer/**/*"],

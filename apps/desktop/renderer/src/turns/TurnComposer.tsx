@@ -5,9 +5,23 @@ import { useConversationCopy } from "../locales/conversation";
 import { useT } from "@roleweave/ui";
 import { DiagnosticNotice, type AvailabilityCheck } from "../DiagnosticNotice";
 
+function insertNewline(
+  value: string,
+  selectionStart: number | null,
+  selectionEnd: number | null,
+  onChange: (value: string) => void,
+) {
+  const start = selectionStart ?? value.length;
+  const end = selectionEnd ?? start;
+  onChange(`${value.slice(0, start)}\n${value.slice(end)}`);
+  requestAnimationFrame(() => {
+    const input = document.getElementById("owb-turn-input") as HTMLTextAreaElement | null;
+    input?.setSelectionRange(start + 1, start + 1);
+  });
+}
+
 export interface TurnComposerProps {
   options?: ReactNode;
-  sendShortcut?: "enter" | "mod-enter";
   draftDisabled?: boolean;
   value: string;
   placeholder: string;
@@ -29,7 +43,6 @@ export interface TurnComposerProps {
  * focused writing surface instead of a mixed settings form. */
 export function TurnComposer({
   options,
-  sendShortcut = "enter",
   draftDisabled,
   value,
   placeholder,
@@ -64,11 +77,17 @@ export function TurnComposer({
           disabled={draftDisabled ?? (disabledReason !== null && !running)}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
-            // Enter sends; Shift+Enter keeps multiline input. During Chinese
+            // Enter sends. Ctrl/Command+Enter (and Shift+Enter for familiar
+            // chat muscle memory) keeps multiline input. During Chinese
             // IME composition Enter only commits the selected candidate.
             const native = event.nativeEvent as KeyboardEvent;
             if (native.isComposing || native.keyCode === 229) return;
-            if (event.key === "Enter" && !event.shiftKey && (sendShortcut === "enter" ? !event.metaKey && !event.ctrlKey : event.metaKey || event.ctrlKey)) {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              insertNewline(value, event.currentTarget.selectionStart, event.currentTarget.selectionEnd, onChange);
+              return;
+            }
+            if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
               event.preventDefault();
               if (!running && !disabledReason && value.trim()) void onSend();
             }
@@ -106,7 +125,7 @@ export function TurnComposer({
           diagnostic={running ? undefined : disabledDiagnostic}
           availabilityCheck={running ? undefined : availabilityCheck}
           diagnosticKey={diagnosticKey} />
-      ) : <p className="owb-turn-composer__shortcut">{sendShortcut === "mod-enter" ? copy.modEnterHint : t("turn.keyboardHint")}</p>}
+      ) : <p className="owb-turn-composer__shortcut">{t("turn.keyboardHint")}</p>}
     </form>
   );
 }

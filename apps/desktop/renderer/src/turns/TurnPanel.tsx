@@ -2,14 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Modal, Popover } from "antd";
 import { useConversationCopy } from "../locales/conversation";
 import { createConversationMemory, conversationKey, type ConversationMemory } from "./conversation-memory";
-import { Maximize2, Minimize2, History, MessagesSquare } from "lucide-react";
+import { Maximize2, Minimize2, History, LockKeyhole, MessagesSquare } from "lucide-react";
 import type { EmployeeModelConfig, WorkbenchSession } from "@roleweave/shared";
 import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
 import type { AvailabilityCheck } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
-import { useEngineLabel } from "./engine-select";
-import { EngineBadge } from "./EngineBadge";
+import { EngineSelect, TURN_ENGINES, useEngineLabel } from "./engine-select";
 import { TurnThread } from "./TurnThread";
 import { PositionAvatar } from "../PositionAvatar";
 import type {
@@ -34,7 +33,6 @@ export interface TurnPanelProps {
   modelError?: string;
   modelNotice?: string;
   onReloadModel?: () => void;
-  sendShortcut?: "enter" | "mod-enter";
   availabilityCheck?: AvailabilityCheck;
   modelConfig?: EmployeeModelConfig;
   avatarUrls?: Record<string, string>;
@@ -58,7 +56,7 @@ export interface TurnPanelProps {
    * that share the old panel contract; this panel deliberately has no second
    * recipient picker. */
   onSelectPosition?: (positionId: string) => void;
-  /** Retained for caller compatibility; Host selection belongs to employee creation. */
+  /** The employee's durable Agent setting, shown in the conversation header. */
   onSelectEngine?: (engine: TurnEngine) => void;
   onCreateTurn: (request: CreateTurnRequest) => void | boolean | Promise<void | boolean>;
   /** Operator interrupt for the in-flight turn of the selected position. */
@@ -69,10 +67,6 @@ export interface TurnPanelProps {
    * cards settle into a decided state (no duplicate verdicts). */
   decidedApprovalIds?: ReadonlySet<string>;
   onSetSessionContext?: (sessionId: string, enabled: boolean) => void | Promise<void>;
-  /** #305 Operator restart: rotate the attached active session into history
-   * and continue on its successor. Optional; callers without it simply get a
-   * conversation without the restart control. */
-  onRotateSession?: (sessionId: string) => void | Promise<void>;
 }
 
 export function TurnPanel({
@@ -87,17 +81,18 @@ export function TurnPanel({
   modelError,
   modelNotice,
   onReloadModel,
-  sendShortcut = "enter",
   availabilityCheck,
   modelConfig,
   avatarUrls,
   modelSaving = false,
   onSelectModel,
   onSetSessionContext,
+  onSelectEngine,
   workspaceOpen,
   positions,
   selectedPositionId,
   engine,
+  engineLocked = false,
   engineAvailability,
   turns,
   busy = false,
@@ -110,7 +105,6 @@ export function TurnPanel({
   onCancelTurn,
   onVerdictTurn,
   decidedApprovalIds,
-  onRotateSession,
 }: TurnPanelProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
@@ -241,11 +235,13 @@ export function TurnPanel({
           {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
           <div className="owb-conversation-identity__copy">
             <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
-            {selectedPosition && selectedSession ? <p>{copy.session} {selectedSession.sessionId.slice(-8)}</p> : null}
+            {selectedPosition ? <p>{engineLabel(engine)}{selectedSession ? ` · ${copy.session} ${selectedSession.sessionId.slice(-8)}` : ""}</p> : null}
           </div>
         </div>
         <div className="owb-conversation-header-actions">
-          {selectedPosition ? <EngineBadge engine={engine} /> : null}
+          {selectedPosition ? engineLocked ? <span className="owb-agent-locked" title={t("turn.agentLocked")}><LockKeyhole size={12} aria-hidden="true" />{engineLabel(engine)}</span> : <EngineSelect
+            engines={TURN_ENGINES} engineAvailability={engineAvailability} value={engine}
+            disabled={busy || employeeBusy || sending || modelSaving} onChange={(next) => onSelectEngine?.(next)} /> : null}
           {selectedPosition && sessions && onSelectSession ? <Popover trigger="click" placement="bottomRight" open={active && historyOpen} onOpenChange={setHistoryOpen} title={copy.history}
             content={<div className="owb-session-history">{sessions.length ? sessions.map(session => <button type="button" key={session.sessionId}
               className={session.sessionId === selectedSessionId ? "is-selected" : ""}
@@ -277,12 +273,10 @@ export function TurnPanel({
 
       {sendErrors[draftKey] ? <p role="alert" className="owb-conversation-error">{sendErrors[draftKey]}</p> : null}
       {selectedPosition ? <TurnComposer
-        sendShortcut={sendShortcut}
         options={active ? <ConversationOptions
           config={modelConfig} saving={modelSaving} disabled={runningTurn || busy || employeeBusy || sending || sessionBusy}
           loading={modelLoading} error={modelError} notice={modelNotice} onReload={onReloadModel} running={runningTurn || employeeBusy}
           session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
-          onRotate={onRotateSession}
         /> : undefined}
         value={input}
         placeholder={selectedPosition ? t("turn.composeTo", { name: selectedPosition.name }) : t("turn.composePlaceholder")}
