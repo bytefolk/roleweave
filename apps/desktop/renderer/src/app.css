@@ -3860,6 +3860,35 @@ body,
   transform: rotate(180deg);
 }
 
+/* 导轨宽窄动画的减弱动态豁免（owner 裁决 2026-09-17：这个动效必须可见）。
+   design-system 的全局守卫在 prefers-reduced-motion: reduce 下把一切
+   transition 压到 0.01ms !important；这里用更高特异度 + !important 把
+   导轨这一组动效原样要回来。范围仅限导轨宽窄 morph，不扩散。 */
+@media (prefers-reduced-motion: reduce) {
+  .owb-app .ui-module-rail {
+    transition: width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease) !important;
+  }
+
+  .owb-app .ui-module-rail__item {
+    transition:
+      padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
+      color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+      background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease) !important;
+  }
+
+  .owb-app .ui-module-rail__label {
+    transition: opacity 80ms var(--owb-ease-out, ease) !important;
+  }
+
+  .owb-app.is-rail-expanded .ui-module-rail__label {
+    transition: opacity var(--owb-duration-mid, 160ms) var(--owb-ease-out, ease) 60ms !important;
+  }
+
+  .owb-app .owb-rail-chip__glyph {
+    transition: transform var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease) !important;
+  }
+}
+
 /* ---------- 侧栏：head + workspace strip + tree + backups ---------- */
 
 .owb-app .ui-sidebar {
