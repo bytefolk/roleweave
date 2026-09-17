@@ -3668,7 +3668,9 @@ body,
   width: var(--ui-rail-width);
   padding: 10px 0;
   background: var(--ui-canvas-subtle);
-  transition: width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease);
+  transition:
+    width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
+    padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease);
 }
 
 .owb-app .ui-module-rail__brand {
@@ -3693,6 +3695,7 @@ body,
   background: transparent;
   box-shadow: none;
   transition:
+    width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
     padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
     margin var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
     color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
@@ -3701,10 +3704,11 @@ body,
 
 /* 收拢态：条目是 38×38 的正方形槽丸——高度、间距与展开态口径对齐
    （评审确认参考展开态的高亮高度），水平居中；图标靠 11px 内边距居中。
-   活跃左竖条在收拢态让位给丸形，展开态保留。内缩随 morph 一起滑出。 */
+   丸宽/边距/导轨内边距都用像素值，morph 时和 rail 宽度、chip 一起插值，
+   不再有从"整行"骤缩到"居中方块"的闪跳。 */
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item {
   width: 38px;
-  margin-inline: auto;
+  margin-inline: 8px;
   padding: 0 11px;
 }
 
@@ -3814,6 +3818,7 @@ body,
 
 .owb-app.is-rail-expanded .ui-module-rail__item {
   min-height: 38px;
+  width: 100px;
   margin-inline: 0;
   padding: 0 10px;
   border-radius: 8px;
@@ -3879,12 +3884,16 @@ body,
    导轨这一组动效原样要回来。范围仅限导轨宽窄 morph，不扩散。 */
 @media (prefers-reduced-motion: reduce) {
   .owb-app .ui-module-rail {
-    transition: width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease) !important;
+    transition:
+      width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
+      padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease) !important;
   }
 
   .owb-app .ui-module-rail__item {
     transition:
+      width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
       padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
+      margin var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
       color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
       background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease) !important;
   }
