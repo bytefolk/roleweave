@@ -84,6 +84,8 @@ export interface OwbBridge {
   openWorkspace(): Promise<OwbApiResponse>;
   createWorkspace(request: Omit<WorkspaceCreateRequest, "parentPath">): Promise<OwbApiResponse | { canceled: true }>;
   workspace(): Promise<OwbApiResponse>;
+  /** Reveal the open workspace in the OS file manager. Takes no argument: the main process re-reads the open workspace itself. */
+  revealWorkspace?(): Promise<{ opened: boolean; path?: string; reason?: string }>;
   orgTree(): Promise<OwbApiResponse>;
   orgApply(manifest: ChangeManifest): Promise<OwbApiResponse>;
   orgBackups(): Promise<OwbApiResponse<OrgBackupsResponse>>;

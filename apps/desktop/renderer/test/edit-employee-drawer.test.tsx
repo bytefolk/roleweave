@@ -110,4 +110,11 @@ describe("EditEmployeeDrawer", () => {
     expect(screen.queryByDisplayValue("./knowledge/**")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存改动" })).toBeDisabled();
   });
+
+  it("keeps its header close button (the #301 removal is scoped to the create drawer)", () => {
+    renderDrawer();
+    // This drawer shares owb-hire-drawer-shell with the create drawer; its
+    // working close control must survive the #301 change untouched (issue AC-004).
+    expect(document.querySelector(".ant-drawer-close")).not.toBeNull();
+  });
 });
