@@ -3786,10 +3786,10 @@ body,
   transition-delay: 0.35s;
 }
 
-/* 展开态：icon + 名字横排，导轨放宽到 148px（三级断点里收窄的是收拢态
-   宽度，展开态固定，避免名字被截断）。 */
+/* 展开态：icon + 名字横排。宽度按最长 4 字名字定（10+16+8+52+10+两侧
+   8px 导轨内边距 ≈ 116），不再留 148 的大空档。 */
 .owb-app.is-rail-expanded .ui-app-shell {
-  --ui-rail-width: 148px;
+  --ui-rail-width: 116px;
 }
 
 .owb-app.is-rail-expanded .ui-module-rail {
