@@ -146,7 +146,8 @@ function AppInner({
     else requestSettingsLeave(() => setActiveModuleRaw(next));
   }, []);
   /** 2026-09-17 设计评审：导轨默认收拢只出图标（hover 浮名字），展开后
-   * icon+名字；选择写 localStorage，下次启动照旧。 */
+   * icon+名字；展开/收拢手柄骑在导轨与侧栏边界上（竖居中胶囊）。
+   * 选择写 localStorage，下次启动照旧。 */
   const [railExpanded, setRailExpanded] = useState<boolean>(() => seedRailExpanded());
   const toggleRailExpanded = useCallback(() => {
     setRailExpanded((current) => {
@@ -1516,15 +1517,12 @@ function AppInner({
           footer={
             <button
               type="button"
-              className="owb-rail-toggle"
+              className="owb-rail-nub"
               aria-label={railExpanded ? t("rail.collapse") : t("rail.expand")}
               title={railExpanded ? t("rail.collapse") : t("rail.expand")}
               onClick={toggleRailExpanded}
             >
-              {railExpanded ? <ChevronsLeft aria-hidden="true" size={14} /> : <ChevronsRight aria-hidden="true" size={14} />}
-              <span className="owb-rail-toggle__label" aria-hidden="true">
-                {railExpanded ? t("rail.collapseShort") : t("rail.expandShort")}
-              </span>
+              {railExpanded ? <ChevronsLeft aria-hidden="true" size={12} /> : <ChevronsRight aria-hidden="true" size={12} />}
             </button>
           }
         />

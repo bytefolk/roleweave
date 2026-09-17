@@ -3658,6 +3658,7 @@ body,
 /* ---------- 模块导轨：54px，图标 only，活跃项左侧竖条 ---------- */
 
 .owb-app .ui-module-rail {
+  position: relative;
   padding: 10px 0;
   background: var(--ui-canvas-subtle);
 }
@@ -3729,7 +3730,7 @@ body,
    aria-label——浮名与可及名同源，永远不会漂移；停一会儿才显形，
    指针扫过导轨不会一路闪名字。 */
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item::after,
-.owb-app:not(.is-rail-expanded) .owb-rail-toggle::after {
+.owb-app:not(.is-rail-expanded) .owb-rail-nub::after {
   content: attr(aria-label);
   position: absolute;
   left: calc(100% + 10px);
@@ -3752,8 +3753,8 @@ body,
 
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item:hover::after,
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item:focus-visible::after,
-.owb-app:not(.is-rail-expanded) .owb-rail-toggle:hover::after,
-.owb-app:not(.is-rail-expanded) .owb-rail-toggle:focus-visible::after {
+.owb-app:not(.is-rail-expanded) .owb-rail-nub:hover::after,
+.owb-app:not(.is-rail-expanded) .owb-rail-nub:focus-visible::after {
   opacity: 1;
   transition-delay: 0.35s;
 }
@@ -3794,56 +3795,35 @@ body,
   bottom: 6px;
 }
 
-/* 展开/收拢切换钮：钉在导轨底部，用发丝线和导航区隔开，不再是一个
-   悬在空处的裸 glyph。收拢态是 36px 居中图标钮（hover 浮名同导航项）；
-   展开态长成一条导航行：icon + 短文案，hover 出 chip。 */
-.owb-app .ui-module-rail__footer {
-  padding: 8px 0 6px;
-  border-top: 1px solid var(--ui-border-secondary, var(--ui-border));
-}
-
-.owb-app .owb-rail-toggle {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 36px;
+/* 展开/收拢手柄：骑在导轨与侧栏的边界上、竖居中的小胶囊（Notion / Linear
+   式 nub），不再占导轨底部一行。收拢态双箭头朝右、展开态朝左；收拢时
+   hover 浮名与导航项同一套。胶囊半跨边界，所以两种导轨宽度下都贴在
+   同一条缝上，位置永远可预期。 */
+.owb-app .owb-rail-nub {
+  position: absolute;
+  top: 50%;
+  right: -9px;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 36px;
   padding: 0;
   color: var(--ui-foreground-muted);
-  background: transparent;
-  border: none;
-  border-radius: 8px;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  box-shadow: var(--ui-shadow-sm);
   cursor: pointer;
   transition:
     color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
-    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+    border-color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
-.owb-app .owb-rail-toggle:hover {
+.owb-app .owb-rail-nub:hover {
   color: var(--ui-foreground);
-  background: color-mix(in srgb, var(--ui-surface-raised) 58%, transparent);
-}
-
-.owb-app .owb-rail-toggle__label {
-  display: none;
-}
-
-.owb-app.is-rail-expanded .owb-rail-toggle {
-  justify-content: flex-start;
-  min-height: 38px;
-  padding: 0 10px;
-}
-
-.owb-app.is-rail-expanded .owb-rail-toggle__label {
-  display: block;
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  border-color: color-mix(in srgb, var(--ui-foreground-muted) 45%, var(--ui-border));
 }
 
 /* ---------- 侧栏：head + workspace strip + tree + backups ---------- */
