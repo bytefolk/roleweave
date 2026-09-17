@@ -714,6 +714,41 @@ describe("App runtime bridge", () => {
     expect(bridge.position).toHaveBeenCalledWith("repo-owner");
   });
 
+  it("edits the right-clicked employee's record from the tree menu without moving the selection", async () => {
+    const docsPosition = { ...position, id: "docs-writer", name: "文档工程师", description: "维护文档", reportTo: "repo-owner" };
+    const twoNodeSnapshot = {
+      ...snapshot,
+      positionCount: 2,
+      depth: 2,
+      tree: [{ ...snapshot.tree[0], children: [{ id: "docs-writer", reportTo: "repo-owner", budget: { perTask: { tokens: 500 }, perDay: { tokens: 2000 } }, children: [] }] }],
+    };
+    const updatePositionProfile = vi.fn().mockResolvedValue({ status: 200, body: { status: "updated", name: "文档维护者" } });
+    openedBridge({
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: twoNodeSnapshot }),
+      position: vi.fn().mockImplementation((id: string) => Promise.resolve({
+        status: 200,
+        body: { position: id === "docs-writer" ? docsPosition : position, agentEngine: "qoder" },
+      })),
+      updatePositionProfile,
+    });
+    render(<App />);
+    await selectRepoOwner();
+    const tree = await screen.findByRole("tree");
+    const docsRow = tree.querySelector('[data-org-node-id="docs-writer"]');
+    expect(docsRow).not.toBeNull();
+    fireEvent.contextMenu(docsRow!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "编辑" }));
+    // The drawer seeds from the right-clicked record, not the selected one.
+    const nameInput = await screen.findByDisplayValue("文档工程师");
+    expect(screen.getByText("编辑员工")).toBeInTheDocument();
+    fireEvent.change(nameInput, { target: { value: "文档维护者" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存改动" }));
+    await waitFor(() => expect(updatePositionProfile).toHaveBeenCalledWith({ positionId: "docs-writer", name: "文档维护者" }));
+    await waitFor(() => expect(screen.queryByText("编辑员工")).toBeNull());
+    // The conversation selection stayed on the owner throughout the edit.
+    expect(screen.getByRole("region", { name: "岗位对话" })).toBeInTheDocument();
+  });
+
   it("keeps an employee whose bound Agent is unavailable honestly disabled", async () => {
     openedBridge({
       status: vi.fn().mockResolvedValue({

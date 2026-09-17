@@ -243,12 +243,15 @@ function AppInner({
   const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
-  /** Employee-record editor (#292): the card's own action, never a tree entry —
-   * editing is about the selected record, not the organization shape. */
-  const [employeeEditorOpen, setEmployeeEditorOpen] = useState(false);
-  // The editor is bound to one record: switching employee or project must not
-  // leave a form open over a different employee's values.
-  useEffect(() => { setEmployeeEditorOpen(false); }, [selectedId, workspaceInfo?.path]);
+  /** Employee-record editor (#292): opened from the position card header or
+   * from a tree row's own menu (right-click / ellipsis). Bound to the target
+   * record id rather than the conversation selection, so editing one employee
+   * from the tree never hijacks — or depend on — the open conversation. */
+  const [editTargetId, setEditTargetId] = useState<string | undefined>(undefined);
+  const [editPosition, setEditPosition] = useState<PositionCardData | null>(null);
+  // The editor is bound to one record: switching project must not leave a form
+  // open over another workspace's employee.
+  useEffect(() => { setEditTargetId(undefined); setEditPosition(null); }, [workspaceInfo?.path]);
   const [projectHubOpen, setProjectHubOpen] = useState(false);
   /** Org-tree group entry (#53): prefilled draft members handed to the
    * GroupsPanel create panel; nonce re-fires repeated entries. */
@@ -262,6 +265,30 @@ function AppInner({
   /** #146：界面文案唯一入口；数据层文案不经过这里。 */
   const t = useT();
   const conversationCopy = useConversationCopy();
+
+  // Read the target record when the editor opens, so a tree entry edits exactly
+  // the row it was invoked on — not whichever employee happens to be selected.
+  useEffect(() => {
+    if (editTargetId === undefined) {
+      setEditPosition(null);
+      return;
+    }
+    let alive = true;
+    setEditPosition(null);
+    void window.owb.position(editTargetId).then((res) => {
+      if (!alive) return;
+      const body = res.body as { position?: PositionCardData; code?: string };
+      if (res.status !== 200 || !body.position) {
+        setEditTargetId(undefined);
+        setOrgFeedback({ tone: "warn", text: t("org.stalePosition") });
+        return;
+      }
+      setEditPosition(normalizePositionForDisplay(body.position, locale));
+    }).catch(() => {
+      if (alive) setEditTargetId(undefined);
+    });
+    return () => { alive = false; };
+  }, [editTargetId, locale, t]);
 
   const updateWorkspaceStream = useCallback((path: string, update: (state: TurnStreamState) => TurnStreamState) => {
     const next = update(workspaceStreams.current.get(path) ?? EMPTY_TURN_STREAM);
@@ -1181,8 +1208,8 @@ function AppInner({
    * re-reads the card; reloading only the card would leave the tree showing the
    * old name until the next unrelated refresh.
    */
-  const saveEmployeeProfile = useCallback(async (patch: PositionProfilePatch) => {
-    const id = selectedIdRef.current;
+  const saveEmployeeProfile = useCallback(async (patch: PositionProfilePatch, targetId?: string) => {
+    const id = targetId ?? selectedIdRef.current;
     const workspace = workspacePathRef.current;
     if (!id || !window.owb.updatePositionProfile) return { ok: false as const, code: "control_plane_unreachable" };
     try {
@@ -1195,7 +1222,9 @@ function AppInner({
       }
       setOrgFeedback({ tone: "info", text: t("org.profileUpdated", { name: body.name }) });
       await refresh();
-      await loadPosition(id);
+      // loadPosition aborts (and blanks the card) for a non-selected id, so only
+      // the selected record's card is re-read; the tree labels follow refresh().
+      if (selectedIdRef.current === id) await loadPosition(id);
       return { ok: true as const, name: body.name };
     } catch {
       return { ok: false as const, code: "control_plane_unreachable" };
@@ -1411,6 +1440,7 @@ function AppInner({
   // The shared provider derives both AntD and custom-component values from the
   // selected profile. <html data-ui-theme> is seeded before React renders.
   const treeAction = (id: string | null, action: TreeAction) => {
+    if (action === "edit") { if (id) setEditTargetId(id); return; }
     if (action === "settings") { setManagementTarget(id); return; }
     if (action === "switch") { setProjectHubOpen(true); return; }
     if (action === "hire") { setTreeHireParent(id ?? snapshot?.owner ?? null); return; }
@@ -1640,11 +1670,11 @@ function AppInner({
           ) : null}
           {workspaceInfo?.open === true ? (
             <EditEmployeeDrawer
-              open={employeeEditorOpen}
-              position={card.data}
+              open={editTargetId !== undefined && editPosition !== null}
+              position={editPosition}
               busy={orgBusy}
-              onClose={() => setEmployeeEditorOpen(false)}
-              onSave={saveEmployeeProfile}
+              onClose={() => setEditTargetId(undefined)}
+              onSave={(patch) => saveEmployeeProfile(patch, editTargetId)}
             />
           ) : null}
           <ProjectWorkspaceDialog
@@ -1820,7 +1850,7 @@ function AppInner({
                       <button
                         type="button"
                         className="owb-edit"
-                        onClick={() => setEmployeeEditorOpen(true)}
+                        onClick={() => setEditTargetId(selectedId)}
                         disabled={orgBusy}
                         title={t("profile.editTitle")}
                       >

@@ -7,14 +7,17 @@ import type { PositionMentionOption } from "../turns/types";
 import { DismissPositionDialog } from "./OrgControls";
 import { AVATAR_PRESETS, PositionAvatar, type AvatarValue } from "../PositionAvatar";
 
-export type TreeAction = "settings" | "chat" | "memory" | "hire" | "group" | "switch";
+export type TreeAction = "settings" | "chat" | "memory" | "hire" | "group" | "switch" | "edit";
 export function TreeRowMenu({ id, name, children, busy, onAction }: {
   id: string | null; name: string; children?: ReactNode; busy: boolean;
   onAction: (id: string | null, action: TreeAction) => void;
 }) {
   const t = useT();
   const menu = { items: [
-    ...(id ? [{ key: "chat", label: t("manage.chat") }] : []),
+    // Record editing leads the per-employee menu: right-click / ellipsis on a
+    // row must be able to modify exactly that row's record (#292 drawer), the
+    // way a conventional tree's context menu edits the node it was invoked on.
+    ...(id ? [{ key: "edit", label: t("profile.edit") }, { key: "chat", label: t("manage.chat") }] : []),
     { key: "settings", label: t(id ? "manage.employeeSettings" : "manage.projectSettings") },
     { key: "memory", label: t("memory.title") },
     { type: "divider" as const },

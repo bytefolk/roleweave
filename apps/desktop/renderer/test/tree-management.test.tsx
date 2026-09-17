@@ -13,6 +13,24 @@ describe("tree management and knowledge boundaries", () => {
     expect(action).toHaveBeenCalledWith("alice", "settings");
     expect(select).not.toHaveBeenCalled();
   });
+  it("offers record editing for the right-clicked position from both menu triggers", async () => {
+    const action = vi.fn();
+    render(<TreeRowMenu id="alice" name="Alice" busy={false} onAction={action}><div>Alice row</div></TreeRowMenu>);
+    fireEvent.contextMenu(screen.getByText("Alice row"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "编辑" }));
+    expect(action).toHaveBeenCalledWith("alice", "edit");
+  });
+  it("exposes the same edit entry from a position ellipsis, and never on the enterprise row", async () => {
+    const action = vi.fn();
+    render(<TreeRowMenu id="alice" name="Alice" busy={false} onAction={action} />);
+    fireEvent.click(screen.getByRole("button", { name: "Alice 的更多操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "编辑" }));
+    expect(action).toHaveBeenCalledWith("alice", "edit");
+    render(<TreeRowMenu id={null} name="Project" busy={false} onAction={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Project 的更多操作" }));
+    await waitFor(() => expect(screen.getByText("项目设置")).toBeVisible());
+    expect(screen.queryByRole("menuitem", { name: "编辑" })).toBeNull();
+  });
   it("ellipsis exposes the project menu, with structural mutation disabled while busy", async () => {
     const action = vi.fn();
     render(<TreeRowMenu id={null} name="Project" busy onAction={action} />);
