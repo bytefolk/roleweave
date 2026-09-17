@@ -383,7 +383,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   }, [description, messageApi, name, t]);
 
   return (
-    <Drawer className="owb-hire-drawer-shell" title={t("hire.createTitle")} width="min(760px, calc(100vw - 24px))" open={open} onClose={() => { if (flow.phase !== "draft" && flow.phase !== "failed") return; clearTimers(); onClose(); }} destroyOnHidden>
+    <Drawer closable={false} className="owb-hire-drawer-shell" title={t("hire.createTitle")} width="min(760px, calc(100vw - 24px))" open={open} onClose={() => { if (flow.phase !== "draft" && flow.phase !== "failed") return; clearTimers(); onClose(); }} destroyOnHidden>
       {contextHolder}
       {flow.phase === "draft" ? <div className="owb-hire-shell">
         <div className="owb-hire-shell__scroll">
