@@ -3678,7 +3678,7 @@ body,
 
 .owb-app .ui-module-rail__items {
   flex: 0 0 auto;
-  gap: 4px;
+  gap: 2px;
 }
 
 .owb-app .ui-module-rail__item {
@@ -3688,7 +3688,7 @@ body,
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
-  min-height: 44px;
+  min-height: 38px;
   border: none;
   background: transparent;
   box-shadow: none;
@@ -3699,13 +3699,13 @@ body,
     background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
-/* 收拢态：条目是 44×44 的正方形槽丸（评审确认的高亮形态），水平居中、
-   高度与上下间距（48 步距）保持 #312 口径不变；图标靠 14px 内边距居中。
+/* 收拢态：条目是 38×38 的正方形槽丸——高度、间距与展开态口径对齐
+   （评审确认参考展开态的高亮高度），水平居中；图标靠 11px 内边距居中。
    活跃左竖条在收拢态让位给丸形，展开态保留。内缩随 morph 一起滑出。 */
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item {
-  width: 44px;
+  width: 38px;
   margin-inline: auto;
-  padding: 0 14px;
+  padding: 0 11px;
 }
 
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item.is-active::before {
