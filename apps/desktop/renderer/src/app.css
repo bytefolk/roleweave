@@ -3699,12 +3699,13 @@ body,
     background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
-/* 收拢态：条目两侧内缩 6px 成圆角槽丸（评审确认的高亮形态），图标靠
-   13px 内边距居中；活跃左竖条在收拢态让位给丸形，展开态保留。内缩随
-   morph 一起滑出滑入。 */
+/* 收拢态：条目是 44×44 的正方形槽丸（评审确认的高亮形态），水平居中、
+   高度与上下间距（48 步距）保持 #312 口径不变；图标靠 14px 内边距居中。
+   活跃左竖条在收拢态让位给丸形，展开态保留。内缩随 morph 一起滑出。 */
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item {
-  margin-inline: 6px;
-  padding: 0 13px;
+  width: 44px;
+  margin-inline: auto;
+  padding: 0 14px;
 }
 
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item.is-active::before {
