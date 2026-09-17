@@ -90,6 +90,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/org/undo.js",
   "dist/src/per-key-lock.js",
   "dist/src/qoder-binary.js",
+  "dist/src/qoder-model-catalog.js",
   "dist/src/routes/assets.js",
   "dist/src/routes/avatar.js",
   "dist/src/routes/doc-plane.js",
