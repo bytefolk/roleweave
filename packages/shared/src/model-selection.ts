@@ -6,6 +6,8 @@ export interface EmployeeModelOption {
   resolvedModel?: string;
   billing?: "provider" | "subscription" | "qoder" | "unknown";
   connectionLabel?: string;
+  /** Provider-reported model class; absent for an unknown saved selection. */
+  group?: "tiers" | "models" | "custom";
 }
 export interface EmployeeModelConnection {
   source: "local-config" | "environment" | "official";
@@ -21,11 +23,13 @@ export interface EmployeeModelConfig {
   selected: string;
   recommended: string;
   options: EmployeeModelOption[];
-  source: "local-cache" | "local-config" | "provider-tiers" | "default";
+  source: "local-cache" | "local-config" | "provider-tiers" | "provider-catalog" | "default";
   editable: boolean;
   connection?: EmployeeModelConnection;
   /** The CLI validates already-registered custom IDs without changing provider credentials. */
   allowCustomModel?: boolean;
+  /** A stale catalog is an earlier account read, not a fresh entitlement check. */
+  catalogStatus?: "ready" | "stale" | "unavailable";
 }
 export function isModelId(value: unknown): value is string {
   return typeof value === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(value);

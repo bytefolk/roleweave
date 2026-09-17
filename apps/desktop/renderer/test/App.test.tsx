@@ -483,10 +483,10 @@ describe("App runtime bridge", () => {
     expect(screen.queryByRole("dialog", { name: "选择工作区" })).not.toBeInTheDocument();
   });
 
-  it("opens the selected employee's direct conversation with one Agent picker and no duplicate session controls", async () => {
+  it("opens the selected employee's direct conversation with a fixed Agent identity and no duplicate session controls", async () => {
     // The organization tree is the only recipient selector.  A click opens
     // that employee's durable conversation; the conversation header carries
-    // exactly one Agent picker (#288), and runtime/session plumbing must not
+    // the fixed Agent identity, and runtime/session plumbing must not
     // reappear as a second choice in the right pane.
     openedBridge();
 
@@ -496,9 +496,53 @@ describe("App runtime bridge", () => {
     expect(screen.getByLabelText("下达任务")).toHaveAttribute("placeholder", "向 @代码库负责人 下达任务…");
     expect(screen.queryByRole("combobox", { name: "选择对话岗位" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "选择本地会话" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("combobox", { name: "选择 Agent Host" })).toHaveLength(1);
+    expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "岗位对话" })).getAllByText("Qoder").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "轮换当前会话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "启用会话上下文" })).not.toBeInTheDocument();
+  });
+
+  it("shows each employee's Agent before selection and marks an unbound employee's current default", async () => {
+    const children = ["writer", "imported"].map(id => ({ id, reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }));
+    const engines: Record<string, string> = { "repo-owner": "qoder", writer: "codex-local" };
+    openedBridge({
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: { ...snapshot, positionCount: 3, depth: 2, tree: [{ ...snapshot.tree[0]!, children }] } }),
+      position: vi.fn(async id => ({ status: 200, body: {
+        position: { ...position, id, name: id }, ...(engines[id] ? { agentEngine: engines[id] } : {}),
+      } })),
+    });
+    await act(async () => { render(<App />); });
+    const tree = screen.getByRole("tree");
+    const owner = tree.querySelector('[data-org-node-id="repo-owner"]') as HTMLElement;
+    const writer = tree.querySelector('[data-org-node-id="writer"]') as HTMLElement;
+    const imported = tree.querySelector('[data-org-node-id="imported"]') as HTMLElement;
+    expect(within(owner).getByTitle("Agent：Qoder")).toHaveTextContent("Qoder");
+    expect(within(writer).getByTitle("Agent：Codex")).toHaveTextContent("Codex");
+    expect(within(imported).getByTitle("当前默认 Agent：Qoder，首次运行后固定")).toHaveTextContent("Qoder · 默认");
+    expect(tree.querySelector('[aria-selected="true"]')).toBeNull();
+    expect(within(writer).queryByText("codex-local")).not.toBeInTheDocument();
+  });
+
+  it("clears the previous workspace's Agent label while the new employee metadata is pending", async () => {
+    let workspace = "A";
+    let finishMetadata!: (value: Awaited<ReturnType<OwbBridge["position"]>>) => void;
+    const positionRead = vi.fn(() => workspace === "A"
+      ? Promise.resolve({ status: 200, body: { position, agentEngine: "workbuddy" } })
+      : new Promise<Awaited<ReturnType<OwbBridge["position"]>>>(resolve => { finishMetadata = resolve; }));
+    openedBridge({
+      position: positionRead,
+      workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })),
+    });
+    await act(async () => { render(<App />); });
+    expect(screen.getByTitle("Agent：WorkBuddy")).toBeInTheDocument();
+    workspace = "B";
+    await chooseExistingWorkspace();
+    expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent("Workspace B");
+    expect(screen.queryByTitle("Agent：WorkBuddy")).not.toBeInTheDocument();
+    expect(screen.getByTitle("当前默认 Agent：Qoder，首次运行后固定")).toBeInTheDocument();
+    await act(async () => finishMetadata({ status: 200, body: { position, agentEngine: "codex-local" } }));
+    expect(screen.getByTitle("Agent：Codex")).toBeInTheDocument();
+    expect(screen.queryByTitle("当前默认 Agent：Qoder，首次运行后固定")).not.toBeInTheDocument();
   });
 
   it("shows the model picker for an unbound employee and saves the choice with its effective Agent", async () => {
@@ -518,6 +562,8 @@ describe("App runtime bridge", () => {
 
     render(<App />);
     await selectRepoOwner();
+    const row = screen.getByRole("tree").querySelector('[data-org-node-id="repo-owner"]') as HTMLElement;
+    expect(within(row).getByTitle("当前默认 Agent：Qoder，首次运行后固定")).toHaveTextContent("Qoder · 默认");
     await waitFor(() => expect(screen.getByRole("combobox", { name: "员工模型" })).toBeEnabled());
     pickSelectOption("员工模型", "Performance");
 
@@ -527,9 +573,72 @@ describe("App runtime bridge", () => {
       engine: "qoder",
     }));
     expect(positionRead.mock.calls.some(([id, engine]) => id === "repo-owner" && engine === "qoder")).toBe(true);
+    expect(within(row).getByTitle("Agent：Qoder")).toHaveTextContent("Qoder");
+    expect(within(row).queryByText(/默认/)).not.toBeInTheDocument();
   });
 
-  it.each(["qoder", "claude-code", "workbuddy"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
+  it("preserves a confirmed model binding against older metadata but accepts a later refresh", async () => {
+    let listener: (event: unknown) => void = () => {};
+    let finishMetadata!: (value: Awaited<ReturnType<OwbBridge["position"]>>) => void;
+    const modelConfig = { selected: "provider-default", recommended: "provider-default", editable: true, source: "default", options: [
+      { id: "provider-default", name: "Agent default", tier: "default" }, { id: "performance", name: "Performance", tier: "balanced" },
+    ] };
+    const bridge = openedBridge({
+      position: vi.fn().mockResolvedValue({ status: 200, body: { position, modelConfig } }),
+      onEvent: vi.fn(callback => { listener = callback; return () => {}; }),
+      setPositionModel: vi.fn().mockResolvedValue({ status: 200, body: { ...modelConfig, selected: "performance" } }),
+    });
+    await act(async () => { render(<App />); });
+    await selectRepoOwner();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "员工模型" })).toBeEnabled());
+    vi.mocked(bridge.position).mockImplementationOnce(() => new Promise(resolve => { finishMetadata = resolve; }));
+    await act(async () => listener({ type: "org.updated", payload: { workspace: "/fixture/workspace", version: { seq: 8 }, changes: [] } }));
+    expect(finishMetadata).toBeTypeOf("function");
+    pickSelectOption("员工模型", "Performance");
+    await waitFor(() => expect(screen.getByTitle("Agent：Qoder")).toBeInTheDocument());
+    expect(bridge.setPositionModel).toHaveBeenCalledExactlyOnceWith({ positionId: "repo-owner", model: "performance", engine: "qoder" });
+    await act(async () => finishMetadata({ status: 200, body: { position, modelConfig } }));
+    expect(screen.getByTitle("Agent：Qoder")).toBeInTheDocument();
+    expect(screen.queryByTitle("当前默认 Agent：Qoder，首次运行后固定")).not.toBeInTheDocument();
+
+    // A refresh begun after the save must still accept current server data,
+    // for example when an employee was replaced by an organization update.
+    vi.mocked(bridge.position).mockResolvedValue({ status: 200, body: { position, agentEngine: "codex-local" } });
+    await act(async () => listener({ type: "org.updated", payload: { workspace: "/fixture/workspace", version: { seq: 9 }, changes: [] } }));
+    expect(screen.getByTitle("Agent：Codex")).toBeInTheDocument();
+    expect(screen.queryByTitle("Agent：Qoder")).not.toBeInTheDocument();
+  });
+
+  it.each(["B", "A"])("does not apply an old model save's Agent label after workspace navigation ends in %s", async destination => {
+    let workspace = "A";
+    let navigated = false;
+    let finishSave!: (value: unknown) => void;
+    const modelConfig = { selected: "provider-default", recommended: "provider-default", editable: true, source: "default", options: [
+      { id: "provider-default", name: "Agent default", tier: "default" }, { id: "performance", name: "Performance", tier: "balanced" },
+    ] };
+    const setPositionModel = vi.fn(() => new Promise(resolve => { finishSave = resolve; }));
+    openedBridge({
+      setPositionModel,
+      workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })),
+      position: vi.fn(async () => ({ status: 200, body: { position, modelConfig, ...(navigated ? { agentEngine: "codex-local", agentLocked: true } : {}) } })),
+    });
+    await act(async () => { render(<App />); });
+    await selectRepoOwner();
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "员工模型" })).toBeEnabled());
+    pickSelectOption("员工模型", "Performance");
+    expect(setPositionModel).toHaveBeenCalledExactlyOnceWith({ positionId: "repo-owner", model: "performance", engine: "qoder" });
+    navigated = true;
+    workspace = "B";
+    await chooseExistingWorkspace();
+    if (destination === "A") { workspace = "A"; await chooseExistingWorkspace(); }
+    expect(screen.getByTitle("Agent：Codex")).toBeInTheDocument();
+    await act(async () => finishSave({ status: 200, body: { ...modelConfig, selected: "performance" } }));
+    expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
+    expect(screen.getByTitle("Agent：Codex")).toBeInTheDocument();
+    expect(screen.queryByTitle("Agent：Qoder")).not.toBeInTheDocument();
+  });
+
+  it.each(["qoder", "claude-code", "codex-local", "workbuddy"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
     window.localStorage.setItem("owb-turn-engine", "codex-local");
     try {
       for (let mount = 0; mount < 2; mount += 1) {
@@ -541,7 +650,7 @@ describe("App runtime bridge", () => {
         try {
           await selectRepoOwner();
           await waitFor(() => expect(bridge.sessionTurnHistory).toHaveBeenCalled());
-          expect(screen.getAllByRole("combobox", { name: "选择 Agent Host" })).toHaveLength(1);
+          expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
           if (agentEngine !== "claude-code") {
             await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
             fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "使用员工绑定" } });

@@ -1,16 +1,46 @@
-.owb-model-connection__model {
-  display: flex;
-  flex: 1 1 230px;
-  flex-wrap: wrap;
+.owb-conversation-options.owb-model-connection {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 2px 4px;
-  min-width: 160px;
+  gap: 4px 8px;
+  min-width: 0;
 }
 
-.owb-model-connection__model .owb-model-picker {
-  flex: 1 1 130px;
-  min-width: 110px;
+.owb-conversation-options.owb-model-connection .owb-model-connection__model {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.owb-conversation-options.owb-model-connection .owb-model-picker {
+  flex: 1 1 auto;
+  min-width: 0;
   max-width: none;
+}
+
+.owb-conversation-options__tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.owb-conversation-options__tools > .ant-btn { min-width: 0; }
+
+.owb-conversation-options.owb-model-connection .owb-model-picker__state {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
+@container owb-composer (max-width: 340px) {
+  .owb-conversation-options.owb-model-connection { grid-template-columns: minmax(0, 1fr); }
+  .owb-conversation-options__tools {
+    justify-self: end;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
 }
 
 .owb-conversation-options .owb-model-connection__model .owb-model-picker {
@@ -48,12 +78,11 @@
   .owb-conversation-popover { transition-property: none !important; }
 }
 
-.owb-model-connection__summary {
-  flex: 0 1 auto;
-  max-width: 170px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.owb-conversation-options.owb-model-connection .owb-model-connection__summary {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 28px;
+  padding: 0;
 }
 
 .owb-model-connection__error {
@@ -74,6 +103,18 @@
 }
 
 .owb-model-menu__heading strong { font-size: 12px; }
+
+.owb-model-menu__heading .owb-model-menu__refresh { flex: none; }
+
+.owb-model-menu__connection,
+.owb-model-menu .owb-model-menu__catalog-status {
+  margin: 0;
+  padding: 0 12px 7px;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 
 .owb-model-menu__heading span {
   min-width: 0;

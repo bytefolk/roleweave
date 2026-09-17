@@ -16,6 +16,21 @@ function props(overrides: Partial<TurnPanelProps> = {}): TurnPanelProps {
 }
 
 describe("conversation interaction refinements without a frame redesign", () => {
+  it.each([true, false, undefined])("shows a noninteractive branded Agent for engineLocked=%s without changing the employee or draft", (engineLocked) => {
+    const selectEngine = vi.fn();
+    const { container } = render(<TurnPanel {...props({ engineLocked, onSelectEngine: selectEngine })} />);
+    const header = container.querySelector(".owb-turn-panel__header")!;
+    const badge = header.querySelector(".owb-engine-badge")!;
+    expect(badge).toHaveTextContent("Codex");
+    expect(badge.querySelector("img")).toHaveAttribute("alt", "");
+    expect(badge.querySelector("img")).toHaveAttribute("aria-hidden", "true");
+    expect(badge.closest("button, [role=button], [tabindex]")).toBeNull();
+    expect(within(header as HTMLElement).queryByRole("combobox")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "Keep draft" } });
+    fireEvent.click(badge);
+    expect(selectEngine).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("下达任务")).toHaveValue("Keep draft");
+  });
   it("protects an existing draft and re-edits into a new task without changing history", async () => {
     const create = vi.fn().mockResolvedValue(true);
     render(<TurnPanel {...props({ onCreateTurn: create })} />);

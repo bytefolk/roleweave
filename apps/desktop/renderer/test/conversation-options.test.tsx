@@ -102,6 +102,10 @@ it("shows the inherited connection, billing, and concrete model without assignin
   render(<ConversationOptions config={config} saving={false} disabled={false} session={null} turns={[]} onModel={vi.fn()} />);
 
   expect(screen.getByText("跟随本地配置")).toBeInTheDocument();
+  // Connection and billing are readable on demand without filling the footer.
+  const details = screen.getByRole("button", { name: "模型连接详情" });
+  expect(details.textContent).toBe("");
+  expect(screen.queryByText("供应商计费")).not.toBeInTheDocument();
   fireEvent.mouseDown(screen.getByRole("combobox", { name: "员工模型" }));
   expect(await screen.findByText(/配置映射: team\/claude-custom/)).toBeInTheDocument();
   expect(screen.getByText(/团队网关/)).toBeInTheDocument();
@@ -111,6 +115,72 @@ it("shows the inherited connection, billing, and concrete model without assignin
   expect(await screen.findByText("gateway.example.test")).toBeInTheDocument();
   expect(screen.getByText("网关 / 自定义服务")).toBeInTheDocument();
   expect(screen.getAllByText("供应商计费").length).toBeGreaterThan(0);
+});
+
+it("groups real catalog models separately from routing tiers and configured models without fabricating prices", async () => {
+  const change = vi.fn();
+  render(<ConversationOptions saving={false} disabled={false} session={null} turns={[]} onModel={change}
+    config={{ selected: "provider-default", recommended: "auto", editable: true, source: "provider-catalog", catalogStatus: "ready",
+      connection: { source: "official", kind: "unknown", billing: "unknown", status: "configured" }, options: [
+      { id: "provider-default", name: "Default", tier: "default" },
+      { id: "auto", name: "Auto", tier: "auto", group: "tiers" },
+      { id: "Qwen Fixture", name: "Qwen Fixture", tier: "default", group: "models", billing: "unknown" },
+      { id: "local-fixture", name: "Local Fixture", tier: "default", group: "custom" },
+    ] }} />);
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "员工模型" }));
+  expect(await screen.findByText("Qoder 档位")).toBeInTheDocument();
+  expect(screen.getByText("具体模型")).toBeInTheDocument();
+  expect(screen.getByText("已配置模型")).toBeInTheDocument();
+  expect(screen.queryByText(/倍率|\d+(\.\d+)?\s*[×x]/)).not.toBeInTheDocument();
+  expect(screen.getByText("Qwen Fixture").closest(".owb-model-choice")?.querySelector("p")).toBeNull();
+  expect(screen.getByText("Auto", { selector: ".owb-model-choice > span" }).closest(".owb-model-choice")?.querySelector("p")).toBeNull();
+  expect(screen.getAllByText(/计费方式未确认/)).toHaveLength(1);
+  fireEvent.click(screen.getByText("Qwen Fixture"));
+  expect(change).toHaveBeenCalledExactlyOnceWith("Qwen Fixture");
+});
+
+it.each(["custom", "models"] as const)("preserves unknown billing for a %s override instead of implying that Qoder pays for it", async (group) => {
+  render(<ConversationOptions saving={false} disabled={false} session={null} turns={[]} onModel={vi.fn()}
+    config={{ selected: "provider-default", recommended: "provider-default", editable: true, source: "provider-catalog",
+      connection: { source: "official", kind: "official", billing: "qoder", status: "configured" }, options: [
+        { id: "provider-default", name: "Default", tier: "default" },
+        { id: "Included", name: "Included", tier: "default", group, billing: "qoder" },
+        { id: "team-model", name: "Team Model", tier: "default", group, billing: "unknown" },
+      ] }} />);
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "员工模型" }));
+  expect((await screen.findByText("Team Model")).closest(".owb-model-choice")).toHaveTextContent("计费方式未确认");
+  expect(screen.getByText("Included").closest(".owb-model-choice")).not.toHaveTextContent("计费方式未确认");
+});
+
+it("states uniform catalog billing once in the group while keeping concrete model rows compact", async () => {
+  render(<ConversationOptions saving={false} disabled={false} session={null} turns={[]} onModel={vi.fn()}
+    config={{ selected: "provider-default", recommended: "provider-default", editable: true, source: "provider-catalog",
+      connection: { source: "official", kind: "unknown", billing: "unknown", status: "configured" }, options: [
+        { id: "provider-default", name: "Default", tier: "default" },
+        { id: "Model A", name: "Model A", tier: "default", group: "models", billing: "qoder" },
+        { id: "Model B", name: "Model B", tier: "default", group: "models", billing: "qoder" },
+      ] }} />);
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "员工模型" }));
+  expect(await screen.findByText("具体模型 · Qoder 额度")).toBeInTheDocument();
+  expect(screen.getAllByText(/Qoder 额度/)).toHaveLength(1);
+  for (const name of ["Model A", "Model B"]) expect(screen.getByText(name).closest(".owb-model-choice")?.querySelector("p")).toBeNull();
+});
+
+it.each(["stale", "unavailable"] as const)("keeps fallback model selection available with %s catalog status and offers refresh", async (catalogStatus) => {
+  const reload = vi.fn();
+  const config: EmployeeModelConfig = { selected: "auto", recommended: "auto", editable: true, source: "provider-tiers", catalogStatus,
+    options: [{ id: "auto", name: "Auto", tier: "auto", group: "tiers" }] };
+  const base = { config, saving: false, disabled: false, session: null, turns: [], onModel: vi.fn(), onReload: reload };
+  const { rerender } = render(<ConversationOptions {...base} />);
+  const select = screen.getByRole("combobox", { name: "员工模型" });
+  expect(select).toBeEnabled();
+  fireEvent.mouseDown(select);
+  expect(await screen.findByRole("status")).toHaveTextContent(catalogStatus === "stale" ? "显示上次的模型列表" : "暂未取得 Qoder 模型列表");
+  fireEvent.click(screen.getByRole("button", { name: "刷新模型列表" }));
+  expect(reload).toHaveBeenCalledTimes(1);
+  rerender(<ConversationOptions {...base} loading />);
+  expect(select).toBeDisabled();
+  expect(screen.getAllByText("正在加载模型…").length).toBeGreaterThan(0);
 });
 
 it("uses the Agent default outside local configuration and leaves session context alone when switching", async () => {

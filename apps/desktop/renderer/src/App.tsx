@@ -54,7 +54,9 @@ import {
   resolveAgentEngine,
   resetStreamSeq,
   settlePendingTurn,
+  useEngineLabel,
 } from "./turns";
+import { EngineIcon } from "./turns/engine-icon";
 import type {
   CreateTurnRequest,
   PositionMentionOption,
@@ -189,6 +191,7 @@ function AppInner({
   const [positionEngines, setPositionEngines] = useState<Record<string, TurnEngine>>({});
   const positionEnginesRef = useRef<Record<string, TurnEngine>>({});
   positionEnginesRef.current = positionEngines;
+  const positionBindingWrites = useRef<Record<string, number>>({});
   const defaultTurnEngineRef = useRef<TurnEngine>("qoder");
   const [lockedAgentPositions, setLockedAgentPositions] = useState<Record<string, boolean>>({});
   const [positionModels, setPositionModels] = useState<Record<string, EmployeeModelConfig>>({});
@@ -406,6 +409,9 @@ function AppInner({
       backupRead.current += 1;
       setBackups([]);
       setBackupsStatus("loading");
+      positionBindingWrites.current = {};
+      setPositionEngines({});
+      setLockedAgentPositions({});
     }
     const backupScope = backupWorkspace.current;
     setWorkspaceInfo(ws);
@@ -425,6 +431,7 @@ function AppInner({
         // Moves/reorders keep the sidebar's names, avatars and engines. Other
         // mutations (especially deletion/hire) still reconcile all metadata.
         if (!reusePositionMetadata) {
+          const bindingWritesAtRead = { ...positionBindingWrites.current };
           const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; agentEngine?: TurnEngine }]> => {
             const response = await window.owb.position(id);
             const body = response.body as { position?: PositionCardData; agentEngine?: unknown };
@@ -457,7 +464,17 @@ function AppInner({
             if (entry.agentEngine !== undefined) next[id] = entry.agentEngine;
             return next;
           }, {});
-          setPositionEngines(engines);
+          setPositionEngines((current) => {
+            // A first model save or turn can bind an employee while these
+            // cards are in flight. Keep that newer confirmation per employee;
+            // later refreshes can still reconcile current server metadata.
+            for (const id of positionIds) {
+              if (positionBindingWrites.current[id] === bindingWritesAtRead[id]) continue;
+              if (current[id] !== undefined) engines[id] = current[id];
+              else delete engines[id];
+            }
+            return engines;
+          });
         }
         await Promise.all([backupLoad, loadReports()]);
       } else {
@@ -834,6 +851,7 @@ function AppInner({
       const body = res.body as { engine?: unknown; runId?: unknown; turnId?: unknown };
       if (workspacePathRef.current === workspacePath && isTurnEngine(body.engine)) {
         const resolvedEngine = body.engine;
+        positionBindingWrites.current[request.positionId] = (positionBindingWrites.current[request.positionId] ?? 0) + 1;
         setPositionEngines((current) => current[request.positionId] === resolvedEngine
           ? current
           : { ...current, [request.positionId]: resolvedEngine });
@@ -904,14 +922,18 @@ function AppInner({
     positionReadVersion.current += 1;
     setModelSavingIds(current => ({ ...current, [operationKey]: true }));
     setModelStates(current => ({ ...current, [id]: {} }));
+    const engine = positionEnginesRef.current[id] ?? defaultTurnEngineRef.current;
     try {
       const response = await window.owb.setPositionModel({
         positionId: id,
         model,
-        engine: positionEnginesRef.current[id] ?? defaultTurnEngineRef.current,
+        engine,
       });
       if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
       if (response.status !== 200) { setModelStates(current => ({ ...current, [id]: { error: t("model.saveFailed") } })); return; }
+      positionBindingWrites.current[id] = (positionBindingWrites.current[id] ?? 0) + 1;
+      setPositionEngines((current) => ({ ...current, [id]: engine }));
+      setLockedAgentPositions((current) => ({ ...current, [id]: true }));
       setPositionModels((current) => ({ ...current, [id]: response.body }));
       setModelStates(current => ({ ...current, [id]: { notice: conversationCopy.modelSaved } }));
       setTurnError(null);
@@ -936,6 +958,7 @@ function AppInner({
       const response = await window.owb.setPositionAgentEngine({ positionId: id, engine });
       if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
       if (response.status !== 200) { setTurnError(apiErrorMessage(response.body, t("turn.createFail"))); return; }
+      positionBindingWrites.current[id] = (positionBindingWrites.current[id] ?? 0) + 1;
       setPositionEngines((current) => ({ ...current, [id]: response.body.agentEngine }));
       setLockedAgentPositions((current) => ({ ...current, [id]: true }));
       setPositionModels((current) => ({ ...current, [id]: response.body.modelConfig }));
@@ -1327,6 +1350,7 @@ function AppInner({
     (positionId: string): TurnEngine => positionEngines[positionId] ?? defaultTurnEngine,
     [defaultTurnEngine, positionEngines],
   );
+  const engineLabel = useEngineLabel();
 
   const displayTurns = useMemo(() => {
     const historyRunIds = new Set(turns.flatMap((turn) => (turn.runId ? [turn.runId] : [])));
@@ -1536,6 +1560,16 @@ function AppInner({
                 <OrgTree
                   decorateRow={(id, row) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
                   rowActions={(id) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction} />}
+                  rowMetadata={(id) => {
+                    const bound = positionEngines[id] !== undefined;
+                    const engine = engineForPosition(id);
+                    const label = engineLabel(engine);
+                    const description = t(bound ? "tree.agentIdentity" : "tree.agentDefaultDescription", { name: label });
+                    return <span className="ui-org-tree__metadata-content" title={description} aria-label={description}>
+                      <EngineIcon engine={engine} />
+                      <span className="ui-org-tree__metadata-label">{label}{bound ? null : ` · ${t("tree.agentDefault")}`}</span>
+                    </span>;
+                  }}
                   snapshot={snapshot}
                   versionStamp={snapshot.updatedAt}
                   displayNames={positionNames}
