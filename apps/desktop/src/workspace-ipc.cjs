@@ -1,8 +1,10 @@
-// Main-process boundary gate for project bootstrap. The native parent-folder
-// picker supplies the path; the control plane still validates the workspace
-// contract and never overwrites an existing project directory.
+// Main-process boundary gate for project bootstrap and workspace reveal. The
+// native parent-folder picker supplies the path; the control plane still
+// validates the workspace contract and never overwrites an existing project
+// directory. Reveal asks the control plane which workspace is open instead of
+// trusting a renderer-supplied path.
 const path = require("node:path");
-const { serverPathForWorkspace } = require("./control-plane-launch.cjs");
+const { controlPlaneMode, serverPathForWorkspace } = require("./control-plane-launch.cjs");
 const { writeLastWorkspacePath } = require("./last-workspace.cjs");
 const { workspaceDialogOptions } = require("./runtime-settings.cjs");
 const { TURN_ENGINE_IDS, turnEngineMessage } = require("@roleweave/shared/turn-engines");
@@ -89,4 +91,55 @@ async function createWorkspaceWithPicker({ request, pickDirectory, apiRequest, e
   return res;
 }
 
-module.exports = { validateWorkspaceCreateRequest, openWorkspaceWithPicker, createWorkspaceWithPicker };
+/**
+ * Map the control-plane workspace path back to a path the native shell can
+ * open. In WSL mode the control plane reports a Linux path; Windows Explorer
+ * reaches the same directory through the distribution's UNC share, which is
+ * the same share the native folder picker offers.
+ */
+function nativePathForServerPath(serverPath, env) {
+  if (controlPlaneMode(env) !== "wsl") return serverPath;
+  const distro = env.ROLEWEAVE_WSL_DISTRO ?? "";
+  if (typeof distro !== "string" || distro.length === 0) {
+    throw new Error("WSL mode needs a configured distribution to reveal the workspace");
+  }
+  if (typeof serverPath !== "string" || !serverPath.startsWith("/") || /[\x00-\x1f]/.test(serverPath)) {
+    throw new Error("workspace path is not an absolute WSL path");
+  }
+  if (serverPath.split("/").includes("..")) {
+    throw new Error("workspace path cannot traverse its distribution root");
+  }
+  return `\\\\wsl.localhost\\${distro}${serverPath.replace(/\//g, "\\")}`;
+}
+
+/**
+ * Reveal the currently open workspace in the OS file manager (Finder on
+ * macOS, Explorer on Windows). Takes no renderer-supplied path on purpose:
+ * the main process asks the control plane which workspace is open, so the
+ * shell only ever opens the directory the user already opened here.
+ * `openPath` is Electron's `shell.openPath`, which resolves to an empty
+ * string on success and to an error message on failure.
+ */
+async function revealWorkspaceInFileManager({ apiRequest, env, openPath }) {
+  const res = await apiRequest("/workspace");
+  if (res.status !== 200 || res.body?.open !== true || typeof res.body.path !== "string" || res.body.path.length === 0) {
+    return { opened: false, reason: "workspace_not_open" };
+  }
+  let target;
+  try {
+    target = nativePathForServerPath(res.body.path, env);
+  } catch (error) {
+    return { opened: false, reason: String(error.message ?? error) };
+  }
+  const failure = await openPath(target);
+  if (failure) return { opened: false, reason: String(failure) };
+  return { opened: true, path: target };
+}
+
+module.exports = {
+  validateWorkspaceCreateRequest,
+  openWorkspaceWithPicker,
+  createWorkspaceWithPicker,
+  nativePathForServerPath,
+  revealWorkspaceInFileManager,
+};

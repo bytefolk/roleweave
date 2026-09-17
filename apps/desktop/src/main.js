@@ -95,7 +95,7 @@ const {
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
 } = require("./goal-ipc.cjs");
-const { openWorkspaceWithPicker, createWorkspaceWithPicker } = require("./workspace-ipc.cjs");
+const { openWorkspaceWithPicker, createWorkspaceWithPicker, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
 const { runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
@@ -402,6 +402,12 @@ ipcMain.handle("owb:workspace:create", async (_event, request) => createWorkspac
 }));
 
 ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
+
+// The renderer never supplies a path here: the handler re-reads the open
+// workspace from the control plane before handing anything to the shell.
+ipcMain.handle("owb:workspace:reveal", async () => revealWorkspaceInFileManager({
+  apiRequest, env: desktopEnv, openPath: (target) => shell.openPath(target),
+}));
 
 ipcMain.handle("owb:org:tree", async () => apiRequest("/org/tree"));
 

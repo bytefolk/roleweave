@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type { OrgTreeSnapshot } from "@roleweave/shared";
 import { describe, expect, it, vi } from "vitest";
 import { OrgTree } from "../src/org-tree";
@@ -42,6 +42,22 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(onSelect).toHaveBeenCalledWith("issue-researcher");
   });
 
+  it("keeps optional row metadata inside the selectable position without adding another action", () => {
+    const onSelect = vi.fn();
+    const manage = vi.fn();
+    const metadata = vi.fn((id: string) => id === "issue-researcher" ? <span>Codex</span> : null);
+    render(<OrgTree snapshot={SNAPSHOT} rowMetadata={metadata} onSelect={onSelect}
+      rowActions={id => id === "issue-researcher" ? <button onClick={event => { event.stopPropagation(); manage(id); }}>Manage employee</button> : null} />);
+    const row = screen.getByText("issue-researcher").closest('[role="treeitem"]')!;
+    expect(within(row as HTMLElement).getByText("Codex")).toBeVisible();
+    fireEvent.click(screen.getByText("Codex"));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("issue-researcher");
+    fireEvent.click(screen.getByRole("button", { name: "Manage employee" }));
+    expect(manage).toHaveBeenCalledExactlyOnceWith("issue-researcher");
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(metadata.mock.calls.flat()).not.toContain("__enterprise__");
+  });
+
   it("toggles expansion with the arrow buttons (enterprise and owner)", () => {
     const onExpand = vi.fn();
     render(<OrgTree snapshot={SNAPSHOT} onExpand={onExpand} />);
@@ -59,7 +75,7 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
   });
 
   it("supports keyboard navigation (ModuleRail arrow pattern)", () => {
-    render(<OrgTree snapshot={SNAPSHOT} />);
+    render(<OrgTree snapshot={SNAPSHOT} rowMetadata={() => <span>Agent</span>} />);
     const tree = screen.getByRole("tree");
     const items = screen.getAllByRole("treeitem");
     act(() => {
@@ -129,7 +145,7 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
 
   it("emits a move proposal when a movable position is dropped on a manager or enterprise root", () => {
     const onMove = vi.fn();
-    render(<OrgTree snapshot={SNAPSHOT} onMove={onMove} />);
+    render(<OrgTree snapshot={SNAPSHOT} onMove={onMove} rowMetadata={() => <span>Agent</span>} />);
     const source = screen.getByText("issue-researcher").closest('[role="treeitem"]')!;
     const manager = screen.getByText("release-engineer").closest('[role="treeitem"]')!;
     const enterprise = screen.getByText("oss-maintainer").closest('[role="treeitem"]')!;

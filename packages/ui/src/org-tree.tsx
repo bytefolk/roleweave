@@ -47,6 +47,9 @@ export interface OrgDropPosition {
 export interface OrgTreeProps {
   decorateRow?: (id: string | null, row: ReactNode) => ReactNode;
   rowActions?: (id: string | null) => ReactNode;
+  /** Optional, read-only metadata alongside a position name. The caller
+   * supplies its presentation without extending the frozen tree DTO. */
+  rowMetadata?: (id: string) => ReactNode;
   snapshot: OrgTreeSnapshot;
   /** Applied-state stamp (updatedAt); change re-triggers the 180ms fade. */
   versionStamp?: string | null;
@@ -86,6 +89,7 @@ export interface OrgTreeNodeProps {
   dragState?: OrgTreeDragState;
   decorate?: (row: ReactNode) => ReactNode;
   actions?: ReactNode;
+  metadata?: ReactNode;
   node: OrgTreeNodeV1;
   depth: number;
   selected: boolean;
@@ -128,6 +132,7 @@ export const OrgTreeNode = memo(function OrgTreeNode({
   dragState,
   decorate,
   actions,
+  metadata,
   node,
   depth,
   selected,
@@ -226,6 +231,7 @@ export const OrgTreeNode = memo(function OrgTreeNode({
       <span className="ui-org-tree__label" title={displayName ?? node.id}>
         <span className="ui-org-tree__name">{displayName ?? node.id}</span>
       </span>
+      {metadata ? <span className="ui-org-tree__metadata">{metadata}</span> : null}
       {actions ?? (onGroupEntry || onHireEntry ? (
         <span className="ui-org-tree__actions">
           {onGroupEntry ? (
@@ -364,6 +370,7 @@ interface FlatNode {
 export function OrgTree({
   decorateRow,
   rowActions,
+  rowMetadata,
   snapshot,
   versionStamp,
   displayNames,
@@ -635,6 +642,7 @@ export function OrgTree({
           dragState={dragState}
           decorate={decorateRow ? (row) => decorateRow(node.id, row) : undefined}
           actions={rowActions?.(node.id)}
+          metadata={rowMetadata?.(node.id)}
           node={node}
           depth={depth}
           selected={selectedId === node.id}

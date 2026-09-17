@@ -79,7 +79,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
-  it("keeps session controls out of a direct employee conversation while retaining its Agent picker", () => {
+  it("keeps session controls out of a direct employee conversation and shows its fixed Agent identity", () => {
     const active = {
       schemaVersion: "workbench-session.v1" as const,
       sessionId: "11111111-1111-4111-8111-111111111111",
@@ -115,7 +115,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(document.querySelector(".owb-conversation-controls")).toBeNull();
     expect(screen.queryByLabelText("选择对话岗位")).toBeNull();
     expect(screen.queryByLabelText("选择本地会话")).toBeNull();
-    expect(screen.getByLabelText("选择 Agent Host")).toBeEnabled();
+    expect(screen.queryByLabelText("选择 Agent Host")).not.toBeInTheDocument();
+    expect(document.querySelector(".owb-engine-badge")).toHaveTextContent("Qoder");
     expect(screen.queryByRole("button", { name: "轮换当前会话" })).toBeNull();
     expect(screen.getByLabelText("下达任务")).toBeEnabled();
   });
@@ -127,7 +128,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
 
     expect(screen.getByRole("heading", { name: "发布负责人" })).toBeInTheDocument();
     expect(screen.getAllByText("Claude Code").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("选择 Agent Host")).toBeEnabled();
+    expect(screen.queryByLabelText("选择 Agent Host")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "准备发布说明" } });
     fireEvent.click(screen.getByRole("button", { name: "发送任务" }));

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button as AntButton, ConfigProvider } from "antd";
+import { Alert, Badge, Button as AntButton, ConfigProvider, message } from "antd";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
@@ -54,7 +54,9 @@ import {
   resolveAgentEngine,
   resetStreamSeq,
   settlePendingTurn,
+  useEngineLabel,
 } from "./turns";
+import { EngineIcon } from "./turns/engine-icon";
 import type {
   CreateTurnRequest,
   PositionMentionOption,
@@ -153,6 +155,7 @@ function AppInner({
   const [approvalItems] = useState<ApprovalQueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const healthReadVersion = useRef(0);
+  const refreshReadVersion = useRef(0);
   const positionReadVersion = useRef(0);
   const availabilityOperation = useRef<symbol | null>(null);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
@@ -188,6 +191,7 @@ function AppInner({
   const [positionEngines, setPositionEngines] = useState<Record<string, TurnEngine>>({});
   const positionEnginesRef = useRef<Record<string, TurnEngine>>({});
   positionEnginesRef.current = positionEngines;
+  const positionBindingWrites = useRef<Record<string, number>>({});
   const defaultTurnEngineRef = useRef<TurnEngine>("qoder");
   const [lockedAgentPositions, setLockedAgentPositions] = useState<Record<string, boolean>>({});
   const [positionModels, setPositionModels] = useState<Record<string, EmployeeModelConfig>>({});
@@ -223,6 +227,10 @@ function AppInner({
   const [sseState, setSseState] = useState<"connecting" | "connected">("connecting");
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [backups, setBackups] = useState<OrgBackupEntry[]>([]);
+  const [backupsStatus, setBackupsStatus] = useState<"loading" | "ready" | "error">("loading");
+  // Identity changes on every workspace transition, including A → B → A.
+  const backupWorkspace = useRef<{ path: string | null }>({ path: null });
+  const backupRead = useRef(0);
   const [reports, setReports] = useState<ReportsResponse | null>(null);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState<string | null>(null);
@@ -331,10 +339,24 @@ function AppInner({
     setTurnError(null);
   }, [locale]);
 
-  const loadBackups = useCallback(async () => {
-    const response = await window.owb.orgBackups();
-    if (response.status === 200) setBackups((response.body as OrgBackupsResponse).backups);
-    else setBackups([]);
+  const loadBackups = useCallback(async (scope = backupWorkspace.current) => {
+    if (!scope.path || scope !== backupWorkspace.current) return;
+    const read = ++backupRead.current;
+    const isCurrent = () => scope === backupWorkspace.current && read === backupRead.current;
+    setBackupsStatus("loading");
+    try {
+      const response = await window.owb.orgBackups();
+      if (!isCurrent()) return;
+      const body = response.body as OrgBackupsResponse | null;
+      if (response.status !== 200 || !Array.isArray(body?.backups)) {
+        setBackupsStatus("error");
+        return;
+      }
+      setBackups(body.backups);
+      setBackupsStatus("ready");
+    } catch {
+      if (isCurrent()) setBackupsStatus("error");
+    }
   }, []);
 
   const loadReports = useCallback(async () => {
@@ -357,26 +379,50 @@ function AppInner({
   }, [t]);
 
   const refresh = useCallback(async (reusePositionMetadata = false) => {
+    const refreshRead = ++refreshReadVersion.current;
+    const isCurrentRefresh = () => refreshRead === refreshReadVersion.current;
     const healthRead = ++healthReadVersion.current;
     try {
     const statusRes = await window.owb.status();
+    if (!isCurrentRefresh()) return;
     if (healthRead === healthReadVersion.current) setHealth(statusRes.health ?? null);
     if (!statusRes.running) {
       setStartupError(t("misc.serviceFailed"));
       return;
     }
-    // A structural refresh reads the workspace summary and tree together;
-    // ordinary startup still checks for an open workspace before reading it.
-    const [workspaceRes, refreshedTree] = await Promise.all([
-      window.owb.workspace(),
-      reusePositionMetadata ? window.owb.orgTree() : undefined,
-    ]);
+    // Publish only the latest summary: a delayed workspace read must not
+    // reset the recovery scope after a newer workspace has already opened.
+    const workspaceRead = window.owb.workspace();
+    // Structural refreshes still start both reads together. Settle a rejected
+    // tree immediately, even if a stale workspace makes us discard it later.
+    const pendingTree = reusePositionMetadata
+      ? window.owb.orgTree().then((response) => ({ response }), (error: unknown) => ({ error }))
+      : undefined;
+    const workspaceRes = await workspaceRead;
+    if (!isCurrentRefresh()) return;
     if (workspaceRes.status !== 200) throw new Error("Workspace unavailable");
     setStartupError(null);
     const ws = workspaceRes.body as WorkspaceInfoResponse | null;
+    const backupPath = ws?.open === true ? ws.path ?? null : null;
+    if (backupWorkspace.current.path !== backupPath) {
+      backupWorkspace.current = { path: backupPath };
+      backupRead.current += 1;
+      setBackups([]);
+      setBackupsStatus("loading");
+      positionBindingWrites.current = {};
+      setPositionEngines({});
+      setLockedAgentPositions({});
+    }
+    const backupScope = backupWorkspace.current;
     setWorkspaceInfo(ws);
     if (ws?.open === true) {
-      const treeRes = refreshedTree ?? await window.owb.orgTree();
+      // Recovery is independent of the organization tree; a failed tree read
+      // must not leave this footer waiting for a request that never started.
+      const backupLoad = loadBackups(backupScope);
+      const treeResult = pendingTree ? await pendingTree : { response: await window.owb.orgTree() };
+      if (!isCurrentRefresh()) return;
+      if ("error" in treeResult) throw treeResult.error;
+      const treeRes = treeResult.response;
       if (treeRes.status === 200) {
         const nextSnapshot = treeRes.body as OrgTreeSnapshot;
         setSnapshot(nextSnapshot);
@@ -385,6 +431,7 @@ function AppInner({
         // Moves/reorders keep the sidebar's names, avatars and engines. Other
         // mutations (especially deletion/hire) still reconcile all metadata.
         if (!reusePositionMetadata) {
+          const bindingWritesAtRead = { ...positionBindingWrites.current };
           const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; agentEngine?: TurnEngine }]> => {
             const response = await window.owb.position(id);
             const body = response.body as { position?: PositionCardData; agentEngine?: unknown };
@@ -401,6 +448,7 @@ function AppInner({
               // budget and permissions belong to the selected position record.
             }];
           }));
+          if (!isCurrentRefresh()) return;
           const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
           positionNamesRef.current = names;
           setPositionNames(names);
@@ -416,9 +464,19 @@ function AppInner({
             if (entry.agentEngine !== undefined) next[id] = entry.agentEngine;
             return next;
           }, {});
-          setPositionEngines(engines);
+          setPositionEngines((current) => {
+            // A first model save or turn can bind an employee while these
+            // cards are in flight. Keep that newer confirmation per employee;
+            // later refreshes can still reconcile current server metadata.
+            for (const id of positionIds) {
+              if (positionBindingWrites.current[id] === bindingWritesAtRead[id]) continue;
+              if (current[id] !== undefined) engines[id] = current[id];
+              else delete engines[id];
+            }
+            return engines;
+          });
         }
-        await Promise.all([loadBackups(), loadReports()]);
+        await Promise.all([backupLoad, loadReports()]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
@@ -426,6 +484,7 @@ function AppInner({
         setPositionColors({});
         setPositionEngines({});
         setLockedAgentPositions({});
+        await backupLoad;
       }
     } else {
       setSnapshot(null);
@@ -448,9 +507,9 @@ function AppInner({
       setReportsError(null);
     }
     } catch {
-      setStartupError(t("misc.serviceFailed"));
+      if (isCurrentRefresh()) setStartupError(t("misc.serviceFailed"));
     } finally {
-      setTreeLoading(false);
+      if (isCurrentRefresh()) setTreeLoading(false);
     }
   }, [loadBackups, loadReports, locale, t]);
 
@@ -792,6 +851,7 @@ function AppInner({
       const body = res.body as { engine?: unknown; runId?: unknown; turnId?: unknown };
       if (workspacePathRef.current === workspacePath && isTurnEngine(body.engine)) {
         const resolvedEngine = body.engine;
+        positionBindingWrites.current[request.positionId] = (positionBindingWrites.current[request.positionId] ?? 0) + 1;
         setPositionEngines((current) => current[request.positionId] === resolvedEngine
           ? current
           : { ...current, [request.positionId]: resolvedEngine });
@@ -862,14 +922,18 @@ function AppInner({
     positionReadVersion.current += 1;
     setModelSavingIds(current => ({ ...current, [operationKey]: true }));
     setModelStates(current => ({ ...current, [id]: {} }));
+    const engine = positionEnginesRef.current[id] ?? defaultTurnEngineRef.current;
     try {
       const response = await window.owb.setPositionModel({
         positionId: id,
         model,
-        engine: positionEnginesRef.current[id] ?? defaultTurnEngineRef.current,
+        engine,
       });
       if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
       if (response.status !== 200) { setModelStates(current => ({ ...current, [id]: { error: t("model.saveFailed") } })); return; }
+      positionBindingWrites.current[id] = (positionBindingWrites.current[id] ?? 0) + 1;
+      setPositionEngines((current) => ({ ...current, [id]: engine }));
+      setLockedAgentPositions((current) => ({ ...current, [id]: true }));
       setPositionModels((current) => ({ ...current, [id]: response.body }));
       setModelStates(current => ({ ...current, [id]: { notice: conversationCopy.modelSaved } }));
       setTurnError(null);
@@ -894,6 +958,7 @@ function AppInner({
       const response = await window.owb.setPositionAgentEngine({ positionId: id, engine });
       if (workspacePathRef.current !== workspace || latestGroupWorkspaceScope.current !== scope) return;
       if (response.status !== 200) { setTurnError(apiErrorMessage(response.body, t("turn.createFail"))); return; }
+      positionBindingWrites.current[id] = (positionBindingWrites.current[id] ?? 0) + 1;
       setPositionEngines((current) => ({ ...current, [id]: response.body.agentEngine }));
       setLockedAgentPositions((current) => ({ ...current, [id]: true }));
       setPositionModels((current) => ({ ...current, [id]: response.body.modelConfig }));
@@ -1285,6 +1350,7 @@ function AppInner({
     (positionId: string): TurnEngine => positionEngines[positionId] ?? defaultTurnEngine,
     [defaultTurnEngine, positionEngines],
   );
+  const engineLabel = useEngineLabel();
 
   const displayTurns = useMemo(() => {
     const historyRunIds = new Set(turns.flatMap((turn) => (turn.runId ? [turn.runId] : [])));
@@ -1474,7 +1540,9 @@ function AppInner({
             </>
           }
           footer={
-            workspaceInfo?.open === true ? <BackupTray backups={backups} busy={orgBusy} positionNames={positionNames} onRestore={restorePosition} /> : null
+            workspaceInfo?.open === true && (backupsStatus !== "ready" || backups.length > 0)
+              ? <BackupTray key={workspaceInfo.path} backups={backups} status={backupsStatus} busy={orgBusy} positionNames={positionNames} onRestore={restorePosition} onRetry={() => void loadBackups()} />
+              : null
           }
         >
           {workspaceInfo?.open === true ? (
@@ -1492,6 +1560,16 @@ function AppInner({
                 <OrgTree
                   decorateRow={(id, row) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
                   rowActions={(id) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction} />}
+                  rowMetadata={(id) => {
+                    const bound = positionEngines[id] !== undefined;
+                    const engine = engineForPosition(id);
+                    const label = engineLabel(engine);
+                    const description = t(bound ? "tree.agentIdentity" : "tree.agentDefaultDescription", { name: label });
+                    return <span className="ui-org-tree__metadata-content" title={description} aria-label={description}>
+                      <EngineIcon engine={engine} />
+                      <span className="ui-org-tree__metadata-label">{label}{bound ? null : ` · ${t("tree.agentDefault")}`}</span>
+                    </span>;
+                  }}
                   snapshot={snapshot}
                   versionStamp={snapshot.updatedAt}
                   displayNames={positionNames}
@@ -1910,17 +1988,25 @@ function Breadcrumbs({
 }: {
   workspace: WorkspaceInfoResponse | null;
 }) {
+  const t = useT();
   if (workspace?.open !== true || !workspace.path) return null;
+  const revealInFileManager = async () => {
+    if (!window.owb.revealWorkspace) return;
+    const result = await window.owb.revealWorkspace();
+    if (result.opened !== true) message.warning(t("misc.workspaceRevealFailed"));
+  };
   return (
     <span className="owb-topbar-context">
-      <span
+      <button
+        type="button"
         className="owb-workspace-location"
-        title={workspace.path}
-        aria-label={workspace.path}
+        title={`${workspace.path} · ${t("misc.workspaceRevealHint")}`}
+        aria-label={`${t("misc.workspaceRevealHint")}: ${workspace.path}`}
+        onClick={() => void revealInFileManager()}
       >
         <FolderOpen aria-hidden="true" size={12} />
         <span className="owb-workspace-location__path">{workspace.path}</span>
-      </span>
+      </button>
     </span>
   );
 }

@@ -27,6 +27,7 @@
 
 .ui-org-tree__row {
   --d: 0;
+  container: org-tree-row / inline-size;
   position: relative;
   display: flex;
   align-items: center;
@@ -248,6 +249,45 @@
 
 .ui-org-tree__name {
   font-weight: 500;
+}
+
+.ui-org-tree__metadata {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100px;
+  color: var(--ui-foreground-muted);
+  font-size: 10px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.ui-org-tree__metadata-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ui-org-tree__metadata-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ui-org-tree__metadata :is(img, svg) {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+
+/* Keep the employee name readable at the normal sidebar width. The badge's
+   wrapper retains its full accessible description and hover title. */
+@container org-tree-row (max-width: 250px) {
+  .ui-org-tree__metadata-label {
+    display: none;
+  }
 }
 
 /* hover 浮出动作组（设计稿 .row-actions） */

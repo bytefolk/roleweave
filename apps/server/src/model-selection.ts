@@ -4,18 +4,20 @@ import { isEngineModelId, isModelId } from "@roleweave/shared";
 import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption, TurnEngine } from "@roleweave/shared";
 import { decodeStableUtf8, readStableBoundedFile } from "./stable-read.js";
 import { LocalProviderConfigError, resolveClaudeProviderConfig, resolveQoderProviderConfig } from "./local-provider-config.js";
+import { qoderModelCatalog } from "./qoder-model-catalog.js";
 
 const MAX_MODEL_CACHE_BYTES = 4 * 1024 * 1024;
 
 /** These are provider-supported aliases; Codex's concrete list comes from
  * its local account cache, never from a guessed public model availability. */
-export async function employeeModelConfig(engine: TurnEngine, selected?: string, editable = true, env: NodeJS.ProcessEnv = process.env): Promise<EmployeeModelConfig> {
+export async function employeeModelConfig(engine: TurnEngine, selected?: string, editable = true, env: NodeJS.ProcessEnv = process.env, catalogMode: "refresh" | "cached" = "refresh"): Promise<EmployeeModelConfig> {
   let source: EmployeeModelConfig["source"] = "provider-tiers";
   let options: EmployeeModelOption[] = [];
   let connection: EmployeeModelConnection | undefined;
   let followLocalDefault = false;
   let selectedDefault: string | undefined;
   let allowCustomModel = false;
+  let catalogStatus: EmployeeModelConfig["catalogStatus"];
   try {
   if (engine === "qoder") {
     options = [
@@ -23,10 +25,23 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       { id: "auto", name: "Auto · Qoder", tier: "auto" },
       { id: "performance", name: "Performance", tier: "balanced" },
       { id: "ultimate", name: "Ultimate", tier: "powerful" },
-    ].map((option) => ({ ...option, tier: option.tier as EmployeeModelOption["tier"], billing: "qoder" as const }));
+    ].map((option) => ({ ...option, tier: option.tier as EmployeeModelOption["tier"], billing: "qoder" as const, group: "tiers" as const }));
     if (editable) {
       const local = resolveQoderProviderConfig(env, { model: selected === "provider-default" ? undefined : selected });
-      options.push(...local.models.map((model) => ({ ...model, tier: model.tier ?? "default" })));
+      const catalog = await qoderModelCatalog.read(env, catalogMode);
+      catalogStatus = catalog.status;
+      if (catalog.options.length > 0) {
+        options = catalog.options;
+        source = "provider-catalog";
+      }
+      // Locally declared connection metadata stays authoritative for a matching
+      // selector; listing a CLI model must not change its provider or billing.
+      const localOptions = local.models.map((model): EmployeeModelOption => ({
+        ...model, tier: model.tier ?? "default",
+        group: model.billing === "provider" ? "custom" : options.find((entry) => entry.id === model.id
+          || (entry.group === "tiers" && entry.id.toLowerCase() === model.id.toLowerCase()))?.group ?? "custom",
+      }));
+      options = [...localOptions, ...options.filter((model) => !localOptions.some((localModel) => localModel.id === model.id))];
       connection = local.connection;
       selectedDefault = local.selectedDefault;
       allowCustomModel = true;
@@ -77,5 +92,5 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
   options.push({ id: "provider-default", name: "Agent default", tier: "default", ...(selectedDefault ? { resolvedModel: selectedDefault } : {}), ...(connection ? { billing: connection.billing } : {}) });
   if (selected && isEngineModelId(selected, engine) && !options.some((m) => m.id === selected)) options.push({ id: selected, name: selected, tier: "default", billing: "unknown" });
   if (recommended === "provider-default") options.sort((a, b) => Number(b.id === recommended) - Number(a.id === recommended));
-  return { selected: selected ?? (editable ? recommended : "provider-default"), recommended, options, source, editable, ...(connection ? { connection } : {}), ...(allowCustomModel ? { allowCustomModel } : {}) };
+  return { selected: selected ?? (editable ? recommended : "provider-default"), recommended, options, source, editable, ...(connection ? { connection } : {}), ...(allowCustomModel ? { allowCustomModel } : {}), ...(catalogStatus ? { catalogStatus } : {}) };
 }
