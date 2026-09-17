@@ -32,7 +32,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { Brain, ChartColumn, ClipboardCheck, Flag, FolderOpen, Network, PanelLeftClose, PanelLeftOpen, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
+import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderOpen, Network, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -1584,21 +1584,22 @@ function AppInner({
             { id: "settings", label: t("rail.settings"), icon: <Settings aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
           ]}
           footer={
-            /* 导轨宽窄开关住在导轨自己的底部槽位（VS Code 活动栏齿轮位 =
-               窗口左下角）：收拢态是和导航项同规格的图标槽，展开态长成
-               导航行；⌘B 同效。 */
+            /* 导轨宽窄开关：Pro Layout 式圆形浮 chip，骑在导轨与侧栏的缝上、
+               贴在导轨底部（左下角位置）；箭头 glyph 随状态旋转 180°。
+               ⌘B 同效。 */
             <button
               type="button"
-              className="owb-rail-foot"
+              className="owb-rail-chip"
               aria-label={railExpanded ? t("rail.collapse") : t("rail.expand")}
               title={railExpanded ? t("rail.collapse") : t("rail.expand")}
               aria-expanded={railExpanded}
               onClick={toggleRailExpanded}
             >
-              {railExpanded ? <PanelLeftClose aria-hidden="true" size={16} /> : <PanelLeftOpen aria-hidden="true" size={16} />}
-              <span className="owb-rail-foot__label" aria-hidden="true">
-                {railExpanded ? t("rail.collapse") : t("rail.expand")}
-              </span>
+              <ChevronsRight
+                aria-hidden="true"
+                size={12}
+                className={railExpanded ? "owb-rail-chip__glyph is-flipped" : "owb-rail-chip__glyph"}
+              />
             </button>
           }
         />
