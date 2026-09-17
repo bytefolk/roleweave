@@ -4,7 +4,7 @@ import { pickSelectOption, visibleSelectOptions } from "./select-helper";
 import { App } from "../src/App";
 import { HireDrawer } from "../src/org/HireDrawer";
 import type { OwbBridge } from "../src/owb";
-import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
+import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession, WorkspaceInfoResponse } from "@roleweave/shared";
 
 const activeSession: WorkbenchSession = {
   schemaVersion: "workbench-session.v1",
@@ -511,7 +511,41 @@ describe("App runtime bridge", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ }));
     expect(openWorkspace).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("dialog", { name: "选择工作区" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "选择工作区" })).not.toBeInTheDocument());
+  });
+
+  it("keeps the chooser visible while an existing workspace is opening and refreshes it after success", async () => {
+    let resolveOpen!: (value: unknown) => void;
+    const openWorkspace = vi.fn(() => new Promise((resolve) => { resolveOpen = resolve; }));
+    let workspace: WorkspaceInfoResponse = { open: false };
+    openedBridge({
+      openWorkspace,
+      workspace: vi.fn().mockImplementation(async () => ({ status: 200, body: workspace })),
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: snapshot }),
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "项目入口" }));
+    const dialog = screen.getByRole("dialog", { name: "选择工作区" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ }));
+    expect(screen.getByRole("dialog", { name: "选择工作区" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("status")).toHaveTextContent("正在打开项目");
+    expect(within(dialog).getByRole("button", { name: /打开项目/ })).toBeDisabled();
+
+    workspace = { open: true, path: "/fixture/next", business: "新项目" };
+    await act(async () => resolveOpen({ status: 200, body: workspace }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "选择工作区" })).not.toBeInTheDocument());
+    expect(await screen.findByText("项目「新项目」已打开")).toBeInTheDocument();
+  });
+
+  it("keeps the chooser open and explains why an existing workspace was rejected", async () => {
+    const openWorkspace = vi.fn().mockResolvedValue({ status: 422, body: { message: "workspace.json 缺失" } });
+    openedBridge({ openWorkspace });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "项目入口" }));
+    const dialog = screen.getByRole("dialog", { name: "选择工作区" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("workspace.json 缺失");
+    expect(screen.getByRole("dialog", { name: "选择工作区" })).toBeInTheDocument();
   });
 
   it("opens the selected employee's direct conversation with a fixed Agent identity and no duplicate session controls", async () => {

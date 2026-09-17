@@ -34,8 +34,8 @@ describe("ProjectWorkspaceDialog", () => {
     expect(screen.getByText("内容运营")).toBeInTheDocument();
     expect(screen.getByText("/tmp/content-ops")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /打开项目/ }));
-    expect(onClose).toHaveBeenCalledTimes(1);
     expect(onOpenWorkspace).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("generates a safe project id and submits the project contract", async () => {

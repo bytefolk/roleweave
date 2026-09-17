@@ -368,6 +368,11 @@ function AppInner({
   // open over another workspace's employee.
   useEffect(() => { setEditTargetId(undefined); setEditPosition(null); }, [workspaceInfo?.path]);
   const [projectHubOpen, setProjectHubOpen] = useState(false);
+  const [workspaceOpening, setWorkspaceOpening] = useState(false);
+  const [workspaceOpenError, setWorkspaceOpenError] = useState<string | null>(null);
+  useEffect(() => {
+    if (projectHubOpen) setWorkspaceOpenError(null);
+  }, [projectHubOpen]);
   /** Org-tree group entry (#53): prefilled draft members handed to the
    * GroupsPanel create panel; nonce re-fires repeated entries. */
   const groupWorkspaceScope = useMemo(() => Symbol("group-workspace"), [workspaceInfo?.path, workspaceInfo?.open]);
@@ -1238,9 +1243,40 @@ function AppInner({
   );
 
   const openWorkspace = useCallback(async () => {
-    await window.owb.openWorkspace();
-    await refresh();
-  }, [refresh]);
+    if (workspaceOpening) return;
+    setWorkspaceOpening(true);
+    setWorkspaceOpenError(null);
+    try {
+      const response = await window.owb.openWorkspace();
+      if ("canceled" in response && response.canceled === true) {
+        setProjectHubOpen(false);
+        // A native picker cancel does not change the workspace, but keeping
+        // the existing refresh preserves the same read-after-picker contract
+        // used by workspace switches and catches an external change made
+        // while the picker was open.
+        await refresh();
+        return;
+      }
+      if (response.status !== 200) {
+        setWorkspaceOpenError(apiErrorMessage(response.body, t("project.openFailed")));
+        return;
+      }
+      const opened = response.body as WorkspaceInfoResponse | null;
+      if (opened?.open === true) setWorkspaceInfo(opened);
+      setTreeLoading(true);
+      await refresh();
+      setProjectHubOpen(false);
+      setActiveModule("org");
+      setOrgFeedback({
+        tone: "info",
+        text: t("project.opened", { name: opened?.business ?? opened?.path ?? t("project.localOnly") }),
+      });
+    } catch {
+      setWorkspaceOpenError(t("project.openOffline"));
+    } finally {
+      setWorkspaceOpening(false);
+    }
+  }, [refresh, setActiveModule, t, workspaceOpening]);
 
   const onProjectCreated = useCallback(async (created: WorkspaceCreateResponse) => {
     setActiveModule("org");
@@ -1827,6 +1863,8 @@ function AppInner({
             positionCount={snapshot?.positionCount ?? null}
             engineAvailability={engineAvailability}
             disabled={orgBusy}
+            opening={workspaceOpening}
+            openError={workspaceOpenError}
             onClose={() => setProjectHubOpen(false)}
             onOpenWorkspace={() => void openWorkspace()}
             onCreated={(created) => void onProjectCreated(created)}

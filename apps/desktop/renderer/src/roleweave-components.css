@@ -448,6 +448,31 @@
   color: var(--ui-foreground-muted);
   font: 400 13px/1.55 var(--ui-font-sans);
 }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__status,
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -6px 0 0;
+  padding: 9px 10px;
+  border-radius: 6px;
+  font: 400 12px/1.45 var(--ui-font-sans);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__status {
+  border: 1px solid color-mix(in srgb, var(--ui-primary) 38%, var(--ui-border));
+  background: color-mix(in srgb, var(--ui-primary) 8%, var(--ui-surface));
+  color: var(--ui-primary);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__status svg { animation: owb-project-dialog-spin 900ms linear infinite; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__error {
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 45%, var(--ui-border));
+  background: color-mix(in srgb, var(--ui-danger) 7%, var(--ui-surface));
+  color: var(--ui-danger);
+}
+@keyframes owb-project-dialog-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  :is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__status svg { animation: none; }
+}
 :is([data-theme="light"], [data-theme="dark"]) .owb-project-current-workspace {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
