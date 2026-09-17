@@ -120,6 +120,57 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByLabelText("下达任务")).toBeEnabled();
   });
 
+  it("#305 forwards the restart handler to the composer options bar and stays optional", async () => {
+    const rotate = vi.fn();
+    const active = {
+      schemaVersion: "workbench-session.v1" as const,
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      positionId: "repo-owner",
+      workspaceInstanceId: "workspace-1",
+      principal: "position.repo-owner",
+      status: "active" as const,
+      rotatedFrom: null,
+      rotatedTo: null,
+      createdAt: "2026-09-08T00:00:00Z",
+      rotatedAt: null,
+    };
+    const { rerender } = render(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[]}
+        sessions={[active]}
+        selectedSessionId={active.sessionId}
+        onRotateSession={rotate}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    // antd inserts a space between the two CJK characters of a button label.
+    fireEvent.click(await screen.findByRole("button", { name: /开\s*始$/ }));
+    await waitFor(() => expect(rotate).toHaveBeenCalledWith(active.sessionId));
+
+    // Without the handler the options bar renders without the restart control.
+    rerender(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineAvailability={availability}
+        turns={[]}
+        sessions={[active]}
+        selectedSessionId={active.sessionId}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "新对话" })).not.toBeInTheDocument();
+  });
+
   it("sends directly to the employee selected in the organization tree", async () => {
     const createTurn = vi.fn();
     render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="release-manager" engine="claude-local"

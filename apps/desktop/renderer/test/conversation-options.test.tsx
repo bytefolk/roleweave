@@ -165,3 +165,40 @@ it("submits only a valid Qoder custom model identifier and never asks for a key"
   fireEvent.click(screen.getByRole("button", { name: "使用此模型" }));
   expect(change).toHaveBeenCalledWith("custom/研发 小模型 (BYOK)");
 });
+
+it("#305 restarts the conversation from the composer bar only for the active session", async () => {
+  const rotate = vi.fn();
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const session = (status: "active" | "rotated"): WorkbenchSession => ({
+    schemaVersion: "workbench-session.v1",
+    sessionId,
+    workspaceInstanceId: "workspace-1",
+    positionId: "repo-owner",
+    principal: "position.repo-owner",
+    status,
+    rotatedFrom: null,
+    rotatedTo: null,
+    createdAt: "2026-09-13T00:00:00Z",
+    rotatedAt: null,
+  });
+  const { rerender } = render(<ConversationOptions saving={false} disabled={false} session={session("active")} turns={[]} onRotate={rotate} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+  // antd inserts a space between the two CJK characters of a button label.
+  fireEvent.click(await screen.findByRole("button", { name: /开\s*始$/ }));
+  expect(rotate).toHaveBeenCalledTimes(1);
+  expect(rotate).toHaveBeenCalledWith(sessionId);
+
+  // A rotated (read-only) session cannot be rotated again.
+  rerender(<ConversationOptions saving={false} disabled={false} session={session("rotated")} turns={[]} onRotate={rotate} />);
+  expect(screen.getByRole("button", { name: "新对话" })).toBeDisabled();
+
+  // Busy conversation states reuse the shared disabled contract.
+  rerender(<ConversationOptions saving={false} disabled session={session("active")} turns={[]} onRotate={rotate} />);
+  expect(screen.getByRole("button", { name: "新对话" })).toBeDisabled();
+
+  // Callers without a restart handler keep the old options bar exactly as it was.
+  rerender(<ConversationOptions saving={false} disabled={false} session={session("active")} turns={[]} />);
+  expect(screen.queryByRole("button", { name: "新对话" })).not.toBeInTheDocument();
+  expect(rotate).toHaveBeenCalledTimes(1);
+});

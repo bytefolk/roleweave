@@ -68,6 +68,10 @@ export interface TurnPanelProps {
    * cards settle into a decided state (no duplicate verdicts). */
   decidedApprovalIds?: ReadonlySet<string>;
   onSetSessionContext?: (sessionId: string, enabled: boolean) => void | Promise<void>;
+  /** #305 Operator restart: rotate the attached active session into history
+   * and continue on its successor. Optional; callers without it simply get a
+   * conversation without the restart control. */
+  onRotateSession?: (sessionId: string) => void | Promise<void>;
 }
 
 export function TurnPanel({
@@ -107,6 +111,7 @@ export function TurnPanel({
   onCancelTurn,
   onVerdictTurn,
   decidedApprovalIds,
+  onRotateSession,
 }: TurnPanelProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
@@ -280,6 +285,7 @@ export function TurnPanel({
           config={modelConfig} saving={modelSaving} disabled={runningTurn || busy || employeeBusy || sending || sessionBusy}
           loading={modelLoading} error={modelError} notice={modelNotice} onReload={onReloadModel} running={runningTurn || employeeBusy}
           session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
+          onRotate={onRotateSession}
         /> : undefined}
         value={input}
         placeholder={selectedPosition ? t("turn.composeTo", { name: selectedPosition.name }) : t("turn.composePlaceholder")}

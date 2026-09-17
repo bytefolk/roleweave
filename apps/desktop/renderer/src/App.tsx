@@ -851,6 +851,33 @@ function AppInner({
     }
   }, [t]);
 
+  /** #305 Restart the conversation: rotate the attached active session into
+   * history and attach its successor. The old thread stays readable in the
+   * session-history popover; a failure keeps the current session selected. */
+  const rotateActiveSession = useCallback(async (sessionId: string) => {
+    const positionId = selectedIdRef.current;
+    if (positionId === null) return;
+    const version = selectionVersion.current;
+    const operation = Symbol();
+    sessionOperations.current.set(positionId, operation);
+    setSessionBusyPositions((current) => ({ ...current, [positionId]: true }));
+    try {
+      const res = await window.owb.rotateSession(sessionId);
+      if (version !== selectionVersion.current || selectedIdRef.current !== positionId) return;
+      if (res.status !== 200 && res.status !== 201) { setTurnError(apiErrorMessage(res.body, t("turn.rotateFail"))); return; }
+      const session = res.body as WorkbenchSession;
+      selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = session.sessionId;
+      selectedSessionIdRef.current = session.sessionId;
+      setSelectedSessionId(session.sessionId);
+      await loadSessions(positionId);
+      setTurnError(null);
+    } catch {
+      if (version === selectionVersion.current && selectedIdRef.current === positionId) setTurnError(t("turn.rotateFailOffline"));
+    } finally {
+      if (sessionOperations.current.get(positionId) === operation) setSessionBusyPositions((current) => ({ ...current, [positionId]: false }));
+    }
+  }, [loadSessions, t]);
+
   const changeEmployeeModel = useCallback(async (model: string) => {
     const id = selectedIdRef.current;
     const workspace = workspacePathRef.current;
@@ -1759,6 +1786,7 @@ function AppInner({
             onSelectModel={changeEmployeeModel}
             onSelectEngine={changeEmployeeAgentEngine}
             onSetSessionContext={setSessionContext}
+            onRotateSession={rotateActiveSession}
             positions={positions}
             selectedPositionId={selectedId}
             engine={selectedId === null ? defaultTurnEngine : engineForPosition(selectedId)}
