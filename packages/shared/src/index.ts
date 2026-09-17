@@ -25,3 +25,4 @@ export * from "./goals.js";
 export * from "./avatar.js";
 
 export * from "./services.js";
+export * from "./attachments.js";

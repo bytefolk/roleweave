@@ -24,6 +24,38 @@ import { assertPositionId, compareRfc3339Instants, compareCodeUnitOrdinal } from
 import { compactThreadContextHistory, materializeThreadContext, type SupplementalContext, type ThreadContextSource } from "../turns/thread-context.js";
 import { readPositionAgentBinding, resolvePositionAgentEngine } from "../agent-binding.js";
 import { employeeModelConfig } from "../model-selection.js";
+import { readAttachmentMetas, attachmentFilePath } from "../attachments/store.js";
+import { assertAttachmentId } from "../attachments/validate.js";
+import type { TurnAttachment } from "@roleweave/shared";
+import { ATTACHMENT_MAX_COUNT } from "@roleweave/shared";
+
+/**
+ * Build the engine-visible attachment context block (Decision A2). Extracted
+ * PDF text is inlined with page anchors; images are referenced by file path
+ * for engines with vision capabilities.
+ */
+function buildAttachmentContext(
+  attachments: TurnAttachment[],
+  workspace: string,
+  sessionId: string,
+  userInput: string,
+): string {
+  const lines: string[] = ["[Attached files]"];
+  for (let i = 0; i < attachments.length; i++) {
+    const att = attachments[i]!;
+    if (att.mimeType === "application/pdf" && att.extractedText) {
+      lines.push(`- File ${i + 1}: ${att.fileName} (${att.extractedText.pages.length} pages)`);
+      for (const page of att.extractedText.pages) {
+        lines.push(`  Page ${page.pageNumber}: ${page.text}`);
+      }
+    } else {
+      const filePath = attachmentFilePath(workspace, sessionId, att.id);
+      lines.push(`- File ${i + 1}: ${att.fileName} (${att.mimeType}, path: ${filePath})`);
+    }
+  }
+  lines.push("", "[User message]", userInput);
+  return lines.join("\n");
+}
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -40,6 +72,8 @@ export interface TurnPostBody {
   /** Additive #222: optional goal binding. */
   goalId?: string;
   branchId?: string;
+  /** Additive #306: optional attachment ids to include in this turn. */
+  attachmentIds?: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,12 +97,12 @@ function parsePostBody(raw: unknown): TurnPostBody {
   if (!isRecord(raw)) {
     throw new OrgApiError(errorCodes.turn_request_invalid, 400, "turn request must be a JSON object");
   }
-  const allowedKeys = new Set(["positionId", "input", "engine", "pendingApproval", "goalId", "branchId"]);
+  const allowedKeys = new Set(["positionId", "input", "engine", "pendingApproval", "goalId", "branchId", "retryOf", "attachmentIds"]);
   if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
     throw new OrgApiError(
       errorCodes.turn_request_invalid,
       400,
-      "turn request accepts positionId, input, engine, and optional pendingApproval, goalId, branchId",
+      "turn request accepts positionId, input, engine, and optional pendingApproval, goalId, branchId, retryOf, attachmentIds",
     );
   }
   const positionId = assertPositionId(raw.positionId);
@@ -97,6 +131,13 @@ function parsePostBody(raw: unknown): TurnPostBody {
   if (raw.branchId !== undefined && (typeof raw.branchId !== "string" || !GOAL_ID_PATTERN.test(raw.branchId))) {
     throw new OrgApiError(errorCodes.turn_request_invalid, 400, "branchId must be a bounded alphanumeric string");
   }
+  let attachmentIds: string[] | undefined;
+  if (raw.attachmentIds !== undefined) {
+    if (!Array.isArray(raw.attachmentIds) || raw.attachmentIds.length === 0 || raw.attachmentIds.length > ATTACHMENT_MAX_COUNT) {
+      throw new OrgApiError(errorCodes.turn_request_invalid, 400, `attachmentIds must be 1–${ATTACHMENT_MAX_COUNT} entries`);
+    }
+    attachmentIds = raw.attachmentIds.map((id) => assertAttachmentId(id));
+  }
   return {
     positionId,
     input: raw.input,
@@ -106,6 +147,8 @@ function parsePostBody(raw: unknown): TurnPostBody {
       : {}),
     ...(raw.goalId !== undefined ? { goalId: raw.goalId } : {}),
     ...(raw.branchId !== undefined ? { branchId: raw.branchId } : {}),
+    ...(raw.retryOf !== undefined && typeof raw.retryOf === "string" ? { retryOf: raw.retryOf } : {}),
+    ...(attachmentIds !== undefined ? { attachmentIds } : {}),
   };
 }
 
@@ -304,8 +347,18 @@ export async function executeTurn(
       history.push(...[...memberSources.values()].flat());
       history.sort(compare);
     }
+    // Additive #306: resolve attachment manifests and build engine context.
+    let resolvedAttachments: TurnAttachment[] | undefined;
+    let augmentedInput = body.input;
+    if (body.attachmentIds !== undefined && session !== undefined) {
+      resolvedAttachments = await readAttachmentMetas(workspace.dir, session.sessionId, body.attachmentIds);
+      if (resolvedAttachments.length === 0) {
+        throw new OrgApiError(errorCodes.attachment_missing, 400, "one or more attachment ids were not found in this session");
+      }
+      augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, body.input);
+    }
     const context = materializeThreadContext({
-      input: body.input,
+      input: augmentedInput,
       enabled: group !== undefined || (session !== undefined && session.threadContextEnabled !== false),
       turns: history,
       omittedTurnCount,
@@ -339,6 +392,7 @@ export async function executeTurn(
       // dual-write during the #63 clearing window so rollback never loses links.
       ...(group !== undefined ? { groupRef: group.groupRef } : {}),
       ...(conversationRef !== undefined ? { conversationRef } : {}),
+      ...(resolvedAttachments !== undefined ? { attachments: resolvedAttachments } : {}),
     };
     const running = session === undefined
       ? await ctx.turnStore.begin(beginInput)

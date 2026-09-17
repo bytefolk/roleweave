@@ -660,6 +660,16 @@ ipcMain.handle("owb:session:turn:history", async (_event, sessionId) => {
   return apiRequest(`/sessions/${sessionId}/turns`);
 });
 
+ipcMain.handle("owb:attachment:upload", async (_event, request) => {
+  if (request === null || typeof request !== "object" || Array.isArray(request)) {
+    return { status: 400, body: { code: "attachment_request_invalid", message: "upload must be an object", retryable: false } };
+  }
+  if (!validateSessionId(request.sessionId)) {
+    return { status: 400, body: { code: "session_request_invalid", message: "sessionId is invalid", retryable: false } };
+  }
+  return apiRequest("/attachments/upload", { method: "POST", body: request });
+});
+
 // Additive #52: S2 group-chat surface (DS-34-001 rev-1 §1.2).
 ipcMain.handle("owb:group:create", async (_event, request) => {
   const validated = validateGroupCreateRequest(request);

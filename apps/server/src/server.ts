@@ -44,6 +44,7 @@ import {
   handleSessionTurnPost,
 } from "./routes/sessions.js";
 import { handleTurnCancel, handleTurnHistory, handleTurnPost } from "./routes/turns.js";
+import { handleAttachmentRead, handleAttachmentUpload } from "./attachments/routes.js";
 import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceInitialize, handleWorkspaceOpen } from "./routes/workspace.js";
 
 /**
@@ -240,6 +241,14 @@ async function dispatch(
     }
     if (pathname === routes.turns && method === "GET") {
       await handleTurnHistory(ctx, res, url);
+      return;
+    }
+    if (pathname === routes.attachmentsUpload && method === "POST") {
+      await handleAttachmentUpload(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.attachmentsRead && method === "GET") {
+      await handleAttachmentRead(ctx, res, url);
       return;
     }
     if (pathname === routes.docsList && method === "GET") {

@@ -1,4 +1,5 @@
-import type { EmployeeModelConnection, TurnRecord as ApiTurnRecord } from "@roleweave/shared";
+import type { EmployeeModelConnection, TurnRecord as ApiTurnRecord, TurnAttachment } from "@roleweave/shared";
+export type { TurnAttachment } from "@roleweave/shared";
 export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "gemini";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
@@ -91,6 +92,8 @@ export interface TurnRecord {
   };
   /** Safe, high-level execution milestones derived from server-owned events. */
   progress?: TurnProgressStep[];
+  /** Additive #306: attachment manifest for this turn. */
+  attachments?: TurnAttachment[];
 }
 
 export interface CreateTurnRequest {
@@ -101,4 +104,16 @@ export interface CreateTurnRequest {
   retryOf?: string;
   /** Operator verdict for a resume turn (#187 Option 1 terminal-and-resume). */
   pendingApproval?: TurnPendingApprovalInput;
+  /** Additive #306: server-side attachment ids to include. */
+  attachmentIds?: string[];
+}
+
+export interface PendingAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: "pending" | "uploading" | "ready" | "error";
+  serverId?: string;
+  error?: string;
 }

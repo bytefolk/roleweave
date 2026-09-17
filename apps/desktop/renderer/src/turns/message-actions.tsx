@@ -3,6 +3,7 @@ import { Dropdown } from "antd";
 import { Copy, Pencil, ChevronDown } from "lucide-react";
 import { useConversationCopy } from "../locales/conversation";
 import type { TurnRecord } from "./types";
+import { SavedAttachmentCard } from "./AttachmentCard";
 export function MessageActions({ raw, plain, onEdit }: { raw: string; plain?: string; onEdit?: (text: string) => void }) {
   const copy = useConversationCopy();
   const [status, setStatus] = useState("");
@@ -36,6 +37,11 @@ export function OperatorMessage({ turn, onEdit }: { turn: TurnRecord; onEdit?: (
   }, [turn.input]);
   return <>
     <p ref={ref} className={`owb-bubble__text${!expanded ? " owb-message-collapsible" : ""}`} title={turn.input}>{turn.input}</p>
+    {turn.attachments && turn.attachments.length > 0 ? (
+      <div className="owb-attachment-strip owb-attachment-strip--saved">
+        {turn.attachments.map((att) => <SavedAttachmentCard key={att.id} attachment={att} />)}
+      </div>
+    ) : null}
     {long ? <button className="owb-message-expand" type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? copy.collapse : copy.expand}</button> : null}
     <div className="owb-message-meta"><time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleTimeString()}</time><MessageActions raw={turn.input} onEdit={onEdit} /></div>
   </>;
