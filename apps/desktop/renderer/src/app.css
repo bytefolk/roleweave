@@ -3422,6 +3422,7 @@
 .owb-hire-mcp__tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 4px; }
 .owb-hire-mcp__tools button { border: 1px solid var(--ui-border); border-radius: 999px; background: transparent; color: var(--ui-foreground-muted); padding: 3px 7px; font: 9px var(--ui-font-mono, monospace); cursor: pointer; }
 .owb-hire-mcp__tools button.is-selected { border-color: color-mix(in srgb, var(--ui-success) 58%, var(--ui-border)); background: color-mix(in srgb, var(--ui-success) 15%, transparent); color: var(--ui-success); }
+.owb-hire-mcp-unsupported { margin: 0; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--ui-warning, #d97706) 45%, var(--ui-border)); border-radius: 8px; background: color-mix(in srgb, var(--ui-warning, #d97706) 12%, var(--ui-surface)); color: var(--ui-foreground); font-size: 11px; line-height: 1.45; }
 .owb-hire-capability-note { margin: 0; color: var(--ui-foreground-muted); font-size: 10px; line-height: 1.4; }
 .owb-tag--mcp { border-color: color-mix(in srgb, var(--ui-info, var(--ui-primary)) 46%, var(--ui-border)); color: var(--ui-info, var(--ui-primary)); }
 

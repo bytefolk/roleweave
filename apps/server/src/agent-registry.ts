@@ -90,8 +90,6 @@ interface HostDefinition {
   readonly capabilities: readonly string[];
 }
 
-const HOST_ORDER = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"] as const satisfies readonly AgentHostId[];
-
 /**
  * Capabilities describe the control-plane contract, not provider account
  * state. No executable path, token, or raw CLI output is ever part of this
@@ -124,6 +122,10 @@ const HOST_DEFINITIONS: Readonly<Record<AgentHostId, HostDefinition>> = {
   },
 };
 
+/** Derived from HOST_DEFINITIONS so adding an AgentHostId is a compile error
+ * until the catalog entry exists; a handwritten subset would stay legal. */
+const HOST_ORDER = Object.keys(HOST_DEFINITIONS) as AgentHostId[];
+
 const LOCAL_PROBE_FAILURES = new Set<AgentHostLocalProbeStatus>([
   "timed_out",
   "unsupported_version",
@@ -135,7 +137,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isKnownHostId(value: unknown): value is AgentHostId {
-  return typeof value === "string" && (HOST_ORDER as readonly string[]).includes(value);
+  return typeof value === "string" && value in HOST_DEFINITIONS;
 }
 
 function isBoolean(value: unknown): value is boolean {

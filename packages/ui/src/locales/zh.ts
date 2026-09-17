@@ -544,6 +544,7 @@ export const zhCatalog: Record<string, string> = {
   "hire.mcpBound": "已绑定",
   "hire.mcpAvailable": "可选",
   "hire.mcpToolsAria": "MCP 工具权限",
+  "hire.mcpUnsupportedHint": "当前全部内置引擎都会在第一回合拒绝员工级 MCP 绑定（qoder.mcp_binding_unsupported）。绑定可以保存，但该员工的首次任务会立刻失败，直到引擎支持 MCP。",
   "hire.capabilityPermissionHint": "能力绑定和资源权限分开控制；MCP 工具可以逐个关闭。",
   "hire.actionRead": "查",
   "hire.actionCreate": "新建",

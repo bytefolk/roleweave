@@ -541,6 +541,7 @@ export const enCatalog: Record<string, string> = {
   "hire.mcpBound": "Bound",
   "hire.mcpAvailable": "Available",
   "hire.mcpToolsAria": "MCP tool permissions",
+  "hire.mcpUnsupportedHint": "Every bundled engine currently rejects employee-level MCP bindings on the first turn (qoder.mcp_binding_unsupported). The grant can be saved, but the employee's first task will fail immediately until an engine supports MCP.",
   "hire.capabilityPermissionHint": "Capability binding and resource access are separate; MCP tools can be turned off individually.",
   "hire.actionRead": "Read",
   "hire.actionCreate": "Create",

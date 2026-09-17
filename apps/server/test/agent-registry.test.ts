@@ -30,6 +30,14 @@ function health(overrides: Record<string, unknown> = {}) {
   };
 }
 
+test("Host order is derived from the exhaustive catalog, not a handwritten subset", () => {
+  const hosts = listRegisteredAgentHosts(health());
+  assert.deepEqual(
+    hosts.map((host) => host.id).sort(),
+    ["claude-code", "claude-local", "codex", "codex-local", "qoder", "workbuddy"],
+  );
+});
+
 test("registers every contracted Host from a health snapshot", () => {
   const hosts = listRegisteredAgentHosts(health());
 
