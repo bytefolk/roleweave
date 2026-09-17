@@ -55,6 +55,8 @@
 
 ### Changed
 
+- #316：导轨收拢按钮默认上移到内容区，并支持鼠标/触控上下拖动与方向键微调位置；收拢与展开 morph 调整为 160ms 的快速 ease-out，保持导轨宽度、菜单槽位、文字淡入淡出和箭头旋转同步完成。
+
 - #275：新增 WorkBuddy（CodeBuddy Code CLI）服务凭据 Host，需要 `CODEBUDDY_API_KEY` 和显式 `CODEBUDDY_MODEL`；仅接受已审计的 2.106.4 / 2.137.1 工具清单。回合隔离本地配置并校验实际空工具/MCP 初始化，修复持久化 WorkBuddy 员工绑定在 renderer 被回退到其他 Host 的问题，补充 IPC、历史回读、打包清单与子进程验收。新增本地模拟 provider 验证脚本；真实 provider 与原生打包验收仍待完成，原生 Windows 当前保持 not-ready。
 
 ## [0.2.0] — 2026-09-15

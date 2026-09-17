@@ -229,6 +229,34 @@ async function chooseExistingWorkspace(): Promise<void> {
   });
 }
 
+describe("rail collapse control", () => {
+  it("starts above the bottom edge and supports vertical drag without toggling", async () => {
+    window.localStorage.removeItem("owb.railExpanded");
+    window.localStorage.removeItem("owb.railChipBottom");
+    openedBridge();
+    render(<App />);
+
+    const toggle = await screen.findByRole("button", { name: "展开导航" });
+    expect(toggle).toHaveAttribute("data-rail-chip-bottom", "72");
+    fireEvent(toggle, new MouseEvent("pointerdown", { bubbles: true, button: 0, clientY: 500 }));
+    expect(toggle).toHaveClass("is-dragging");
+    fireEvent(toggle, new MouseEvent("pointermove", { bubbles: true, clientY: 420 }));
+    fireEvent(toggle, new MouseEvent("pointerup", { bubbles: true, clientY: 420 }));
+    expect(toggle).toHaveAttribute("data-rail-chip-bottom", "152");
+    expect(window.localStorage.getItem("owb.railChipBottom")).toBe("152");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(toggle, { key: "ArrowDown" });
+    expect(toggle).toHaveAttribute("data-rail-chip-bottom", "136");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    window.localStorage.removeItem("owb.railExpanded");
+    window.localStorage.removeItem("owb.railChipBottom");
+  });
+});
+
 describe("App removed-employee recovery", () => {
   const oldEmployee = {
     backupId: "old-writer-1756000000000-abcdef",

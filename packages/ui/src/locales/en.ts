@@ -939,6 +939,7 @@ export const enCatalog: Record<string, string> = {
   // 2026-09-17 design review: rail expand/collapse toggle names
   "rail.expand": "Expand navigation",
   "rail.collapse": "Collapse navigation",
+  "rail.reposition": "Drag up or down to reposition",
   "settings.title": "Settings",
   "settings.moduleAria": "Settings",
   "settings.runtimeTitle": "Project and Agent environment",

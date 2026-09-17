@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Alert, Badge, Button as AntButton, ConfigProvider, message } from "antd";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
@@ -146,9 +146,16 @@ function AppInner({
     else requestSettingsLeave(() => setActiveModuleRaw(next));
   }, []);
   /** 2026-09-17 设计评审：导轨默认收拢只出图标（hover 浮名字），展开后
-   * icon+名字；展开/收拢手柄骑在导轨与侧栏边界上（竖居中胶囊）。
-   * 选择写 localStorage，下次启动照旧。 */
+   * icon+名字；展开/收拢手柄骑在导轨与侧栏边界上。手柄默认离底部 72px，
+   * 可拖拽上下调整，位置写 localStorage，下次启动照旧。 */
   const [railExpanded, setRailExpanded] = useState<boolean>(() => seedRailExpanded());
+  const [railChipBottom, setRailChipBottom] = useState<number>(() => seedRailChipBottom());
+  const railChipBottomRef = useRef(railChipBottom);
+  railChipBottomRef.current = railChipBottom;
+  const railChipDrag = useRef<RailChipDrag | null>(null);
+  const railChipMoved = useRef(false);
+  const [railChipDragging, setRailChipDragging] = useState(false);
+
   const toggleRailExpanded = useCallback(() => {
     setRailExpanded((current) => {
       const next = !current;
@@ -156,6 +163,91 @@ function AppInner({
       return next;
     });
   }, []);
+
+  const updateRailChipBottom = useCallback((next: number) => {
+    railChipBottomRef.current = next;
+    setRailChipBottom(next);
+  }, []);
+
+  const railChipBounds = useCallback((target: HTMLElement): RailChipBounds => {
+    const rail = target.closest<HTMLElement>(".ui-module-rail");
+    const railHeight = rail?.getBoundingClientRect().height || window.innerHeight || 720;
+    return {
+      min: RAIL_CHIP_MIN_BOTTOM,
+      max: Math.max(RAIL_CHIP_MIN_BOTTOM, railHeight - RAIL_CHIP_EDGE_GUTTER - RAIL_CHIP_SIZE),
+    };
+  }, []);
+
+  const onRailChipPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button > 0) return;
+    const bounds = railChipBounds(event.currentTarget);
+    const startBottom = clampRailChipBottom(railChipBottomRef.current, bounds);
+    railChipDrag.current = { pointerId: event.pointerId, startY: event.clientY, startBottom, bounds };
+    railChipMoved.current = false;
+    setRailChipDragging(true);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // jsdom and older WebViews may not implement pointer capture.
+    }
+  }, [railChipBounds]);
+
+  const onRailChipPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = railChipDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const currentY = Number.isFinite(event.clientY) ? event.clientY : drag.startY;
+    const delta = drag.startY - currentY;
+    if (Math.abs(delta) > RAIL_CHIP_DRAG_THRESHOLD) {
+      railChipMoved.current = true;
+      event.preventDefault();
+    }
+    updateRailChipBottom(clampRailChipBottom(drag.startBottom + delta, drag.bounds));
+  }, [updateRailChipBottom]);
+
+  const onRailChipPointerUp = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = railChipDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    persistRailChipBottom(railChipBottomRef.current);
+    railChipDrag.current = null;
+    setRailChipDragging(false);
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // jsdom and older WebViews may not implement pointer capture.
+    }
+  }, []);
+
+  const onRailChipPointerCancel = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = railChipDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    railChipDrag.current = null;
+    railChipMoved.current = false;
+    setRailChipDragging(false);
+  }, []);
+
+  const onRailChipKeyDown = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!(event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Home" || event.key === "End")) return;
+    event.preventDefault();
+    const bounds = railChipBounds(event.currentTarget);
+    const next = event.key === "Home"
+      ? bounds.max
+      : event.key === "End"
+        ? bounds.min
+        : railChipBottomRef.current + (event.key === "ArrowUp" ? RAIL_CHIP_KEYBOARD_STEP : -RAIL_CHIP_KEYBOARD_STEP);
+    const clamped = clampRailChipBottom(next, bounds);
+    updateRailChipBottom(clamped);
+    persistRailChipBottom(clamped);
+  }, [railChipBounds, updateRailChipBottom]);
+
+  const onRailChipClick = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (railChipMoved.current) {
+      event.preventDefault();
+      railChipMoved.current = false;
+      return;
+    }
+    toggleRailExpanded();
+  }, [toggleRailExpanded]);
+
   /** ⌘B / Ctrl+B 直接切导轨宽窄；输入框里不抢键。 */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1589,11 +1681,19 @@ function AppInner({
                ⌘B 同效。 */
             <button
               type="button"
-              className="owb-rail-chip"
+              className={`owb-rail-chip${railChipDragging ? " is-dragging" : ""}`}
               aria-label={railExpanded ? t("rail.collapse") : t("rail.expand")}
-              title={railExpanded ? t("rail.collapse") : t("rail.expand")}
+              title={`${railExpanded ? t("rail.collapse") : t("rail.expand")} · ${t("rail.reposition")}`}
               aria-expanded={railExpanded}
-              onClick={toggleRailExpanded}
+              aria-keyshortcuts="ArrowUp ArrowDown Home End"
+              data-rail-chip-bottom={railChipBottom}
+              style={{ "--owb-rail-chip-bottom": `${railChipBottom}px` } as CSSProperties}
+              onClick={onRailChipClick}
+              onKeyDown={onRailChipKeyDown}
+              onPointerDown={onRailChipPointerDown}
+              onPointerMove={onRailChipPointerMove}
+              onPointerUp={onRailChipPointerUp}
+              onPointerCancel={onRailChipPointerCancel}
             >
               <ChevronsRight
                 aria-hidden="true"
@@ -1995,6 +2095,29 @@ function isTurnEngine(value: unknown): value is TurnEngine {
 
 /** 导轨展开态持久化：写不了（隐私窗口/被禁）就只保留本次启动的内存选择。 */
 const RAIL_EXPANDED_STORAGE_KEY = "owb.railExpanded";
+const RAIL_CHIP_BOTTOM_STORAGE_KEY = "owb.railChipBottom";
+const RAIL_CHIP_DEFAULT_BOTTOM = 72;
+const RAIL_CHIP_MIN_BOTTOM = 12;
+const RAIL_CHIP_EDGE_GUTTER = 12;
+const RAIL_CHIP_SIZE = 24;
+const RAIL_CHIP_DRAG_THRESHOLD = 4;
+const RAIL_CHIP_KEYBOARD_STEP = 16;
+
+interface RailChipBounds {
+  min: number;
+  max: number;
+}
+
+interface RailChipDrag {
+  pointerId: number;
+  startY: number;
+  startBottom: number;
+  bounds: RailChipBounds;
+}
+
+function clampRailChipBottom(value: number, bounds: RailChipBounds): number {
+  return Math.round(Math.min(bounds.max, Math.max(bounds.min, value)));
+}
 
 function seedRailExpanded(): boolean {
   try {
@@ -2009,6 +2132,24 @@ function persistRailExpanded(expanded: boolean): void {
     window.localStorage.setItem(RAIL_EXPANDED_STORAGE_KEY, expanded ? "1" : "0");
   } catch {
     // 存储不可用时静默降级为会话内记忆。
+  }
+}
+
+function seedRailChipBottom(): number {
+  try {
+    const raw = Number.parseFloat(window.localStorage.getItem(RAIL_CHIP_BOTTOM_STORAGE_KEY) ?? "");
+    if (Number.isFinite(raw)) return Math.max(RAIL_CHIP_MIN_BOTTOM, Math.min(720, Math.round(raw)));
+  } catch {
+    // 存储不可用时静默降级为本次会话的默认位置。
+  }
+  return RAIL_CHIP_DEFAULT_BOTTOM;
+}
+
+function persistRailChipBottom(bottom: number): void {
+  try {
+    window.localStorage.setItem(RAIL_CHIP_BOTTOM_STORAGE_KEY, String(Math.round(bottom)));
+  } catch {
+    // 存储不可用时静默降级为会话内位置。
   }
 }
 

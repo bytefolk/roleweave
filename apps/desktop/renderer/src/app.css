@@ -3422,10 +3422,11 @@ body,
   --ui-sidebar-width: 300px;
   --ui-topbar-height: 48px;
   /* 导轨宽窄切换的总时长：导轨宽度、条目 padding、chip 箭头旋转共用
-     同一条曲线（Pro Layout sider 0.2s 的口径），整组动作一起走完。
+     同一条曲线，160ms 内完成，避免收拢时拖沓。
      grid 轨道列改 auto 跟导轨自身宽度——grid-template 带命名区域是
      discrete 的，过渡挂在 width 上才插值。 */
-  --owb-rail-duration: 200ms;
+  --owb-rail-duration: 160ms;
+  --owb-rail-ease: cubic-bezier(0.22, 1, 0.36, 1);
   min-height: 0;
   height: 100%;
   grid-template-columns: auto var(--ui-sidebar-width) minmax(0, 1fr);
@@ -3669,8 +3670,8 @@ body,
   padding: 10px 0;
   background: var(--ui-canvas-subtle);
   transition:
-    width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
-    padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease);
+    width var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+    padding var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out);
 }
 
 .owb-app .ui-module-rail__brand {
@@ -3695,9 +3696,9 @@ body,
   background: transparent;
   box-shadow: none;
   transition:
-    width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
-    padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
-    margin var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
+    width var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+    padding var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+    margin var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
     color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
     background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
@@ -3835,13 +3836,13 @@ body,
 }
 
 /* 导轨宽窄开关：Pro Layout 式圆形浮 chip——24px 圆片骑在导轨与侧栏的
-   缝上（右缘外探一半）、贴在导轨底部（左下角位置），抬升底 + 三层软
-   阴影、无边框；箭头 glyph 随状态旋转 180°，旋转和导轨宽度同一条
-   200ms 缓动曲线，整组动作一起走完。 */
+   缝上（右缘外探一半），默认从底部上移 72px，也可以沿导轨上下拖动。
+   抬升底 + 三层软阴影、无边框；箭头 glyph 随状态旋转 180°，旋转和
+   导轨宽度同一条 160ms 快速缓动曲线，整组动作一起走完。 */
 .owb-app .owb-rail-chip {
   position: absolute;
   right: -12px;
-  bottom: 14px;
+  bottom: clamp(12px, var(--owb-rail-chip-bottom, 72px), calc(100% - 36px));
   z-index: 30;
   display: grid;
   place-items: center;
@@ -3856,10 +3857,16 @@ body,
     0 2px 8px -2px rgb(0 0 0 / 0.18),
     0 1px 4px -1px rgb(0 0 0 / 0.14),
     0 0 1px 0 rgb(0 0 0 / 0.16);
-  cursor: pointer;
+  cursor: ns-resize;
+  touch-action: none;
   transition:
     color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
     box-shadow var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+}
+
+.owb-app .owb-rail-chip.is-dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .owb-app .owb-rail-chip:hover {
@@ -3871,7 +3878,7 @@ body,
 }
 
 .owb-app .owb-rail-chip__glyph {
-  transition: transform var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease);
+  transition: transform var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out);
 }
 
 .owb-app .owb-rail-chip__glyph.is-flipped {
@@ -3885,15 +3892,15 @@ body,
 @media (prefers-reduced-motion: reduce) {
   .owb-app .ui-module-rail {
     transition:
-      width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
-      padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease) !important;
+      width var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+      padding var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out) !important;
   }
 
   .owb-app .ui-module-rail__item {
     transition:
-      width var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
-      padding var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
-      margin var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease),
+      width var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+      padding var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+      margin var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
       color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
       background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease) !important;
   }
@@ -3907,7 +3914,7 @@ body,
   }
 
   .owb-app .owb-rail-chip__glyph {
-    transition: transform var(--owb-rail-duration, 200ms) var(--owb-ease-out, ease) !important;
+    transition: transform var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out) !important;
   }
 }
 
