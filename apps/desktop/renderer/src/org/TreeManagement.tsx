@@ -14,6 +14,10 @@ export function TreeRowMenu({ id, name, children, busy, onAction }: {
 }) {
   const t = useT();
   const menu = { items: [
+    // Structural actions come first: a context menu should answer the most
+    // likely question for the node it was opened on before offering inspection.
+    { key: "hire", label: t(id ? "manage.hireUnder" : "tree.create"), disabled: busy },
+    { type: "divider" as const },
     // Record editing leads the per-employee menu: right-click / ellipsis on a
     // row must be able to modify exactly that row's record (#292 drawer), the
     // way a conventional tree's context menu edits the node it was invoked on.
@@ -21,7 +25,6 @@ export function TreeRowMenu({ id, name, children, busy, onAction }: {
     { key: "settings", label: t(id ? "manage.employeeSettings" : "manage.projectSettings") },
     { key: "memory", label: t("memory.title") },
     { type: "divider" as const },
-    { key: "hire", label: t(id ? "manage.hireUnder" : "tree.create"), disabled: busy },
     { key: "group", label: t("memory.collaborate") },
     ...(!id ? [{ key: "switch", label: t("manage.switchProject"), disabled: busy }] : []),
   ], onClick: ({ key, domEvent }: { key: string; domEvent: { stopPropagation(): void } }) => {
