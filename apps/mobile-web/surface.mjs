@@ -23,11 +23,11 @@ function safeJoin(root, relative) {
 export function resolvePublicAsset(urlPath, { webDir, userAgent, searchParams }) {
   const surface = chooseSurface({ userAgent, searchParams });
   if (urlPath === "/" || urlPath === "/mobile" || urlPath === "/mobile/") {
+    if (urlPath === "/" && surface === "desktop") return null;
     return path.join(webDir, "index.html");
   }
   if (urlPath === "/app.css") return path.join(webDir, "app.css");
   if (urlPath === "/app.mjs") return path.join(webDir, "app.mjs");
-  if (surface === "desktop" && urlPath === "/") return path.join(webDir, "index.html");
   return null;
 }
 

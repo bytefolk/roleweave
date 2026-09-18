@@ -8,6 +8,7 @@ import {
   chooseSurface,
   isMobileUserAgent,
   loadWorkspaceSnapshot,
+  resolvePublicAsset,
 } from "../../apps/mobile-web/surface.mjs";
 
 const productDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -22,6 +23,15 @@ test("classifies phone and ASteam app user agents as mobile", () => {
 test("surface query overrides user agent", () => {
   assert.equal(chooseSurface({ userAgent: "iPhone", searchParams: new URLSearchParams("surface=desktop") }), "desktop");
   assert.equal(chooseSurface({ userAgent: "Macintosh", searchParams: new URLSearchParams("surface=mobile") }), "mobile");
+});
+
+test("desktop surface falls through instead of serving the mobile shell", () => {
+  const asset = resolvePublicAsset("/", {
+    webDir: path.join(productDir, "apps", "mobile-web"),
+    userAgent: "iPhone",
+    searchParams: new URLSearchParams("surface=desktop"),
+  });
+  assert.equal(asset, null);
 });
 
 test("workspace snapshot lists oss-maintainer roles without leaking host paths", () => {
