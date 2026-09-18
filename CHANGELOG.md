@@ -7,7 +7,7 @@
 
 ### Added
 
-- #349：private / position / team memory grants 设计稿（`docs/design/memory-grants-v1.md`）。三类 grant 钉在现有 durable-memory.v1 binding+grant 上，默认跨 principal 拒绝；handoff 只复制引用不放宽权限。无运行时，等 Gate D0。
+- #349：private / position / team memory grants 设计稿（`docs/design/memory-grants-v1.md`）。pin mem#221 `e0e47c7`；employee-private 用不可复用 `employee.<hire_id>`（需 mem additive，不能用可换人的 position seat）；team/task 展开为每成员一条 mem grant 行，不引入 `task.*` principal；越权 receipt / handoff 不携带 memoryId。无运行时；#327 D0 / #345 未接受，不当作已定基线。
 
 ## [0.3.0] — 2026-09-18
 
