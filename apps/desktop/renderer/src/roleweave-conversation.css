@@ -368,14 +368,17 @@
   100% { transform: translateY(104px); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .owb-turn-progress__spinner,
-  .owb-turn-progress__activity-orbit,
-  .owb-turn-progress__step,
-  .owb-turn-progress[data-motion="live"] .owb-turn-progress__steps::after {
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__spinner,
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__activity-orbit,
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step,
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress[data-motion="live"] .owb-turn-progress__steps::after {
     animation: none;
+    animation-delay: 0ms;
   }
-  .owb-turn-progress__activity-orbit,
-  .owb-turn-progress[data-motion="live"] .owb-turn-progress__steps::after { display: none; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__activity-orbit,
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress[data-motion="live"] .owb-turn-progress__steps::after {
+    display: none;
+  }
 }
 
 /* Public output flows as the reply body. The header retains the explicit
