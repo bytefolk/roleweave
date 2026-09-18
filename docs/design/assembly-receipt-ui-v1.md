@@ -63,7 +63,13 @@ Illustrative receipt (full SHA-256, not a truncated placeholder):
 | Admitted tokens | `admittedTokens` when present; otherwise the tokens column is hidden, not invented |
 | Omit reasons | one row per `omitted[]` entry, same `reason` string |
 
+These fields render on the **turn/task timeline** next to that turn’s
+receipt, not on a global memory widget.
+
 Forbidden: summing local caches, counting pins, or guessing from the composer.
+
+The receipt `digest` in examples is illustrative unless stated as a hash of
+named UTF-8 text. Runtime must hash the canonical receipt bytes.
 
 ## AC-002 — Degraded / unavailable is never drawn as success
 
