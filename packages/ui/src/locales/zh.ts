@@ -471,6 +471,7 @@ export const zhCatalog: Record<string, string> = {
   "hire.errOffline": "本地服务当前不可用，未产生任何效果；可重试。",
   "hire.errCli": "本地 Agent 执行器不可用，检查配置后可重试。",
   "hire.errCapability": "当前运行环境暂不支持创建岗位，请升级后重试。",
+  "hire.errMcpCapability": "当前还没有引擎支持员工级 MCP 绑定，请取消勾选 MCP 连接器后重试。",
   "hire.errDenied": "创建被拒绝；没有产生任何更改，已填内容保留。",
   "hire.joined": "{name} 已加入团队",
   "hire.name": "姓名*",

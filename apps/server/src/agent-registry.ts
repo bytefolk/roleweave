@@ -320,3 +320,25 @@ export function getAgentHostCapabilities(host: Pick<AgentHostDescriptor, "id" | 
   if (!isRecord(host) || !isKnownHostId(host.id) || host.engine !== host.id) return Object.freeze([]);
   return Object.freeze([...HOST_DEFINITIONS[host.id].capabilities]);
 }
+
+/**
+ * Whether this specific Host honors employee-level MCP bindings. No bundled
+ * Host declares the "mcp" capability today — the bundled adapters spawn with
+ * an empty MCP config, so a granted binding survives hire and then fails
+ * every turn at spawn time. The hire and profile gates read this registry
+ * answer instead of a hardcoded list, so declaring "mcp" on a Host unlocks
+ * the grant with no further edits here (#314).
+ */
+export function agentHostSupportsEmployeeMcp(hostId: unknown): boolean {
+  if (!isKnownHostId(hostId)) return false;
+  return HOST_DEFINITIONS[hostId].capabilities.includes("mcp");
+}
+
+/**
+ * Whether any Host at all honors employee-level MCP bindings. Surfaces that
+ * edit a package without an engine context (the profile editor) gate on this
+ * until some Host ships MCP support (#314).
+ */
+export function anyAgentHostSupportsEmployeeMcp(): boolean {
+  return HOST_ORDER.some((id) => HOST_DEFINITIONS[id].capabilities.includes("mcp"));
+}
