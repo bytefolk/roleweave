@@ -3,6 +3,12 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 早期开发记录以里程碑（D0/D1/D2…）标注，安装包发布使用语义化版本。
 
+## [Unreleased]
+
+### Added
+
+- #349：private / position / team memory grants 设计稿（`docs/design/memory-grants-v1.md`）。三类 grant 钉在现有 durable-memory.v1 binding+grant 上，默认跨 principal 拒绝；handoff 只复制引用不放宽权限。无运行时，等 Gate D0。
+
 ## [0.3.0] — 2026-09-18
 
 ### Added
