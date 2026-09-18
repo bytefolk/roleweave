@@ -35,6 +35,7 @@ function health(overrides: Record<string, unknown> = {}) {
 test("inherited Object keys are not treated as Agent Host ids", () => {
   for (const inherited of ["constructor", "toString", "hasOwnProperty"]) {
     assert.deepEqual(getAgentHostCapabilities({ id: inherited, engine: inherited }), []);
+    assert.equal(agentHostSupportsEmployeeMcp(inherited), false);
   }
 });
 
