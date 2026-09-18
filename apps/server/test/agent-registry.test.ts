@@ -30,6 +30,12 @@ function health(overrides: Record<string, unknown> = {}) {
   };
 }
 
+test("inherited Object keys are not treated as Agent Host ids", () => {
+  for (const inherited of ["constructor", "toString", "hasOwnProperty"]) {
+    assert.deepEqual(getAgentHostCapabilities({ id: inherited, engine: inherited }), []);
+  }
+});
+
 test("Host order is derived from the exhaustive catalog, not a handwritten subset", () => {
   const hosts = listRegisteredAgentHosts(health());
   assert.deepEqual(

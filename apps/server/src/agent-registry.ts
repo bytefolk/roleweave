@@ -137,7 +137,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isKnownHostId(value: unknown): value is AgentHostId {
-  return typeof value === "string" && value in HOST_DEFINITIONS;
+  return typeof value === "string" && Object.hasOwn(HOST_DEFINITIONS, value);
 }
 
 function isBoolean(value: unknown): value is boolean {
