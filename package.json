@@ -6,7 +6,7 @@
     "type": "git",
     "url": "git+https://github.com/bytefolk/roleweave.git"
   },
-  "description": "RoleWeave — file tree is the org chart. Electron shell + local control plane for digital-employee workspaces.",
+  "description": "RoleWeave \u2014 file tree is the org chart. Electron shell + local control plane for digital-employee workspaces.",
   "author": "RoleWeave Contributors",
   "license": "Apache-2.0",
   "type": "module",
@@ -61,7 +61,8 @@
     "check": "npm run build && npm run prepare:updater && npm run test:scripts && npm run typecheck:ui && npm run test:ui && node --test --test-timeout=120000 \"apps/server/dist/test/*.test.js\" && npm run typecheck:renderer && npm run test:renderer && npm run test:desktop-main && npm run security:check",
     "dev:server": "npm run build && node apps/server/dist/src/index.js",
     "dev:desktop": "npm run build && npm run build:renderer && npm run prepare:updater && electron apps/desktop/src/main.js",
-    "typecheck": "tsc -b --force"
+    "typecheck": "tsc -b --force",
+    "test:phone-link": "node --test --test-timeout=30000 \"packages/phone-link/test/*.test.mjs\" \"apps/desktop/test/phone-link-host.test.cjs\""
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

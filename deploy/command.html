@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#101116">
+    <title>发指令 · RoleWeave</title>
+    <link rel="stylesheet" href="/command.css">
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">RoleWeave</p>
+      <h1>发一条指令</h1>
+      <p class="lead">发给电脑上已打开的 RoleWeave。同一产品地址可一键连接；也可以输入电脑弹窗里的 6 位码。</p>
+      <p id="host-status">正在查看电脑是否在线…</p>
+
+      <form id="claim-form">
+        <button type="submit">连接这台电脑</button>
+      </form>
+
+      <form id="pair-form">
+        <label for="code">电脑上的 6 位配对码</label>
+        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="482910">
+        <button type="submit">用配对码连接</button>
+      </form>
+
+      <form id="command-form" hidden>
+        <label for="text">指令</label>
+        <textarea id="text" name="text" rows="4" maxlength="4000" placeholder="例如：看一下还开着的 PR，能合的合，能关的关"></textarea>
+        <button type="submit">发给电脑</button>
+      </form>
+
+      <p id="status" role="status">尚未配对。</p>
+      <pre id="summary" hidden></pre>
+    </main>
+    <script type="module" src="/command.mjs"></script>
+  </body>
+</html>

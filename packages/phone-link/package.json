@@ -1,0 +1,14 @@
+{
+  "name": "@roleweave/phone-link",
+  "version": "1.0.0",
+  "description": "phone-link.v1 — phone commands a running RoleWeave host through an outbound relay. Other software can speak the same protocol.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ]
+}
