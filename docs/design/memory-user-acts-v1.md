@@ -71,12 +71,14 @@ submits Remember. Chat residue without that act is not a pin.
   "act": "remember",
   "outcome": "created",
   "memoryId": "22222222-2222-4222-8222-222222222222",
-  "digest": "sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+  "digest": "sha256:a4a76f15fd79a253891d86cf5c9fbf0caba45dd436aedf8834fee457ee8f7267",
   "createdAt": "2026-09-18T14:30:00.000Z"
 }
 ```
 
-Forbidden on this response: `status: admitted`, `used: true`, `trust: trusted`.
+`digest` is SHA-256 of `content.text` UTF-8 bytes (same rule as mem
+durable-memory.v1). Forbidden on this response: `status: admitted`,
+`used: true`, `trust: trusted`.
 
 ## AC-001 — Correct flow
 
@@ -109,7 +111,7 @@ Operator names the wrong derived record and submits Correct.
   "act": "correct",
   "outcome": "created",
   "memoryId": "33333333-3333-4333-8333-333333333333",
-  "digest": "sha256:fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9",
+  "digest": "sha256:d942f4c0037e91b59589391726ff4a8cb3a31248097560ea722c0b25b6666dc3",
   "relation": {
     "kind": "supersession",
     "relationId": "rel-0001",
