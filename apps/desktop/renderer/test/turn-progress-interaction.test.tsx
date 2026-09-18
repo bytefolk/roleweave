@@ -54,7 +54,15 @@ describe("conversation progress disclosure", () => {
     expect(css).toContain("@keyframes owb-progress-activity");
     expect(css).toContain("@keyframes owb-progress-rail");
     expect(css).toMatch(/\[data-motion="live"\][^{]*::after/);
-    expect(css).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*owb-turn-progress__activity[\s\S]*animation:\s*none/);
+    expect(css).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*:is\(\[data-theme="light"\], \[data-theme="dark"\]\) \.owb-app \.owb-turn-progress__spinner,[\s\S]*:is\(\[data-theme="light"\], \[data-theme="dark"\]\) \.owb-app \.owb-turn-progress__step[\s\S]*animation:\s*none/);
+  });
+
+  it("does not animate a running record that is waiting for approval", () => {
+    render(<TurnThread turns={[turn({ approvalRequest: {
+      approvalId: "approve-live", kind: "write", description: "保存检查结果",
+    }, progress: [...turn().progress!, { kind: "awaiting_approval", at: ended }] })]} />);
+    expect(screen.getByRole("group", { name: "执行进展" })).not.toHaveAttribute("data-motion");
+    expect(document.querySelector(".owb-turn-progress__activity")).toBeNull();
   });
 
   it("preserves a user's closed disclosure while streamed output changes", () => {
