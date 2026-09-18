@@ -41,6 +41,15 @@ class PhoneLinkCodecTest {
     }
 
     @Test
+    fun reconnectDelayIsExponential() {
+        assertEquals(1000L, PhoneLinkCodec.reconnectDelayMs(1))
+        assertEquals(2000L, PhoneLinkCodec.reconnectDelayMs(2))
+        assertEquals(4000L, PhoneLinkCodec.reconnectDelayMs(3))
+        assertEquals(8000L, PhoneLinkCodec.reconnectDelayMs(4))
+        assertEquals(16000L, PhoneLinkCodec.reconnectDelayMs(5))
+    }
+
+    @Test
     fun commandStatusLabelsAreStable() {
         assertEquals("电脑已接到", PhoneLinkCodec.commandStatusLabel("accepted"))
         assertEquals("请在电脑上确认", PhoneLinkCodec.commandStatusLabel("needs_approval"))

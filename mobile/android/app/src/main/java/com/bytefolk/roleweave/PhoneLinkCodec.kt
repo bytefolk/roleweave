@@ -43,6 +43,12 @@ object PhoneLinkCodec {
         return payload.toString()
     }
 
+    /** Exponential backoff: 1s, 2s, 4s, 8s, 16s for attempts 1..5. */
+    fun reconnectDelayMs(attempt: Int): Long {
+        val n = attempt.coerceAtLeast(1).coerceAtMost(16)
+        return 1000L shl (n - 1)
+    }
+
     fun commandStatusLabel(state: String): String =
         when (state) {
             "accepted" -> "电脑已接到"

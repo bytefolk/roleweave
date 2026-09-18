@@ -78,9 +78,12 @@ class PhoneViewModel : ViewModel() {
                     }
                     val snapshot = PhoneLinkCodec.parseSnapshot(body)
                     _state.update {
+                        val stillValid = it.selectedRoleId?.takeIf { id ->
+                            snapshot.roles.any { role -> role.id == id }
+                        }
                         it.copy(
                             snapshot = snapshot,
-                            selectedRoleId = it.selectedRoleId ?: snapshot.roles.firstOrNull()?.id,
+                            selectedRoleId = stillValid,
                             error = null,
                         )
                     }
@@ -187,7 +190,7 @@ class PhoneViewModel : ViewModel() {
             return
         }
         reconnectAttempt += 1
-        val waitMs = 1000L * reconnectAttempt
+        val waitMs = PhoneLinkCodec.reconnectDelayMs(reconnectAttempt)
         _state.update { it.copy(paired = false, status = "连接断开，正在重连…") }
         reconnectJob?.cancel()
         reconnectJob = viewModelScope.launch {
