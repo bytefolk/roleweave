@@ -294,12 +294,21 @@
 
 /* Creation keeps one surface per step. Scope these refinements to this drawer:
  * the permissions and capability controls are also used by employee editing. */
-:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-shell__scroll {
-  padding: 16px 20px 24px;
-  background: var(--ui-surface-inset);
-  scroll-padding-block: 16px;
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .ant-drawer-header {
+  min-height: 0;
+  padding: 18px 24px;
 }
-:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-drawer--conversation { gap: 16px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-shell__scroll {
+  padding: 20px 24px 28px;
+  background: var(--ui-surface-inset);
+  scroll-padding-block: 20px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-drawer--conversation {
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  gap: 16px;
+}
 :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create :is(.owb-hire-design-section, .owb-hire-draft-card, .owb-hire-capability-panel) {
   min-width: 0;
   border: 1px solid var(--ui-border);
@@ -409,7 +418,10 @@
 :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-advanced { margin-top: 4px; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-advanced > summary { min-height: 40px; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-advanced > summary:focus-visible { outline-offset: -2px; }
-:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-footer { padding: 12px 20px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-footer {
+  gap: 10px;
+  padding: 14px 24px;
+}
 
 @media (max-width: 720px) {
   :is([data-theme="light"], [data-theme="dark"]) .owb-hire-drawer-shell--create .owb-hire-shell__scroll { padding: 12px 14px 20px; }
