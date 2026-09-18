@@ -3,6 +3,12 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 早期开发记录以里程碑（D0/D1/D2…）标注，安装包发布使用语义化版本。
 
+## [Unreleased]
+
+### Added
+
+- #355: design-only pin/disable/inspect/forget controls (`docs/design/memory-controls-v1.md`). Forget failure is visible; no local fake delete. No runtime.
+
 ## [0.3.0] — 2026-09-18
 
 ### Added
