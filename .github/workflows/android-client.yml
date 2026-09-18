@@ -25,7 +25,14 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # Do not install the retired `tools` package. setup-android@v3 defaults
+      # to `sdkmanager tools`, which now fails: Failed to find package 'tools'.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
