@@ -29,10 +29,8 @@ const VALID_HIRE = {
       { scope: "position", resource: "./knowledge/**", actions: ["read"] },
       { scope: "workspace", resource: "./reports/**", actions: ["read", "create"], approval: true },
       { scope: "position", resource: "skill://issue-research", actions: ["execute"] },
-      { scope: "workspace", resource: "mcp://workspace-drive", actions: ["execute"], approval: true },
     ],
     skills: [{ id: "issue-research" }],
-    mcpServers: [{ id: "workspace-drive", tools: ["read"] }],
   },
   prompt: "先阅读已批准资料，再输出带依据的文档结论。",
   memorySources: [
@@ -122,24 +120,24 @@ test("POST /hire: the bundled qoder-engine validates and applies a hire through 
     assert.deepEqual(appliedRole.toolAllow, ["Read", "Grep", "Glob"], "package permissions flow into the org model");
     const packageDir = path.join(dir, "positions", "repo-owner", "docs-writer");
     const employee = await readJson<{ entrypoints: { mcp?: string }; policy: { mcpTools: Array<{ name: string; requestedMode: string }> }; assets: string[] }>(path.join(packageDir, "employee.json"));
-    assert.deepEqual(employee.policy.mcpTools, [{ name: "workspace-drive.read", requestedMode: "read" }], "MCP tool allowlist reaches the employee runtime policy");
-    assert.equal(employee.entrypoints.mcp, "./mcp.json", "MCP grants require the package MCP entrypoint");
+    assert.deepEqual(employee.policy.mcpTools, [], "a hire without MCP grants carries no MCP tools into the runtime policy");
+    assert.equal(employee.entrypoints.mcp, undefined, "the package MCP entrypoint appears only alongside an MCP grant");
     assert.ok(employee.assets.includes("./skills.json") && employee.assets.includes("./mcp.json"), "capability manifests are package assets");
-    const packagePermissions = await readJson<{ model: string; defaultEffect: string; rules: unknown[] }>(path.join(packageDir, "permissions.json"));
+    const packagePermissions = await readJson<{ model: string; defaultEffect: string; rules: unknown[]; mcpServers: unknown[] }>(path.join(packageDir, "permissions.json"));
     assert.equal(packagePermissions.model, "chmod-inspired");
     assert.equal(packagePermissions.defaultEffect, "deny");
-    assert.equal(packagePermissions.rules.length, 4);
+    assert.equal(packagePermissions.rules.length, 3);
     assert.deepEqual((packagePermissions as { skills?: unknown[] }).skills, [{ id: "issue-research" }]);
-    assert.deepEqual((packagePermissions as { mcpServers?: unknown[] }).mcpServers, [{ id: "workspace-drive", tools: ["read"] }]);
+    assert.deepEqual(packagePermissions.mcpServers, [], "a hire without MCP grants persists an empty grant list");
     assert.deepEqual(await readJson<{ skills: Array<{ id: string }> }>(path.join(packageDir, "skills.json")), { schemaVersion: "workbench-skills.v1", defaultEffect: "deny", skills: [{ id: "issue-research", name: "Issue 调研", description: "梳理 Issue / PR，输出带证据的研究结论。" }] });
-    assert.deepEqual(await readJson<{ servers: Array<{ id: string; tools: string[] }> }>(path.join(packageDir, "mcp.json")), { schemaVersion: "workbench-mcp.v1", defaultEffect: "deny", servers: [{ id: "workspace-drive", name: "工作区网盘", description: "读取已接入的组织共享资料。", tools: ["read"] }] });
+    assert.deepEqual(await readJson<{ servers: Array<{ id: string; tools: string[] }> }>(path.join(packageDir, "mcp.json")), { schemaVersion: "workbench-mcp.v1", defaultEffect: "deny", servers: [] });
     assert.match(await fs.readFile(path.join(packageDir, "SKILL.md"), "utf8"), /先阅读已批准资料/);
     assert.match(await fs.readFile(path.join(packageDir, "SKILL.md"), "utf8"), /Issue 调研/);
     const positionResponse = await api(server.baseUrl, "/positions/docs-writer", { token: server.token });
     assert.equal(positionResponse.status, 200);
     assert.deepEqual((positionResponse.body as { position: { capabilities: unknown } }).position.capabilities, {
       skills: [{ id: "issue-research", name: "Issue 调研" }],
-      mcpServers: [{ id: "workspace-drive", name: "工作区网盘", tools: ["read"] }],
+      mcpServers: [],
     });
     const auditLines = (await fs.readFile(path.join(dir, ".digital-employee", "org-audit.jsonl"), "utf8"))
       .trim()
@@ -367,6 +365,39 @@ test("POST /hire: static validation failure is fail-closed before any filesystem
     assert.equal((res.body as { code: string }).code, "hire_request_budget_malformed");
     assert.deepEqual(driver.calls, [], "engine is never called after a failed static gate");
     assert.deepEqual(await fs.readdir(path.join(dir, "positions", "repo-owner")), before, "no staged skeleton survives");
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /hire: an employee-level MCP grant is refused 422 before the engine or the filesystem see it", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const before = await fs.readdir(path.join(dir, "positions", "repo-owner"));
+    const res = await api(server.baseUrl, "/hire", {
+      method: "POST", token: server.token,
+      body: {
+        ...VALID_HIRE,
+        permissions: {
+          ...VALID_HIRE.permissions,
+          rules: [...VALID_HIRE.permissions.rules, { scope: "workspace", resource: "mcp://workspace-drive", actions: ["execute"], approval: true }],
+          mcpServers: [{ id: "workspace-drive", tools: ["read"] }],
+        },
+      },
+    });
+    assert.equal(res.status, 422);
+    const body = res.body as { status: string; code: string; retryable: boolean };
+    assert.equal(body.status, "failed");
+    assert.equal(body.code, "hire_mcp_unsupported", "#314: the grant names the capability gap instead of dying at the first turn");
+    assert.equal(body.retryable, false);
+    assert.equal(driver.hireCalls.length, 0, "the request never reaches the engine validator");
+    assert.deepEqual(driver.calls, [], "no engine adjudication follows a refused grant");
+    assert.deepEqual(await fs.readdir(path.join(dir, "positions", "repo-owner")), before, "no staged skeleton survives");
+    assert.equal((await readApplied(dir)).roles.some((role) => role.id === "docs-writer"), false, "the applied model is untouched");
   } finally {
     await server.close();
   }

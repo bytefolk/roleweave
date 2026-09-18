@@ -468,6 +468,7 @@ export const enCatalog: Record<string, string> = {
   "hire.errOffline": "The local service is unavailable right now; nothing happened. Retryable.",
   "hire.errCli": "The local Agent runner is unavailable; check its configuration and retry.",
   "hire.errCapability": "This environment cannot create roles yet; upgrade and retry.",
+  "hire.errMcpCapability": "No engine supports employee-level MCP bindings yet; unbind the MCP connectors and retry.",
   "hire.errDenied": "Creation was rejected; nothing changed and your input was kept.",
   "hire.joined": "{name} joined the team",
   "hire.name": "Name*",

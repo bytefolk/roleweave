@@ -45,10 +45,9 @@ const PATCHED_PERMISSIONS = {
     { scope: "position", resource: "./knowledge/**", actions: ["read"] },
     { scope: "workspace", resource: "./reports/**", actions: ["read", "create", "update"], approval: true },
     { scope: "position", resource: "skill://docs-review", actions: ["execute"] },
-    { scope: "workspace", resource: "mcp://issue-tracker", actions: ["execute"], approval: true },
   ],
   skills: [{ id: "docs-review" }],
-  mcpServers: [{ id: "issue-tracker", tools: ["search"] }],
+  mcpServers: [],
 };
 
 const QODER_ADAPTER = fileURLToPath(new URL("../../bin/qoder-engine.mjs", import.meta.url));
@@ -244,8 +243,8 @@ test("PATCH /positions/:id/profile: the bundled engine re-applies a renamed, re-
     assert.equal(employee.policy.mode, "approval_required");
     assert.deepEqual(employee.policy.filesystem.read, ["./knowledge/**", "./reports/**"]);
     assert.deepEqual(employee.policy.filesystem.write, ["./reports/**"]);
-    assert.deepEqual(employee.policy.mcpTools, [{ name: "issue-tracker.search", requestedMode: "read" }]);
-    assert.equal(employee.entrypoints.mcp, "./mcp.json", "granting an MCP tool restores the package MCP entrypoint");
+    assert.deepEqual(employee.policy.mcpTools, [], "the edit grants no MCP tools while no engine supports them (#314)");
+    assert.equal(employee.entrypoints.mcp, undefined, "a package with no MCP grant must not advertise the entrypoint");
     assert.ok(["./permissions.json", "./skills.json", "./mcp.json"].every((asset) => employee.assets.includes(asset)));
     assert.deepEqual(await readJson(path.join(packageDir, "permissions.json")), {
       schemaVersion: "workbench-permissions.v1",
@@ -264,12 +263,12 @@ test("PATCH /positions/:id/profile: the bundled engine re-applies a renamed, re-
     assert.deepEqual(await readJson(path.join(packageDir, "mcp.json")), {
       schemaVersion: "workbench-mcp.v1",
       defaultEffect: "deny",
-      servers: [{ id: "issue-tracker", name: "Issue 跟踪", description: "搜索和读取已接入的 Issue / PR 数据。", tools: ["search"] }],
+      servers: [],
     });
     const skill = await readText(path.join(packageDir, "SKILL.md"));
     assert.match(skill, /^# 文档工程师$/m, "the generated SKILL title follows the rename");
     assert.match(skill, /### 文档审校（docs-review）/);
-    assert.match(skill, /- Issue 跟踪（issue-tracker）：search/);
+    assert.match(skill, /- 暂无 MCP 连接器/, "the generated MCP prose follows the emptied grant list");
     assert.doesNotMatch(skill, /暂无附加 Skill/, "the stale capability prose is refreshed");
 
     // 3. The position card the renderer reads reflects it without a reload race.
@@ -336,27 +335,38 @@ test("PATCH /positions/:id/profile updates the workspace declaration, because th
   }
 });
 
-test("PATCH /positions/:id/profile: dropping every MCP grant removes the package MCP entrypoint", async (t) => {
+test("PATCH /positions/:id/profile: an MCP grant is refused fail-closed while an explicit empty grant list stays allowed", async (t) => {
   const driver = new DigitalEmployeeCliDriver(QODER_ADAPTER_COMMAND);
   const server = await startTestServer(driver);
   const dir = await copyExampleWorkspace();
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   try {
     await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
-    await api(server.baseUrl, "/hire", {
-      method: "POST",
-      token: server.token,
-      body: { ...HIRE, permissions: { tools: ["Read"], rules: [], mcpServers: [{ id: "issue-tracker", tools: ["search"] }] } },
-    });
+    await api(server.baseUrl, "/hire", { method: "POST", token: server.token, body: HIRE });
     const packageDir = path.join(dir, "positions", "repo-owner", "docs-writer");
-    assert.equal((await readJson<{ entrypoints: { mcp?: string } }>(path.join(packageDir, "employee.json"))).entrypoints.mcp, "./mcp.json");
+    assert.equal((await readJson<{ entrypoints: { mcp?: string } }>(path.join(packageDir, "employee.json"))).entrypoints.mcp, undefined);
 
-    const response = await api(server.baseUrl, "/positions/docs-writer/profile", {
+    // A well-formed grant still fails closed: no bundled Host declares the
+    // "mcp" capability, so accepting it would only move the failure to the
+    // employee's first turn (#314).
+    const employeeBefore = await readText(path.join(packageDir, "employee.json"));
+    const refused = await api(server.baseUrl, "/positions/docs-writer/profile", {
+      method: "PATCH",
+      token: server.token,
+      body: { permissions: { tools: ["Read"], rules: [], skills: [], mcpServers: [{ id: "issue-tracker", tools: ["search"] }] } },
+    });
+    assert.equal(refused.status, 400);
+    assert.equal((refused.body as { code: string }).code, "position_profile_invalid");
+    assert.equal(await readText(path.join(packageDir, "employee.json")), employeeBefore, "a refused grant never touches the package");
+
+    // The clearing path stays open so pre-existing packages keep a manual
+    // unbind workaround.
+    const cleared = await api(server.baseUrl, "/positions/docs-writer/profile", {
       method: "PATCH",
       token: server.token,
       body: { permissions: { tools: ["Read"], rules: [], skills: [], mcpServers: [] } },
     });
-    assert.equal(response.status, 200);
+    assert.equal(cleared.status, 200);
     const employee = await readJson<{ entrypoints: { mcp?: string }; policy: { mcpTools: unknown[] } }>(path.join(packageDir, "employee.json"));
     assert.equal(employee.entrypoints.mcp, undefined, "a package with no MCP grant must stop advertising the entrypoint");
     assert.deepEqual(employee.policy.mcpTools, []);
@@ -388,6 +398,8 @@ test("PATCH /positions/:id/profile: boundary matrix fails closed before any writ
       ["unregistered Skill grant", { permissions: { tools: ["Read"], rules: [], skills: [{ id: "ghost-skill" }] } }],
       ["unregistered MCP grant", { permissions: { tools: ["Read"], rules: [], mcpServers: [{ id: "ghost-server", tools: [] }] } }],
       ["MCP tool outside the catalog", { permissions: { tools: ["Read"], rules: [], mcpServers: [{ id: "issue-tracker", tools: ["delete"] }] } }],
+      // #314: a well-formed grant still fails closed while no Host declares "mcp".
+      ["MCP grant with no supporting engine", { permissions: { tools: ["Read"], rules: [], mcpServers: [{ id: "issue-tracker", tools: ["search"] }] } }],
       ["rule referencing an unregistered Skill", { permissions: { tools: ["Read"], rules: [{ scope: "position", resource: "skill://ghost", actions: ["execute"] }] } }],
       ["invalid rule scope", { permissions: { tools: ["Read"], rules: [{ scope: "galaxy", resource: "./x", actions: ["read"] }] } }],
       ["empty rule action list", { permissions: { tools: ["Read"], rules: [{ scope: "position", resource: "./x", actions: [] }] } }],
