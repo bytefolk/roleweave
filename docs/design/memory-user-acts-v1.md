@@ -39,10 +39,31 @@ workbench controls. This file specifies the **acts** those controls submit.
 6. Forget is mem’s permissioned lifecycle. RoleWeave must not fake-delete
    locally. Failure is a visible error.
 
+## Principals (aligned with #364)
+
+`employee-private` is **not** a reusable seat. [#364](https://github.com/bytefolk/roleweave/pull/364)
+pins:
+
+| `scopeClass` | Request identity | mem principal (when stored) |
+| --- | --- | --- |
+| `employee-private` | `hireId` (issued at hire, **never reissued**) | `employee.<hire_id>` |
+| `position` | `positionId` (reusable seat) | `position.<position_id>` |
+
+**mem#221 as shipped** only fail-closes on `position.<id>` +
+`/workspaces/<instance>/positions/<position_id>`. `employee.<hire_id>` and
+`/workspaces/<instance>/employees/<hire_id>` are a **later additive** mem
+contract. Until that lands, RoleWeave must not persist private notes as
+`position.sales-owner` and call them private. A later occupant of the same
+seat must not see hire A’s private records.
+
+Client remember/correct/forget for `employee-private` sends `hireId`, never
+`positionId`.
+
 ## AC-001 — Remember flow (example, no secrets, no real PII)
 
-Operator confirms “Acme accepts email only” for the sales hire, then
-submits Remember. Chat residue without that act is not a pin.
+Operator confirms “Acme accepts email only” for hire `hire_a` (currently
+seated at sales-owner; the seat is **not** the isolation key), then submits
+Remember. Chat residue without that act is not a pin.
 
 **Request** (client does not send provenance):
 
@@ -50,7 +71,7 @@ submits Remember. Chat residue without that act is not a pin.
 {
   "schemaVersion": "memory-act-request.v1",
   "act": "remember",
-  "positionId": "sales-owner",
+  "hireId": "hire_a",
   "scopeClass": "employee-private",
   "content": {
     "text": "Customer Acme accepts email only.",
@@ -90,7 +111,8 @@ Operator names the wrong derived record and submits Correct.
 {
   "schemaVersion": "memory-act-request.v1",
   "act": "correct",
-  "positionId": "sales-owner",
+  "hireId": "hire_a",
+  "scopeClass": "employee-private",
   "targetMemoryId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   "content": {
     "text": "Customer Acme accepts email only (not phone).",
@@ -126,11 +148,21 @@ Operator names the wrong derived record and submits Correct.
 The derived record `aaaaaaaa-…` stays byte-identical. A projection marks it
 omitted-by-default because of `rel-0001`.
 
+Relation direction (do **not** PATCH the old row):
+
+| Field | Value | Meaning |
+| --- | --- | --- |
+| `fromMemoryId` | **new** record (`3333…`) | The correcting write just created |
+| `toMemoryId` | **old** record (`aaaa…`) | Immutable target; bytes unchanged |
+
+Edge: `new ──corrects──► old`.
+
 ## AC-002 — Append-only supersession model
 
 ```
 new user record ──relation/event──► old record (immutable)
      created                         unchanged bytes
+     fromMemoryId                    toMemoryId
 ```
 
 | Scene | Behavior |
@@ -182,7 +214,8 @@ UI counts **must** equal `selected.length` and `omitted.length`. If
 {
   "schemaVersion": "memory-act-request.v1",
   "act": "forget",
-  "positionId": "sales-owner",
+  "hireId": "hire_a",
+  "scopeClass": "employee-private",
   "targetMemoryId": "33333333-3333-4333-8333-333333333333"
 }
 ```
