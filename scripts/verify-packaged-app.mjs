@@ -135,7 +135,7 @@ function assertAllowedRendererBuild(files) {
   for (const relative of files) {
     assert.match(
       relative,
-      /^(?:index\.html|assets\/[A-Za-z0-9_-]+\.(?:css|js|png|woff2?))$/,
+      /^(?:index\.html|assets\/[A-Za-z0-9_-]+\.(?:css|js|png|svg|woff2?))$/,
       `unexpected generated renderer entry: ${relative}`,
     );
   }
