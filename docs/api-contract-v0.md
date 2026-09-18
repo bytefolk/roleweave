@@ -365,6 +365,8 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 
 #### 2.11.2 `pendingApproval` — 审批裁决随回合传入（#25 Slice B 加法修订）
 
+**2026-09-18 P0 更新：** 下列内容保留为旧版信封与输入形状说明。公共 `POST /turns` 和 `POST /sessions/:sessionId/turns` 现在对形状合法的直接裁决返回 `409 approval_endpoint_required`；形状错误仍返回 `400`。客户端必须改用 `POST /approvals/:id/decision`，防止绕过来源、有效期和幂等检查。`pendingApproval` 仅由服务端在内部构造，继续遵守原引擎信封契约。完整新接口见 [审批中心 P0](./approvals-p0.md)。
+
 `POST /turns` 与 `POST /sessions/:sessionId/turns` 在既有字段之外允许一个可选字段 `pendingApproval`，逐字镜像上游 #193 加法的 `turn-envelope.v1` 可选字段（其形状即引擎 `TurnPendingApprovalInput`）：
 
 ```json

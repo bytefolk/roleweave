@@ -57,6 +57,22 @@ export const errorCodes = {
   session_storage_failed: "session_storage_failed",
   /** A local reports source is malformed or crosses a safe path boundary. */
   reports_data_invalid: "reports_data_invalid",
+  /** Approval query or decision body violates the approval contract. */
+  approval_request_invalid: "approval_request_invalid",
+  /** A requested approval record does not exist in the open workspace. */
+  approval_missing: "approval_missing",
+  /** Approval state, source, workspace instance, or optimistic version conflicts. */
+  approval_conflict: "approval_conflict",
+  /** The approval expired before its verdict could be accepted. */
+  approval_expired: "approval_expired",
+  /** Approval persistence is malformed, unsafe, or unavailable. */
+  approval_storage_failed: "approval_storage_failed",
+  /** Another local control-plane process owns approval writes for this workspace. */
+  approval_writer_busy: "approval_writer_busy",
+  /** A paginated approval snapshot changed and must be read from the first page. */
+  approval_snapshot_changed: "approval_snapshot_changed",
+  /** Direct pendingApproval input is disabled; decisions require source validation. */
+  approval_endpoint_required: "approval_endpoint_required",
   /** POST /hire request shape violates the frozen hire channel contract (#33). */
   hire_request_invalid: "hire_request_invalid",
   /** Employee avatar request shape is invalid. */

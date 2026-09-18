@@ -3,8 +3,8 @@
  *
  * Right-side drawer that lets the operator inspect one approval and
  * approve / deny it. Interaction is deliberately dumb: it forwards the
- * verdict up via callbacks; the host owns the "carry pendingApproval in the
- * next resume turn" work (see App.tsx `onVerdictTurn`). Once an item is
+ * verdict up via callbacks; the server owns the source-bound resume turn.
+ * Once an item is
  * decided (or expired), inputs and action buttons are locked so nothing can
  * be re-judged.
  *
@@ -65,7 +65,7 @@ export function ApprovalDetailDrawer({
   const decided = isDecided(item);
   const overreach = isPermissionOverreach(item);
   const expired = item.decision.kind === "expired";
-  const disabled = decided || expired;
+  const disabled = decided || expired || item.busy === true || item.canDecide === false || new TextEncoder().encode(reason.trim()).length > MAX_APPROVAL_REASON_BYTES;
   const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
   const description = decodeEscapedUnicode(item.description);
   const target = item.target ? decodeEscapedUnicode(item.target) : undefined;
@@ -138,7 +138,7 @@ export function ApprovalDetailDrawer({
                   ? t("apr.alertGranted")
                   : item.decision.kind === "denied"
                     ? t("apr.alertDenied")
-                    : t("apr.alertExpired")
+                    : t(`apr.status.${item.decision.kind}`)
               }
               description={
                 item.decision.kind === "denied" && item.decision.reason
@@ -168,6 +168,7 @@ export function ApprovalDetailDrawer({
               type="primary"
               onClick={handleApprove}
               disabled={disabled}
+              loading={item.busy}
               data-testid="approval-approve-button"
             >
               {t("apr.grant")}
@@ -181,6 +182,11 @@ export function ApprovalDetailDrawer({
               {t("apr.deny")}
             </Button>
           </div>
+          {item.requestReason ? <p>{item.requestReason}</p> : null}
+          {item.executionPhase && item.executionPhase !== "not_started" ? <Alert type="info" showIcon message={t(`apr.phase.${item.executionPhase}`)} /> : null}
+          {item.canDecide === false && !decided ? <Alert type="warning" message={t(`apr.unavailable.${item.unavailableReason ?? "unknown"}`)} /> : null}
+          {new TextEncoder().encode(reason.trim()).length > MAX_APPROVAL_REASON_BYTES ? <Alert type="warning" message={t("apr.reasonTooLong")} /> : null}
+          {item.error ? <Alert type="error" showIcon message={item.error} /> : null}
 
         </Space>
       </div>

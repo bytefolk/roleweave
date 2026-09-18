@@ -14,6 +14,7 @@ import type {
 import { EventBus } from "../src/bus.js";
 import type { ControlPlaneContext } from "../src/context.js";
 import { createControlPlane } from "../src/server.js";
+import { approvals } from "../src/approvals/service.js";
 import { WorkspaceState } from "../src/workspace-state.js";
 import { TurnStore } from "../src/turns/store.js";
 import { RunningTurnRegistry } from "../src/turns/running.js";
@@ -146,10 +147,13 @@ export async function startTestServer(
     boundPort: address.port,
     token: TEST_TOKEN,
     ctx,
-    close: () =>
+    close: async () => {
+      await approvals(ctx).close();
+      await (
       new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
-      }),
+      }));
+    },
   };
 }
 
@@ -165,7 +169,9 @@ class UnavailableTestContextAdapter implements ContextAdapterClient {
 
 export async function copyExampleWorkspace(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-workspace-"));
-  await fs.cp(EXAMPLE_WORKSPACE, dir, { recursive: true });
+  // Running the example locally must not import sessions/applied state into
+  // a new test fixture. Preserve the user's original runtime directory.
+  await fs.cp(EXAMPLE_WORKSPACE, dir, { recursive: true, filter: source => path.basename(source) !== ".digital-employee" });
   return dir;
 }
 
