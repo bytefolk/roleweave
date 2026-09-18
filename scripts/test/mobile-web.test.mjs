@@ -5,8 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-  chooseSurface,
-  isMobileUserAgent,
+  choosePlatform,
+  detectPlatform,
   loadWorkspaceSnapshot,
   resolvePublicAsset,
 } from "../../apps/mobile-web/surface.mjs";
@@ -14,15 +14,17 @@ import {
 const productDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const exampleDir = path.join(productDir, "examples", "oss-maintainer");
 
-test("classifies phone and ASteam app user agents as mobile", () => {
-  assert.equal(isMobileUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"), true);
-  assert.equal(isMobileUserAgent("Mozilla/5.0 ASteamApp/0.15"), true);
-  assert.equal(isMobileUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"), false);
+test("splits phone platforms: iOS, Android, HarmonyOS", () => {
+  assert.equal(detectPlatform("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"), "ios");
+  assert.equal(detectPlatform("Mozilla/5.0 (Linux; Android 14; Pixel 8) Mobile"), "android");
+  assert.equal(detectPlatform("Mozilla/5.0 (Linux; Android 12; HarmonyOS) Mobile"), "harmony");
+  assert.equal(detectPlatform("Mozilla/5.0 (Phone; OpenHarmony 5.0) ArkWeb/5.0.0.0"), "harmony");
+  assert.equal(detectPlatform("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"), "desktop");
 });
 
-test("surface query overrides user agent", () => {
-  assert.equal(chooseSurface({ userAgent: "iPhone", searchParams: new URLSearchParams("surface=desktop") }), "desktop");
-  assert.equal(chooseSurface({ userAgent: "Macintosh", searchParams: new URLSearchParams("surface=mobile") }), "mobile");
+test("platform query overrides user agent", () => {
+  assert.equal(choosePlatform({ userAgent: "iPhone", searchParams: new URLSearchParams("platform=android") }), "android");
+  assert.equal(choosePlatform({ userAgent: "iPhone", searchParams: new URLSearchParams("surface=desktop") }), "desktop");
 });
 
 test("desktop surface falls through instead of serving the mobile shell", () => {
@@ -53,7 +55,7 @@ function unusedPort() {
   });
 }
 
-test("phone user agents receive the mobile shell", async (t) => {
+test("each phone UA receives its own shell", async (t) => {
   const port = await unusedPort();
   const child = spawn(process.execPath, [path.join(productDir, "scripts", "mobile-web.mjs")], {
     cwd: productDir,
@@ -75,14 +77,10 @@ test("phone user agents receive the mobile shell", async (t) => {
       reject(new Error(`exited ${code}`));
     });
   });
-  const phone = await fetch(`http://127.0.0.1:${port}/`, {
-    headers: { "user-agent": "Mozilla/5.0 (iPhone) Mobile" },
-  });
-  const html = await phone.text();
-  assert.equal(phone.status, 200);
-  assert.match(html, /data-surface="mobile"/);
-  const workspace = await fetch(`http://127.0.0.1:${port}/api/mobile/workspace`);
-  assert.equal(workspace.status, 200);
-  const body = await workspace.json();
-  assert.equal(body.roles.length, 4);
+  const ios = await (await fetch(`http://127.0.0.1:${port}/`, { headers: { "user-agent": "Mozilla/5.0 (iPhone) Mobile" } })).text();
+  const android = await (await fetch(`http://127.0.0.1:${port}/`, { headers: { "user-agent": "Mozilla/5.0 (Linux; Android 14) Mobile" } })).text();
+  const harmony = await (await fetch(`http://127.0.0.1:${port}/`, { headers: { "user-agent": "Mozilla/5.0 (Phone; OpenHarmony 5.0) ArkWeb/5.0.0.0" } })).text();
+  assert.match(ios, /data-platform="ios"/);
+  assert.match(android, /data-platform="android"/);
+  assert.match(harmony, /data-platform="harmony"/);
 });

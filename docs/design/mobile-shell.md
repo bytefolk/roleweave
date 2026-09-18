@@ -1,32 +1,20 @@
-# RoleWeave mobile shell
+# RoleWeave mobile shells
 
 Date: 2026-09-17
-Status: first slice
-
-## Problem
-
-Opening RoleWeave on a phone currently presents a desktop workspace. Targets are too small, typing is hostile, and the org chart plus conversation are not designed for a thumb.
+Status: split by OS
 
 ## Decision
 
-Phones get a native web shell. The desktop app remains where hiring, org edits, and turns actually run.
+Phone traffic is split into three shells. They share the workspace snapshot and command protocol, not the layout.
 
-Bottom navigation, four entries at most:
+| Platform | Detection | Layout |
+| --- | --- | --- |
+| iOS | iPhone / iPad / iPod | Large title, inset grouped list, 49pt tab bar |
+| Android | Android UA without Harmony | Material top app bar, full-bleed list, 80dp nav |
+| HarmonyOS | HarmonyOS / OpenHarmony / ArkWeb first | Service cards, 20px radius, floating dock |
 
-1. Organization: read-only preview of the example workspace roles.
-2. Command: send one instruction to an already-running desktop host.
-3. Desktop: remind the user that the full workbench stays on the computer.
-4. Settings: data boundary (preview is read-only; turns execute on the desktop).
+Force with `?platform=ios|android|harmony`. Desktop remains `?surface=desktop`.
 
-## Constraints
+Harmony wins when a UA contains both Android and HarmonyOS.
 
-- Touch targets at least 44px, including the tab bar, with safe-area insets.
-- Keep the existing RoleWeave palette (`#12141b` / `#7aa2ff`).
-- `/api/mobile/workspace` returns names, descriptions, budgets, and skill excerpts only. No host filesystem paths.
-- The control plane stays on loopback. The phone never receives the boot token.
-
-## Non-goals
-
-- Hiring, rewriting the org tree, or editing budgets on the phone.
-- Exposing the control-plane port on a LAN.
-- Rebuilding the Electron four-zone layout in this slice.
+Turns still run on the desktop host. These shells do not hire or edit the org tree.

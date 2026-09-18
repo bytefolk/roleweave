@@ -3,6 +3,8 @@ const orgLead = document.getElementById("org-lead");
 const roleList = document.getElementById("role-list");
 const roleDetail = document.getElementById("role-detail");
 const pairForm = document.getElementById("pair-form");
+const claimForm = document.getElementById("claim-form");
+const hostStatus = document.getElementById("host-status");
 const commandForm = document.getElementById("command-form");
 const commandStatus = document.getElementById("command-status");
 const commandSummary = document.getElementById("command-summary");
@@ -55,9 +57,34 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function describeSource(snapshot) {
+  if (snapshot.source === "live") return "电脑当前工作区";
+  if (snapshot.source === "closed") return "电脑未打开工作区";
+  return "示例预览，电脑打开工作区后会换成当前组织";
+}
+
+function setDeviceState(connected) {
+  const state = document.getElementById("device-state");
+  const revoke = document.getElementById("revoke");
+  if (state) state.textContent = connected ? "已连接" : "未连接";
+  if (revoke) revoke.hidden = !connected;
+}
+
 function renderRoles(snapshot) {
+  const sourceEl = document.getElementById("org-source");
+  if (sourceEl) sourceEl.textContent = describeSource(snapshot);
+  if (snapshot.source === "closed") {
+    workspaceName.textContent = "未打开工作区";
+    orgLead.textContent = "在电脑上打开一个工作区后，这里会列出当前员工。";
+    orgLead.classList.remove("error");
+    roleList.replaceChildren();
+    roleDetail.hidden = true;
+    return;
+  }
   workspaceName.textContent = snapshot.name;
-  orgLead.textContent = snapshot.description || "当前是示例组织的只读预览。选一个岗位，看说明书和预算。";
+  orgLead.textContent = snapshot.source === "live"
+    ? (snapshot.description || "这是电脑上正在打开的工作区。")
+    : (snapshot.description || "当前是示例组织的只读预览。选一个岗位，看说明书和预算。");
   const names = new Map(snapshot.roles.map((role) => [role.id, role.name]));
   roleList.replaceChildren();
   for (const role of snapshot.roles) {
@@ -120,7 +147,9 @@ function connect() {
     }
     if (message.type === "phone.accepted") {
       pairForm.hidden = true;
+      claimForm.hidden = true;
       commandForm.hidden = false;
+      setDeviceState(true);
       setCommandStatus("已连上电脑，可以发指令。");
       return;
     }
@@ -142,7 +171,9 @@ function connect() {
         localStorage.removeItem(storageKey);
         deviceToken = null;
         pairForm.hidden = false;
+        claimForm.hidden = false;
         commandForm.hidden = true;
+        setDeviceState(false);
       }
       setCommandStatus(message.message ?? "出错了");
     }
@@ -151,6 +182,41 @@ function connect() {
     if (deviceToken) setCommandStatus("连接断开，正在重试…");
   });
 }
+
+async function acceptGrant(body) {
+  if (!body?.deviceToken) return false;
+  deviceToken = body.deviceToken;
+  localStorage.setItem(storageKey, deviceToken);
+  connect();
+  return true;
+}
+
+async function refreshHostStatus() {
+  try {
+    const response = await fetch("/phone-link/v1/status", { headers: { accept: "application/json" } });
+    const body = await response.json();
+    if (body.hostOnline) {
+      hostStatus.textContent = "电脑在线，可以连接。";
+      hostStatus.classList.remove("error");
+    } else {
+      hostStatus.textContent = "电脑还没连上。先打开 RoleWeave 桌面。";
+      hostStatus.classList.add("error");
+    }
+  } catch {
+    hostStatus.textContent = "暂时读不到电脑状态。";
+    hostStatus.classList.add("error");
+  }
+}
+
+claimForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setCommandStatus("正在连接电脑…");
+  const response = await fetch("/phone-link/v1/claim", { method: "POST" });
+  const body = await response.json();
+  if (!response.ok || !(await acceptGrant(body))) {
+    setCommandStatus(body.message ?? "连接失败");
+  }
+});
 
 pairForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -162,13 +228,9 @@ pairForm.addEventListener("submit", async (event) => {
     body: JSON.stringify({ code }),
   });
   const body = await response.json();
-  if (!response.ok || !body.deviceToken) {
+  if (!response.ok || !(await acceptGrant(body))) {
     setCommandStatus(body.message ?? "配对失败");
-    return;
   }
-  deviceToken = body.deviceToken;
-  localStorage.setItem(storageKey, deviceToken);
-  connect();
 });
 
 commandForm.addEventListener("submit", (event) => {
@@ -180,14 +242,43 @@ commandForm.addEventListener("submit", (event) => {
   }
   showSummary("");
   const commandId = crypto.randomUUID();
-  socket.send(JSON.stringify({ v: 1, type: "command.submit", commandId, text }));
+  socket.send(JSON.stringify({
+    v: 1,
+    type: "command.submit",
+    commandId,
+    text,
+    ...(selectedRoleId ? { positionId: selectedRoleId } : {}),
+  }));
   setCommandStatus("已发出，等电脑受理…");
 });
 
-document.querySelector(".tabs").addEventListener("click", (event) => {
+document.querySelector("nav[aria-label='主要功能']")?.addEventListener("click", (event) => {
   const tab = event.target.closest("[data-tab]");
   if (tab) selectTab(tab.dataset.tab);
 });
 
+document.getElementById("revoke")?.addEventListener("click", async () => {
+  if (!deviceToken) return;
+  const response = await fetch("/phone-link/v1/revoke", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deviceToken }),
+  });
+  localStorage.removeItem(storageKey);
+  deviceToken = null;
+  socket?.close();
+  pairForm.hidden = false;
+  claimForm.hidden = false;
+  commandForm.hidden = true;
+  setDeviceState(false);
+  setCommandStatus(response.ok ? "已断开这台手机。" : "已在本机退出，电脑侧可能仍需确认。");
+});
+
 if (deviceToken) connect();
+else setDeviceState(false);
 void loadWorkspace();
+void refreshHostStatus();
+setInterval(() => {
+  void refreshHostStatus();
+  void loadWorkspace();
+}, 4000);

@@ -7,6 +7,8 @@
 
 ### Added
 
+- #334 #335 #336：手机壳按 iOS / Android / HarmonyOS 拆开，UA 分流；可用 `?platform=` 强制切换。
+
 - #329：手机打开 RoleWeave 时进入原生手机壳（组织 / 指令 / 桌面 / 设置），而不是缩过的桌面工作台。组织页只读预览 `examples/oss-maintainer`；回合仍在已打开的电脑桌面执行。
 
 - #328 R2：新增 `semantic-runtime.v1alpha1` 合同切片（BusinessObjectRef / EvidenceRef / DecisionRecord / ActionProposal / ExecutionReceipt）与 Ontology Runtime 术语表；github-ops 示例给出只读分析与可写 squash-merge 轨迹；纯函数测试覆盖「未批准不可执行、非法过期时间 fail-closed、幂等重试绑定目标版本、目标版本失效、运行前状态不可直接失败、indeterminate 不能变成 succeeded」。不是 live GitHub 执行，也不是 Sales Workbench 核心词汇。设计说明见 `docs/design/ontology-runtime-r2.md`。
