@@ -2014,8 +2014,8 @@
 }
 
 
-/* #57 agent 引擎品牌 icon：18px 档，给品牌标识足够的识别面积，
-   与引擎文字标签内联对齐。 */
+/* #57 agent 引擎品牌 icon：统一 18px 布局盒子；不同素材的画布留白不一，
+   用轻微 optical scale 让实际可见的品牌面积保持同一档位。 */
 .owb-engine-icon {
   width: 18px;
   height: 18px;
@@ -2023,6 +2023,15 @@
   margin-right: 5px;
   vertical-align: -4px;
   flex: none;
+  transform: scale(var(--owb-engine-icon-optical-scale, 1));
+}
+
+.owb-engine-icon--qoder {
+  --owb-engine-icon-optical-scale: 1.2;
+}
+
+.owb-engine-icon--workbuddy {
+  --owb-engine-icon-optical-scale: .92;
 }
 
 /* design-system 的树元数据默认把所有图像压到 12px；品牌标识需要与

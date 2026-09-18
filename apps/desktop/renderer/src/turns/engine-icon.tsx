@@ -19,5 +19,5 @@ const ENGINE_ICON_SRC: Record<TurnEngine, string> = {
  * GitHub organisation avatar. WorkBuddy uses the product's official logo.svg
  * served by workbuddy.ai. */
 export function EngineIcon({ engine }: { engine: TurnEngine }) {
-  return <img src={ENGINE_ICON_SRC[engine]} alt="" aria-hidden="true" className="owb-engine-icon" draggable={false} />;
+  return <img src={ENGINE_ICON_SRC[engine]} alt="" aria-hidden="true" className={`owb-engine-icon owb-engine-icon--${engine}`} draggable={false} />;
 }
