@@ -64,7 +64,9 @@ It must **not** include:
 - another hire’s private `memoryId` (#349 non-enumerable deny)
 - the whole transcript
 
-Illustrative legal package (full digest):
+Illustrative legal package. Digests below are full 64-hex SHA-256 **shapes**;
+runtime must hash the named segment/receipt/memory bytes, not copy these
+constants:
 
 ```json
 {
