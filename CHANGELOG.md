@@ -7,6 +7,8 @@
 
 ### Added
 
+- #328 R2：新增 `semantic-runtime.v1alpha1` 合同切片（BusinessObjectRef / EvidenceRef / DecisionRecord / ActionProposal / ExecutionReceipt）与 Ontology Runtime 术语表；github-ops 示例给出只读分析与可写 squash-merge 轨迹；纯函数测试覆盖「未批准不可执行、幂等键必须同一、目标版本失效、indeterminate 不能变成 succeeded」。不是 live GitHub 执行，也不是 Sales Workbench 核心词汇。设计说明见 `docs/design/ontology-runtime-r2.md`。
+
 - #309 后续：控制面拒绝超大请求体时，drain 或读取被中止（2 秒截止、10 MiB drain 上限、对端断开）会向 stderr 写一行原因与字节数，现场 EPIPE / 连接复位事故从此可归因；同步 docs/api-contract-v0.md：1 MiB 上限补记先读后拒行为、drain 上限与截止、server requestTimeout / headersTimeout，以及拒绝响应携带 Connection: close。附测试：stall 的超大上传在 drain 与 read 两条路径都断言中止行。
 
 - #302：新增随仓库版本化的 GitHub 运营员工组织 `examples/github-ops/`：打开该目录即得到「问题调研 / PR 提交 / 合并把关」三个岗位。调研岗负责查重、复现并按模板建 issue；提交岗负责实现改动与提 PR；把关岗只在「存在非作者的批准、该 head 上必需检查全绿、无未解决对话、非 draft」时 squash 合并，合并前一刻重读 head SHA，禁用管理员绕过与 dismiss 他人的变更请求。三者均通过 `Bash` 调用 `gh`，不使用 MCP（内置宿主会以 `qoder.mcp_binding_unsupported` 拒绝员工 MCP 绑定）。注意：岗位包里的 `policy.network` / `policy.filesystem` / `policy.mode` 目前只被记录、不被执行，真正生效的是 `permissions.json` 的工具白名单，因此该员工在 GitHub 上的能力边界由所用凭据决定——建议用独立机器身份的细粒度 PAT，且不要授予 Administration。随附测试守护：声明与包一致（含 digest）、内置引擎能 `org apply`、控制面能打开并供出岗位卡。
