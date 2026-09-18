@@ -3,6 +3,12 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 早期开发记录以里程碑（D0/D1/D2…）标注，安装包发布使用语义化版本。
 
+## [Unreleased]
+
+### Added
+
+- #348: design-only user remember/correct/forget acts (`docs/design/memory-user-acts-v1.md`). Write responses are created/stored; admitted/omitted only on the next receipt. Append-only supersession. Recalled text stays untrusted. No runtime.
+
 ## [0.3.0] — 2026-09-18
 
 ### Added
