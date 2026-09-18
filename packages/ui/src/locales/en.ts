@@ -694,6 +694,17 @@ export const enCatalog: Record<string, string> = {
   "docs.openingDoc": "Opening the document…",
   "docs.readerAria": "Document reader",
   "docs.readerEmpty": "Select a document on the left to read it",
+  "docs.fileType.md": "Markdown Document",
+  "docs.fileType.markdown": "Markdown Document",
+  "docs.fileType.txt": "Plain Text Document",
+  "docs.fileType.json": "JSON Document",
+  "docs.fileType.yaml": "YAML Document",
+  "docs.fileType.yml": "YAML Document",
+  "docs.fileType.unknown": "File",
+  "docs.sizeBytes": "{size} B",
+  "docs.sizeKB": "{size} KB",
+  "docs.sizeMB": "{size} MB",
+  "docs.sizeGB": "{size} GB",
 
   // Reports center / budget deck / timeline
   "rep.readFail": "Failed to read report data",

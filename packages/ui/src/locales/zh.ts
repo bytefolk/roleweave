@@ -697,6 +697,17 @@ export const zhCatalog: Record<string, string> = {
   "docs.openingDoc": "正在打开文档…",
   "docs.readerAria": "文档阅读区",
   "docs.readerEmpty": "选择左侧文档开始阅读",
+  "docs.fileType.md": "Markdown 文档",
+  "docs.fileType.markdown": "Markdown 文档",
+  "docs.fileType.txt": "纯文本文档",
+  "docs.fileType.json": "JSON 文档",
+  "docs.fileType.yaml": "YAML 文档",
+  "docs.fileType.yml": "YAML 文档",
+  "docs.fileType.unknown": "文件",
+  "docs.sizeBytes": "{size} 字节",
+  "docs.sizeKB": "{size} KB",
+  "docs.sizeMB": "{size} MB",
+  "docs.sizeGB": "{size} GB",
 
   // 上报中心 / 预算看板 / 时间线
   "rep.readFail": "上报数据读取失败",
