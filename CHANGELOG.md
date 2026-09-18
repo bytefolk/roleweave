@@ -3,6 +3,12 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 早期开发记录以里程碑（D0/D1/D2…）标注，安装包发布使用语义化版本。
 
+## [Unreleased]
+
+### Added
+
+- #352: design-only routing table among #143 short window, #327 durable memory, and #347 Knowledge Base (`docs/design/memory-routing-v1.md`). Does not close #143. No runtime.
+
 ## [0.3.0] — 2026-09-18
 
 ### Added
