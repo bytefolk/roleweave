@@ -95,7 +95,7 @@ const {
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
 } = require("./goal-ipc.cjs");
-const { openWorkspaceWithPicker, createWorkspaceWithPicker, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
+const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
 const { runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
@@ -393,6 +393,11 @@ function pickWorkspaceDirectory(options) {
 
 ipcMain.handle("owb:workspace:open", async () => openWorkspaceWithPicker({
   pickDirectory: pickWorkspaceDirectory, apiRequest, env: desktopEnv,
+  userDataPath: app.getPath("userData"),
+}));
+
+ipcMain.handle("owb:workspace:initialize", async (_event, request) => initializeWorkspace({
+  request, apiRequest, env: desktopEnv,
   userDataPath: app.getPath("userData"),
 }));
 

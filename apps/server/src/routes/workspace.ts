@@ -19,6 +19,7 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
+  WorkspaceInitializeRequest,
   WorkspaceManifest,
   WorkspaceOpenRequest,
 } from "@roleweave/shared";
@@ -84,6 +85,52 @@ function assertWorkspaceCreateRequest(raw: unknown): WorkspaceCreateRequest {
   };
 }
 
+function assertWorkspaceInitializeRequest(raw: unknown): WorkspaceInitializeRequest {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw invalid("workspace initialize request must be a JSON object");
+  }
+  const body = raw as Record<string, unknown>;
+  const known = new Set(["path", "projectId", "business", "description", "agentEngine"]);
+  for (const key of Object.keys(body)) {
+    if (!known.has(key)) throw invalid(`unknown field: ${key}`);
+  }
+  if (typeof body.path !== "string" || !path.isAbsolute(body.path) || body.path.trim().length === 0) {
+    throw invalid("path must be an absolute directory path");
+  }
+  if (
+    !isPositionId(body.projectId) ||
+    String(body.projectId).length > MAX_PROJECT_ID_LENGTH
+  ) {
+    throw invalid(`projectId must be a path-safe id no larger than ${MAX_PROJECT_ID_LENGTH} characters`);
+  }
+  if (
+    typeof body.business !== "string" ||
+    body.business.trim().length === 0 ||
+    Buffer.byteLength(body.business.trim(), "utf8") > MAX_BUSINESS_BYTES
+  ) {
+    throw invalid("business must be a non-empty name no larger than 128 bytes");
+  }
+  if (
+    typeof body.description !== "string" ||
+    body.description.trim().length > MAX_DESCRIPTION_CHARACTERS
+  ) {
+    throw invalid(`description must be at most ${MAX_DESCRIPTION_CHARACTERS} characters`);
+  }
+  if (
+    body.agentEngine !== undefined &&
+    (typeof body.agentEngine !== "string" || !turnEngines.includes(body.agentEngine as TurnEngine))
+  ) {
+    throw invalid(`agentEngine must be ${turnEngines.join(" or ")}`);
+  }
+  return {
+    path: body.path.trim(),
+    projectId: body.projectId,
+    business: body.business.trim(),
+    description: body.description.trim(),
+    agentEngine: body.agentEngine === undefined ? DEFAULT_AGENT_ENGINE : body.agentEngine as TurnEngine,
+  };
+}
+
 async function assertRealDirectory(directory: string): Promise<string> {
   let stat;
   try {
@@ -95,6 +142,26 @@ async function assertRealDirectory(directory: string): Promise<string> {
     throw new OrgApiError(errorCodes.workspace_invalid, 422, "project parent must be a real directory");
   }
   return fs.realpath(directory);
+}
+
+/** An explicit in-place bootstrap may add RoleWeave metadata to a source tree,
+ * but it must never guess how to repair an existing partial workspace. */
+async function assertInitializableDirectory(directory: string): Promise<string> {
+  const realDirectory = await assertRealDirectory(directory);
+  for (const relative of ["workspace.json", "organization.v1alpha1.json", "positions", ".digital-employee"] as const) {
+    try {
+      await fs.lstat(path.join(realDirectory, relative));
+      throw new OrgApiError(
+        errorCodes.workspace_invalid,
+        422,
+        "directory already contains RoleWeave workspace files; open it or choose a new directory",
+      );
+    } catch (error) {
+      if (error instanceof OrgApiError) throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return realDirectory;
 }
 
 function projectOwnerId(projectId: string): string {
@@ -232,6 +299,66 @@ export async function handleWorkspaceCreate(
   } finally {
     if (targetCreated && !applied) {
       await fs.rm(target, { recursive: true, force: true });
+    }
+  }
+}
+
+/** Bootstrap a RoleWeave workspace in an existing, otherwise-uninitialized
+ * directory. User files stay in place; only the generated workspace contract
+ * and project-owner package are added. */
+export async function handleWorkspaceInitialize(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const request = assertWorkspaceInitializeRequest(await readJsonBody<unknown>(req));
+  const target = await assertInitializableDirectory(request.path);
+  const createRequest: WorkspaceCreateRequest = {
+    parentPath: target,
+    projectId: request.projectId,
+    business: request.business,
+    description: request.description,
+    agentEngine: request.agentEngine,
+  };
+  let applied = false;
+  try {
+    const { owner } = await writeProjectSkeleton(target, createRequest);
+    const engineResult = await ctx.driver.apply(target);
+    if (engineResult.status === "engine_unavailable") {
+      throw new OrgApiError(errorCodes.engine_unavailable, 503, engineResult.message, true);
+    }
+    if (engineResult.status === "engine_capability_missing") {
+      throw new OrgApiError(errorCodes.engine_capability_missing, 503, engineResult.message);
+    }
+    if (engineResult.status === "failed") {
+      throw new OrgApiError(engineResult.code, 422, engineResult.message, engineResult.retryable);
+    }
+    applied = true;
+
+    const ws = await ctx.workspace.openWorkspace(target);
+    const version = ctx.workspace.touch();
+    ctx.bus.publish("org.updated", { workspace: ws.dir, version, changes: [] });
+    const body: WorkspaceCreateResponse = {
+      open: true,
+      created: true,
+      next: "create_employee",
+      path: ws.dir,
+      business: ws.organization.business,
+      owner,
+      agentEngine: request.agentEngine ?? DEFAULT_AGENT_ENGINE,
+      version: ws.version,
+      budgetPoolTokens: ctx.config.budgetPoolTokens,
+    };
+    sendJson(res, 201, body);
+  } finally {
+    if (!applied) {
+      // Every marker was absent during the preflight. Remove only files and
+      // directories generated by this attempt; unrelated source files remain.
+      await fs.rm(path.join(target, "workspace.json"), { force: true });
+      await fs.rm(path.join(target, "organization.v1alpha1.json"), { force: true });
+      await fs.rm(path.join(target, "positions"), { recursive: true, force: true });
+      await fs.rm(path.join(target, "context"), { recursive: true, force: true });
+      await fs.rm(path.join(target, ".digital-employee"), { recursive: true, force: true });
     }
   }
 }

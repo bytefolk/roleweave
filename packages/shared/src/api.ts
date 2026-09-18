@@ -21,6 +21,7 @@ export const routes = {
   workspace: "/workspace",
   workspaceOpen: "/workspace/open",
   workspaceCreate: "/workspace/create",
+  workspaceInitialize: "/workspace/initialize",
   orgTree: "/org/tree",
   orgApply: "/org/apply",
   orgBackups: "/org/backups",

@@ -15,9 +15,6 @@ export interface PositionCardProps {
   onRefresh?: () => void;
   /** Opens the unified employee-memory surface for a context source. */
   onContextSourceSelect?: (source: ContextSourceSummary) => void;
-  /** Per-task consumption ratio (0..1+) for the budget gauge; null/undefined
-   * keeps the gauge in declaration phase — never a fabricated percentage. */
-  consumption?: number | null;
   /** Live turn in flight for this position: header status light breathes. */
   running?: boolean;
   /** #137 review: operator actions (e.g. the dismiss dialog) render inside
@@ -44,7 +41,6 @@ export function PositionCard({
   notFound = false,
   onRefresh,
   onContextSourceSelect,
-  consumption = null,
   running = false,
   actions,
   className,
@@ -154,7 +150,6 @@ export function PositionCard({
                 ? { taskLimit: position.budget.perTask, dailyLimit: position.budget.perDay }
                 : null
             }
-            consumption={consumption}
           />
         </section>
 

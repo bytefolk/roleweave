@@ -34,8 +34,8 @@ describe("ProjectWorkspaceDialog", () => {
     expect(screen.getByText("内容运营")).toBeInTheDocument();
     expect(screen.getByText("/tmp/content-ops")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /打开项目/ }));
-    expect(onClose).toHaveBeenCalledTimes(1);
     expect(onOpenWorkspace).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("generates a safe project id and submits the project contract", async () => {
@@ -110,5 +110,49 @@ describe("ProjectWorkspaceDialog", () => {
     expect(screen.getByRole("button", { name: "返回" })).toBeDisabled();
     expect(screen.getByRole("button", { name: /取\s*消/ })).toBeDisabled();
     await act(async () => resolveCreate({ status: 201, body: { open: true, created: true, next: "create_employee", path: "/tmp/content-ops", business: "内容运营", owner: "project-owner", agentEngine: "codex-local" } }));
+  });
+
+  it("initializes the selected existing folder with a generated project owner", async () => {
+    const initializeWorkspace = vi.fn().mockResolvedValue({
+      status: 201,
+      body: {
+        open: true,
+        created: true,
+        next: "create_employee",
+        path: "/tmp/source-tree",
+        business: "源代码项目",
+        owner: "source-tree-owner",
+        agentEngine: "codex-local",
+      },
+    });
+    window.owb = { initializeWorkspace } as unknown as OwbBridge;
+    const onCreated = vi.fn();
+
+    render(
+      <ProjectWorkspaceDialog
+        open
+        workspace={null}
+        positionCount={null}
+        initializePath="/tmp/source-tree"
+        engineAvailability={engineAvailability}
+        onClose={() => {}}
+        onOpenWorkspace={() => {}}
+        onCreated={onCreated}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /在此目录初始化项目/ }));
+    expect(screen.getByRole("dialog", { name: "初始化此目录" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "项目名称*" })).toHaveValue("source-tree");
+    fireEvent.change(screen.getByRole("textbox", { name: "项目名称*" }), { target: { value: "源代码项目" } });
+    fireEvent.click(screen.getByRole("button", { name: "初始化项目" }));
+
+    await waitFor(() => expect(initializeWorkspace).toHaveBeenCalledWith({
+      path: "/tmp/source-tree",
+      projectId: expect.stringMatching(/^project-[a-z0-9]+$/),
+      business: "源代码项目",
+      description: "",
+      agentEngine: "qoder",
+    }));
+    expect(onCreated).toHaveBeenCalledTimes(1);
   });
 });

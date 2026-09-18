@@ -4,7 +4,7 @@ import { pickSelectOption, visibleSelectOptions } from "./select-helper";
 import { App } from "../src/App";
 import { HireDrawer } from "../src/org/HireDrawer";
 import type { OwbBridge } from "../src/owb";
-import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
+import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession, WorkspaceInfoResponse } from "@roleweave/shared";
 
 const activeSession: WorkbenchSession = {
   schemaVersion: "workbench-session.v1",
@@ -228,6 +228,38 @@ async function chooseExistingWorkspace(): Promise<void> {
     fireEvent.click(openButton!);
   });
 }
+
+describe("rail collapse control", () => {
+  it("starts above the bottom edge and supports vertical drag without toggling", async () => {
+    window.localStorage.removeItem("owb.railExpanded");
+    window.localStorage.removeItem("owb.railChipBottom");
+    openedBridge();
+    render(<App />);
+
+    const toggle = await screen.findByRole("button", { name: "展开导航" });
+    expect(toggle).toHaveAttribute("data-rail-chip-bottom", "72");
+    fireEvent(toggle, new MouseEvent("pointerdown", { bubbles: true, button: 0, clientY: 500 }));
+    expect(toggle).not.toHaveClass("is-dragging");
+    fireEvent(toggle, new MouseEvent("pointermove", { bubbles: true, clientY: 497 }));
+    expect(toggle).not.toHaveClass("is-dragging");
+    fireEvent(toggle, new MouseEvent("pointermove", { bubbles: true, clientY: 420 }));
+    expect(toggle).toHaveClass("is-dragging");
+    fireEvent(toggle, new MouseEvent("pointerup", { bubbles: true, clientY: 420 }));
+    expect(toggle).not.toHaveClass("is-dragging");
+    expect(toggle).toHaveAttribute("data-rail-chip-bottom", "152");
+    expect(window.localStorage.getItem("owb.railChipBottom")).toBe("152");
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.keyDown(toggle, { key: "ArrowDown" });
+    expect(toggle).toHaveAttribute("data-rail-chip-bottom", "136");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    window.localStorage.removeItem("owb.railExpanded");
+    window.localStorage.removeItem("owb.railChipBottom");
+  });
+});
 
 describe("App removed-employee recovery", () => {
   const oldEmployee = {
@@ -483,7 +515,55 @@ describe("App runtime bridge", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ }));
     expect(openWorkspace).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("dialog", { name: "选择工作区" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "选择工作区" })).not.toBeInTheDocument());
+  });
+
+  it("keeps the chooser visible while an existing workspace is opening and refreshes it after success", async () => {
+    let resolveOpen!: (value: unknown) => void;
+    const openWorkspace = vi.fn(() => new Promise((resolve) => { resolveOpen = resolve; }));
+    let workspace: WorkspaceInfoResponse = { open: false };
+    openedBridge({
+      openWorkspace,
+      workspace: vi.fn().mockImplementation(async () => ({ status: 200, body: workspace })),
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: snapshot }),
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "项目入口" }));
+    const dialog = screen.getByRole("dialog", { name: "选择工作区" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ }));
+    expect(screen.getByRole("dialog", { name: "选择工作区" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("status")).toHaveTextContent("正在打开项目");
+    expect(within(dialog).getByRole("button", { name: /打开项目/ })).toBeDisabled();
+
+    workspace = { open: true, path: "/fixture/next", business: "新项目" };
+    await act(async () => resolveOpen({ status: 200, body: workspace }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "选择工作区" })).not.toBeInTheDocument());
+    expect(await screen.findByText("项目「新项目」已打开")).toBeInTheDocument();
+  });
+
+  it("keeps the chooser open and explains why an existing workspace was rejected", async () => {
+    const openWorkspace = vi.fn().mockResolvedValue({ status: 422, body: { message: "workspace.json 缺失" } });
+    openedBridge({ openWorkspace });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "项目入口" }));
+    const dialog = screen.getByRole("dialog", { name: "选择工作区" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("workspace.json 缺失");
+    expect(screen.getByRole("dialog", { name: "选择工作区" })).toBeInTheDocument();
+  });
+
+  it("offers to initialize the selected directory when opening finds no workspace markers", async () => {
+    const openWorkspace = vi.fn().mockResolvedValue({
+      status: 422,
+      body: { message: "workspace.json 缺失" },
+      workspacePath: "/tmp/source-tree",
+    });
+    openedBridge({ openWorkspace });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "项目入口" }));
+    const dialog = screen.getByRole("dialog", { name: "选择工作区" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ }));
+    expect(await within(dialog).findByRole("button", { name: /在此目录初始化项目/ })).toBeInTheDocument();
   });
 
   it("opens the selected employee's direct conversation with a fixed Agent identity and no duplicate session controls", async () => {
@@ -1075,8 +1155,8 @@ describe("App runtime bridge", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "创建员工" }));
     expect(await screen.findByRole("button", { name: "开始创建" })).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "员工 Agent" })).toBeInTheDocument();
-    pickSelectOption("员工 Agent", "Codex");
+    fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
+    fireEvent.click(screen.getByRole("option", { name: "Codex" }));
     fireEvent.change(screen.getByPlaceholderText("员工姓名（≤24 字）"), { target: { value: "文档负责人" } });
     fireEvent.change(screen.getByPlaceholderText("≤500 字"), { target: { value: "维护文档" } });
     const taskTokens = screen.getByLabelText("每任务 token 上限*");

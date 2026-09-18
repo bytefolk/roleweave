@@ -42,7 +42,7 @@ See the [v0.2.0 release notes](docs/releases/v0.2.0.md) for this candidate's cha
 ## Get started
 
 1. **Install and open RoleWeave.** Choose the package for your platform above. The interface supports English and Simplified Chinese; open Preferences in the top-right title bar, then choose Language to switch to English.
-2. **Create or open a workspace.** Use the project menu to create a project or open an existing `digital-employee` workspace. To explore a prepared team, download or clone this repository and open its `examples/oss-maintainer` folder.
+2. **Create or open a workspace.** Use the project menu to create a project or open an existing `digital-employee` workspace. To explore a prepared team, download or clone this repository and open its `examples/oss-maintainer` folder. If you choose a source folder that has no RoleWeave files yet, the app explains why it cannot be opened and offers **Initialize this folder**; that action keeps your existing files and adds a project owner plus the workspace metadata.
 3. **Choose a role.** Inspect its instructions and budget, or create a role for the work you want it to do.
 4. **Prepare an AI host.** The default desktop adapter uses a locally installed Qoder CLI **1.x, version 1.1.0 or newer**, and checks the headless command options required for employee conversations. Install the native CLI with `npm install -g @qoder-ai/qodercli` and sign in with `qodercli login`; the Qoder editor's `qoder` launcher is not the CLI. RoleWeave checks the CLI's reported login status before enabling Qoder conversations. It does not include a model subscription, and local readiness does not establish model entitlement or a successful model request.
 5. **Send a small first task.** Select the role's conversation and send a prompt such as: “Summarize your role instructions and suggest a first task.” Review the recorded result and return to its history when needed.
@@ -74,6 +74,8 @@ Choose an Agent when creating a project or hiring an employee. Each employee kee
 ## How workspaces work
 
 A **workspace** is a local project folder. A **role** is an AI employee's position, with its own instructions and budget. A **session** groups local conversation turns for that role.
+
+Opening a directory does not infer a workspace from arbitrary files. A valid workspace has `workspace.json`, `organization.v1alpha1.json`, and `positions/`, and its organization must contain at least one employee. For an existing source tree without those markers, use the explicit initialize action in the project dialog. Initialization is additive: it preserves the source files and creates a read-only project owner so the directory is immediately usable.
 
 The included example uses this layout:
 

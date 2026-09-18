@@ -3,7 +3,7 @@ const test = require("node:test");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { validateWorkspaceCreateRequest, openWorkspaceWithPicker, createWorkspaceWithPicker, nativePathForServerPath, revealWorkspaceInFileManager } = require("../src/workspace-ipc.cjs");
+const { validateWorkspaceCreateRequest, validateWorkspaceInitializeRequest, openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, nativePathForServerPath, revealWorkspaceInFileManager } = require("../src/workspace-ipc.cjs");
 const { readLastWorkspacePath } = require("../src/last-workspace.cjs");
 const { runtimeEnvironment } = require("../src/runtime-settings.cjs");
 const { openDefaultWorkspace } = require("../src/auto-open-workspace.cjs");
@@ -67,6 +67,32 @@ test("project bootstrap IPC rejects traversal-shaped ids and unknown fields", ()
   });
   assert.equal(unknown.ok, false);
   assert.equal(unknown.response.status, 400);
+});
+
+test("in-place initialization IPC validates the selected folder and project details", () => {
+  const valid = validateWorkspaceInitializeRequest({
+    path: "/tmp/source-tree",
+    projectId: "source-tree",
+    business: "源代码项目",
+    description: "在已有目录中启用 RoleWeave。",
+    agentEngine: "codex-local",
+  });
+  assert.equal(valid.ok, true);
+  assert.deepEqual(valid.request, {
+    path: "/tmp/source-tree",
+    projectId: "source-tree",
+    business: "源代码项目",
+    description: "在已有目录中启用 RoleWeave。",
+    agentEngine: "codex-local",
+  });
+  for (const value of [
+    { path: "relative", projectId: "source-tree", business: "项目", description: "" },
+    { path: "/tmp/source-tree", projectId: "../escape", business: "项目", description: "" },
+  ]) {
+    const invalid = validateWorkspaceInitializeRequest(value);
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.response.status, 400);
+  }
 });
 
 function fixture(t, nativePath, { wsl = true, status = 201 } = {}) {
@@ -136,6 +162,34 @@ test("opening a WSL directory posts Linux path and persists picker path", async 
   const f = fixture(t, dir, { status: 200 });
   assert.equal((await openWorkspaceWithPicker(f)).status, 200);
   assert.deepEqual(f.calls, [{ route: "/workspace/open", method: "POST", body: { path: "/home/tester/team" } }]);
+  assert.equal(readLastWorkspacePath(f.userDataPath), dir);
+});
+
+test("failed open keeps the native candidate path for explicit initialization", async (t) => {
+  const dir = "\\\\wsl$\\Ubuntu-22.04\\home\\tester\\source-tree";
+  const f = fixture(t, dir, { status: 422 });
+  const result = await openWorkspaceWithPicker(f);
+  assert.equal(result.status, 422);
+  assert.equal(result.workspacePath, dir);
+  assert.deepEqual(f.calls, [{ route: "/workspace/open", method: "POST", body: { path: "/home/tester/source-tree" } }]);
+  assert.equal(readLastWorkspacePath(f.userDataPath), null);
+});
+
+test("in-place initialization converts the native path and remembers it after success", async (t) => {
+  const dir = "\\\\wsl.localhost\\Ubuntu-22.04\\home\\tester\\source-tree";
+  const f = fixture(t, dir, { status: 201 });
+  const result = await initializeWorkspace({
+    request: { path: dir, projectId: "source-tree", business: "源代码项目", description: "", agentEngine: "codex-local" },
+    apiRequest: f.apiRequest,
+    env: f.env,
+    userDataPath: f.userDataPath,
+  });
+  assert.equal(result.status, 201);
+  assert.deepEqual(f.calls, [{
+    route: "/workspace/initialize",
+    method: "POST",
+    body: { path: "/home/tester/source-tree", projectId: "source-tree", business: "源代码项目", description: "", agentEngine: "codex-local" },
+  }]);
   assert.equal(readLastWorkspacePath(f.userDataPath), dir);
 });
 

@@ -2014,15 +2014,31 @@
 }
 
 
-/* #57 agent 引擎品牌 icon（Qoder 应用标 / Claude starburst）：14px 档、圆角 3px，
-   与引擎文字标签内联对齐。 */
+/* #57 agent 引擎品牌 icon：统一 18px 布局盒子；不同素材的画布留白不一，
+   用轻微 optical scale 让实际可见的品牌面积保持同一档位。 */
 .owb-engine-icon {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  margin-right: 4px;
-  vertical-align: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  margin-right: 5px;
+  vertical-align: -4px;
   flex: none;
+  transform: scale(var(--owb-engine-icon-optical-scale, 1));
+}
+
+.owb-engine-icon--qoder {
+  --owb-engine-icon-optical-scale: 1.2;
+}
+
+.owb-engine-icon--workbuddy {
+  --owb-engine-icon-optical-scale: .92;
+}
+
+/* design-system 的树元数据默认把所有图像压到 12px；品牌标识需要与
+   岗位头像同一视觉档位，避免在深色树中显得像一枚无关紧要的点。 */
+.ui-org-tree__metadata .owb-engine-icon {
+  width: 18px;
+  height: 18px;
 }
 
 /* #35 S3 文档模块面：岗位选择器与 DocsPanel 纵向排布，间距走档位变量。 */
@@ -2933,9 +2949,92 @@
   overflow-wrap: break-word;
 }
 
-.owb-hire-agent-picker .ant-select {
+.owb-hire-choice-select {
+  position: relative;
   min-width: 0;
+}
+
+.owb-hire-choice-select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.owb-hire-choice-select__trigger:hover,
+.owb-hire-choice-select__trigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--ui-primary) 62%, var(--ui-border));
+}
+
+.owb-hire-choice-select__trigger:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.owb-hire-choice-select__trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-hire-choice-select__trigger > svg {
+  flex: 0 0 auto;
+  color: var(--ui-foreground-muted);
+  transition: transform 120ms ease;
+}
+
+.owb-hire-choice-select__trigger[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+
+.owb-hire-choice-select__menu {
+  position: absolute;
+  z-index: 1100;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 2px;
+  min-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface-raised);
+  box-shadow: var(--ui-shadow-md);
+}
+
+.owb-hire-choice-select__menu > button {
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.owb-hire-choice-select__menu > button:hover,
+.owb-hire-choice-select__menu > button.is-selected {
+  background: color-mix(in srgb, var(--ui-primary) 14%, var(--ui-surface));
+  color: var(--ui-primary);
+}
+
+.owb-hire-choice-select__menu > button:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
 }
 
 .owb-hire-agent-binding {
@@ -2963,6 +3062,31 @@
   min-height: 0;
   background: var(--ui-surface-inset);
 }
+
+.owb-hire-assist {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ui-surface-inset) 52%, transparent);
+}
+
+.owb-hire-assist > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 13px;
+  color: var(--ui-foreground);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+
+.owb-hire-assist > summary::-webkit-details-marker { display: none; }
+.owb-hire-assist > summary > svg { color: var(--ui-primary); }
+.owb-hire-assist > summary > span { margin-left: auto; color: var(--ui-foreground-muted); font-size: 10px; font-weight: 400; }
+.owb-hire-assist > .owb-hire-conversation { border: 0; border-top: 1px solid var(--ui-border); border-radius: 0; }
 
 .owb-hire-conversation__meta,
 .owb-hire-prompt__footer,
@@ -3113,6 +3237,13 @@
   padding: 5px 8px;
   color: var(--ui-foreground-muted);
   font-size: 10px;
+}
+
+.owb-hire-basic-description {
+  margin: 5px 0 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .owb-hire-basic-grid,
@@ -3421,8 +3552,15 @@ body,
   --ui-rail-width: 54px;
   --ui-sidebar-width: 300px;
   --ui-topbar-height: 48px;
+  /* 导轨宽窄切换的总时长：导轨宽度、条目 padding、chip 箭头旋转共用
+     同一条曲线，160ms 内完成，避免收拢时拖沓。
+     grid 轨道列改 auto 跟导轨自身宽度——grid-template 带命名区域是
+     discrete 的，过渡挂在 width 上才插值。 */
+  --owb-rail-duration: 160ms;
+  --owb-rail-ease: cubic-bezier(0.22, 1, 0.36, 1);
   min-height: 0;
   height: 100%;
+  grid-template-columns: auto var(--ui-sidebar-width) minmax(0, 1fr);
 }
 
 .owb-app .ui-module-rail,
@@ -3658,8 +3796,13 @@ body,
 /* ---------- 模块导轨：54px，图标 only，活跃项左侧竖条 ---------- */
 
 .owb-app .ui-module-rail {
+  position: relative;
+  width: var(--ui-rail-width);
   padding: 10px 0;
   background: var(--ui-canvas-subtle);
+  transition:
+    width var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+    padding var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out);
 }
 
 .owb-app .ui-module-rail__brand {
@@ -3669,23 +3812,56 @@ body,
 
 .owb-app .ui-module-rail__items {
   flex: 0 0 auto;
-  gap: 4px;
+  gap: 2px;
 }
 
 .owb-app .ui-module-rail__item {
   position: relative;
-  min-height: 44px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 38px;
   border: none;
-  border-radius: 0;
   background: transparent;
   box-shadow: none;
-  gap: 0;
+  transition:
+    width var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+    padding var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+    margin var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+    color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
-/* 设计稿的导轨只出图标：可及名已由 aria-label 提供，文字 span 直接
-   display:none，不再留 1px 隐藏文本。 */
+/* 收拢态：条目是 38×38 的正方形槽丸——高度、间距与展开态口径对齐
+   （评审确认参考展开态的高亮高度），水平居中；图标靠 11px 内边距居中。
+   丸宽/边距/导轨内边距都用像素值，morph 时和 rail 宽度、chip 一起插值，
+   不再有从"整行"骤缩到"居中方块"的闪跳。 */
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item {
+  width: 38px;
+  margin-inline: 8px;
+  padding: 0 11px;
+}
+
+.owb-app:not(.is-rail-expanded) .ui-module-rail__item.is-active::before {
+  content: none;
+}
+
+/* 名字常驻 DOM：收拢态 opacity 0（浮名与可及名仍同源 aria-label）；展开
+   延迟 60ms 淡入，收拢先 80ms 淡出——宽度收缩的过程中文字已经走了，
+   不会看到字被挤。 */
 .owb-app .ui-module-rail__label {
-  display: none;
+  display: block;
+  overflow: hidden;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 80ms var(--owb-ease-out, ease);
 }
 
 .owb-app .ui-module-rail__item:hover {
@@ -3720,7 +3896,7 @@ body,
 }
 
 .owb-app .ui-module-rail__footer {
-  padding: 6px 0 4px;
+  padding: 0;
 }
 
 /* ---------- 导轨展开/收拢 + 收拢 hover 浮名（2026-09-17 设计评审） ---------- */
@@ -3729,7 +3905,7 @@ body,
    aria-label——浮名与可及名同源，永远不会漂移；停一会儿才显形，
    指针扫过导轨不会一路闪名字。 */
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item::after,
-.owb-app:not(.is-rail-expanded) .owb-rail-foot::after {
+.owb-app:not(.is-rail-expanded) .owb-rail-chip::after {
   content: attr(aria-label);
   position: absolute;
   left: calc(100% + 10px);
@@ -3752,16 +3928,16 @@ body,
 
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item:hover::after,
 .owb-app:not(.is-rail-expanded) .ui-module-rail__item:focus-visible::after,
-.owb-app:not(.is-rail-expanded) .owb-rail-foot:hover::after,
-.owb-app:not(.is-rail-expanded) .owb-rail-foot:focus-visible::after {
+.owb-app:not(.is-rail-expanded) .owb-rail-chip:hover::after,
+.owb-app:not(.is-rail-expanded) .owb-rail-chip:focus-visible::after {
   opacity: 1;
   transition-delay: 0.35s;
 }
 
-/* 展开态：icon + 名字横排，导轨放宽到 148px（三级断点里收窄的是收拢态
-   宽度，展开态固定，避免名字被截断）。 */
+/* 展开态：icon + 名字横排。宽度按最长 4 字名字定（10+16+8+52+10+两侧
+   8px 导轨内边距 ≈ 116），不再留 148 的大空档。 */
 .owb-app.is-rail-expanded .ui-app-shell {
-  --ui-rail-width: 148px;
+  --ui-rail-width: 116px;
 }
 
 .owb-app.is-rail-expanded .ui-module-rail {
@@ -3773,20 +3949,16 @@ body,
 }
 
 .owb-app.is-rail-expanded .ui-module-rail__item {
-  flex-direction: row;
-  justify-content: flex-start;
-  gap: 8px;
   min-height: 38px;
+  width: 100px;
+  margin-inline: 0;
   padding: 0 10px;
   border-radius: 8px;
 }
 
 .owb-app.is-rail-expanded .ui-module-rail__label {
-  display: block;
-  width: auto;
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
+  opacity: 1;
+  transition: opacity var(--owb-duration-mid, 160ms) var(--owb-ease-out, ease) 60ms;
 }
 
 .owb-app.is-rail-expanded .ui-module-rail__item.is-active::before {
@@ -3794,55 +3966,87 @@ body,
   bottom: 6px;
 }
 
-/* 导轨宽窄开关：住在导轨自己的底部槽位（VS Code 活动栏齿轮位 = 窗口
-   左下角）。收拢态是和导航项同规格的图标槽（44px 居中、hover 浮名同套），
-   展开态长成导航行（icon + 名字）；不画多余线、不占导航序。 */
-.owb-app .ui-module-rail__footer {
-  padding-top: 8px;
-}
-
-.owb-app .owb-rail-foot {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 44px;
+/* 导轨宽窄开关：Pro Layout 式圆形浮 chip——24px 圆片骑在导轨与侧栏的
+   缝上（右缘外探一半），默认从底部上移 72px，也可以沿导轨上下拖动。
+   抬升底 + 三层软阴影、无边框；箭头 glyph 随状态旋转 180°，旋转和
+   导轨宽度同一条 160ms 快速缓动曲线，整组动作一起走完。 */
+.owb-app .owb-rail-chip {
+  position: absolute;
+  right: -12px;
+  bottom: clamp(12px, var(--owb-rail-chip-bottom, 72px), calc(100% - 36px));
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   padding: 0;
   color: var(--ui-foreground-muted);
-  background: transparent;
+  background: var(--ui-surface-raised);
   border: none;
-  border-radius: 0;
+  border-radius: 50%;
+  box-shadow:
+    0 2px 8px -2px rgb(0 0 0 / 0.18),
+    0 1px 4px -1px rgb(0 0 0 / 0.14),
+    0 0 1px 0 rgb(0 0 0 / 0.16);
   cursor: pointer;
+  touch-action: none;
   transition:
     color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
-    background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
+    box-shadow var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
-.owb-app .owb-rail-foot:hover {
+.owb-app .owb-rail-chip.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.owb-app .owb-rail-chip:hover {
   color: var(--ui-foreground);
+  box-shadow:
+    0 3px 10px -2px rgb(0 0 0 / 0.22),
+    0 2px 6px -1px rgb(0 0 0 / 0.16),
+    0 0 1px 0 rgb(0 0 0 / 0.2);
 }
 
-.owb-app .owb-rail-foot__label {
-  display: none;
+.owb-app .owb-rail-chip__glyph {
+  transition: transform var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out);
 }
 
-.owb-app.is-rail-expanded .owb-rail-foot {
-  justify-content: flex-start;
-  min-height: 38px;
-  padding: 0 10px;
-  border-radius: 8px;
+.owb-app .owb-rail-chip__glyph.is-flipped {
+  transform: rotate(180deg);
 }
 
-.owb-app.is-rail-expanded .owb-rail-foot__label {
-  display: block;
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* 导轨宽窄动画的减弱动态豁免（owner 裁决 2026-09-17：这个动效必须可见）。
+   design-system 的全局守卫在 prefers-reduced-motion: reduce 下把一切
+   transition 压到 0.01ms !important；这里用更高特异度 + !important 把
+   导轨这一组动效原样要回来。范围仅限导轨宽窄 morph，不扩散。 */
+@media (prefers-reduced-motion: reduce) {
+  .owb-app .ui-module-rail {
+    transition:
+      width var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+      padding var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out) !important;
+  }
+
+  .owb-app .ui-module-rail__item {
+    transition:
+      width var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+      padding var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+      margin var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out),
+      color var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease),
+      background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease) !important;
+  }
+
+  .owb-app .ui-module-rail__label {
+    transition: opacity 80ms var(--owb-ease-out, ease) !important;
+  }
+
+  .owb-app.is-rail-expanded .ui-module-rail__label {
+    transition: opacity var(--owb-duration-mid, 160ms) var(--owb-ease-out, ease) 60ms !important;
+  }
+
+  .owb-app .owb-rail-chip__glyph {
+    transition: transform var(--owb-rail-duration, 160ms) var(--owb-rail-ease, ease-out) !important;
+  }
 }
 
 /* ---------- 侧栏：head + workspace strip + tree + backups ---------- */
