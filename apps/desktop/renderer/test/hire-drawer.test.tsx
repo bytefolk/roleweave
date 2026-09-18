@@ -55,4 +55,35 @@ describe("HireDrawer header close control (#301)", () => {
     fireEvent.click(screen.getByRole("button", { name: /取\s*消/ }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("allows choosing the employee Agent in the create drawer", () => {
+    renderCreateDrawer();
+
+    fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
+    fireEvent.click(screen.getByRole("option", { name: "WorkBuddy" }));
+
+    expect(screen.getByRole("button", { name: /员工 Agent/ })).toHaveTextContent("WorkBuddy");
+  });
+
+  it("keeps optional drafting and advanced configuration collapsed by default", () => {
+    renderCreateDrawer();
+
+    const assist = screen.getByText("让 Agent 帮我生成草案").closest("details");
+    const advanced = screen.getByText("高级配置").closest("details");
+    expect(assist).not.toBeNull();
+    expect(advanced).not.toBeNull();
+    expect(assist).not.toHaveAttribute("open");
+    expect(advanced).not.toHaveAttribute("open");
+  });
+
+  it("reveals the optional drafting and advanced configuration on demand", () => {
+    renderCreateDrawer();
+
+    fireEvent.click(screen.getByText("让 Agent 帮我生成草案"));
+    fireEvent.click(screen.getByText("高级配置"));
+
+    expect(screen.getByLabelText("岗位创建对话").closest("details")).toHaveAttribute("open");
+    expect(screen.getByLabelText("附加能力与授权").closest("details")).toHaveAttribute("open");
+    expect(screen.getByLabelText("员工头像").closest("details")).toHaveAttribute("open");
+  });
 });

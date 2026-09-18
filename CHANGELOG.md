@@ -9,6 +9,7 @@
 
 - #329：手机打开 RoleWeave 时进入原生手机壳（组织 / 指令 / 桌面 / 设置），而不是缩过的桌面工作台。组织页只读预览 `examples/oss-maintainer`；回合仍在已打开的电脑桌面执行。
 
+- #328 R2：新增 `semantic-runtime.v1alpha1` 合同切片（BusinessObjectRef / EvidenceRef / DecisionRecord / ActionProposal / ExecutionReceipt）与 Ontology Runtime 术语表；github-ops 示例给出只读分析与可写 squash-merge 轨迹；纯函数测试覆盖「未批准不可执行、非法过期时间 fail-closed、幂等重试绑定目标版本、目标版本失效、运行前状态不可直接失败、indeterminate 不能变成 succeeded」。不是 live GitHub 执行，也不是 Sales Workbench 核心词汇。设计说明见 `docs/design/ontology-runtime-r2.md`。
 
 - #309 后续：控制面拒绝超大请求体时，drain 或读取被中止（2 秒截止、10 MiB drain 上限、对端断开）会向 stderr 写一行原因与字节数，现场 EPIPE / 连接复位事故从此可归因；同步 docs/api-contract-v0.md：1 MiB 上限补记先读后拒行为、drain 上限与截止、server requestTimeout / headersTimeout，以及拒绝响应携带 Connection: close。附测试：stall 的超大上传在 drain 与 read 两条路径都断言中止行。
 
@@ -25,6 +26,10 @@
 - #289：员工 Agent 首次选定即持久化并锁定：导入的员工由操作者选定一次 Agent（Claude Code / Codex 等），对话面板展示当前 Agent 并在锁定后禁用切换，控制面接口对已锁定员工返回冲突；新建项目负责人与新聘员工创建即带锁定绑定，存量未绑定员工在首次派单时锁定其实际使用的 Agent。
 
 ### Fixed
+
+- #325: The employee card now keeps its per-task and per-day budget declarations visible after turns instead of replacing the declaration with latest-turn usage. Usage remains available in the reports surfaces, where over-budget percentages stay truthful while the visual meter fill is bounded to its track.
+
+- #297：创建数字员工默认先展示 Agent 与基础信息；Agent 草案、头像、权限、能力、记忆、运行模式和预算改为按需展开，保留安全默认值、原有字段校验与 hire 请求 payload。
 
 - 组织树员工行的右键菜单与省略号菜单首位新增「编辑」入口：点击后打开 #292 的员工编辑抽屉，并按被右键/省略号唤起的那一行现取该员工档案回填表单，保存也对该行提交，不再绑定或抢占主面板当前选中的对话；岗位卡片头部的「编辑」按钮改用同一入口。企业根行菜单不变（仍为项目设置等）。附渲染层测试：行菜单两种触发均出编辑项、企业行菜单不出，以及 App 级端到端断言右键某行后抽屉预填该行档案、改名保存以正确 id 走档案更新桥且选中保持不变。
 
@@ -137,6 +142,8 @@
 > 逐条按版本重分派留待单独一次文档变更处理；本文件只保证不丢条目、不虚构归属。
 
 ### Added
+
+- #329：手机打开 RoleWeave 时进入原生手机壳（组织 / 指令 / 桌面 / 设置），而不是缩过的桌面工作台。组织页只读预览 `examples/oss-maintainer`；回合仍在已打开的电脑桌面执行。
 
 - #127 AC-004 跨平台布局一致性证据：新增 layout smoke 模式（macOS arm64 / Windows x64 双平台，全应用渲染两栏组织工作区并由 main 进程度量列矩形写报告），verify.yml 新增 layout-parity job 下载双平台报告比对（per-platform bottomDelta ≤2px、per-platform 两列高差 ≤2px、跨平台宽差 ≤4px、跨平台 chrome overhead 差 ≤8px，阈值声明在 scripts/check-layout-parity.mjs）。跨平台一项自 #190 起比的是 chrome overhead（`viewport.innerHeight - 列高`）而非绝对列高：runner 给两侧的窗口高度本就不同，比绝对高度量到的是 runner 而不是布局，#190 之前的「高差 ≤8px」写法已随之作废。顺带修 #150 打包缺口：doc-plane.js 未登记 SERVER_RUNTIME_FILES 导致打包 server 启动即崩、main CI 红。
 - #146 国际化骨架与全量迁移：`@org-workbench/ui` 新增 `OwbI18nProvider` / `useT` / `zhText` 与 zh-CN/en 双目录（440 key，parity 门强制 key 集合一致）；标题栏新增语言切换钮（恰好两态，持久化，默认 zh-CN，antd ConfigProvider locale 同步切换）；renderer 与 ui 包全部用户可见文案迁入目录，`i18n-cjk-gate` 测试扫描源码字符串字面量内的 CJK 防绕过；数据层（turn 原文、信封、组织文件、裁决输入）不翻译。
@@ -254,6 +261,8 @@
 提交 0db36fe（feat(d0): org-workbench skeleton）。
 
 ### Added
+
+- #329：手机打开 RoleWeave 时进入原生手机壳（组织 / 指令 / 桌面 / 设置），而不是缩过的桌面工作台。组织页只读预览 `examples/oss-maintainer`；回合仍在已打开的电脑桌面执行。
 
 - 壳-服务分离：Electron main 拉起 `apps/server`（Node，仅 127.0.0.1，每启动随机 boot-token）；控制面可脱离壳独立运行。
 - 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 报告引擎可用性与下一步。

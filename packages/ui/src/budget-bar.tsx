@@ -109,10 +109,12 @@ function BudgetLane({
   const unavailable = consumption === undefined;
   const ratio = cap && typeof consumption === "number" ? consumption : null;
   const laneClass = declarationMode || unavailable || ratio === null ? "is-declared" : tierClass(ratio);
-  // #77 review item 4：>100% 不夹到 100——spec 要求超限超长出界呈现（116%
-  // 出界不截断圆角），夹到 100 会让超限和刚好用满看起来一样。
   const percent = ratio === null ? null : Math.max(Math.round(ratio * 100), 0);
-  const fillWidth = percent === null ? "100%" : `${percent}%`;
+  // The label remains truthful above 100%, while the visual fill and numeric
+  // meter position stay bounded by the track. aria-valuetext carries the
+  // actual percentage for assistive technology.
+  const boundedPercent = percent === null ? null : Math.min(percent, 100);
+  const fillWidth = boundedPercent === null ? "100%" : `${boundedPercent}%`;
   const meterProps: CSSProperties | undefined =
     ratio === null
       ? undefined
@@ -125,10 +127,9 @@ function BudgetLane({
         role="meter"
         aria-label={`${label}${declarationMode ? t("pos.laneDeclared") : unavailable ? t("pos.laneUnavailable") : t("pos.laneConsumed")}`}
         aria-valuemin={0}
-        // valuemax 必须 >= valuenow（ARIA 合法性）：正常态定死 100，超限时
-        // 跟实际读数一起涨，不能一边报 116 一边把上限钉在 100。
-        aria-valuemax={ratio === null ? 100 : Math.max(100, percent ?? 0)}
-        aria-valuenow={ratio === null ? undefined : percent ?? undefined}
+        aria-valuemax={100}
+        aria-valuenow={ratio === null ? undefined : boundedPercent ?? undefined}
+        aria-valuetext={ratio === null ? undefined : `${percent}%`}
       >
         <span className="ui-org-budget__fill" style={meterProps ?? undefined} />
       </span>

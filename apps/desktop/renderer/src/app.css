@@ -2014,15 +2014,31 @@
 }
 
 
-/* #57 agent 引擎品牌 icon（Qoder 应用标 / Claude starburst）：14px 档、圆角 3px，
-   与引擎文字标签内联对齐。 */
+/* #57 agent 引擎品牌 icon：统一 18px 布局盒子；不同素材的画布留白不一，
+   用轻微 optical scale 让实际可见的品牌面积保持同一档位。 */
 .owb-engine-icon {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  margin-right: 4px;
-  vertical-align: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  margin-right: 5px;
+  vertical-align: -4px;
   flex: none;
+  transform: scale(var(--owb-engine-icon-optical-scale, 1));
+}
+
+.owb-engine-icon--qoder {
+  --owb-engine-icon-optical-scale: 1.2;
+}
+
+.owb-engine-icon--workbuddy {
+  --owb-engine-icon-optical-scale: .92;
+}
+
+/* design-system 的树元数据默认把所有图像压到 12px；品牌标识需要与
+   岗位头像同一视觉档位，避免在深色树中显得像一枚无关紧要的点。 */
+.ui-org-tree__metadata .owb-engine-icon {
+  width: 18px;
+  height: 18px;
 }
 
 /* #35 S3 文档模块面：岗位选择器与 DocsPanel 纵向排布，间距走档位变量。 */
@@ -2933,9 +2949,92 @@
   overflow-wrap: break-word;
 }
 
-.owb-hire-agent-picker .ant-select {
+.owb-hire-choice-select {
+  position: relative;
   min-width: 0;
+}
+
+.owb-hire-choice-select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.owb-hire-choice-select__trigger:hover,
+.owb-hire-choice-select__trigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--ui-primary) 62%, var(--ui-border));
+}
+
+.owb-hire-choice-select__trigger:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.owb-hire-choice-select__trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-hire-choice-select__trigger > svg {
+  flex: 0 0 auto;
+  color: var(--ui-foreground-muted);
+  transition: transform 120ms ease;
+}
+
+.owb-hire-choice-select__trigger[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+
+.owb-hire-choice-select__menu {
+  position: absolute;
+  z-index: 1100;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 2px;
+  min-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface-raised);
+  box-shadow: var(--ui-shadow-md);
+}
+
+.owb-hire-choice-select__menu > button {
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.owb-hire-choice-select__menu > button:hover,
+.owb-hire-choice-select__menu > button.is-selected {
+  background: color-mix(in srgb, var(--ui-primary) 14%, var(--ui-surface));
+  color: var(--ui-primary);
+}
+
+.owb-hire-choice-select__menu > button:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: -2px;
 }
 
 .owb-hire-agent-binding {
@@ -2963,6 +3062,31 @@
   min-height: 0;
   background: var(--ui-surface-inset);
 }
+
+.owb-hire-assist {
+  overflow: hidden;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ui-surface-inset) 52%, transparent);
+}
+
+.owb-hire-assist > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 13px;
+  color: var(--ui-foreground);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+
+.owb-hire-assist > summary::-webkit-details-marker { display: none; }
+.owb-hire-assist > summary > svg { color: var(--ui-primary); }
+.owb-hire-assist > summary > span { margin-left: auto; color: var(--ui-foreground-muted); font-size: 10px; font-weight: 400; }
+.owb-hire-assist > .owb-hire-conversation { border: 0; border-top: 1px solid var(--ui-border); border-radius: 0; }
 
 .owb-hire-conversation__meta,
 .owb-hire-prompt__footer,
@@ -3113,6 +3237,13 @@
   padding: 5px 8px;
   color: var(--ui-foreground-muted);
   font-size: 10px;
+}
+
+.owb-hire-basic-description {
+  margin: 5px 0 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .owb-hire-basic-grid,

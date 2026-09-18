@@ -8,7 +8,7 @@
  * POST /hire gate.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Button as AntButton, Checkbox, Drawer, Input, Select, Steps, message } from "antd";
+import { Button as AntButton, Checkbox, Drawer, Input, Steps, message } from "antd";
 import { CheckCircle2, ChevronDown, LoaderCircle, RotateCcw, Sparkles, XCircle } from "lucide-react";
 import { Input as OwbInput } from "@fullstack-ai-infra/ui";
 import { useT, type OwbT } from "@roleweave/ui";
@@ -97,6 +97,46 @@ function defaultPrompt(t: OwbT): string {
   return t("hire.agentPromptTemplate");
 }
 
+function HireChoiceSelect({ ariaLabel, value, options, onChange, t }: {
+  ariaLabel: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+  t: OwbT;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
+  const selectedLabel = selected?.label ?? value;
+  return (
+    <div className="owb-hire-choice-select">
+      <button
+        type="button"
+        className="owb-hire-choice-select__trigger"
+        aria-label={t("hire.choiceCurrent", { label: ariaLabel, value: selectedLabel })}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
+      >
+        <span>{selectedLabel}</span>
+        <ChevronDown aria-hidden="true" size={16} />
+      </button>
+      {open ? <div className="owb-hire-choice-select__menu" role="listbox" aria-label={ariaLabel}>
+        {options.map((option) => <button
+          key={option.value}
+          type="button"
+          role="option"
+          aria-selected={option.value === value}
+          className={option.value === value ? "is-selected" : undefined}
+          onClick={() => { onChange(option.value); setOpen(false); }}
+        >
+          {option.label}
+        </button>)}
+      </div> : null}
+    </div>
+  );
+}
+
 export function HireDrawer({ open, workspacePath, positions, presetReportTo, engine, conversationEngine, engineAvailability, conversationHostId, conversationHostName, budgetPoolTokens = PLATFORM_BUDGET_POOL, budgetAllocatedTokens = 0, onClose, onHired }: HireDrawerProps) {
   const t = useT();
   const [flow, dispatch] = useReducer(reduceHireFlow, undefined, () => initialHireFlow());
@@ -116,6 +156,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const [messages, setMessages] = useState<HireMessage[]>([]);
   const [conversationBusy, setConversationBusy] = useState(false);
   const [conversationError, setConversationError] = useState<string | null>(null);
+  const [designAssistOpen, setDesignAssistOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [permissions, setPermissions] = useState<HirePermissions>({ tools: ["Read", "Grep", "Glob"], rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }], skills: [], mcpServers: [] });
   const [memorySources, setMemorySources] = useState<HireMemorySource[]>([{ kind: "position_docs", locator: "./knowledge/**" }]);
@@ -147,7 +188,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
     setName(""); setDescription(""); setAvatar(undefined); setAvatarGenerating(false); setAvatarError(null); setReportTo(presetReportTo);
     setMode("approval_required"); setTaskTokens("20000"); setTaskIterations("8"); setDayTokens("200000"); setDayIterations("64");
     setAgentHost(defaultAgentHost(engineAvailability));
-    setPrompt(defaultPrompt(t)); setMessages([]); setConversationBusy(false); setConversationError(null); setAdvancedOpen(false);
+    setPrompt(defaultPrompt(t)); setMessages([]); setConversationBusy(false); setConversationError(null); setDesignAssistOpen(false); setAdvancedOpen(false);
     setPermissions({ tools: ["Read", "Grep", "Glob"], rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }], skills: [], mcpServers: [] });
     setMemorySources([{ kind: "position_docs", locator: "./knowledge/**" }]); setPhaseCopy(t("hire.phaseSubmit"));
   }, [clearTimers, engineAvailability, open, presetReportTo, t]);
@@ -298,55 +339,59 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
                 <h3>{t("hire.agentTitle")}</h3>
                 <p>{t("hire.agentDescription")}</p>
               </div>
-              <label className="owb-hire-agent-binding">
+              <div className="owb-hire-agent-binding">
                 <span>{t("hire.agentBinding")}</span>
-                <Select
-                  aria-label={t("hire.agentBinding")}
+                <HireChoiceSelect
+                  ariaLabel={t("hire.agentBinding")}
                   value={agentHost}
-                  onChange={(value) => setAgentHost(value as AgentHost)}
                   options={AGENT_HOSTS.map((host) => ({ value: host, label: AGENT_HOST_LABEL[host] }))}
+                  onChange={(value) => setAgentHost(value as AgentHost)}
+                  t={t}
                 />
                 <small>{t("hire.agentBindingHint")}</small>
-              </label>
+              </div>
             </section>
-            <section className="owb-hire-conversation" aria-label={t("hire.agentConversationAria")}><div className="owb-hire-conversation__meta"><span className="owb-hire-conversation__host"><span className="owb-led owb-led--running" />{conversationHostName ?? t("hire.agentWorkspaceContext")}</span><span>{t("hire.agentNoWrite")}</span></div>{messages.length === 0 ? <div className="owb-hire-conversation__empty"><Sparkles aria-hidden="true" size={20} /><span>{t("hire.agentEmpty")}</span></div> : <div className="owb-hire-conversation__messages">{messages.map((entry, index) => <div className={`owb-hire-message is-${entry.role}`} key={`${entry.role}-${index}`}><span>{entry.role === "user" ? t("hire.you") : t("hire.agent")}</span><p>{entry.text}</p></div>)}</div>}<div className="owb-hire-prompt"><div className="owb-hire-prompt__heading"><label htmlFor="owb-hire-prompt-input">{t("hire.promptLabel")}</label><button type="button" onClick={() => setPrompt(defaultPrompt(t))}><RotateCcw aria-hidden="true" size={12} />{t("hire.resetPrompt")}</button></div><Input.TextArea id="owb-hire-prompt-input" value={prompt} rows={4} onChange={(event) => setPrompt(event.target.value)} placeholder={t("hire.promptPh")} /><div className="owb-hire-prompt__footer"><span>{t("hire.promptEditable")}</span><AntButton type="primary" loading={conversationBusy} disabled={!engineAvailability[designEngine]?.ready || (!conversationHostId && positions.length === 0) || prompt.trim().length === 0} onClick={() => void askAgent()} icon={<Sparkles aria-hidden="true" size={14} />}>{conversationBusy ? t("hire.askingAgent") : t("hire.askAgent")}</AntButton></div>{conversationError ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{conversationError}</p> : null}</div></section>
+            <details className="owb-hire-assist" open={designAssistOpen} onToggle={(event) => setDesignAssistOpen(event.currentTarget.open)}>
+              <summary><Sparkles aria-hidden="true" size={15} />{t("hire.assistTitle")}<span>{t("hire.assistHint")}</span></summary>
+              <section className="owb-hire-conversation" aria-label={t("hire.agentConversationAria")}><div className="owb-hire-conversation__meta"><span className="owb-hire-conversation__host"><span className="owb-led owb-led--running" />{conversationHostName ?? t("hire.agentWorkspaceContext")}</span><span>{t("hire.agentNoWrite")}</span></div>{messages.length === 0 ? <div className="owb-hire-conversation__empty"><Sparkles aria-hidden="true" size={20} /><span>{t("hire.agentEmpty")}</span></div> : <div className="owb-hire-conversation__messages">{messages.map((entry, index) => <div className={`owb-hire-message is-${entry.role}`} key={`${entry.role}-${index}`}><span>{entry.role === "user" ? t("hire.you") : t("hire.agent")}</span><p>{entry.text}</p></div>)}</div>}<div className="owb-hire-prompt"><div className="owb-hire-prompt__heading"><label htmlFor="owb-hire-prompt-input">{t("hire.promptLabel")}</label><button type="button" onClick={() => setPrompt(defaultPrompt(t))}><RotateCcw aria-hidden="true" size={12} /><span>{t("hire.resetPrompt")}</span></button></div><Input.TextArea id="owb-hire-prompt-input" value={prompt} rows={4} onChange={(event) => setPrompt(event.target.value)} placeholder={t("hire.promptPh")} /><div className="owb-hire-prompt__footer"><span>{t("hire.promptEditable")}</span><AntButton type="primary" loading={conversationBusy} disabled={!engineAvailability[designEngine]?.ready || (!conversationHostId && positions.length === 0) || prompt.trim().length === 0} onClick={() => void askAgent()} icon={<Sparkles aria-hidden="true" size={14} />}>{conversationBusy ? t("hire.askingAgent") : t("hire.askAgent")}</AntButton></div>{conversationError ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{conversationError}</p> : null}</div></section>
+            </details>
             </div>
             <section className="owb-hire-draft-card">
               <div className="owb-hire-draft-card__heading">
-                <div><p className="owb-hire-eyebrow">{t("hire.draftStep")}</p><h3>{t("hire.draftTitle")}</h3></div>
-                <span className="owb-hire-draft-card__status">{name ? t("hire.draftReady") : t("hire.waitingProposal")}</span>
+                <div><p className="owb-hire-eyebrow">{t("hire.basicStep")}</p><h3>{t("hire.basicTitle")}</h3><p className="owb-hire-basic-description">{t("hire.basicDescription")}</p></div>
+                <span className="owb-hire-draft-card__status">{name ? t("hire.basicReady") : t("hire.basicWaiting")}</span>
               </div>
               <div className="owb-hire-basic-grid">
                 <label><span>{t("hire.name")}</span><OwbInput value={name} maxLength={24} onChange={(event) => setName(event.target.value)} placeholder={t("hire.namePh")} /></label>
-                <label><span>{t("hire.reportTo")}</span><Select value={reportTo ?? ""} onChange={(value: string) => setReportTo(value === "" ? null : value)} options={[{ value: "", label: t("hire.ownerRoot") }, ...positions.map((position) => ({ value: position.id, label: t("hire.reportOption", { name: position.name }) }))]} /></label>
+                <label><span>{t("hire.reportTo")}</span><HireChoiceSelect t={t} ariaLabel={t("hire.reportTo")} value={reportTo ?? ""} onChange={(value) => setReportTo(value === "" ? null : value)} options={[{ value: "", label: t("hire.ownerRoot") }, ...positions.map((position) => ({ value: position.id, label: t("hire.reportOption", { name: position.name }) }))]} /></label>
                 <label className="owb-hire-basic-grid__wide"><span>{t("hire.desc")}</span><Input.TextArea value={description} maxLength={1_024} autoSize={{ minRows: 2, maxRows: 5 }} onChange={(event) => setDescription(event.target.value)} placeholder={t("hire.descPh")} /></label>
               </div>
-              <section className="owb-hire-avatar-picker" aria-label={t("avatar.title")}>
-                <div><strong>{t("avatar.title")}</strong><p>{t("avatar.description")}</p>{avatarError ? <p className="owb-hire-avatar-picker__error">{avatarError}</p> : null}</div>
-                <div className="owb-hire-avatar-picker__choices">
-                  <button type="button" className={avatar === undefined ? "is-selected" : ""} onClick={() => setAvatar(undefined)} aria-label={t("avatar.autoAria")}><img src={avatarSrcFor(positionId)} alt="" /><span>{t("avatar.auto")}</span></button>
-                  <button type="button" className="owb-hire-avatar-picker__generate" onClick={() => void generateAvatar()} disabled={avatarGenerating} aria-label={t("avatar.generateAria")}><Sparkles aria-hidden="true" size={15} /><span>{avatarGenerating ? t("avatar.generating") : "AI"}</span></button>
-                  {AVATAR_PRESETS.map((preset) => <button type="button" className={avatar === preset.id ? "is-selected" : ""} key={preset.id} onClick={() => setAvatar(preset.id)} aria-label={t("avatar.selectPreset", { name: t(preset.labelKey) })}><img src={preset.src} alt="" /></button>)}
-                  <label className="owb-hire-avatar-picker__upload"><span>{t("avatar.upload")}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => chooseAvatarFile(event.target.files?.[0])} /></label>
-                </div>
-              </section>
               <div className="owb-hire-summary-row">
                 <span>{t("hire.idAutoNote")}</span>
                 <span><b>{t("hire.budgetRemaining")}</b> {Math.max(0, remainingPool - (Number.isFinite(parsedDayTokens) ? parsedDayTokens : 0)).toLocaleString()} tokens</span>
               </div>
               <details open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)} className="owb-hire-advanced">
-                <summary><ChevronDown aria-hidden="true" size={15} />{t("hire.structuredConfig")}<span>{t("hire.formOnly")}</span></summary>
+                <summary><ChevronDown aria-hidden="true" size={15} />{t("hire.advancedTitle")}<span>{t("hire.advancedHint")}</span></summary>
                 <div className="owb-hire-advanced__body">
+                  <section className="owb-hire-avatar-picker" aria-label={t("avatar.title")}>
+                    <div><strong>{t("avatar.title")}</strong><p>{t("avatar.description")}</p>{avatarError ? <p className="owb-hire-avatar-picker__error">{avatarError}</p> : null}</div>
+                    <div className="owb-hire-avatar-picker__choices">
+                      <button type="button" className={avatar === undefined ? "is-selected" : ""} onClick={() => setAvatar(undefined)} aria-label={t("avatar.autoAria")}><img src={avatarSrcFor(positionId)} alt="" /><span>{t("avatar.auto")}</span></button>
+                      <button type="button" className="owb-hire-avatar-picker__generate" onClick={() => void generateAvatar()} disabled={avatarGenerating} aria-label={t("avatar.generateAria")}><Sparkles aria-hidden="true" size={15} /><span>{avatarGenerating ? t("avatar.generating") : "AI"}</span></button>
+                      {AVATAR_PRESETS.map((preset) => <button type="button" className={avatar === preset.id ? "is-selected" : ""} key={preset.id} onClick={() => setAvatar(preset.id)} aria-label={t("avatar.selectPreset", { name: t(preset.labelKey) })}><img src={preset.src} alt="" /></button>)}
+                      <label className="owb-hire-avatar-picker__upload"><span>{t("avatar.upload")}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => chooseAvatarFile(event.target.files?.[0])} /></label>
+                    </div>
+                  </section>
                   <PermissionPolicyEditor permissions={permissions} onChange={setPermissions} />
                   <div className="owb-hire-section-head"><div><h4>{t("hire.memoryTitle")}</h4><p>{t("hire.memoryHint")}</p></div></div>
                   <div className="owb-hire-memory-chips">{MEMORY_OPTIONS.map((option) => <label key={option.kind} className={memorySources.some((source) => source.kind === option.kind) ? "is-selected" : ""}><Checkbox checked={memorySources.some((source) => source.kind === option.kind)} onChange={() => toggleMemory(option.kind)} />{t(option.labelKey)}</label>)}</div>
                   <div className="owb-hire-divider" />
-                  <div className="owb-hire-two-col"><label><span>{t("hire.mode")}</span><Select value={mode} onChange={(value: HireDraft["mode"]) => setMode(value)} options={[{ value: "read_only", label: t("hire.modeReadOnly") }, { value: "approval_required", label: t("hire.modeApproval") }]} /></label></div>
+                  <div className="owb-hire-two-col"><label><span>{t("hire.mode")}</span><HireChoiceSelect t={t} ariaLabel={t("hire.mode")} value={mode} onChange={(value) => setMode(value as HireDraft["mode"])} options={[{ value: "read_only", label: t("hire.modeReadOnly") }, { value: "approval_required", label: t("hire.modeApproval") }]} /></label></div>
                   <fieldset className="owb-hire-budget"><legend>{t("hire.budgetTitle")}</legend><div className="owb-hire-budget__bar"><span style={{ width: `${poolPercent}%` }} /><small>{t("hire.poolAllocated", { allocated: allocated.toLocaleString(), total: budgetPoolTokens.toLocaleString() })}</small></div><div className="owb-hire-two-col"><label><span>{t("hire.taskTokens")}</span><OwbInput value={taskTokens} inputMode="numeric" onChange={(event) => setTaskTokens(event.target.value)} /></label><label><span>{t("hire.dayTokens")}</span><OwbInput value={dayTokens} inputMode="numeric" onChange={(event) => setDayTokens(event.target.value)} /></label><label><span>{t("hire.taskIters")}</span><OwbInput value={taskIterations} inputMode="numeric" onChange={(event) => setTaskIterations(event.target.value)} placeholder={t("hire.optional")} /></label><label><span>{t("hire.dayIters")}</span><OwbInput value={dayIterations} inputMode="numeric" onChange={(event) => setDayIterations(event.target.value)} placeholder={t("hire.optional")} /></label></div>{parsedDayTokens > remainingPool ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{t("hire.budgetExceeded", { remaining: remainingPool.toLocaleString() })}</p> : parsedTaskTokens > parsedDayTokens ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{t("hire.taskBudgetExceeded")}</p> : null}</fieldset>
+                  <CapabilityPicker permissions={permissions} onChange={setPermissions} />
                 </div>
               </details>
             </section>
-            <CapabilityPicker permissions={permissions} onChange={setPermissions} />
           </div>
         </div>
         <footer className="owb-modal__footer owb-hire-footer"><span>{t("hire.finalGate")}</span><AntButton onClick={onClose}>{t("dlg.cancel")}</AntButton><AntButton type="primary" disabled={!formValid} onClick={submit}>{t("hire.start")}</AntButton></footer>

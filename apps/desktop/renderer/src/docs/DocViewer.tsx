@@ -4,6 +4,11 @@ import { useT } from "@roleweave/ui";
 import { Markdown, markdownHeadings } from "../markdown/Markdown";
 import { splitFrontmatter } from "./frontmatter";
 
+function stripExtension(filename: string): string {
+  const dotIndex = filename.lastIndexOf(".");
+  return dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
+}
+
 export interface DocViewerProps {
   source: string;
   /** Reference provenance, not an editable revision history. */
@@ -40,21 +45,32 @@ export function DocViewer({
         hasFrontmatter: false,
       };
   const heading = title ?? data.name ?? t("docs.untitled");
+  const displayHeading = stripExtension(heading);
   const metaEntries = Object.entries(data).filter(([key]) => key !== "name");
   const headings = isMarkdown ? markdownHeadings(body, headingPrefix) : [];
   const time =
     updatedAt ??
     (version && Number.isFinite(Date.parse(version)) ? version : undefined);
+  const formattedTime = time
+    ? new Date(time).toLocaleString(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+    : undefined;
   return (
     <article className="owb-doc-viewer">
       <header className="owb-doc-viewer__toolbar">
         <div className="owb-doc-viewer__location">
-          <strong title={heading}>{heading}</strong>
+          <strong title={heading}>{displayHeading}</strong>
           <span>
-            {time ? (
+            {formattedTime ? (
               <time dateTime={time}>
                 {t("reading.updatedAt", {
-                  time: new Date(time).toLocaleString(),
+                  time: formattedTime,
                 })}
               </time>
             ) : version ? (
