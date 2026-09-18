@@ -73,7 +73,7 @@ fun RoleWeaveApp(model: PhoneViewModel) {
         }
     ) { padding ->
         when (tab) {
-            0 -> OrgScreen(state, Modifier.padding(padding))
+            0 -> OrgScreen(state, model, Modifier.padding(padding))
             1 -> CommandScreen(state, model, Modifier.padding(padding))
             else -> SettingsScreen(Modifier.padding(padding))
         }
@@ -81,7 +81,7 @@ fun RoleWeaveApp(model: PhoneViewModel) {
 }
 
 @Composable
-fun OrgScreen(state: PhoneState, modifier: Modifier = Modifier) {
+fun OrgScreen(state: PhoneState, model: PhoneViewModel, modifier: Modifier = Modifier) {
     var selected by remember { mutableStateOf<Role?>(null) }
     if (selected != null) {
         Column(modifier.padding(16.dp).fillMaxSize()) {
@@ -96,9 +96,12 @@ fun OrgScreen(state: PhoneState, modifier: Modifier = Modifier) {
         state.error?.let { item { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) } }
         items(state.snapshot?.roles.orEmpty()) { role ->
             ListItem(
-                headlineContent = { Text(role.name) },
+                headlineContent = { Text(role.name + if (role.id == state.selectedRoleId) "  · 已选" else "") },
                 supportingContent = { Text(role.description) },
-                modifier = Modifier.clickable { selected = role }
+                modifier = Modifier.clickable {
+                    model.selectRole(role.id)
+                    selected = role
+                }
             )
         }
     }
@@ -116,9 +119,11 @@ fun CommandScreen(state: PhoneState, model: PhoneViewModel, modifier: Modifier =
             Button(onClick = { model.pair(code) }, modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) { Text("配对这台电脑") }
         } else {
             OutlinedTextField(text, onValueChange = { text = it }, label = { Text("指令") }, modifier = Modifier.fillMaxWidth(), minLines = 4)
+            val selectedName = state.snapshot?.roles?.firstOrNull { it.id == state.selectedRoleId }?.name
+            Text(if (selectedName == null) "先在组织里选一个岗位" else "发给 $selectedName")
             Button(
                 onClick = {
-                    model.send(text, state.snapshot?.roles?.firstOrNull()?.id)
+                    model.send(text)
                     text = ""
                 },
                 modifier = Modifier.padding(top = 12.dp).fillMaxWidth()
