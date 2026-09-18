@@ -151,6 +151,7 @@ const SHARED_RUNTIME_FILES = [
   "dist/pending-approval.js",
   "dist/position-id.js",
   "dist/position-profile.js",
+  "dist/semantic-runtime.js",
   "dist/services.js",
   "dist/sessions.js",
   "dist/turns.js",

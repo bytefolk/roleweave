@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   AgentHostRegistryError,
+  agentHostSupportsEmployeeMcp,
+  anyAgentHostSupportsEmployeeMcp,
   getAgentHostCapabilities,
   listRegisteredAgentHosts,
   selectAgentHost,
@@ -29,6 +31,21 @@ function health(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+test("inherited Object keys are not treated as Agent Host ids", () => {
+  for (const inherited of ["constructor", "toString", "hasOwnProperty"]) {
+    assert.deepEqual(getAgentHostCapabilities({ id: inherited, engine: inherited }), []);
+    assert.equal(agentHostSupportsEmployeeMcp(inherited), false);
+  }
+});
+
+test("Host order is derived from the exhaustive catalog, not a handwritten subset", () => {
+  const hosts = listRegisteredAgentHosts(health());
+  assert.deepEqual(
+    hosts.map((host) => host.id).sort(),
+    ["claude-code", "claude-local", "codex", "codex-local", "qoder", "workbuddy"],
+  );
+});
 
 test("registers every contracted Host from a health snapshot", () => {
   const hosts = listRegisteredAgentHosts(health());
@@ -289,4 +306,18 @@ test("fails closed when an explicitly supplied local probe is malformed", () => 
   assert.equal(hosts[0]?.reason, "主机尚未就绪");
   assert.equal(hosts[1]?.availability.ready, true);
   assert.equal(hosts[2]?.availability.ready, true);
+});
+
+test("employee-MCP capability gate answers from the registry, not a list copy", () => {
+  // No bundled Host declares "mcp" today, so every per-host answer is false
+  // and the aggregate is false — the hire/profile gates reject on this.
+  for (const id of ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"]) {
+    assert.equal(agentHostSupportsEmployeeMcp(id), false);
+  }
+  assert.equal(anyAgentHostSupportsEmployeeMcp(), false);
+
+  // Unknown or malformed ids fail closed rather than throwing.
+  assert.equal(agentHostSupportsEmployeeMcp("missing"), false);
+  assert.equal(agentHostSupportsEmployeeMcp(undefined), false);
+  assert.equal(agentHostSupportsEmployeeMcp({ id: "qoder" }), false);
 });

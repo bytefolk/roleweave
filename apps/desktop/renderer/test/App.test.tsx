@@ -1155,8 +1155,8 @@ describe("App runtime bridge", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "创建员工" }));
     expect(await screen.findByRole("button", { name: "开始创建" })).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "员工 Agent" })).toBeInTheDocument();
-    pickSelectOption("员工 Agent", "Codex");
+    fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
+    fireEvent.click(screen.getByRole("option", { name: "Codex" }));
     fireEvent.change(screen.getByPlaceholderText("员工姓名（≤24 字）"), { target: { value: "文档负责人" } });
     fireEvent.change(screen.getByPlaceholderText("≤500 字"), { target: { value: "维护文档" } });
     const taskTokens = screen.getByLabelText("每任务 token 上限*");

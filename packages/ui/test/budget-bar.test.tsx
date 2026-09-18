@@ -46,20 +46,15 @@ describe("BudgetBar (D1 spec §4 dual-phase contract)", () => {
     expect(screen.getAllByText("120%")).toHaveLength(2);
   });
 
-  // #77 review item 4: spec requires the >100% fill to overflow the track
-  // rather than clamp flush to it, and ARIA valuenow must never exceed
-  // valuemax (the previous fixed valuemax=100 with an unclamped valuenow of
-  // 120 was an invalid meter).
-  it("does not clamp the fill width or the ARIA range at 100% when over budget", () => {
-    render(<BudgetBar declared={DECLARED} consumption={1.2} format="full" />);
+  it("keeps a 309% over-budget fill inside its track while exposing the actual percentage", () => {
+    render(<BudgetBar declared={DECLARED} consumption={3.09} format="full" />);
     const overMeter = screen.getByRole("meter", { name: "单任务消耗" });
-    expect(overMeter).toHaveAttribute("aria-valuenow", "120");
-    expect(overMeter).toHaveAttribute("aria-valuemax", "120");
-    expect(Number(overMeter.getAttribute("aria-valuenow"))).toBeLessThanOrEqual(
-      Number(overMeter.getAttribute("aria-valuemax")),
-    );
+    expect(overMeter).toHaveAttribute("aria-valuenow", "100");
+    expect(overMeter).toHaveAttribute("aria-valuemax", "100");
+    expect(overMeter).toHaveAttribute("aria-valuetext", "309%");
+    expect(screen.getByText("309%")).toBeInTheDocument();
     const fill = overMeter.querySelector(".ui-org-budget__fill") as HTMLElement;
-    expect(fill.style.width).toBe("120%");
+    expect(fill.style.width).toBe("100%");
   });
 
   it("compact format renders a single lane (label/value hidden via CSS, one meter)", () => {

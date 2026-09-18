@@ -90,8 +90,6 @@ interface HostDefinition {
   readonly capabilities: readonly string[];
 }
 
-const HOST_ORDER = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"] as const satisfies readonly AgentHostId[];
-
 /**
  * Capabilities describe the control-plane contract, not provider account
  * state. No executable path, token, or raw CLI output is ever part of this
@@ -124,6 +122,10 @@ const HOST_DEFINITIONS: Readonly<Record<AgentHostId, HostDefinition>> = {
   },
 };
 
+/** Derived from HOST_DEFINITIONS so adding an AgentHostId is a compile error
+ * until the catalog entry exists; a handwritten subset would stay legal. */
+const HOST_ORDER = Object.keys(HOST_DEFINITIONS) as AgentHostId[];
+
 const LOCAL_PROBE_FAILURES = new Set<AgentHostLocalProbeStatus>([
   "timed_out",
   "unsupported_version",
@@ -135,7 +137,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isKnownHostId(value: unknown): value is AgentHostId {
-  return typeof value === "string" && (HOST_ORDER as readonly string[]).includes(value);
+  return typeof value === "string" && Object.hasOwn(HOST_DEFINITIONS, value);
 }
 
 function isBoolean(value: unknown): value is boolean {
@@ -319,4 +321,26 @@ export function selectAgentHost(hosts: unknown, id: unknown): AgentHostDescripto
 export function getAgentHostCapabilities(host: Pick<AgentHostDescriptor, "id" | "engine"> | unknown): ReadonlyArray<string> {
   if (!isRecord(host) || !isKnownHostId(host.id) || host.engine !== host.id) return Object.freeze([]);
   return Object.freeze([...HOST_DEFINITIONS[host.id].capabilities]);
+}
+
+/**
+ * Whether this specific Host honors employee-level MCP bindings. No bundled
+ * Host declares the "mcp" capability today — the bundled adapters spawn with
+ * an empty MCP config, so a granted binding survives hire and then fails
+ * every turn at spawn time. The hire and profile gates read this registry
+ * answer instead of a hardcoded list, so declaring "mcp" on a Host unlocks
+ * the grant with no further edits here (#314).
+ */
+export function agentHostSupportsEmployeeMcp(hostId: unknown): boolean {
+  if (!isKnownHostId(hostId)) return false;
+  return HOST_DEFINITIONS[hostId].capabilities.includes("mcp");
+}
+
+/**
+ * Whether any Host at all honors employee-level MCP bindings. Surfaces that
+ * edit a package without an engine context (the profile editor) gate on this
+ * until some Host ships MCP support (#314).
+ */
+export function anyAgentHostSupportsEmployeeMcp(): boolean {
+  return HOST_ORDER.some((id) => HOST_DEFINITIONS[id].capabilities.includes("mcp"));
 }

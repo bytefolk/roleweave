@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "semantic-runtime.v1alpha1",
+  "kind": "read_only_analysis",
+  "pilot": "github-ops",
+  "objects": [
+    {
+      "schemaVersion": "business-object-ref.v1alpha1",
+      "kind": "object",
+      "id": "obj-issue-328",
+      "displayName": "bytefolk/roleweave#328",
+      "source": "github.issue",
+      "scope": "workspace:examples/github-ops",
+      "version": "issue-328-r2",
+      "digest": "sha256:roleweave-issue-328-r2-anchor"
+    }
+  ],
+  "evidence": [
+    {
+      "schemaVersion": "evidence-ref.v1alpha1",
+      "id": "ev-r2-comment",
+      "objectId": "obj-issue-328",
+      "provenance": "github.issue.comment",
+      "locator": "https://github.com/bytefolk/roleweave/issues/328#issuecomment-5724496889",
+      "digest": "sha256:r2-ontology-runtime-comment",
+      "observedAt": "2026-09-18T03:00:26Z"
+    }
+  ],
+  "derivedState": {
+    "id": "ds-328-design-only",
+    "lifecycle": "needs_runtime_seam",
+    "recomputable": true
+  },
+  "decision": {
+    "schemaVersion": "decision-record.v1alpha1",
+    "id": "dec-328-read",
+    "objectId": "obj-issue-328",
+    "conclusion": "R2 asks for a domain-neutral Ontology Runtime seam; no Sales vocabulary in core; github-ops remains the technical proof candidate.",
+    "uncertainty": "low",
+    "evidenceIds": ["ev-r2-comment"],
+    "turnId": "turn-design-review",
+    "positionId": "issue-triage"
+  }
+}

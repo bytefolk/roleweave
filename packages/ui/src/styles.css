@@ -478,13 +478,13 @@
   display: none;
 }
 
-/* #77 review item 4：同上，允许 >100% 时 fill 出界，圆角端帽不被截断。 */
 .ui-org-budget__track {
   position: relative;
   min-width: 0;
   height: 9px;
   background: var(--ui-surface-inset);
   border-radius: 5px;
+  overflow: hidden;
 }
 
 .ui-org-budget.is-compact .ui-org-budget__track {
