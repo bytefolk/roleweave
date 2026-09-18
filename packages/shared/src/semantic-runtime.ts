@@ -92,8 +92,8 @@ export interface ExecutionReceipt {
 }
 
 const allowedActionTransitions: Readonly<Record<ActionProposalState, readonly ActionProposalState[]>> = {
-  proposed: ["approved", "cancelled", "failed"],
-  approved: ["running", "cancelled", "failed"],
+  proposed: ["approved", "cancelled"],
+  approved: ["running", "cancelled"],
   running: ["succeeded", "failed", "cancelled", "indeterminate"],
   succeeded: [],
   failed: [],
@@ -119,10 +119,17 @@ export function assertExecutable(proposal: ActionProposal, observedTargetVersion
   if (proposal.approvalRequired && !proposal.approvalId) return "approval_missing";
   if (!proposal.permissionScope) return "permission_scope_missing";
   if (proposal.target.version !== observedTargetVersion) return "target_version_stale";
-  if (Date.parse(proposal.expiresAt) <= Date.now()) return "proposal_expired";
+  const expiresAt = Date.parse(proposal.expiresAt);
+  if (!Number.isFinite(expiresAt)) return "proposal_expiry_invalid";
+  if (expiresAt <= Date.now()) return "proposal_expired";
   return null;
 }
 
 export function sameIdempotencyRetry(first: ActionProposal, retry: ActionProposal): boolean {
-  return first.idempotencyKey === retry.idempotencyKey && first.id === retry.id && first.target.id === retry.target.id;
+  return (
+    first.idempotencyKey === retry.idempotencyKey &&
+    first.id === retry.id &&
+    first.target.id === retry.target.id &&
+    first.target.version === retry.target.version
+  );
 }

@@ -62,9 +62,11 @@
 ## 5. 安全不变量（已测纯函数）
 
 1. `state !== approved` 或缺少 `approvalId`（当 `approvalRequired`）→ 不可执行。
-2. 重试必须同一 `id` + `idempotencyKey` + `target.id`。
-3. 观察到的目标版本 ≠ `target.version` → stale，作废提案。
-4. `indeterminate → succeeded` 非法；`succeeded` 且 `readback.ok !== true` 且无 exception → 非法。
+2. `expiresAt` 无法解析为有限时间值 → `proposal_expiry_invalid`，不得执行；已过期 → `proposal_expired`。
+3. 重试必须同一 `id` + `idempotencyKey` + `target.id` + `target.version`，目标版本变化不得复用重试身份。
+4. 观察到的目标版本 ≠ `target.version` → stale，作废提案。
+5. 状态迁移与 #346 对齐：`proposed` 只能进入 `approved/cancelled`，`approved` 只能进入 `running/cancelled`；不能在运行前直接进入 `failed`。
+6. `indeterminate → succeeded` 非法；`succeeded` 且 `readback.ok !== true` 且无 exception → 非法。
 
 ## 6. 试点度量（尚无实测）
 

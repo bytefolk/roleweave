@@ -42,14 +42,36 @@ test("#328 AC-003: action cannot run without approval", () => {
   assert.equal(assertExecutable(approvedMerge, "sha-aaa"), null);
 });
 
+test("#328 AC-003: invalid proposal expiry fails closed", () => {
+  assert.equal(
+    assertExecutable({ ...approvedMerge, expiresAt: "not-a-timestamp" }, "sha-aaa"),
+    "proposal_expiry_invalid",
+  );
+});
+
 test("#328 AC-003: retries reuse the same idempotency identity", () => {
   const retry = { ...approvedMerge };
   assert.equal(sameIdempotencyRetry(approvedMerge, retry), true);
   assert.equal(sameIdempotencyRetry(approvedMerge, { ...retry, idempotencyKey: "other" }), false);
 });
 
+test("#328 AC-003: retries cannot reuse an idempotency identity across target versions", () => {
+  const changedTarget = {
+    ...approvedMerge,
+    target: { ...approvedMerge.target, version: "sha-bbb" },
+  };
+  assert.equal(sameIdempotencyRetry(approvedMerge, changedTarget), false);
+});
+
 test("#328 AC-003: target version change invalidates the proposal", () => {
   assert.equal(assertExecutable(approvedMerge, "sha-bbb"), "target_version_stale");
+});
+
+test("#328 AC-003: pre-run states cannot transition directly to failed", () => {
+  assert.equal(canTransitionAction("proposed", "failed"), false);
+  assert.equal(canTransitionAction("approved", "failed"), false);
+  assert.equal(canTransitionAction("proposed", "approved"), true);
+  assert.equal(canTransitionAction("approved", "running"), true);
 });
 
 test("#328 AC-003: indeterminate never becomes succeeded", () => {
