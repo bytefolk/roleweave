@@ -5,7 +5,38 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 对话默认使用 Enter 发送时，Ctrl/Command + Enter 可在光标处插入换行或替换选中文字，并保留正确光标位置；保留 Shift + Enter 换行、输入法确认保护和设置中的发送快捷键选择。
+
+- #339 Android 原生客户端：release 强制 HTTPS；debug 才允许明文以便连本机 RoleWeave。WebSocket 断开按 1/2/4/8/16s 指数退避重连最多 5 次。发指令必须在组织页显式点选岗位，不再默认第一角色。`android-client.yml` 对 `mobile/android` 跑 `gradle test`（不安装已下线的 SDK `tools` 包）。
+
 ### Added
+
+- #365：新增持久化审批中心：统一列出和查看待审批记录，由 `/approvals/:id/decision` 作为唯一裁决入口；个人会话可批准或拒绝并以新回合恢复执行，原 `engine.approval_required` 回合保持不变；群聊来源仅只读展示、不能在审批中心裁决。审批状态、审计信息和恢复结果可跨刷新及重启恢复。
+
+- #356: design-only multi-agent branch heads and handoff-carried checkpoint refs (`docs/design/memory-branch-handoff-v1.md`). No silent head clobber; handoff does not copy grants. No runtime.
+
+- #355: design-only pin/disable/inspect/forget controls (`docs/design/memory-controls-v1.md`). Forget failure is visible; no local fake delete. No runtime.
+
+- #354: design-only assembly receipt UI (`docs/design/assembly-receipt-ui-v1.md`). Admission authority is UTF-8 bytes; model tokens are a separate cost cap. UI counts must equal the receipt. No runtime.
+
+- #352: design-only routing table among #143 short window, #327 durable memory, and #347 Knowledge Base (`docs/design/memory-routing-v1.md`). Does not close #143. No runtime.
+
+- #348: design-only user remember/correct/forget acts (`docs/design/memory-user-acts-v1.md`). Write responses are created/stored; admitted/omitted only on the next receipt. Append-only supersession. Recalled text stays untrusted. No runtime.
+
+- #349：private / position / team memory grants 设计稿（`docs/design/memory-grants-v1.md`）。pin mem#221 `e0e47c7`；employee-private 用不可复用 `employee.<hire_id>`（需 mem additive，不能用可换人的 position seat）；team/task 展开为每成员一条 mem grant 行，不引入 `task.*` principal；越权 receipt / handoff 不携带 memoryId。无运行时；#327 D0 / #345 未接受，不当作已定基线。
+
+
+## [0.3.0] — 2026-09-18
+
+### Added
+
+- #334 #335 #336：手机壳按 iOS / Android / HarmonyOS 拆开，UA 分流；可用 `?platform=` 强制切换。
+
+- #329：手机打开 RoleWeave 时进入原生手机壳（组织 / 指令 / 桌面 / 设置），而不是缩过的桌面工作台。组织页只读预览 `examples/oss-maintainer`；回合仍在已打开的电脑桌面执行。
+
+- #328 R2：新增 `semantic-runtime.v1alpha1` 合同切片（BusinessObjectRef / EvidenceRef / DecisionRecord / ActionProposal / ExecutionReceipt）与 Ontology Runtime 术语表；github-ops 示例给出只读分析与可写 squash-merge 轨迹；纯函数测试覆盖「未批准不可执行、非法过期时间 fail-closed、幂等重试绑定目标版本、目标版本失效、运行前状态不可直接失败、indeterminate 不能变成 succeeded」。不是 live GitHub 执行，也不是 Sales Workbench 核心词汇。设计说明见 `docs/design/ontology-runtime-r2.md`。
 
 - #309 后续：控制面拒绝超大请求体时，drain 或读取被中止（2 秒截止、10 MiB drain 上限、对端断开）会向 stderr 写一行原因与字节数，现场 EPIPE / 连接复位事故从此可归因；同步 docs/api-contract-v0.md：1 MiB 上限补记先读后拒行为、drain 上限与截止、server requestTimeout / headersTimeout，以及拒绝响应携带 Connection: close。附测试：stall 的超大上传在 drain 与 read 两条路径都断言中止行。
 
@@ -22,6 +53,11 @@
 - #289：员工 Agent 首次选定即持久化并锁定：导入的员工由操作者选定一次 Agent（Claude Code / Codex 等），对话面板展示当前 Agent 并在锁定后禁用切换，控制面接口对已锁定员工返回冲突；新建项目负责人与新聘员工创建即带锁定绑定，存量未绑定员工在首次派单时锁定其实际使用的 Agent。
 
 ### Fixed
+
+- #322：修复未锁定或初次导入的数字人在对话头部无法选择 Agent 的问题：在会话头部恢复基于锁定状态的条件渲染，未锁定员工展示交互式 Agent 下拉选择框（允许完成首次选择并立即持久化锁定），已锁定员工保持固定标识展示。
+
+- #314：招聘/编辑能力面板在绑定任一 MCP 连接器时给出明确警告——当前全部内置引擎都会在第一回合以 `qoder.mcp_binding_unsupported` 拒绝员工级 MCP，绑定仍可保存，但不再静默让操作员以为该能力已经可用。
+- #243：Agent Host 登记顺序改为从详尽的 `HOST_DEFINITIONS` 派生，新增引擎时不能再静默漏掉。
 
 - #325: The employee card now keeps its per-task and per-day budget declarations visible after turns instead of replacing the declaration with latest-turn usage. Usage remains available in the reports surfaces, where over-budget percentages stay truthful while the visual meter fill is bounded to its track.
 
@@ -139,6 +175,8 @@
 
 ### Added
 
+- #329：手机打开 RoleWeave 时进入原生手机壳（组织 / 指令 / 桌面 / 设置），而不是缩过的桌面工作台。组织页只读预览 `examples/oss-maintainer`；回合仍在已打开的电脑桌面执行。
+
 - #127 AC-004 跨平台布局一致性证据：新增 layout smoke 模式（macOS arm64 / Windows x64 双平台，全应用渲染两栏组织工作区并由 main 进程度量列矩形写报告），verify.yml 新增 layout-parity job 下载双平台报告比对（per-platform bottomDelta ≤2px、per-platform 两列高差 ≤2px、跨平台宽差 ≤4px、跨平台 chrome overhead 差 ≤8px，阈值声明在 scripts/check-layout-parity.mjs）。跨平台一项自 #190 起比的是 chrome overhead（`viewport.innerHeight - 列高`）而非绝对列高：runner 给两侧的窗口高度本就不同，比绝对高度量到的是 runner 而不是布局，#190 之前的「高差 ≤8px」写法已随之作废。顺带修 #150 打包缺口：doc-plane.js 未登记 SERVER_RUNTIME_FILES 导致打包 server 启动即崩、main CI 红。
 - #146 国际化骨架与全量迁移：`@org-workbench/ui` 新增 `OwbI18nProvider` / `useT` / `zhText` 与 zh-CN/en 双目录（440 key，parity 门强制 key 集合一致）；标题栏新增语言切换钮（恰好两态，持久化，默认 zh-CN，antd ConfigProvider locale 同步切换）；renderer 与 ui 包全部用户可见文案迁入目录，`i18n-cjk-gate` 测试扫描源码字符串字面量内的 CJK 防绕过；数据层（turn 原文、信封、组织文件、裁决输入）不翻译。
 - #167 组织图画布化收尾：视口 overflow:hidden 零滚动条，平移纯拖拽（transform translate + pointer capture，4px 点击阈值保留），缩放（按钮/捏合）以光标为锚；选中岗位 translate 居中替代 scrollIntoView；布局不再随滚动条跳动。描述语精简到标题：图表头部只留标题、空态只留标题行、composer 空闲提示行移除（运行态/禁用原因保留）。
@@ -255,6 +293,8 @@
 提交 0db36fe（feat(d0): org-workbench skeleton）。
 
 ### Added
+
+- #329：手机打开 RoleWeave 时进入原生手机壳（组织 / 指令 / 桌面 / 设置），而不是缩过的桌面工作台。组织页只读预览 `examples/oss-maintainer`；回合仍在已打开的电脑桌面执行。
 
 - 壳-服务分离：Electron main 拉起 `apps/server`（Node，仅 127.0.0.1，每启动随机 boot-token）；控制面可脱离壳独立运行。
 - 引擎消费：spawn 钉版 `digital-employee` CLI（ADR-0002）；`/health` 报告引擎可用性与下一步。

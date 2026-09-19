@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "semantic-runtime.v1alpha1",
+  "kind": "write_capable_action",
+  "pilot": "github-ops",
+  "objects": [
+    {
+      "schemaVersion": "business-object-ref.v1alpha1",
+      "kind": "object",
+      "id": "obj-pr-184",
+      "displayName": "bytefolk/mem#184",
+      "source": "github.pull_request",
+      "scope": "workspace:examples/github-ops",
+      "version": "sha-aaa",
+      "digest": "sha256:pr-184-head-aaa"
+    }
+  ],
+  "decision": {
+    "schemaVersion": "decision-record.v1alpha1",
+    "id": "dec-merge-ok",
+    "objectId": "obj-pr-184",
+    "conclusion": "Required checks green, non-author approval present, not draft; squash merge is allowed for pr-gatekeeper only.",
+    "uncertainty": "medium",
+    "evidenceIds": ["ev-checks"],
+    "turnId": "turn-gate-1",
+    "positionId": "pr-gatekeeper"
+  },
+  "proposal": {
+    "schemaVersion": "action-proposal.v1alpha1",
+    "id": "act-merge-184",
+    "objectId": "obj-pr-184",
+    "decisionId": "dec-merge-ok",
+    "intent": "squash-merge",
+    "target": { "kind": "github.pull_request", "id": "bytefolk/mem#184", "version": "sha-aaa" },
+    "expectedEffect": "PR closed; squash commit on main at the approved head",
+    "preconditions": ["required checks green", "non-author CODEOWNER approval", "not draft"],
+    "permissionScope": "pr-gatekeeper:merge",
+    "approvalRequired": true,
+    "approvalId": "appr-merge-184",
+    "idempotencyKey": "github-ops/merge/bytefolk/mem#184/sha-aaa",
+    "expiresAt": "2099-01-01T00:00:00.000Z",
+    "state": "approved"
+  },
+  "receipt": {
+    "schemaVersion": "execution-receipt.v1alpha1",
+    "id": "rcpt-merge-184",
+    "proposalId": "act-merge-184",
+    "turnId": "turn-gate-1",
+    "positionId": "pr-gatekeeper",
+    "actor": "pr-gatekeeper",
+    "permissionReevaluated": true,
+    "targetVersionObserved": "sha-aaa",
+    "terminalState": "succeeded",
+    "externalId": "gh-pr-184",
+    "readback": { "ok": true, "observed": "MERGED squash at sha-aaa" }
+  }
+}

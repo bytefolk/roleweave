@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { ApprovalList, ApprovalView, EngineEvent, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
+import type { ApprovalList, ApprovalView, EngineEvent, GroupConversation, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
 import { approvals } from "../src/approvals/service.js";
 
@@ -77,6 +77,10 @@ test("approval center restores the source session, preserves expiry, is idempote
     assert.deepEqual(responses.map(r => r.status).sort(), [200, 202]);
     const done = await settle(s, a.id);
     assert.equal(done.execution.phase, "completed");
+    assert.notEqual(done.execution.turnId, a.source.turnId, "a decision must execute in a new recovery turn");
+    const history = await s.ctx.turnStore.sessionHistory(workspace, originalSession, a.source.positionId, new Date().toISOString());
+    const source = history.turns.find(turn => turn.turnId === a.source.turnId);
+    assert.equal(source?.error?.code, "engine.approval_required", "the source turn remains immutable");
     assert.equal(driver.calls.filter(c => c.envelope.pendingApproval).length, 1);
     const resume = driver.calls.find(c => c.envelope.pendingApproval)!;
     assert.equal(resume.envelope.conversationRef, originalSession);
@@ -92,6 +96,45 @@ test("approval center restores the source session, preserves expiry, is idempote
     const repeated = await api(s.baseUrl, route, { token: s.token, method: "POST", body: { ...decision, workspaceToken: reloaded.workspaceToken } });
     assert.equal(repeated.status, 200);
     assert.equal(driver.calls.filter(c => c.envelope.pendingApproval).length, 1);
+  } finally { await s.close(); }
+});
+
+test("group approvals stay visible but read-only and never dispatch a recovery turn", async () => {
+  const driver = new ApprovalDriver(), s = await startTestServer(undefined, driver);
+  try {
+    await open(s, await copyExampleWorkspace());
+    const created = await api(s.baseUrl, "/groups", {
+      token: s.token,
+      method: "POST",
+      body: { memberPositionIds: ["repo-owner", "community-operator"] },
+    });
+    assert.equal(created.status, 201);
+    const group = created.body as GroupConversation;
+    const accepted = await api(s.baseUrl, `/groups/${group.conversationRef}/turns`, {
+      token: s.token,
+      method: "POST",
+      body: { input: "group task requiring approval", mentions: ["repo-owner"], engine: "qoder" },
+    });
+    assert.equal(accepted.status, 202);
+
+    let snapshot: ApprovalList | undefined;
+    for (let i = 0; i < 100; i++) {
+      const next = await list(s);
+      if (next.items.length > 0) { snapshot = next; break; }
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.ok(snapshot, "group approval should remain visible in the queue");
+    const approval = snapshot.items[0]!;
+    assert.equal(approval.source.kind, "group");
+    assert.equal(approval.canDecide, false);
+    assert.equal(approval.unavailableReason, "approval_source_unsupported");
+    const rejected = await api(s.baseUrl, `/approvals/${approval.id}/decision`, {
+      token: s.token,
+      method: "POST",
+      body: body(snapshot, approval),
+    });
+    assert.equal(rejected.status, 409);
+    assert.equal(driver.calls.length, 1, "read-only group approval must not start a recovery turn");
   } finally { await s.close(); }
 });
 

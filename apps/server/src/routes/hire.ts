@@ -32,6 +32,7 @@ import type {
   PositionBudget,
   TurnEngine,
 } from "@roleweave/shared";
+import { agentHostSupportsEmployeeMcp } from "../agent-registry.js";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { computeEnvelopeDigest } from "../turns/envelope.js";
@@ -248,6 +249,22 @@ async function hireUnlocked(
     return {
       status: 409,
       body: { status: "failed", code: "hire_position_exists", message: `position already exists: ${request.positionId}`, retryable: false },
+    };
+  }
+  // Fail closed before any staging: while no bundled Host declares the "mcp"
+  // capability, a granted binding would survive hire and then kill every turn
+  // at spawn time, away from its cause. Gate here with a code the renderer
+  // maps to explicit copy; a Host that ships MCP support unlocks its own
+  // grants automatically (#314).
+  if ((request.permissions.mcpServers ?? []).length > 0 && !agentHostSupportsEmployeeMcp(request.agentEngine)) {
+    return {
+      status: 422,
+      body: {
+        status: "failed",
+        code: "hire_mcp_unsupported",
+        message: "permissions.mcpServers: no engine honors employee-level MCP bindings yet; leave MCP connectors unbound",
+        retryable: false,
+      },
     };
   }
   if (request.reportTo !== null && !ws.organization.roles.some((role) => role.id === request.reportTo)) {

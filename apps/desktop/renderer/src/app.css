@@ -3422,6 +3422,7 @@
 .owb-hire-mcp__tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 4px; }
 .owb-hire-mcp__tools button { border: 1px solid var(--ui-border); border-radius: 999px; background: transparent; color: var(--ui-foreground-muted); padding: 3px 7px; font: 9px var(--ui-font-mono, monospace); cursor: pointer; }
 .owb-hire-mcp__tools button.is-selected { border-color: color-mix(in srgb, var(--ui-success) 58%, var(--ui-border)); background: color-mix(in srgb, var(--ui-success) 15%, transparent); color: var(--ui-success); }
+.owb-hire-mcp-unsupported { margin: 0; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--ui-warning, #d97706) 45%, var(--ui-border)); border-radius: 8px; background: color-mix(in srgb, var(--ui-warning, #d97706) 12%, var(--ui-surface)); color: var(--ui-foreground); font-size: 11px; line-height: 1.45; }
 .owb-hire-capability-note { margin: 0; color: var(--ui-foreground-muted); font-size: 10px; line-height: 1.4; }
 .owb-tag--mcp { border-color: color-mix(in srgb, var(--ui-info, var(--ui-primary)) 46%, var(--ui-border)); color: var(--ui-info, var(--ui-primary)); }
 
@@ -4068,6 +4069,24 @@ body,
   margin: 12px 12px 8px;
 }
 
+/* 项目身份行：开关器（品牌头像+项目名）+ 右侧项目级动作入口。
+   目录树顶层已经是人，项目自己的脸和菜单收在这一行。 */
+.owb-project-switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 12px 12px 8px;
+}
+.owb-project-switcher-row .owb-project-switcher {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.owb-project-switcher-row .owb-tree-more {
+  margin-left: 0;
+  opacity: 1;
+}
+
 .owb-project-switcher__trigger {
   display: grid;
   width: 100%;
@@ -4110,6 +4129,7 @@ body,
   display: grid;
   width: 28px;
   height: 28px;
+  padding: 5px;
   place-items: center;
   border: 1px solid var(--ui-border-strong);
   border-radius: 8px;

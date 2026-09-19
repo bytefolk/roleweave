@@ -30,6 +30,7 @@ import type {
   GoalSummary,
   GoalsCreateResponse,
   HealthResponse,
+  QoderLoginResponse,
   ChangeManifest,
   CancelTurnRequest,
   HirePositionRequest,
@@ -83,6 +84,11 @@ export interface OwbBridge {
   setPositionAgentEngine?(request: { positionId: string; engine: TurnEngine }): Promise<OwbApiResponse<{ agentEngine: TurnEngine; agentLocked: true; modelConfig: import("@roleweave/shared").EmployeeModelConfig }>>;
   updatePositionProfile?(request: PositionProfilePatch & { positionId: string }): Promise<OwbApiResponse<PositionProfileResult>>;
   status(): Promise<OwbStatusResponse>;
+  /** One-click Qoder CLI login owned by the control plane. */
+  qoderLogin: {
+    start(): Promise<OwbApiResponse<QoderLoginResponse>>;
+    status(): Promise<OwbApiResponse<QoderLoginResponse>>;
+  };
   stopControlPlane(): Promise<{ ok: boolean; state: "stopped"; forced: boolean; exitCode: number | null; signalCode: string | null }>;
   openWorkspace(): Promise<OwbApiResponse>;
   createWorkspace(request: Omit<WorkspaceCreateRequest, "parentPath">): Promise<OwbApiResponse | { canceled: true }>;

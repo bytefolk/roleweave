@@ -387,6 +387,11 @@ ipcMain.handle("owb:control-plane:stop", async () => {
   return { ok: true, ...result };
 });
 
+// One-click Qoder CLI login: the control plane owns the child process; the
+// renderer only starts it and observes its state (see routes/qoder-login.ts).
+ipcMain.handle("owb:qoder:login", async () => apiRequest("/qoder/login", { method: "POST" }));
+ipcMain.handle("owb:qoder:login-status", async () => apiRequest("/qoder/login", { method: "GET" }));
+
 function pickWorkspaceDirectory(options) {
   return mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options);
 }

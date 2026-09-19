@@ -223,3 +223,21 @@ process.stdout.write("digital-employee 1.2.3\\n");
     assert.equal(record.environment.HOME, sourceEnvironment.HOME);
   }
 });
+
+// The one-click login repair path is offered only when the bundled Qoder Host's
+// sole blocker is a missing account login: a broken, unsupported, or unparseable
+// binary keeps its own repair wording, and clients must tell the cases apart
+// without parsing prose.
+test("hostHealth flags loginRequired only for a supported binary whose sole blocker is the missing login", () => {
+  const healthFor = (qoderLocal: Parameters<typeof hostHealth>[0]["qoderLocal"]) => hostHealth({
+    env: {},
+    engineAvailable: true,
+    engineVersion: "qoder-engine 1.0.0",
+    bundledElectronEngine: true,
+    qoderLocal,
+  }).qoder;
+  assert.equal(healthFor({ installed: true, version: "1.2.0", supported: true, authenticated: false, failure: "not_authenticated" }).loginRequired, true);
+  assert.equal(healthFor({ installed: true, version: "1.2.0", supported: true, authenticated: false, failure: "auth_check_failed" }).loginRequired, undefined);
+  assert.equal(healthFor({ installed: true, version: "1.0.0", supported: false, failure: "unsupported_version" }).loginRequired, undefined);
+  assert.equal(healthFor({ installed: true, version: "1.2.0", supported: true, authenticated: true }).loginRequired, undefined);
+});

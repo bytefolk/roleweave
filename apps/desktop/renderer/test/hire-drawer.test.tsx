@@ -1,4 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { HireDrawer } from "../src/org/HireDrawer";
 import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
@@ -36,6 +39,13 @@ function renderCreateDrawer() {
 }
 
 describe("HireDrawer header close control (#301)", () => {
+  it("keeps the create form compact and visually separated from the drawer chrome", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/roleweave-components.css"), "utf8");
+    expect(css).toMatch(/\.owb-hire-drawer-shell--create \.ant-drawer-header\s*\{[^}]*padding:\s*18px 24px/s);
+    expect(css).toMatch(/\.owb-hire-drawer-shell--create \.owb-hire-shell__scroll\s*\{[^}]*padding:\s*20px 24px 28px/s);
+    expect(css).toMatch(/\.owb-hire-drawer-shell--create \.owb-hire-drawer--conversation\s*\{[^}]*max-width:\s*680px[^}]*margin:\s*0 auto/s);
+    expect(css).toMatch(/\.owb-hire-drawer-shell--create \.owb-hire-footer\s*\{[^}]*gap:\s*10px[^}]*padding:\s*14px 24px/s);
+  });
   it("renders the create drawer without a header close button", () => {
     renderCreateDrawer();
     // The drawer must actually be on screen for the absence to mean anything.

@@ -27,7 +27,7 @@ const AGENT_CONVERSATION_TIMEOUT_MS = 75_000;
 const PLATFORM_BUDGET_POOL = 10_000_000;
 
 const PHASE_COPY_KEYS: Record<string, string> = { validate: "hire.phaseValidate", stage: "hire.phaseStage", apply: "hire.phaseApply" };
-const FAILURE_COPY_KEYS: Record<string, string> = { hire_position_exists: "hire.errExists", hire_timeout: "hire.errTimeout", control_plane_unreachable: "hire.errOffline", engine_unavailable: "hire.errCli", engine_capability_missing: "hire.errCapability" };
+const FAILURE_COPY_KEYS: Record<string, string> = { hire_position_exists: "hire.errExists", hire_timeout: "hire.errTimeout", control_plane_unreachable: "hire.errOffline", engine_unavailable: "hire.errCli", engine_capability_missing: "hire.errCapability", hire_mcp_unsupported: "hire.errMcpCapability" };
 const MEMORY_OPTIONS: Array<{ kind: HireMemorySource["kind"]; labelKey: string; locator: string }> = [
   { kind: "position_docs", labelKey: "hire.memoryPositionDocs", locator: "./knowledge/**" },
   { kind: "workspace_docs", labelKey: "hire.memoryWorkspaceDocs", locator: "./**" },
@@ -327,7 +327,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   }, [description, messageApi, name, t]);
 
   return (
-    <Drawer className="owb-hire-drawer-shell owb-hire-drawer-shell--create" title={t("hire.createTitle")} width="min(760px, calc(100vw - 24px))" open={open} closable={false} onClose={() => { if (flow.phase !== "draft" && flow.phase !== "failed") return; clearTimers(); onClose(); }} destroyOnHidden>
+    <Drawer className="owb-hire-drawer-shell owb-hire-drawer-shell--create" title={t("hire.createTitle")} width="min(720px, calc(100vw - 24px))" open={open} closable={false} onClose={() => { if (flow.phase !== "draft" && flow.phase !== "failed") return; clearTimers(); onClose(); }} destroyOnHidden>
       {contextHolder}
       {flow.phase === "draft" ? <div className="owb-hire-shell">
         <div className="owb-hire-shell__scroll">

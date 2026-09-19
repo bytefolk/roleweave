@@ -32,6 +32,8 @@ export interface TurnEngineAvailability {
   /** Model the control plane pins for this Host; absent means its CLI decides. */
   model?: string;
   connection?: EmployeeModelConnection;
+  /** The only blocker is a missing CLI login the in-app flow can resolve. */
+  loginRequired?: boolean;
 }
 
 /** Renderer projection of the #193 verdict field (engine shape verbatim). */
