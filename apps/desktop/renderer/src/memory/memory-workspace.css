@@ -26,10 +26,15 @@
   border: 0; border-radius: 6px; background: transparent; color: var(--ui-foreground-muted);
   text-align: left; font: inherit; font-size: 12px; cursor: pointer;
 }
-[data-theme] .owb-app .owb-memory-source > svg { flex: none; }
+[data-theme] .owb-app .owb-memory-source > svg { flex: none; color: currentColor; }
 [data-theme] .owb-app .owb-memory-source:hover { background: var(--ui-surface); color: var(--ui-foreground); }
-[data-theme] .owb-app .owb-memory-source[aria-pressed="true"] { background: var(--ui-primary-soft); color: var(--ui-primary); font-weight: 600; }
-[data-theme] .owb-app .owb-memory-source:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: -2px; }
+[data-theme] .owb-app .owb-memory-source[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ui-primary) 18%, var(--ui-surface));
+  color: var(--ui-primary); font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--ui-primary);
+}
+[data-theme] .owb-app .owb-memory-source[aria-pressed="true"] > svg { color: var(--ui-primary); }
+[data-theme] .owb-app .owb-memory-source:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: -3px; }
 [data-theme] .owb-app .owb-memory-source__label { flex: 1; }
 [data-theme] .owb-app .owb-memory-source__count { font-size: 11px; font-variant-numeric: tabular-nums; }
 [data-theme] .owb-app .owb-memory-sidebar__hint { margin: auto 6px 6px; padding-top: 24px; color: var(--ui-foreground-muted); font-size: 11px; line-height: 1.7; }
@@ -41,7 +46,7 @@
   gap: 0; padding: 0; overflow: hidden; border: 0; border-radius: 0;
 }
 [data-theme] .owb-app .owb-memory-location { display: flex; flex: none; align-items: center; gap: 10px; min-height: 40px; padding: 6px 16px; border-bottom: 1px solid var(--ui-border); }
-[data-theme] .owb-app .owb-memory-location h2 { margin: 0; font-size: 12px; font-weight: 600; }
+[data-theme] .owb-app .owb-memory-location h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--ui-foreground); }
 [data-theme] .owb-app .owb-memory-location__status { margin-left: auto; font-size: 11px; color: var(--ui-foreground-muted); }
 [data-theme] .owb-app .owb-memory-module :is(.owb-docs-module--embedded, .owb-docs-module__position-surface, .owb-docs-panel, .owb-doc-plane, .owb-drive-module--embedded) {
   display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; max-width: none;
@@ -73,6 +78,18 @@
 [data-theme] .owb-app .owb-memory-module .owb-memory-history { flex: 1; min-height: 0; max-height: none; }
 [data-theme] .owb-app .owb-memory-module[data-reading-focus="true"] :is(.owb-memory-sidebar, .owb-docs-panel__list-pane, .owb-doc-plane__list-pane) { display: none; }
 [data-theme] .owb-app .owb-memory-module[data-reading-focus="true"] :is(.owb-docs-panel__workspace, .owb-doc-plane__workspace) { grid-template-columns: minmax(0, 1fr); }
+/* Docs / doc-plane list selection parity: stronger accent + tinted background,
+   scoped inside Memory so DocsModule surfaces elsewhere are untouched. */
+[data-theme] .owb-app .owb-memory-module :is(.owb-docs-panel__file, .owb-doc-plane__entry)[aria-pressed="true"] {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--ui-primary) 18%, var(--ui-surface));
+  color: var(--ui-primary);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--ui-primary);
+}
+[data-theme] .owb-app .owb-memory-module :is(.owb-docs-panel__file, .owb-doc-plane__entry)[aria-pressed="true"] :is(.owb-docs-panel__file-name, .owb-docs-panel__file-parent) {
+  color: inherit;
+}
 /* The shell itself can be resized, so adapt to module width rather than window width. */
 @container memory (max-width: 760px) {
   [data-theme] .owb-app .owb-memory-sidebar { flex-basis: 132px; padding-inline: 4px; }
