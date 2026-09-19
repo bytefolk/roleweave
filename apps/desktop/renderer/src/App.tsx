@@ -356,7 +356,7 @@ function AppInner({
     decision: a.status === "granted" ? { kind: "granted", scope: "once", decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy, reason: a.decision?.reason } : a.status === "denied" ? { kind: "denied", reason: a.decision?.reason, decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy } : { kind: a.status },
     canDecide: a.canDecide, busy: approvalState.busy.has(a.id), error: approvalState.errors[a.id],
     unavailableReason: a.unavailableReason, executionPhase: a.execution.phase,
-    requestReason: a.requestReason, source: a.source, executionTurnId: a.execution.turnId, executionErrorCode: a.execution.errorCode,
+    requestReason: a.requestReason, context: a.context, source: a.source, executionTurnId: a.execution.turnId, executionErrorCode: a.execution.errorCode,
   })), [approvalState.items, approvalState.busy, approvalState.errors, positionNames]);
   const decidedApprovals = useMemo(() => new Set(approvalState.items.filter(a =>
     a.status !== "pending" && a.source.positionId === selectedId && a.source.conversationId === selectedSessionId
@@ -861,7 +861,7 @@ function AppInner({
     }
   }, [t]);
 
-  const loadSessions = useCallback(async (id: string) => {
+  const loadSessions = useCallback(async (id: string, preferredSessionId?: string | null, fallbackToActive = true) => {
     const version = selectionVersion.current;
     try {
       const res = await window.owb.sessions(id);
@@ -875,14 +875,19 @@ function AppInner({
       }
       const list = res.body as WorkbenchSessionList;
       setSessions(list.sessions);
-      const current = selectedSessionIdRef.current ?? selectedSessions.current[JSON.stringify([workspacePathRef.current, id])];
-      const next = current && list.sessions.some((session) => session.sessionId === current)
-        ? current
-        : list.activeSessionId;
+      const current = preferredSessionId !== undefined
+        ? preferredSessionId
+        : (selectedSessionIdRef.current ?? selectedSessions.current[JSON.stringify([workspacePathRef.current, id])]);
+      const matched = current && list.sessions.some((session) => session.sessionId === current);
+      const next = matched ? current : (fallbackToActive ? list.activeSessionId : null);
       selectedSessionIdRef.current = next;
       if (next) selectedSessions.current[JSON.stringify([workspacePathRef.current, id])] = next;
       setSelectedSessionId(next);
-      setTurnError(null);
+      if (preferredSessionId && !matched && !fallbackToActive) {
+        setTurnError(t("apr.sourceUnavailable"));
+      } else {
+        setTurnError(null);
+      }
       return true;
     } catch {
       if (version === selectionVersion.current && selectedIdRef.current === id) setTurnError(t("turn.sessionsFailOffline"));
@@ -1303,7 +1308,7 @@ function AppInner({
     setSessions([]);
     setTurns([]);
     setActiveModule("org");
-    void loadSessions(source.positionId);
+    void loadSessions(source.positionId, source.conversationId, false);
   }, [loadSessions, setActiveModule]);
 
   const openApprovalEvidence = useCallback((item: ApprovalQueueItem) => {

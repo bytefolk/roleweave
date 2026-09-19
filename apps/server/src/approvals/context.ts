@@ -1,0 +1,44 @@
+import type { ApprovalContext, ApprovalRequestedEvent, OrgRole } from "@roleweave/shared";
+
+const MAX_SUMMARY_BYTES = 2048;
+
+/** Keep secrets out of the human-facing approval projection. The durable turn
+ * and approval records retain the engine contract for source validation, but
+ * the approval view only exposes this bounded presentation summary. */
+export function redactApprovalText(value: string): string {
+  let result = value;
+  result = result.replace(/(https?:\/\/)([^/\s:@]+):([^@\s]+)@/gi, "$1[redacted]@");
+  result = result.replace(/([?&](?:access[_-]?token|api[_-]?key|auth|credential|password|secret|token)=)[^&\s]+/gi, "$1[redacted]");
+  result = result.replace(/(\b(?:authorization|cookie|password|passphrase|secret|token|api[_-]?key|access[_-]?token)\s*[:=]\s*(?:Bearer\s+)?)("[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1[redacted]");
+  result = result.replace(/(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, "$1[redacted]");
+  const bytes = Buffer.byteLength(result, "utf8");
+  if (bytes <= MAX_SUMMARY_BYTES) return result;
+  return `${Buffer.from(result, "utf8").subarray(0, MAX_SUMMARY_BYTES - 3).toString("utf8")}...`;
+}
+
+function capabilityContext(kind: ApprovalRequestedEvent["action"]["kind"]): Pick<ApprovalContext, "risk" | "impact"> {
+  switch (kind) {
+    case "write": return { risk: "high", impact: "workspace_write" };
+    case "exec": return { risk: "high", impact: "command_execution" };
+    case "network": return { risk: "high", impact: "external_network" };
+    case "tool": return { risk: "medium", impact: "restricted_tool" };
+  }
+}
+
+export function buildApprovalContext(
+  action: ApprovalRequestedEvent["action"],
+  role: Pick<OrgRole, "mode" | "toolAllow" | "toolDeny">,
+): ApprovalContext {
+  return {
+    ...capabilityContext(action.kind),
+    requestedCapability: action.kind,
+    ...(action.target ? { parameterSummary: redactApprovalText(action.target) } : {}),
+    permissions: {
+      mode: role.mode,
+      allowedTools: role.toolAllow.slice(0, 128),
+      deniedTools: role.toolDeny.slice(0, 128),
+    },
+    preview: { status: "unavailable", reason: "engine_preview_not_supplied" },
+  };
+}
+

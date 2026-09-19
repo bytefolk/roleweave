@@ -209,7 +209,13 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
       <ApprovalQueue
         defaultFilter="all"
         items={[makeItem({
+          target: "https://alice:secret@example.com/upload?token=top-secret",
           source: { kind: "session", positionId: "writer-1", conversationId: "session-1", turnId: "turn-1", runId: "run-1", engine: "qoder" },
+          context: {
+            risk: "high", requestedCapability: "write", parameterSummary: "https://[redacted]@example.com/upload?token=[redacted]",
+            impact: "workspace_write", permissions: { mode: "approval_required", allowedTools: ["fs.read"], deniedTools: ["fs.write"] },
+            preview: { status: "unavailable", reason: "engine_preview_not_supplied" },
+          },
           executionPhase: "completed",
           executionTurnId: "recovery-1",
           requestReason: "The requested write changes a shared report.",
@@ -223,8 +229,12 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     );
     fireEvent.click(screen.getByTestId("approval-card-appr-abc"));
     expect(await screen.findByTestId("approval-lifecycle")).toBeInTheDocument();
+    expect(screen.getByTestId("approval-context")).toBeInTheDocument();
     expect(screen.getByText("裁决与执行")).toBeInTheDocument();
+    expect(screen.getByText("高风险")).toBeInTheDocument();
+    expect(screen.getByText("引擎未提供")).toBeInTheDocument();
     expect(screen.getByText("session-1")).toBeInTheDocument();
+    expect(screen.queryByText("top-secret")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "打开原会话" }));
     fireEvent.click(screen.getByRole("button", { name: "打开执行证据" }));
     expect(onOpenSource).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "appr-abc" }));
@@ -243,5 +253,23 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     fireEvent.click(screen.getByTestId("approval-card-appr-abc"));
     expect(await screen.findByText("当前桌面端暂不支持打开此来源。"));
     expect(screen.getByRole("button", { name: "打开原会话" })).toBeDisabled();
+  });
+
+  it("shows an in-app reminder and supports the expiring filter", () => {
+    render(
+      <ApprovalQueue
+        defaultFilter="all"
+        items={[
+          makeItem({ approvalId: "expiring", expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() }),
+          makeItem({ approvalId: "expired", expiresAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(), decision: { kind: "expired" } }),
+        ]}
+        onApprove={noop}
+        onDeny={noop}
+      />,
+    );
+    expect(screen.getByText("有 1 条待审批将在 24 小时内过期")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看即将过期" }));
+    expect(screen.getByTestId("approval-card-expiring")).toBeInTheDocument();
+    expect(screen.queryByTestId("approval-card-expired")).toBeNull();
   });
 });

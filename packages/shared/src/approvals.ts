@@ -2,6 +2,28 @@ import type { ApprovalRequestedEvent, TurnEngine } from "./turns.js";
 
 export type ApprovalStatus = "pending" | "granted" | "denied" | "expired" | "cancelled" | "indeterminate";
 export type ApprovalPhase = "not_started" | "starting" | "running" | "completed" | "denied" | "failed" | "indeterminate";
+export type ApprovalRiskLevel = "medium" | "high";
+export type ApprovalImpactKind = "workspace_write" | "command_execution" | "external_network" | "restricted_tool";
+
+/** Safe, request-time context projected from the engine action and position
+ * policy. It deliberately carries enums and redacted summaries rather than
+ * raw credentials, command arguments, or opaque engine payloads. */
+export interface ApprovalContext {
+  risk: ApprovalRiskLevel;
+  requestedCapability: "exec" | "write" | "network" | "tool";
+  parameterSummary?: string;
+  impact: ApprovalImpactKind;
+  permissions: {
+    mode: "read_only" | "approval_required";
+    allowedTools: string[];
+    deniedTools: string[];
+  };
+  preview: {
+    status: "unavailable";
+    reason: "engine_preview_not_supplied";
+  };
+}
+
 export interface ApprovalDecisionRequest {
   requestId: string;
   expectedVersion: number;
@@ -22,6 +44,7 @@ export interface ApprovalRecord {
     engine: TurnEngine;
   };
   action: ApprovalRequestedEvent["action"];
+  context?: ApprovalContext;
   requestReason?: string;
   requestedAt: string;
   expiresAt?: string;

@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import { OrgApiError, errorCodes, turnEngines, validatePendingApproval, type ApprovalRecord } from "@roleweave/shared";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
+import { redactApprovalText } from "./context.js";
 
 const MAX_BYTES = 128 * 1024;
 const ID = /^[a-f0-9]{64}$/;
@@ -70,6 +71,17 @@ function valid(value: unknown): value is ApprovalRecord {
     if (!/^[a-f0-9-]{36}$/.test(d.requestId) || !Number.isSafeInteger(d.expectedVersion) || d.expectedVersion < 1 ||
         !time(d.decidedAt) || d.scope !== "once" || d.decision !== a.status ||
         !validatePendingApproval({ approvalId: a.approvalId, decision: d.decision, decidedBy: d.decidedBy, scope: d.scope, ...(d.reason === undefined ? {} : { reason: d.reason }) }).ok) return false;
+  }
+  if (a.context !== undefined) {
+    const c = a.context;
+    const boundedList = (v: unknown) => Array.isArray(v) && v.length <= 128 && v.every(item => typeof item === "string" && item.length <= 256);
+    if (!c || !["medium", "high"].includes(c.risk) ||
+        !["exec", "write", "network", "tool"].includes(c.requestedCapability) ||
+        (c.parameterSummary !== undefined && (typeof c.parameterSummary !== "string" || c.parameterSummary.length > 2048 || redactApprovalText(c.parameterSummary) !== c.parameterSummary)) ||
+        !["workspace_write", "command_execution", "external_network", "restricted_tool"].includes(c.impact) ||
+        !c.permissions || !["read_only", "approval_required"].includes(c.permissions.mode) ||
+        !boundedList(c.permissions.allowedTools) || !boundedList(c.permissions.deniedTools) ||
+        !c.preview || c.preview.status !== "unavailable" || c.preview.reason !== "engine_preview_not_supplied") return false;
   }
   return true;
 }

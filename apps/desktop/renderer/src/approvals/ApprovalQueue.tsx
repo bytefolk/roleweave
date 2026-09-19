@@ -6,7 +6,7 @@
  * callbacks to the shared approval cache. The server resolves the source
  * conversation and constructs the resume turn; the UI never chooses it.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Input, List, Select, Segmented, Tag, Tooltip } from "antd";
 import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
@@ -18,9 +18,11 @@ import {
   type ApprovalQueueItem,
 } from "./types";
 import { ApprovalDetailDrawer } from "./ApprovalDetailDrawer";
+import { safeApprovalText } from "./safe-display";
 import { decodeEscapedUnicode } from "../display-text";
 
 export type ApprovalQueueFilter = "pending" | "decided" | "all";
+export type ApprovalExpiryFilter = "all" | "active" | "expiring" | "expired";
 export type ApprovalQueueDataState = "ready" | "not-connected";
 
 export interface ApprovalQueueProps extends ApprovalQueueCallbacks {
@@ -86,9 +88,16 @@ export function ApprovalQueue({
   const [query, setQuery] = useState("");
   const [positionFilter, setPositionFilter] = useState<string>();
   const [categoryFilter, setCategoryFilter] = useState<ApprovalCategory>();
+  const [expiryFilter, setExpiryFilter] = useState<ApprovalExpiryFilter>();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const pendingCount = useMemo(
     () => items.filter((item) => item.decision.kind === "pending").length,
@@ -102,6 +111,7 @@ export function ApprovalQueue({
       if (filter === "decided" && !isDecided(item)) return false;
       if (positionFilter && item.positionId !== positionFilter) return false;
       if (categoryFilter && item.category !== categoryFilter) return false;
+      if (expiryFilter && expiryFilter !== "all" && expiryState(item, now) !== expiryFilter) return false;
       if (fromDate && (!item.requestedAt || item.requestedAt.slice(0, 10) < fromDate)) return false;
       if (toDate && (!item.requestedAt || item.requestedAt.slice(0, 10) > toDate)) return false;
       if (needle) {
@@ -123,15 +133,17 @@ export function ApprovalQueue({
       }
       return true;
     });
-  }, [categoryFilter, filter, fromDate, items, positionFilter, query, toDate]);
+  }, [categoryFilter, expiryFilter, filter, fromDate, items, now, positionFilter, query, toDate]);
 
   const positionOptions = useMemo(() => [...new Map(items.map((item) => [item.positionId, item.positionName ?? item.positionId]))]
     .sort((a, b) => a[1].localeCompare(b[1])), [items]);
-  const hasAdvancedFilters = Boolean(query || positionFilter || categoryFilter || fromDate || toDate);
+  const expiringSoonCount = useMemo(() => items.filter(item => expiryState(item, now) === "expiring").length, [items, now]);
+  const hasAdvancedFilters = Boolean(query || positionFilter || categoryFilter || expiryFilter || fromDate || toDate);
   const clearAdvancedFilters = () => {
     setQuery("");
     setPositionFilter(undefined);
     setCategoryFilter(undefined);
+    setExpiryFilter(undefined);
     setFromDate("");
     setToDate("");
   };
@@ -204,6 +216,20 @@ export function ApprovalQueue({
           className="owb-approval-queue__select"
           data-testid="approval-filter-category"
         />
+        <Select
+          allowClear
+          value={expiryFilter}
+          onChange={setExpiryFilter}
+          placeholder={t("apr.filterExpiry")}
+          options={[
+            { value: "active", label: t("apr.filterExpiryActive") },
+            { value: "expiring", label: t("apr.filterExpirySoon") },
+            { value: "expired", label: t("apr.filterExpiryExpired") },
+          ]}
+          aria-label={t("apr.filterExpiryAria")}
+          className="owb-approval-queue__select"
+          data-testid="approval-filter-expiry"
+        />
         <Input
           type="date"
           value={fromDate}
@@ -223,6 +249,16 @@ export function ApprovalQueue({
         {hasAdvancedFilters ? <Button type="link" onClick={clearAdvancedFilters}>{t("apr.clearFilters")}</Button> : null}
         <span className="owb-approval-queue__count">{t("apr.filteredRecords", { visible: visible.length, total: items.length })}</span>
       </div>
+
+      {expiringSoonCount > 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t("apr.expiryReminder", { count: expiringSoonCount })}
+          action={<Button type="link" size="small" onClick={() => setExpiryFilter("expiring")}>{t("apr.showExpiring")}</Button>}
+          className="owb-approval-queue__banner"
+        />
+      ) : null}
 
       {errorMessage ? (
         <Alert
@@ -341,10 +377,11 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
   const t = useT();
   const localeTag = useOwbLocale() === "en" ? "en-US" : "zh-CN";
   const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
-  const description = decodeEscapedUnicode(item.description);
-  const target = item.target ? decodeEscapedUnicode(item.target) : undefined;
+  const description = safeApprovalText(decodeEscapedUnicode(item.description));
+  const target = item.target ? safeApprovalText(decodeEscapedUnicode(item.target)) : undefined;
   const overreach = isPermissionOverreach(item);
   const decided = isDecided(item);
+  const expiringSoon = expiryState(item, Date.now()) === "expiring";
   const decisionTagColor = !decided
     ? "blue"
     : item.decision.kind === "granted"
@@ -383,6 +420,7 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
                 {t("apr.modeTag", { mode: item.positionMode === "read_only" ? t("pos.readOnly") : t("pos.approval") })}
               </Tag>
             ) : null}
+            {expiringSoon ? <Tag color="orange">{t("apr.expiringSoon")}</Tag> : null}
             <Tag color={decisionTagColor}>{decisionLabel(item, t)}</Tag>
           </span>
         </div>
@@ -408,6 +446,15 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
       </button>
     </article>
   );
+}
+
+function expiryState(item: ApprovalQueueItem, now: number): "active" | "expiring" | "expired" {
+  if (item.decision.kind === "expired") return "expired";
+  if (!item.expiresAt) return "active";
+  const expiresAt = Date.parse(item.expiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) return "expired";
+  if (item.decision.kind === "pending" && expiresAt <= now + 24 * 60 * 60 * 1000) return "expiring";
+  return "active";
 }
 
 function formatApprovalTime(value: string | undefined, t: OwbT, localeTag: string): string {

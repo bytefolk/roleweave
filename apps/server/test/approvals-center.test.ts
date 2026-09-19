@@ -10,6 +10,8 @@ import { approvals } from "../src/approvals/service.js";
 class ApprovalDriver implements TurnRunDriver {
   calls: TurnRunRequest[] = [];
   expiresAt = new Date(Date.now() + 60000).toISOString();
+  target = "report.md";
+  reason = "The write needs operator approval";
   hold?: Promise<void>;
   async turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
     this.calls.push(request);
@@ -21,7 +23,7 @@ class ApprovalDriver implements TurnRunDriver {
       await this.hold;
       if (d.decision === "granted") events.push({ ...base, type: "approval.granted", approvalId: d.approvalId, grantedBy: "operator", scope: "once" }, { ...base, type: "run.completed", output: "done", terminalReason: "goal_met" });
       else events.push({ ...base, type: "approval.denied", approvalId: d.approvalId, deniedBy: "operator" }, { ...base, type: "run.failed", error: { code: "engine.approval_denied", message: "denied", retryable: false, terminalReason: "cancelled" } });
-    } else events.push({ ...base, type: "approval.requested", approvalId: "same-engine-id", action: { kind: "write", description: "write report", target: "report.md" }, expiresAt: this.expiresAt },
+    } else events.push({ ...base, type: "approval.requested", approvalId: "same-engine-id", action: { kind: "write", description: "write report", target: this.target }, reason: this.reason, expiresAt: this.expiresAt },
       { ...base, type: "run.failed", error: { code: "engine.approval_required", message: "waiting", retryable: true, terminalReason: "engine_internal_error" } });
     for (const event of events) request.onEvent?.(event);
     return { status: "trusted", events, diagnostic: "" };
@@ -71,6 +73,10 @@ test("approval center restores the source session, preserves expiry, is idempote
     assert.equal(snapshot.items.length, 2);
     assert.notEqual(snapshot.items[0]!.id, snapshot.items[1]!.id);
     const a = snapshot.items.find(a => a.source.positionId === "repo-owner")!;
+    assert.equal(a.context?.risk, "high");
+    assert.equal(a.context?.impact, "workspace_write");
+    assert.equal(a.context?.permissions.mode, "read_only");
+    assert.equal(a.context?.preview.status, "unavailable");
     const decision = body(snapshot, a);
     const route = `/approvals/${a.id}/decision`;
     const responses = await Promise.all([0, 1].map(() => api(s.baseUrl, route, { token: s.token, method: "POST", body: decision })));
@@ -135,6 +141,23 @@ test("group approvals stay visible but read-only and never dispatch a recovery t
     });
     assert.equal(rejected.status, 409);
     assert.equal(driver.calls.length, 1, "read-only group approval must not start a recovery turn");
+  } finally { await s.close(); }
+});
+
+test("approval views redact secrets while preserving safe decision context", async () => {
+  const driver = new ApprovalDriver();
+  driver.target = "https://alice:password@example.com/upload?token=top-secret";
+  driver.reason = "Authorization: Bearer top-secret";
+  const s = await startTestServer(undefined, driver);
+  try {
+    await open(s, await copyExampleWorkspace()); await request(s);
+    const approval = (await list(s)).items[0]!;
+    const serialized = JSON.stringify(approval);
+    assert.equal(serialized.includes("password"), false);
+    assert.equal(serialized.includes("top-secret"), false);
+    assert.match(approval.action.target!, /\[redacted\]/);
+    assert.match(approval.context?.parameterSummary ?? "", /\[redacted\]/);
+    assert.equal(approval.context?.preview.reason, "engine_preview_not_supplied");
   } finally { await s.close(); }
 });
 

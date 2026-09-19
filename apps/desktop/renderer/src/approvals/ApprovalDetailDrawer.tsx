@@ -22,6 +22,7 @@ import {
   type ApprovalQueueCallbacks,
   type ApprovalQueueItem,
 } from "./types";
+import { safeApprovalText } from "./safe-display";
 import { decodeEscapedUnicode } from "../display-text";
 // Mirrors packages/shared/pending-approval.cjs MAX_APPROVAL_REASON_BYTES.
 // Inlined here because the shared module transitively uses `node:module`
@@ -69,8 +70,8 @@ export function ApprovalDetailDrawer({
   const expired = item.decision.kind === "expired";
   const disabled = decided || expired || item.busy === true || item.canDecide === false || new TextEncoder().encode(reason.trim()).length > MAX_APPROVAL_REASON_BYTES;
   const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
-  const description = decodeEscapedUnicode(item.description);
-  const target = item.target ? decodeEscapedUnicode(item.target) : undefined;
+  const description = safeApprovalText(decodeEscapedUnicode(item.description));
+  const target = item.target ? safeApprovalText(decodeEscapedUnicode(item.target)) : undefined;
   const trimmedReason = reason.trim();
   const reasonForCallback = trimmedReason.length === 0 ? undefined : trimmedReason;
   const source = item.source;
@@ -142,9 +143,33 @@ export function ApprovalDetailDrawer({
           {item.requestReason ? (
             <section>
               <h3 className="owb-approval-drawer__section-title">{t("apr.requestReason")}</h3>
-              <p className="owb-approval-drawer__description">{decodeEscapedUnicode(item.requestReason)}</p>
+              <p className="owb-approval-drawer__description">{safeApprovalText(decodeEscapedUnicode(item.requestReason))}</p>
             </section>
           ) : null}
+
+          <section data-testid="approval-context">
+            <h3 className="owb-approval-drawer__section-title">{t("apr.context")}</h3>
+            {item.context ? (
+              <>
+                <div className="owb-approval-drawer__meta">
+                  <Tag color={item.context.risk === "high" ? "red" : "orange"}>
+                    {t(`apr.risk.${item.context.risk}`)}
+                  </Tag>
+                </div>
+                <dl className="owb-approval-drawer__references">
+                  <div><dt>{t("apr.requestedCapability")}</dt><dd>{t(`apr.kind.${item.context.requestedCapability}`)}</dd></div>
+                  <div><dt>{t("apr.impact")}</dt><dd>{t(`apr.impact.${item.context.impact}`)}</dd></div>
+                  <div><dt>{t("apr.parameterSummary")}</dt><dd>{item.context.parameterSummary ? safeApprovalText(item.context.parameterSummary) : <span className="owb-muted">{t("apr.contextUnavailable")}</span>}</dd></div>
+                  <div><dt>{t("apr.permissionMode")}</dt><dd>{t(`apr.mode.${item.context.permissions.mode}`)}</dd></div>
+                  <div><dt>{t("apr.allowedTools")}</dt><dd>{item.context.permissions.allowedTools.length > 0 ? item.context.permissions.allowedTools.join(", ") : t("apr.noneDeclared")}</dd></div>
+                  <div><dt>{t("apr.deniedTools")}</dt><dd>{item.context.permissions.deniedTools.length > 0 ? item.context.permissions.deniedTools.join(", ") : t("apr.noneDeclared")}</dd></div>
+                  <div><dt>{t("apr.changePreview")}</dt><dd>{t(`apr.preview.${item.context.preview.status}`)}</dd></div>
+                </dl>
+              </>
+            ) : (
+              <p className="owb-muted">{t("apr.contextUnavailable")}</p>
+            )}
+          </section>
 
           <section data-testid="approval-lifecycle">
             <h3 className="owb-approval-drawer__section-title">{t("apr.lifecycle")}</h3>
@@ -207,7 +232,7 @@ export function ApprovalDetailDrawer({
               }
               description={
                 item.decision.kind === "denied" && item.decision.reason
-                  ? t("apr.reasonPrefix", { reason: item.decision.reason })
+                  ? t("apr.reasonPrefix", { reason: safeApprovalText(item.decision.reason) })
                   : undefined
               }
               showIcon

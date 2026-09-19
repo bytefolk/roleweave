@@ -5,6 +5,7 @@ import type { OpenWorkspace } from "../workspace-state.js";
 import { assertTurnWorkspace, executeTurn } from "../routes/turns.js";
 import { resolvePositionAgentEngine } from "../agent-binding.js";
 import { ApprovalStore, approvalIdentity } from "./store.js";
+import { buildApprovalContext, redactApprovalText } from "./context.js";
 
 const instances = new WeakMap<ControlPlaneContext, ApprovalService>();
 export function approvals(ctx: ControlPlaneContext): ApprovalService {
@@ -23,6 +24,25 @@ export function parseDecision(value: unknown): ApprovalDecisionRequest {
     throw new OrgApiError(errorCodes.approval_request_invalid, 400, "Invalid decision or reason (maximum 1024 UTF-8 bytes)");
   }
   return d;
+}
+
+function publicView(record: ApprovalRecord): ApprovalRecord {
+  return {
+    ...record,
+    action: {
+      ...record.action,
+      description: redactApprovalText(record.action.description),
+      ...(record.action.target ? { target: redactApprovalText(record.action.target) } : {}),
+    },
+    ...(record.requestReason ? { requestReason: redactApprovalText(record.requestReason) } : {}),
+    ...(record.context ? {
+      context: {
+        ...record.context,
+        ...(record.context.parameterSummary ? { parameterSummary: redactApprovalText(record.context.parameterSummary) } : {}),
+      },
+    } : {}),
+    ...(record.decision?.reason ? { decision: { ...record.decision, reason: redactApprovalText(record.decision.reason) } } : {}),
+  };
 }
 
 export class ApprovalService {
@@ -66,9 +86,11 @@ export class ApprovalService {
         const source: ApprovalRecord["source"] = { kind, positionId: turn.positionId, conversationId: turn.conversationRef ?? turn.conversationId, turnId: turn.turnId, runId: event.runId, engine: turn.engine };
         const id = approvalIdentity(source, event.approvalId);
         if (byId.has(id)) continue;
+        const role = ws.organization.roles.find(entry => entry.id === source.positionId);
         const record: ApprovalRecord = {
           schemaVersion: "workbench-approval.v1", id, version: 1, approvalId: event.approvalId, source,
           action: event.action, ...(event.reason ? { requestReason: event.reason } : {}),
+          ...(role ? { context: buildApprovalContext(event.action, role) } : {}),
           requestedAt: event.timestamp, ...(event.expiresAt ? { expiresAt: event.expiresAt } : {}),
           status: turn.error?.code === "engine.approval_required" ? "pending" : "indeterminate",
           execution: { phase: "not_started" }, createdAt: now, updatedAt: now,
@@ -78,6 +100,10 @@ export class ApprovalService {
     }
     for (const a of byId.values()) {
       const before = JSON.stringify(a);
+      if (!a.context) {
+        const role = ws.organization.roles.find(entry => entry.id === a.source.positionId);
+        if (role) a.context = buildApprovalContext(a.action, role);
+      }
       if (a.execution.turnId && !this.active.has(`${ws.dir}\0${a.id}`)) {
         const result = turns.find(t => t.turnId === a.execution.turnId && t.positionId === a.source.positionId && t.conversationId === a.source.conversationId);
         a.execution = { ...a.execution, ...this.outcome(a, result) };
@@ -122,7 +148,7 @@ export class ApprovalService {
         else throw error;
       }
     }
-    return { ...a, canDecide: !unavailableReason, ...(unavailableReason ? { unavailableReason } : {}) };
+    return { ...publicView(a), canDecide: !unavailableReason, ...(unavailableReason ? { unavailableReason } : {}) };
   }
 
   async list(ws: OpenWorkspace): Promise<ApprovalView[]> {
