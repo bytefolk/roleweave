@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN" data-platform="ios">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>组织 · RoleWeave</title>
+    <link rel="stylesheet" href="/ios/app.css">
+  </head>
+  <body>
+    <header class="ios-nav">
+      <p class="ios-nav__product">RoleWeave · iOS</p>
+      <h1 id="workspace-name">组织</h1>
+    </header>
+    <main id="main">
+      <section id="panel-org" class="panel is-active" data-panel="org" aria-label="组织">
+        <p id="org-lead" class="ios-footnote">正在读取组织…</p>
+        <ol id="role-list" class="ios-group"></ol>
+        <article id="role-detail" class="ios-card" hidden></article>
+      </section>
+      <section id="panel-command" class="panel" data-panel="command" hidden aria-label="指令">
+        <p class="ios-footnote">发给电脑上已打开的 RoleWeave。员工在电脑上跑。</p>
+        <p id="host-status" class="host-status">正在查看电脑是否在线…</p>
+        <form id="claim-form" class="ios-stack">
+          <button type="submit" id="claim" class="ios-btn">连接这台电脑</button>
+        </form>
+        <form id="pair-form" class="ios-stack">
+          <label for="code">6 位配对码</label>
+          <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}">
+          <button type="submit" class="ios-btn ios-btn--plain">配对</button>
+        </form>
+        <form id="command-form" class="ios-stack" hidden>
+          <label for="text">指令</label>
+          <textarea id="text" name="text" rows="4" maxlength="4000"></textarea>
+          <button type="submit" class="ios-btn">发给电脑</button>
+        </form>
+        <p id="command-status" role="status">尚未连接。</p>
+        <pre id="command-summary" hidden></pre>
+      </section>
+      <section id="panel-desktop" class="panel" data-panel="desktop" hidden aria-label="桌面">
+        <p class="ios-footnote">完整工作台在电脑上。需要时再打开远程桌面。</p>
+        <a class="ios-btn" href="/desktop">打开远程桌面</a>
+      </section>
+      <section id="panel-settings" class="panel" data-panel="settings" hidden aria-label="设置">
+        <ul class="ios-group ios-settings">
+          <li><span>平台</span><strong>iOS</strong></li>
+          <li><span>组织数据</span><strong id="org-source">尚未同步</strong></li>
+          <li><span>这台手机</span><strong id="device-state">未连接</strong></li>
+          <li><span>回合</span><strong>电脑宿主执行</strong></li>
+        </ul>
+        <button type="button" id="revoke" class="ios-btn ios-btn--plain" hidden>断开这台手机</button>
+        <a class="ios-btn ios-btn--plain" href="/?surface=desktop">打开桌面版</a>
+      </section>
+    </main>
+    <nav class="ios-tabbar" aria-label="主要功能">
+      <button type="button" class="tab is-active" data-tab="org" aria-current="page">组织</button>
+      <button type="button" class="tab" data-tab="command">指令</button>
+      <button type="button" class="tab" data-tab="desktop">桌面</button>
+      <button type="button" class="tab" data-tab="settings">设置</button>
+    </nav>
+    <script type="module" src="/ios/app.mjs"></script>
+  </body>
+</html>

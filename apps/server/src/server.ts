@@ -26,6 +26,7 @@ import {
   handleGoalUpdate,
 } from "./routes/goals.js";
 import { handleHealth } from "./routes/health.js";
+import { handleQoderLoginStart, handleQoderLoginStatus } from "./routes/qoder-login.js";
 import { handleHirePost } from "./routes/hire.js";
 import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
@@ -41,16 +42,19 @@ import {
   handleSessionTurnPost,
 } from "./routes/sessions.js";
 import { handleTurnCancel, handleTurnHistory, handleTurnPost } from "./routes/turns.js";
-import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceOpen } from "./routes/workspace.js";
+import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceInitialize, handleWorkspaceOpen } from "./routes/workspace.js";
 
 /**
  * Loopback-only control-plane HTTP server (frozen v0 contract).
  * Auth: every endpoint except /health requires `Authorization: Bearer <boot-token>`.
  */
 export function createControlPlane(ctx: ControlPlaneContext): http.Server {
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     void dispatch(ctx, req, res);
   });
+  server.requestTimeout = 30000;
+  server.headersTimeout = 10000;
+  return server;
 }
 
 async function dispatch(
@@ -78,6 +82,14 @@ async function dispatch(
       await handleHealth(ctx, res);
       return;
     }
+    if (pathname === routes.qoderLogin && method === "POST") {
+      await handleQoderLoginStart(ctx, res);
+      return;
+    }
+    if (pathname === routes.qoderLogin && method === "GET") {
+      await handleQoderLoginStatus(ctx, res);
+      return;
+    }
     if (pathname === routes.workspace && method === "GET") {
       await handleWorkspaceGet(ctx, res);
       return;
@@ -88,6 +100,10 @@ async function dispatch(
     }
     if (pathname === routes.workspaceCreate && method === "POST") {
       await handleWorkspaceCreate(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.workspaceInitialize && method === "POST") {
+      await handleWorkspaceInitialize(ctx, req, res);
       return;
     }
     if (pathname === routes.orgTree && method === "GET") {
@@ -360,6 +376,9 @@ async function dispatch(
     );
   } catch (err) {
     try {
+      if (err instanceof OrgApiError && err.code === errorCodes.body_invalid) {
+        res.setHeader("connection", "close");
+      }
       sendError(res, err);
     } catch {
       // Response already closed (e.g. SSE drop); nothing else to do.

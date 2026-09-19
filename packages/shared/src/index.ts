@@ -8,6 +8,7 @@ export * from "./hire.js";
 export * from "./position-profile.js";
 export * from "./capabilities.js";
 export * from "./workflows.js";
+export * from "./semantic-runtime.js";
 export * from "./org-layout.js";
 export * from "./health.js";
 export * from "./turns.js";

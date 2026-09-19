@@ -18,12 +18,13 @@
 :is([data-theme="light"], [data-theme="dark"]) .owb-wctl--max > svg { stroke: var(--ui-success-foreground); }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-module-rail {
-  padding-inline: 6px;
   border-right-color: transparent;
 }
 
+/* 导轨几何（槽高 / 内边距 / 宽度）归 app.css 的导轨块管；主题层只上色，
+   不再用高特异度改几何——之前这里的 padding-inline/min-height 把收拢
+   槽压成 38px 并把图标推离中心。 */
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-module-rail__item {
-  min-height: 38px;
   border-radius: var(--ui-radius-md);
   color: var(--ui-foreground-muted);
 }

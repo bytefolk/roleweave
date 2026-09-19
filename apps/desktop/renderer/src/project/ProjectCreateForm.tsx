@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button as AntButton, Input, Select } from "antd";
 import { FolderPlus } from "lucide-react";
 import type { WorkspaceCreateResponse } from "@roleweave/shared";
@@ -11,9 +11,13 @@ interface ProjectCreateFormProps {
   onCreated: (workspace: WorkspaceCreateResponse) => void;
   onBusyChange?: (busy: boolean) => void;
   engineAvailability: Record<TurnEngine, TurnEngineAvailability>;
+  /** When set, bootstrap metadata in this existing directory instead of
+   * opening the parent-folder picker used by a new project. */
+  targetPath?: string;
+  initialBusiness?: string;
 }
 
-function slugify(value: string): string {
+export function slugify(value: string): string {
   const slug = value
     .normalize("NFKD")
     .toLowerCase()
@@ -34,13 +38,16 @@ function slugify(value: string): string {
 }
 
 /** The creation form is intentionally independent from the workspace picker. */
-export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAvailability }: ProjectCreateFormProps) {
+export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAvailability, targetPath, initialBusiness = "" }: ProjectCreateFormProps) {
   const t = useT();
-  const [business, setBusiness] = useState("");
+  const [business, setBusiness] = useState(initialBusiness);
   const [description, setDescription] = useState("");
   const [agentHost, setAgentHost] = useState<AgentHost>(() => defaultAgentHost(engineAvailability));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (targetPath !== undefined) setBusiness(initialBusiness);
+  }, [initialBusiness, targetPath]);
   const generatedId = useMemo(() => slugify(business), [business]);
   const agentEngine = useMemo(
     () => resolveAgentEngine(agentHost, engineAvailability),
@@ -54,21 +61,32 @@ export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAva
     onBusyChange?.(true);
     setError(null);
     try {
-      const response = await window.owb.createWorkspace({
-        projectId: generatedId,
-        business: business.trim(),
-        description: description.trim(),
-        agentEngine,
-      });
-      if (!("status" in response)) return;
+      const response = targetPath
+        ? await window.owb.initializeWorkspace?.({
+            path: targetPath,
+            projectId: generatedId,
+            business: business.trim(),
+            description: description.trim(),
+            agentEngine,
+          })
+        : await window.owb.createWorkspace({
+            projectId: generatedId,
+            business: business.trim(),
+            description: description.trim(),
+            agentEngine,
+          });
+      if (!response || !("status" in response)) {
+        setError(targetPath ? t("project.initializeFailed") : t("project.createFailed"));
+        return;
+      }
       if (response.status !== 201) {
         const body = response.body as { message?: unknown };
-        setError(typeof body?.message === "string" ? body.message : t("project.createFailed"));
+        setError(typeof body?.message === "string" ? body.message : targetPath ? t("project.initializeFailed") : t("project.createFailed"));
         return;
       }
       onCreated(response.body as WorkspaceCreateResponse);
     } catch {
-      setError(t("project.createOffline"));
+      setError(targetPath ? t("project.initializeOffline") : t("project.createOffline"));
     } finally {
       setBusy(false);
       onBusyChange?.(false);
@@ -94,7 +112,7 @@ export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAva
           placeholder={t("project.businessPh")}
           onChange={(event) => setBusiness(event.target.value)}
         />
-        <p>{t("project.idAutoNote")}</p>
+        <p>{targetPath ? t("project.initializeIdNote") : t("project.idAutoNote")}</p>
       </div>
 
       <div className="owb-project-create-form__field">
@@ -118,16 +136,16 @@ export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAva
           onChange={(value) => setAgentHost(value as AgentHost)}
           options={AGENT_HOSTS.map((host) => ({ value: host, label: AGENT_HOST_LABEL[host] }))}
         />
-        <p>{t("project.ownerAgentHint")}</p>
+        <p>{targetPath ? t("project.initializeAgentHint") : t("project.ownerAgentHint")}</p>
       </div>
 
       {error ? <p className="owb-project-create-form__error" role="alert">{error}</p> : null}
 
       <footer className="owb-project-create-form__footer">
-        <span>{t("project.locationHint")}</span>
+        <span title={targetPath}>{targetPath ? t("project.initializeLocation", { path: targetPath }) : t("project.locationHint")}</span>
         <AntButton htmlType="button" onClick={onCancel} disabled={busy}>{t("dlg.cancel")}</AntButton>
         <AntButton type="primary" htmlType="submit" loading={busy} disabled={!formValid} icon={<FolderPlus aria-hidden="true" size={14} />}>
-          {t("project.createAction")}
+          {targetPath ? t("project.initializeSubmitAction") : t("project.createAction")}
         </AntButton>
       </footer>
     </form>

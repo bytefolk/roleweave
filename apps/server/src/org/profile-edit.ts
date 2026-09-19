@@ -45,6 +45,7 @@ import { ORGANIZATION_FILE } from "../workspace-state.js";
 import { resolvePositionPackageDir } from "../context-sources.js";
 import { derivePermissionArtifacts, permissionsFromPackage } from "./permission-artifacts.js";
 import { validatePermissions } from "./permissions.js";
+import { anyAgentHostSupportsEmployeeMcp } from "../agent-registry.js";
 
 /** Same bound `POST /hire` applies to a display name (UTF-8 bytes). */
 const MAX_NAME_BYTES = 128;
@@ -96,6 +97,12 @@ export function assertProfilePatch(raw: unknown): PositionProfilePatch {
   if (body.name !== undefined) patch.name = (body.name as string).trim();
   if (body.mode !== undefined) patch.mode = body.mode as PositionProfilePatch["mode"];
   if (body.permissions !== undefined) patch.permissions = validatePermissions(body.permissions, invalid);
+  // A grant no bundled Host can honor must not enter an existing package
+  // either; dropping every grant (empty array) stays allowed so the manual
+  // unbind workaround keeps working (#314).
+  if (patch.permissions !== undefined && (patch.permissions.mcpServers ?? []).length > 0 && !anyAgentHostSupportsEmployeeMcp()) {
+    throw invalid("permissions.mcpServers: no engine honors employee-level MCP bindings yet; leave MCP connectors unbound");
+  }
   return patch;
 }
 

@@ -8,7 +8,7 @@ import { resolveGeminiClient, resolveGeminiExecutable } from "../src/gemini-bina
 async function executable(dir: string, name: string): Promise<string> {
   const file = path.join(dir, name);
   await fs.writeFile(file, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-  return file;
+  return fs.realpath(file);
 }
 
 test("Gemini client resolver prefers Gemini CLI and falls back to Antigravity CLI", async (t) => {

@@ -180,24 +180,35 @@ export function DocsPanel({
   }, [files, knowledgeFirst, selected, listing, openFile]);
 
   const formatSize = (size: number): string => {
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    if (size < 1024) return t("docs.sizeBytes", { size });
+    if (size < 1024 * 1024) return t("docs.sizeKB", { size: (size / 1024).toFixed(1) });
+    if (size < 1024 * 1024 * 1024) return t("docs.sizeMB", { size: (size / (1024 * 1024)).toFixed(1) });
+    return t("docs.sizeGB", { size: (size / (1024 * 1024 * 1024)).toFixed(1) });
   };
 
-  const fileExtension = (path: string): string => {
-    const extension = path.split(".").pop();
-    return extension && extension !== path ? extension.toUpperCase() : "FILE";
+  const fileTypeLabel = (path: string): string => {
+    const extension = path.split(".").pop()?.toLowerCase();
+    if (!extension || extension === path) return t("docs.fileType.unknown");
+    const key = `docs.fileType.${extension}`;
+    const label = t(key);
+    return label !== key ? label : t("docs.fileType.unknown");
+  };
+
+  const stripExtension = (filename: string): string => {
+    const dotIndex = filename.lastIndexOf(".");
+    return dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
   };
 
   const renderFilePath = (path: string) => {
     const separator = path.lastIndexOf("/");
+    const fullName = separator < 0 ? path : path.slice(separator + 1);
+    const displayName = stripExtension(fullName);
     if (separator < 0)
-      return <span className="owb-docs-panel__file-name">{path}</span>;
+      return <span className="owb-docs-panel__file-name">{displayName}</span>;
     return (
       <>
         <span className="owb-docs-panel__file-name">
-          {path.slice(separator + 1)}
+          {displayName}
         </span>
         <span className="owb-docs-panel__file-parent">
           {path.slice(0, separator)}/
@@ -322,7 +333,7 @@ export function DocsPanel({
                         aria-hidden="true"
                       >
                         <span className="owb-docs-panel__file-type">
-                          {fileExtension(entry.path)}
+                          {fileTypeLabel(entry.path)}
                         </span>
                         <span>{formatSize(entry.size)}</span>
                       </div>

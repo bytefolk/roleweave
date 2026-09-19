@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Alert, Badge, Button as AntButton, ConfigProvider, message } from "antd";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
@@ -25,6 +25,7 @@ import type {
   OrgTreeSnapshot,
   PositionProfilePatch,
   PositionProfileResult,
+  QoderLoginResponse,
   ReportsResponse,
   TurnHistory,
   WorkbenchSession,
@@ -32,7 +33,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { Brain, ChartColumn, ClipboardCheck, Flag, FolderOpen, Network, PanelLeftClose, PanelLeftOpen, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
+import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderOpen, Network, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -146,9 +147,16 @@ function AppInner({
     else requestSettingsLeave(() => setActiveModuleRaw(next));
   }, []);
   /** 2026-09-17 设计评审：导轨默认收拢只出图标（hover 浮名字），展开后
-   * icon+名字；展开/收拢手柄骑在导轨与侧栏边界上（竖居中胶囊）。
-   * 选择写 localStorage，下次启动照旧。 */
+   * icon+名字；展开/收拢手柄骑在导轨与侧栏边界上。手柄默认离底部 72px，
+   * 可拖拽上下调整，位置写 localStorage，下次启动照旧。 */
   const [railExpanded, setRailExpanded] = useState<boolean>(() => seedRailExpanded());
+  const [railChipBottom, setRailChipBottom] = useState<number>(() => seedRailChipBottom());
+  const railChipBottomRef = useRef(railChipBottom);
+  railChipBottomRef.current = railChipBottom;
+  const railChipDrag = useRef<RailChipDrag | null>(null);
+  const railChipMoved = useRef(false);
+  const [railChipDragging, setRailChipDragging] = useState(false);
+
   const toggleRailExpanded = useCallback(() => {
     setRailExpanded((current) => {
       const next = !current;
@@ -156,6 +164,91 @@ function AppInner({
       return next;
     });
   }, []);
+
+  const updateRailChipBottom = useCallback((next: number) => {
+    railChipBottomRef.current = next;
+    setRailChipBottom(next);
+  }, []);
+
+  const railChipBounds = useCallback((target: HTMLElement): RailChipBounds => {
+    const rail = target.closest<HTMLElement>(".ui-module-rail");
+    const railHeight = rail?.getBoundingClientRect().height || window.innerHeight || 720;
+    return {
+      min: RAIL_CHIP_MIN_BOTTOM,
+      max: Math.max(RAIL_CHIP_MIN_BOTTOM, railHeight - RAIL_CHIP_EDGE_GUTTER - RAIL_CHIP_SIZE),
+    };
+  }, []);
+
+  const onRailChipPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button > 0) return;
+    const bounds = railChipBounds(event.currentTarget);
+    const startBottom = clampRailChipBottom(railChipBottomRef.current, bounds);
+    railChipDrag.current = { pointerId: event.pointerId, startY: event.clientY, startBottom, bounds };
+    railChipMoved.current = false;
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // jsdom and older WebViews may not implement pointer capture.
+    }
+  }, [railChipBounds]);
+
+  const onRailChipPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = railChipDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const currentY = Number.isFinite(event.clientY) ? event.clientY : drag.startY;
+    const delta = drag.startY - currentY;
+    if (Math.abs(delta) > RAIL_CHIP_DRAG_THRESHOLD) {
+      railChipMoved.current = true;
+      setRailChipDragging(true);
+      event.preventDefault();
+    }
+    updateRailChipBottom(clampRailChipBottom(drag.startBottom + delta, drag.bounds));
+  }, [updateRailChipBottom]);
+
+  const onRailChipPointerUp = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = railChipDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    persistRailChipBottom(railChipBottomRef.current);
+    railChipDrag.current = null;
+    setRailChipDragging(false);
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // jsdom and older WebViews may not implement pointer capture.
+    }
+  }, []);
+
+  const onRailChipPointerCancel = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = railChipDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    railChipDrag.current = null;
+    railChipMoved.current = false;
+    setRailChipDragging(false);
+  }, []);
+
+  const onRailChipKeyDown = useCallback((event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!(event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Home" || event.key === "End")) return;
+    event.preventDefault();
+    const bounds = railChipBounds(event.currentTarget);
+    const next = event.key === "Home"
+      ? bounds.max
+      : event.key === "End"
+        ? bounds.min
+        : railChipBottomRef.current + (event.key === "ArrowUp" ? RAIL_CHIP_KEYBOARD_STEP : -RAIL_CHIP_KEYBOARD_STEP);
+    const clamped = clampRailChipBottom(next, bounds);
+    updateRailChipBottom(clamped);
+    persistRailChipBottom(clamped);
+  }, [railChipBounds, updateRailChipBottom]);
+
+  const onRailChipClick = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (railChipMoved.current) {
+      event.preventDefault();
+      railChipMoved.current = false;
+      return;
+    }
+    toggleRailExpanded();
+  }, [toggleRailExpanded]);
+
   /** ⌘B / Ctrl+B 直接切导轨宽窄；输入框里不抢键。 */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -276,6 +369,12 @@ function AppInner({
   // open over another workspace's employee.
   useEffect(() => { setEditTargetId(undefined); setEditPosition(null); }, [workspaceInfo?.path]);
   const [projectHubOpen, setProjectHubOpen] = useState(false);
+  const [workspaceOpening, setWorkspaceOpening] = useState(false);
+  const [workspaceOpenError, setWorkspaceOpenError] = useState<string | null>(null);
+  const [workspaceOpenCandidatePath, setWorkspaceOpenCandidatePath] = useState<string | null>(null);
+  useEffect(() => {
+    if (projectHubOpen) setWorkspaceOpenError(null);
+  }, [projectHubOpen]);
   /** Org-tree group entry (#53): prefilled draft members handed to the
    * GroupsPanel create panel; nonce re-fires repeated entries. */
   const groupWorkspaceScope = useMemo(() => Symbol("group-workspace"), [workspaceInfo?.path, workspaceInfo?.open]);
@@ -673,6 +772,61 @@ function AppInner({
   }, []);
 
   const availabilityCheck = { onRecheck: recheckAvailability, checking: checkingAvailability, failed: availabilityCheckFailed };
+
+  /** One-click Qoder login: the control plane owns the `qodercli login` child;
+   * the shell only starts it and observes its state. While the login runs,
+   * health is polled so the composer unblocks the moment the credential lands —
+   * no manual "run qodercli login then refresh" repair loop for the operator. */
+  const [qoderLogin, setQoderLogin] = useState<{ phase: "idle" | "starting" | "running"; feedback: string | null; loginUrl: string | null }>({ phase: "idle", feedback: null, loginUrl: null });
+  const startQoderLogin = useCallback(async () => {
+    setQoderLogin((current) => ({ ...current, phase: "starting", feedback: null }));
+    try {
+      const response = await window.owb.qoderLogin.start();
+      const body = response.status === 200 ? response.body as QoderLoginResponse : undefined;
+      if (!body) throw new Error();
+      if (body.failure) {
+        setQoderLogin({ phase: "idle", feedback: t("misc.qoderLoginUnavailable"), loginUrl: null });
+        return;
+      }
+      setQoderLogin({ phase: "running", feedback: t("misc.qoderLoginRunning"), loginUrl: body.loginUrl ?? null });
+    } catch {
+      setQoderLogin({ phase: "idle", feedback: t("misc.qoderLoginUnavailable"), loginUrl: null });
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (qoderLogin.phase !== "running") return;
+    let alive = true;
+    const timer = setInterval(() => {
+      void (async () => {
+        const [loginRes, statusRes] = await Promise.all([window.owb.qoderLogin.status(), window.owb.status()]);
+        if (!alive) return;
+        if (statusRes.health) setHealth(statusRes.health);
+        if (statusRes.health?.hosts?.qoder?.ready === true) {
+          setQoderLogin({ phase: "idle", feedback: t("misc.qoderLoginSuccess"), loginUrl: null });
+          return;
+        }
+        const login = loginRes.status === 200 ? loginRes.body as QoderLoginResponse : undefined;
+        if (!login || login.running) {
+          if (login?.loginUrl) {
+            setQoderLogin((current) => (current.loginUrl === login.loginUrl ? current : { ...current, loginUrl: login.loginUrl ?? null }));
+          }
+          return;
+        }
+        // The child exited: read health once more because the credential write
+        // can land a beat before the process exit is observed.
+        const finalStatus = await window.owb.status();
+        if (!alive) return;
+        if (finalStatus.health) setHealth(finalStatus.health);
+        setQoderLogin({
+          phase: "idle",
+          feedback: finalStatus.health?.hosts?.qoder?.ready === true ? t("misc.qoderLoginSuccess") : t("misc.qoderLoginFailed"),
+          loginUrl: null,
+        });
+      })();
+    }, 2500);
+    return () => { alive = false; clearInterval(timer); };
+  }, [qoderLogin.phase, t]);
 
   const loadTurnHistory = useCallback(async (id: string, sessionId = selectedSessionIdRef.current) => {
     if (selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
@@ -1146,9 +1300,44 @@ function AppInner({
   );
 
   const openWorkspace = useCallback(async () => {
-    await window.owb.openWorkspace();
-    await refresh();
-  }, [refresh]);
+    if (workspaceOpening) return;
+    setWorkspaceOpening(true);
+    setWorkspaceOpenError(null);
+    setWorkspaceOpenCandidatePath(null);
+    try {
+      const response = await window.owb.openWorkspace();
+      if ("canceled" in response && response.canceled === true) {
+        setProjectHubOpen(false);
+        setWorkspaceOpenCandidatePath(null);
+        // A native picker cancel does not change the workspace, but keeping
+        // the existing refresh preserves the same read-after-picker contract
+        // used by workspace switches and catches an external change made
+        // while the picker was open.
+        await refresh();
+        return;
+      }
+      if (response.status !== 200) {
+        setWorkspaceOpenError(apiErrorMessage(response.body, t("project.openFailed")));
+        setWorkspaceOpenCandidatePath(typeof response.workspacePath === "string" ? response.workspacePath : null);
+        return;
+      }
+      const opened = response.body as WorkspaceInfoResponse | null;
+      if (opened?.open === true) setWorkspaceInfo(opened);
+      setWorkspaceOpenCandidatePath(null);
+      setTreeLoading(true);
+      await refresh();
+      setProjectHubOpen(false);
+      setActiveModule("org");
+      setOrgFeedback({
+        tone: "info",
+        text: t("project.opened", { name: opened?.business ?? opened?.path ?? t("project.localOnly") }),
+      });
+    } catch {
+      setWorkspaceOpenError(t("project.openOffline"));
+    } finally {
+      setWorkspaceOpening(false);
+    }
+  }, [refresh, setActiveModule, t, workspaceOpening]);
 
   const onProjectCreated = useCallback(async (created: WorkspaceCreateResponse) => {
     setActiveModule("org");
@@ -1353,11 +1542,6 @@ function AppInner({
     [reports],
   );
   const selectedNode = selectedId && snapshot ? findNodeById(snapshot.tree, selectedId) : null;
-  const selectedBudgetReport = selectedId ? reports?.budgets.find((budget) => budget.positionId === selectedId) : null;
-  const selectedBudgetRatio = selectedBudgetReport?.latestTurn && selectedBudgetReport.declared.perTask.tokens
-    ? selectedBudgetReport.latestTurn.totalTokens / selectedBudgetReport.declared.perTask.tokens
-    : null;
-
   /** Position ids with a turn in flight — drives the tree/card status lights
    * (#73 signature move ②). Observed from the SSE run stream only; a position
    * with no live run is never shown as running. */
@@ -1377,6 +1561,7 @@ function AppInner({
       modelPinnable: health?.hosts?.qoder.modelPinnable,
       model: health?.hosts?.qoder.model,
       connection: health?.hosts?.qoder.connection,
+      loginRequired: health?.hosts?.qoder.loginRequired === true,
     },
     "claude-code": {
       configured: health?.hosts?.["claude-code"].configured === true,
@@ -1426,6 +1611,27 @@ function AppInner({
       model: health?.hosts?.gemini?.model,
     },
   }), [health, t]);
+
+  /** Login repair surface for the composer notice: offered only while the
+   * bundled Qoder Host says the missing login is its sole blocker. */
+  const qoderLoginSurface = health?.hosts?.qoder.loginRequired === true && health?.hosts?.qoder.ready !== true
+    ? {
+      action: {
+        label: qoderLogin.phase === "running" ? t("misc.qoderLoginRunning") : t("misc.qoderLogin"),
+        busy: qoderLogin.phase !== "idle",
+        onClick: () => void startQoderLogin(),
+      },
+      feedback: qoderLogin.feedback,
+      ...(qoderLogin.loginUrl !== null
+        ? {
+          link: {
+            label: t("misc.qoderLoginOpenBrowser"),
+            onClick: () => { void window.owb.openExternalUrl?.(qoderLogin.loginUrl as string); },
+          },
+        }
+        : {}),
+    }
+    : undefined;
 
   /** A visible conversation has exactly one employee-selected runtime. For
    * legacy employees this supplies the first request used by the server to
@@ -1591,21 +1797,30 @@ function AppInner({
             { id: "settings", label: t("rail.settings"), icon: <Settings aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
           ]}
           footer={
-            /* 导轨宽窄开关住在导轨自己的底部槽位（VS Code 活动栏齿轮位 =
-               窗口左下角）：收拢态是和导航项同规格的图标槽，展开态长成
-               导航行；⌘B 同效。 */
+            /* 导轨宽窄开关：Pro Layout 式圆形浮 chip，骑在导轨与侧栏的缝上、
+               贴在导轨底部（左下角位置）；箭头 glyph 随状态旋转 180°。
+               ⌘B 同效。 */
             <button
               type="button"
-              className="owb-rail-foot"
+              className={`owb-rail-chip${railChipDragging ? " is-dragging" : ""}`}
               aria-label={railExpanded ? t("rail.collapse") : t("rail.expand")}
-              title={railExpanded ? t("rail.collapse") : t("rail.expand")}
+              title={`${railExpanded ? t("rail.collapse") : t("rail.expand")} · ${t("rail.reposition")}`}
               aria-expanded={railExpanded}
-              onClick={toggleRailExpanded}
+              aria-keyshortcuts="ArrowUp ArrowDown Home End"
+              data-rail-chip-bottom={railChipBottom}
+              style={{ "--owb-rail-chip-bottom": `${railChipBottom}px` } as CSSProperties}
+              onClick={onRailChipClick}
+              onKeyDown={onRailChipKeyDown}
+              onPointerDown={onRailChipPointerDown}
+              onPointerMove={onRailChipPointerMove}
+              onPointerUp={onRailChipPointerUp}
+              onPointerCancel={onRailChipPointerCancel}
             >
-              {railExpanded ? <PanelLeftClose aria-hidden="true" size={16} /> : <PanelLeftOpen aria-hidden="true" size={16} />}
-              <span className="owb-rail-foot__label" aria-hidden="true">
-                {railExpanded ? t("rail.collapse") : t("rail.expand")}
-              </span>
+              <ChevronsRight
+                aria-hidden="true"
+                size={12}
+                className={railExpanded ? "owb-rail-chip__glyph is-flipped" : "owb-rail-chip__glyph"}
+              />
             </button>
           }
         />
@@ -1616,12 +1831,15 @@ function AppInner({
           header={
             <>
               <TreeRowMenu id={null} name={workspaceInfo?.business ?? ""} busy={orgBusy} onAction={treeAction}>
-              <div><ProjectSwitcher
+              <div className="owb-project-switcher-row">
+              <ProjectSwitcher
                 workspace={workspaceInfo}
                 disabled={orgBusy}
                 dialogOpen={projectHubOpen}
                 onOpen={() => setProjectHubOpen(true)}
-              /></div>
+              />
+              <TreeRowMenu id={null} name={workspaceInfo?.business ?? ""} busy={orgBusy} onAction={treeAction} />
+              </div>
               </TreeRowMenu>
               <div className="owb-side-head">
                 <div className="owb-side-head__copy">
@@ -1665,8 +1883,8 @@ function AppInner({
                 }}
               >
                 <OrgTree
-                  decorateRow={(id, row) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
-                  rowActions={(id) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction} />}
+                  decorateRow={(id, row) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
+                  rowActions={(id) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction} />}
                   rowMetadata={(id) => {
                     const bound = positionEngines[id] !== undefined;
                     const engine = engineForPosition(id);
@@ -1733,7 +1951,13 @@ function AppInner({
             positionCount={snapshot?.positionCount ?? null}
             engineAvailability={engineAvailability}
             disabled={orgBusy}
-            onClose={() => setProjectHubOpen(false)}
+            opening={workspaceOpening}
+            openError={workspaceOpenError}
+            initializePath={workspaceOpenCandidatePath}
+            onClose={() => {
+              setProjectHubOpen(false);
+              setWorkspaceOpenCandidatePath(null);
+            }}
             onOpenWorkspace={() => void openWorkspace()}
             onCreated={(created) => void onProjectCreated(created)}
           />
@@ -1881,7 +2105,6 @@ function AppInner({
                   position={card.data}
                   loading={card.loading}
                   notFound={card.notFound}
-                  consumption={selectedBudgetRatio}
                   running={selectedId !== null && runningPositionIds.has(selectedId)}
                   onRefresh={() => void refresh()}
                   onContextSourceSelect={(source) => {
@@ -1918,6 +2141,7 @@ function AppInner({
           }
           right={<TurnPanel
             availabilityCheck={availabilityCheck}
+            qoderLogin={qoderLoginSurface}
             key={workspaceInfo?.path}
             workspaceKey={workspaceInfo?.path}
             memory={conversationMemory.current}
@@ -2001,6 +2225,29 @@ function isTurnEngine(value: unknown): value is TurnEngine {
 
 /** 导轨展开态持久化：写不了（隐私窗口/被禁）就只保留本次启动的内存选择。 */
 const RAIL_EXPANDED_STORAGE_KEY = "owb.railExpanded";
+const RAIL_CHIP_BOTTOM_STORAGE_KEY = "owb.railChipBottom";
+const RAIL_CHIP_DEFAULT_BOTTOM = 72;
+const RAIL_CHIP_MIN_BOTTOM = 12;
+const RAIL_CHIP_EDGE_GUTTER = 12;
+const RAIL_CHIP_SIZE = 24;
+const RAIL_CHIP_DRAG_THRESHOLD = 4;
+const RAIL_CHIP_KEYBOARD_STEP = 16;
+
+interface RailChipBounds {
+  min: number;
+  max: number;
+}
+
+interface RailChipDrag {
+  pointerId: number;
+  startY: number;
+  startBottom: number;
+  bounds: RailChipBounds;
+}
+
+function clampRailChipBottom(value: number, bounds: RailChipBounds): number {
+  return Math.round(Math.min(bounds.max, Math.max(bounds.min, value)));
+}
 
 function seedRailExpanded(): boolean {
   try {
@@ -2015,6 +2262,24 @@ function persistRailExpanded(expanded: boolean): void {
     window.localStorage.setItem(RAIL_EXPANDED_STORAGE_KEY, expanded ? "1" : "0");
   } catch {
     // 存储不可用时静默降级为会话内记忆。
+  }
+}
+
+function seedRailChipBottom(): number {
+  try {
+    const raw = Number.parseFloat(window.localStorage.getItem(RAIL_CHIP_BOTTOM_STORAGE_KEY) ?? "");
+    if (Number.isFinite(raw)) return Math.max(RAIL_CHIP_MIN_BOTTOM, Math.min(720, Math.round(raw)));
+  } catch {
+    // 存储不可用时静默降级为本次会话的默认位置。
+  }
+  return RAIL_CHIP_DEFAULT_BOTTOM;
+}
+
+function persistRailChipBottom(bottom: number): void {
+  try {
+    window.localStorage.setItem(RAIL_CHIP_BOTTOM_STORAGE_KEY, String(Math.round(bottom)));
+  } catch {
+    // 存储不可用时静默降级为会话内位置。
   }
 }
 
