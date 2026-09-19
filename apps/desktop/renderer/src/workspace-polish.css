@@ -25,7 +25,10 @@
 .owb-report-filter-note { display: flex; align-items: center; gap: 10px; font-size: 12px; }
 @media (max-width: 1100px) { .owb-report-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } [data-theme] .owb-app .owb-reports { padding: 20px; } }
 .owb-tree-more { margin-left: auto; display: inline-flex; opacity: 0; flex-shrink: 0; }
-.ui-org-tree__row:hover .owb-tree-more, .ui-org-tree__row:focus-within .owb-tree-more { opacity: 1; }
+/* The ellipsis is the node's create/modify entry: keep it hover-revealed like
+   the other row actions, but never hide it on the row the operator selected —
+   a selected row with no visible action affordance reads as "no actions". */
+.ui-org-tree__row:hover .owb-tree-more, .ui-org-tree__row:focus-within .owb-tree-more, .ui-org-tree__row.is-selected .owb-tree-more { opacity: 1; }
 .owb-tree-more button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 5px; color: var(--ui-foreground-muted); background: transparent; cursor: pointer; }
 .owb-tree-more button:hover { background: var(--ui-surface-inset); color: var(--ui-brand); }
 .owb-management-modal .ant-modal-content { border-radius: 14px; }

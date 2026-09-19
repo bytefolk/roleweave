@@ -18,6 +18,8 @@ export const routes = {
   servicesProbe: "/services/probe",
   servicesRelease: "/services/release",
   health: "/health",
+  /** One-click Qoder CLI login flow owned by the control plane. */
+  qoderLogin: "/qoder/login",
   workspace: "/workspace",
   workspaceOpen: "/workspace/open",
   workspaceCreate: "/workspace/create",

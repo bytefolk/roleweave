@@ -121,6 +121,41 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(screen.getByLabelText("下达任务")).toBeEnabled();
   });
 
+  it("#322 renders EngineSelect for an unlocked position and EngineBadge when locked", () => {
+    const onSelectEngine = vi.fn();
+    const { rerender } = render(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineLocked={false}
+        engineAvailability={availability}
+        turns={[]}
+        onSelectEngine={onSelectEngine}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("选择 Agent Host")).toBeEnabled();
+    expect(document.querySelector(".owb-engine-badge")).toBeNull();
+
+    rerender(
+      <TurnPanel
+        workspaceOpen
+        positions={positions}
+        selectedPositionId="repo-owner"
+        engine="qoder"
+        engineLocked={true}
+        engineAvailability={availability}
+        turns={[]}
+        onSelectEngine={onSelectEngine}
+        onCreateTurn={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText("选择 Agent Host")).not.toBeInTheDocument();
+    expect(document.querySelector(".owb-engine-badge")).toHaveTextContent("Qoder");
+  });
+
   it("#305 forwards the restart handler to the composer options bar and stays optional", async () => {
     const rotate = vi.fn();
     const active = {

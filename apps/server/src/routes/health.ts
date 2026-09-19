@@ -453,7 +453,7 @@ function bundledQoderNextStep(state: QoderLocalBinaryState, engineAvailable: boo
       ? "Qoder CLI 版本无法解析；请安装 Qoder CLI 1.1.0 或更新的 1.x 版本"
       : `Qoder CLI 版本 ${state.version} 不受支持；请安装 Qoder CLI 1.1.0 或更新的 1.x 版本`;
   }
-  if (state.authenticated !== true) return "Qoder CLI 尚未登录；运行 qodercli login 完成登录后刷新";
+  if (state.authenticated !== true) return "Qoder CLI 尚未登录；点击对话输入框的「一键登录」完成浏览器授权，或手动运行 qodercli login";
   return undefined;
 }
 
@@ -512,6 +512,12 @@ export function hostHealth({
     qoder: {
       configured: qoderConfigured,
       ready: engineAvailable && qoderConfigured,
+      // The one-click login flow can only help when the binary itself is fine
+      // and the sole blocker is the missing account login; every other failure
+      // keeps pointing at its own repair path.
+      ...(bundledQoder && qoderLocal.supported && qoderLocal.authenticated === false && qoderLocal.failure === "not_authenticated"
+        ? { loginRequired: true }
+        : {}),
       ...(bundledQoder
         ? (qoderNextStep !== undefined ? { nextStep: qoderNextStep } : {})
         : !qoderConfigured

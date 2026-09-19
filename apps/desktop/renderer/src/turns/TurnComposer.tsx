@@ -3,7 +3,7 @@ import { Button as AntButton, Input } from "antd";
 import { ArrowUp, Square } from "lucide-react";
 import { useConversationCopy } from "../locales/conversation";
 import { useT } from "@roleweave/ui";
-import { DiagnosticNotice, type AvailabilityCheck } from "../DiagnosticNotice";
+import { DiagnosticNotice, type AvailabilityCheck, type NoticeAction } from "../DiagnosticNotice";
 
 export interface TurnComposerProps {
   options?: ReactNode;
@@ -16,6 +16,10 @@ export interface TurnComposerProps {
   disabledDiagnostic?: string;
   diagnosticKey?: string;
   availabilityCheck?: AvailabilityCheck;
+  /** Repair action for the current block (e.g. one-click Qoder login). */
+  primaryAction?: NoticeAction;
+  linkAction?: NoticeAction;
+  primaryFeedback?: string | null;
   running: boolean;
   cancelling?: boolean;
   canCancel: boolean;
@@ -38,6 +42,9 @@ export function TurnComposer({
   disabledDiagnostic,
   diagnosticKey,
   availabilityCheck,
+  primaryAction,
+  linkAction,
+  primaryFeedback,
   running,
   cancelling = false,
   canCancel,
@@ -128,6 +135,9 @@ export function TurnComposer({
             : disabledSummary ?? disabledReason!}
           diagnostic={running ? undefined : disabledDiagnostic}
           availabilityCheck={running ? undefined : availabilityCheck}
+          primaryAction={running ? undefined : primaryAction}
+          linkAction={running ? undefined : linkAction}
+          primaryFeedback={running ? undefined : primaryFeedback}
           diagnosticKey={diagnosticKey} />
       ) : <p className="owb-turn-composer__shortcut">{sendShortcut === "mod-enter" ? copy.modEnterHint : t("turn.keyboardHint")}</p>}
     </form>

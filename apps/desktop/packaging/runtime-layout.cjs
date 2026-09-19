@@ -103,6 +103,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/routes/hire.js",
   "dist/src/routes/org.js",
   "dist/src/routes/positions.js",
+  "dist/src/routes/qoder-login.js",
   "dist/src/routes/reports.js",
   "dist/src/routes/services.js",
   "dist/src/routes/sessions.js",
