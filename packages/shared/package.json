@@ -25,6 +25,10 @@
       "import": "./dist/pending-approval.js",
       "require": "./pending-approval.cjs"
     },
+    "./approval-redaction": {
+      "types": "./dist/approval-redaction.d.ts",
+      "import": "./dist/approval-redaction.js"
+    },
     "./docs": {
       "types": "./dist/docs.d.ts",
       "import": "./dist/docs.js"

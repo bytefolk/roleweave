@@ -1,4 +1,5 @@
-import { redactApprovalSecrets, type ApprovalContext, type ApprovalRequestedEvent, type OrgRole } from "@roleweave/shared";
+import { redactApprovalSecrets } from "@roleweave/shared/approval-redaction";
+import type { ApprovalContext, ApprovalRequestedEvent, OrgRole } from "@roleweave/shared";
 
 const MAX_SUMMARY_BYTES = 2048;
 
