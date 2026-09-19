@@ -302,6 +302,7 @@
 }
 
 .ui-org-tree__row:hover .ui-org-tree__actions,
+.ui-org-tree__row.is-selected .ui-org-tree__actions,
 .ui-org-tree__actions:focus-within {
   opacity: 1;
 }

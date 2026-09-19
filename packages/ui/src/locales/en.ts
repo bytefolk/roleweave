@@ -431,8 +431,6 @@ export const enCatalog: Record<string, string> = {
   "tree.emptyHireHint": "No positions yet — click to hire",
   "tree.emptyHireCta": "Hire a position",
   "tree.emptyHireDisabled": "The hire entry lands in D2",
-  "tree.orgRunning": "turns running in the org",
-  "tree.orgReady": "org ready",
 
   // Org change feedback
   "org.applyRejected": "Org change rejected; the applied state is unchanged and the proposal stays fixable",
@@ -956,6 +954,12 @@ export const enCatalog: Record<string, string> = {
   "misc.copied": "Diagnostics copied",
   "misc.copyFailed": "Copy failed. Try again.",
   "misc.qoderHostUnknown": "Qoder is currently unavailable",
+  "misc.qoderLogin": "Sign in",
+  "misc.qoderLoginRunning": "Signing in…",
+  "misc.qoderLoginSuccess": "Signed in — refreshed automatically",
+  "misc.qoderLoginFailed": "Sign-in did not complete; retry or run qodercli login manually",
+  "misc.qoderLoginUnavailable": "Cannot start sign-in: no executable Qoder CLI found",
+  "misc.qoderLoginOpenBrowser": "Open sign-in page in browser",
   "misc.claudeHostUnknown": "Claude Code is currently unavailable",
   "misc.codexHostUnknown": "Codex is currently unavailable",
   "misc.workbuddyHostUnknown": "WorkBuddy is currently unavailable",

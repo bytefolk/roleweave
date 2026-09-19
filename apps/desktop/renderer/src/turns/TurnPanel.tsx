@@ -6,7 +6,7 @@ import { Maximize2, Minimize2, History, MessagesSquare } from "lucide-react";
 import type { EmployeeModelConfig, WorkbenchSession } from "@roleweave/shared";
 import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
-import type { AvailabilityCheck } from "../DiagnosticNotice";
+import type { AvailabilityCheck, NoticeAction } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
 import { useEngineLabel } from "./engine-select";
 import { EngineBadge } from "./EngineBadge";
@@ -36,6 +36,9 @@ export interface TurnPanelProps {
   onReloadModel?: () => void;
   sendShortcut?: "enter" | "mod-enter";
   availabilityCheck?: AvailabilityCheck;
+  /** One-click Qoder login surface owned by the shell; rendered only while the
+   *  qoder Host is the selected runtime and reports loginRequired. */
+  qoderLogin?: { action: NoticeAction; link?: NoticeAction; feedback: string | null };
   modelConfig?: EmployeeModelConfig;
   avatarUrls?: Record<string, string>;
   modelSaving?: boolean;
@@ -89,6 +92,7 @@ export function TurnPanel({
   onReloadModel,
   sendShortcut = "enter",
   availabilityCheck,
+  qoderLogin,
   modelConfig,
   avatarUrls,
   modelSaving = false,
@@ -290,6 +294,9 @@ export function TurnPanel({
         disabledSummary={disabledState?.summary}
         disabledDiagnostic={disabledState?.diagnostic}
         availabilityCheck={disabledState?.canRecheck ? availabilityCheck : undefined}
+        primaryAction={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.action : undefined}
+        linkAction={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.link : undefined}
+        primaryFeedback={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.feedback ?? null : undefined}
         diagnosticKey={`${selectedPositionId}:${selectedSessionId ?? ""}:${engine}`}
         running={runningTurn}
         cancelling={stopping}

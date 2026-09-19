@@ -30,6 +30,27 @@ export interface TurnHostHealth {
    */
   model?: string;
   connection?: EmployeeModelConnection;
+  /**
+   * The Host's only blocker is a missing local CLI login that the in-app
+   * one-click login flow can resolve (bundled Qoder). Clients render a login
+   * action instead of telling the operator to visit a terminal.
+   */
+  loginRequired?: boolean;
+}
+
+/** State of the control-plane-owned `qodercli login` child process. */
+export interface QoderLoginResponse {
+  running: boolean;
+  startedAt: string | null;
+  exitCode: number | null;
+  /** Stable local reason only; never carries CLI output or executable paths. */
+  failure?: "binary_unavailable" | "spawn_failed";
+  /**
+   * First URL the login process printed, when it did not open a browser by
+   * itself. The renderer offers it as an explicit "open in browser" fallback;
+   * it is never persisted and only served while the process is running.
+   */
+  loginUrl?: string;
 }
 
 export interface HealthResponse {
