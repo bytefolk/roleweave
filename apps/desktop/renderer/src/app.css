@@ -4069,6 +4069,24 @@ body,
   margin: 12px 12px 8px;
 }
 
+/* 项目身份行：开关器（品牌头像+项目名）+ 右侧项目级动作入口。
+   目录树顶层已经是人，项目自己的脸和菜单收在这一行。 */
+.owb-project-switcher-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 12px 12px 8px;
+}
+.owb-project-switcher-row .owb-project-switcher {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.owb-project-switcher-row .owb-tree-more {
+  margin-left: 0;
+  opacity: 1;
+}
+
 .owb-project-switcher__trigger {
   display: grid;
   width: 100%;
@@ -4111,6 +4129,7 @@ body,
   display: grid;
   width: 28px;
   height: 28px;
+  padding: 5px;
   place-items: center;
   border: 1px solid var(--ui-border-strong);
   border-radius: 8px;

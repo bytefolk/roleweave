@@ -30,7 +30,7 @@ describe("tree management and knowledge boundaries", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "编辑" }));
     expect(action).toHaveBeenCalledWith("alice", "edit");
   });
-  it("exposes the same edit entry from a position ellipsis, and never on the enterprise row", async () => {
+  it("exposes the same edit entry from a position ellipsis, while the project menu stays edit-free", async () => {
     const action = vi.fn();
     render(<TreeRowMenu id="alice" name="Alice" busy={false} onAction={action} />);
     fireEvent.click(screen.getByRole("button", { name: "Alice 的更多操作" }));

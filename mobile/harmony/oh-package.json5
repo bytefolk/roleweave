@@ -1,0 +1,6 @@
+{
+  "name": "roleweave",
+  "version": "0.1.0",
+  "description": "Native HarmonyOS client for RoleWeave",
+  "modelVersion": "5.0.0"
+}

@@ -3,6 +3,29 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 早期开发记录以里程碑（D0/D1/D2…）标注，安装包发布使用语义化版本。
 
+## [Unreleased]
+
+### Fixed
+
+- 对话默认使用 Enter 发送时，Ctrl/Command + Enter 可在光标处插入换行或替换选中文字，并保留正确光标位置；保留 Shift + Enter 换行、输入法确认保护和设置中的发送快捷键选择。
+
+- #339 Android 原生客户端：release 强制 HTTPS；debug 才允许明文以便连本机 RoleWeave。WebSocket 断开按 1/2/4/8/16s 指数退避重连最多 5 次。发指令必须在组织页显式点选岗位，不再默认第一角色。`android-client.yml` 对 `mobile/android` 跑 `gradle test`（不安装已下线的 SDK `tools` 包）。
+
+### Added
+
+- #356: design-only multi-agent branch heads and handoff-carried checkpoint refs (`docs/design/memory-branch-handoff-v1.md`). No silent head clobber; handoff does not copy grants. No runtime.
+
+- #355: design-only pin/disable/inspect/forget controls (`docs/design/memory-controls-v1.md`). Forget failure is visible; no local fake delete. No runtime.
+
+- #354: design-only assembly receipt UI (`docs/design/assembly-receipt-ui-v1.md`). Admission authority is UTF-8 bytes; model tokens are a separate cost cap. UI counts must equal the receipt. No runtime.
+
+- #352: design-only routing table among #143 short window, #327 durable memory, and #347 Knowledge Base (`docs/design/memory-routing-v1.md`). Does not close #143. No runtime.
+
+- #348: design-only user remember/correct/forget acts (`docs/design/memory-user-acts-v1.md`). Write responses are created/stored; admitted/omitted only on the next receipt. Append-only supersession. Recalled text stays untrusted. No runtime.
+
+- #349：private / position / team memory grants 设计稿（`docs/design/memory-grants-v1.md`）。pin mem#221 `e0e47c7`；employee-private 用不可复用 `employee.<hire_id>`（需 mem additive，不能用可换人的 position seat）；team/task 展开为每成员一条 mem grant 行，不引入 `task.*` principal；越权 receipt / handoff 不携带 memoryId。无运行时；#327 D0 / #345 未接受，不当作已定基线。
+
+
 ## [0.3.0] — 2026-09-18
 
 ### Added

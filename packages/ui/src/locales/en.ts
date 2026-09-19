@@ -117,7 +117,7 @@ export const enCatalog: Record<string, string> = {
   "project.welcomeDescription": "Work on your project with AI employees.",
   "project.welcomeAction": "Open or create a project",
   "turn.pickEmployeeHint": "Choose an employee in the sidebar",
-  "turn.keyboardHint": "Enter to send · Shift + Enter for a new line",
+  "turn.keyboardHint": "Enter to send · Ctrl/⌘ + Enter or Shift + Enter for a new line",
   // Module rail
   "rail.org": "Organization",
   "rail.groups": "Groups",
@@ -431,8 +431,6 @@ export const enCatalog: Record<string, string> = {
   "tree.emptyHireHint": "No positions yet — click to hire",
   "tree.emptyHireCta": "Hire a position",
   "tree.emptyHireDisabled": "The hire entry lands in D2",
-  "tree.orgRunning": "turns running in the org",
-  "tree.orgReady": "org ready",
 
   // Org change feedback
   "org.applyRejected": "Org change rejected; the applied state is unchanged and the proposal stays fixable",

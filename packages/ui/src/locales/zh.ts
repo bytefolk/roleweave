@@ -120,7 +120,7 @@ export const zhCatalog: Record<string, string> = {
   "project.welcomeDescription": "与 AI 员工一起完成项目。",
   "project.welcomeAction": "打开或新建项目",
   "turn.pickEmployeeHint": "从左侧选择一位员工",
-  "turn.keyboardHint": "Enter 发送 · Shift + Enter 换行",
+  "turn.keyboardHint": "Enter 发送 · Ctrl/⌘ + Enter 或 Shift + Enter 换行",
   // 模块导轨
   "rail.org": "组织",
   "rail.groups": "群聊",
@@ -434,8 +434,6 @@ export const zhCatalog: Record<string, string> = {
   "tree.emptyHireHint": "尚无岗位，点击招聘",
   "tree.emptyHireCta": "招聘岗位",
   "tree.emptyHireDisabled": "招聘入口 D2 启用",
-  "tree.orgRunning": "组织内有回合运行中",
-  "tree.orgReady": "组织就绪",
 
   // 组织变更反馈
   "org.applyRejected": "组织变更被拒绝；应用态未更新，提案保留可修正",
