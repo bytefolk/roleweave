@@ -120,7 +120,7 @@ export const zhCatalog: Record<string, string> = {
   "project.welcomeDescription": "与 AI 员工一起完成项目。",
   "project.welcomeAction": "打开或新建项目",
   "turn.pickEmployeeHint": "从左侧选择一位员工",
-  "turn.keyboardHint": "Enter 发送 · Shift + Enter 换行",
+  "turn.keyboardHint": "Enter 发送 · Ctrl/⌘ + Enter 或 Shift + Enter 换行",
   // 模块导轨
   "rail.org": "组织",
   "rail.groups": "群聊",
