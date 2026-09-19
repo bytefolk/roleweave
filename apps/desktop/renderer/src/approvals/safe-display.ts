@@ -10,4 +10,3 @@ export function safeApprovalText(value: string): string {
   result = result.replace(/(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, "$1[redacted]");
   return result;
 }
-
