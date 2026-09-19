@@ -58,8 +58,6 @@ export function resolvePublicAsset(urlPath, { deployDir, noVncDir, userAgent, se
   if (urlPath === "/ios" || urlPath === "/ios/") return path.join(deployDir, "mobile", "ios", "index.html");
   if (urlPath === "/android" || urlPath === "/android/") return path.join(deployDir, "mobile", "android", "index.html");
   if (urlPath === "/harmony" || urlPath === "/harmony/") return path.join(deployDir, "mobile", "harmony", "index.html");
-  if (urlPath === "/shared/org.mjs") return path.join(deployDir, "mobile", "shared", "org.mjs");
-  if (urlPath === "/shared/command.mjs") return path.join(deployDir, "mobile", "shared", "command.mjs");
   if (urlPath === "/shared/shell.mjs") return path.join(deployDir, "mobile", "shared", "shell.mjs");
   if (urlPath === "/mobile/app.css") return path.join(phoneDir(deployDir, platform === "desktop" ? "android" : platform), "app.css");
   if (urlPath === "/mobile/app.mjs") return path.join(phoneDir(deployDir, platform === "desktop" ? "android" : platform), "app.mjs");

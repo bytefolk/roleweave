@@ -9,9 +9,6 @@
 
 - 手机壳与 phone-link.v1：手机打开产品为原生壳（组织/指令/桌面/设置）；一键连接电脑发指令；组织跟随电脑当前工作区；设置可断开配对。托管入口见 deploy/ 与 start.sh。
 
-
-### Added
-
 - #328 R2：新增 `semantic-runtime.v1alpha1` 合同切片（BusinessObjectRef / EvidenceRef / DecisionRecord / ActionProposal / ExecutionReceipt）与 Ontology Runtime 术语表；github-ops 示例给出只读分析与可写 squash-merge 轨迹；纯函数测试覆盖「未批准不可执行、非法过期时间 fail-closed、幂等重试绑定目标版本、目标版本失效、运行前状态不可直接失败、indeterminate 不能变成 succeeded」。不是 live GitHub 执行，也不是 Sales Workbench 核心词汇。设计说明见 `docs/design/ontology-runtime-r2.md`。
 
 - #309 后续：控制面拒绝超大请求体时，drain 或读取被中止（2 秒截止、10 MiB drain 上限、对端断开）会向 stderr 写一行原因与字节数，现场 EPIPE / 连接复位事故从此可归因；同步 docs/api-contract-v0.md：1 MiB 上限补记先读后拒行为、drain 上限与截止、server requestTimeout / headersTimeout，以及拒绝响应携带 Connection: close。附测试：stall 的超大上传在 drain 与 read 两条路径都断言中止行。
