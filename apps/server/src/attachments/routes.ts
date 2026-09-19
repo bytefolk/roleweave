@@ -18,6 +18,18 @@ import { extractPdfText } from "./extract-pdf.js";
 
 const MAX_UPLOAD_BODY_BYTES = Math.ceil(ATTACHMENT_MAX_SINGLE_BYTES * 1.34) + 4096;
 const READ_SAFETY_CAP = MAX_UPLOAD_BODY_BYTES + 64 * 1024;
+const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function decodeBase64Strict(value: string): Buffer {
+  if (value.length % 4 !== 0 || !BASE64_PATTERN.test(value)) {
+    throw new OrgApiError(errorCodes.attachment_request_invalid, 400, "dataBase64 is not valid base64");
+  }
+  const data = Buffer.from(value, "base64");
+  if (data.toString("base64") !== value) {
+    throw new OrgApiError(errorCodes.attachment_request_invalid, 400, "dataBase64 is not valid base64");
+  }
+  return data;
+}
 
 interface UploadBody {
   sessionId: string;
@@ -64,18 +76,14 @@ export async function handleAttachmentUpload(
     throw new OrgApiError(errorCodes.attachment_request_invalid, 400, "upload body must be a JSON object");
   }
   const sessionId = assertSessionId(body.sessionId);
+  await ctx.sessionStore.get(workspace.dir, sessionId);
   const fileName = assertAttachmentFileName(body.fileName);
   const mimeType = assertAttachmentMimeType(body.mimeType);
   if (typeof body.dataBase64 !== "string" || body.dataBase64.length === 0) {
     throw new OrgApiError(errorCodes.attachment_request_invalid, 400, "dataBase64 is required");
   }
 
-  let data: Buffer;
-  try {
-    data = Buffer.from(body.dataBase64, "base64");
-  } catch {
-    throw new OrgApiError(errorCodes.attachment_request_invalid, 400, "dataBase64 is not valid base64");
-  }
+  const data = decodeBase64Strict(body.dataBase64);
   assertAttachmentSize(data.length);
   assertAttachmentBatch([{ sizeBytes: data.length }]);
 
@@ -110,6 +118,7 @@ export async function handleAttachmentRead(
     throw new OrgApiError(errorCodes.attachment_request_invalid, 400, "sessionId and attachmentId are required");
   }
   assertSessionId(sessionId);
+  await ctx.sessionStore.get(workspace.dir, sessionId);
   assertAttachmentId(attachmentId);
   const meta = await readAttachmentMeta(workspace.dir, sessionId, attachmentId);
   sendJson(res, 200, { attachment: meta });
