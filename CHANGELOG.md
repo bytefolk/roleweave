@@ -13,6 +13,8 @@
 
 ### Added
 
+- #327 R1：记忆平面设计锚点。新增 ADR-0008 与 `docs/design/memory-plane-v1.md`，冻结四层所有权、FIFO/LRU/TTL 分工、链式 segment/head/index、召回收据与子 issue DAG。durable-memory 绑定 principal + grant/revocation version + permissionDigest（拒绝自由字符串 scope）。准入硬预算以 UTF-8 bytes 为准，模型 token 只作成本上限。不改变运行时；未接受修订不得被实现 PR 消费。
+
 - #356: design-only multi-agent branch heads and handoff-carried checkpoint refs (`docs/design/memory-branch-handoff-v1.md`). No silent head clobber; handoff does not copy grants. No runtime.
 
 - #355: design-only pin/disable/inspect/forget controls (`docs/design/memory-controls-v1.md`). Forget failure is visible; no local fake delete. No runtime.
