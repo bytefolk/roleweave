@@ -5804,7 +5804,6 @@ body,
   max-width: 1180px;
   margin-inline: auto;
   padding: 8px 12px 28px;
-  background: var(--ui-canvas);
   min-height: 100%;
 }
 
