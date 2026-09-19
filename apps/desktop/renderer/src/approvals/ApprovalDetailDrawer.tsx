@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Drawer, Input, Space, Tag } from "antd";
 import { useT } from "@roleweave/ui";
 import {
+  approvalExpiryState,
   isDecided,
   isPermissionOverreach,
   type ApprovalQueueCallbacks,
@@ -32,12 +33,15 @@ const MAX_APPROVAL_REASON_BYTES = 1024;
 export interface ApprovalDetailDrawerProps extends ApprovalQueueCallbacks {
   open: boolean;
   item: ApprovalQueueItem | null;
+  /** The queue-owned clock, refreshed once a minute. */
+  now: number;
   onClose: () => void;
 }
 
 export function ApprovalDetailDrawer({
   open,
   item,
+  now,
   onClose,
   onApprove,
   onDeny,
@@ -67,7 +71,7 @@ export function ApprovalDetailDrawer({
 
   const decided = isDecided(item);
   const overreach = isPermissionOverreach(item);
-  const expired = item.decision.kind === "expired";
+  const expired = approvalExpiryState(item, now) === "expired";
   const disabled = decided || expired || item.busy === true || item.canDecide === false || new TextEncoder().encode(reason.trim()).length > MAX_APPROVAL_REASON_BYTES;
   const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
   const description = safeApprovalText(decodeEscapedUnicode(item.description));
@@ -237,6 +241,8 @@ export function ApprovalDetailDrawer({
               }
               showIcon
             />
+          ) : expired ? (
+            <Alert type="warning" showIcon message={t("apr.alertExpired")} />
           ) : (
             <section>
               <h3 className="owb-approval-drawer__section-title">{t("apr.reasonOptional")}</h3>

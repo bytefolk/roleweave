@@ -12,7 +12,7 @@ function makeItem(over: Partial<ApprovalQueueItem> = {}): ApprovalQueueItem {
     category: "write",
     description: "\u8bf7\u6c42\u5199\u5165 ./positions/ops-lead/report.md",
     target: "./positions/ops-lead/report.md",
-    expiresAt: "2026-08-27T14:32:00.000Z",
+    expiresAt: "2099-08-27T14:32:00.000Z",
     toolDeny: ["fs.write"],
     decision: { kind: "pending" },
     ...over,
@@ -273,20 +273,34 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(screen.queryByTestId("approval-card-expired")).toBeNull();
   });
 
-  it("refreshes an approval card's expiry marker on the shared minute tick", () => {
+  it("locks a stale pending approval in the drawer on the shared minute tick", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-27T14:00:00.000Z"));
+    const onApprove = vi.fn();
+    const onDeny = vi.fn();
     try {
       render(
         <ApprovalQueue
           items={[makeItem({ expiresAt: new Date(Date.now() + 60_000).toISOString() })]}
-          onApprove={noop}
-          onDeny={noop}
+          onApprove={onApprove}
+          onDeny={onDeny}
         />,
       );
       expect(screen.getByText("即将过期")).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("approval-card-appr-abc"));
+      expect(screen.getByTestId("approval-approve-button")).not.toBeDisabled();
       act(() => vi.advanceTimersByTime(60_000));
       expect(screen.queryByText("即将过期")).toBeNull();
+      expect(screen.getByTestId("approval-card-appr-abc")).toHaveAttribute("data-expiry-state", "expired");
+      expect(screen.getByText("已过期——如需放行请发起新回合")).toBeInTheDocument();
+      const approve = screen.getByTestId("approval-approve-button");
+      const deny = screen.getByTestId("approval-deny-button");
+      expect(approve).toBeDisabled();
+      expect(deny).toBeDisabled();
+      fireEvent.click(approve);
+      fireEvent.click(deny);
+      expect(onApprove).not.toHaveBeenCalled();
+      expect(onDeny).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

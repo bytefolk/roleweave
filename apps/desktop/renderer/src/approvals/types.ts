@@ -22,6 +22,11 @@ export type ApprovalDecisionState =
   | { kind: "denied"; reason?: string; decidedAt?: string; decidedBy?: string }
   | { kind: "expired" | "cancelled" | "indeterminate" };
 
+/** Display-only deadline state. The server remains authoritative for the
+ * persisted decision; this merely prevents a stale pending item from being
+ * submitted after its declared deadline. */
+export type ApprovalExpiryState = "active" | "expiring" | "expired";
+
 export type ApprovalSource = ApprovalRecord["source"];
 
 export interface ApprovalQueueItem {
@@ -93,4 +98,18 @@ export function isPermissionOverreach(item: ApprovalQueueItem): boolean {
 
 export function isDecided(item: ApprovalQueueItem): boolean {
   return item.decision.kind !== "pending";
+}
+
+/**
+ * Project an approval deadline against a caller-supplied clock. Keeping the
+ * clock outside this helper lets the queue, card, and detail drawer update in
+ * lockstep on the same minute tick.
+ */
+export function approvalExpiryState(item: ApprovalQueueItem, now: number): ApprovalExpiryState {
+  if (item.decision.kind === "expired") return "expired";
+  if (item.decision.kind !== "pending" || !item.expiresAt) return "active";
+  const expiresAt = Date.parse(item.expiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) return "expired";
+  if (expiresAt <= now + 24 * 60 * 60 * 1000) return "expiring";
+  return "active";
 }

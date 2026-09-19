@@ -11,6 +11,7 @@ import { Alert, Button, Input, List, Select, Segmented, Tag, Tooltip } from "ant
 import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import {
+  approvalExpiryState,
   isDecided,
   isPermissionOverreach,
   type ApprovalCategory,
@@ -100,7 +101,7 @@ export function ApprovalQueue({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [notificationPermission, setNotificationPermission] = useState<DesktopNotificationPermission>(desktopNotificationPermission);
-  const notificationSnapshot = useRef<Map<string, { status: ApprovalQueueItem["decision"]["kind"]; expiry: ReturnType<typeof expiryState> }>>();
+  const notificationSnapshot = useRef<Map<string, { status: ApprovalQueueItem["decision"]["kind"]; expiry: ReturnType<typeof approvalExpiryState> }>>();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
@@ -108,7 +109,7 @@ export function ApprovalQueue({
   }, []);
 
   useEffect(() => {
-    const next = new Map(items.map(item => [item.approvalId, { status: item.decision.kind, expiry: expiryState(item, now) }]));
+    const next = new Map(items.map(item => [item.approvalId, { status: item.decision.kind, expiry: approvalExpiryState(item, now) }]));
     const previous = notificationSnapshot.current;
     notificationSnapshot.current = next;
     if (!previous || notificationPermission !== "granted" || typeof window.Notification !== "function") return;
@@ -141,7 +142,7 @@ export function ApprovalQueue({
       if (filter === "decided" && !isDecided(item)) return false;
       if (positionFilter && item.positionId !== positionFilter) return false;
       if (categoryFilter && item.category !== categoryFilter) return false;
-      if (expiryFilter && expiryFilter !== "all" && expiryState(item, now) !== expiryFilter) return false;
+      if (expiryFilter && expiryFilter !== "all" && approvalExpiryState(item, now) !== expiryFilter) return false;
       if (fromDate && (!item.requestedAt || item.requestedAt.slice(0, 10) < fromDate)) return false;
       if (toDate && (!item.requestedAt || item.requestedAt.slice(0, 10) > toDate)) return false;
       if (needle) {
@@ -167,7 +168,7 @@ export function ApprovalQueue({
 
   const positionOptions = useMemo(() => [...new Map(items.map((item) => [item.positionId, item.positionName ?? item.positionId]))]
     .sort((a, b) => a[1].localeCompare(b[1])), [items]);
-  const expiringSoonCount = useMemo(() => items.filter(item => expiryState(item, now) === "expiring").length, [items, now]);
+  const expiringSoonCount = useMemo(() => items.filter(item => approvalExpiryState(item, now) === "expiring").length, [items, now]);
   const hasAdvancedFilters = Boolean(query || positionFilter || categoryFilter || expiryFilter || fromDate || toDate);
   const clearAdvancedFilters = () => {
     setQuery("");
@@ -342,6 +343,7 @@ export function ApprovalQueue({
       <ApprovalDetailDrawer
         open={selectedItem !== null}
         item={selectedItem}
+        now={now}
         onClose={() => setSelectedId(null)}
         onApprove={onApprove}
         onDeny={onDeny}
@@ -418,8 +420,12 @@ function ApprovalCard({ item, now, onOpen }: ApprovalCardProps) {
   const target = item.target ? safeApprovalText(decodeEscapedUnicode(item.target)) : undefined;
   const overreach = isPermissionOverreach(item);
   const decided = isDecided(item);
-  const expiringSoon = expiryState(item, now) === "expiring";
-  const decisionTagColor = !decided
+  const expiry = approvalExpiryState(item, now);
+  const expiringSoon = expiry === "expiring";
+  const expired = expiry === "expired";
+  const decisionTagColor = expired
+    ? "default"
+    : !decided
     ? "blue"
     : item.decision.kind === "granted"
       ? "green"
@@ -432,6 +438,7 @@ function ApprovalCard({ item, now, onOpen }: ApprovalCardProps) {
       data-testid={`approval-card-${item.approvalId}`}
       data-approval-id={item.approvalId}
       data-decision-state={decisionCssState(item)}
+      data-expiry-state={expiry}
       data-overreach={overreach ? "true" : "false"}
       data-decided={decided ? "true" : "false"}
       onClick={onOpen}
@@ -458,7 +465,7 @@ function ApprovalCard({ item, now, onOpen }: ApprovalCardProps) {
               </Tag>
             ) : null}
             {expiringSoon ? <Tag color="orange">{t("apr.expiringSoon")}</Tag> : null}
-            <Tag color={decisionTagColor}>{decisionLabel(item, t)}</Tag>
+            <Tag color={decisionTagColor}>{expired ? t("apr.decisionExpired") : decisionLabel(item, t)}</Tag>
           </span>
         </div>
         <div className="owb-approval-card__title">
@@ -483,15 +490,6 @@ function ApprovalCard({ item, now, onOpen }: ApprovalCardProps) {
       </button>
     </article>
   );
-}
-
-function expiryState(item: ApprovalQueueItem, now: number): "active" | "expiring" | "expired" {
-  if (item.decision.kind === "expired") return "expired";
-  if (!item.expiresAt) return "active";
-  const expiresAt = Date.parse(item.expiresAt);
-  if (!Number.isFinite(expiresAt) || expiresAt <= now) return "expired";
-  if (item.decision.kind === "pending" && expiresAt <= now + 24 * 60 * 60 * 1000) return "expiring";
-  return "active";
 }
 
 function formatApprovalTime(value: string | undefined, t: OwbT, localeTag: string): string {
