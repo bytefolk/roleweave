@@ -1046,7 +1046,9 @@ describe("App runtime bridge", () => {
     await act(async () => resolveTree({ status: 200, body: moved }));
     const movedRow = () => screen.getByText("docs-writer", { selector: ".ui-org-tree__name" }).closest('[role="treeitem"]');
     await waitFor(() => expect(movedRow()).toHaveAttribute("draggable", "true"));
-    expect(movedRow()).toHaveAttribute("aria-level", "4");
+    // owner(1) → release-engineer(2) → docs-writer(3): the directory leads
+    // with people, no project pseudo-row above the owner.
+    expect(movedRow()).toHaveAttribute("aria-level", "3");
     if (timing === "after-refresh") await act(async () => emit(2));
     for (const read of [bridge.status, bridge.workspace, bridge.orgTree, bridge.orgBackups, bridge.reports]) expect(read).toHaveBeenCalledTimes(1);
     expect(bridge.position).toHaveBeenCalledTimes(positionReads);

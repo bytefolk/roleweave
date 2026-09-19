@@ -13,25 +13,24 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(css).toMatch(/\.ui-org-tree\s*\{[^}]*padding:\s*6px 8px 12px/s);
     expect(css).toMatch(/\.ui-org-tree__row\s*\{[^}]*box-sizing:\s*border-box/s);
   });
-  it("renders enterprise root + nested positions: root=企业, owner beneath, children by reportTo", () => {
+  it("leads with people: owner at the top level, children by reportTo, no project pseudo-row", () => {
     render(<OrgTree snapshot={SNAPSHOT} />);
     const tree = screen.getByRole("tree");
     expect(tree).toBeInTheDocument();
 
     const items = screen.getAllByRole("treeitem");
-    expect(items).toHaveLength(5); // enterprise + repo-owner + 3 positions
+    expect(items).toHaveLength(4); // repo-owner + 3 positions
 
-    expect(screen.getByText("oss-maintainer")).toBeInTheDocument();
-    const enterprise = screen.getByText("oss-maintainer").closest('[role="treeitem"]');
-    expect(enterprise).toHaveAttribute("aria-level", "1");
-    expect(enterprise).toHaveAttribute("aria-expanded", "true");
+    // The project name is the switcher's job; the directory lists people only.
+    expect(screen.queryByText("oss-maintainer")).not.toBeInTheDocument();
 
     const owner = screen.getByText("repo-owner").closest('[role="treeitem"]');
-    expect(owner).toHaveAttribute("aria-level", "2");
+    expect(owner).toHaveAttribute("aria-level", "1");
+    expect(owner).toHaveAttribute("aria-expanded", "true");
     expect(owner).toHaveAttribute("aria-selected", "false");
 
     const child = screen.getByText("issue-researcher").closest('[role="treeitem"]');
-    expect(child).toHaveAttribute("aria-level", "3");
+    expect(child).toHaveAttribute("aria-level", "2");
   });
 
   it("falls back to the engine tree as top level when business is missing", () => {
@@ -66,20 +65,16 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(metadata.mock.calls.flat()).not.toContain("__enterprise__");
   });
 
-  it("toggles expansion with the arrow buttons (enterprise and owner)", () => {
+  it("toggles expansion with the arrow buttons", () => {
     const onExpand = vi.fn();
     render(<OrgTree snapshot={SNAPSHOT} onExpand={onExpand} />);
     const toggles = screen.getAllByRole("button", { name: "收起" });
-    expect(toggles).toHaveLength(2); // enterprise + repo-owner
+    expect(toggles).toHaveLength(1); // repo-owner only
 
-    fireEvent.click(toggles[1]!); // collapse repo-owner
+    fireEvent.click(toggles[0]!); // collapse repo-owner
     expect(onExpand).toHaveBeenCalledWith("repo-owner", false);
     expect(screen.queryByText("issue-researcher")).not.toBeInTheDocument();
     expect(screen.getByText("repo-owner")).toBeInTheDocument();
-
-    fireEvent.click(toggles[0]!); // collapse enterprise
-    expect(onExpand).toHaveBeenCalledWith("__enterprise__", false);
-    expect(screen.queryByText("repo-owner")).not.toBeInTheDocument();
   });
 
   it("supports keyboard navigation (ModuleRail arrow pattern)", () => {
@@ -95,14 +90,14 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(document.activeElement).toBe(items[1]);
 
     fireEvent.keyDown(tree, { key: "End" });
-    expect(document.activeElement).toBe(items[4]);
+    expect(document.activeElement).toBe(items[3]);
 
     fireEvent.keyDown(tree, { key: "Home" });
     expect(document.activeElement).toBe(items[0]);
 
-    // Enter collapses the focused enterprise root.
+    // Enter collapses the focused owner (the top-level row).
     fireEvent.keyDown(tree, { key: "Enter" });
-    expect(screen.queryByText("repo-owner")).not.toBeInTheDocument();
+    expect(screen.queryByText("issue-researcher")).not.toBeInTheDocument();
   });
 
   // The directory row is intentionally only status + folder + human name. The
@@ -132,9 +127,8 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(ownerRow.querySelector<HTMLElement>(".ui-org-tree__icon")!.style.color).toBe("");
     expect(container.querySelector('[role="treeitem"] .ui-org-tree__name')).toBeTruthy();
 
-    const enterpriseIcon = container.querySelector('[data-brand="bytefolk-open-herd"]');
-    expect(enterpriseIcon).toBeInTheDocument();
-    expect(enterpriseIcon?.closest(".ui-org-tree__row--enterprise")).toBeTruthy();
+    // The brand mark lives in the project switcher, never inside the tree.
+    expect(container.querySelector('[data-brand="bytefolk-open-herd"]')).toBeNull();
   });
 
   it("breathes the status light only for positions with a live run (#73)", () => {
@@ -151,12 +145,12 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(screen.getByRole("button", { name: "招聘岗位" })).toBeDisabled();
   });
 
-  it("emits a move proposal when a movable position is dropped on a manager or enterprise root", () => {
+  it("emits a move proposal when a movable position is dropped on a manager or the tree background", () => {
     const onMove = vi.fn();
     render(<OrgTree snapshot={SNAPSHOT} onMove={onMove} rowMetadata={() => <span>Agent</span>} />);
+    const tree = screen.getByRole("tree");
     const source = screen.getByText("issue-researcher").closest('[role="treeitem"]')!;
     const manager = screen.getByText("release-engineer").closest('[role="treeitem"]')!;
-    const enterprise = screen.getByText("oss-maintainer").closest('[role="treeitem"]')!;
     const data = new Map<string, string>();
     const dataTransfer = {
       effectAllowed: "move",
@@ -170,8 +164,11 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     fireEvent.drop(manager, { dataTransfer });
     expect(onMove).toHaveBeenCalledWith("issue-researcher", "release-engineer");
 
+    // The tree background owns the top-level drop (reportTo null) now that
+    // the project pseudo-row is gone.
     fireEvent.dragStart(source, { dataTransfer });
-    fireEvent.drop(enterprise, { dataTransfer });
+    fireEvent.dragOver(tree, { dataTransfer });
+    fireEvent.drop(tree, { dataTransfer });
     expect(onMove).toHaveBeenCalledWith("issue-researcher", null);
     expect(screen.getByText("repo-owner").closest('[role="treeitem"]')).toHaveAttribute("draggable", "false");
   });
@@ -238,14 +235,14 @@ describe("OrgTree (#32 §1 insertion lines, invalid-drop rejection, ⌘ reorder)
         })),
       ] }],
     };
-    // decorateRow runs inside the real row render, including the enterprise
-    // row. This catches fresh callbacks defeating React.memo as well as root
-    // state updates traversing the entire tree.
+    // decorateRow runs inside the real row render. This catches fresh
+    // callbacks defeating React.memo as well as root state updates traversing
+    // the entire tree.
     const decorate = vi.fn((_id, row) => row);
     render(<OrgTree snapshot={tree} decorateRow={decorate} />);
+    const treeEl = screen.getByRole("tree");
     const source = screen.getByText("release-engineer").closest('[role="treeitem"]')!;
     const target = screen.getByText("community-operator").closest('[role="treeitem"]')!;
-    const enterprise = screen.getByText("oss-maintainer").closest('[role="treeitem"]')!;
     const dataTransfer = makeDataTransfer();
     withRowRect(target, 40);
     decorate.mockClear();
@@ -267,13 +264,14 @@ describe("OrgTree (#32 §1 insertion lines, invalid-drop rejection, ⌘ reorder)
       expect(decorate).not.toHaveBeenCalled();
     }
 
-    dragOverAt(enterprise, dataTransfer, 20);
-    expect(decorate.mock.calls.map(([id]) => id)).toEqual([null, "community-operator"]);
+    // The tree background takes over as the top-level drop target: the row
+    // hint clears and only the involved row re-renders (no pseudo-row left).
+    dragOverAt(treeEl, dataTransfer, 20);
+    expect(decorate.mock.calls.map(([id]) => id)).toEqual(["community-operator"]);
     expect(target).not.toHaveAttribute("data-drop-zone");
-    expect(enterprise).toHaveAttribute("data-drop-zone", "body");
     decorate.mockClear();
     fireEvent.dragEnd(source);
-    expect(new Set(decorate.mock.calls.map(([id]) => id))).toEqual(new Set([null, "release-engineer"]));
+    expect(new Set(decorate.mock.calls.map(([id]) => id))).toEqual(new Set(["release-engineer"]));
     expect(dragStartRenders).toEqual(["release-engineer"]);
   });
 

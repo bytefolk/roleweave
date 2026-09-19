@@ -1746,12 +1746,15 @@ function AppInner({
           header={
             <>
               <TreeRowMenu id={null} name={workspaceInfo?.business ?? ""} busy={orgBusy} onAction={treeAction}>
-              <div><ProjectSwitcher
+              <div className="owb-project-switcher-row">
+              <ProjectSwitcher
                 workspace={workspaceInfo}
                 disabled={orgBusy}
                 dialogOpen={projectHubOpen}
                 onOpen={() => setProjectHubOpen(true)}
-              /></div>
+              />
+              <TreeRowMenu id={null} name={workspaceInfo?.business ?? ""} busy={orgBusy} onAction={treeAction} />
+              </div>
               </TreeRowMenu>
               <div className="owb-side-head">
                 <div className="owb-side-head__copy">
@@ -1795,8 +1798,8 @@ function AppInner({
                 }}
               >
                 <OrgTree
-                  decorateRow={(id, row) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
-                  rowActions={(id) => <TreeRowMenu id={id} name={id ? positionNames[id] ?? id : workspaceInfo.business ?? ""} busy={orgBusy} onAction={treeAction} />}
+                  decorateRow={(id, row) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
+                  rowActions={(id) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction} />}
                   rowMetadata={(id) => {
                     const bound = positionEngines[id] !== undefined;
                     const engine = engineForPosition(id);

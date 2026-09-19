@@ -206,8 +206,8 @@
   flex: none;
 }
 
-/* 设计稿 .tr-folder：文件夹图标在所有行都出现（"文件树即组织架构"），
-   企业根用 --ui-primary 描边区分。 */
+/* 设计稿 .tr-folder：文件夹图标在所有行都出现（"文件树即组织架构"）。
+   组织品牌标识不在目录里——它在侧栏项目开关器上，目录只列人。 */
 .ui-org-tree__icon {
   display: grid;
   place-items: center;
@@ -216,22 +216,8 @@
 }
 .ui-org-tree__avatar { width: 17px; height: 17px; border-radius: 5px; object-fit: cover; vertical-align: middle; }
 
-.ui-org-tree__row--enterprise .ui-org-tree__icon {
-  color: var(--ui-primary);
-}
-
-/* 企业根使用组织品牌标识；岗位仍使用文件夹图标，避免把“组织”和“岗位”混为一谈。 */
-.ui-org-tree__icon--brand {
-  width: 19px;
-  height: 19px;
-  padding: 2px;
-  border: 1px solid color-mix(in srgb, var(--ui-primary) 36%, var(--ui-border));
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--ui-foreground) 86%, var(--ui-surface) 14%);
-  overflow: hidden;
-}
-
-.ui-org-tree__brand-mark {
+/* 组织品牌标识（项目开关器的头像槽复用）。 */
+.owb-brand-mark {
   display: block;
   width: 100%;
   height: 100%;
@@ -302,6 +288,7 @@
 }
 
 .ui-org-tree__row:hover .ui-org-tree__actions,
+.ui-org-tree__row.is-selected .ui-org-tree__actions,
 .ui-org-tree__actions:focus-within {
   opacity: 1;
 }
@@ -349,10 +336,6 @@
   gap: var(--ui-space-3, 12px);
   color: var(--ui-foreground-muted);
   text-align: center;
-}
-
-.ui-org-tree__row--enterprise {
-  font-weight: 600;
 }
 
 /* Reporting connection lines = guide rails (#73 signature move ①，spec §2①

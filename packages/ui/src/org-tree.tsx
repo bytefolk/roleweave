@@ -5,48 +5,20 @@ import { useT } from "./i18n";
 import { type OrgTreeNodeV1, type OrgTreeSnapshot } from "./types";
 import { createOrgTreeDragState, useOrgTreeDragState, type DropZone, type OrgTreeDragState } from "./org-tree-drag";
 
-/**
- * ByteFolk “Open Herd” mark, cropped from the supplied organization logo
- * concept at organization-profile/brand/logo-concepts/bytefolk-concept-c-open-herd-mark.svg.
- * The wordmark is intentionally omitted here because this is the compact
- * organization identity slot; the full logo remains the source of truth.
- */
-function BytefolkOpenHerdMark() {
-  return (
-    <svg
-      className="ui-org-tree__brand-mark"
-      data-brand="bytefolk-open-herd"
-      viewBox="0 0 142 116"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path fill="#1677ff" d="M12 28a8 8 0 0 1 8-8h28v36H12V28Zm8-20h12v14H20Z" />
-      <path fill="#722ed1" d="M56 20h31a9 9 0 0 1 9 9v27H56V20Zm28-12h12v18H84Z" />
-      <path fill="#141414" d="M12 64h36v44H28a16 16 0 0 1-16-16V64Z" />
-      <path fill="#1677ff" d="M56 64h40v10h18a14 14 0 0 1 14 14v6a14 14 0 0 1-14 14H56V64Z" />
-      <rect x="70" y="75" width="10" height="10" rx="3" fill="#fff" />
-      <rect x="99" y="84" width="7" height="10" rx="3" fill="#fff" />
-      <rect x="114" y="84" width="7" height="10" rx="3" fill="#fff" />
-      <rect x="48" y="20" width="8" height="88" fill="#fff" />
-      <rect x="12" y="56" width="84" height="8" fill="#fff" />
-    </svg>
-  );
-}
-
 /** Same-level insertion produced by an edge drop or ⌘-arrow reorder
  * (#32 §1). `order` is the final ordered child-id list of `parentId` with
  * the dragged id already moved in — it maps 1:1 onto the additive
  * change-manifest.v1 `reorder` op; the caller owns validation/apply. */
 export interface OrgDropPosition {
   id: string;
-  /** Target parent id; null = enterprise top level. */
+  /** Target parent id; null = top level (reportTo null). */
   parentId: string | null;
   order: string[];
 }
 
 export interface OrgTreeProps {
-  decorateRow?: (id: string | null, row: ReactNode) => ReactNode;
-  rowActions?: (id: string | null) => ReactNode;
+  decorateRow?: (id: string, row: ReactNode) => ReactNode;
+  rowActions?: (id: string) => ReactNode;
   /** Optional, read-only metadata alongside a position name. The caller
    * supplies its presentation without extending the frozen tree DTO. */
   rowMetadata?: (id: string) => ReactNode;
@@ -72,7 +44,7 @@ export interface OrgTreeProps {
   onMove?: (id: string, reportTo: string | null) => void;
   /** Emits a same-level reorder proposal (insertion-line drop / ⌘↑↓←→). */
   onDropPosition?: (drop: OrgDropPosition) => void;
-  /** Hover "+" creation entry (#32 AC-004): recruit under parentId (null = enterprise root). */
+  /** Hover "+" creation entry (#32 AC-004): recruit under parentId (null = top level, empty state only). */
   onHireEntry?: (parentId: string | null) => void;
   /** Explicit group-chat entry (#53, DS-34-001 §1.3/§7): start a group draft
    * prefilled with this row's position. An explicit action only — the caller
@@ -267,11 +239,8 @@ export const OrgTreeNode = memo(function OrgTreeNode({
   return decorate ? decorate(row) : row;
 });
 
-const ENTERPRISE_ID = "__enterprise__";
-
-function EnterpriseDropTarget({ state, children }: { state: OrgTreeDragState; children: (zone: DropZone | undefined) => ReactNode }) {
-  const zone = useOrgTreeDragState(state, null);
-  return children(zone === "denied" ? undefined : zone);
+function isRowTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("[data-org-node-id]") !== null;
 }
 
 /** Stable avatar hue for positions without a declared color. Exported so
@@ -345,9 +314,7 @@ function buildInsertion(
 
 interface FlatNode {
   id: string;
-  kind: "enterprise" | "position";
-  node: OrgTreeNodeV1 | null;
-  name: string;
+  node: OrgTreeNodeV1;
   depth: number;
   hasChildren: boolean;
   expanded: boolean;
@@ -356,11 +323,14 @@ interface FlatNode {
 /**
  * OrgTree — accessible org directory tree (D1 spec §2, frozen org-tree.v1).
  *
- * Root = the enterprise (snapshot.business, Brand icon); the engine's nested
- * tree[] (reportTo-null owner as first level, children by reporting line)
- * renders beneath it. The frozen org-tree.v1 node deliberately carries only
- * routing data; display names are served via /positions/:id. Budget and mode
- * stay in the selected position record instead of repeating in every row.
+ * The top level is people: the engine's nested tree[] (reportTo-null owner
+ * first, children by reporting line) renders as-is, so the 一号位 row leads
+ * the directory. The project's own identity (brand mark, name, project menu)
+ * lives in the sidebar's project switcher above the tree — a project pseudo
+ * row here only pushed every person one level down for no information.
+ * The frozen org-tree.v1 node deliberately carries only routing data; display
+ * names are served via /positions/:id. Budget and mode stay in the selected
+ * position record instead of repeating in every row.
  *
  * Accessibility: role=tree/treeitem, roving tabindex; ArrowUp/Down/Home/End
  * move, ArrowRight/Left expand/collapse or move to child/parent, Enter
@@ -392,20 +362,17 @@ export function OrgTree({
   /** #146：默认 aria 走目录（无 Provider 时回退 zh 全量目录）。 */
   const t = useT();
   const resolvedAriaLabel = ariaLabel ?? t("tree.dir");
-  const enterpriseName = snapshot.business?.trim() ?? "";
-  const useEnterpriseRoot = enterpriseName.length > 0 && snapshot.tree.length > 0;
   const topLevel = snapshot.tree;
 
   const allParentIds = useMemo(() => {
     const ids = new Set<string>();
-    if (useEnterpriseRoot && topLevel.length > 0) ids.add(ENTERPRISE_ID);
     const visit = (node: OrgTreeNodeV1): void => {
       if (node.children.length > 0) ids.add(node.id);
       for (const child of node.children) visit(child);
     };
     for (const node of topLevel) visit(node);
     return ids;
-  }, [topLevel, useEnterpriseRoot]);
+  }, [topLevel]);
 
   /** id → parentId (null = top level), one pass over the whole tree. */
   const parentOf = useMemo(() => {
@@ -419,8 +386,7 @@ export function OrgTree({
   }, [topLevel]);
 
   /** Selected position's ancestor chain, inclusive (#73 signature move ①:
-   * 连接线=汇报线，选中即递推点亮祖先链路). Walks parentOf up to the root,
-   * then includes the enterprise pseudo-row so the top trunk lights too. */
+   * 连接线=汇报线，选中即递推点亮祖先链路). Walks parentOf up to the root. */
   const linkedIds = useMemo(() => {
     const ids = new Set<string>();
     if (!selectedId) return ids;
@@ -429,9 +395,8 @@ export function OrgTree({
       ids.add(current);
       current = parentOf.get(current) ?? null;
     }
-    if (useEnterpriseRoot) ids.add(ENTERPRISE_ID);
     return ids;
-  }, [selectedId, parentOf, useEnterpriseRoot]);
+  }, [selectedId, parentOf]);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(allParentIds));
   const [focusedId, setFocusedId] = useState<string | null>(selectedId ?? null);
@@ -459,23 +424,14 @@ export function OrgTree({
     const pushNode = (node: OrgTreeNodeV1, depth: number): void => {
       const hasChildren = node.children.length > 0;
       const isExpanded = hasChildren && expanded.has(node.id);
-      result.push({ id: node.id, kind: "position", node, name: node.id, depth, hasChildren, expanded: isExpanded });
+      result.push({ id: node.id, node, depth, hasChildren, expanded: isExpanded });
       if (isExpanded) {
         for (const child of node.children) pushNode(child, depth + 1);
       }
     };
-    if (useEnterpriseRoot) {
-      const hasChildren = topLevel.length > 0;
-      const isExpanded = hasChildren && expanded.has(ENTERPRISE_ID);
-      result.push({ id: ENTERPRISE_ID, kind: "enterprise", node: null, name: enterpriseName, depth: 0, hasChildren, expanded: isExpanded });
-      if (isExpanded) {
-        for (const node of topLevel) pushNode(node, 1);
-      }
-    } else {
-      for (const node of topLevel) pushNode(node, 0);
-    }
+    for (const node of topLevel) pushNode(node, 0);
     return result;
-  }, [topLevel, expanded, useEnterpriseRoot, enterpriseName]);
+  }, [topLevel, expanded]);
 
   const focusedIndex = flatNodes.findIndex((entry) => entry.id === focusedId);
 
@@ -522,7 +478,7 @@ export function OrgTree({
     // #32 §1: ⌘↑/⌘↓ same-level reorder, ⌘←/⌘→ level change; coexists with
     // the plain-arrow navigation below (modifier required, no conflict).
     if ((event.metaKey || event.ctrlKey) && key.startsWith("Arrow")) {
-      if (current.kind !== "position" || !current.node || moveDisabled) return;
+      if (moveDisabled) return;
       const id = current.node.id;
       if (id === snapshot.owner) {
         event.preventDefault();
@@ -583,12 +539,8 @@ export function OrgTree({
       if (current.hasChildren && !current.expanded) {
         toggleNode(current.id);
       } else if (current.hasChildren) {
-        if (current.kind === "enterprise") {
-          moveFocus(focusedIndex + 1);
-        } else {
-          const childIndex = flatNodes.findIndex((entry) => entry.node?.id === current.node?.children[0]?.id);
-          if (childIndex >= 0) moveFocus(childIndex);
-        }
+        const childIndex = flatNodes.findIndex((entry) => entry.id === current.node.children[0]?.id);
+        if (childIndex >= 0) moveFocus(childIndex);
       }
       return;
     }
@@ -596,8 +548,8 @@ export function OrgTree({
       event.preventDefault();
       if (current.hasChildren && current.expanded) {
         toggleNode(current.id);
-      } else if (current.kind === "position" && current.node?.reportTo) {
-        const parentIndex = flatNodes.findIndex((entry) => entry.id === current.node?.reportTo);
+      } else if (current.node.reportTo) {
+        const parentIndex = flatNodes.findIndex((entry) => entry.id === current.node.reportTo);
         if (parentIndex >= 0) moveFocus(parentIndex);
       }
       return;
@@ -718,8 +670,6 @@ export function OrgTree({
     );
   };
 
-  const enterpriseExpanded = expanded.has(ENTERPRISE_ID) && topLevel.length > 0;
-
   return (
     <div
       role="tree"
@@ -728,76 +678,29 @@ export function OrgTree({
       ref={containerRef}
       className={cn("ui-org-tree", refreshed && "is-refreshed", className)}
       onKeyDown={handleKeyDown}
+      onDragOver={(event) => {
+        // Tree background = the top-level drop target (reportTo null), the
+        // space the project pseudo-row used to occupy. Row dragovers bubble
+        // here; rows own their own zones, so skip anything aimed at a row.
+        if (!dragState.draggedId || moveDisabled || isRowTarget(event.target)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        dragState.denied = false;
+        dragState.setHint(null, "body");
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        dragState.setHint();
+      }}
+      onDrop={(event) => {
+        if (isRowTarget(event.target)) return;
+        event.preventDefault();
+        const source = dragState.draggedId || event.dataTransfer.getData("application/x-org-workbench-position-id");
+        dragState.reset();
+        if (source) onMove?.(source, null);
+      }}
     >
-      {useEnterpriseRoot ? (
-        <Fragment>
-          <EnterpriseDropTarget state={dragState}>{(dropZone) => (decorateRow ?? ((_id, row) => row))(null, <div
-            role="treeitem"
-            data-org-node-id={ENTERPRISE_ID}
-            data-drop-zone={dropZone}
-            aria-level={1}
-            aria-expanded={enterpriseExpanded}
-            tabIndex={focusedId === ENTERPRISE_ID ? 0 : -1}
-            className={cn(
-              "ui-org-tree__row",
-              "ui-org-tree__row--enterprise",
-              dropZone === "body" && "is-drop-target",
-            )}
-            style={{ "--d": 0 } as CSSProperties}
-            onClick={() => {
-              if (topLevel.length > 0) toggleNode(ENTERPRISE_ID);
-            }}
-            onFocus={() => setFocusedId(ENTERPRISE_ID)}
-            onDragOver={(event) => {
-              if (!dragState.draggedId || moveDisabled) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-              dragState.denied = false;
-              dragState.setHint(null, "body");
-            }}
-            onDragLeave={() => dragState.setHint()}
-            onDrop={(event) => {
-              event.preventDefault();
-              const source = dragState.draggedId || event.dataTransfer.getData("application/x-org-workbench-position-id");
-              dragState.reset();
-              if (source) onMove?.(source, null);
-            }}
-          >
-            <button
-              type="button"
-              data-ui-org-toggle
-              aria-label={enterpriseExpanded ? t("tree.collapse") : t("tree.expand")}
-              className={cn("ui-org-tree__toggle", enterpriseExpanded && "is-expanded")}
-              onClick={(event) => {
-                event.stopPropagation();
-                toggleNode(ENTERPRISE_ID);
-              }}
-            >
-              <ChevronRight aria-hidden="true" size={14} />
-            </button>
-            <span
-              className={cn("ui-org-tree__led", runningIds && runningIds.size > 0 && "is-running")}
-              role="img"
-              aria-label={runningIds && runningIds.size > 0 ? t("tree.orgRunning") : t("tree.orgReady")}
-              title={runningIds && runningIds.size > 0 ? t("tree.orgRunning") : t("tree.orgReady")}
-            />
-            <span className="ui-org-tree__icon ui-org-tree__icon--brand" aria-hidden="true">
-              <BytefolkOpenHerdMark />
-            </span>
-            <span className="ui-org-tree__label" title={enterpriseName}>
-              <span className="ui-org-tree__name">{enterpriseName}</span>
-            </span>
-            {rowActions?.(null)}
-          </div>)}</EnterpriseDropTarget>
-          {enterpriseExpanded
-            ? topLevel.map((node, index) =>
-                renderPosition(node, 1, index === topLevel.length - 1),
-              )
-            : null}
-        </Fragment>
-      ) : (
-        topLevel.map((node, index) => renderPosition(node, 0, index === topLevel.length - 1))
-      )}
+      {topLevel.map((node, index) => renderPosition(node, 0, index === topLevel.length - 1))}
       {toast !== null ? (
         <div className="ui-org-tree__toast" role="status">
           {toast}

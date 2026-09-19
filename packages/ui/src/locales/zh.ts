@@ -434,8 +434,6 @@ export const zhCatalog: Record<string, string> = {
   "tree.emptyHireHint": "尚无岗位，点击招聘",
   "tree.emptyHireCta": "招聘岗位",
   "tree.emptyHireDisabled": "招聘入口 D2 启用",
-  "tree.orgRunning": "组织内有回合运行中",
-  "tree.orgReady": "组织就绪",
 
   // 组织变更反馈
   "org.applyRejected": "组织变更被拒绝；应用态未更新，提案保留可修正",
@@ -959,6 +957,12 @@ export const zhCatalog: Record<string, string> = {
   "misc.copied": "诊断已复制",
   "misc.copyFailed": "复制失败，请重试",
   "misc.qoderHostUnknown": "Qoder 当前不可用",
+  "misc.qoderLogin": "一键登录",
+  "misc.qoderLoginRunning": "登录中…",
+  "misc.qoderLoginSuccess": "登录完成，已自动刷新",
+  "misc.qoderLoginFailed": "登录未完成，请重试或手动运行 qodercli login",
+  "misc.qoderLoginUnavailable": "无法启动登录：找不到可执行的 Qoder CLI",
+  "misc.qoderLoginOpenBrowser": "在浏览器打开登录页",
   "misc.claudeHostUnknown": "Claude Code 当前不可用",
   "misc.codexHostUnknown": "Codex 当前不可用",
   "misc.workbuddyHostUnknown": "WorkBuddy 当前不可用",
