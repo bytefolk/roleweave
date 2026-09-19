@@ -13,6 +13,7 @@
 
 ### Added
 
+- #327 R1：记忆平面设计锚点。新增 ADR-0008 与 `docs/design/memory-plane-v1.md`，冻结四层所有权、FIFO/LRU/TTL 分工、链式 segment/head/index、召回收据与子 issue DAG。durable-memory 绑定 principal + grant/revocation version + permissionDigest（拒绝自由字符串 scope）。准入硬预算以 UTF-8 bytes 为准，模型 token 只作成本上限。不改变运行时；未接受修订不得被实现 PR 消费。
 - #315：新增 Gemini Agent Host，支持本机 Gemini CLI，并兼容已登录的 Antigravity CLI（`agy`）；可在员工 Agent 选择、健康检查、模型配置与报告中使用，凭据仍只留在主进程和控制面边界内。
 
 - #356: design-only multi-agent branch heads and handoff-carried checkpoint refs (`docs/design/memory-branch-handoff-v1.md`). No silent head clobber; handoff does not copy grants. No runtime.
