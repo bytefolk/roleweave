@@ -4,7 +4,7 @@ import { EngineIcon } from "../src/turns/engine-icon";
 import type { TurnEngine } from "../src/turns";
 
 describe("EngineIcon (#57)", () => {
-  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"];
+  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini"];
 
   it.each(engines)("renders a normalized brand mark for %s", (engine) => {
     const { container } = render(<EngineIcon engine={engine} />);
@@ -34,5 +34,7 @@ describe("EngineIcon (#57)", () => {
     expect(src("codex-local")).toBe(src("codex"));
     expect(src("workbuddy")).toMatch(/workbuddy/);
     expect(src("workbuddy")).not.toBe(src("codex"));
+    expect(src("gemini")).toContain("%234285f4");
+    expect(src("gemini")).not.toBe(src("workbuddy"));
   });
 });

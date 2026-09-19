@@ -49,7 +49,8 @@
     "claude-local": { "configured": false, "ready": false, "nextStep": "安装 Claude Code 并确保 claude 在 PATH 上…" },
     "codex": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 OPENAI_API_KEY…" },
     "codex-local": { "configured": true, "ready": true, "modelPinnable": true, "model": "gpt-5.6-sol" },
-    "workbuddy": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 CODEBUDDY_API_KEY 和 CODEBUDDY_MODEL…" }
+    "workbuddy": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 CODEBUDDY_API_KEY 和 CODEBUDDY_MODEL…" },
+    "gemini": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "安装 Gemini CLI（gemini）或 Antigravity CLI（agy）…" }
   },
   "workspace": { "open": false }
 }
@@ -59,9 +60,9 @@
 
 WorkBuddy 的 `workbuddy` Host 使用服务凭据 `CODEBUDDY_API_KEY` 和显式 `CODEBUDDY_MODEL`。本地预检与回合共用 executable resolver、环境过滤和精确版本配置，只接受审计后的 2.106.4 / 2.137.1；原生 Windows 当前以 `workbuddy.platform_not_verified` 保持 not-ready。`ready` 只代表本地前置满足；真实 provider 成功回合和原生打包验收分别记录。所有提示保持非敏感，不包含凭据、绝对 CLI 路径或原始输出。详见 [本地连接说明](local-agent-connections.md#workbuddy-codebuddy-code)。
 
-可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，Codex 与 WorkBuddy Host 传 `true`，其余不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
+可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，Codex、WorkBuddy 与 Gemini Host 传 `true`，其余不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
 
-可选的 `hosts[].model` 表示控制面会为该 Host 固定的 LLM 模型，Codex 与 WorkBuddy Host 有这个旋钮，取值分别来自 `OPENAI_MODEL` 与 `CODEBUDDY_MODEL`。只有 `modelPinnable` 为 `true` 时该字段才有意义：在无旋钮的 Host 上，`model` 缺失代表能力不存在，而不是未设置偏好。Codex 字段缺失即控制面不固定模型：引擎不会传 `--model`，由 Host 自己的 CLI 决定。WorkBuddy 要求显式 `CODEBUDDY_MODEL`；缺失时 `configured` / `ready` 均为 false，不能回退到本地登录或默认模型。Codex 回合一律带 `--ignore-user-config`，操作员 `~/.codex/config.toml` 里的 `model` 不参与决策，不能据此展示。`OPENAI_MODEL` 或 `CODEBUDDY_MODEL` 若不是合法模型标识（首字符为字母或数字，其余限 `A-Z a-z 0-9 . _ : / -`，长度 ≤ 256），引擎会在 spawn 前失败，故这些 Host 一律 fail closed（`configured` 与 `ready` 均为 false 并给出 `nextStep`），且该值绝不回显为 `model`。
+可选的 `hosts[].model` 表示控制面会为该 Host 固定的 LLM 模型，Codex、WorkBuddy 与 Gemini Host 有这个旋钮，取值分别来自 `OPENAI_MODEL`、`CODEBUDDY_MODEL` 与 `GEMINI_MODEL`。只有 `modelPinnable` 为 `true` 时该字段才有意义：在无旋钮的 Host 上，`model` 缺失代表能力不存在，而不是未设置偏好。Codex 与 Gemini 字段缺失即控制面不固定模型：引擎不会传 `--model`，由 Host 自己的 CLI 决定。WorkBuddy 要求显式 `CODEBUDDY_MODEL`；缺失时 `configured` / `ready` 均为 false，不能回退到本地登录或默认模型。Codex 回合一律带 `--ignore-user-config`，操作员 `~/.codex/config.toml` 里的 `model` 不参与决策，不能据此展示。`OPENAI_MODEL`、`CODEBUDDY_MODEL` 或 `GEMINI_MODEL` 若不是合法模型标识（首字符为字母或数字，其余限 `A-Z a-z 0-9 . _ : / -`，长度 ≤ 256），引擎会在 spawn 前失败，故这些 Host 一律 fail closed（`configured` 与 `ready` 均为 false 并给出 `nextStep`），且该值绝不回显为 `model`。
 
 ### 2.2 `GET /workspace` — 当前工作区信息
 
@@ -364,6 +365,8 @@ Electron renderer 只通过枚举式 `createTurn({positionId,input,engine})` 与
 - 同一 `POST /turns` 请求语义不变：被中断的回合仍以完整 `turn-record.v1`（status `indeterminate`）作为该请求的 200 响应返回。
 
 #### 2.11.2 `pendingApproval` — 审批裁决随回合传入（#25 Slice B 加法修订）
+
+**2026-09-18 P0 更新：** 下列内容保留为旧版信封与输入形状说明。公共 `POST /turns` 和 `POST /sessions/:sessionId/turns` 现在对形状合法的直接裁决返回 `409 approval_endpoint_required`；形状错误仍返回 `400`。客户端必须改用 `POST /approvals/:id/decision`，防止绕过来源、有效期和幂等检查。`pendingApproval` 仅由服务端在内部构造，继续遵守原引擎信封契约。完整新接口见 [审批中心 P0](./approvals-p0.md)。
 
 `POST /turns` 与 `POST /sessions/:sessionId/turns` 在既有字段之外允许一个可选字段 `pendingApproval`，逐字镜像上游 #193 加法的 `turn-envelope.v1` 可选字段（其形状即引擎 `TurnPendingApprovalInput`）：
 

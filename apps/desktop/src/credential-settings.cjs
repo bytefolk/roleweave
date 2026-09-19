@@ -8,6 +8,7 @@ const HOST_FIELDS = Object.freeze({
   qoder: ["QODER_PERSONAL_ACCESS_TOKEN"],
   claude: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"],
   codex: ["OPENAI_API_KEY", "OPENAI_BASE_URL"],
+  gemini: ["GEMINI_API_KEY"],
 });
 const KEYS = Object.freeze(Object.values(HOST_FIELDS).flat());
 const MAX_FILE_BYTES = 128 * 1024;

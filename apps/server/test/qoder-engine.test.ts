@@ -38,6 +38,12 @@ function runAdapter(
         ANTHROPIC_DEFAULT_HAIKU_MODEL: undefined,
         ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
         ANTHROPIC_DEFAULT_OPUS_MODEL: undefined,
+        GEMINI_API_KEY: undefined,
+        GEMINI_MODEL: undefined,
+        GEMINI_CLI_HOME: undefined,
+        GOOGLE_GEMINI_BASE_URL: undefined,
+        DIGITAL_EMPLOYEE_GEMINI_CLIENT: undefined,
+        DIGITAL_EMPLOYEE_GEMINI_COMMAND: undefined,
         ...options.env,
       },
       stdio: ["pipe", "pipe", "pipe"],
@@ -920,6 +926,192 @@ test("qoder-engine turn run: claude-code dispatches to Claude binary, never Qode
 
   const stdinContent = await fs.readFile(stdinFile, "utf8");
   assert.ok(stdinContent.includes("hello from test"), "input is piped to Claude stdin");
+});
+
+test("qoder-engine turn run: Gemini uses its isolated, tool-free JSON CLI surface", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-gemini-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const argsFile = path.join(fixture, "args.json");
+  const envFile = path.join(fixture, "env.json");
+  const policyFile = path.join(fixture, "policy.toml");
+  const fakeGemini = path.join(fixture, "gemini.cjs");
+  await fs.writeFile(fakeGemini, `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(args));
+fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));
+fs.writeFileSync(${JSON.stringify(policyFile)}, fs.readFileSync(args[args.indexOf("--admin-policy") + 1] + "/roleweave.toml", "utf8"));
+process.stdout.write(JSON.stringify({ response: "Gemini output", stats: { inputTokens: 3 } }));
+`, { mode: 0o755 });
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "Gemini fixture question" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "gemini",
+      DIGITAL_EMPLOYEE_GEMINI_COMMAND: fakeGemini,
+      GEMINI_API_KEY: "gemini-fixture-secret",
+      GEMINI_MODEL: "gemini-2.5-pro",
+      OPENAI_API_KEY: "must-not-leak",
+      QODER_PERSONAL_ACCESS_TOKEN: "must-not-leak",
+    },
+  });
+  assert.equal(result.code, 0, result.stderr);
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.equal(events.at(-1)?.type, "run.completed");
+  assert.equal(events.at(-1)?.output, "Gemini output");
+  assert.equal(events.find((event) => event.type === "model.delta")?.text, "Gemini output");
+  assert.doesNotMatch(result.stdout + result.stderr, /gemini-fixture-secret|must-not-leak/);
+
+  const args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.equal(args[args.indexOf("--output-format") + 1], "json");
+  assert.equal(args[args.indexOf("--approval-mode") + 1], "plan");
+  assert.equal(args[args.indexOf("--extensions") + 1], "");
+  assert.equal(args[args.indexOf("--model") + 1], "gemini-2.5-pro");
+  const childEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
+  assert.equal(childEnv.GEMINI_API_KEY, "gemini-fixture-secret");
+  assert.notEqual(childEnv.GEMINI_CLI_HOME, process.env.HOME);
+  assert.equal(childEnv.OPENAI_API_KEY, undefined);
+  assert.equal(childEnv.QODER_PERSONAL_ACCESS_TOKEN, undefined);
+  assert.notEqual(childEnv.HOME, process.env.HOME);
+  assert.match(await fs.readFile(policyFile, "utf8"), /toolName = "\*"\ndecision = "deny"/);
+});
+
+test("qoder-engine turn run: Gemini CLI reuses cached local login without requiring an API key", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-gemini-local-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const envFile = path.join(fixture, "env.json");
+  const cliHome = path.join(fixture, "operator-gemini-home");
+  await fs.mkdir(cliHome);
+  const fakeGemini = path.join(fixture, "gemini");
+  await fs.writeFile(fakeGemini, `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));
+process.stdout.write(JSON.stringify({ response: "Cached Gemini login", stats: { inputTokens: 4, outputTokens: 2, totalTokens: 6 } }));
+`, { mode: 0o755 });
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "local login test" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "gemini",
+      DIGITAL_EMPLOYEE_GEMINI_COMMAND: fakeGemini,
+      GEMINI_CLI_HOME: cliHome,
+    },
+  });
+  assert.equal(result.code, 0, result.stderr);
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.equal(events.at(-1)?.output, "Cached Gemini login");
+  assert.deepEqual(events.find((event) => event.type === "usage"), {
+    type: "usage", runId: events[0]?.runId, timestamp: events.find((event) => event.type === "usage")?.timestamp,
+    inputTokens: 4, outputTokens: 2, totalTokens: 6,
+  });
+  const childEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
+  assert.equal(childEnv.GEMINI_API_KEY, undefined);
+  assert.equal(childEnv.GEMINI_CLI_HOME, cliHome);
+  assert.notEqual(childEnv.HOME, process.env.HOME);
+});
+
+test("qoder-engine turn run: Antigravity CLI uses headless JSON and an isolated deny policy", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-antigravity-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const argsFile = path.join(fixture, "args.json");
+  const envFile = path.join(fixture, "env.json");
+  const settingsFile = path.join(fixture, "settings.json");
+  const copiedTokenFile = path.join(fixture, "copied-token.txt");
+  const operatorHome = path.join(fixture, "operator-home");
+  const operatorConfig = path.join(operatorHome, ".gemini", "antigravity-cli");
+  await fs.mkdir(operatorConfig, { recursive: true });
+  await fs.writeFile(path.join(operatorConfig, "antigravity-oauth-token"), "fixture-oauth-token", { mode: 0o600 });
+  await fs.writeFile(path.join(operatorConfig, "settings.json"), JSON.stringify({ model: "Gemini Fixture (High)", permissions: { allow: ["command(*)"] }, operatorMarker: "must-not-import" }));
+  const fakeAgy = path.join(fixture, "agy");
+  await fs.writeFile(fakeAgy, `#!/usr/bin/env node
+const fs = require("node:fs");
+const path = require("node:path");
+fs.writeFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)));
+fs.writeFileSync(${JSON.stringify(envFile)}, JSON.stringify(process.env));
+fs.writeFileSync(${JSON.stringify(settingsFile)}, fs.readFileSync(path.join(process.env.HOME, ".gemini", "antigravity-cli", "settings.json"), "utf8"));
+fs.writeFileSync(${JSON.stringify(copiedTokenFile)}, fs.readFileSync(path.join(process.env.HOME, ".gemini", "antigravity-cli", "antigravity-oauth-token"), "utf8"));
+process.stdout.write(JSON.stringify({ status: "SUCCESS", response: "Antigravity output", usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 } }));
+`, { mode: 0o755 });
+
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    stdin: JSON.stringify({ input: "Antigravity fixture question" }),
+    env: {
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "gemini",
+      DIGITAL_EMPLOYEE_GEMINI_COMMAND: fakeAgy,
+      DIGITAL_EMPLOYEE_GEMINI_CLIENT: "antigravity",
+      HOME: operatorHome,
+      HTTPS_PROXY: "http://proxy.invalid:8080",
+    },
+  });
+  assert.equal(result.code, 0, result.stderr);
+  const events = result.stdout.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  assert.equal(events.at(-1)?.output, "Antigravity output");
+  assert.equal(events.find((event) => event.type === "usage")?.totalTokens, 8);
+  const args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.equal(args[args.indexOf("--output-format") + 1], "json");
+  assert.ok(args.includes("--mode=plan"));
+  assert.ok(args.includes("--disable-slash-commands"));
+  assert.equal(args.includes("--sandbox"), false);
+  assert.equal(args.includes("--admin-policy"), false);
+  const childEnv = JSON.parse(await fs.readFile(envFile, "utf8")) as Record<string, string>;
+  assert.equal(childEnv.GEMINI_API_KEY, undefined);
+  assert.equal(childEnv.HTTPS_PROXY, "http://proxy.invalid:8080");
+  assert.notEqual(childEnv.HOME, process.env.HOME);
+  const settings = JSON.parse(await fs.readFile(settingsFile, "utf8")) as { modelProvider?: string; model?: string; permissions: { deny: string[] } };
+  assert.equal(settings.modelProvider, undefined);
+  assert.equal(settings.model, "Gemini Fixture (High)");
+  assert.ok(settings.permissions.deny.includes("read_file(*)"));
+  assert.ok(settings.permissions.deny.includes("write_file(*)"));
+  assert.ok(settings.permissions.deny.includes("command(*)"));
+  assert.equal("operatorMarker" in settings, false);
+  assert.equal(await fs.readFile(copiedTokenFile, "utf8"), "fixture-oauth-token");
+});
+
+test("qoder-engine turn run: terminating the Gemini adapter reaps its detached Antigravity client", { skip: process.platform === "win32" ? "requires POSIX process groups" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-antigravity-signal-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const childStateFile = path.join(fixture, "child.json");
+  const operatorHome = path.join(fixture, "operator-home");
+  const operatorConfig = path.join(operatorHome, ".gemini", "antigravity-cli");
+  await fs.mkdir(operatorConfig, { recursive: true });
+  await fs.writeFile(path.join(operatorConfig, "antigravity-oauth-token"), "fixture-oauth-token", { mode: 0o600 });
+  await fs.writeFile(path.join(operatorConfig, "settings.json"), JSON.stringify({ model: "Gemini Fixture (High)" }));
+  const fakeAgy = path.join(fixture, "agy");
+  await fs.writeFile(fakeAgy, `#!/usr/bin/env node
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(childStateFile)}, JSON.stringify({ pid: process.pid, home: process.env.HOME }));
+setInterval(() => {}, 1000);
+`, { mode: 0o755 });
+
+  const adapter = spawn(process.execPath, [ADAPTER, "turn", "run", dir, "--position", "repo-owner", "--stdin"], {
+    env: {
+      ...process.env,
+      DIGITAL_EMPLOYEE_ENGINE_MODEL: "gemini",
+      DIGITAL_EMPLOYEE_GEMINI_COMMAND: fakeAgy,
+      DIGITAL_EMPLOYEE_GEMINI_CLIENT: "antigravity",
+      HOME: operatorHome,
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  adapter.stdin.end(JSON.stringify({ input: "wait for termination" }));
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try { await fs.access(childStateFile); break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); }
+  }
+  const childState = JSON.parse(await fs.readFile(childStateFile, "utf8")) as { pid: number; home: string };
+  const temporaryRoot = path.dirname(childState.home);
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+    adapter.once("close", (code, signal) => resolve({ code, signal }));
+  });
+  adapter.kill("SIGTERM");
+  const exit = await exited;
+  assert.equal(exit.code, 143);
+  assert.equal(exit.signal, null);
+  await assert.rejects(fs.access(temporaryRoot), { code: "ENOENT" });
+  assert.throws(() => process.kill(childState.pid, 0), { code: "ESRCH" });
 });
 
 test("qoder-engine turn run: claude-local preserves OAuth discovery without unrelated service credentials", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {

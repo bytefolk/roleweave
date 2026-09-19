@@ -1228,11 +1228,14 @@ export class TurnStore {
             ) {
               throw storageError("local reports turn directory contains an unsafe temporary");
             }
-            const temporary = await readBoundedStateFile(
-              path.join(turnsDir, turnEntry.name),
-              MAX_TURN_RECORD_BYTES,
-            );
-            chargeStableBytes(temporary.bytes);
+            // Wait for our atomic writer before inspecting its temporary.
+            // rename() may remove it after readdir(); that is not corruption.
+            const target = path.join(turnsDir, turnEntry.name.slice(1, -41));
+            const temporary = await this.recordLocks.run(target, async () => {
+              try { return await readBoundedStateFile(path.join(turnsDir, turnEntry.name), MAX_TURN_RECORD_BYTES); }
+              catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
+            });
+            if (temporary) chargeStableBytes(temporary.bytes);
             continue;
           }
           if (!turnEntry.isFile() || turnEntry.isSymbolicLink() || !turnEntry.name.endsWith(".json")) {

@@ -17,6 +17,8 @@ function setup(t, options = {}) {
 const text = (value) => JSON.stringify(value, null, 2);
 test('JSONC accepts comments and rejects unknown fields, duplicate keys, plaintext tokens, and unsafe URLs with location', () => {
   assert.equal(validateConfigurationText('// prefs\n'+text(defaults())).ok, true);
+  const preGemini = defaults(); delete preGemini.hosts.gemini;
+  assert.deepEqual(validateConfigurationText(text(preGemini)).config.hosts.gemini, {});
   for (const patch of [c => c.hosts.codex.apiKey='secret', c => c.services.doc={apiUrl:'http://remote.example'},
     c => c.chat.sendShortcut='other', c => c.hosts.codex.apiKeyRef='secret:host/ANTHROPIC_API_KEY']) {
     const c=defaults(); patch(c); const result=validateConfigurationText(text(c));

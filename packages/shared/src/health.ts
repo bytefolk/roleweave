@@ -30,6 +30,8 @@ export interface TurnHostHealth {
    */
   model?: string;
   connection?: EmployeeModelConnection;
+  /** Optional, display-safe result of a local CLI preflight. */
+  localProbe?: { installed: boolean; supported: boolean; version?: string | null; failure?: string };
   /**
    * The Host's only blocker is a missing local CLI login that the in-app
    * one-click login flow can resolve (bundled Qoder). Clients render a login

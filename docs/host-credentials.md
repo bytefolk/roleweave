@@ -8,6 +8,7 @@ names the environment variable it replaces:
 | Qoder | `QODER_PERSONAL_ACCESS_TOKEN` |
 | Claude | `ANTHROPIC_API_KEY`, optional alternative `ANTHROPIC_AUTH_TOKEN`, optional `ANTHROPIC_BASE_URL` |
 | Codex | `OPENAI_API_KEY`, optional `OPENAI_BASE_URL` |
+| Gemini | optional `GEMINI_API_KEY` (local Gemini or Antigravity sign-in remains available without it) |
 
 Save each required field. The status indicates whether a value is stored, not
 whether a provider has accepted it. Stored values are never pre-filled or
@@ -29,8 +30,8 @@ Operator `ORG_WORKBENCH_*` pins are untouched. An explicit launch-environment
 credential or endpoint (including an explicit empty string) wins over saved
 settings for the whole Host connection. In particular, an inherited key is never
 combined with a saved endpoint, nor an inherited endpoint with a saved key.
-Claude custom headers also select the environment connection. A model selection
-such as `OPENAI_MODEL` remains existing configuration, not a credential field.
+Claude custom headers also select the environment connection. Model selections
+such as `OPENAI_MODEL` and `GEMINI_MODEL` remain existing configuration, not credential fields.
 The existing per-Host engine allowlists determine which credentials reach a turn.
 
 Native children receive the credentials in their environment. WSL uses the

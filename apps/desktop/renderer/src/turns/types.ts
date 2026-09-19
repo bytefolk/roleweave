@@ -1,5 +1,5 @@
 import type { EmployeeModelConnection, TurnRecord as ApiTurnRecord } from "@roleweave/shared";
-export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy";
+export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "gemini";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
 
@@ -82,6 +82,13 @@ export interface TurnRecord {
   retryOf?: string;
   /** Present when the turn settled as engine.approval_required. */
   approvalRequest?: TurnApprovalRequest;
+  approvalControl?: {
+    disabled: boolean;
+    status?: import("@roleweave/shared").ApprovalStatus;
+    phase?: import("@roleweave/shared").ApprovalPhase;
+    error?: string;
+    unavailableReason?: string;
+  };
   /** Safe, high-level execution milestones derived from server-owned events. */
   progress?: TurnProgressStep[];
 }

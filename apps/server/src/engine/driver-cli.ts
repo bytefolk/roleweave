@@ -386,6 +386,18 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, mod
     for (const key of ["DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND", "ProgramFiles", "PROGRAMFILES", "LOCALAPPDATA", "PATHEXT", "SystemRoot", "WINDIR"]) {
       if (source[key] !== undefined) environment[key] = source[key];
     }
+  } else if (engine === "gemini") {
+    if (source.GEMINI_API_KEY !== undefined) environment.GEMINI_API_KEY = source.GEMINI_API_KEY;
+    if (source.GEMINI_MODEL !== undefined) environment.GEMINI_MODEL = source.GEMINI_MODEL;
+    if (source.GEMINI_CLI_HOME !== undefined) environment.GEMINI_CLI_HOME = source.GEMINI_CLI_HOME;
+    if (source.GOOGLE_GEMINI_BASE_URL !== undefined) environment.GOOGLE_GEMINI_BASE_URL = source.GOOGLE_GEMINI_BASE_URL;
+    if (source.DIGITAL_EMPLOYEE_GEMINI_CLIENT !== undefined) environment.DIGITAL_EMPLOYEE_GEMINI_CLIENT = source.DIGITAL_EMPLOYEE_GEMINI_CLIENT;
+    if (source.DIGITAL_EMPLOYEE_GEMINI_COMMAND !== undefined) environment.DIGITAL_EMPLOYEE_GEMINI_COMMAND = source.DIGITAL_EMPLOYEE_GEMINI_COMMAND;
+    // Antigravity's cached local login is stored in the OS keyring. Linux
+    // Secret Service discovery needs these session endpoints; no credential
+    // value is carried in either variable.
+    if (source.DBUS_SESSION_BUS_ADDRESS !== undefined) environment.DBUS_SESSION_BUS_ADDRESS = source.DBUS_SESSION_BUS_ADDRESS;
+    if (source.XDG_RUNTIME_DIR !== undefined) environment.XDG_RUNTIME_DIR = source.XDG_RUNTIME_DIR;
   } else {
     // The external engine's historical claude-local contract remains login
     // only. The bundled adapter below also supports the operator's own local

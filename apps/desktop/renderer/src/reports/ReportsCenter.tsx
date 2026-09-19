@@ -242,7 +242,7 @@ function Evidence({ entries, positionNames, onOpenTimeline }: { entries: Evidenc
     <span>{t("rep.recordCount", { count: rows.length })}</span>
   </div><Table<EvidenceEntry> rowKey="turnId" size="middle" dataSource={rows} scroll={{ x: 670 }} pagination={{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: true }} locale={{ emptyText: t("rep.noMatchingExecutions") }} columns={[
     { title: t("rep.colPosition"), key: "position", render: (_, entry) => <strong>{positionNames?.[entry.positionId] ?? entry.positionId}</strong> },
-    { title: "Agent", dataIndex: "engine", key: "engine", render: (engine: string) => engine.startsWith("codex") ? "Codex" : engine.startsWith("claude") ? "Claude Code" : "Qoder" },
+    { title: "Agent", dataIndex: "engine", key: "engine", render: (engine: string) => engine.startsWith("codex") ? "Codex" : engine.startsWith("claude") ? "Claude Code" : engine === "gemini" ? "Gemini" : "Qoder" },
     { title: t("rep.executionStatus"), key: "status", render: (_, entry) => <Tag color={entry.status === "failed" ? "error" : entry.status === "completed" ? "success" : "default"}>{evidenceStatusLabel(entry.status, t)}</Tag> },
     { title: t("rep.recordedTokenTotal"), key: "usage", align: "right", render: (_, entry) => entry.usage.totalTokens.toLocaleString() },
     { title: t("rep.updatedAt"), key: "at", render: (_, entry) => formatTime(entry.updatedAt, localeTag) },

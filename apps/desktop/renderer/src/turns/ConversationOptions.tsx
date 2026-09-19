@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, type FormEvent 
 import { Button, Input, Popconfirm, Popover, Select, Switch } from "antd";
 import { Check, CircleHelp, Gauge, Layers3, RefreshCw, RotateCw } from "lucide-react";
 import { useT } from "@roleweave/ui";
-import { isQoderModelId } from "@roleweave/shared/model-selection";
+import { isModelId, isQoderModelId } from "@roleweave/shared/model-selection";
 import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption, WorkbenchSession } from "@roleweave/shared";
 import type { TurnRecord } from "./types";
 import { useConversationCopy } from "../locales/conversation";
@@ -41,7 +41,7 @@ function ConnectionSummary({ connection }: { connection: EmployeeModelConnection
   return <>{source} · {t(`model.billing.${connection.billing}`)}</>;
 }
 
-function CustomModelEntry() {
+function CustomModelEntry({ strict = false }: { strict?: boolean }) {
   const t = useT();
   const selection = useContext(ModelSelectionContext);
   const currentSelection = useRef(selection);
@@ -57,7 +57,7 @@ function CustomModelEntry() {
     const { disabled: currentlyDisabled, onModel } = currentSelection.current;
     if (currentlyDisabled || !onModel) return;
     const model = value.trim();
-    if (!isQoderModelId(model)) {
+    if (!(strict ? isModelId(model) : isQoderModelId(model))) {
       setInvalid(true);
       return;
     }
@@ -180,7 +180,7 @@ export function ConversationOptions({ config, saving, disabled, loading = false,
           {config.catalogStatus && config.catalogStatus !== "ready" ? <p className="owb-model-menu__catalog-status" role="status">{t(`model.catalog.${config.catalogStatus}`)}</p> : null}
           {connection ? <div className="owb-model-menu__connection"><ConnectionSummary connection={connection} /></div> : null}
           {menu}
-          {config.allowCustomModel && !connectionInvalid && onModel ? <CustomModelEntry /> : null}
+          {config.allowCustomModel && !connectionInvalid && onModel ? <CustomModelEntry strict={config.customModelFormat === "strict"} /> : null}
           <p>{t("model.switchHint")}</p>
         </div>}
       />

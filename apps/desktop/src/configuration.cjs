@@ -14,7 +14,7 @@ const MAX_STORED_BYTES = MAX_BYTES * 4;
 // Recovery must accept every journal the transaction writer can produce.
 const MAX_JOURNAL_BYTES = 4 * MAX_STORED_BYTES * 6 + 4096;
 const REF_FIELDS = { qoder: { personalAccessTokenRef: 'QODER_PERSONAL_ACCESS_TOKEN' },
-  claude: { apiKeyRef: 'ANTHROPIC_API_KEY', authTokenRef: 'ANTHROPIC_AUTH_TOKEN' }, codex: { apiKeyRef: 'OPENAI_API_KEY' } };
+  claude: { apiKeyRef: 'ANTHROPIC_API_KEY', authTokenRef: 'ANTHROPIC_AUTH_TOKEN' }, codex: { apiKeyRef: 'OPENAI_API_KEY' }, gemini: { apiKeyRef: 'GEMINI_API_KEY' } };
 const HOST_URLS = { claude: 'ANTHROPIC_BASE_URL', codex: 'OPENAI_BASE_URL' };
 const serialize = value => JSON.stringify(value, null, 2) + '\n';
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -22,7 +22,7 @@ const plain = value => value !== null && typeof value === 'object' && !Array.isA
 const fail = code => ({ ok: false, code });
 function defaults() { return { schemaVersion: 1, appearance: { mode: 'system', profile: 'mint', locale: 'zh-CN' },
   chat: { sendShortcut: 'enter', rememberLayout: true }, layouts: { focusByWorkspace: {} },
-  runtime: {}, hosts: { qoder: {}, claude: {}, codex: {} }, services: {}, migration: { rendererPreferences: false, pendingHostUrls: [] } }; }
+  runtime: {}, hosts: { qoder: {}, claude: {}, codex: {}, gemini: {} }, services: {}, migration: { rendererPreferences: false, pendingHostUrls: [] } }; }
 function validateConfigurationText(text) {
   const errors = [];
   if (typeof text !== 'string' || Buffer.byteLength(text) > MAX_BYTES) return { ok: false, code: 'invalid_configuration', errors: [{ field: '$', line: 1, column: 1, message: 'Configuration exceeds 256 KiB.' }] };
@@ -74,7 +74,10 @@ function validateConfigurationText(text) {
   }
   try { validateRuntimeSettings(value.runtime); } catch { error('runtime', 'Invalid runtime fields. WSL paths must be absolute Linux paths.'); }
   if (shape(value.hosts, Object.keys(REF_FIELDS), 'hosts')) for (const [host, refs] of Object.entries(REF_FIELDS)) {
-    const entry = value.hosts[host];
+    // Adding a Host must not invalidate a configuration written by an older
+    // desktop build. Project the omitted Host to its empty default; it will be
+    // serialized on the next ordinary settings save.
+    const entry = value.hosts[host] ?? (value.hosts[host] = {});
     if (!shape(entry, [...Object.keys(refs), ...(HOST_URLS[host] ? ['baseUrl'] : [])], `hosts.${host}`)) continue;
     for (const [field, key] of Object.entries(refs)) if (entry[field] !== undefined && entry[field] !== `secret:host/${key}`) error(`hosts.${host}.${field}`, 'Invalid encrypted credential reference.');
     if (entry.baseUrl !== undefined && !validValue(HOST_URLS[host], entry.baseUrl)) error(`hosts.${host}.baseUrl`, 'Use HTTPS or localhost HTTP without credentials, query or fragment.');

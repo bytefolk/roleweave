@@ -94,7 +94,7 @@ Moving a role changes its reporting relationship. Archiving through the app pres
 ## Data and connected services
 
 For a packaged install, open **Settings → Agent Host credentials** to save Qoder,
-Claude or Codex credentials with operating-system encryption. Finish active work,
+Claude, Codex or Gemini credentials with operating-system encryption. Finish active work,
 then fully quit and reopen RoleWeave to apply saved changes. Launch-environment
 connections take precedence. See [Host credential settings](docs/host-credentials.md)
 for the supported fields, precedence and storage boundaries.

@@ -195,7 +195,7 @@ test("CLI driver fails closed on malformed approval events without faking a term
   }
 });
 
-test("POST /turns accepts a mirrored pendingApproval and seals it into the envelope digest", async () => {
+test("POST /turns cannot bypass durable approval source validation", async () => {
   const turnDriver = new FakeTurnDriver(trustedOutcome);
   const server = await startTestServer(undefined, turnDriver);
   const workspace = await copyExampleWorkspace();
@@ -211,21 +211,9 @@ test("POST /turns accepts a mirrored pendingApproval and seals it into the envel
         pendingApproval: VERDICT,
       },
     });
-    assert.equal(response.status, 200);
-    const record = response.body as Record<string, unknown>;
-    assert.equal(record.status, "completed");
-    assert.equal(turnDriver.calls.length, 1);
-    const envelope = turnDriver.calls[0]!.envelope;
-    assert.deepEqual(envelope.pendingApproval, VERDICT);
-    assert.equal(envelope.envelopeDigest, record.envelopeDigest);
-    const expected = createTurnEnvelope({
-      workspaceRef: envelope.workspaceRef,
-      positionId: "repo-owner",
-      turnId: envelope.turnId,
-      message: "[verdict] resume",
-      pendingApproval: VERDICT,
-    });
-    assert.equal(envelope.envelopeDigest, expected.envelopeDigest);
+    assert.equal(response.status, 409);
+    assert.equal((response.body as { code: string }).code, "approval_endpoint_required");
+    assert.equal(turnDriver.calls.length, 0);
   } finally {
     await server.close();
   }
@@ -404,7 +392,7 @@ test("turn records containing approval events persist and read back intact", asy
   }
 });
 
-test("session turn accepts the same mirrored pendingApproval and rejects violations", async () => {
+test("session turns reject direct verdicts and malformed approval inputs", async () => {
   const turnDriver = new FakeTurnDriver(trustedOutcome);
   const server = await startTestServer(undefined, turnDriver);
   const workspace = await copyExampleWorkspace();
@@ -423,9 +411,8 @@ test("session turn accepts the same mirrored pendingApproval and rejects violati
       token: server.token,
       body: { input: "[verdict] resume", engine: "qoder", pendingApproval: VERDICT },
     });
-    assert.equal(accepted.status, 200);
-    assert.equal(turnDriver.calls.length, 1);
-    assert.deepEqual(turnDriver.calls[0]!.envelope.pendingApproval, VERDICT);
+    assert.equal(accepted.status, 409);
+    assert.equal(turnDriver.calls.length, 0);
 
     const rejected = await api(server.baseUrl, `/sessions/${sessionId}/turns`, {
       method: "POST",
@@ -437,7 +424,7 @@ test("session turn accepts the same mirrored pendingApproval and rejects violati
       },
     });
     assert.equal(rejected.status, 400);
-    assert.equal(turnDriver.calls.length, 1, "no engine spawn on session verdict violation");
+    assert.equal(turnDriver.calls.length, 0, "no engine spawn on session verdict violation");
   } finally {
     await server.close();
   }

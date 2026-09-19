@@ -32,6 +32,8 @@ import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
 import { handlePositionAgentEngine, handlePositionGet, handlePositionModel, handlePositionProfilePatch } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
+import { handleApprovals } from "./routes/approvals.js";
+import { approvals } from "./approvals/service.js";
 import {
   handleSessionCreate,
   handleSessionContextPatch,
@@ -54,6 +56,7 @@ export function createControlPlane(ctx: ControlPlaneContext): http.Server {
   });
   server.requestTimeout = 30000;
   server.headersTimeout = 10000;
+  server.on("close", () => { void approvals(ctx).close().catch(() => undefined); });
   return server;
 }
 
@@ -77,6 +80,7 @@ async function dispatch(
     }
 
     if (await handleServices(ctx, req, res, url)) return;
+    if (await handleApprovals(ctx, req, res, url)) return;
 
     if (pathname === routes.health && method === "GET") {
       await handleHealth(ctx, res);

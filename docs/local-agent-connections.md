@@ -98,6 +98,31 @@ omitted provider `tools` field from an empty array. It does not download a CLI,
 read real credentials, or qualify a real provider account. See
 [issue #275 evidence and remaining acceptance](evidence/issue-275/README.md).
 
+## Gemini and Antigravity
+
+The `gemini` Host accepts either Google Gemini CLI (`gemini`) or Google
+Antigravity CLI (`agy`). Gemini CLI is preferred when both are on PATH. Set
+`DIGITAL_EMPLOYEE_GEMINI_COMMAND` for a wrapper or non-standard installation;
+set `DIGITAL_EMPLOYEE_GEMINI_CLIENT` to `gemini` or `antigravity` when the
+wrapper name does not identify its protocol.
+
+Both clients support their existing local Google sign-in. Gemini CLI receives
+the operator's `GEMINI_CLI_HOME` only for authentication/config discovery while
+the run itself uses a private HOME. Antigravity receives only its bounded local
+OAuth token when the platform did not store the session in a native keyring;
+operator settings, plugins, hooks, skills and conversation history are not
+copied. The adapter creates a private settings file with tool-deny rules and
+runs Antigravity in plan mode. A real turn remains the authentication and
+entitlement check, so local health readiness does not promise remote access.
+
+`GEMINI_API_KEY` remains an optional alternative. It is passed only to the
+selected Gemini Host process; Antigravity also receives an isolated
+`modelProvider: gemini` setting required by that client. Windows-to-WSL runs
+transport the saved key through the bounded stdin bootstrap, never argv. An
+optional `GEMINI_MODEL` pins a model; otherwise the selected client keeps its
+own default. The model menu accepts strict model slugs and never imports the
+Codex model cache.
+
 ## Status and cost
 
 The menu shows the local connection source, hostname, mapped model identifier
@@ -115,3 +140,7 @@ Reported tokens are usage receipts, not a price quote or a hard spending cap.
 - [Qoder configuration and precedence](https://docs.qoder.com/cli/settings)
 - [Qoder CLI parameters](https://docs.qoder.com/cli/cli-reference)
 - [Qoder custom models](https://docs.qoder.com/cli/custom-models)
+- [Gemini CLI authentication](https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/authentication.mdx)
+- [Gemini CLI configuration](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md)
+- [Antigravity CLI headless mode](https://antigravity.google/docs/cli/headless/)
+- [Antigravity CLI authentication](https://antigravity.google/docs/cli-install)

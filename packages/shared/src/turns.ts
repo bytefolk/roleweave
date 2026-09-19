@@ -21,7 +21,7 @@ export const TURN_HISTORY_SCHEMA_VERSION = "turn-history.v1" as const;
  * before #206 they carried their own copy, which silently rejected every new
  * engine at the IPC boundary.
  */
-export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy";
+export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "gemini";
 
 const turnEngineContract = createRequire(import.meta.url)("../turn-engines.cjs") as {
   TURN_ENGINE_IDS: readonly TurnEngine[];
