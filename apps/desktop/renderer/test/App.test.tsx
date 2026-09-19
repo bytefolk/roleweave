@@ -1320,7 +1320,9 @@ describe("App runtime bridge", () => {
     expect(screen.queryByText("sensitive raw output")).not.toBeInTheDocument();
     // #112: a durable session record is opaque to the renderer; once the
     // sanitized evidence reaches reports.v1 it must also populate the derived timeline.
-    fireEvent.click(screen.getByRole("button", { name: /时间线/ }));
+    // #394: the stream switcher is flat now, so anchor the nav tab label to
+    // avoid matching the evidence table's per-row "查看时间线" link button.
+    fireEvent.click(screen.getByRole("button", { name: /^时间线/ }));
     expect(screen.getByLabelText("执行时间线")).toBeInTheDocument();
     expect(screen.getByText("共 3 条")).toBeInTheDocument();
     expect(screen.getByTestId("timeline-budget-tag-turn-1")).toBeInTheDocument();

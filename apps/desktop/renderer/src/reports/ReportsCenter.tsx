@@ -48,22 +48,21 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
         {onRefresh ? <Button icon={<RefreshCw size={14} />} loading={loading} onClick={onRefresh}>{t("rep.refresh")}</Button> : null}
       </header>
       <div className="owb-report-overview" role="group" aria-label={t("rep.overview")}>
-        <SummaryMetric label={t("rep.recordedTokenTotal")} value={hasObservedUsage ? total.toLocaleString() : "—"} detail={t("rep.usageScope")} onClick={() => setTabOverride("budgets")} />
-        <SummaryMetric label={t("rep.runCount")} value={reports.streams.evidence.length.toLocaleString()} detail={t("rep.completedCount", { count: completed })} onClick={() => setTabOverride("evidence")} />
-        <SummaryMetric label={t("rep.exceptionCount")} value={exceptions.toLocaleString()} detail={t("rep.exceptionHint")} warning={exceptions > 0} onClick={() => setTabOverride("escalations")} />
-        <SummaryMetric label={t("rep.employeeCount")} value={reports.budgets.length.toLocaleString()} detail={t("rep.observedCount", { count: reports.budgets.filter((budget) => budget.latestTurn !== null).length })} onClick={() => setTabOverride("budgets")} />
+        <SummaryMetric active={tab === "budgets"} label={t("rep.recordedTokenTotal")} value={hasObservedUsage ? total.toLocaleString() : "—"} detail={t("rep.usageScope")} onClick={() => setTabOverride("budgets")} />
+        <SummaryMetric active={tab === "evidence"} label={t("rep.runCount")} value={reports.streams.evidence.length.toLocaleString()} detail={t("rep.completedCount", { count: completed })} onClick={() => setTabOverride("evidence")} />
+        <SummaryMetric active={tab === "escalations"} label={t("rep.exceptionCount")} value={exceptions.toLocaleString()} detail={t("rep.exceptionHint")} warning={exceptions > 0} onClick={() => setTabOverride("escalations")} />
+        <SummaryMetric active={tab === "budgets"} label={t("rep.employeeCount")} value={reports.budgets.length.toLocaleString()} detail={t("rep.observedCount", { count: reports.budgets.filter((budget) => budget.latestTurn !== null).length })} onClick={() => setTabOverride("budgets")} />
       </div>
       <p className="owb-report-scope">{t("rep.scopeHint")}{reports.page.hasMore ? ` ${t("rep.partialSnapshot")}` : ""}</p>
+      {/* #394：单层视图切换。旧的两层 tab（治理父 tab 再套三个子 tab）把时间线这种
+          全量流塞进"异常"分组里，用户找不到也记不住；拍平后 KPI 卡与视图一一对应。 */}
       <nav className="owb-report-tabs" aria-label={t("rep.streamsAria")}>
         <TabButton active={tab === "budgets"} onClick={() => setTabOverride("budgets")} label={t("rep.tabBudgets")} count={reports.budgets.length} />
         <TabButton active={tab === "evidence"} onClick={() => setTabOverride("evidence")} label={t("rep.tabEvidence")} count={reports.streams.evidence.length} />
-        <TabButton active={!["budgets", "evidence"].includes(tab)} onClick={() => setTabOverride("escalations")} label={t("rep.governance")} count={exceptions} />
-      </nav>
-      {!["budgets", "evidence"].includes(tab) ? <nav className="owb-report-subtabs" aria-label={t("rep.governance")}>
         <TabButton active={tab === "escalations"} onClick={() => setTabOverride("escalations")} label={t("rep.tabEscalations")} count={reports.streams.escalations.length} />
         <TabButton active={tab === "audits"} onClick={() => setTabOverride("audits")} label={t("rep.tabAudits")} count={reports.streams.audits.length} />
         <TabButton active={tab === "timeline"} onClick={() => { setTimelinePosition(null); setTabOverride("timeline"); }} label={t("rep.tabTimeline")} count={timelineEvents.length} />
-      </nav> : null}
+      </nav>
       <div className="owb-report-stream" role="tabpanel" aria-label={t("rep.streamTabpanelAria", { tab: tabLabel(tab, t) })}>
         {tab === "budgets" ? (
           <BudgetDashboard
@@ -75,8 +74,8 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
             onOpenTimeline={openTimeline}
           />
         ) : null}
-        {tab === "escalations" ? <Escalations entries={reports.streams.escalations} positionNames={positionNames} /> : null}
-        {tab === "audits" ? <Audits entries={reports.streams.audits} /> : null}
+        {tab === "escalations" ? <Escalations entries={reports.streams.escalations} positionNames={positionNames} onOpenTimeline={openTimeline} /> : null}
+        {tab === "audits" ? <Audits entries={reports.streams.audits} positionNames={positionNames} /> : null}
         {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} /> : null}
         {tab === "timeline" && timelinePosition ? <div className="owb-report-filter-note"><span>{positionNames?.[timelinePosition] ?? timelinePosition}</span><Button type="link" onClick={() => setTimelinePosition(null)}>{t("rep.clearScope")}</Button></div> : null}
         {tab === "timeline" ? (
@@ -113,8 +112,8 @@ function tabLabel(tab: Tab, t: OwbT): string {
   }[tab];
 }
 
-function SummaryMetric({ label, value, detail, warning = false, onClick }: { label: string; value: string; detail: string; warning?: boolean; onClick: () => void }) {
-  return <button type="button" className={`owb-report-metric${warning ? " is-warning" : ""}`} onClick={onClick} aria-label={label}>
+function SummaryMetric({ label, value, detail, warning = false, active = false, onClick }: { label: string; value: string; detail: string; warning?: boolean; active?: boolean; onClick: () => void }) {
+  return <button type="button" aria-pressed={active} className={`owb-report-metric${warning ? " is-warning" : ""}${active ? " is-active" : ""}`} onClick={onClick} aria-label={label}>
     <span>{label}</span><strong>{value}</strong><small>{detail}</small>
   </button>;
 }
@@ -204,29 +203,79 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
 
 function Empty({ text }: { text: string }) { return <p className="owb-report-empty">{text}</p>; }
 
-function Escalations({ entries, positionNames }: { entries: EscalationEntry[]; positionNames?: Record<string, string> }) {
+function Escalations({ entries, positionNames, onOpenTimeline }: { entries: EscalationEntry[]; positionNames?: Record<string, string>; onOpenTimeline: (id: string) => void }) {
   const t = useT();
   const localeTag = useLocaleTag();
   if (entries.length === 0) return <Empty text={t("rep.noEscalations")} />;
   return <ol>{entries.map((entry) => {
     const summary = entry.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation");
-    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time>{formatTime(entry.at, localeTag)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div></div></li>;
+    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div><Button type="link" size="small" className="owb-report-trace" onClick={() => onOpenTimeline(entry.positionId)}>{t("rep.traceRun")}</Button></div></li>;
   })}</ol>;
 }
 
-function Audits({ entries }: { entries: AuditEntry[] }) {
+/**
+ * #394：审计行从"只报数字"升级为可展开明细。旧行只写"调岗 27"，用户没法回答
+ * "谁调去了哪"，追溯承诺落空；展开后按 招聘/调岗/裁撤/预算 四组列具体岗位，
+ * 调岗带 从→到。零值组不渲染，全零显示"无实质变更"。
+ */
+function Audits({ entries, positionNames }: { entries: AuditEntry[]; positionNames?: Record<string, string> }) {
   const t = useT();
   const localeTag = useLocaleTag();
   if (entries.length === 0) return <Empty text={t("rep.noAudits")} />;
-  return <ol>{entries.map((entry, index) => {
-    const summary = t("rep.auditSummary", {
-      hired: entry.changes.hired.length,
-      moved: entry.changes.moved.length,
-      dismissed: entry.changes.dismissed.length,
-      budget: entry.changes.budgetUpdated.length,
-    });
-    return <li className="owb-report-card" key={`${entry.at}-${index}`}><ClipboardList aria-hidden="true" size={16} /><div><header><strong>{entry.actor}</strong><time>{formatTime(entry.at, localeTag)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><small>{t("rep.auditPositions", { count: entry.positionCount })}</small></div></li>;
-  })}</ol>;
+  return <ol>{entries.map((entry, index) => <AuditRow key={`${entry.at}-${index}`} entry={entry} positionNames={positionNames} localeTag={localeTag} />)}</ol>;
+}
+
+function AuditRow({ entry, positionNames, localeTag }: { entry: AuditEntry; positionNames?: Record<string, string>; localeTag: string }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const nameOf = (id: string) => positionNames?.[id] ?? id;
+  const parentOf = (id: string | null) => (id === null ? t("rep.noParent") : nameOf(id));
+  const groups = [
+    { key: "hired", label: t("rep.changeHired"), count: entry.changes.hired.length },
+    { key: "moved", label: t("rep.changeMoved"), count: entry.changes.moved.length },
+    { key: "dismissed", label: t("rep.changeDismissed"), count: entry.changes.dismissed.length },
+    { key: "budget", label: t("rep.changeBudget"), count: entry.changes.budgetUpdated.length },
+  ];
+  const live = groups.filter((group) => group.count > 0);
+  const summary = t("rep.auditSummary", {
+    hired: entry.changes.hired.length,
+    moved: entry.changes.moved.length,
+    dismissed: entry.changes.dismissed.length,
+    budget: entry.changes.budgetUpdated.length,
+  });
+  return (
+    <li className={`owb-report-card owb-report-card--expandable${open ? " is-open" : ""}`}>
+      <ClipboardList aria-hidden="true" size={16} />
+      <div>
+        <header><strong>{entry.actor}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header>
+        <div className="owb-report-chips" title={summary}>
+          {live.length === 0
+            ? <span className="owb-report-chip is-muted">{t("rep.noSubstantiveChanges")}</span>
+            : live.map((group) => <span className="owb-report-chip" key={group.key}>{group.label} {group.count}</span>)}
+          <small>{t("rep.auditPositions", { count: entry.positionCount })}</small>
+        </div>
+        <button type="button" className="owb-report-expand" aria-expanded={open} onClick={() => setOpen(!open)}>
+          {open ? t("rep.collapseChanges") : t("rep.expandChanges")}
+        </button>
+        {open ? (
+          <div className="owb-report-changes">
+            {entry.changes.hired.length > 0 ? (
+              <section><h4>{t("rep.changeHired")}</h4><ul>{entry.changes.hired.map((role) => <li key={role.id}>{nameOf(role.id)}</li>)}</ul></section>
+            ) : null}
+            {entry.changes.moved.length > 0 ? (
+              <section><h4>{t("rep.changeMoved")}</h4><ul>{entry.changes.moved.map((move) => <li key={move.id}>{nameOf(move.id)}<span className="owb-report-move">{parentOf(move.from)} → {parentOf(move.to)}</span></li>)}</ul></section>
+            ) : null}
+            {entry.changes.dismissed.length > 0 ? (
+              <section><h4>{t("rep.changeDismissed")}</h4><ul>{entry.changes.dismissed.map((role) => <li key={role.id}>{nameOf(role.id)}</li>)}</ul></section>
+            ) : null}
+            {entry.changes.budgetUpdated.length > 0 ? (
+              <section><h4>{t("rep.changeBudget")}</h4><ul>{entry.changes.budgetUpdated.map((id) => <li key={id}>{nameOf(id)}</li>)}</ul></section>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </li>
+  );
 }
 
 function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline }: { entries: EvidenceEntry[]; positionNames?: Record<string, string>; focusTurnId?: string; onOpenTimeline: (id: string) => void }) {
@@ -266,6 +315,20 @@ function evidenceStatusLabel(status: string, t: OwbT): string {
 function formatTime(value: string, localeTag = "zh-CN"): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(localeTag, { hour12: false });
+}
+
+/** #394：列表行主时间用相对值（秒级绝对戳是噪声），完整绝对时间挂在 title 上。 */
+function formatRelativeTime(value: string, localeTag: string, t: OwbT): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const diff = Date.now() - date.getTime();
+  if (diff < 0) return formatTime(value, localeTag);
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return t("rep.relJustNow");
+  if (minutes < 60) return t("rep.relMinutesAgo", { count: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t("rep.relHoursAgo", { count: hours });
+  return t("rep.relDaysAgo", { count: Math.floor(hours / 24) });
 }
 
 /** #146：时间格式跟随应用 locale（数据本身仍是原时间戳）。 */

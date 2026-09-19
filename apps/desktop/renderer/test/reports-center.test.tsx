@@ -12,6 +12,16 @@ const report: ReportsResponse = {
   ] }, page: { cursor: null, hasMore: false },
 };
 
+const audit = {
+  schemaVersion: "org-audit.v1" as const,
+  at: "2026-09-18T00:00:00Z",
+  actor: "owner",
+  workspace: "ws",
+  bootstrapped: true,
+  changes: { hired: [], moved: [{ id: "alice", from: null, to: "boss" }], dismissed: [], budgetUpdated: [] },
+  positionCount: 2,
+};
+
 describe("consolidated reports", () => {
   it("counts executions and exceptions without counting timeline events twice", () => {
     render(<ReportsCenter reports={report} loading={false} positionNames={{ alice: "Alice" }} />);
@@ -19,7 +29,7 @@ describe("consolidated reports", () => {
     expect(screen.getByRole("button", { name: "异常执行" })).toHaveTextContent("1");
     expect(screen.getByRole("button", { name: "已记录 Token" })).toHaveTextContent("30");
     expect(document.querySelector(".owb-budget-deck")).toBeNull();
-    expect(within(screen.getByRole("navigation", { name: "上报数据流" })).getAllByRole("button")).toHaveLength(3);
+    expect(within(screen.getByRole("navigation", { name: "上报数据流" })).getAllByRole("button")).toHaveLength(5);
   });
   it("searches sanitized execution rows and opens a scoped timeline", () => {
     render(<ReportsCenter reports={report} loading={false} positionNames={{ alice: "Alice" }} />);
@@ -31,6 +41,21 @@ describe("consolidated reports", () => {
     expect(screen.getByLabelText("执行时间线")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看全部员工" })).toBeInTheDocument();
     expect(screen.getByText("共 4 条")).toBeInTheDocument();
+  });
+  it("expands audit rows into concrete change details and traces escalations to the timeline", () => {
+    const withAudit: ReportsResponse = { ...report, streams: { ...report.streams, audits: [audit] } };
+    render(<ReportsCenter reports={withAudit} loading={false} positionNames={{ alice: "Alice", boss: "Boss" }} />);
+    // 默认落在失败/升级：行内追溯按钮直接跳带范围的时间线。
+    fireEvent.click(screen.getByRole("button", { name: "追溯这次执行" }));
+    expect(screen.getByRole("button", { name: "查看全部员工" })).toBeInTheDocument();
+    // 组织审计：chips 只留非零组，展开后能看到"谁从哪调到哪"。
+    fireEvent.click(screen.getByRole("button", { name: /组织审计/ }));
+    expect(screen.getByText("调岗 1")).toBeInTheDocument();
+    expect(screen.queryByText(/招聘 0/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "展开变更明细" }));
+    expect(screen.getByText(/无上级 → Boss/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "收起变更明细" }));
+    expect(screen.queryByText(/无上级 → Boss/)).toBeNull();
   });
   it("does not display a fabricated zero when there is no usage observation, and refresh is explicit", () => {
     const onRefresh = vi.fn();

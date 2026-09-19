@@ -292,7 +292,10 @@
 
 /* D4 evidence room — dense, local-first operations surface. */
 .owb-reports {
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  /* #394: 5 rows now that the stream switcher is a single flat nav
+     (hero / overview / scope / tabs / stream); the old 4-row template
+     squeezed the tab bar into a clipped track. */
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   display: grid;
   gap: var(--ui-space-4, 16px);
   min-height: 0;
@@ -449,6 +452,7 @@
 
 .owb-report-tabs {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   min-width: 0;
   gap: 4px;
@@ -456,10 +460,10 @@
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-md, 10px);
   background: var(--ui-surface);
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.owb-report-tabs::-webkit-scrollbar { display: none; }
+/* #394: 不再用 overflow-x 横向滚动——作为 grid 行内的 scroll container，
+   它的 intrinsic 高度贡献会被压成 0（tab 栏整行被裁切）；换行既修好高度，
+   窄窗口下也比藏进横向滚动条好找。 */
 
 .owb-report-tabs button {
   display: inline-flex;
