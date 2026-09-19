@@ -28,7 +28,7 @@
 }
 [data-theme] .owb-app .owb-memory-source > svg { flex: none; }
 [data-theme] .owb-app .owb-memory-source:hover { background: var(--ui-surface); color: var(--ui-foreground); }
-[data-theme] .owb-app .owb-memory-source[aria-pressed="true"] { background: var(--ui-primary-soft); color: var(--ui-primary); font-weight: 600; }
+[data-theme] .owb-app .owb-memory-source[aria-pressed="true"] { background: var(--owb-nav-selected); color: var(--ui-brand); font-weight: 600; }
 [data-theme] .owb-app .owb-memory-source:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: -2px; }
 [data-theme] .owb-app .owb-memory-source__label { flex: 1; }
 [data-theme] .owb-app .owb-memory-source__count { font-size: 11px; font-variant-numeric: tabular-nums; }
