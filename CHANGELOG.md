@@ -13,6 +13,7 @@
 
 ### Added
 
+- #327 R1：记忆平面设计锚点。新增 ADR-0008 与 `docs/design/memory-plane-v1.md`，冻结四层所有权、FIFO/LRU/TTL 分工、链式 segment/head/index、召回收据与子 issue DAG。durable-memory 绑定 principal + grant/revocation version + permissionDigest（拒绝自由字符串 scope）。准入硬预算以 UTF-8 bytes 为准，模型 token 只作成本上限。不改变运行时；未接受修订不得被实现 PR 消费。
 - #365：新增持久化审批中心：统一列出和查看待审批记录，由 `/approvals/:id/decision` 作为唯一裁决入口；个人会话可批准或拒绝并以新回合恢复执行，原 `engine.approval_required` 回合保持不变；群聊来源仅只读展示、不能在审批中心裁决。审批状态、审计信息和恢复结果可跨刷新及重启恢复。
 
 - #356: design-only multi-agent branch heads and handoff-carried checkpoint refs (`docs/design/memory-branch-handoff-v1.md`). No silent head clobber; handoff does not copy grants. No runtime.
