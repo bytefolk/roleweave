@@ -24,6 +24,20 @@ import { ATTACHMENT_ALLOWED_MIME_TYPES, ATTACHMENT_MAX_COUNT, ATTACHMENT_MAX_SIN
 
 export { EngineSelect, useEngineLabel } from "./engine-select";
 
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    let part = "";
+    for (let i = 0; i < chunk.length; i += 1) {
+      part += String.fromCharCode(chunk[i]!);
+    }
+    binary += part;
+  }
+  return btoa(binary);
+}
+
 export interface TurnPanelProps {
   active?: boolean;
   workspaceKey?: string;
@@ -238,7 +252,7 @@ export function TurnPanel({
       setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "uploading" as const } : a));
       try {
         const buffer = await file.arrayBuffer();
-        const dataBase64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+        const dataBase64 = bytesToBase64(new Uint8Array(buffer));
         const res = await window.owb.uploadAttachment({
           sessionId: selectedSessionId,
           fileName: pending.fileName,

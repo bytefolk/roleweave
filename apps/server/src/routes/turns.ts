@@ -350,7 +350,14 @@ export async function executeTurn(
     // Additive #306: resolve attachment manifests and build engine context.
     let resolvedAttachments: TurnAttachment[] | undefined;
     let augmentedInput = body.input;
-    if (body.attachmentIds !== undefined && session !== undefined) {
+    if (body.attachmentIds !== undefined) {
+      if (session === undefined) {
+        throw new OrgApiError(
+          errorCodes.attachment_request_invalid,
+          400,
+          "attachmentIds require a personal session; bare /turns cannot carry attachments",
+        );
+      }
       resolvedAttachments = await readAttachmentMetas(workspace.dir, session.sessionId, body.attachmentIds);
       if (resolvedAttachments.length === 0) {
         throw new OrgApiError(errorCodes.attachment_missing, 400, "one or more attachment ids were not found in this session");
