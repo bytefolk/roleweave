@@ -13,6 +13,7 @@
 
 ### Added
 
+- #327 R1：记忆平面设计锚点。新增 ADR-0008 与 `docs/design/memory-plane-v1.md`，冻结四层所有权、FIFO/LRU/TTL 分工、链式 segment/head/index、召回收据与子 issue DAG。durable-memory 绑定 principal + grant/revocation version + permissionDigest（拒绝自由字符串 scope）。准入硬预算以 UTF-8 bytes 为准，模型 token 只作成本上限。不改变运行时；未接受修订不得被实现 PR 消费。
 - #338：iOS SwiftUI 原生客户端（`mobile/ios`）。桌面控制面 HTTP 带 `Authorization: Bearer <boot-token>`；WebSocket 指数退避重连（1s/2s/4s/8s/16s，最多 5 次）并保留 device token；组织页必须显式点选岗位后才能发指令；配对码限 6 位数字；主机与 boot-token 本地持久化。回合仍在电脑上执行。
 
 - #356: design-only multi-agent branch heads and handoff-carried checkpoint refs (`docs/design/memory-branch-handoff-v1.md`). No silent head clobber; handoff does not copy grants. No runtime.
