@@ -230,3 +230,22 @@
   [data-theme] .owb-app .owb-turn-composer { padding: 12px; }
   [data-theme] .owb-app .owb-conversation-kind { display: none; }
 }
+
+/* #394 上报中心交互重构：KPI 卡选中态、审计行变更 chips 与展开明细。 */
+.owb-report-metric.is-active { border-color: var(--ui-primary); background: color-mix(in srgb, var(--ui-primary) 6%, var(--ui-surface)); }
+.owb-report-metric.is-active::before { background: var(--ui-primary); }
+.owb-report-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 5px 0 0; }
+.owb-report-chip {
+  border: 1px solid var(--ui-border); border-radius: 999px; background: var(--ui-surface-inset);
+  padding: 1px 8px; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--ui-foreground-muted);
+}
+.owb-report-chip.is-muted { border-style: dashed; background: transparent; }
+.owb-report-chips small { font-size: 11px; color: var(--ui-foreground-muted); }
+.owb-report-expand { border: 0; background: none; padding: 6px 0 0; font-size: 12px; color: var(--ui-primary); cursor: pointer; }
+.owb-report-expand:hover { text-decoration: underline; }
+.owb-report-expand:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 2px; border-radius: 4px; }
+.owb-report-changes { margin-top: 8px; border-top: 1px dashed var(--ui-border); padding-top: 8px; display: grid; gap: 8px; }
+.owb-report-changes h4 { margin: 0; font-size: 11px; font-weight: 600; color: var(--ui-foreground-muted); }
+.owb-report-changes ul { margin: 3px 0 0; padding-left: 16px; display: grid; gap: 2px; font-size: 12px; color: var(--ui-foreground); }
+.owb-report-move { margin-left: 8px; font-size: 11px; color: var(--ui-foreground-muted); }
+.owb-report-card .owb-report-trace { padding-left: 0; }
