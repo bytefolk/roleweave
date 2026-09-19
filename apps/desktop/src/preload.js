@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld("owb", {
   rotateSession: (sessionId) => ipcRenderer.invoke("owb:session:rotate", sessionId),
   createSessionTurn: (request) => ipcRenderer.invoke("owb:session:turn:create", request),
   sessionTurnHistory: (sessionId) => ipcRenderer.invoke("owb:session:turn:history", sessionId),
+  uploadAttachment: (request) => ipcRenderer.invoke("owb:attachment:upload", request),
   createGroup: (request) => ipcRenderer.invoke("owb:group:create", request),
   groups: () => ipcRenderer.invoke("owb:group:list"),
   group: (conversationRef) => ipcRenderer.invoke("owb:group:get", conversationRef),

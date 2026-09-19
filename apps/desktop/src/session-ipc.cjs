@@ -26,11 +26,11 @@ function validateSessionTurnRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("turn_request_invalid", "session turn must be an object") };
   }
-  const allowedKeys = new Set(["sessionId", "input", "engine", "pendingApproval", "goalId", "branchId", "retryOf"]);
+  const allowedKeys = new Set(["sessionId", "input", "engine", "pendingApproval", "goalId", "branchId", "retryOf", "attachmentIds"]);
   if (Object.keys(value).some((k) => !allowedKeys.has(k))) {
     return {
       ok: false,
-      response: invalid("turn_request_invalid", "session turn accepts sessionId, input, engine, and optional pendingApproval, goalId, branchId, retryOf"),
+      response: invalid("turn_request_invalid", "session turn accepts sessionId, input, engine, and optional pendingApproval, goalId, branchId, retryOf, attachmentIds"),
     };
   }
   if (!validateSessionId(value.sessionId)) {
@@ -53,6 +53,19 @@ function validateSessionTurnRequest(value) {
   if (value.branchId !== undefined && (typeof value.branchId !== "string" || !GOAL_ID.test(value.branchId))) {
     return { ok: false, response: invalid("turn_request_invalid", "branchId must be a bounded alphanumeric string") };
   }
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  let attachmentIds;
+  if (value.attachmentIds !== undefined) {
+    if (!Array.isArray(value.attachmentIds) || value.attachmentIds.length === 0 || value.attachmentIds.length > 5) {
+      return { ok: false, response: invalid("turn_request_invalid", "attachmentIds must be 1–5 entries") };
+    }
+    for (const id of value.attachmentIds) {
+      if (typeof id !== "string" || !UUID.test(id)) {
+        return { ok: false, response: invalid("turn_request_invalid", "each attachmentId must be a UUID") };
+      }
+    }
+    attachmentIds = value.attachmentIds;
+  }
   let pendingApproval;
   if (value.pendingApproval !== undefined) {
     const checked = validatePendingApproval(value.pendingApproval);
@@ -69,6 +82,7 @@ function validateSessionTurnRequest(value) {
       ...(value.retryOf !== undefined ? { retryOf: value.retryOf } : {}),
       ...(value.goalId !== undefined ? { goalId: value.goalId } : {}),
       ...(value.branchId !== undefined ? { branchId: value.branchId } : {}),
+      ...(attachmentIds !== undefined ? { attachmentIds } : {}),
     },
   };
 }

@@ -63,6 +63,9 @@ export const routes = {
   driveList: "/drive/list",
   driveDetail: "/drive/detail",
   driveUpload: "/drive/upload",
+  /** Additive #306: attachment upload/read surface. */
+  attachmentsUpload: "/attachments/upload",
+  attachmentsRead: "/attachments/read",
   /** Additive user-owned goal surface (#222). */
   goals: "/goals",
   events: "/events",
