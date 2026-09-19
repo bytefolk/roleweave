@@ -571,7 +571,9 @@ describe("App runtime bridge", () => {
     // that employee's durable conversation; the conversation header carries
     // the fixed Agent identity, and runtime/session plumbing must not
     // reappear as a second choice in the right pane.
-    openedBridge();
+    openedBridge({
+      position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine: "qoder", agentLocked: true } }),
+    });
 
     render(<App />);
     await selectRepoOwner();
@@ -583,6 +585,17 @@ describe("App runtime bridge", () => {
     expect(within(screen.getByRole("region", { name: "岗位对话" })).getAllByText("Qoder").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "轮换当前会话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "启用会话上下文" })).not.toBeInTheDocument();
+  });
+
+  it("#322 opens an unlocked employee direct conversation with an interactive Agent Host selector", async () => {
+    openedBridge({
+      position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine: "qoder", agentLocked: false } }),
+    });
+
+    render(<App />);
+    await selectRepoOwner();
+
+    expect(screen.getByRole("combobox", { name: "选择 Agent Host" })).toBeInTheDocument();
   });
 
   it("shows each employee's Agent before selection and marks an unbound employee's current default", async () => {
@@ -726,7 +739,7 @@ describe("App runtime bridge", () => {
     try {
       for (let mount = 0; mount < 2; mount += 1) {
         const bridge = openedBridge({
-          position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine } }),
+          position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine, agentLocked: true } }),
           createSessionTurn: vi.fn().mockResolvedValue({ status: 200, body: apiTurn({ engine: agentEngine, input: "使用员工绑定" }) }),
         });
         const view = render(<App />);

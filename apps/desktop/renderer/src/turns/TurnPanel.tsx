@@ -8,7 +8,7 @@ import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
 import type { AvailabilityCheck, NoticeAction } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
-import { useEngineLabel } from "./engine-select";
+import { EngineSelect, TURN_ENGINES, useEngineLabel } from "./engine-select";
 import { EngineBadge } from "./EngineBadge";
 import { TurnThread } from "./TurnThread";
 import { PositionAvatar } from "../PositionAvatar";
@@ -61,7 +61,7 @@ export interface TurnPanelProps {
    * that share the old panel contract; this panel deliberately has no second
    * recipient picker. */
   onSelectPosition?: (positionId: string) => void;
-  /** Retained for caller compatibility; Host selection belongs to employee creation. */
+  /** Host selection for unlocked positions (e.g. imported employees before initial choice). */
   onSelectEngine?: (engine: TurnEngine) => void;
   onCreateTurn: (request: CreateTurnRequest) => void | boolean | Promise<void | boolean>;
   /** Operator interrupt for the in-flight turn of the selected position. */
@@ -102,7 +102,9 @@ export function TurnPanel({
   positions,
   selectedPositionId,
   engine,
+  engineLocked = true,
   engineAvailability,
+  onSelectEngine,
   turns,
   busy = false,
   employeeBusy = false,
@@ -249,7 +251,19 @@ export function TurnPanel({
           </div>
         </div>
         <div className="owb-conversation-header-actions">
-          {selectedPosition ? <EngineBadge engine={engine} /> : null}
+          {selectedPosition ? (
+            engineLocked ? (
+              <EngineBadge engine={engine} />
+            ) : (
+              <EngineSelect
+                engines={TURN_ENGINES}
+                engineAvailability={engineAvailability}
+                value={engine}
+                disabled={busy || employeeBusy || sending || modelSaving}
+                onChange={(next) => onSelectEngine?.(next)}
+              />
+            )
+          ) : null}
           {selectedPosition && sessions && onSelectSession ? <Popover trigger="click" placement="bottomRight" open={active && historyOpen} onOpenChange={setHistoryOpen} title={copy.history}
             content={<div className="owb-session-history">{sessions.length ? sessions.map(session => <button type="button" key={session.sessionId}
               className={session.sessionId === selectedSessionId ? "is-selected" : ""}
