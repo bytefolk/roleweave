@@ -308,23 +308,9 @@
   border: 1px solid var(--ui-border-strong);
   border-radius: var(--ui-radius-xl, 18px);
   background:
-    repeating-linear-gradient(90deg, transparent 0 39px, var(--ui-border) 40px),
-    linear-gradient(105deg, color-mix(in srgb, var(--ui-primary-soft) 42%, transparent), transparent 54%),
+    linear-gradient(105deg, color-mix(in srgb, var(--ui-primary-soft) 36%, transparent), transparent 60%),
     var(--ui-surface-inset);
-  padding: 22px 24px;
-}
-
-.owb-reports__hero::after {
-  position: absolute;
-  right: 142px;
-  bottom: -76px;
-  width: 220px;
-  height: 160px;
-  border: 1px solid color-mix(in srgb, var(--ui-primary) 22%, transparent);
-  border-radius: 50%;
-  content: "";
-  transform: rotate(-18deg);
-  pointer-events: none;
+  padding: 18px 22px;
 }
 
 .owb-reports__hero-copy {
@@ -333,14 +319,11 @@
   min-width: 0;
 }
 
-
-
-
 .owb-reports__hero h1 {
-  margin: 6px 0 5px;
+  margin: 0 0 4px;
   color: var(--ui-foreground);
-  font-size: 28px;
-  line-height: 1.12;
+  font-size: 20px;
+  line-height: 1.2;
 }
 
 .owb-reports__hero p {
@@ -466,9 +449,13 @@
 
 .owb-report-tabs {
   display: flex;
+  align-items: center;
   min-width: 0;
-  gap: 2px;
-  border-bottom: 1px solid var(--ui-border);
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 10px);
+  background: var(--ui-surface);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -479,21 +466,34 @@
   align-items: center;
   flex: none;
   gap: 7px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: var(--ui-foreground-muted);
-  padding: 9px 12px 10px;
+  padding: 6px 12px;
   font: inherit;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
 }
 
-.owb-report-tabs button:hover { color: var(--ui-foreground); }
-.owb-report-tabs button[aria-pressed="true"] { border-bottom-color: var(--ui-primary); color: var(--ui-foreground); }
-.owb-report-tabs button span { min-width: 20px; border-radius: 999px; background: var(--ui-surface-inset); color: var(--ui-foreground-muted); padding: 1px 6px; font-family: var(--ui-font-mono, monospace); font-size: 10px; text-align: center; }
-.owb-report-tabs button[aria-pressed="true"] span { background: var(--ui-primary-soft); color: var(--ui-primary); }
+.owb-report-tabs button:hover { background: var(--ui-surface-inset); color: var(--ui-foreground); }
+.owb-report-tabs button[aria-pressed="true"] { background: var(--ui-primary-soft); color: var(--ui-primary); font-weight: 600; }
+.owb-report-tabs button span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-muted);
+  font-family: var(--ui-font-mono, monospace);
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+}
+.owb-report-tabs button[aria-pressed="true"] span { background: color-mix(in srgb, var(--ui-primary) 20%, var(--ui-surface)); color: var(--ui-primary); }
 
 .owb-report-stream { min-height: 0; overflow: auto; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg, 14px); background: var(--ui-surface-inset); padding: 12px; }
 .owb-report-stream ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
@@ -508,7 +508,7 @@
 .owb-report-card code { display: block; overflow-wrap: anywhere; color: var(--ui-foreground); font-size: 11px; white-space: pre-wrap; word-break: break-all; }
 .owb-report-chain { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .owb-report-chain span { border-left: 1px solid var(--ui-warning); border-radius: 4px; background: var(--ui-warning-soft); color: var(--ui-foreground); padding: 3px 6px; font-size: 11px; }
-.owb-report-empty { display: grid; min-height: 170px; place-items: center; margin: 0; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-md, 10px); color: var(--ui-foreground-muted); padding: 32px; text-align: center; }
+.owb-report-empty { display: grid; min-height: 130px; place-items: center; margin: 0; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-md, 10px); color: var(--ui-foreground-muted); padding: 24px; text-align: center; }
 
 @media (max-width: 1220px) {
   .owb-budget-deck__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
