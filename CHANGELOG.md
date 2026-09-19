@@ -3,6 +3,13 @@
 本仓库采用 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式。
 早期开发记录以里程碑（D0/D1/D2…）标注，安装包发布使用语义化版本。
 
+## [Unreleased]
+
+### Added
+
+- #349：private / position / team memory grants 设计稿（`docs/design/memory-grants-v1.md`）。pin mem#221 `e0e47c7`；employee-private 用不可复用 `employee.<hire_id>`（需 mem additive，不能用可换人的 position seat）；team/task 展开为每成员一条 mem grant 行，不引入 `task.*` principal；越权 receipt / handoff 不携带 memoryId。无运行时；#327 D0 / #345 未接受，不当作已定基线。
+
+
 ## [0.3.0] — 2026-09-18
 
 ### Added
