@@ -7,7 +7,7 @@
  * conversation and constructs the resume turn; the UI never chooses it.
  */
 import { useMemo, useState } from "react";
-import { Alert, Button, List, Segmented, Tag, Tooltip } from "antd";
+import { Alert, Button, Input, List, Select, Segmented, Tag, Tooltip } from "antd";
 import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import {
@@ -78,9 +78,16 @@ export function ApprovalQueue({
   onNavigateToOrg,
   onApprove,
   onDeny,
+  onOpenSource,
+  onOpenEvidence,
 }: ApprovalQueueProps) {
   const t = useT();
   const [filter, setFilter] = useState<ApprovalQueueFilter>(defaultFilter);
+  const [query, setQuery] = useState("");
+  const [positionFilter, setPositionFilter] = useState<string>();
+  const [categoryFilter, setCategoryFilter] = useState<ApprovalCategory>();
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const pendingCount = useMemo(
@@ -89,10 +96,45 @@ export function ApprovalQueue({
   );
 
   const visible = useMemo(() => {
-    if (filter === "pending") return items.filter((item) => !isDecided(item));
-    if (filter === "decided") return items.filter((item) => isDecided(item));
-    return items;
-  }, [items, filter]);
+    const needle = query.trim().toLocaleLowerCase();
+    return items.filter((item) => {
+      if (filter === "pending" && isDecided(item)) return false;
+      if (filter === "decided" && !isDecided(item)) return false;
+      if (positionFilter && item.positionId !== positionFilter) return false;
+      if (categoryFilter && item.category !== categoryFilter) return false;
+      if (fromDate && (!item.requestedAt || item.requestedAt.slice(0, 10) < fromDate)) return false;
+      if (toDate && (!item.requestedAt || item.requestedAt.slice(0, 10) > toDate)) return false;
+      if (needle) {
+        const haystack = [
+          item.positionName,
+          item.positionId,
+          item.category,
+          item.description,
+          item.target,
+          item.requestReason,
+          item.source?.conversationId,
+          item.source?.turnId,
+          item.source?.runId,
+          item.decision.kind,
+          item.decision.kind === "denied" || item.decision.kind === "granted" ? item.decision.reason : undefined,
+          item.executionErrorCode,
+        ].filter(Boolean).join(" ").toLocaleLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
+      return true;
+    });
+  }, [categoryFilter, filter, fromDate, items, positionFilter, query, toDate]);
+
+  const positionOptions = useMemo(() => [...new Map(items.map((item) => [item.positionId, item.positionName ?? item.positionId]))]
+    .sort((a, b) => a[1].localeCompare(b[1])), [items]);
+  const hasAdvancedFilters = Boolean(query || positionFilter || categoryFilter || fromDate || toDate);
+  const clearAdvancedFilters = () => {
+    setQuery("");
+    setPositionFilter(undefined);
+    setCategoryFilter(undefined);
+    setFromDate("");
+    setToDate("");
+  };
 
   const selectedItem = useMemo(
     () => items.find((item) => item.approvalId === selectedId) ?? null,
@@ -133,7 +175,53 @@ export function ApprovalQueue({
             aria-label={t("apr.filterStateAria")}
           />
         </div>
-        <span className="owb-approval-queue__count">{t("apr.totalRecords", { count: items.length })}</span>
+        <Input
+          allowClear
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("apr.filterKeywordPh")}
+          aria-label={t("apr.filterKeywordAria")}
+          className="owb-approval-queue__search"
+          data-testid="approval-filter-keyword"
+        />
+        <Select
+          allowClear
+          value={positionFilter}
+          onChange={setPositionFilter}
+          placeholder={t("apr.filterPosition")}
+          options={positionOptions.map(([value, label]) => ({ value, label }))}
+          aria-label={t("apr.filterPositionAria")}
+          className="owb-approval-queue__select"
+          data-testid="approval-filter-position"
+        />
+        <Select
+          allowClear
+          value={categoryFilter}
+          onChange={setCategoryFilter}
+          placeholder={t("apr.filterCategory")}
+          options={Object.keys(CATEGORY_TAG_COLOR).map((value) => ({ value, label: t(`apr.kind.${value as ApprovalCategory}`) }))}
+          aria-label={t("apr.filterCategoryAria")}
+          className="owb-approval-queue__select"
+          data-testid="approval-filter-category"
+        />
+        <Input
+          type="date"
+          value={fromDate}
+          onChange={(event) => setFromDate(event.target.value)}
+          aria-label={t("apr.filterFromAria")}
+          className="owb-approval-queue__date"
+          data-testid="approval-filter-from"
+        />
+        <Input
+          type="date"
+          value={toDate}
+          onChange={(event) => setToDate(event.target.value)}
+          aria-label={t("apr.filterToAria")}
+          className="owb-approval-queue__date"
+          data-testid="approval-filter-to"
+        />
+        {hasAdvancedFilters ? <Button type="link" onClick={clearAdvancedFilters}>{t("apr.clearFilters")}</Button> : null}
+        <span className="owb-approval-queue__count">{t("apr.filteredRecords", { visible: visible.length, total: items.length })}</span>
       </div>
 
       {errorMessage ? (
@@ -185,6 +273,8 @@ export function ApprovalQueue({
         onClose={() => setSelectedId(null)}
         onApprove={onApprove}
         onDeny={onDeny}
+        onOpenSource={onOpenSource}
+        onOpenEvidence={onOpenEvidence}
       />
     </section>
   );
@@ -308,6 +398,7 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
           </p>
         ) : null}
         <p className="owb-approval-card__meta">
+          {item.requestedAt ? <span>{t("apr.requested", { at: formatApprovalTime(item.requestedAt, t, localeTag) })}</span> : null}
           {item.expiresAt ? (
             <Tooltip title={item.expiresAt}>
               <span className="owb-approval-card__expires">{t("apr.expires", { at: formatApprovalTime(item.expiresAt, t, localeTag) })}</span>

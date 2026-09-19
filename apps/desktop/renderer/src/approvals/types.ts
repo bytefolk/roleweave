@@ -11,16 +11,18 @@
  *     The callback id is the workbench record id (not the engine approvalId).
  *     The server alone constructs the resume-turn envelope.
  */
-import type { TurnApprovalActionKind } from "@roleweave/shared";
+import type { ApprovalRecord, TurnApprovalActionKind } from "@roleweave/shared";
 import { zhText } from "@roleweave/ui";
 
 export type ApprovalCategory = TurnApprovalActionKind;
 
 export type ApprovalDecisionState =
   | { kind: "pending" }
-  | { kind: "granted"; scope: "once" | "run"; decidedAt?: string }
-  | { kind: "denied"; reason?: string; decidedAt?: string }
+  | { kind: "granted"; scope: "once" | "run"; decidedAt?: string; decidedBy?: string; reason?: string }
+  | { kind: "denied"; reason?: string; decidedAt?: string; decidedBy?: string }
   | { kind: "expired" | "cancelled" | "indeterminate" };
+
+export type ApprovalSource = ApprovalRecord["source"];
 
 export interface ApprovalQueueItem {
   canDecide?: boolean;
@@ -29,6 +31,9 @@ export interface ApprovalQueueItem {
   unavailableReason?: string;
   executionPhase?: import("@roleweave/shared").ApprovalPhase;
   requestReason?: string;
+  source?: ApprovalSource;
+  executionTurnId?: string;
+  executionErrorCode?: string;
   approvalId: string;
   positionId: string;
   positionName?: string;
@@ -52,6 +57,10 @@ export interface ApprovalQueueCallbacks {
   onApprove: (approvalId: string, reason?: string) => void;
   /** denied MUST allow an empty reason (contract permits absent reason). */
   onDeny: (approvalId: string, reason?: string) => void;
+  /** Open the persisted source conversation when the source is addressable. */
+  onOpenSource?: (item: ApprovalQueueItem) => void;
+  /** Open the reports surface; it may still be empty when no receipt exists. */
+  onOpenEvidence?: (item: ApprovalQueueItem) => void;
 }
 
 /** #146：展示词面走 apr.kind.* 目录；该导出以 zh 目录为源保持旧值。 */

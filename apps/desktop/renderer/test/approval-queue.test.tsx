@@ -62,6 +62,7 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
   it("展示层会修复被多编码一层的中文，不修改审批契约字段", () => {
     render(
       <ApprovalQueue
+        defaultFilter="all"
         items={[makeItem({
           positionName: "\\u5185\\u5bb9\\u5199\\u4f5c\\u5458",
           description: "\\u8bf7\\u6c42\\u5199\\u5165 report.md",
@@ -174,5 +175,73 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     render(<ApprovalQueue items={items} onApprove={noop} onDeny={noop} />);
     expect(screen.queryByTestId("approval-card-appr-1")).toBeInTheDocument();
     expect(screen.queryByTestId("approval-card-appr-2")).toBeNull();
+  });
+
+  it("filters approval history by keyword and request date", () => {
+    render(
+      <ApprovalQueue
+        defaultFilter="all"
+        items={[
+          makeItem({ approvalId: "appr-write", requestedAt: "2026-09-18T08:00:00.000Z" }),
+          makeItem({ approvalId: "appr-exec", positionId: "operator-2", positionName: "Operations", category: "exec", description: "Run the audit command", requestedAt: "2026-09-17T08:00:00.000Z", decision: { kind: "granted", scope: "once" } }),
+        ]}
+        onApprove={noop}
+        onDeny={noop}
+      />,
+    );
+    expect(screen.getByTestId("approval-card-appr-write")).toBeInTheDocument();
+    expect(screen.getByTestId("approval-card-appr-exec")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("approval-filter-keyword"), { target: { value: "audit command" } });
+    expect(screen.queryByTestId("approval-card-appr-write")).toBeNull();
+    expect(screen.getByTestId("approval-card-appr-exec")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("approval-filter-keyword"), { target: { value: "" } });
+    fireEvent.change(screen.getByTestId("approval-filter-from"), { target: { value: "2026-09-18" } });
+    expect(screen.getByTestId("approval-card-appr-write")).toBeInTheDocument();
+    expect(screen.queryByTestId("approval-card-appr-exec")).toBeNull();
+  });
+
+  it("shows lifecycle and traceability fields and routes supported sources", async () => {
+    const onOpenSource = vi.fn();
+    const onOpenEvidence = vi.fn();
+    render(
+      <ApprovalQueue
+        defaultFilter="all"
+        items={[makeItem({
+          source: { kind: "session", positionId: "writer-1", conversationId: "session-1", turnId: "turn-1", runId: "run-1", engine: "qoder" },
+          executionPhase: "completed",
+          executionTurnId: "recovery-1",
+          requestReason: "The requested write changes a shared report.",
+          decision: { kind: "granted", scope: "once", decidedAt: "2026-09-18T09:00:00.000Z", decidedBy: "operator" },
+        })]}
+        onApprove={noop}
+        onDeny={noop}
+        onOpenSource={onOpenSource}
+        onOpenEvidence={onOpenEvidence}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("approval-card-appr-abc"));
+    expect(await screen.findByTestId("approval-lifecycle")).toBeInTheDocument();
+    expect(screen.getByText("裁决与执行")).toBeInTheDocument();
+    expect(screen.getByText("session-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "打开原会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开执行证据" }));
+    expect(onOpenSource).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "appr-abc" }));
+    expect(onOpenEvidence).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "appr-abc" }));
+  });
+
+  it("keeps unsupported group sources visibly unavailable", async () => {
+    render(
+      <ApprovalQueue
+        items={[makeItem({ source: { kind: "group", positionId: "writer-1", conversationId: "group-1", turnId: "turn-1", runId: "run-1", engine: "qoder" } })]}
+        onApprove={noop}
+        onDeny={noop}
+        onOpenSource={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("approval-card-appr-abc"));
+    expect(await screen.findByText("当前桌面端暂不支持打开此来源。"));
+    expect(screen.getByRole("button", { name: "打开原会话" })).toBeDisabled();
   });
 });

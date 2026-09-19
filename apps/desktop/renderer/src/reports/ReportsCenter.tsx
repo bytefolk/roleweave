@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button, Input, Select, Skeleton, Table, Tag } from "antd";
+import { Alert, Button, Input, Select, Skeleton, Table, Tag } from "antd";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import type { AuditEntry, EvidenceEntry, EscalationEntry, ReportsResponse } from "@roleweave/shared";
 import { AlertOctagon, ClipboardList, RefreshCw } from "lucide-react";
@@ -15,9 +15,10 @@ export interface ReportsCenterProps {
   positionNames?: Record<string, string>;
   positionColors?: Record<string, string>;
   onOpenTimeline?: (positionId: string) => void;
+  focusTurnId?: string;
 }
 
-export function ReportsCenter({ reports, loading, positionNames, positionColors, onOpenTimeline, onRefresh }: ReportsCenterProps) {
+export function ReportsCenter({ reports, loading, positionNames, positionColors, focusTurnId, onOpenTimeline, onRefresh }: ReportsCenterProps) {
   const t = useT();
   const timelineEvents = useMemo<AuditTimelineEvent[]>(
     () => (reports ? buildTimelineEventsFromReports(reports, t) : []),
@@ -30,7 +31,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
   const [timelinePosition, setTimelinePosition] = useState<string | null>(null);
   if (loading && !reports) return <section className="owb-reports" aria-label={t("rep.loading")}><Skeleton active paragraph={{ rows: 6 }} /></section>;
   if (!reports) return <section className="owb-reports"><p className="owb-muted">{t("rep.unavailable")}</p>{onRefresh ? <Button onClick={onRefresh}>{t("rep.refresh")}</Button> : null}</section>;
-  const tab = tabOverride ?? firstReportTab(reports, timelineEvents.length);
+  const tab = tabOverride ?? (focusTurnId ? "evidence" : firstReportTab(reports, timelineEvents.length));
   const total = reports.budgets.reduce((sum, budget) => sum + budget.recorded.totalTokens, 0);
   const exceptions = new Set([...reports.streams.escalations.map((item) => item.turnId), ...reports.streams.evidence.filter((item) => item.status === "failed" || item.status === "indeterminate").map((item) => item.turnId)]).size;
   const completed = reports.streams.evidence.filter((item) => item.status === "completed").length;
@@ -76,7 +77,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
         ) : null}
         {tab === "escalations" ? <Escalations entries={reports.streams.escalations} positionNames={positionNames} /> : null}
         {tab === "audits" ? <Audits entries={reports.streams.audits} /> : null}
-        {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} onOpenTimeline={openTimeline} /> : null}
+        {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} /> : null}
         {tab === "timeline" && timelinePosition ? <div className="owb-report-filter-note"><span>{positionNames?.[timelinePosition] ?? timelinePosition}</span><Button type="link" onClick={() => setTimelinePosition(null)}>{t("rep.clearScope")}</Button></div> : null}
         {tab === "timeline" ? (
           <AuditTimeline
@@ -228,15 +229,19 @@ function Audits({ entries }: { entries: AuditEntry[] }) {
   })}</ol>;
 }
 
-function Evidence({ entries, positionNames, onOpenTimeline }: { entries: EvidenceEntry[]; positionNames?: Record<string, string>; onOpenTimeline: (id: string) => void }) {
+function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline }: { entries: EvidenceEntry[]; positionNames?: Record<string, string>; focusTurnId?: string; onOpenTimeline: (id: string) => void }) {
   const t = useT();
   const localeTag = useLocaleTag();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
-  const filtered = entries.filter((entry) => (status === "all" || entry.status === status) && `${positionNames?.[entry.positionId] ?? entry.positionId} ${entry.engine}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const focused = focusTurnId ? entries.filter((entry) => entry.turnId === focusTurnId) : entries;
+  const filtered = focused.filter((entry) => (status === "all" || entry.status === status) && `${positionNames?.[entry.positionId] ?? entry.positionId} ${entry.engine}`.toLowerCase().includes(query.trim().toLowerCase()));
   const rows = [...filtered].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   if (entries.length === 0) return <Empty text={t("rep.noEvidence")} />;
-  return <div className="owb-execution-records"><div className="owb-report-toolbar">
+  return <div className="owb-execution-records">
+    {focusTurnId && focused.length === 0 ? <Alert type="warning" showIcon message={t("rep.focusEvidenceMissing", { turnId: focusTurnId })} /> : null}
+    {focusTurnId && focused.length > 0 ? <Alert type="info" showIcon message={t("rep.focusEvidenceFound", { turnId: focusTurnId })} /> : null}
+    {focusTurnId && focused.length === 0 ? null : <><div className="owb-report-toolbar">
     <Input allowClear aria-label={t("rep.searchExecutions")} placeholder={t("rep.searchExecutions")} value={query} onChange={(event) => setQuery(event.target.value)} />
     <Select aria-label={t("rep.executionStatus")} value={status} onChange={setStatus} options={[{ value: "all", label: t("rep.allStatuses") }, ...["completed", "running", "failed", "indeterminate"].map((value) => ({ value, label: evidenceStatusLabel(value, t) }))]} />
     <span>{t("rep.recordCount", { count: rows.length })}</span>
@@ -247,7 +252,8 @@ function Evidence({ entries, positionNames, onOpenTimeline }: { entries: Evidenc
     { title: t("rep.recordedTokenTotal"), key: "usage", align: "right", render: (_, entry) => entry.usage.totalTokens.toLocaleString() },
     { title: t("rep.updatedAt"), key: "at", render: (_, entry) => formatTime(entry.updatedAt, localeTag) },
     { title: "", key: "action", render: (_, entry) => <Button type="link" size="small" onClick={() => onOpenTimeline(entry.positionId)}>{t("rep.openTimeline")}</Button> },
-  ]} /></div>;
+  ]} /></>}
+  </div>;
 }
 
 function evidenceStatusLabel(status: string, t: OwbT): string {

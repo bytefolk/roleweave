@@ -39,4 +39,15 @@ describe("consolidated reports", () => {
     fireEvent.click(screen.getByRole("button", { name: "刷新" }));
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
+
+  it("focuses execution evidence on the requested turn and fails closed when it is absent", () => {
+    const { rerender } = render(<ReportsCenter reports={report} loading={false} focusTurnId="failed-1" />);
+    expect(screen.getByText("回合 failed-1 的执行证据")).toBeInTheDocument();
+    expect(screen.getByText("1 条记录")).toBeInTheDocument();
+    expect(screen.queryByText("running-1")).toBeNull();
+
+    rerender(<ReportsCenter reports={report} loading={false} focusTurnId="missing-turn" />);
+    expect(screen.getByText("回合 missing-turn 暂无执行证据")).toBeInTheDocument();
+    expect(screen.queryByText("1 条记录")).toBeNull();
+  });
 });

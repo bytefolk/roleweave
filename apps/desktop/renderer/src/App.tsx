@@ -344,6 +344,8 @@ function AppInner({
   const [reports, setReports] = useState<ReportsResponse | null>(null);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState<string | null>(null);
+  const [reportsFocusTurnId, setReportsFocusTurnId] = useState<string | null>(null);
+  useEffect(() => setReportsFocusTurnId(null), [workspaceInfo?.open, workspaceInfo?.path]);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
   const [orgRefreshes] = useState(createOrgRefreshCoordinator);
@@ -351,10 +353,10 @@ function AppInner({
     approvalId: a.id, positionId: a.source.positionId, positionName: positionNames[a.source.positionId],
     category: a.action.kind, description: a.action.description, target: a.action.target,
     requestedAt: a.requestedAt, expiresAt: a.expiresAt,
-    decision: a.status === "granted" ? { kind: "granted", scope: "once" } : a.status === "denied" ? { kind: "denied", reason: a.decision?.reason } : { kind: a.status },
+    decision: a.status === "granted" ? { kind: "granted", scope: "once", decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy, reason: a.decision?.reason } : a.status === "denied" ? { kind: "denied", reason: a.decision?.reason, decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy } : { kind: a.status },
     canDecide: a.canDecide, busy: approvalState.busy.has(a.id), error: approvalState.errors[a.id],
     unavailableReason: a.unavailableReason, executionPhase: a.execution.phase,
-    requestReason: a.requestReason,
+    requestReason: a.requestReason, source: a.source, executionTurnId: a.execution.turnId, executionErrorCode: a.execution.errorCode,
   })), [approvalState.items, approvalState.busy, approvalState.errors, positionNames]);
   const decidedApprovals = useMemo(() => new Set(approvalState.items.filter(a =>
     a.status !== "pending" && a.source.positionId === selectedId && a.source.conversationId === selectedSessionId
@@ -1284,6 +1286,32 @@ function AppInner({
     [approvalState.items, approvalState.decide],
   );
 
+  const openApprovalSource = useCallback((item: ApprovalQueueItem) => {
+    const source = item.source;
+    if (!source || source.kind !== "session") return;
+    const workspacePath = workspacePathRef.current;
+    if (!workspacePath) return;
+    const key = JSON.stringify([workspacePath, source.positionId]);
+    setOrgOverview(false);
+    selectionVersion.current += 1;
+    historyRequest.current += 1;
+    selectedIdRef.current = source.positionId;
+    selectedSessionIdRef.current = source.conversationId;
+    selectedSessions.current[key] = source.conversationId;
+    setSelectedId(source.positionId);
+    setSelectedSessionId(source.conversationId);
+    setSessions([]);
+    setTurns([]);
+    setActiveModule("org");
+    void loadSessions(source.positionId);
+  }, [loadSessions, setActiveModule]);
+
+  const openApprovalEvidence = useCallback((item: ApprovalQueueItem) => {
+    setReportsFocusTurnId(item.executionTurnId ?? item.source?.turnId ?? null);
+    setActiveModule("reports");
+    void loadReports();
+  }, [loadReports, setActiveModule]);
+
   const openWorkspace = useCallback(async () => {
     if (workspaceOpening) return;
     setWorkspaceOpening(true);
@@ -1775,7 +1803,7 @@ function AppInner({
               active: activeModule === "approvals",
               onSelect: () => { setActiveModule("approvals"); void approvalState.refresh(); },
             },
-            { id: "reports", label: t("rail.reports"), icon: <ChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
+            { id: "reports", label: t("rail.reports"), icon: <ChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setReportsFocusTurnId(null); setActiveModule("reports"); void loadReports(); } },
             // mem and position documents are two sources in one employee-memory
             // surface. Keep one entry here so the user does not have to choose
             // between two implementation-owned data planes.
@@ -2009,6 +2037,7 @@ function AppInner({
             loading={reportsLoading}
             positionNames={positionNames}
             positionColors={positionColors}
+            focusTurnId={reportsFocusTurnId ?? undefined}
           />
         ) : activeModule === "approvals" ? (
           <ApprovalQueue
@@ -2019,6 +2048,8 @@ function AppInner({
             onNavigateToOrg={() => setActiveModule("org")}
             onApprove={(id, reason) => { void approvalState.decide(id, "granted", reason); }}
             onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
+            onOpenSource={openApprovalSource}
+            onOpenEvidence={openApprovalEvidence}
           />
         ) : activeModule === "groups" ? (
           <GroupsPanel
