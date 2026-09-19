@@ -6,11 +6,12 @@ import type { TurnEngine } from "../src/turns";
 describe("EngineIcon (#57)", () => {
   const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"];
 
-  it.each(engines)("renders a 14px brand mark for %s", (engine) => {
+  it.each(engines)("renders a normalized brand mark for %s", (engine) => {
     const { container } = render(<EngineIcon engine={engine} />);
     const img = container.querySelector("img.owb-engine-icon");
     expect(img).not.toBeNull();
     expect(img?.getAttribute("aria-hidden")).toBe("true");
+    expect(img).toHaveClass(`owb-engine-icon--${engine}`);
   });
 
   it("maps each engine to its own brand mark, with the two claude engines sharing one", () => {

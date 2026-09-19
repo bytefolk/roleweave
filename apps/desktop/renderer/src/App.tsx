@@ -1486,11 +1486,6 @@ function AppInner({
     [reports],
   );
   const selectedNode = selectedId && snapshot ? findNodeById(snapshot.tree, selectedId) : null;
-  const selectedBudgetReport = selectedId ? reports?.budgets.find((budget) => budget.positionId === selectedId) : null;
-  const selectedBudgetRatio = selectedBudgetReport?.latestTurn && selectedBudgetReport.declared.perTask.tokens
-    ? selectedBudgetReport.latestTurn.totalTokens / selectedBudgetReport.declared.perTask.tokens
-    : null;
-
   /** Position ids with a turn in flight — drives the tree/card status lights
    * (#73 signature move ②). Observed from the SSE run stream only; a position
    * with no live run is never shown as running. */
@@ -2022,7 +2017,6 @@ function AppInner({
                   position={card.data}
                   loading={card.loading}
                   notFound={card.notFound}
-                  consumption={selectedBudgetRatio}
                   running={selectedId !== null && runningPositionIds.has(selectedId)}
                   onRefresh={() => void refresh()}
                   onContextSourceSelect={(source) => {

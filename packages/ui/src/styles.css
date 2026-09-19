@@ -3,13 +3,14 @@
 
 /* ---------- OrgTree ---------- */
 
-/* 通栏树（设计稿 .tree: padding 6px 0 12px）：横向不留内边距，行的缩进由
-   .ui-org-tree__row 的 --d padding 负责，把宽度留给岗位名。 */
+/* Keep selection and hover surfaces inside the sidebar instead of visually
+   merging into both dividers. Depth remains row padding, so nesting does not
+   shrink the available row width. */
 .ui-org-tree {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 6px 0 12px;
+  padding: 6px 8px 12px;
   gap: var(--ui-space-1, 4px);
   outline: none;
   overflow: auto;
@@ -29,6 +30,7 @@
   --d: 0;
   container: org-tree-row / inline-size;
   position: relative;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -478,13 +480,13 @@
   display: none;
 }
 
-/* #77 review item 4：同上，允许 >100% 时 fill 出界，圆角端帽不被截断。 */
 .ui-org-budget__track {
   position: relative;
   min-width: 0;
   height: 9px;
   background: var(--ui-surface-inset);
   border-radius: 5px;
+  overflow: hidden;
 }
 
 .ui-org-budget.is-compact .ui-org-budget__track {

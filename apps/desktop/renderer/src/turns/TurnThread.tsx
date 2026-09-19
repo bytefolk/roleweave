@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { AlertTriangle, Check, ChevronRight, LoaderCircle, MessagesSquare, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
 import { Markdown, markdownToPlainText } from "../markdown/Markdown";
 import { useConversationCopy } from "../locales/conversation";
@@ -69,7 +69,12 @@ function fallbackProgress(turn: TurnRecord): Array<{ kind: TurnProgressKind; at?
 }
 
 function ProgressIcon({ kind, active }: { kind: TurnProgressKind; active: boolean }) {
-  if (active) return <LoaderCircle className="owb-turn-progress__spinner" aria-hidden="true" size={12} />;
+  if (active) return (
+    <span className="owb-turn-progress__activity" aria-hidden="true">
+      <span className="owb-turn-progress__activity-orbit" />
+      <LoaderCircle className="owb-turn-progress__spinner" size={12} />
+    </span>
+  );
   if (kind === "awaiting_approval") return <ShieldAlert aria-hidden="true" size={12} />;
   if (kind === "failed" || kind === "unknown") return <AlertTriangle aria-hidden="true" size={12} />;
   return <Check aria-hidden="true" size={12} />;
@@ -136,7 +141,8 @@ export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRec
     unknown: t("turn.progressUnknown"),
   };
   return (
-    <div className={`owb-turn-progress is-${state}`} role="group" aria-label={t("turn.progressAria")}>
+    <div className={`owb-turn-progress is-${state}`} role="group" aria-label={t("turn.progressAria")}
+      data-motion={running ? "live" : undefined}>
       <div className="owb-turn-progress__summary">
         <button type="button" className="owb-turn-progress__header"
           aria-label={`${t("turn.progressDetails")} · ${summary}`} aria-expanded={open} aria-controls={stepsId}
@@ -152,7 +158,8 @@ export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRec
           const offset = elapsedSeconds(turn.createdAt, step.at);
           return (
             <li className={`owb-turn-progress__step is-${step.kind}${active ? " is-current" : ""}`}
-              key={`${step.kind}-${step.at}-${index}`} aria-current={active ? "step" : undefined}>
+              key={`${step.kind}-${step.at}-${index}`} aria-current={active ? "step" : undefined}
+              data-motion={active ? "active" : undefined} style={{ "--progress-step": index } as CSSProperties}>
               <span className="owb-turn-progress__icon"><ProgressIcon kind={step.kind} active={active} /></span>
               <span className="owb-turn-progress__copy">{labels[step.kind]}</span>
               {offset !== null ? <time className="owb-turn-progress__at" dateTime={step.at}>{formatElapsed(offset)}</time> : null}

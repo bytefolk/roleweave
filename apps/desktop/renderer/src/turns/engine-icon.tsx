@@ -1,7 +1,7 @@
 import claudeIcon from "../assets/claude.svg";
 import codexIcon from "../assets/codex.png";
 import qoderIcon from "../assets/qoder.png";
-import workbuddyIcon from "../assets/workbuddy.png";
+import workbuddyIcon from "../assets/workbuddy.svg";
 import type { TurnEngine } from "./types";
 
 const ENGINE_ICON_SRC: Record<TurnEngine, string> = {
@@ -16,8 +16,8 @@ const ENGINE_ICON_SRC: Record<TurnEngine, string> = {
 /** Per-agent-host brand mark (#57): Qoder app mark / Claude starburst.
  * Sources: qoder.com official favicon (app-mark raster), claude.ai favicon,
  * and for Codex (#206) the official OpenAI mark as published by OpenAI's own
- * GitHub organisation avatar. Its own light ground keeps it legible in both
- * themes at the 3px-rounded 14px tile size. */
+ * GitHub organisation avatar. WorkBuddy uses the product's official logo.svg
+ * served by workbuddy.ai. */
 export function EngineIcon({ engine }: { engine: TurnEngine }) {
-  return <img src={ENGINE_ICON_SRC[engine]} alt="" aria-hidden="true" className="owb-engine-icon" draggable={false} />;
+  return <img src={ENGINE_ICON_SRC[engine]} alt="" aria-hidden="true" className={`owb-engine-icon owb-engine-icon--${engine}`} draggable={false} />;
 }

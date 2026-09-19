@@ -231,6 +231,11 @@ export function CapabilityPicker({
           </div>
         </section>
       </div>
+      {(permissions.mcpServers ?? []).length > 0 ? (
+        <p className="owb-hire-mcp-unsupported" role="status">
+          {t("hire.mcpUnsupportedHint")}
+        </p>
+      ) : null}
       <p className="owb-hire-capability-note">{t("hire.capabilityPermissionHint")}</p>
     </section>
   );

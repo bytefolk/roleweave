@@ -280,11 +280,24 @@
   white-space: nowrap;
 }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__steps {
+  position: relative;
   display: grid;
   gap: 6px;
   margin: 6px 0 0 9px;
   padding: 2px 0 2px 17px;
   border-left: 1px solid var(--ui-border);
+  overflow: hidden;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress[data-motion="live"] .owb-turn-progress__steps::after {
+  position: absolute;
+  top: -32px;
+  bottom: auto;
+  left: -1px;
+  width: 1px;
+  height: 32px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ui-brand) 92%, white), transparent);
+  content: "";
+  animation: owb-progress-rail 1.8s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
 }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__steps[hidden] { display: none; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step {
@@ -297,6 +310,9 @@
   color: var(--ui-foreground-muted);
   font-size: 12px;
   line-height: 1.5;
+  transform-origin: 0 50%;
+  animation: owb-progress-step-in 220ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation-delay: calc(var(--progress-step, 0) * 70ms);
 }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step .owb-turn-progress__icon {
   width: 13px;
@@ -307,8 +323,27 @@
   animation: none;
   box-shadow: none;
 }
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step.is-current .owb-turn-progress__icon { color: var(--ui-brand); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step.is-current .owb-turn-progress__icon {
+  color: var(--ui-brand);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--ui-brand) 42%, transparent));
+}
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step.is-current { color: var(--ui-foreground); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__activity {
+  position: relative;
+  display: grid;
+  width: 13px;
+  height: 18px;
+  place-items: center;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__activity-orbit {
+  position: absolute;
+  width: 17px;
+  height: 17px;
+  border: 1px solid color-mix(in srgb, var(--ui-brand) 60%, transparent);
+  border-radius: 50%;
+  opacity: 0;
+  animation: owb-progress-activity 1.5s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step:is(.is-awaiting_approval, .is-unknown) .owb-turn-progress__icon { color: var(--ui-warning); }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step.is-failed .owb-turn-progress__icon { color: var(--ui-danger); }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__copy {
@@ -318,8 +353,32 @@
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__at { margin-left: 3px; }
 .owb-turn-progress__spinner { animation: owb-progress-spin 1s linear infinite; }
 @keyframes owb-progress-spin { to { transform: rotate(360deg); } }
+@keyframes owb-progress-step-in {
+  from { opacity: 0; transform: translateY(5px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes owb-progress-activity {
+  0% { opacity: 0.6; transform: scale(0.55); }
+  70%, 100% { opacity: 0; transform: scale(1.35); }
+}
+@keyframes owb-progress-rail {
+  0% { transform: translateY(0); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(104px); opacity: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .owb-turn-progress__spinner { animation: none; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__spinner,
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__activity-orbit,
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step,
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress[data-motion="live"] .owb-turn-progress__steps::after {
+    animation: none;
+    animation-delay: 0ms;
+  }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__activity-orbit,
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress[data-motion="live"] .owb-turn-progress__steps::after {
+    display: none;
+  }
 }
 
 /* Public output flows as the reply body. The header retains the explicit
