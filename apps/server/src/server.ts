@@ -26,6 +26,7 @@ import {
   handleGoalUpdate,
 } from "./routes/goals.js";
 import { handleHealth } from "./routes/health.js";
+import { handleQoderLoginStart, handleQoderLoginStatus } from "./routes/qoder-login.js";
 import { handleHirePost } from "./routes/hire.js";
 import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
@@ -79,6 +80,14 @@ async function dispatch(
 
     if (pathname === routes.health && method === "GET") {
       await handleHealth(ctx, res);
+      return;
+    }
+    if (pathname === routes.qoderLogin && method === "POST") {
+      await handleQoderLoginStart(ctx, res);
+      return;
+    }
+    if (pathname === routes.qoderLogin && method === "GET") {
+      await handleQoderLoginStatus(ctx, res);
       return;
     }
     if (pathname === routes.workspace && method === "GET") {

@@ -25,6 +25,7 @@ import type {
   OrgTreeSnapshot,
   PositionProfilePatch,
   PositionProfileResult,
+  QoderLoginResponse,
   ReportsResponse,
   TurnHistory,
   WorkbenchSession,
@@ -772,6 +773,61 @@ function AppInner({
 
   const availabilityCheck = { onRecheck: recheckAvailability, checking: checkingAvailability, failed: availabilityCheckFailed };
 
+  /** One-click Qoder login: the control plane owns the `qodercli login` child;
+   * the shell only starts it and observes its state. While the login runs,
+   * health is polled so the composer unblocks the moment the credential lands —
+   * no manual "run qodercli login then refresh" repair loop for the operator. */
+  const [qoderLogin, setQoderLogin] = useState<{ phase: "idle" | "starting" | "running"; feedback: string | null; loginUrl: string | null }>({ phase: "idle", feedback: null, loginUrl: null });
+  const startQoderLogin = useCallback(async () => {
+    setQoderLogin((current) => ({ ...current, phase: "starting", feedback: null }));
+    try {
+      const response = await window.owb.qoderLogin.start();
+      const body = response.status === 200 ? response.body as QoderLoginResponse : undefined;
+      if (!body) throw new Error();
+      if (body.failure) {
+        setQoderLogin({ phase: "idle", feedback: t("misc.qoderLoginUnavailable"), loginUrl: null });
+        return;
+      }
+      setQoderLogin({ phase: "running", feedback: t("misc.qoderLoginRunning"), loginUrl: body.loginUrl ?? null });
+    } catch {
+      setQoderLogin({ phase: "idle", feedback: t("misc.qoderLoginUnavailable"), loginUrl: null });
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (qoderLogin.phase !== "running") return;
+    let alive = true;
+    const timer = setInterval(() => {
+      void (async () => {
+        const [loginRes, statusRes] = await Promise.all([window.owb.qoderLogin.status(), window.owb.status()]);
+        if (!alive) return;
+        if (statusRes.health) setHealth(statusRes.health);
+        if (statusRes.health?.hosts?.qoder?.ready === true) {
+          setQoderLogin({ phase: "idle", feedback: t("misc.qoderLoginSuccess"), loginUrl: null });
+          return;
+        }
+        const login = loginRes.status === 200 ? loginRes.body as QoderLoginResponse : undefined;
+        if (!login || login.running) {
+          if (login?.loginUrl) {
+            setQoderLogin((current) => (current.loginUrl === login.loginUrl ? current : { ...current, loginUrl: login.loginUrl ?? null }));
+          }
+          return;
+        }
+        // The child exited: read health once more because the credential write
+        // can land a beat before the process exit is observed.
+        const finalStatus = await window.owb.status();
+        if (!alive) return;
+        if (finalStatus.health) setHealth(finalStatus.health);
+        setQoderLogin({
+          phase: "idle",
+          feedback: finalStatus.health?.hosts?.qoder?.ready === true ? t("misc.qoderLoginSuccess") : t("misc.qoderLoginFailed"),
+          loginUrl: null,
+        });
+      })();
+    }, 2500);
+    return () => { alive = false; clearInterval(timer); };
+  }, [qoderLogin.phase, t]);
+
   const loadTurnHistory = useCallback(async (id: string, sessionId = selectedSessionIdRef.current) => {
     if (selectedIdRef.current !== id || selectedSessionIdRef.current !== sessionId) return false;
     const requestVersion = ++historyRequest.current;
@@ -1505,6 +1561,7 @@ function AppInner({
       modelPinnable: health?.hosts?.qoder.modelPinnable,
       model: health?.hosts?.qoder.model,
       connection: health?.hosts?.qoder.connection,
+      loginRequired: health?.hosts?.qoder.loginRequired === true,
     },
     "claude-code": {
       configured: health?.hosts?.["claude-code"].configured === true,
@@ -1547,6 +1604,27 @@ function AppInner({
       model: health?.hosts?.workbuddy?.model,
     },
   }), [health, t]);
+
+  /** Login repair surface for the composer notice: offered only while the
+   * bundled Qoder Host says the missing login is its sole blocker. */
+  const qoderLoginSurface = health?.hosts?.qoder.loginRequired === true && health?.hosts?.qoder.ready !== true
+    ? {
+      action: {
+        label: qoderLogin.phase === "running" ? t("misc.qoderLoginRunning") : t("misc.qoderLogin"),
+        busy: qoderLogin.phase !== "idle",
+        onClick: () => void startQoderLogin(),
+      },
+      feedback: qoderLogin.feedback,
+      ...(qoderLogin.loginUrl !== null
+        ? {
+          link: {
+            label: t("misc.qoderLoginOpenBrowser"),
+            onClick: () => { void window.owb.openExternalUrl?.(qoderLogin.loginUrl as string); },
+          },
+        }
+        : {}),
+    }
+    : undefined;
 
   /** A visible conversation has exactly one employee-selected runtime. For
    * legacy employees this supplies the first request used by the server to
@@ -2056,6 +2134,7 @@ function AppInner({
           }
           right={<TurnPanel
             availabilityCheck={availabilityCheck}
+            qoderLogin={qoderLoginSurface}
             key={workspaceInfo?.path}
             workspaceKey={workspaceInfo?.path}
             memory={conversationMemory.current}

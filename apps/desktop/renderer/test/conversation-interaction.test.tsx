@@ -16,7 +16,7 @@ function props(overrides: Partial<TurnPanelProps> = {}): TurnPanelProps {
 }
 
 describe("conversation interaction refinements without a frame redesign", () => {
-  it.each([true, false, undefined])("shows a noninteractive branded Agent for engineLocked=%s without changing the employee or draft", (engineLocked) => {
+  it.each([true, undefined])("shows a noninteractive branded Agent for engineLocked=%s without changing the employee or draft", (engineLocked) => {
     const selectEngine = vi.fn();
     const { container } = render(<TurnPanel {...props({ engineLocked, onSelectEngine: selectEngine })} />);
     const header = container.querySelector(".owb-turn-panel__header")!;
@@ -30,6 +30,13 @@ describe("conversation interaction refinements without a frame redesign", () => 
     fireEvent.click(badge);
     expect(selectEngine).not.toHaveBeenCalled();
     expect(screen.getByLabelText("下达任务")).toHaveValue("Keep draft");
+  });
+  it("shows an interactive EngineSelect when engineLocked=false", () => {
+    const selectEngine = vi.fn();
+    const { container } = render(<TurnPanel {...props({ engineLocked: false, onSelectEngine: selectEngine })} />);
+    const header = container.querySelector(".owb-turn-panel__header")!;
+    expect(within(header as HTMLElement).getByRole("combobox", { name: "选择 Agent Host" })).toBeInTheDocument();
+    expect(header.querySelector(".owb-engine-badge")).toBeNull();
   });
   it("protects an existing draft and re-edits into a new task without changing history", async () => {
     const create = vi.fn().mockResolvedValue(true);

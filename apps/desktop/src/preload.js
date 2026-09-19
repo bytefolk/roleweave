@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld("owb", {
   },
   openExternalUrl: (url) => ipcRenderer.invoke("owb:external:open", url),
   status: () => ipcRenderer.invoke("owb:status"),
+  qoderLogin: {
+    start: () => ipcRenderer.invoke("owb:qoder:login"),
+    status: () => ipcRenderer.invoke("owb:qoder:login-status"),
+  },
   stopControlPlane: () => ipcRenderer.invoke("owb:control-plane:stop"),
   openWorkspace: () => ipcRenderer.invoke("owb:workspace:open"),
   initializeWorkspace: (request) => ipcRenderer.invoke("owb:workspace:initialize", request),
