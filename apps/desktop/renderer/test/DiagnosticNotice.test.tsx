@@ -31,3 +31,26 @@ describe("availability actions", () => {
     expect(submit).not.toHaveBeenCalled();
   });
 });
+
+describe("primary repair action", () => {
+  it("offers the repair action ahead of recheck and reports its outcome", async () => {
+    const onClick = vi.fn();
+    const { rerender } = render(
+      <DiagnosticNotice message="Qoder CLI 尚未登录" primaryAction={{ label: "一键登录", onClick }} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "一键登录" }));
+    expect(onClick).toHaveBeenCalledExactlyOnceWith();
+    rerender(
+      <DiagnosticNotice
+        message="Qoder CLI 尚未登录"
+        primaryAction={{ label: "登录中…", busy: true, onClick }}
+        linkAction={{ label: "在浏览器打开登录页", onClick }}
+        primaryFeedback="登录未完成，请重试或手动运行 qodercli login"
+      />,
+    );
+    expect(screen.getByRole("button", { name: /登录中…/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "在浏览器打开登录页" }));
+    expect(onClick).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("登录未完成，请重试或手动运行 qodercli login")).toBeVisible();
+  });
+});

@@ -95,7 +95,7 @@ const {
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
 } = require("./goal-ipc.cjs");
-const { openWorkspaceWithPicker, createWorkspaceWithPicker, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
+const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
 const { runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
@@ -387,12 +387,22 @@ ipcMain.handle("owb:control-plane:stop", async () => {
   return { ok: true, ...result };
 });
 
+// One-click Qoder CLI login: the control plane owns the child process; the
+// renderer only starts it and observes its state (see routes/qoder-login.ts).
+ipcMain.handle("owb:qoder:login", async () => apiRequest("/qoder/login", { method: "POST" }));
+ipcMain.handle("owb:qoder:login-status", async () => apiRequest("/qoder/login", { method: "GET" }));
+
 function pickWorkspaceDirectory(options) {
   return mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options);
 }
 
 ipcMain.handle("owb:workspace:open", async () => openWorkspaceWithPicker({
   pickDirectory: pickWorkspaceDirectory, apiRequest, env: desktopEnv,
+  userDataPath: app.getPath("userData"),
+}));
+
+ipcMain.handle("owb:workspace:initialize", async (_event, request) => initializeWorkspace({
+  request, apiRequest, env: desktopEnv,
   userDataPath: app.getPath("userData"),
 }));
 

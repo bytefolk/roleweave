@@ -14,6 +14,11 @@ const MAX_PROJECT_ID_LENGTH = 48;
 const MAX_DESCRIPTION_CHARACTERS = 1024;
 const TURN_ENGINES = new Set(TURN_ENGINE_IDS);
 const KNOWN_KEYS = new Set(["projectId", "business", "description", "agentEngine"]);
+const INITIALIZE_KNOWN_KEYS = new Set(["path", "projectId", "business", "description", "agentEngine"]);
+
+function isAbsoluteNativePath(value) {
+  return path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || /^\\\\/.test(value);
+}
 
 function invalid(message) {
   return { status: 400, body: { code: "workspace_invalid", message, retryable: false } };
@@ -49,6 +54,26 @@ function validateWorkspaceCreateRequest(value) {
   };
 }
 
+function validateWorkspaceInitializeRequest(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, response: invalid("workspace initialize request must be an object") };
+  }
+  if (Object.keys(value).some((key) => !INITIALIZE_KNOWN_KEYS.has(key))) {
+    return { ok: false, response: invalid("workspace initialize accepts path, projectId, business, description, and optional agentEngine") };
+  }
+  if (typeof value.path !== "string" || value.path.trim().length === 0 || !isAbsoluteNativePath(value.path.trim())) {
+    return { ok: false, response: invalid("path must be an absolute directory path") };
+  }
+  const base = validateWorkspaceCreateRequest({
+    projectId: value.projectId,
+    business: value.business,
+    description: value.description,
+    ...(value.agentEngine === undefined ? {} : { agentEngine: value.agentEngine }),
+  });
+  if (!base.ok) return base;
+  return { ok: true, request: { path: value.path.trim(), ...base.request } };
+}
+
 function rememberWorkspace(userDataPath, nativePath) {
   try {
     // Keep the picker path, including its WSL distribution, for a later reopen.
@@ -69,6 +94,19 @@ async function openWorkspaceWithPicker({ pickDirectory, apiRequest, env, userDat
     method: "POST", body: { path: serverPath },
   });
   if (res.status === 200) rememberWorkspace(userDataPath, dir);
+  return res.status === 200 ? res : { ...res, workspacePath: dir };
+}
+
+async function initializeWorkspace({ request, apiRequest, env, userDataPath }) {
+  const validated = validateWorkspaceInitializeRequest(request);
+  if (!validated.ok) return validated.response;
+  let serverPath;
+  try { serverPath = serverPathForWorkspace(validated.request.path, env); }
+  catch (error) { return invalid(error.message); }
+  const res = await apiRequest("/workspace/initialize", {
+    method: "POST", body: { ...validated.request, path: serverPath },
+  });
+  if (res.status === 201 && res.body?.path) rememberWorkspace(userDataPath, validated.request.path);
   return res;
 }
 
@@ -138,7 +176,9 @@ async function revealWorkspaceInFileManager({ apiRequest, env, openPath }) {
 
 module.exports = {
   validateWorkspaceCreateRequest,
+  validateWorkspaceInitializeRequest,
   openWorkspaceWithPicker,
+  initializeWorkspace,
   createWorkspaceWithPicker,
   nativePathForServerPath,
   revealWorkspaceInFileManager,

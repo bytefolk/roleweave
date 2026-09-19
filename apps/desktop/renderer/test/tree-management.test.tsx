@@ -13,6 +13,16 @@ describe("tree management and knowledge boundaries", () => {
     expect(action).toHaveBeenCalledWith("alice", "settings");
     expect(select).not.toHaveBeenCalled();
   });
+  it("puts creating a subordinate first in an employee context menu", async () => {
+    const action = vi.fn();
+    render(<TreeRowMenu id="alice" name="Alice" busy={false} onAction={action}><div>Alice row</div></TreeRowMenu>);
+    fireEvent.contextMenu(screen.getByText("Alice row"));
+
+    const items = await screen.findAllByRole("menuitem");
+    expect(items[0]).toHaveTextContent("创建下属员工");
+    fireEvent.click(items[0]);
+    expect(action).toHaveBeenCalledWith("alice", "hire");
+  });
   it("offers record editing for the right-clicked position from both menu triggers", async () => {
     const action = vi.fn();
     render(<TreeRowMenu id="alice" name="Alice" busy={false} onAction={action}><div>Alice row</div></TreeRowMenu>);
@@ -20,7 +30,7 @@ describe("tree management and knowledge boundaries", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "编辑" }));
     expect(action).toHaveBeenCalledWith("alice", "edit");
   });
-  it("exposes the same edit entry from a position ellipsis, and never on the enterprise row", async () => {
+  it("exposes the same edit entry from a position ellipsis, while the project menu stays edit-free", async () => {
     const action = vi.fn();
     render(<TreeRowMenu id="alice" name="Alice" busy={false} onAction={action} />);
     fireEvent.click(screen.getByRole("button", { name: "Alice 的更多操作" }));

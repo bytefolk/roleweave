@@ -1,4 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { HireDrawer } from "../src/org/HireDrawer";
 import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
@@ -36,6 +39,13 @@ function renderCreateDrawer() {
 }
 
 describe("HireDrawer header close control (#301)", () => {
+  it("keeps the create form compact and visually separated from the drawer chrome", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/roleweave-components.css"), "utf8");
+    expect(css).toMatch(/\.owb-hire-drawer-shell--create \.ant-drawer-header\s*\{[^}]*padding:\s*18px 24px/s);
+    expect(css).toMatch(/\.owb-hire-drawer-shell--create \.owb-hire-shell__scroll\s*\{[^}]*padding:\s*20px 24px 28px/s);
+    expect(css).toMatch(/\.owb-hire-drawer-shell--create \.owb-hire-drawer--conversation\s*\{[^}]*max-width:\s*680px[^}]*margin:\s*0 auto/s);
+    expect(css).toMatch(/\.owb-hire-drawer-shell--create \.owb-hire-footer\s*\{[^}]*gap:\s*10px[^}]*padding:\s*14px 24px/s);
+  });
   it("renders the create drawer without a header close button", () => {
     renderCreateDrawer();
     // The drawer must actually be on screen for the absence to mean anything.
@@ -54,5 +64,36 @@ describe("HireDrawer header close control (#301)", () => {
     // so the name is matched with a whitespace-tolerant regex.
     fireEvent.click(screen.getByRole("button", { name: /取\s*消/ }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows choosing the employee Agent in the create drawer", () => {
+    renderCreateDrawer();
+
+    fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
+    fireEvent.click(screen.getByRole("option", { name: "WorkBuddy" }));
+
+    expect(screen.getByRole("button", { name: /员工 Agent/ })).toHaveTextContent("WorkBuddy");
+  });
+
+  it("keeps optional drafting and advanced configuration collapsed by default", () => {
+    renderCreateDrawer();
+
+    const assist = screen.getByText("让 Agent 帮我生成草案").closest("details");
+    const advanced = screen.getByText("高级配置").closest("details");
+    expect(assist).not.toBeNull();
+    expect(advanced).not.toBeNull();
+    expect(assist).not.toHaveAttribute("open");
+    expect(advanced).not.toHaveAttribute("open");
+  });
+
+  it("reveals the optional drafting and advanced configuration on demand", () => {
+    renderCreateDrawer();
+
+    fireEvent.click(screen.getByText("让 Agent 帮我生成草案"));
+    fireEvent.click(screen.getByText("高级配置"));
+
+    expect(screen.getByLabelText("岗位创建对话").closest("details")).toHaveAttribute("open");
+    expect(screen.getByLabelText("附加能力与授权").closest("details")).toHaveAttribute("open");
+    expect(screen.getByLabelText("员工头像").closest("details")).toHaveAttribute("open");
   });
 });

@@ -30,6 +30,7 @@ import type {
   GoalSummary,
   GoalsCreateResponse,
   HealthResponse,
+  QoderLoginResponse,
   ChangeManifest,
   CancelTurnRequest,
   HirePositionRequest,
@@ -50,11 +51,14 @@ import type {
   WorkbenchSession,
   WorkbenchSessionList,
   WorkspaceCreateRequest,
+  WorkspaceInitializeRequest,
 } from "@roleweave/shared";
 
 interface OwbApiResponse<T = unknown> {
   status: number;
   body: T;
+  /** Native path selected by the picker when an open attempt fails. */
+  workspacePath?: string;
 }
 
 interface OwbStatusResponse {
@@ -80,9 +84,15 @@ export interface OwbBridge {
   setPositionAgentEngine?(request: { positionId: string; engine: TurnEngine }): Promise<OwbApiResponse<{ agentEngine: TurnEngine; agentLocked: true; modelConfig: import("@roleweave/shared").EmployeeModelConfig }>>;
   updatePositionProfile?(request: PositionProfilePatch & { positionId: string }): Promise<OwbApiResponse<PositionProfileResult>>;
   status(): Promise<OwbStatusResponse>;
+  /** One-click Qoder CLI login owned by the control plane. */
+  qoderLogin: {
+    start(): Promise<OwbApiResponse<QoderLoginResponse>>;
+    status(): Promise<OwbApiResponse<QoderLoginResponse>>;
+  };
   stopControlPlane(): Promise<{ ok: boolean; state: "stopped"; forced: boolean; exitCode: number | null; signalCode: string | null }>;
   openWorkspace(): Promise<OwbApiResponse>;
   createWorkspace(request: Omit<WorkspaceCreateRequest, "parentPath">): Promise<OwbApiResponse | { canceled: true }>;
+  initializeWorkspace?(request: WorkspaceInitializeRequest): Promise<OwbApiResponse>;
   workspace(): Promise<OwbApiResponse>;
   /** Reveal the open workspace in the OS file manager. Takes no argument: the main process re-reads the open workspace itself. */
   revealWorkspace?(): Promise<{ opened: boolean; path?: string; reason?: string }>;

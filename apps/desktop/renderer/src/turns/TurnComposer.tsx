@@ -1,9 +1,9 @@
-import type { FormEvent, ReactNode } from "react";
+import { useLayoutEffect, useRef, type FormEvent, type ReactNode } from "react";
 import { Button as AntButton, Input } from "antd";
 import { ArrowUp, Square } from "lucide-react";
 import { useConversationCopy } from "../locales/conversation";
 import { useT } from "@roleweave/ui";
-import { DiagnosticNotice, type AvailabilityCheck } from "../DiagnosticNotice";
+import { DiagnosticNotice, type AvailabilityCheck, type NoticeAction } from "../DiagnosticNotice";
 
 export interface TurnComposerProps {
   options?: ReactNode;
@@ -16,6 +16,10 @@ export interface TurnComposerProps {
   disabledDiagnostic?: string;
   diagnosticKey?: string;
   availabilityCheck?: AvailabilityCheck;
+  /** Repair action for the current block (e.g. one-click Qoder login). */
+  primaryAction?: NoticeAction;
+  linkAction?: NoticeAction;
+  primaryFeedback?: string | null;
   running: boolean;
   cancelling?: boolean;
   canCancel: boolean;
@@ -38,6 +42,9 @@ export function TurnComposer({
   disabledDiagnostic,
   diagnosticKey,
   availabilityCheck,
+  primaryAction,
+  linkAction,
+  primaryFeedback,
   running,
   cancelling = false,
   canCancel,
@@ -47,6 +54,15 @@ export function TurnComposer({
 }: TurnComposerProps) {
   const t = useT();
   const copy = useConversationCopy();
+  const composing = useRef(false);
+  const pendingCaret = useRef<{ input: HTMLTextAreaElement; value: string; offset: number } | null>(null);
+  useLayoutEffect(() => {
+    const pending = pendingCaret.current;
+    pendingCaret.current = null;
+    if (pending && pending.input.isConnected && pending.input.value === pending.value) {
+      pending.input.setSelectionRange(pending.offset, pending.offset);
+    }
+  });
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!running && !disabledReason && value.trim()) void onSend();
@@ -63,11 +79,25 @@ export function TurnComposer({
           placeholder={placeholder}
           disabled={draftDisabled ?? (disabledReason !== null && !running)}
           onChange={(event) => onChange(event.target.value)}
+          onCompositionStart={() => { composing.current = true; }}
+          onCompositionEnd={() => { composing.current = false; }}
           onKeyDown={(event) => {
-            // Enter sends; Shift+Enter keeps multiline input. During Chinese
-            // IME composition Enter only commits the selected candidate.
+            // Preserve the configured send shortcut and native Shift+Enter.
+            // IME confirmation must neither send nor insert an extra newline.
             const native = event.nativeEvent as KeyboardEvent;
-            if (native.isComposing || native.keyCode === 229) return;
+            if (composing.current || native.isComposing || native.keyCode === 229) return;
+            if (event.key === "Enter" && sendShortcut === "enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              const input = event.currentTarget;
+              const start = input.selectionStart;
+              const nextValue = `${value.slice(0, start)}\n${value.slice(input.selectionEnd)}`;
+              // Restore the caret after the controlled value commits, on this
+              // textarea only; switching conversations must not move another caret.
+              if (nextValue === value) input.setSelectionRange(start + 1, start + 1);
+              else pendingCaret.current = { input, value: nextValue, offset: start + 1 };
+              onChange(nextValue);
+              return;
+            }
             if (event.key === "Enter" && !event.shiftKey && (sendShortcut === "enter" ? !event.metaKey && !event.ctrlKey : event.metaKey || event.ctrlKey)) {
               event.preventDefault();
               if (!running && !disabledReason && value.trim()) void onSend();
@@ -105,6 +135,9 @@ export function TurnComposer({
             : disabledSummary ?? disabledReason!}
           diagnostic={running ? undefined : disabledDiagnostic}
           availabilityCheck={running ? undefined : availabilityCheck}
+          primaryAction={running ? undefined : primaryAction}
+          linkAction={running ? undefined : linkAction}
+          primaryFeedback={running ? undefined : primaryFeedback}
           diagnosticKey={diagnosticKey} />
       ) : <p className="owb-turn-composer__shortcut">{sendShortcut === "mod-enter" ? copy.modEnterHint : t("turn.keyboardHint")}</p>}
     </form>

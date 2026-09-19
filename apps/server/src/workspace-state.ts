@@ -70,6 +70,13 @@ export class WorkspaceState {
     }
     const organization = await this.readOrganizationFile(dir);
     this.assertOrganizationStructure(organization, errorCodes.workspace_invalid, 422);
+    if (organization.roles.length === 0) {
+      throw new OrgApiError(
+        errorCodes.workspace_invalid,
+        422,
+        "organization has no employees; initialize the directory or create a project owner first",
+      );
+    }
     let positionsStat;
     try {
       positionsStat = await fs.stat(path.join(dir, POSITIONS_DIR));
