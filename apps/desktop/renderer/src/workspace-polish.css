@@ -51,6 +51,10 @@
   color: var(--ui-foreground-muted);
 }
 .owb-report-metric.is-warning strong { color: var(--ui-warning-strong); }
+@media (prefers-reduced-motion: reduce) {
+  .owb-report-metric,
+  .owb-report-metric::before { transition: none; }
+}
 .owb-report-scope {
   margin: 4px 0 4px;
   padding: 8px 12px;
