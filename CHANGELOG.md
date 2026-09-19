@@ -7,6 +7,8 @@
 
 ### Added
 
+- #356: design-only multi-agent branch heads and handoff-carried checkpoint refs (`docs/design/memory-branch-handoff-v1.md`). No silent head clobber; handoff does not copy grants. No runtime.
+
 - #355: design-only pin/disable/inspect/forget controls (`docs/design/memory-controls-v1.md`). Forget failure is visible; no local fake delete. No runtime.
 
 - #354: design-only assembly receipt UI (`docs/design/assembly-receipt-ui-v1.md`). Admission authority is UTF-8 bytes; model tokens are a separate cost cap. UI counts must equal the receipt. No runtime.
