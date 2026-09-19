@@ -1,4 +1,4 @@
-import type { ApprovalContext, ApprovalRequestedEvent, OrgRole } from "@roleweave/shared";
+import { redactApprovalSecrets, type ApprovalContext, type ApprovalRequestedEvent, type OrgRole } from "@roleweave/shared";
 
 const MAX_SUMMARY_BYTES = 2048;
 
@@ -6,11 +6,7 @@ const MAX_SUMMARY_BYTES = 2048;
  * and approval records retain the engine contract for source validation, but
  * the approval view only exposes this bounded presentation summary. */
 export function redactApprovalText(value: string): string {
-  let result = value;
-  result = result.replace(/(https?:\/\/)([^/\s:@]+):([^@\s]+)@/gi, "$1[redacted]@");
-  result = result.replace(/([?&](?:access[_-]?token|api[_-]?key|auth|credential|password|secret|token)=)[^&\s]+/gi, "$1[redacted]");
-  result = result.replace(/(\b(?:authorization|cookie|password|passphrase|secret|token|api[_-]?key|access[_-]?token)\s*[:=]\s*(?:Bearer\s+)?)("[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1[redacted]");
-  result = result.replace(/(\bBearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, "$1[redacted]");
+  const result = redactApprovalSecrets(value);
   const bytes = Buffer.byteLength(result, "utf8");
   if (bytes <= MAX_SUMMARY_BYTES) return result;
   return `${Buffer.from(result, "utf8").subarray(0, MAX_SUMMARY_BYTES - 3).toString("utf8")}...`;
