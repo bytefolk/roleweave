@@ -7,6 +7,8 @@
 
 ### Added
 
+- #354: design-only assembly receipt UI (`docs/design/assembly-receipt-ui-v1.md`). Admission authority is UTF-8 bytes; model tokens are a separate cost cap. UI counts must equal the receipt. No runtime.
+
 - #352: design-only routing table among #143 short window, #327 durable memory, and #347 Knowledge Base (`docs/design/memory-routing-v1.md`). Does not close #143. No runtime.
 
 - #348: design-only user remember/correct/forget acts (`docs/design/memory-user-acts-v1.md`). Write responses are created/stored; admitted/omitted only on the next receipt. Append-only supersession. Recalled text stays untrusted. No runtime.
