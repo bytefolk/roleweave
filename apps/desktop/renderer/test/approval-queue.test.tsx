@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ApprovalQueue } from "../src/approvals/ApprovalQueue";
 import type { ApprovalQueueItem } from "../src/approvals/types";
@@ -271,5 +271,63 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看即将过期" }));
     expect(screen.getByTestId("approval-card-expiring")).toBeInTheDocument();
     expect(screen.queryByTestId("approval-card-expired")).toBeNull();
+  });
+
+  it("refreshes an approval card's expiry marker on the shared minute tick", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-27T14:00:00.000Z"));
+    try {
+      render(
+        <ApprovalQueue
+          items={[makeItem({ expiresAt: new Date(Date.now() + 60_000).toISOString() })]}
+          onApprove={noop}
+          onDeny={noop}
+        />,
+      );
+      expect(screen.getByText("即将过期")).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(screen.queryByText("即将过期")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends a privacy-safe desktop alert when permission is granted", async () => {
+    const previous = window.Notification;
+    const notify = vi.fn();
+    class TestNotification {
+      static permission: NotificationPermission = "granted";
+      static requestPermission = vi.fn(async () => "granted" as NotificationPermission);
+      constructor(title: string, options?: NotificationOptions) { notify(title, options); }
+    }
+    Object.defineProperty(window, "Notification", { configurable: true, value: TestNotification });
+    try {
+      const { rerender } = render(<ApprovalQueue items={[]} onApprove={noop} onDeny={noop} />);
+      rerender(<ApprovalQueue items={[makeItem({ target: "https://alice:secret@example.com/?token=top-secret" })]} onApprove={noop} onDeny={noop} />);
+      await waitFor(() => expect(notify).toHaveBeenCalledWith(
+        "有新的待审批请求",
+        expect.objectContaining({ body: expect.not.stringContaining("top-secret") }),
+      ));
+    } finally {
+      Object.defineProperty(window, "Notification", { configurable: true, value: previous });
+    }
+  });
+
+  it("requests desktop-notification permission only from the enable action", async () => {
+    const previous = window.Notification;
+    class TestNotification {
+      static permission: NotificationPermission = "default";
+      static requestPermission = vi.fn(async () => "granted" as NotificationPermission);
+    }
+    Object.defineProperty(window, "Notification", { configurable: true, value: TestNotification });
+    try {
+      render(<ApprovalQueue items={[]} onApprove={noop} onDeny={noop} />);
+      expect(TestNotification.requestPermission).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "开启桌面提醒" }));
+      await waitFor(() => expect(TestNotification.requestPermission).toHaveBeenCalledTimes(1));
+      expect(screen.queryByRole("button", { name: "开启桌面提醒" })).toBeNull();
+    } finally {
+      Object.defineProperty(window, "Notification", { configurable: true, value: previous });
+    }
   });
 });

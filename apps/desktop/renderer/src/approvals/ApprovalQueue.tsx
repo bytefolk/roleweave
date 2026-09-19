@@ -6,7 +6,7 @@
  * callbacks to the shared approval cache. The server resolves the source
  * conversation and constructs the resume turn; the UI never chooses it.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Input, List, Select, Segmented, Tag, Tooltip } from "antd";
 import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
@@ -24,6 +24,7 @@ import { decodeEscapedUnicode } from "../display-text";
 export type ApprovalQueueFilter = "pending" | "decided" | "all";
 export type ApprovalExpiryFilter = "all" | "active" | "expiring" | "expired";
 export type ApprovalQueueDataState = "ready" | "not-connected";
+type DesktopNotificationPermission = NotificationPermission | "unsupported";
 
 export interface ApprovalQueueProps extends ApprovalQueueCallbacks {
   items: ApprovalQueueItem[];
@@ -71,6 +72,11 @@ function decisionCssState(item: ApprovalQueueItem): string {
   return item.decision.kind;
 }
 
+function desktopNotificationPermission(): DesktopNotificationPermission {
+  if (typeof window === "undefined" || typeof window.Notification !== "function") return "unsupported";
+  return window.Notification.permission;
+}
+
 export function ApprovalQueue({
   items,
   loading,
@@ -93,11 +99,35 @@ export function ApprovalQueue({
   const [toDate, setToDate] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [notificationPermission, setNotificationPermission] = useState<DesktopNotificationPermission>(desktopNotificationPermission);
+  const notificationSnapshot = useRef<Map<string, { status: ApprovalQueueItem["decision"]["kind"]; expiry: ReturnType<typeof expiryState> }>>();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    const next = new Map(items.map(item => [item.approvalId, { status: item.decision.kind, expiry: expiryState(item, now) }]));
+    const previous = notificationSnapshot.current;
+    notificationSnapshot.current = next;
+    if (!previous || notificationPermission !== "granted" || typeof window.Notification !== "function") return;
+
+    const notify = (title: string, body: string, tag: string) => {
+      try { new window.Notification(title, { body, tag }); } catch { /* BrowserWindow may decline notifications. */ }
+    };
+    for (const item of items) {
+      const before = previous.get(item.approvalId);
+      const position = safeApprovalText(decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition")));
+      if (!before && item.decision.kind === "pending") {
+        notify(t("apr.notificationNewTitle"), t("apr.notificationNewBody", { position, category: t(`apr.kind.${item.category}`) }), `approval-${item.approvalId}`);
+      } else if (before?.status === "pending" && item.decision.kind !== "pending") {
+        notify(t("apr.notificationDecisionTitle"), t("apr.notificationDecisionBody", { position, status: decisionLabel(item, t) }), `approval-${item.approvalId}`);
+      } else if (before?.expiry !== "expiring" && next.get(item.approvalId)?.expiry === "expiring") {
+        notify(t("apr.notificationExpiryTitle"), t("apr.notificationExpiryBody", { position }), `approval-${item.approvalId}`);
+      }
+    }
+  }, [items, notificationPermission, now, t]);
 
   const pendingCount = useMemo(
     () => items.filter((item) => item.decision.kind === "pending").length,
@@ -146,6 +176,10 @@ export function ApprovalQueue({
     setExpiryFilter(undefined);
     setFromDate("");
     setToDate("");
+  };
+  const enableDesktopNotifications = async () => {
+    if (typeof window.Notification !== "function") return;
+    try { setNotificationPermission(await window.Notification.requestPermission()); } catch { setNotificationPermission(desktopNotificationPermission()); }
   };
 
   const selectedItem = useMemo(
@@ -247,6 +281,7 @@ export function ApprovalQueue({
           data-testid="approval-filter-to"
         />
         {hasAdvancedFilters ? <Button type="link" onClick={clearAdvancedFilters}>{t("apr.clearFilters")}</Button> : null}
+        {notificationPermission === "default" ? <Button type="link" onClick={() => void enableDesktopNotifications()}>{t("apr.enableDesktopNotifications")}</Button> : null}
         <span className="owb-approval-queue__count">{t("apr.filteredRecords", { visible: visible.length, total: items.length })}</span>
       </div>
 
@@ -296,6 +331,7 @@ export function ApprovalQueue({
             <List.Item className="owb-approval-queue__item">
               <ApprovalCard
                 item={item}
+                now={now}
                 onOpen={() => setSelectedId(item.approvalId)}
               />
             </List.Item>
@@ -370,10 +406,11 @@ function ApprovalEmptyState({
 
 interface ApprovalCardProps {
   item: ApprovalQueueItem;
+  now: number;
   onOpen: () => void;
 }
 
-function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
+function ApprovalCard({ item, now, onOpen }: ApprovalCardProps) {
   const t = useT();
   const localeTag = useOwbLocale() === "en" ? "en-US" : "zh-CN";
   const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
@@ -381,7 +418,7 @@ function ApprovalCard({ item, onOpen }: ApprovalCardProps) {
   const target = item.target ? safeApprovalText(decodeEscapedUnicode(item.target)) : undefined;
   const overreach = isPermissionOverreach(item);
   const decided = isDecided(item);
-  const expiringSoon = expiryState(item, Date.now()) === "expiring";
+  const expiringSoon = expiryState(item, now) === "expiring";
   const decisionTagColor = !decided
     ? "blue"
     : item.decision.kind === "granted"
