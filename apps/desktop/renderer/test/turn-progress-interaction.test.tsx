@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TurnThread } from "../src/turns/TurnThread";
 import type { TurnRecord } from "../src/turns/types";
@@ -29,6 +31,38 @@ describe("conversation progress disclosure", () => {
     expect(screen.queryByText(/执行工具/)).not.toBeInTheDocument();
     act(() => vi.advanceTimersByTime(2000));
     expect(screen.getByRole("timer")).toHaveTextContent("10s");
+  });
+
+  it("exposes real live motion hooks and removes them when the turn completes", () => {
+    const { rerender } = render(<TurnThread turns={[turn()]} />);
+    const progress = screen.getByRole("group", { name: "执行进展" });
+    const liveStep = document.querySelector('[aria-current="step"]');
+    expect(progress).toHaveAttribute("data-motion", "live");
+    expect(liveStep).toHaveClass("is-current");
+    expect(liveStep).toHaveAttribute("data-motion", "active");
+    expect(liveStep?.querySelector(".owb-turn-progress__activity")).toBeInTheDocument();
+
+    rerender(<TurnThread turns={[turn({ status: "completed", completedAt: ended,
+      progress: [...turn().progress!, { kind: "completed", at: ended }] })]} />);
+    expect(progress).not.toHaveAttribute("data-motion");
+    expect(document.querySelector(".owb-turn-progress__activity")).toBeNull();
+  });
+
+  it("ships state-driven motion with a complete reduced-motion fallback", () => {
+    const css = readFileSync(join(process.cwd(), "apps/desktop/renderer/src/roleweave-conversation.css"), "utf8");
+    expect(css).toContain("@keyframes owb-progress-step-in");
+    expect(css).toContain("@keyframes owb-progress-activity");
+    expect(css).toContain("@keyframes owb-progress-rail");
+    expect(css).toMatch(/\[data-motion="live"\][^{]*::after/);
+    expect(css).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*:is\(\[data-theme="light"\], \[data-theme="dark"\]\) \.owb-app \.owb-turn-progress__spinner,[\s\S]*:is\(\[data-theme="light"\], \[data-theme="dark"\]\) \.owb-app \.owb-turn-progress__step[\s\S]*animation:\s*none/);
+  });
+
+  it("does not animate a running record that is waiting for approval", () => {
+    render(<TurnThread turns={[turn({ approvalRequest: {
+      approvalId: "approve-live", kind: "write", description: "保存检查结果",
+    }, progress: [...turn().progress!, { kind: "awaiting_approval", at: ended }] })]} />);
+    expect(screen.getByRole("group", { name: "执行进展" })).not.toHaveAttribute("data-motion");
+    expect(document.querySelector(".owb-turn-progress__activity")).toBeNull();
   });
 
   it("preserves a user's closed disclosure while streamed output changes", () => {

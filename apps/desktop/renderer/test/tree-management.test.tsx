@@ -13,6 +13,16 @@ describe("tree management and knowledge boundaries", () => {
     expect(action).toHaveBeenCalledWith("alice", "settings");
     expect(select).not.toHaveBeenCalled();
   });
+  it("puts creating a subordinate first in an employee context menu", async () => {
+    const action = vi.fn();
+    render(<TreeRowMenu id="alice" name="Alice" busy={false} onAction={action}><div>Alice row</div></TreeRowMenu>);
+    fireEvent.contextMenu(screen.getByText("Alice row"));
+
+    const items = await screen.findAllByRole("menuitem");
+    expect(items[0]).toHaveTextContent("创建下属员工");
+    fireEvent.click(items[0]);
+    expect(action).toHaveBeenCalledWith("alice", "hire");
+  });
   it("offers record editing for the right-clicked position from both menu triggers", async () => {
     const action = vi.fn();
     render(<TreeRowMenu id="alice" name="Alice" busy={false} onAction={action}><div>Alice row</div></TreeRowMenu>);

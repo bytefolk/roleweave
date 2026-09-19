@@ -1,10 +1,18 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { OrgTreeSnapshot } from "@roleweave/shared";
 import { describe, expect, it, vi } from "vitest";
 import { OrgTree } from "../src/org-tree";
 import { SNAPSHOT } from "./fixtures";
 
 describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
+  it("keeps row highlights inset from both sidebar edges", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/styles.css"), "utf8");
+    expect(css).toMatch(/\.ui-org-tree\s*\{[^}]*padding:\s*6px 8px 12px/s);
+    expect(css).toMatch(/\.ui-org-tree__row\s*\{[^}]*box-sizing:\s*border-box/s);
+  });
   it("renders enterprise root + nested positions: root=企业, owner beneath, children by reportTo", () => {
     render(<OrgTree snapshot={SNAPSHOT} />);
     const tree = screen.getByRole("tree");
