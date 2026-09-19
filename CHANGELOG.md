@@ -7,6 +7,8 @@
 
 ### Added
 
+- #348: design-only user remember/correct/forget acts (`docs/design/memory-user-acts-v1.md`). Write responses are created/stored; admitted/omitted only on the next receipt. Append-only supersession. Recalled text stays untrusted. No runtime.
+
 - #349：private / position / team memory grants 设计稿（`docs/design/memory-grants-v1.md`）。pin mem#221 `e0e47c7`；employee-private 用不可复用 `employee.<hire_id>`（需 mem additive，不能用可换人的 position seat）；team/task 展开为每成员一条 mem grant 行，不引入 `task.*` principal；越权 receipt / handoff 不携带 memoryId。无运行时；#327 D0 / #345 未接受，不当作已定基线。
 
 
