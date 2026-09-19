@@ -3,13 +3,8 @@
  *
  * Reads a props-injected `items: ApprovalQueueItem[]` and renders a queue
  * of approval cards. Wired-in interactions (approve / deny) forward via
- * `callbacks` up to App.tsx, which is responsible for building the
- * `pendingApproval`-carrying resume turn.
- *
- * DATA GAP (TODO, v0):
- *   v0 has no dedicated `/approvals` HTTP stream; items are supplied by the
- *   host. v1 derives the list from bounded turn-history scan + SSE
- *   `turn.approval.requested`. UI shape is stable across that swap.
+ * callbacks to the shared approval cache. The server resolves the source
+ * conversation and constructs the resume turn; the UI never chooses it.
  */
 import { useMemo, useState } from "react";
 import { Alert, Button, List, Segmented, Tag, Tooltip } from "antd";
@@ -64,6 +59,9 @@ function decisionLabel(item: ApprovalQueueItem, t: OwbT): string {
       return t("apr.decisionDenied");
     case "expired":
       return t("apr.decisionExpired");
+    case "cancelled":
+    case "indeterminate":
+      return t(`apr.status.${item.decision.kind}`);
   }
 }
 

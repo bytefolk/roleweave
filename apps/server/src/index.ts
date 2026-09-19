@@ -20,6 +20,7 @@ import { GroupStore } from "./groups/store.js";
 import { GoalStore } from "./goals/store.js";
 import { ContextCliAdapterClient } from "./context-export/adapter-cli.js";
 import { ContextExportService } from "./context-export/exporter.js";
+import { approvals } from "./approvals/service.js";
 
 const config = resolveServerConfig(process.env, process.argv.slice(2));
 const driver = new DigitalEmployeeCliDriver(
@@ -59,7 +60,7 @@ server.on("clientError", (_err, socket) => {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
-    server.close(() => process.exit(0));
+    server.close(() => { void approvals(ctx).close().finally(() => process.exit(0)); });
     setTimeout(() => process.exit(0), 2_000).unref();
   });
 }

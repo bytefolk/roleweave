@@ -196,11 +196,12 @@ function ApprovalCard({
   const request = turn.approvalRequest;
   if (request === undefined) return null;
   const trimmedReason = reason.trim();
+  const disabled = busy || turn.approvalControl?.disabled === true || new TextEncoder().encode(trimmedReason).length > 1024;
   return (
     <div className={`owb-turn__approval${decided ? " is-decided" : ""}`} role="group" aria-label={t("apr.request")}>
       <p className="owb-turn__approval-title">
         <ShieldAlert aria-hidden="true" size={13} />
-        {decided ? t("apr.decided") : t("apr.pending")} · {kindCopy[request.kind] ?? request.kind}
+        {turn.approvalControl?.status ? t(`apr.status.${turn.approvalControl.status}`) : decided ? t("apr.decided") : t("apr.pending")} · {kindCopy[request.kind] ?? request.kind}
       </p>
       <p className="owb-turn__approval-description" title={request.description}>
         {request.description}
@@ -227,15 +228,15 @@ function ApprovalCard({
             <button
               type="button"
               className="owb-turn__approval-grant"
-              disabled={busy}
-              onClick={() => onVerdict(turn, "granted")}
+              disabled={disabled}
+              onClick={() => trimmedReason ? onVerdict(turn, "granted", trimmedReason) : onVerdict(turn, "granted")}
             >
               {t("apr.grant")}
             </button>
             <button
               type="button"
               className="owb-turn__approval-deny"
-              disabled={busy}
+              disabled={disabled}
               onClick={() => onVerdict(turn, "denied", trimmedReason.length > 0 ? trimmedReason : undefined)}
             >
               {t("apr.deny")}
@@ -243,6 +244,10 @@ function ApprovalCard({
           </div>
         </>
       )}
+      {turn.approvalControl?.phase && turn.approvalControl.phase !== "not_started" ? <p>{t(`apr.phase.${turn.approvalControl.phase}`)}</p> : null}
+      {turn.approvalControl?.error ? <p role="alert">{turn.approvalControl.error}</p> : null}
+      {turn.approvalControl?.unavailableReason && turn.approvalControl.status === "pending" ? <p>{t(`apr.unavailable.${turn.approvalControl.unavailableReason}`)}</p> : null}
+      {new TextEncoder().encode(trimmedReason).length > 1024 ? <p role="alert">{t("apr.reasonTooLong")}</p> : null}
     </div>
   );
 }
@@ -391,7 +396,7 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
                 </time>
               </header>
 
-              <ProgressTrail turn={turn} approvalDecided={decidedApprovalIds?.has(turn.approvalRequest?.approvalId ?? "") === true} />
+              <ProgressTrail turn={turn} approvalDecided={decidedApprovalIds?.has(turn.id) === true || decidedApprovalIds?.has(turn.approvalRequest?.approvalId ?? "") === true} />
 
               {turn.output ? (
                 <section
@@ -433,7 +438,7 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
                 <ApprovalCard
                   turn={turn}
                   busy={retrying || canRetry?.(turn) === false}
-                  decided={decidedApprovalIds?.has(turn.approvalRequest.approvalId) === true}
+                  decided={decidedApprovalIds?.has(turn.id) === true || decidedApprovalIds?.has(turn.approvalRequest.approvalId) === true}
                   onVerdict={onVerdict}
                 />
               ) : null}

@@ -16,6 +16,7 @@ import type {
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
+import type { RunningTurnReservation } from "../turns/running.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { createTurnEnvelope } from "../turns/envelope.js";
 import { DeltaForwarder } from "../turns/delta-forwarder.js";
@@ -55,7 +56,7 @@ export function assertPendingApproval(raw: unknown): TurnPendingApproval {
   if (!checked.ok) {
     throw new OrgApiError(errorCodes.turn_request_invalid, 400, checked.message);
   }
-  return checked.value;
+  throw new OrgApiError(errorCodes.approval_endpoint_required, 409, "Use the approval decision endpoint so source, expiry and duplicate decisions are checked");
 }
 
 function parsePostBody(raw: unknown): TurnPostBody {
@@ -175,17 +176,18 @@ export async function handleTurnPost(
  * never comes from a renderer-supplied position/principal mapping. */
 export async function executeTurn(
   ctx: ControlPlaneContext,
-  res: ServerResponse,
+  res: ServerResponse | undefined,
   body: TurnPostBody,
   session?: WorkbenchSession,
   group?: GroupEventAttribution,
   supplementalContext?: readonly SupplementalContext[],
   expectedWorkspace?: OpenWorkspace,
+  approvalExecution?: { turnId: string; reservation: RunningTurnReservation; beforeRun: () => Promise<void> },
 ): Promise<TurnRecord> {
   const workspace = expectedWorkspace ?? ctx.workspace.requireOpen();
   assertTurnWorkspace(ctx, workspace);
-  const turnId = group !== undefined ? group.turnId : crypto.randomUUID();
-  const reservation = ctx.runningTurns.reserve(workspace.dir, body.positionId, turnId);
+  const turnId = approvalExecution?.turnId ?? (group !== undefined ? group.turnId : crypto.randomUUID());
+  const reservation = approvalExecution?.reservation ?? ctx.runningTurns.reserve(workspace.dir, body.positionId, turnId);
   try {
     let retryHistory: TurnRecord[] | undefined;
     if (body.retryOf !== undefined) {
@@ -221,6 +223,7 @@ export async function executeTurn(
       ctx.turnStore,
       ctx.sessionStore,
     );
+    if (approvalExecution && body.engine !== resolvedEngine) throw new OrgApiError(errorCodes.approval_conflict, 409, "Approval engine changed");
     if (body.engine !== resolvedEngine) body = { ...body, engine: resolvedEngine };
     const binding = await readPositionAgentBinding(workspace, body.positionId);
     const modelConfig = await employeeModelConfig(resolvedEngine, binding?.model, ctx.config.bundledElectronEngine);
@@ -350,6 +353,9 @@ export async function executeTurn(
       },
     });
     try {
+      assertTurnWorkspace(ctx, workspace);
+      await approvalExecution?.beforeRun();
+      assertTurnWorkspace(ctx, workspace);
       result = await ctx.turnDriver.turnRun({
         ...(model === undefined ? {} : { model }),
         workspace: workspace.dir,
@@ -359,12 +365,12 @@ export async function executeTurn(
         onEvent: (event) => forwarder.handle(event),
         setAbort: (abort) => reservation.setAbort(abort),
       });
-    } catch {
+    } catch (error) {
       result = {
         status: "indeterminate" as const,
         events: [],
         diagnostic: "",
-        code: "turn_driver_failure",
+        code: approvalExecution && error instanceof OrgApiError ? error.code : "turn_driver_failure",
       };
     } finally {
       // A driver may settle without an engine terminal. Retire its timers
@@ -453,7 +459,7 @@ export async function executeTurn(
         ctx.bus.publish(eventType(terminal), groupTag(terminal, attribution));
       }
     }
-    sendJson(res, 200, record);
+    if (res) sendJson(res, 200, record);
     return record;
   } finally {
     reservation.release();

@@ -7,17 +7,9 @@
  *     `ApprovalRequestedEvent`, mirroring #187).
  *   - `mode / toolAllow / toolDeny` come from org-permissions.v1 (from
  *     `GET /positions/:id` -> `PositionCardData.permissions` + `mode`).
- *   - `decision / reason` reuse the existing `TurnPendingApproval` path;
- *     verdicts are assembled by the caller as a resume-turn envelope. This
- *     component never emits a turn directly.
- *
- * DATA GAP (TODO, v0):
- *   - v0 contract has no dedicated `/approvals` stream. This P0 UI is fed via
- *     a props-injected `ApprovalQueueItem[]`. v1 will derive the queue from
- *     "per-position bounded sessionTurnHistory/turnHistory scan + SSE
- *     `turn.approval.requested` increments". Once the additive
- *     `streams.approvals` endpoint lands, this file switches its data source
- *     with no UI-shape change.
+ *   - decision and execution state are projected from GET /approvals.
+ *     The callback id is the workbench record id (not the engine approvalId).
+ *     The server alone constructs the resume-turn envelope.
  */
 import type { TurnApprovalActionKind } from "@roleweave/shared";
 import { zhText } from "@roleweave/ui";
@@ -28,9 +20,15 @@ export type ApprovalDecisionState =
   | { kind: "pending" }
   | { kind: "granted"; scope: "once" | "run"; decidedAt?: string }
   | { kind: "denied"; reason?: string; decidedAt?: string }
-  | { kind: "expired" };
+  | { kind: "expired" | "cancelled" | "indeterminate" };
 
 export interface ApprovalQueueItem {
+  canDecide?: boolean;
+  busy?: boolean;
+  error?: string;
+  unavailableReason?: string;
+  executionPhase?: import("@roleweave/shared").ApprovalPhase;
+  requestReason?: string;
   approvalId: string;
   positionId: string;
   positionName?: string;

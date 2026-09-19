@@ -46,7 +46,6 @@ import {
   adaptTurnHistory,
   adaptTurnRecord,
   applyTurnEvent,
-  approvalResumeInput,
   beginGroupRun,
   beginPendingTurn,
   defaultAgentHost,
@@ -80,6 +79,7 @@ import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
+import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
@@ -262,13 +262,6 @@ function AppInner({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [toggleRailExpanded]);
   const [memorySource, setMemorySource] = useState<MemorySource>("docs");
-  /**
-   * DATA GAP (TODO, v0): v0 has no dedicated `/approvals` stream. The P0
-   * queue receives an empty items array here; App will later populate this
-   * from a bounded `sessionTurnHistory` scan + SSE `turn.approval.requested`
-   * increments. Kept as a plain state slot so the wiring point is obvious.
-   */
-  const [approvalItems] = useState<ApprovalQueueItem[]>([]);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const healthReadVersion = useRef(0);
   const refreshReadVersion = useRef(0);
@@ -278,6 +271,7 @@ function AppInner({
   const [availabilityCheckFailed, setAvailabilityCheckFailed] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
+  const approvalState = useApprovals(workspaceInfo?.open ? workspaceInfo.path : undefined);
   const [orgOverview, setOrgOverview] = useState(false);
   const [conversationFocused, setConversationFocused] = useWorkspaceFocus(workspaceInfo?.path ?? "");
   const sendShortcut = useSendShortcut();
@@ -353,10 +347,18 @@ function AppInner({
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
   const [orgRefreshes] = useState(createOrgRefreshCoordinator);
-  /** Approvals whose verdict was already sealed into a resume turn. The
-   * server record never persists pendingApproval, so this client-side set is
-   * the only source for settling the verdict card into a terminal state. */
-  const [decidedApprovals, setDecidedApprovals] = useState<ReadonlySet<string>>(new Set());
+  const approvalItems = useMemo<ApprovalQueueItem[]>(() => approvalState.items.map(a => ({
+    approvalId: a.id, positionId: a.source.positionId, positionName: positionNames[a.source.positionId],
+    category: a.action.kind, description: a.action.description, target: a.action.target,
+    requestedAt: a.requestedAt, expiresAt: a.expiresAt,
+    decision: a.status === "granted" ? { kind: "granted", scope: "once" } : a.status === "denied" ? { kind: "denied", reason: a.decision?.reason } : { kind: a.status },
+    canDecide: a.canDecide, busy: approvalState.busy.has(a.id), error: approvalState.errors[a.id],
+    unavailableReason: a.unavailableReason, executionPhase: a.execution.phase,
+    requestReason: a.requestReason,
+  })), [approvalState.items, approvalState.busy, approvalState.errors, positionNames]);
+  const decidedApprovals = useMemo(() => new Set(approvalState.items.filter(a =>
+    a.status !== "pending" && a.source.positionId === selectedId && a.source.conversationId === selectedSessionId
+  ).map(a => a.source.turnId)), [approvalState.items, selectedId, selectedSessionId]);
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
   /** Employee-record editor (#292): opened from the position card header or
@@ -650,7 +652,6 @@ function AppInner({
       setSelectedSessionId(null);
       selectedSessionIdRef.current = null;
       setTurnError(null);
-      setDecidedApprovals(new Set());
       setBackups([]);
       setReports(null);
       setReportsError(null);
@@ -943,7 +944,11 @@ function AppInner({
     void refresh();
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const offEvent = window.owb.onEvent((event) => {
-      const envelope = event as { type?: string };
+      const envelope = event as { type?: string; payload?: { workspacePath?: unknown } };
+      if ((envelope.type === "approvals.changed" || ["turn.completed", "turn.failed", "turn.indeterminate"].includes(envelope.type ?? "")) &&
+          (typeof envelope.payload?.workspacePath !== "string" || envelope.payload.workspacePath === workspacePathRef.current)) {
+        void approvalState.refresh();
+      }
       if (envelope?.type === "org.updated") {
         const payload = (event as { payload?: { workspace?: unknown; version?: unknown; changes?: unknown } }).payload;
         void refreshOrg(payload?.workspace, payload?.version, payload?.changes);
@@ -976,7 +981,7 @@ function AppInner({
       if (state === "connecting") {
         orgRefreshes.clear();
         for (const path of workspaceStreams.current.keys()) updateWorkspaceStream(path, resetStreamSeq);
-      }
+      } else void approvalState.refresh();
     };
     const offSse = window.owb.onSseStatus(applySseStatus);
     void window.owb.sseStatus().then(applySseStatus).catch(() => setStartupError(t("misc.serviceFailed")));
@@ -989,7 +994,7 @@ function AppInner({
       offSse();
       offFallback();
     };
-  }, [loadReports, loadTurnHistory, orgRefreshes, refresh, refreshOrg, updateWorkspaceStream]);
+  }, [approvalState.refresh, loadReports, loadTurnHistory, orgRefreshes, refresh, refreshOrg, updateWorkspaceStream]);
 
   const selectPosition = useCallback((id: string) => {
     if (selectedIdRef.current === id) return;
@@ -1270,33 +1275,13 @@ function AppInner({
     }
   }, [t, updateWorkspaceCancelling]);
 
-  /** Operator verdict (issue #25 Slice B): the verdict is a new resume turn
-   * whose sealed envelope carries pendingApproval; granted defaults scope to
-   * "once" upstream, denied carries the optional reason only. A verdict is
-   * only marked decided after the resume turn is created, so a failed
-   * creation leaves the card actionable. */
+  /** Both approval entry points use the same durable server-owned decision. */
   const verdictTurn = useCallback(
     async (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => {
-      const request = turn.approvalRequest;
-      if (request === undefined) return;
-      if (decidedApprovals.has(request.approvalId)) return;
-      const created = await createTurn({
-        positionId: turn.positionId,
-        engine: turn.engine,
-        input: approvalResumeInput(decision, reason),
-        pendingApproval: {
-          approvalId: request.approvalId,
-          decision,
-          decidedBy: "operator",
-          ...(decision === "granted" ? { scope: "once" as const } : {}),
-          ...(reason !== undefined ? { reason } : {}),
-        },
-      });
-      if (created !== false) {
-        setDecidedApprovals((current) => new Set(current).add(request.approvalId));
-      }
+      const approval = approvalState.items.find(a => a.source.turnId === turn.id && a.source.positionId === turn.positionId && a.approvalId === turn.approvalRequest?.approvalId);
+      if (approval) await approvalState.decide(approval.id, decision, reason);
     },
-    [createTurn, decidedApprovals],
+    [approvalState.items, approvalState.decide],
   );
 
   const openWorkspace = useCallback(async () => {
@@ -1669,9 +1654,14 @@ function AppInner({
         positionName: positionNames[pending.positionId] ?? t("org.unknownPosition"), engine: pending.engine,
         input: pending.input, status: "running", createdAt: pending.startedAt });
     }
-    if (live.length === 0) return turns;
-    return [...turns, ...live].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [positionNames, selectedId, selectedSessionId, t, turnStream.pending, turnStream.runs, turns]);
+    return [...turns, ...live].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(turn => {
+      if (!turn.approvalRequest) return turn;
+      const a = approvalState.items.find(a => a.source.turnId === turn.id && a.source.positionId === turn.positionId && a.approvalId === turn.approvalRequest?.approvalId);
+      return { ...turn, approvalControl: { disabled: !a?.canDecide || approvalState.busy.has(a.id),
+        status: a?.status, phase: a?.execution.phase, error: a ? approvalState.errors[a.id] : approvalState.error,
+        unavailableReason: a?.unavailableReason } };
+    });
+  }, [positionNames, selectedId, selectedSessionId, t, turnStream.pending, turnStream.runs, turns, approvalState.items, approvalState.busy, approvalState.errors, approvalState.error]);
 
   // The shared provider derives both AntD and custom-component values from the
   // selected profile. <html data-ui-theme> is seeded before React renders.
@@ -1783,7 +1773,7 @@ function AppInner({
                 </Badge>
               ),
               active: activeModule === "approvals",
-              onSelect: () => setActiveModule("approvals"),
+              onSelect: () => { setActiveModule("approvals"); void approvalState.refresh(); },
             },
             { id: "reports", label: t("rail.reports"), icon: <ChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setActiveModule("reports"); void loadReports(); } },
             // mem and position documents are two sources in one employee-memory
@@ -2023,16 +2013,12 @@ function AppInner({
         ) : activeModule === "approvals" ? (
           <ApprovalQueue
             items={approvalItems}
-            dataState="not-connected"
+            dataState={approvalState.ready ? "ready" : "not-connected"}
+            loading={approvalState.loading && !approvalState.ready}
+            errorMessage={approvalState.error}
             onNavigateToOrg={() => setActiveModule("org")}
-            onApprove={(approvalId, reason) => {
-              // TODO(v0 gap): wire into onVerdictTurn once the queue is fed
-              // by the bounded-scan + SSE derivation path.
-              console.info("approval.approve", { approvalId, reason });
-            }}
-            onDeny={(approvalId, reason) => {
-              console.info("approval.deny", { approvalId, reason });
-            }}
+            onApprove={(id, reason) => { void approvalState.decide(id, "granted", reason); }}
+            onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
           />
         ) : activeModule === "groups" ? (
           <GroupsPanel
