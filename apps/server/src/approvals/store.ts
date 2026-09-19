@@ -21,12 +21,17 @@ async function directory(dir: string): Promise<void> {
 }
 
 async function read(file: string): Promise<unknown> {
-  const before = await fs.lstat(file);
-  if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_BYTES) throw failure();
   const handle = await fs.open(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const opened = await handle.stat();
-    if (opened.ino !== before.ino || opened.dev !== before.dev || opened.size > MAX_BYTES) throw failure();
+    // Open the descriptor before inspecting the pathname.  This avoids a
+    // check-then-open TOCTOU window; O_NOFOLLOW (where available) also keeps
+    // the final component from being redirected through a symlink.  The
+    // pathname check is still useful on platforms without O_NOFOLLOW, while
+    // the descriptor's identity remains authoritative for the read itself.
+    const named = await fs.lstat(file);
+    if (!named.isFile() || named.isSymbolicLink() || named.size > MAX_BYTES ||
+        opened.ino !== named.ino || opened.dev !== named.dev || opened.size > MAX_BYTES) throw failure();
     const buffer = Buffer.alloc(MAX_BYTES + 1);
     let size = 0;
     while (size < buffer.length) {
@@ -35,7 +40,11 @@ async function read(file: string): Promise<unknown> {
       size += result.bytesRead;
     }
     const after = await handle.stat();
-    if (size > MAX_BYTES || after.size !== size || after.mtimeMs !== opened.mtimeMs) throw failure();
+    const namedAfter = await fs.lstat(file);
+    if (size > MAX_BYTES || after.size !== size || after.mtimeMs !== opened.mtimeMs ||
+        !namedAfter.isFile() || namedAfter.isSymbolicLink() ||
+        namedAfter.ino !== opened.ino || namedAfter.dev !== opened.dev ||
+        namedAfter.size !== after.size || namedAfter.mtimeMs !== after.mtimeMs) throw failure();
     return JSON.parse(buffer.subarray(0, size).toString("utf8"));
   } finally { await handle.close(); }
 }
