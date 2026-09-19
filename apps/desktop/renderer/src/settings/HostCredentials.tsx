@@ -89,7 +89,7 @@ export function HostCredentials() {
     {loadFailed ? <Alert type="error" showIcon title={t("credentials.loadFailed")}
       action={<Button onClick={() => void load()}>{t("credentials.retry")}</Button>} /> : null}
     {!loading && !loadFailed && !storageAvailable ? <Alert type="warning" showIcon title={t("credentials.storageUnavailable")} /> : null}
-    {rows ? ["Qoder", "Claude", "Codex"].map((host) => <section key={host} className="owb-host-credentials__host" aria-label={host}>
+    {rows ? ["Qoder", "Claude", "Codex", "Gemini"].map((host) => <section key={host} className="owb-host-credentials__host" aria-label={host}>
       <h3>{host}</h3>
       {CREDENTIAL_FIELDS.filter((field) => field.host === host).map((field) => {
         const row = rows.find((entry) => entry.key === field.key)!;

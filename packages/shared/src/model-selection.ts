@@ -28,6 +28,8 @@ export interface EmployeeModelConfig {
   connection?: EmployeeModelConnection;
   /** The CLI validates already-registered custom IDs without changing provider credentials. */
   allowCustomModel?: boolean;
+  /** Validation grammar for a manually entered model id. Legacy absence means Qoder's permissive registered-name format. */
+  customModelFormat?: "qoder" | "strict";
   /** A stale catalog is an earlier account read, not a fresh entitlement check. */
   catalogStatus?: "ready" | "stale" | "unavailable";
 }

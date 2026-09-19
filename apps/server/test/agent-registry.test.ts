@@ -19,6 +19,7 @@ function health(overrides: Record<string, unknown> = {}) {
       codex: { configured: true, ready: true },
       "codex-local": { configured: true, ready: true },
       workbuddy: { configured: true, ready: true },
+      gemini: { configured: true, ready: true },
     },
     localProbe: {
       qoder: { installed: true, supported: true, version: "qodercli 1.1.31" },
@@ -27,6 +28,7 @@ function health(overrides: Record<string, unknown> = {}) {
       codex: { installed: true, supported: true, version: "2.1.223" },
       "codex-local": { installed: true, supported: true, version: "2.1.223" },
       workbuddy: { installed: true, supported: true, version: "2.137.1" },
+      gemini: { installed: true, supported: true, version: "0.1.0" },
     },
     ...overrides,
   };
@@ -43,15 +45,15 @@ test("Host order is derived from the exhaustive catalog, not a handwritten subse
   const hosts = listRegisteredAgentHosts(health());
   assert.deepEqual(
     hosts.map((host) => host.id).sort(),
-    ["claude-code", "claude-local", "codex", "codex-local", "qoder", "workbuddy"],
+    ["claude-code", "claude-local", "codex", "codex-local", "gemini", "qoder", "workbuddy"],
   );
 });
 
 test("registers every contracted Host from a health snapshot", () => {
   const hosts = listRegisteredAgentHosts(health());
 
-  assert.deepEqual(hosts.map((host) => host.id), ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy"]);
-  assert.deepEqual(hosts.map((host) => host.label), ["Qoder", "Claude Code", "Claude Code（本地登录）", "Codex", "Codex（本地登录）", "WorkBuddy"]);
+  assert.deepEqual(hosts.map((host) => host.id), ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini"]);
+  assert.deepEqual(hosts.map((host) => host.label), ["Qoder", "Claude Code", "Claude Code（本地登录）", "Codex", "Codex（本地登录）", "WorkBuddy", "Gemini"]);
   for (const host of hosts) {
     assert.equal(host.engine, host.id);
     assert.equal(host.availability.status, "available");
@@ -62,7 +64,7 @@ test("registers every contracted Host from a health snapshot", () => {
     assert.ok(host.capabilities.includes("turns"));
     assert.ok(host.capabilities.includes("streaming"));
   }
-  assert.deepEqual(hosts.map((host) => host.version), ["1.1.31", "2.1.223", "2.1.223", "2.1.223", "2.1.223", "2.137.1"]);
+  assert.deepEqual(hosts.map((host) => host.version), ["1.1.31", "2.1.223", "2.1.223", "2.1.223", "2.1.223", "2.137.1", "0.1.0"]);
 });
 
 test("fails closed for missing or malformed health input", () => {
@@ -110,6 +112,7 @@ test("keeps unavailable hosts visible but never marks them selectable", () => {
         ready: false,
         nextStep: "设置 CODEBUDDY_API_KEY 后重启工作台",
       },
+      gemini: { configured: true, ready: false, nextStep: "设置 GEMINI_API_KEY 后重启工作台" },
     },
     localProbe: {
       qoder: { installed: false, supported: false, version: null, failure: "unavailable" },
@@ -118,10 +121,11 @@ test("keeps unavailable hosts visible but never marks them selectable", () => {
       codex: { installed: true, supported: true, version: "2.1.223" },
       "codex-local": { installed: true, supported: true, version: "2.1.223" },
       workbuddy: { installed: true, supported: true, version: "2.137.1" },
+      gemini: { installed: true, supported: true, version: "0.1.0" },
     },
   }));
 
-  assert.equal(hosts.length, 6);
+  assert.equal(hosts.length, 7);
   assert.equal(hosts[0]?.availability.status, "unavailable");
   assert.equal(hosts[0]?.availability.configured, false);
   assert.equal(hosts[0]?.availability.ready, false);
@@ -143,6 +147,7 @@ test("engine availability is only a pipeline gate, not provider entitlement", ()
       codex: { configured: true, ready: true },
       "codex-local": { configured: true, ready: true },
       workbuddy: { configured: true, ready: true },
+      gemini: { configured: true, ready: true },
     },
   });
   const hosts = listRegisteredAgentHosts(input);
@@ -194,6 +199,7 @@ test("redacts paths, credentials, and raw probe output from version and reason",
         version: "stderr /tmp/codebuddy 2.137.1 private-key=secret",
         nextStep: "codebuddy binary at /tmp/codebuddy private-key=secret",
       },
+      gemini: { configured: true, ready: false, version: "Gemini 0.1.0 secret", nextStep: "gemini at /tmp/gemini secret" },
     },
     localProbe: {
       qoder: { installed: true, supported: false, version: "qodercli 1.2.0 private-token=qoder-secret", failure: "unsupported_version" },
@@ -202,11 +208,12 @@ test("redacts paths, credentials, and raw probe output from version and reason",
       codex: { installed: true, supported: false, version: "/tmp/claude 2.2.0 secret", failure: "unsupported_version" },
       "codex-local": { installed: true, supported: false, version: "/tmp/claude 2.2.0 secret", failure: "unsupported_version" },
       workbuddy: { installed: true, supported: false, version: "/tmp/codebuddy 2.137.1 secret", failure: "unsupported_version" },
+      gemini: { installed: true, supported: false, version: "/tmp/gemini 0.1.0 secret", failure: "unsupported_version" },
     },
   }));
   const serialized = JSON.stringify(hosts);
 
-  assert.deepEqual(hosts.map((host) => host.version), ["1.2.0", "2.2.0", "2.2.0", "2.2.0", "2.2.0", "2.137.1"]);
+  assert.deepEqual(hosts.map((host) => host.version), ["1.2.0", "2.2.0", "2.2.0", "2.2.0", "2.2.0", "2.137.1", "0.1.0"]);
   assert.doesNotMatch(serialized, /Users\/alice|\/tmp\/claude|\/tmp\/codebuddy|qoder-secret|anthropic-secret|private-key|apiKey/iu);
   assert.equal(hosts[0]?.reason, "本地主机版本不受支持");
   assert.equal(hosts[1]?.reason, "本地主机版本不受支持");
@@ -222,6 +229,7 @@ test("selects only a ready host and exposes stable error codes", () => {
       codex: { configured: true, ready: false },
       "codex-local": { configured: true, ready: false },
       workbuddy: { configured: true, ready: false },
+      gemini: { configured: true, ready: false },
     },
   }));
 
@@ -273,6 +281,7 @@ test("maps timeout and unsupported local probes without probing again", () => {
       codex: { configured: true, ready: false },
       "codex-local": { configured: true, ready: false },
       workbuddy: { configured: true, ready: false },
+      gemini: { configured: true, ready: false },
     },
     localProbe: {
       qoder: { installed: true, supported: false, version: "1.1.99", failure: "timed_out" },
@@ -281,11 +290,12 @@ test("maps timeout and unsupported local probes without probing again", () => {
       codex: { installed: false, supported: false, version: null, failure: "unavailable" },
       "codex-local": { installed: false, supported: false, version: null, failure: "unavailable" },
       workbuddy: { installed: false, supported: false, version: null, failure: "unavailable" },
+      gemini: { installed: false, supported: false, version: null, failure: "unavailable" },
     },
   }));
 
-  assert.deepEqual(hosts.map((host) => host.availability.localProbe), ["timed_out", "unsupported_version", "unavailable", "unavailable", "unavailable", "unavailable"]);
-  assert.deepEqual(hosts.map((host) => host.reason), ["本地版本探测超时", "本地主机版本不受支持", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机"]);
+  assert.deepEqual(hosts.map((host) => host.availability.localProbe), ["timed_out", "unsupported_version", "unavailable", "unavailable", "unavailable", "unavailable", "unavailable"]);
+  assert.deepEqual(hosts.map((host) => host.reason), ["本地版本探测超时", "本地主机版本不受支持", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机"]);
 });
 
 test("fails closed when an explicitly supplied local probe is malformed", () => {
@@ -297,6 +307,7 @@ test("fails closed when an explicitly supplied local probe is malformed", () => 
       codex: { installed: true, supported: true, version: "2.1.223" },
       "codex-local": { installed: true, supported: true, version: "2.1.223" },
       workbuddy: { installed: true, supported: true, version: "2.137.1" },
+      gemini: { installed: true, supported: true, version: "0.1.0" },
     },
   }));
 

@@ -120,6 +120,10 @@ const HOST_DEFINITIONS: Readonly<Record<AgentHostId, HostDefinition>> = {
     label: "WorkBuddy",
     capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],
   },
+  gemini: {
+    label: "Gemini",
+    capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],
+  },
 };
 
 /** Derived from HOST_DEFINITIONS so adding an AgentHostId is a compile error

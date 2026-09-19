@@ -17,6 +17,7 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
   let followLocalDefault = false;
   let selectedDefault: string | undefined;
   let allowCustomModel = false;
+  let customModelFormat: EmployeeModelConfig["customModelFormat"];
   let catalogStatus: EmployeeModelConfig["catalogStatus"];
   try {
   if (engine === "qoder") {
@@ -45,6 +46,7 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       connection = local.connection;
       selectedDefault = local.selectedDefault;
       allowCustomModel = true;
+      customModelFormat = "qoder";
       // Even without a plaintext model setting, the CLI may have an account-
       // scoped encrypted Custom selection. Never override it with efficient.
       followLocalDefault = true;
@@ -60,6 +62,22 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       followLocalDefault = local.connection.kind === "gateway" || !!selectedDefault;
       if (local.connection.source === "local-config") source = "local-config";
     }
+  } else if (engine === "gemini") {
+    // Both Gemini CLI and Antigravity CLI own their account-specific catalog.
+    // Keep the provider default plus any explicit/saved model instead of
+    // accidentally showing Codex's models_cache.json for this Host.
+    source = "default";
+    followLocalDefault = true;
+    allowCustomModel = true;
+    customModelFormat = "strict";
+    selectedDefault = isModelId(env.GEMINI_MODEL) ? env.GEMINI_MODEL : undefined;
+    const apiKey = typeof env.GEMINI_API_KEY === "string" && env.GEMINI_API_KEY.trim().length > 0;
+    connection = {
+      source: apiKey ? "environment" : "official",
+      kind: "official",
+      billing: apiKey ? "provider" : "subscription",
+      status: "configured",
+    };
   } else {
     source = "default";
     try {
@@ -92,5 +110,5 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
   options.push({ id: "provider-default", name: "Agent default", tier: "default", ...(selectedDefault ? { resolvedModel: selectedDefault } : {}), ...(connection ? { billing: connection.billing } : {}) });
   if (selected && isEngineModelId(selected, engine) && !options.some((m) => m.id === selected)) options.push({ id: selected, name: selected, tier: "default", billing: "unknown" });
   if (recommended === "provider-default") options.sort((a, b) => Number(b.id === recommended) - Number(a.id === recommended));
-  return { selected: selected ?? (editable ? recommended : "provider-default"), recommended, options, source, editable, ...(connection ? { connection } : {}), ...(allowCustomModel ? { allowCustomModel } : {}), ...(catalogStatus ? { catalogStatus } : {}) };
+  return { selected: selected ?? (editable ? recommended : "provider-default"), recommended, options, source, editable, ...(connection ? { connection } : {}), ...(allowCustomModel ? { allowCustomModel, ...(customModelFormat ? { customModelFormat } : {}) } : {}), ...(catalogStatus ? { catalogStatus } : {}) };
 }

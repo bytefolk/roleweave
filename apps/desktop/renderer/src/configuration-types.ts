@@ -5,7 +5,7 @@ export interface ApplicationConfiguration {
   chat: { sendShortcut: 'enter'|'mod-enter'; rememberLayout: boolean };
   layouts: { focusByWorkspace: Record<string, boolean> };
   runtime: { mode?: 'native'|'wsl'; distro?: string; nodePath?: string; homePath?: string };
-  hosts: { qoder: { personalAccessTokenRef?: string }; claude: { apiKeyRef?: string; authTokenRef?: string; baseUrl?: string }; codex: { apiKeyRef?: string; baseUrl?: string } };
+  hosts: { qoder: { personalAccessTokenRef?: string }; claude: { apiKeyRef?: string; authTokenRef?: string; baseUrl?: string }; codex: { apiKeyRef?: string; baseUrl?: string }; gemini: { apiKeyRef?: string } };
   services: Partial<Record<'doc'|'mem', { apiUrl: string; webUrl?: string; workspaceId?: string; tokenRef?: string } | null>>;
   migration?: { rendererPreferences: boolean; pendingHostUrls?: Array<'claude'|'codex'> };
 }

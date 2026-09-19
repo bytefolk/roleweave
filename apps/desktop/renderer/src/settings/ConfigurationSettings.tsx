@@ -10,8 +10,8 @@ import { ServiceConnections } from './ServiceConnections';
 import './configuration-settings.css';
 const groups = configurationGroups;
 type Category = typeof groups[number][0];
-const hostKeys={Qoder:'qoder',Claude:'claude',Codex:'codex'} as const;
-const refFields:Partial<Record<CredentialKey,string>>={QODER_PERSONAL_ACCESS_TOKEN:'personalAccessTokenRef',ANTHROPIC_API_KEY:'apiKeyRef',ANTHROPIC_AUTH_TOKEN:'authTokenRef',OPENAI_API_KEY:'apiKeyRef'};
+const hostKeys={Qoder:'qoder',Claude:'claude',Codex:'codex',Gemini:'gemini'} as const;
+const refFields:Partial<Record<CredentialKey,string>>={QODER_PERSONAL_ACCESS_TOKEN:'personalAccessTokenRef',ANTHROPIC_API_KEY:'apiKeyRef',ANTHROPIC_AUTH_TOKEN:'authTokenRef',OPENAI_API_KEY:'apiKeyRef',GEMINI_API_KEY:'apiKeyRef'};
 function differences(a:unknown,b:unknown,prefix=''):ConfigurationChange[]{
  const prev=a&&typeof a==='object'?a as Record<string,unknown>:{},next=b&&typeof b==='object'?b as Record<string,unknown>:{};
  return [...new Set([...Object.keys(prev),...Object.keys(next)])].flatMap(key=>{
@@ -34,7 +34,7 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
  const parsed=useMemo(()=>{const errors:ParseError[]=[];const value=parse(text,errors,{allowTrailingComma:true}) as ApplicationConfiguration|undefined;return{value,errors};},[text]);
  const object=(value:unknown)=>value!==null&&typeof value==='object'&&!Array.isArray(value);
  const strings=(value:unknown)=>object(value)&&Object.values(value as Record<string,unknown>).every(v=>typeof v==='string');
- const formShape=parsed.errors.length===0&&object(parsed.value?.appearance)&&['system','light','dark'].includes(parsed.value?.appearance?.mode??'')&&['mint','default'].includes(parsed.value?.appearance?.profile??'')&&['en','zh-CN'].includes(parsed.value?.appearance?.locale??'')&&object(parsed.value?.chat)&&['enter','mod-enter'].includes(parsed.value?.chat?.sendShortcut??'')&&typeof parsed.value?.chat?.rememberLayout==='boolean'&&strings(parsed.value?.hosts?.qoder)&&strings(parsed.value?.hosts?.claude)&&strings(parsed.value?.hosts?.codex)&&object(parsed.value?.services)&&Object.values(parsed.value?.services??{}).every(v=>v===null||strings(v))&&strings(parsed.value?.runtime);
+ const formShape=parsed.errors.length===0&&object(parsed.value?.appearance)&&['system','light','dark'].includes(parsed.value?.appearance?.mode??'')&&['mint','default'].includes(parsed.value?.appearance?.profile??'')&&['en','zh-CN'].includes(parsed.value?.appearance?.locale??'')&&object(parsed.value?.chat)&&['enter','mod-enter'].includes(parsed.value?.chat?.sendShortcut??'')&&typeof parsed.value?.chat?.rememberLayout==='boolean'&&strings(parsed.value?.hosts?.qoder)&&strings(parsed.value?.hosts?.claude)&&strings(parsed.value?.hosts?.codex)&&(parsed.value?.hosts?.gemini===undefined||strings(parsed.value.hosts.gemini))&&object(parsed.value?.services)&&Object.values(parsed.value?.services??{}).every(v=>v===null||strings(v))&&strings(parsed.value?.runtime);
  const config=formShape?parsed.value:snapshot?.config;
  const english=(config??snapshot?.config)?.appearance.locale==='en';const copy=(en:string)=>configurationText(english,en);
  const hasSecretChanges=useMemo(()=>secretVersion>=0&&([...secretInputs.current.values()].some(input=>!!input.value)||clearKeys.size>0),[secretVersion,clearKeys]);
@@ -121,7 +121,7 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
       </>:<p>{copy("This platform uses the native runtime. WSL settings apply only on Windows.")}</p>}
       <p className="owb-settings-module__hint">{copy("Runtime and Host credentials apply after restart. Saving never interrupts a running task or changes an employee’s Agent binding.")}</p>
      </fieldset>
-     {(['Qoder','Claude','Codex'] as const).map(host=>{const id=hostKeys[host],hostConfig=config.hosts[id] as Record<string,string|undefined>,configured=Object.keys(hostConfig).length>0,source=snapshot.sources[`hosts.${id}`];return <details key={host} className="owb-config-host" open={Object.keys(snapshot.config.hosts[id]).length?undefined:true}>
+     {(['Qoder','Claude','Codex','Gemini'] as const).map(host=>{const id=hostKeys[host],hostConfig=(config.hosts[id]??{}) as Record<string,string|undefined>,configured=Object.keys(hostConfig).length>0,source=snapshot.sources[`hosts.${id}`];return <details key={host} className="owb-config-host" open={Object.keys(snapshot.config.hosts[id]??{}).length?undefined:true}>
       <summary><strong>{host}</strong><span>{source==='environment'?copy("Environment override"):configured?copy("Saved locally"):copy("Host default login")}</span><span className="owb-config-edit">{copy("Edit")}</span></summary>
       <fieldset disabled={busy||formBlocked}><legend className="owb-config-sr">{host}</legend>
        {source==='environment'?<p className="owb-settings-module__hint">{copy("The launch environment supplies this whole Host connection; saved credentials and endpoints are not mixed with it.")}</p>:null}
