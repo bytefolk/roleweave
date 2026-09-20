@@ -20,7 +20,11 @@ import type {
   TurnEngineAvailability,
   TurnRecord,
 } from "./types";
-import { ATTACHMENT_ALLOWED_MIME_TYPES, ATTACHMENT_MAX_COUNT, ATTACHMENT_MAX_SINGLE_BYTES, ATTACHMENT_MAX_TOTAL_BYTES } from "@roleweave/shared";
+import {
+  ATTACHMENT_ALLOWED_MIME_TYPES,
+  ATTACHMENT_MAX_COUNT,
+  ATTACHMENT_MAX_TOTAL_BYTES,
+} from "@roleweave/shared/attachments";
 
 export { EngineSelect, useEngineLabel } from "./engine-select";
 
