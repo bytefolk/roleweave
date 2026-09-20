@@ -1012,3 +1012,71 @@
     margin-left: 0;
   }
 }
+
+/* Additive #306: attachment cards */
+.owb-attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px 0;
+}
+
+.owb-attachment-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-surface);
+  font-size: 12px;
+  color: var(--ui-foreground);
+  max-width: 200px;
+}
+
+.owb-attachment-card__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.owb-attachment-card__size {
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.owb-attachment-card__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.owb-attachment-card__remove:hover {
+  background: var(--ui-danger-soft);
+  color: var(--ui-danger-strong);
+}
+
+.owb-attachment-card__spinner {
+  animation: owb-spin 0.8s linear infinite;
+  color: var(--ui-foreground-muted);
+}
+
+.owb-attachment-card__error {
+  color: var(--ui-danger-strong);
+  font-weight: 600;
+}
+
+@keyframes owb-spin {
+  to { transform: rotate(360deg); }
+}

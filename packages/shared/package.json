@@ -44,6 +44,10 @@
     "./goals": {
       "types": "./dist/goals.d.ts",
       "import": "./dist/goals.js"
+    },
+    "./attachments": {
+      "types": "./dist/attachments.d.ts",
+      "import": "./dist/attachments.js"
     }
   },
   "files": [

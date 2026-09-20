@@ -3,8 +3,8 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { ApprovalList, ApprovalView, EngineEvent, GroupConversation, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
-import { approvalRunScopeBindingInput } from "@roleweave/shared";
+import type { ApprovalChangePreview, ApprovalList, ApprovalView, EngineEvent, GroupConversation, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
+import { approvalPreviewFingerprintInput, approvalRunScopeBindingInput } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
 import { approvals } from "../src/approvals/service.js";
 
@@ -15,6 +15,7 @@ class ApprovalDriver implements TurnRunDriver {
   reason = "The write needs operator approval";
   runScope = false;
   invalidRunBinding = false;
+  preview?: ApprovalChangePreview;
   hold?: Promise<void>;
   async turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
     this.calls.push(request);
@@ -31,6 +32,7 @@ class ApprovalDriver implements TurnRunDriver {
       const binding = `sha256:${crypto.createHash("sha256").update(approvalRunScopeBindingInput("same-engine-id", runId, action, this.expiresAt)).digest("hex")}`;
       events.push({ ...base, type: "approval.requested", approvalId: "same-engine-id", action: {
         ...action,
+        ...(this.preview ? { preview: this.preview } : {}),
         ...(this.runScope ? { scope: { version: "approval-scope-offer.v1" as const, allowed: ["once", "run"] as Array<"once" | "run">, runBinding: this.invalidRunBinding ? `sha256:${"0".repeat(64)}` : binding } } : {}),
       }, reason: this.reason, expiresAt: this.expiresAt },
       { ...base, type: "run.failed", error: { code: "engine.approval_required", message: "waiting", retryable: true, terminalReason: "engine_internal_error" } });
@@ -213,6 +215,14 @@ test("approval views redact secrets while preserving safe decision context", asy
   const driver = new ApprovalDriver();
   driver.target = "https://alice:password@example.com/upload?token=top-secret";
   driver.reason = "Authorization: Bearer top-secret";
+  const preview = {
+    version: "approval-change-preview.v1" as const, previewId: "preview-1",
+    files: [{ path: "reports/summary.md", change: "modify" as const, before: "token=top-secret", after: "token=rotated" }],
+  };
+  driver.preview = {
+    ...preview,
+    previewFingerprint: `sha256:${crypto.createHash("sha256").update(approvalPreviewFingerprintInput("same-engine-id", { kind: "write", description: "write report", target: driver.target }, preview)).digest("hex")}`,
+  };
   const s = await startTestServer(undefined, driver);
   try {
     await open(s, await copyExampleWorkspace()); await request(s);
@@ -222,7 +232,8 @@ test("approval views redact secrets while preserving safe decision context", asy
     assert.equal(serialized.includes("top-secret"), false);
     assert.match(approval.action.target!, /\[redacted\]/);
     assert.match(approval.context?.parameterSummary ?? "", /\[redacted\]/);
-    assert.equal(approval.context?.preview.reason, "engine_preview_not_supplied");
+    assert.equal(approval.context?.preview.status, "available");
+    assert.match(JSON.stringify(approval.context?.preview), /\[redacted\]/);
   } finally { await s.close(); }
 });
 

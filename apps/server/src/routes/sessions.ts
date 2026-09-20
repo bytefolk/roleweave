@@ -1,11 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { OrgApiError, errorCodes, turnEngines } from "@roleweave/shared";
+import { OrgApiError, ATTACHMENT_MAX_COUNT, errorCodes, turnEngines } from "@roleweave/shared";
 import type { TurnEngine } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { assertSessionId, UUID_PATTERN } from "../sessions/store.js";
 import { assertPositionExists, assertPendingApproval, assertTurnWorkspace, executeTurn } from "./turns.js";
 import type { TurnPendingApproval } from "@roleweave/shared";
+import { assertAttachmentId } from "../attachments/validate.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -45,6 +46,7 @@ function parseSessionTurn(raw: unknown): {
   goalId?: string;
   branchId?: string;
   retryOf?: string;
+  attachmentIds?: string[];
 } {
   if (!isRecord(raw)) {
     throw new OrgApiError(
@@ -53,12 +55,12 @@ function parseSessionTurn(raw: unknown): {
       "session turn request must be a JSON object",
     );
   }
-  const allowedKeys = new Set(["input", "engine", "pendingApproval", "goalId", "branchId", "retryOf"]);
+  const allowedKeys = new Set(["input", "engine", "pendingApproval", "goalId", "branchId", "retryOf", "attachmentIds"]);
   if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
     throw new OrgApiError(
       errorCodes.turn_request_invalid,
       400,
-      "session turn accepts input, engine, and optional pendingApproval, goalId, branchId, retryOf",
+      "session turn accepts input, engine, and optional pendingApproval, goalId, branchId, retryOf, attachmentIds",
     );
   }
   if (typeof raw.input !== "string" || !Object.hasOwn(raw, "engine")) {
@@ -91,6 +93,13 @@ function parseSessionTurn(raw: unknown): {
   if (raw.branchId !== undefined && (typeof raw.branchId !== "string" || !GOAL_ID_PATTERN.test(raw.branchId))) {
     throw new OrgApiError(errorCodes.turn_request_invalid, 400, "branchId must be a bounded alphanumeric string");
   }
+  let attachmentIds: string[] | undefined;
+  if (raw.attachmentIds !== undefined) {
+    if (!Array.isArray(raw.attachmentIds) || raw.attachmentIds.length === 0 || raw.attachmentIds.length > ATTACHMENT_MAX_COUNT) {
+      throw new OrgApiError(errorCodes.turn_request_invalid, 400, `attachmentIds must be 1–${ATTACHMENT_MAX_COUNT} entries`);
+    }
+    attachmentIds = raw.attachmentIds.map((id) => assertAttachmentId(id));
+  }
   return {
     input: raw.input,
     engine: raw.engine as TurnEngine,
@@ -100,6 +109,7 @@ function parseSessionTurn(raw: unknown): {
     ...(raw.retryOf !== undefined ? { retryOf: raw.retryOf } : {}),
     ...(raw.goalId !== undefined ? { goalId: raw.goalId } : {}),
     ...(raw.branchId !== undefined ? { branchId: raw.branchId } : {}),
+    ...(attachmentIds !== undefined ? { attachmentIds } : {}),
   };
 }
 

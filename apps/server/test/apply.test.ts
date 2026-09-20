@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { OrgApplyFailure, OrganizationFile } from "@roleweave/shared";
+import { AGENT_BINDING_RELATIVE_PATH, AGENT_BINDING_SCHEMA_VERSION } from "@roleweave/shared";
 import { buildPositionSkeletonFiles } from "../src/org/apply.js";
 import { FakeDriver, api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
@@ -333,6 +334,51 @@ test("org restore: engine refusal preserves applied bytes and the restored propo
     await assertAppliedBytes(dir, before);
     assert.ok(await exists(path.join(dir, "positions", "repo-owner", "community-operator")), "restore proposal remains available for correction/retry");
     assert.equal(await exists(path.join(dir, ".digital-employee", "backup", backupId)), false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("#406 org apply move keeps Agent binding and model, not a Claude fallback", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineApply);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    const packageDir = path.join(dir, "positions", "repo-owner", "issue-researcher");
+    const bindingFile = path.join(packageDir, ...AGENT_BINDING_RELATIVE_PATH.split("/"));
+    await fs.mkdir(path.dirname(bindingFile), { recursive: true, mode: 0o700 });
+    const binding = {
+      schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
+      engine: "qoder" as const,
+      locked: true as const,
+      model: "performance",
+    };
+    await fs.writeFile(bindingFile, `${JSON.stringify(binding)}\n`, { mode: 0o600 });
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const hire = await api(server.baseUrl, "/hire", {
+      method: "POST", token: server.token,
+      body: {
+        positionId: "docs-writer",
+        name: "Docs Writer",
+        description: "Keeps documentation current.",
+        reportTo: "repo-owner",
+        mode: "read_only",
+        budget: { perTask: { tokens: 20000, iterations: 8 }, perDay: { tokens: 200000, iterations: 64 } },
+      },
+    });
+    assert.equal(hire.status, 200);
+    const move = await api(server.baseUrl, "/org/apply", {
+      method: "POST", token: server.token,
+      body: { schemaVersion: "change-manifest.v1", changes: [{ op: "move", id: "issue-researcher", reportTo: "docs-writer" }] },
+    });
+    assert.equal(move.status, 200);
+    const nested = path.join(dir, "positions", "repo-owner", "docs-writer", "issue-researcher", ...AGENT_BINDING_RELATIVE_PATH.split("/"));
+    assert.deepEqual(JSON.parse(await fs.readFile(nested, "utf8")), binding);
+    const card = await api(server.baseUrl, `/positions/${encodeURIComponent("issue-researcher")}`, { token: server.token });
+    assert.equal(card.status, 200);
+    assert.equal((card.body as { agentEngine?: string }).agentEngine, "qoder");
+    assert.equal((card.body as { modelConfig?: { selected?: string } }).modelConfig?.selected, "performance");
   } finally {
     await server.close();
   }

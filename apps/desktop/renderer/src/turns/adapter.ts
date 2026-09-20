@@ -133,6 +133,7 @@ export function adaptTurnRecord(
     ...(record.threadContext !== undefined ? { threadContext: record.threadContext } : {}),
     ...(progress.length > 0 ? { progress } : {}),
     ...(usage !== undefined ? { totalTokens: usage } : {}),
+    ...(record.attachments !== undefined ? { attachments: record.attachments } : {}),
   };
 }
 
