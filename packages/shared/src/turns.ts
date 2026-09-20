@@ -4,6 +4,7 @@
  * package only adds workbench-local persistence records.
  */
 import { createRequire } from "node:module";
+import type { ApprovalChangePreview } from "./approval-preview.js";
 import type { TurnAttachment } from "./attachments.js";
 
 export const TURN_ENVELOPE_SCHEMA_VERSION = "turn-envelope.v1" as const;
@@ -72,6 +73,8 @@ export interface ApprovalRequestedEvent extends EngineEventBase {
     kind: TurnApprovalActionKind;
     description: string;
     target?: string;
+    /** Optional, integrity-bound display preview for write-like actions. */
+    preview?: ApprovalChangePreview;
   };
   reason?: string;
   expiresAt?: string;
