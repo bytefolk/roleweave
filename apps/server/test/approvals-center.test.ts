@@ -172,6 +172,57 @@ test("run scope rejects undeclared, tampered, denied, and expired offers before 
   } finally { await s.close(); }
 });
 
+test("multi-party policy rejects unauthorized actors, accepts a delegated co-sign, and exports a verified audit trail", async () => {
+  const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+      schemaVersion: "roleweave-approval-policy.v1", version: "release-7",
+      default: { eligibleApprovers: ["alice", "bob"], threshold: 2, delegations: { alice: ["carol"] } },
+    }));
+    await open(s, workspace); await request(s);
+    let snapshot = await list(s), approval = snapshot.items[0]!;
+    s.ctx.config.approvalActorId = "mallory";
+    assert.equal((await api(s.baseUrl, `/approvals/${approval.id}/decision`, { token: s.token, method: "POST", body: body(snapshot, approval) })).status, 403);
+
+    s.ctx.config.approvalActorId = "carol";
+    const delegated = { ...body(snapshot, approval), delegatedFrom: "alice" };
+    assert.equal((await api(s.baseUrl, `/approvals/${approval.id}/decision`, { token: s.token, method: "POST", body: delegated })).status, 200);
+    snapshot = await list(s); approval = snapshot.items[0]!;
+    assert.deepEqual(approval.progress, { required: 2, granted: 1, pending: 1, escalated: false });
+    assert.equal("policy" in approval, false, "queue must not disclose the approver roster");
+
+    s.ctx.config.approvalActorId = "bob";
+    assert.equal((await api(s.baseUrl, `/approvals/${approval.id}/decision`, { token: s.token, method: "POST", body: body(snapshot, approval) })).status, 202);
+    const audit = await api(s.baseUrl, `/approvals/${approval.id}/audit`, { token: s.token });
+    assert.equal(audit.status, 200);
+    const events = (audit.body as { events: Array<{ type: string; actor?: string; delegatedFrom?: string; policyVersion: string; hash: string }> }).events;
+    assert.equal(events.length, 3);
+    assert.deepEqual(events.map(event => event.type), ["requested", "decision", "decision"]);
+    assert.deepEqual(events[1], { ...events[1], actor: "carol", delegatedFrom: "alice", policyVersion: "release-7" });
+    assert.ok(events.every(event => /^sha256:[a-f0-9]{64}$/.test(event.hash)));
+  } finally { await s.close(); }
+});
+
+test("policy escalation persists and deterministically changes the active threshold", async () => {
+  const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+      schemaVersion: "roleweave-approval-policy.v1", version: "escalation-1",
+      default: { eligibleApprovers: ["alice", "bob"], threshold: 2, escalation: { afterMs: 1, eligibleApprovers: ["escalation-oncall"], threshold: 1 } },
+    }));
+    await open(s, workspace); await request(s); await new Promise(resolve => setTimeout(resolve, 15));
+    const snapshot = await list(s), approval = snapshot.items[0]!;
+    assert.deepEqual(approval.progress, { required: 1, granted: 0, pending: 1, escalated: true });
+    s.ctx.config.approvalActorId = "alice";
+    assert.equal((await api(s.baseUrl, `/approvals/${approval.id}/decision`, { token: s.token, method: "POST", body: body(snapshot, approval) })).status, 403);
+    s.ctx.config.approvalActorId = "escalation-oncall";
+    const fresh = (await list(s)).items[0]!;
+    assert.equal((await api(s.baseUrl, `/approvals/${fresh.id}/decision`, { token: s.token, method: "POST", body: body(await list(s), fresh) })).status, 202);
+  } finally { await s.close(); }
+});
+
 test("group approvals stay visible but read-only and never dispatch a recovery turn", async () => {
   const driver = new ApprovalDriver(), s = await startTestServer(undefined, driver);
   try {

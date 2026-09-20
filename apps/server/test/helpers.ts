@@ -112,6 +112,7 @@ export async function startTestServer(
       host: "127.0.0.1",
       port: 0,
       token: TEST_TOKEN,
+      approvalActorId: "operator",
       cliCommand: "digital-employee",
       bundledElectronEngine: false,
       engineTimeoutMs: 120_000,

@@ -17,3 +17,10 @@ export function bearerAuthorized(req: IncomingMessage, token: string): boolean {
   const b = crypto.createHash("sha256").update(token).digest();
   return crypto.timingSafeEqual(a, b);
 }
+
+/** The bearer credential authenticates one local operator identity.  Do not
+ * accept an actor id from HTTP input: that would turn audit attribution into a
+ * client assertion. */
+export function authenticatedActor(req: IncomingMessage, token: string, actorId: string): string | undefined {
+  return bearerAuthorized(req, token) ? actorId : undefined;
+}

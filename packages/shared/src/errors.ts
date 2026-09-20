@@ -63,6 +63,8 @@ export const errorCodes = {
   approval_missing: "approval_missing",
   /** Approval state, source, workspace instance, or optimistic version conflicts. */
   approval_conflict: "approval_conflict",
+  /** Authenticated actor is not eligible under the request's frozen policy. */
+  approval_unauthorized_actor: "approval_unauthorized_actor",
   /** The approval expired before its verdict could be accepted. */
   approval_expired: "approval_expired",
   /** Approval persistence is malformed, unsafe, or unavailable. */

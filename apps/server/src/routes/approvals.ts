@@ -5,17 +5,22 @@ import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { approvals, parseDecision } from "../approvals/service.js";
 
-export async function handleApprovals(ctx: ControlPlaneContext, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
-  const match = url.pathname.match(/^\/approvals(?:\/([a-f0-9]{64})(\/decision)?)?$/);
+export async function handleApprovals(ctx: ControlPlaneContext, req: IncomingMessage, res: ServerResponse, url: URL, actor?: string): Promise<boolean> {
+  const match = url.pathname.match(/^\/approvals(?:\/([a-f0-9]{64})(?:\/(decision|audit))?)?$/);
   if (!match) return false;
   const ws = ctx.workspace.requireOpen();
   const service = approvals(ctx);
-  if (req.method === "POST" && match[1] && match[2]) {
+  if (req.method === "POST" && match[1] && match[2] === "decision") {
     const body = await readJsonBody<Record<string, unknown>>(req);
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new OrgApiError(errorCodes.approval_request_invalid, 400, "Invalid decision");
     const { workspaceToken, ...decision } = body;
-    const result = await service.decide(ws, workspaceToken, match[1], parseDecision(decision));
+    if (!actor) throw new OrgApiError(errorCodes.unauthorized, 401, "An authenticated approval actor is required");
+    const result = await service.decide(ws, workspaceToken, match[1], parseDecision(decision), actor);
     sendJson(res, result.status, result.record);
+    return true;
+  }
+  if (req.method === "GET" && match[1] && match[2] === "audit") {
+    sendJson(res, 200, { approvalId: match[1], events: await service.audit(ws, match[1]) });
     return true;
   }
   if (req.method !== "GET" || match[2]) throw new OrgApiError(errorCodes.method_not_allowed, 405, "Unsupported approval operation");

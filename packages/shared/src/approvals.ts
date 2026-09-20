@@ -31,9 +31,51 @@ export interface ApprovalDecisionRequest {
   decision: "granted" | "denied";
   scope: "once" | "run";
   reason?: string;
+  /** The eligible principal whose policy authority this actor is exercising. */
+  delegatedFrom?: string;
+}
+
+export interface ApprovalPolicySnapshot {
+  version: string;
+  digest: string;
+  eligibleApprovers: string[];
+  threshold: number;
+  delegations: Record<string, string[]>;
+  escalation?: { at: string; eligibleApprovers: string[]; threshold: number };
+}
+export interface ApprovalDecisionEvent {
+  requestId: string;
+  expectedVersion: number;
+  decision: "granted" | "denied";
+  scope: "once" | "run";
+  actor: string;
+  delegatedFrom?: string;
+  reason?: string;
+  decidedAt: string;
+}
+export interface ApprovalPolicyProgress {
+  required: number;
+  granted: number;
+  pending: number;
+  escalated: boolean;
+}
+export interface ApprovalAuditEvent {
+  approvalId: string;
+  seq: number;
+  timestamp: string;
+  type: "requested" | "decision" | "escalated";
+  requestId?: string;
+  actor?: string;
+  delegatedFrom?: string;
+  decision?: "granted" | "denied";
+  scope?: "once" | "run";
+  policyVersion: string;
+  policyDigest: string;
+  previousHash?: string;
+  hash: string;
 }
 export interface ApprovalRecord {
-  schemaVersion: "workbench-approval.v1";
+  schemaVersion: "workbench-approval.v1" | "workbench-approval.v2";
   id: string;
   version: number;
   approvalId: string;
@@ -52,11 +94,15 @@ export interface ApprovalRecord {
   expiresAt?: string;
   status: ApprovalStatus;
   decision?: ApprovalDecisionRequest & { decidedBy: "operator"; decidedAt: string };
+  policy?: ApprovalPolicySnapshot;
+  decisions?: ApprovalDecisionEvent[];
+  progress?: ApprovalPolicyProgress;
   execution: { phase: ApprovalPhase; turnId?: string; errorCode?: string };
   createdAt: string;
   updatedAt: string;
 }
-export interface ApprovalView extends ApprovalRecord {
+export interface ApprovalView extends Omit<ApprovalRecord, "policy" | "decisions" | "schemaVersion"> {
+  schemaVersion: "workbench-approval.v1";
   canDecide: boolean;
   unavailableReason?: string;
 }

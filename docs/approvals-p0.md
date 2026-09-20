@@ -65,3 +65,48 @@ npm run build:renderer
 - 已接受的恢复若因工作区切换或崩溃未能完成，不自动执行第二次；页面保留结果待核实。
 - 历史扫描不是常驻全量索引；分页读取会核对完整有界快照。
 - 群聊恢复、多审批人权限、批量批准和外部通知不属于本期。
+
+## 多人审批策略（#402）
+
+审批请求创建时，服务从工作区的
+`.digital-employee/workbench/approval-policy.json` 读取策略，并把解析结果、
+版本和 SHA-256 摘要冻结到该请求。之后更改策略只影响新请求，不能改写已经
+发起的审批或它的审计依据。没有此文件时保守地采用一个兼容策略：仅已认证的
+`operator`，门槛为 1。
+
+```json
+{
+  "schemaVersion": "roleweave-approval-policy.v1",
+  "version": "2026-q3-release",
+  "default": {
+    "eligibleApprovers": ["security-lead", "engineering-lead"],
+    "threshold": 2,
+    "delegations": { "security-lead": ["security-oncall"] },
+    "escalation": {
+      "afterMs": 3600000,
+      "eligibleApprovers": ["incident-commander"],
+      "threshold": 1
+    }
+  },
+  "rules": [
+    {
+      "positionId": "release-engineer",
+      "actionKinds": ["network", "exec"],
+      "eligibleApprovers": ["release-manager"],
+      "threshold": 1
+    }
+  ]
+}
+```
+
+`rules` 按文件顺序选择第一条匹配岗位和动作类别的规则。可决策 actor 由服务器
+的认证凭证绑定；默认绑定 `operator`，部署时通过
+`ORG_WORKBENCH_APPROVAL_ACTOR_ID` 设置稳定 actor ID。客户端不能通过请求头或
+请求体宣称自己的身份。委派必须同时指定 `delegatedFrom`，并且该授权人和受托人
+都要命中冻结策略的 delegation map；一个授权人只能对同一请求投一次票。拒绝
+立即终止请求，批准只有在达到当前门槛后才会启动恢复回合。
+
+队列只显示聚合的 `granted/required` 和是否升级，不暴露候选审批人或委派图。
+`GET /approvals/:id/audit` 为已认证客户端导出该请求的 `requested`、`decision`
+和 `escalated` 事件。事件记录实际 actor、可选委派来源、策略版本/摘要，并以
+跨记录的 SHA-256 前序哈希链连接；格式或链不完整时导出会失败关闭。

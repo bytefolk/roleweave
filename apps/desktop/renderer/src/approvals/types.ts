@@ -11,7 +11,7 @@
  *     The callback id is the workbench record id (not the engine approvalId).
  *     The server alone constructs the resume-turn envelope.
  */
-import type { ApprovalContext, ApprovalRecord, TurnApprovalActionKind } from "@roleweave/shared";
+import type { ApprovalContext, ApprovalPolicyProgress, ApprovalRecord, TurnApprovalActionKind } from "@roleweave/shared";
 import { zhText } from "@roleweave/ui";
 
 export type ApprovalCategory = TurnApprovalActionKind;
@@ -37,6 +37,9 @@ export interface ApprovalQueueItem {
   executionPhase?: import("@roleweave/shared").ApprovalPhase;
   requestReason?: string;
   context?: ApprovalContext;
+  /** Aggregate policy state only; candidate identities are intentionally not
+   * projected into the approval queue. */
+  policyProgress?: ApprovalPolicyProgress;
   source?: ApprovalSource;
   executionTurnId?: string;
   executionErrorCode?: string;

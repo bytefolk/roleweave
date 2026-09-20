@@ -154,6 +154,16 @@ export function ApprovalDetailDrawer({
             </section>
           ) : null}
 
+          {item.policyProgress ? (
+            <section data-testid="approval-policy-progress">
+              <h3 className="owb-approval-drawer__section-title">{t("apr.policyProgress")}</h3>
+              <p className="owb-approval-drawer__meta-line">
+                {t("apr.policyProgressValue", { granted: item.policyProgress.granted, required: item.policyProgress.required })}
+                {item.policyProgress.escalated ? ` · ${t("apr.escalated")}` : ""}
+              </p>
+            </section>
+          ) : null}
+
           <section data-testid="approval-context">
             <h3 className="owb-approval-drawer__section-title">{t("apr.context")}</h3>
             {item.context ? (

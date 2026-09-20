@@ -4,7 +4,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
-import { OrgApiError, errorCodes, isApprovalChangePreview, isApprovalScopeOffer, turnEngines, validatePendingApproval, type ApprovalRecord } from "@roleweave/shared";
+import { OrgApiError, errorCodes, isApprovalChangePreview, isApprovalScopeOffer, turnEngines, validatePendingApproval, type ApprovalAuditEvent, type ApprovalRecord } from "@roleweave/shared";
 import { approvalPreviewFingerprintInput } from "@roleweave/shared";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 import { projectApprovalPreview } from "./context.js";
@@ -13,6 +13,7 @@ const MAX_BYTES = 128 * 1024;
 const ID = /^[a-f0-9]{64}$/;
 const failure = () => new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval storage is unavailable or invalid");
 const locked = () => new OrgApiError(errorCodes.approval_writer_busy, 409, "Another local control plane owns approvals for this workspace");
+const auditFailure = () => new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval audit is unavailable or invalid");
 
 export function approvalIdentity(source: ApprovalRecord["source"], approvalId: string): string {
   return crypto.createHash("sha256").update(JSON.stringify([source.kind, source.conversationId, source.positionId, source.turnId, source.runId, approvalId])).digest("hex");
@@ -76,7 +77,7 @@ function valid(value: unknown): value is ApprovalRecord {
     const { status: _status, ...payload } = preview;
     return payload;
   };
-  if (a.schemaVersion !== "workbench-approval.v1" || !ID.test(a.id) || !Number.isSafeInteger(a.version) || a.version < 1 ||
+  if ((a.schemaVersion !== "workbench-approval.v1" && a.schemaVersion !== "workbench-approval.v2") || !ID.test(a.id) || !Number.isSafeInteger(a.version) || a.version < 1 ||
       !s || !["session", "position", "group"].includes(s.kind) ||
       ![s.positionId, s.conversationId, s.turnId, s.runId, a.approvalId].every(text) || !turnEngines.includes(s.engine) ||
       a.id !== approvalIdentity(s, a.approvalId) || !a.action || !["write", "exec", "network", "tool"].includes(a.action.kind) ||
@@ -93,6 +94,11 @@ function valid(value: unknown): value is ApprovalRecord {
     if (!/^[a-f0-9-]{36}$/.test(d.requestId) || !Number.isSafeInteger(d.expectedVersion) || d.expectedVersion < 1 ||
         !time(d.decidedAt) || (d.scope !== "once" && d.scope !== "run") || d.decision !== a.status ||
         !validatePendingApproval({ approvalId: a.approvalId, decision: d.decision, decidedBy: d.decidedBy, scope: d.scope, ...(d.reason === undefined ? {} : { reason: d.reason }) }).ok) return false;
+  }
+  if (a.schemaVersion === "workbench-approval.v2") {
+    const p = a.policy;
+    const actor = (v: unknown) => typeof v === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(v);
+    if (!p || !actor(p.version) || !/^sha256:[a-f0-9]{64}$/.test(p.digest) || !Array.isArray(p.eligibleApprovers) || !p.eligibleApprovers.every(actor) || !Number.isSafeInteger(p.threshold) || p.threshold < 1 || p.threshold > p.eligibleApprovers.length || !p.delegations || typeof p.delegations !== "object" || Array.isArray(p.delegations) || !Object.entries(p.delegations).every(([from, to]) => actor(from) && Array.isArray(to) && to.every(actor)) || (p.escalation !== undefined && (!time(p.escalation.at) || !Array.isArray(p.escalation.eligibleApprovers) || !p.escalation.eligibleApprovers.every(actor) || !Number.isSafeInteger(p.escalation.threshold) || p.escalation.threshold < 1 || p.escalation.threshold > p.escalation.eligibleApprovers.length)) || !Array.isArray(a.decisions) || a.decisions.length > 64 || !a.decisions.every(d => /^[a-f0-9-]{36}$/.test(d.requestId) && Number.isSafeInteger(d.expectedVersion) && d.expectedVersion >= 1 && ["granted", "denied"].includes(d.decision) && (d.scope === "once" || d.scope === "run") && actor(d.actor) && time(d.decidedAt) && (d.delegatedFrom === undefined || actor(d.delegatedFrom)) && (d.reason === undefined || text(d.reason))) || !a.progress || !Number.isSafeInteger(a.progress.required) || !Number.isSafeInteger(a.progress.granted) || !Number.isSafeInteger(a.progress.pending) || typeof a.progress.escalated !== "boolean") return false;
   }
   if (a.context !== undefined) {
     const c = a.context;
@@ -169,7 +175,7 @@ export class ApprovalStore {
       if (names.length > 10002) throw failure();
       const result: ApprovalRecord[] = [];
       for (const name of names) {
-        if (name === "writer.json" || name === "reclaim.lock" || /^\.[a-f0-9]{64}\.json\.[a-f0-9-]{36}\.tmp$/.test(name)) continue;
+        if (name === "writer.json" || name === "reclaim.lock" || name === "audit.jsonl" || /^\.[a-f0-9]{64}\.json\.[a-f0-9-]{36}\.tmp$/.test(name)) continue;
         if (!/^[a-f0-9]{64}\.json$/.test(name)) throw failure();
         const value = await read(path.join(dir, name));
         if (!valid(value) || `${value.id}.json` !== name) throw failure();
@@ -185,6 +191,45 @@ export class ApprovalStore {
       const dir = await this.open(workspace);
       await atomicWriteJson(path.join(dir, `${record.id}.json`), record, MAX_BYTES, nodeAtomicTurnWriteOperations, failure);
     } catch (e) { if (e instanceof OrgApiError) throw e; throw failure(); }
+  }
+
+  async appendAudit(workspace: string, event: Omit<ApprovalAuditEvent, "seq" | "previousHash" | "hash">): Promise<ApprovalAuditEvent> {
+    try {
+      const dir = await this.open(workspace);
+      const existing = await this.audit(workspace);
+      const repeated = event.requestId === undefined ? undefined : existing.find(item => item.approvalId === event.approvalId && item.requestId === event.requestId);
+      if (repeated) {
+        const same = repeated.type === event.type && repeated.actor === event.actor && repeated.delegatedFrom === event.delegatedFrom && repeated.decision === event.decision && repeated.scope === event.scope && repeated.policyVersion === event.policyVersion && repeated.policyDigest === event.policyDigest;
+        if (!same) throw new OrgApiError(errorCodes.approval_conflict, 409, "Request id was already used for another audit decision");
+        return repeated;
+      }
+      const previous = existing.at(-1);
+      const body = { seq: existing.length + 1, ...event, ...(previous ? { previousHash: previous.hash } : {}) };
+      const hash = `sha256:${crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex")}`;
+      const complete = { ...body, hash } as ApprovalAuditEvent;
+      await fs.appendFile(path.join(dir, "audit.jsonl"), `${JSON.stringify(complete)}\n`, { encoding: "utf8", mode: 0o600, flag: "a" });
+      return complete;
+    } catch (e) { if (e instanceof OrgApiError) throw e; throw auditFailure(); }
+  }
+
+  async audit(workspace: string, id?: string): Promise<ApprovalAuditEvent[]> {
+    try {
+      const dir = await this.open(workspace);
+      const file = path.join(dir, "audit.jsonl");
+      let content: string;
+      try { content = await fs.readFile(file, "utf8"); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return []; throw e; }
+      if (Buffer.byteLength(content, "utf8") > MAX_BYTES || (content.length > 0 && !content.endsWith("\n"))) throw auditFailure();
+      const events: ApprovalAuditEvent[] = [];
+      for (const line of content.split("\n")) {
+        if (!line) continue;
+        const value = JSON.parse(line) as ApprovalAuditEvent;
+        const { hash, ...unsigned } = value;
+        const expected = `sha256:${crypto.createHash("sha256").update(JSON.stringify(unsigned)).digest("hex")}`;
+        if (!/^sha256:[a-f0-9]{64}$/.test(hash) || hash !== expected || value.seq !== events.length + 1 || value.previousHash !== events.at(-1)?.hash || !ID.test(value.approvalId) || (value.requestId !== undefined && !/^[a-f0-9-]{36}$/.test(value.requestId))) throw auditFailure();
+        events.push(value);
+      }
+      return id ? events.filter(e => e.approvalId === id) : events;
+    } catch (e) { if (e instanceof OrgApiError) throw e; throw auditFailure(); }
   }
 
   async close(): Promise<void> {

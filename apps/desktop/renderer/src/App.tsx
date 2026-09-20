@@ -357,7 +357,7 @@ function AppInner({
     scopeAllowed: a.context?.scope.allowed ?? ["once"],
     canDecide: a.canDecide, busy: approvalState.busy.has(a.id), error: approvalState.errors[a.id],
     unavailableReason: a.unavailableReason, executionPhase: a.execution.phase,
-    requestReason: a.requestReason, context: a.context, source: a.source, executionTurnId: a.execution.turnId, executionErrorCode: a.execution.errorCode,
+    requestReason: a.requestReason, context: a.context, policyProgress: a.progress, source: a.source, executionTurnId: a.execution.turnId, executionErrorCode: a.execution.errorCode,
   })), [approvalState.items, approvalState.busy, approvalState.errors, positionNames]);
   const decidedApprovals = useMemo(() => new Set(approvalState.items.filter(a =>
     a.status !== "pending" && a.source.positionId === selectedId && a.source.conversationId === selectedSessionId

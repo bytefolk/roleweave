@@ -10,6 +10,9 @@ export interface ServerConfig {
   /** 0 = ephemeral port (shell reads the actual port from the ready line). */
   port: number;
   token: string;
+  /** Identity bound to the local, authenticated control-plane credential.
+   * It is deliberately configuration, never a request header. */
+  approvalActorId: string;
   /** Pinned digital-employee CLI command consumed via spawn. */
   cliCommand: string;
   /** Desktop-owned bundled adapter boundary (legacy name retained for callers). */
@@ -80,6 +83,10 @@ export function resolveServerConfig(
   const envToken = env.ORG_WORKBENCH_BOOT_TOKEN;
   const token =
     typeof envToken === "string" && envToken.length >= 16 ? envToken : createBootToken();
+  const configuredActor = env.ORG_WORKBENCH_APPROVAL_ACTOR_ID?.trim();
+  const approvalActorId = configuredActor && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(configuredActor)
+    ? configuredActor
+    : "operator";
   const cliCommand = env.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI ?? "digital-employee";
   const bundledElectronEngine =
     (env.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE === "1" &&
@@ -97,6 +104,7 @@ export function resolveServerConfig(
     host: "127.0.0.1",
     port,
     token,
+    approvalActorId,
     cliCommand,
     bundledElectronEngine,
     engineTimeoutMs,

@@ -10,12 +10,13 @@ async function approvalList(request, apiRequest) {
   return apiRequest(`/approvals?${query}`);
 }
 async function approvalDecision(request, apiRequest) {
-  if (!object(request) || Object.keys(request).some(k => !["id", "workspaceToken", "requestId", "expectedVersion", "decision", "reason"].includes(k)) ||
+  if (!object(request) || Object.keys(request).some(k => !["id", "workspaceToken", "requestId", "expectedVersion", "decision", "reason", "delegatedFrom"].includes(k)) ||
       typeof request.id !== "string" || !/^[a-f0-9]{64}$/.test(request.id) ||
       typeof request.workspaceToken !== "string" || !UUID.test(request.workspaceToken) ||
       typeof request.requestId !== "string" || !UUID.test(request.requestId) ||
       !Number.isSafeInteger(request.expectedVersion) || request.expectedVersion < 1 || !["granted", "denied"].includes(request.decision) ||
-      (request.reason !== undefined && (typeof request.reason !== "string" || !request.reason.trim() || Buffer.byteLength(request.reason, "utf8") > 1024))) return invalid();
+      (request.reason !== undefined && (typeof request.reason !== "string" || !request.reason.trim() || Buffer.byteLength(request.reason, "utf8") > 1024)) ||
+      (request.delegatedFrom !== undefined && (typeof request.delegatedFrom !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(request.delegatedFrom)))) return invalid();
   const { id, ...body } = request;
   return apiRequest(`/approvals/${id}/decision`, { method: "POST", body });
 }

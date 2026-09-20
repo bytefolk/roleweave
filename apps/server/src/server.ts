@@ -1,7 +1,7 @@
 import http from "node:http";
 import { OrgApiError, errorCodes, routes } from "@roleweave/shared";
 import { handleServices } from "./routes/services.js";
-import { bearerAuthorized } from "./auth.js";
+import { authenticatedActor } from "./auth.js";
 import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
 import { handleAssetsCreate, handleAssetsList, handleAssetsRead } from "./routes/assets.js";
@@ -71,7 +71,8 @@ async function dispatch(
     const pathname = url.pathname;
     const method = (req.method ?? "GET").toUpperCase();
 
-    if (pathname !== routes.health && !bearerAuthorized(req, ctx.config.token)) {
+    const actor = pathname === routes.health ? undefined : authenticatedActor(req, ctx.config.token, ctx.config.approvalActorId);
+    if (pathname !== routes.health && !actor) {
       sendJson(
         res,
         401,
@@ -81,7 +82,7 @@ async function dispatch(
     }
 
     if (await handleServices(ctx, req, res, url)) return;
-    if (await handleApprovals(ctx, req, res, url)) return;
+    if (await handleApprovals(ctx, req, res, url, actor)) return;
 
     if (pathname === routes.health && method === "GET") {
       await handleHealth(ctx, res);
