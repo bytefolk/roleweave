@@ -13,6 +13,8 @@
 
 ### Added
 
+- #306：对话回合支持 PNG/JPEG/WebP 图片和 PDF 附件；可通过粘贴或文件选择添加，控制面按 session 存储并做 fail-closed 校验，PDF 文本提取超预算则不计为成功。
+
 - #327 R1：记忆平面设计锚点。新增 ADR-0008 与 `docs/design/memory-plane-v1.md`，冻结四层所有权、FIFO/LRU/TTL 分工、链式 segment/head/index、召回收据与子 issue DAG。durable-memory 绑定 principal + grant/revocation version + permissionDigest（拒绝自由字符串 scope）。准入硬预算以 UTF-8 bytes 为准，模型 token 只作成本上限。不改变运行时；未接受修订不得被实现 PR 消费。
 - #338：iOS SwiftUI 原生客户端（`mobile/ios`）。桌面控制面 HTTP 带 `Authorization: Bearer <boot-token>`；WebSocket 指数退避重连（1s/2s/4s/8s/16s，最多 5 次）并保留 device token；组织页必须显式点选岗位后才能发指令；配对码限 6 位数字；主机与 boot-token 本地持久化。回合仍在电脑上执行。
 - #365：新增持久化审批中心：统一列出和查看待审批记录，由 `/approvals/:id/decision` 作为唯一裁决入口；个人会话可批准或拒绝并以新回合恢复执行，原 `engine.approval_required` 回合保持不变；群聊来源仅只读展示、不能在审批中心裁决。审批状态、审计信息和恢复结果可跨刷新及重启恢复。
