@@ -168,8 +168,11 @@ async function applyChangeManifestUnlocked(
   ctx.bus.publish("org.updated", {
     workspace: ws.dir,
     version,
-    changes:
-      engineResult.result?.changes ?? manifest.changes.map(changeDigest),
+    // The engine's applied payload uses { hired, moved, dismissed }, not the
+    // change-manifest ops the desktop uses to skip a full metadata reload.
+    // Publishing that object made a move look like an unknown mutation and
+    // dropped Agent bindings that GET then failed to resolve.
+    changes: manifest.changes.map(changeDigest),
   });
   const body: OrgApplySuccess = {
     status: "applied",

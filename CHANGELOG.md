@@ -7,6 +7,8 @@
 
 ### Fixed
 
+- #406：把岗位拖到新上级只改汇报线。移动后仍按真实 `employee.json` 目录读取 `.workbench/agent-binding.v1.json`，不会因为过期的 `localReference` 把除 CEO 外的员工显示成默认 Claude。`org.updated` 继续发布 change-manifest 的 move/reorder，避免一次拖拽触发全量元数据重载。
+
 - 对话默认使用 Enter 发送时，Ctrl/Command + Enter 可在光标处插入换行或替换选中文字，并保留正确光标位置；保留 Shift + Enter 换行、输入法确认保护和设置中的发送快捷键选择。
 
 - #339 Android 原生客户端：release 强制 HTTPS；debug 才允许明文以便连本机 RoleWeave。WebSocket 断开按 1/2/4/8/16s 指数退避重连最多 5 次。发指令必须在组织页显式点选岗位，不再默认第一角色。`android-client.yml` 对 `mobile/android` 跑 `gradle test`（不安装已下线的 SDK `tools` 包）。
@@ -14,7 +16,6 @@
 ### Added
 
 - #306：对话回合支持 PNG/JPEG/WebP 图片和 PDF 附件；可通过粘贴或文件选择添加，控制面按 session 存储并做 fail-closed 校验。P0 不抽取 PDF 文本（未声明 pdfjs-dist），引擎上下文只带文件路径，且不得超过 256 KiB 输入预算。
-
 - #327 R1：记忆平面设计锚点。新增 ADR-0008 与 `docs/design/memory-plane-v1.md`，冻结四层所有权、FIFO/LRU/TTL 分工、链式 segment/head/index、召回收据与子 issue DAG。durable-memory 绑定 principal + grant/revocation version + permissionDigest（拒绝自由字符串 scope）。准入硬预算以 UTF-8 bytes 为准，模型 token 只作成本上限。不改变运行时；未接受修订不得被实现 PR 消费。
 - #338：iOS SwiftUI 原生客户端（`mobile/ios`）。桌面控制面 HTTP 带 `Authorization: Bearer <boot-token>`；WebSocket 指数退避重连（1s/2s/4s/8s/16s，最多 5 次）并保留 device token；组织页必须显式点选岗位后才能发指令；配对码限 6 位数字；主机与 boot-token 本地持久化。回合仍在电脑上执行。
 - #365：新增持久化审批中心：统一列出和查看待审批记录，由 `/approvals/:id/decision` 作为唯一裁决入口；个人会话可批准或拒绝并以新回合恢复执行，原 `engine.approval_required` 回合保持不变；群聊来源仅只读展示、不能在审批中心裁决。审批状态、审计信息和恢复结果可跨刷新及重启恢复。

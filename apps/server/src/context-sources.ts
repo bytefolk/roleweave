@@ -1,4 +1,5 @@
-import fs from "node:fs/promises";
+import fs from "node:fs";
+import fsPromises from "node:fs/promises";
 import path from "node:path";
 import type { ContextSourceSummary, OrgRole } from "@roleweave/shared";
 import { POSITIONS_DIR } from "./workspace-state.js";
@@ -84,6 +85,20 @@ function nonEmptyEnv(name: string): boolean {
  */
 export function resolvePositionPackageDir(workspaceDir: string, role: OrgRole): string {
   const positionsRoot = path.resolve(workspaceDir, POSITIONS_DIR);
+  const referenced = referencedPackageDir(workspaceDir, role);
+  if (isEmployeePackage(referenced, positionsRoot)) return referenced;
+  // After an org move the applied localReference can still name the old nest
+  // while the directory (and `.workbench/agent-binding.v1.json`) already lives
+  // under the new parent. Prefer the real package over a stale path so a
+  // reportTo change cannot look like a missing Agent and fall through to the
+  // Host default (Claude).
+  const located = findEmployeePackageById(positionsRoot, role.id);
+  if (located !== null) return located;
+  return referenced;
+}
+
+function referencedPackageDir(workspaceDir: string, role: OrgRole): string {
+  const positionsRoot = path.resolve(workspaceDir, POSITIONS_DIR);
   const rawReference = role.package.localReference;
   const candidate = path.isAbsolute(rawReference)
     ? path.resolve(rawReference)
@@ -108,16 +123,47 @@ export function resolvePositionPackageDir(workspaceDir: string, role: OrgRole): 
   return path.join(positionsRoot, role.id);
 }
 
+function isEmployeePackage(dir: string, positionsRoot: string): boolean {
+  const relative = path.relative(positionsRoot, dir);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return false;
+  try {
+    const employee = fs.lstatSync(path.join(dir, "employee.json"));
+    return employee.isFile() && !employee.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function findEmployeePackageById(positionsRoot: string, positionId: string): string | null {
+  const stack = [positionsRoot];
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.isSymbolicLink() || entry.name.startsWith(".")) continue;
+      const child = path.join(dir, entry.name);
+      if (entry.name === positionId && isEmployeePackage(child, positionsRoot)) return child;
+      stack.push(child);
+    }
+  }
+  return null;
+}
+
 function positionRelativePath(workspaceDir: string, positionDir: string): string {
   const relative = path.relative(path.resolve(workspaceDir, POSITIONS_DIR), positionDir);
   return relative.split(path.sep).join("/") || "—";
 }
 
 async function countContextFiles(dir: string, relativeDir = ""): Promise<number> {
-  const stat = await fs.lstat(dir);
+  const stat = await fsPromises.lstat(dir);
   if (!stat.isDirectory() || stat.isSymbolicLink()) return 0;
   let count = 0;
-  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const entries = await fsPromises.readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name.startsWith(".")) continue;
     const absolute = path.join(dir, entry.name);
@@ -139,7 +185,7 @@ async function countContextExports(workspaceDir: string, positionId: string): Pr
   const root = path.resolve(workspaceDir, ...CONTEXT_EXPORT_ROOT);
   let sessions;
   try {
-    sessions = await fs.readdir(root, { withFileTypes: true });
+    sessions = await fsPromises.readdir(root, { withFileTypes: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
     return 0;
@@ -149,14 +195,14 @@ async function countContextExports(workspaceDir: string, positionId: string): Pr
     if (!session.isDirectory() || session.isSymbolicLink() || session.name.startsWith(".")) continue;
     let files;
     try {
-      files = await fs.readdir(path.join(root, session.name), { withFileTypes: true });
+      files = await fsPromises.readdir(path.join(root, session.name), { withFileTypes: true });
     } catch {
       continue;
     }
     for (const file of files) {
       if (!file.isFile() || file.isSymbolicLink() || !file.name.endsWith(".json")) continue;
       try {
-        const raw = await fs.readFile(path.join(root, session.name, file.name), "utf8");
+        const raw = await fsPromises.readFile(path.join(root, session.name, file.name), "utf8");
         const state = JSON.parse(raw) as { positionId?: unknown };
         if (state.positionId === positionId) count += 1;
       } catch {
