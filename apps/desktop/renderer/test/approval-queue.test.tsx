@@ -291,7 +291,9 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
       expect(screen.getByTestId("approval-approve-button")).not.toBeDisabled();
       act(() => vi.advanceTimersByTime(60_000));
       expect(screen.queryByText("即将过期")).toBeNull();
-      expect(screen.getByTestId("approval-card-appr-abc")).toHaveAttribute("data-expiry-state", "expired");
+      // The stale item is no longer actionable, so it leaves the Pending tab
+      // while the already-open drawer continues to show its terminal state.
+      expect(screen.queryByTestId("approval-card-appr-abc")).toBeNull();
       expect(screen.getByText("已过期——如需放行请发起新回合")).toBeInTheDocument();
       const approve = screen.getByTestId("approval-approve-button");
       const deny = screen.getByTestId("approval-deny-button");
@@ -301,6 +303,31 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
       fireEvent.click(deny);
       expect(onApprove).not.toHaveBeenCalled();
       expect(onDeny).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes a locally expired pending approval from actionable metrics and the Pending tab", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-27T14:00:00.000Z"));
+    try {
+      render(
+        <ApprovalQueue
+          items={[makeItem({ expiresAt: new Date(Date.now() + 60_000).toISOString() })]}
+          onApprove={noop}
+          onDeny={noop}
+        />,
+      );
+      expect(screen.getByLabelText("待裁决 1")).toBeInTheDocument();
+      expect(screen.getByTestId("approval-card-appr-abc")).toBeInTheDocument();
+
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(screen.getByLabelText("待裁决 0")).toBeInTheDocument();
+      expect(screen.queryByTestId("approval-card-appr-abc")).toBeNull();
+
+      fireEvent.click(screen.getByRole("radio", { name: "全部" }));
+      expect(screen.getByTestId("approval-card-appr-abc")).toHaveAttribute("data-expiry-state", "expired");
     } finally {
       vi.useRealTimers();
     }

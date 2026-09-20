@@ -12,6 +12,7 @@ import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import {
   approvalExpiryState,
+  isActionablePending,
   isDecided,
   isPermissionOverreach,
   type ApprovalCategory,
@@ -131,14 +132,14 @@ export function ApprovalQueue({
   }, [items, notificationPermission, now, t]);
 
   const pendingCount = useMemo(
-    () => items.filter((item) => item.decision.kind === "pending").length,
-    [items],
+    () => items.filter((item) => isActionablePending(item, now)).length,
+    [items, now],
   );
 
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return items.filter((item) => {
-      if (filter === "pending" && isDecided(item)) return false;
+      if (filter === "pending" && !isActionablePending(item, now)) return false;
       if (filter === "decided" && !isDecided(item)) return false;
       if (positionFilter && item.positionId !== positionFilter) return false;
       if (categoryFilter && item.category !== categoryFilter) return false;
