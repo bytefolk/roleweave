@@ -101,6 +101,15 @@ export function isDecided(item: ApprovalQueueItem): boolean {
 }
 
 /**
+ * A local deadline makes a pending record non-actionable before the next
+ * authoritative server snapshot persists its expired status. Keep this
+ * projection separate from `isDecided`: expiry is not an operator verdict.
+ */
+export function isActionablePending(item: ApprovalQueueItem, now: number): boolean {
+  return item.decision.kind === "pending" && approvalExpiryState(item, now) !== "expired";
+}
+
+/**
  * Project an approval deadline against a caller-supplied clock. Keeping the
  * clock outside this helper lets the queue, card, and detail drawer update in
  * lockstep on the same minute tick.
