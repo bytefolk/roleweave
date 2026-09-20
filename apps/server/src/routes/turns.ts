@@ -25,16 +25,19 @@ import { compactThreadContextHistory, materializeThreadContext, type Supplementa
 import { readPositionAgentBinding, resolvePositionAgentEngine } from "../agent-binding.js";
 import { employeeModelConfig } from "../model-selection.js";
 import { readAttachmentMetas, attachmentFilePath } from "../attachments/store.js";
-import { assertAttachmentId } from "../attachments/validate.js";
+import { assertAttachmentBatch, assertAttachmentId } from "../attachments/validate.js";
 import type { TurnAttachment } from "@roleweave/shared";
 import { ATTACHMENT_MAX_COUNT } from "@roleweave/shared";
 
+const MAX_INPUT_BYTES = 256 * 1024;
+
 /**
- * Build the engine-visible attachment context block (Decision A2). Extracted
- * PDF text is inlined with page anchors; images are referenced by file path
- * for engines with vision capabilities.
+ * Engine-visible attachment context (Decision A2). P0 lists file paths only —
+ * PDF text extraction is out of scope until pdfjs-dist is a declared, packaged
+ * runtime dependency. The assembled string must fit the 256 KiB input budget
+ * so thread history is not squeezed to zero.
  */
-function buildAttachmentContext(
+export function buildAttachmentContext(
   attachments: TurnAttachment[],
   workspace: string,
   sessionId: string,
@@ -43,21 +46,20 @@ function buildAttachmentContext(
   const lines: string[] = ["[Attached files]"];
   for (let i = 0; i < attachments.length; i++) {
     const att = attachments[i]!;
-    if (att.mimeType === "application/pdf" && att.extractedText) {
-      lines.push(`- File ${i + 1}: ${att.fileName} (${att.extractedText.pages.length} pages)`);
-      for (const page of att.extractedText.pages) {
-        lines.push(`  Page ${page.pageNumber}: ${page.text}`);
-      }
-    } else {
-      const filePath = attachmentFilePath(workspace, sessionId, att.id);
-      lines.push(`- File ${i + 1}: ${att.fileName} (${att.mimeType}, path: ${filePath})`);
-    }
+    const filePath = attachmentFilePath(workspace, sessionId, att.id);
+    lines.push(`- File ${i + 1}: ${att.fileName} (${att.mimeType}, path: ${filePath})`);
   }
   lines.push("", "[User message]", userInput);
-  return lines.join("\n");
+  const assembled = lines.join("\n");
+  if (Buffer.byteLength(assembled, "utf8") > MAX_INPUT_BYTES) {
+    throw new OrgApiError(
+      errorCodes.turn_request_invalid,
+      400,
+      "attachment context exceeds 256 KiB input budget",
+    );
+  }
+  return assembled;
 }
-
-const MAX_INPUT_BYTES = 256 * 1024;
 
 export interface TurnPostBody {
   /** Session retry association; never accepted by the bare or group routes. */
@@ -362,6 +364,7 @@ export async function executeTurn(
       if (resolvedAttachments.length === 0) {
         throw new OrgApiError(errorCodes.attachment_missing, 400, "one or more attachment ids were not found in this session");
       }
+      assertAttachmentBatch(resolvedAttachments);
       augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, body.input);
     }
     const context = materializeThreadContext({

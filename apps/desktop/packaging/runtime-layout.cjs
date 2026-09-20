@@ -67,7 +67,6 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/approvals/service.js",
   "dist/src/approvals/store.js",
   "dist/src/assets/store.js",
-  "dist/src/attachments/extract-pdf.js",
   "dist/src/attachments/routes.js",
   "dist/src/attachments/store.js",
   "dist/src/attachments/validate.js",

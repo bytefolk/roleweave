@@ -14,7 +14,6 @@ import {
   assertAttachmentMimeType,
   assertAttachmentSize,
 } from "./validate.js";
-import { extractPdfText } from "./extract-pdf.js";
 
 const MAX_UPLOAD_BODY_BYTES = Math.ceil(ATTACHMENT_MAX_SINGLE_BYTES * 1.34) + 4096;
 const READ_SAFETY_CAP = MAX_UPLOAD_BODY_BYTES + 64 * 1024;
@@ -88,19 +87,12 @@ export async function handleAttachmentUpload(
   assertAttachmentBatch([{ sizeBytes: data.length }]);
 
   const id = crypto.randomUUID();
-  let meta: TurnAttachment = {
+  const meta: TurnAttachment = {
     id,
     fileName,
     mimeType,
     sizeBytes: data.length,
   };
-
-  if (mimeType === "application/pdf") {
-    const extractedText = await extractPdfText(data);
-    if (extractedText !== undefined) {
-      meta = { ...meta, extractedText };
-    }
-  }
 
   await saveAttachment(workspace.dir, sessionId, meta, data);
   sendJson(res, 200, { attachment: meta });
