@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -11,7 +12,7 @@ import type {
   TurnRunRequest,
   TurnRunResult,
 } from "@roleweave/shared";
-import { validatePendingApproval } from "@roleweave/shared";
+import { approvalPreviewDigestInput, isApprovalChangePreview, validatePendingApproval } from "@roleweave/shared";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 import { createTurnEnvelope } from "../src/turns/envelope.js";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
@@ -98,6 +99,18 @@ const ENVELOPE = createTurnEnvelope({
   message: "hello",
 });
 
+function changePreview(approvalId: string, action: { kind: string; description: string; target?: string }) {
+  const preview = {
+    version: "approval-change-preview.v1" as const,
+    previewId: "preview-1",
+    files: [{ path: "reports/summary.md", change: "modify" as const, before: "old", after: "new" }],
+  };
+  return {
+    ...preview,
+    actionDigest: `sha256:${crypto.createHash("sha256").update(approvalPreviewDigestInput(approvalId, action, preview)).digest("hex")}`,
+  };
+}
+
 test("CLI driver mirrors the engine.v1 approval events verbatim into a trusted stream", async () => {
   const command = await fixtureCli(`
     process.stdin.resume();
@@ -142,6 +155,32 @@ test("CLI driver mirrors the engine.v1 approval events verbatim into a trusted s
     assert.equal(requested.reason, "destructive command");
     assert.equal(requested.expiresAt, "2026-08-24T01:00:00.000Z");
   }
+});
+
+test("CLI driver accepts a bounded preview only when it is bound to its approval action", async () => {
+  const action = { kind: "write", description: "update summary", target: "reports/summary.md" };
+  const preview = changePreview("appr-preview", action);
+  assert.equal(isApprovalChangePreview(preview), true);
+  const command = await fixtureCli(`
+    process.stdin.resume();
+    console.log(JSON.stringify({ runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z", type: "run.started" }));
+    console.log(JSON.stringify({ runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z", type: "approval.requested", approvalId: "appr-preview", action: ${JSON.stringify({ ...action, preview })} }));
+    console.log(JSON.stringify({ runId: "run-1", timestamp: "2026-08-24T00:00:01.000Z", type: "run.failed", error: { code: "engine.approval_required", message: "awaiting verdict", retryable: true, terminalReason: "engine_internal_error" } }));
+  `);
+  const result = await new DigitalEmployeeCliDriver(command).turnRun({ workspace: "/workspace", positionId: "repo-owner", engine: "qoder", envelope: ENVELOPE });
+  assert.equal(result.status, "trusted", JSON.stringify(result));
+  assert.equal(result.events[1]?.type, "approval.requested");
+  if (result.events[1]?.type === "approval.requested") assert.deepEqual(result.events[1].action.preview, preview);
+
+  const tampered = await fixtureCli(`
+    process.stdin.resume();
+    console.log(JSON.stringify({ runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z", type: "run.started" }));
+    console.log(JSON.stringify({ runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z", type: "approval.requested", approvalId: "appr-preview", action: ${JSON.stringify({ ...action, description: "different action", preview })} }));
+    console.log(JSON.stringify({ runId: "run-1", timestamp: "2026-08-24T00:00:01.000Z", type: "run.failed", error: { code: "engine.approval_required", message: "awaiting verdict", retryable: true, terminalReason: "engine_internal_error" } }));
+  `);
+  const rejected = await new DigitalEmployeeCliDriver(tampered).turnRun({ workspace: "/workspace", positionId: "repo-owner", engine: "qoder", envelope: ENVELOPE });
+  assert.equal(rejected.status, "indeterminate");
+  if (rejected.status === "indeterminate") assert.equal(rejected.code, "turn_protocol_invalid");
 });
 
 test("CLI driver fails closed on malformed approval events without faking a terminal", async () => {

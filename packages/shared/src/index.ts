@@ -5,6 +5,7 @@ export * from "./position-id.js";
 export * from "./pending-approval.js";
 export * from "./approvals.js";
 export * from "./approval-redaction.js";
+export * from "./approval-preview.js";
 export * from "./change-manifest.js";
 export * from "./hire.js";
 export * from "./position-profile.js";

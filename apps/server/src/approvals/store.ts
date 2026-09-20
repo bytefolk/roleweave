@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
-import { OrgApiError, errorCodes, turnEngines, validatePendingApproval, type ApprovalRecord } from "@roleweave/shared";
+import { OrgApiError, errorCodes, isApprovalChangePreview, turnEngines, validatePendingApproval, type ApprovalRecord } from "@roleweave/shared";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 import { redactApprovalText } from "./context.js";
 
@@ -56,6 +56,10 @@ function valid(value: unknown): value is ApprovalRecord {
   const s = a.source;
   const text = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 8192;
   const time = (v: unknown) => typeof v === "string" && Number.isFinite(Date.parse(v));
+  const previewPayload = (preview: Exclude<NonNullable<ApprovalRecord["context"]>["preview"], { status: "unavailable" }>) => {
+    const { status: _status, ...payload } = preview;
+    return payload;
+  };
   if (a.schemaVersion !== "workbench-approval.v1" || !ID.test(a.id) || !Number.isSafeInteger(a.version) || a.version < 1 ||
       !s || !["session", "position", "group"].includes(s.kind) ||
       ![s.positionId, s.conversationId, s.turnId, s.runId, a.approvalId].every(text) || !turnEngines.includes(s.engine) ||
@@ -81,7 +85,13 @@ function valid(value: unknown): value is ApprovalRecord {
         !["workspace_write", "command_execution", "external_network", "restricted_tool"].includes(c.impact) ||
         !c.permissions || !["read_only", "approval_required"].includes(c.permissions.mode) ||
         !boundedList(c.permissions.allowedTools) || !boundedList(c.permissions.deniedTools) ||
-        !c.preview || c.preview.status !== "unavailable" || c.preview.reason !== "engine_preview_not_supplied") return false;
+        !c.preview || (c.preview.status === "unavailable"
+          ? c.preview.reason !== "engine_preview_not_supplied"
+          : c.preview.status !== "available" || !isApprovalChangePreview(previewPayload(c.preview)) || c.preview.files.some(file =>
+            redactApprovalText(file.path) !== file.path ||
+            (file.before !== undefined && redactApprovalText(file.before) !== file.before) ||
+            (file.after !== undefined && redactApprovalText(file.after) !== file.after)
+          ))) return false;
   }
   return true;
 }
