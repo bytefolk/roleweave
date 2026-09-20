@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import type {
   EngineOrgApplySuccess,
@@ -11,6 +12,7 @@ import type {
   TurnRunResult,
   TurnTerminalReason,
 } from "@roleweave/shared";
+import { approvalPreviewFingerprintInput, isApprovalChangePreview } from "@roleweave/shared";
 import { splitCommand } from "./probe.js";
 import {
   bundledElectronRunAsNode,
@@ -64,6 +66,20 @@ function exactKeys(value: Record<string, unknown>, required: string[], optional:
   if (required.some((key) => !(key in value)) || Object.keys(value).some((key) => !allowed.has(key))) {
     throw new EngineProtocolError("engine.v1 event fields do not match the frozen shape");
   }
+}
+
+function hasBoundPreview(approvalId: string, action: Record<string, unknown>): boolean {
+  if (action.preview === undefined) return true;
+  if (!isApprovalChangePreview(action.preview)) return false;
+  const { previewFingerprint, ...preview } = action.preview;
+  const digest = crypto.createHash("sha256")
+    .update(approvalPreviewFingerprintInput(approvalId, {
+      kind: action.kind as string,
+      description: action.description as string,
+      ...(action.target === undefined ? {} : { target: action.target as string }),
+    }, preview))
+    .digest("hex");
+  return previewFingerprint === `sha256:${digest}`;
 }
 
 function boundedJsonBytes(value: unknown, limit: number): boolean {
@@ -223,13 +239,14 @@ function parseEngineEvent(line: string): EngineEvent {
       if (!isRecord(unknownEvent.action)) {
         throw new EngineProtocolError("engine.v1 approval.requested action is invalid");
       }
-      exactKeys(unknownEvent.action, ["kind", "description"], ["target"]);
+      exactKeys(unknownEvent.action, ["kind", "description"], ["target", "preview"]);
       if (
         !boundedApprovalId(unknownEvent.approvalId) ||
         !APPROVAL_ACTION_KINDS.has(unknownEvent.action.kind as string) ||
         !boundedNonEmptyText(unknownEvent.action.description, APPROVAL_DESCRIPTION_MAX_BYTES) ||
         (unknownEvent.action.target !== undefined &&
           !boundedNonEmptyText(unknownEvent.action.target, APPROVAL_TARGET_MAX_BYTES)) ||
+        !hasBoundPreview(unknownEvent.approvalId, unknownEvent.action) ||
         (unknownEvent.reason !== undefined &&
           !boundedNonEmptyText(unknownEvent.reason, APPROVAL_DESCRIPTION_MAX_BYTES)) ||
         !optionalIsoTimestamp(unknownEvent.expiresAt)
@@ -245,6 +262,9 @@ function parseEngineEvent(line: string): EngineEvent {
           description: unknownEvent.action.description,
           ...(unknownEvent.action.target !== undefined
             ? { target: unknownEvent.action.target }
+            : {}),
+          ...(unknownEvent.action.preview !== undefined
+            ? { preview: unknownEvent.action.preview as import("@roleweave/shared").ApprovalChangePreview }
             : {}),
         },
         ...(unknownEvent.reason !== undefined ? { reason: unknownEvent.reason } : {}),

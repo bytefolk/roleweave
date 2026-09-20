@@ -33,12 +33,34 @@ function publicView(record: ApprovalRecord): ApprovalRecord {
       ...record.action,
       description: redactApprovalText(record.action.description),
       ...(record.action.target ? { target: redactApprovalText(record.action.target) } : {}),
+      ...(record.action.preview ? {
+        preview: {
+          ...record.action.preview,
+          files: record.action.preview.files.map(file => ({
+            ...file,
+            path: redactApprovalText(file.path),
+            ...(file.before === undefined ? {} : { before: redactApprovalText(file.before) }),
+            ...(file.after === undefined ? {} : { after: redactApprovalText(file.after) }),
+          })),
+        },
+      } : {}),
     },
     ...(record.requestReason ? { requestReason: redactApprovalText(record.requestReason) } : {}),
     ...(record.context ? {
       context: {
         ...record.context,
         ...(record.context.parameterSummary ? { parameterSummary: redactApprovalText(record.context.parameterSummary) } : {}),
+        ...(record.context.preview.status === "available" ? {
+          preview: {
+            ...record.context.preview,
+            files: record.context.preview.files.map(file => ({
+              ...file,
+              path: redactApprovalText(file.path),
+              ...(file.before === undefined ? {} : { before: redactApprovalText(file.before) }),
+              ...(file.after === undefined ? {} : { after: redactApprovalText(file.after) }),
+            })),
+          },
+        } : {}),
       },
     } : {}),
     ...(record.decision?.reason ? { decision: { ...record.decision, reason: redactApprovalText(record.decision.reason) } } : {}),

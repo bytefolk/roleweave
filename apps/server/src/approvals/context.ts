@@ -1,5 +1,5 @@
 import { redactApprovalSecrets } from "@roleweave/shared/approval-redaction";
-import type { ApprovalContext, ApprovalRequestedEvent, OrgRole } from "@roleweave/shared";
+import type { ApprovalChangePreview, ApprovalContext, ApprovalRequestedEvent, OrgRole } from "@roleweave/shared";
 
 const MAX_SUMMARY_BYTES = 2048;
 
@@ -22,6 +22,19 @@ function capabilityContext(kind: ApprovalRequestedEvent["action"]["kind"]): Pick
   }
 }
 
+export function projectApprovalPreview(preview: ApprovalChangePreview): Extract<ApprovalContext["preview"], { status: "available" }> {
+  return {
+    status: "available",
+    ...preview,
+    files: preview.files.map(file => ({
+      ...file,
+      path: redactApprovalText(file.path),
+      ...(file.before === undefined ? {} : { before: redactApprovalText(file.before) }),
+      ...(file.after === undefined ? {} : { after: redactApprovalText(file.after) }),
+    })),
+  };
+}
+
 export function buildApprovalContext(
   action: ApprovalRequestedEvent["action"],
   role: Pick<OrgRole, "mode" | "toolAllow" | "toolDeny">,
@@ -35,6 +48,8 @@ export function buildApprovalContext(
       allowedTools: role.toolAllow.slice(0, 128),
       deniedTools: role.toolDeny.slice(0, 128),
     },
-    preview: { status: "unavailable", reason: "engine_preview_not_supplied" },
+    preview: action.preview
+      ? projectApprovalPreview(action.preview)
+      : { status: "unavailable", reason: "engine_preview_not_supplied" },
   };
 }
