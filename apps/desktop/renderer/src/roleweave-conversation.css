@@ -449,11 +449,12 @@
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-bubble__error, .owb-turn__error, .owb-turn__warning) {
   margin-top: 10px;
-  padding: 6px 0 6px 10px;
+  padding: 8px 10px;
   border-left: 2px solid var(--ui-danger);
   border-radius: 0;
   background: transparent;
   color: var(--ui-danger-strong);
+  line-height: 1.7;
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn__warning {
@@ -523,6 +524,7 @@
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-bubble__retryrow {
   justify-content: flex-start;
+  margin-top: 12px;
 }
 
 /* The composer is a distinct writing block. It carries the only primary

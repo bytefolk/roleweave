@@ -7,6 +7,8 @@
 
 ### Fixed
 
+- #412：失败回合里错误块与「创建新回合重试」之间补回气泡内既有 10–16px 间距节奏（retry 行 `margin-top: 12px`）；错误块多行行高与正文对齐，并使用对称内边距。纯视觉，不改重试行为。
+
 - #406：把岗位拖到新上级只改汇报线。移动后仍按真实 `employee.json` 目录读取 `.workbench/agent-binding.v1.json`，不会因为过期的 `localReference` 把除 CEO 外的员工显示成默认 Claude。`org.updated` 继续发布 change-manifest 的 move/reorder，避免一次拖拽触发全量元数据重载。
 
 - 对话默认使用 Enter 发送时，Ctrl/Command + Enter 可在光标处插入换行或替换选中文字，并保留正确光标位置；保留 Shift + Enter 换行、输入法确认保护和设置中的发送快捷键选择。
