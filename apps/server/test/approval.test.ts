@@ -150,7 +150,8 @@ test("approval store retains legacy records with unsanitized preview text", asyn
       risk: "high" as const, requestedCapability: "write" as const, parameterSummary: "token=old",
       impact: "workspace_write" as const,
       permissions: { mode: "approval_required" as const, allowedTools: [], deniedTools: [] },
-      preview: { status: "available" as const, ...preview, previewFingerprint },
+      preview: { status: "available" as const, ...preview, previewFingerprint,
+        files: [{ path: "report.md", change: "modify" as const, before: "token=[redacted]", after: "token=[redacted]" }] },
     },
     requestedAt: now, status: "pending" as const, execution: { phase: "not_started" as const },
     createdAt: now, updatedAt: now,
@@ -158,6 +159,41 @@ test("approval store retains legacy records with unsanitized preview text", asyn
   try {
     await store.put(workspace, record);
     assert.equal((await store.list(workspace))[0]?.approvalId, "approval-1");
+  } finally {
+    await store.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("approval store rejects a context preview that does not project from the action", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-approval-mismatch-"));
+  const store = new ApprovalStore();
+  const source = {
+    kind: "position" as const, positionId: "repo-owner", conversationId: "conversation-1",
+    turnId: "turn-1", runId: "run-1", engine: "qoder" as const,
+  };
+  const action = { kind: "write" as const, description: "write report", target: "report.md" };
+  const preview = {
+    version: "approval-change-preview.v1" as const, previewId: "preview-1",
+    files: [{ path: "report.md", change: "modify" as const, before: "old", after: "new" }],
+  };
+  const previewFingerprint = `sha256:${crypto.createHash("sha256").update(approvalPreviewFingerprintInput("approval-1", action, preview)).digest("hex")}`;
+  const now = new Date().toISOString();
+  const record = {
+    schemaVersion: "workbench-approval.v1" as const,
+    id: approvalIdentity(source, "approval-1"), version: 1, approvalId: "approval-1", source,
+    action: { ...action, preview: { ...preview, previewFingerprint } },
+    context: {
+      risk: "high" as const, requestedCapability: "write" as const, impact: "workspace_write" as const,
+      permissions: { mode: "approval_required" as const, allowedTools: [], deniedTools: [] },
+      preview: { status: "available" as const, ...preview, previewFingerprint,
+        files: [{ path: "forged.md", change: "modify" as const, before: "old", after: "new" }] },
+    },
+    requestedAt: now, status: "pending" as const, execution: { phase: "not_started" as const },
+    createdAt: now, updatedAt: now,
+  };
+  try {
+    await assert.rejects(store.put(workspace, record));
   } finally {
     await store.close();
     await fs.rm(workspace, { recursive: true, force: true });

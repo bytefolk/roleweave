@@ -22,7 +22,7 @@ function capabilityContext(kind: ApprovalRequestedEvent["action"]["kind"]): Pick
   }
 }
 
-function displayPreview(preview: ApprovalChangePreview): Extract<ApprovalContext["preview"], { status: "available" }> {
+export function projectApprovalPreview(preview: ApprovalChangePreview): Extract<ApprovalContext["preview"], { status: "available" }> {
   return {
     status: "available",
     ...preview,
@@ -49,7 +49,7 @@ export function buildApprovalContext(
       deniedTools: role.toolDeny.slice(0, 128),
     },
     preview: action.preview
-      ? displayPreview(action.preview)
+      ? projectApprovalPreview(action.preview)
       : { status: "unavailable", reason: "engine_preview_not_supplied" },
   };
 }

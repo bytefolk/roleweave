@@ -3,8 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { OrgApiError, errorCodes, isApprovalChangePreview, turnEngines, validatePendingApproval, type ApprovalRecord } from "@roleweave/shared";
+import { approvalPreviewFingerprintInput } from "@roleweave/shared";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
+import { projectApprovalPreview } from "./context.js";
 
 const MAX_BYTES = 128 * 1024;
 const ID = /^[a-f0-9]{64}$/;
@@ -49,6 +52,20 @@ async function read(file: string): Promise<unknown> {
   } finally { await handle.close(); }
 }
 
+function hasBoundPreview(record: ApprovalRecord): boolean {
+  const preview = record.action.preview;
+  if (preview === undefined || !isApprovalChangePreview(preview)) return preview === undefined;
+  const { previewFingerprint, ...payload } = preview;
+  const digest = crypto.createHash("sha256")
+    .update(approvalPreviewFingerprintInput(record.approvalId, {
+      kind: record.action.kind,
+      description: record.action.description,
+      ...(record.action.target === undefined ? {} : { target: record.action.target }),
+    }, payload))
+    .digest("hex");
+  return previewFingerprint === `sha256:${digest}`;
+}
+
 function valid(value: unknown): value is ApprovalRecord {
   if (!value || typeof value !== "object") return false;
   const a = value as ApprovalRecord;
@@ -68,7 +85,8 @@ function valid(value: unknown): value is ApprovalRecord {
       (a.expiresAt !== undefined && !time(a.expiresAt)) ||
       !["pending", "granted", "denied", "expired", "cancelled", "indeterminate"].includes(a.status) ||
       !a.execution || !["not_started", "starting", "running", "completed", "denied", "failed", "indeterminate"].includes(a.execution.phase) ||
-      (a.execution.turnId !== undefined && !/^[a-f0-9-]{36}$/.test(a.execution.turnId))) return false;
+      (a.execution.turnId !== undefined && !/^[a-f0-9-]{36}$/.test(a.execution.turnId)) ||
+      !hasBoundPreview(a)) return false;
   if (a.decision) {
     const d = a.decision;
     if (!/^[a-f0-9-]{36}$/.test(d.requestId) || !Number.isSafeInteger(d.expectedVersion) || d.expectedVersion < 1 ||
@@ -87,6 +105,10 @@ function valid(value: unknown): value is ApprovalRecord {
         !c.preview || (c.preview.status === "unavailable"
           ? c.preview.reason !== "engine_preview_not_supplied"
           : c.preview.status !== "available" || !isApprovalChangePreview(previewPayload(c.preview)))) return false;
+    const expectedPreview = a.action.preview === undefined
+      ? { status: "unavailable", reason: "engine_preview_not_supplied" }
+      : projectApprovalPreview(a.action.preview);
+    if (!isDeepStrictEqual(c.preview, expectedPreview)) return false;
   }
   return true;
 }
