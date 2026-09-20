@@ -903,6 +903,8 @@ export const zhCatalog: Record<string, string> = {
   "apr.filterPositionAria": "按岗位过滤",
   "apr.filterCategory": "动作类别",
   "apr.filterCategoryAria": "按动作类别过滤",
+  "apr.filterExecution": "执行状态",
+  "apr.filterExecutionAria": "按执行状态过滤",
   "apr.filterExpiry": "有效期",
   "apr.filterExpiryAria": "按有效期过滤",
   "apr.filterExpiryActive": "有效或待处理",

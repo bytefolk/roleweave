@@ -900,6 +900,8 @@ export const enCatalog: Record<string, string> = {
   "apr.filterPositionAria": "Filter by position",
   "apr.filterCategory": "Action category",
   "apr.filterCategoryAria": "Filter by action category",
+  "apr.filterExecution": "Execution status",
+  "apr.filterExecutionAria": "Filter by execution status",
   "apr.filterExpiry": "Expiry",
   "apr.filterExpiryAria": "Filter by expiry",
   "apr.filterExpiryActive": "Active or undecided",

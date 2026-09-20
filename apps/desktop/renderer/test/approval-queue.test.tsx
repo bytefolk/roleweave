@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { describe, expect, it, vi } from "vitest";
 import { ApprovalQueue } from "../src/approvals/ApprovalQueue";
 import type { ApprovalQueueItem } from "../src/approvals/types";
+import { pickSelectOption } from "./select-helper";
 
 function makeItem(over: Partial<ApprovalQueueItem> = {}): ApprovalQueueItem {
   return {
@@ -200,6 +201,33 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     fireEvent.change(screen.getByTestId("approval-filter-from"), { target: { value: "2026-09-18" } });
     expect(screen.getByTestId("approval-card-appr-write")).toBeInTheDocument();
     expect(screen.queryByTestId("approval-card-appr-exec")).toBeNull();
+  });
+
+  it("filters decision history by the separate recovery execution phase", () => {
+    render(
+      <ApprovalQueue
+        defaultFilter="all"
+        items={[
+          makeItem({ approvalId: "appr-completed", decision: { kind: "granted", scope: "once" }, executionPhase: "completed" }),
+          makeItem({ approvalId: "appr-failed", decision: { kind: "granted", scope: "once" }, executionPhase: "failed", executionErrorCode: "approval_execution_unknown" }),
+          makeItem({ approvalId: "appr-pending" }),
+        ]}
+        onApprove={noop}
+        onDeny={noop}
+      />,
+    );
+    expect(screen.getByTestId("approval-card-appr-failed")).toHaveAttribute("data-execution-phase", "failed");
+    expect(screen.getByText("裁决已保存，后续执行失败")).toBeInTheDocument();
+
+    pickSelectOption("按执行状态过滤", "裁决已保存，后续执行失败");
+    expect(screen.queryByTestId("approval-card-appr-completed")).toBeNull();
+    expect(screen.getByTestId("approval-card-appr-failed")).toBeInTheDocument();
+    expect(screen.queryByTestId("approval-card-appr-pending")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "清除过滤" }));
+    expect(screen.getByTestId("approval-card-appr-completed")).toBeInTheDocument();
+    expect(screen.getByTestId("approval-card-appr-failed")).toBeInTheDocument();
+    expect(screen.getByTestId("approval-card-appr-pending")).toBeInTheDocument();
   });
 
   it("shows lifecycle and traceability fields and routes supported sources", async () => {
