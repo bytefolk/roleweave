@@ -266,6 +266,7 @@ export class ApprovalService {
           return { status: 200, record: await this.view(ws, a) };
         }
       }
+      const effectiveScope = a.decisions?.some(d => d.decision === "granted" && d.scope === "once") ? "once" : request.scope;
       const turnId = crypto.randomUUID();
       const reservation = this.ctx.runningTurns.reserve(ws.dir, a.source.positionId, turnId);
       let session: WorkbenchSession | undefined;
@@ -277,7 +278,7 @@ export class ApprovalService {
         if (a.expiresAt && Date.now() >= Date.parse(a.expiresAt)) throw new OrgApiError(errorCodes.approval_expired, 410, "Approval expired");
         a.status = request.decision;
         // `operator` remains the engine protocol marker; audit retains the verified actor.
-        a.decision = { ...request, decidedBy: "operator", decidedAt };
+        a.decision = { ...request, scope: effectiveScope, decidedBy: "operator", decidedAt };
         // Starting is persisted BEFORE any dispatch. A crash here is deliberately
         // indeterminate: replaying an external side effect would be unsafe.
         a.execution = { phase: "starting", turnId };
@@ -296,7 +297,7 @@ export class ApprovalService {
           const result = await executeTurn(this.ctx, undefined, {
             positionId: a.source.positionId, engine: a.source.engine,
             input: `${request.decision === "granted" ? "[审批裁决] 请继续执行以下原任务中已批准的动作" : "[审批裁决] 已拒绝以下原任务的动作，不得执行"}\n${source.input}`,
-            pendingApproval: { approvalId: a.approvalId, decision: request.decision, decidedBy: "operator", scope: request.scope, ...(request.reason ? { reason: request.reason } : {}), ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}) },
+            pendingApproval: { approvalId: a.approvalId, decision: request.decision, decidedBy: "operator", scope: effectiveScope, ...(request.reason ? { reason: request.reason } : {}), ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}) },
           }, session, undefined, undefined, ws, {
             turnId, reservation,
             beforeRun: async () => {

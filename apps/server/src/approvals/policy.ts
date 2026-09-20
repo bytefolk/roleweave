@@ -35,6 +35,18 @@ function defaultFile(): PolicyFile {
   return { schemaVersion: "roleweave-approval-policy.v1", version: "local-operator-v1", default: { eligibleApprovers: ["operator"], threshold: 1 } };
 }
 
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+
+export function approvalPolicyDigest(policy: Omit<ApprovalPolicySnapshot, "digest">): string {
+  return `sha256:${crypto.createHash("sha256").update(canonical(policy)).digest("hex")}`;
+}
+
 /** Read an optional workspace-local policy.  The policy is copied into each
  * request, so edits only govern future requests and cannot rewrite history. */
 export async function resolveApprovalPolicy(workspace: string, record: Pick<ApprovalRecord, "source" | "action" | "requestedAt">): Promise<ApprovalPolicySnapshot> {
@@ -49,15 +61,14 @@ export async function resolveApprovalPolicy(workspace: string, record: Pick<Appr
       !validRule(policy.default) || (policy.rules !== undefined && (!Array.isArray(policy.rules) || policy.rules.length > 64 || !policy.rules.every(validRule)))) throw invalid();
   const selected = policy.rules?.find(r => (r.positionId === undefined || r.positionId === record.source.positionId) &&
     (r.actionKinds === undefined || r.actionKinds.includes(record.action.kind))) ?? policy.default;
-  const canonical = JSON.stringify({ version: policy.version, rule: selected });
-  const digest = `sha256:${crypto.createHash("sha256").update(canonical).digest("hex")}`;
   const escalation = selected.escalation ? {
     at: new Date(Date.parse(record.requestedAt) + selected.escalation.afterMs).toISOString(),
     eligibleApprovers: selected.escalation.eligibleApprovers,
     threshold: selected.escalation.threshold,
   } : undefined;
-  return { version: policy.version, digest, eligibleApprovers: selected.eligibleApprovers, threshold: selected.threshold,
+  const snapshot = { version: policy.version, eligibleApprovers: selected.eligibleApprovers, threshold: selected.threshold,
     delegations: selected.delegations ?? {}, ...(escalation ? { escalation } : {}) };
+  return { ...snapshot, digest: approvalPolicyDigest(snapshot) };
 }
 
 export function effectivePolicy(policy: ApprovalPolicySnapshot, now = Date.now()): Pick<ApprovalPolicySnapshot, "eligibleApprovers" | "threshold"> & { escalated: boolean } {
@@ -68,7 +79,9 @@ export function effectivePolicy(policy: ApprovalPolicySnapshot, now = Date.now()
 
 export function policyProgress(policy: ApprovalPolicySnapshot, decisions: readonly { decision: string; actor: string; delegatedFrom?: string }[], now = Date.now()) {
   const current = effectivePolicy(policy, now);
-  const grants = new Set(decisions.filter(d => d.decision === "granted").map(d => d.delegatedFrom ?? d.actor));
+  const grants = new Set(decisions.filter(d => d.decision === "granted")
+    .map(d => d.delegatedFrom ?? d.actor)
+    .filter(principal => current.eligibleApprovers.includes(principal)));
   return { required: current.threshold, granted: grants.size, pending: Math.max(0, current.threshold - grants.size), escalated: current.escalated };
 }
 

@@ -204,6 +204,63 @@ test("multi-party policy rejects unauthorized actors, accepts a delegated co-sig
   } finally { await s.close(); }
 });
 
+test("persisted policy snapshots remain bound to their digest", async () => {
+  const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+      schemaVersion: "roleweave-approval-policy.v1", version: "bound-1",
+      default: { eligibleApprovers: ["alice"], threshold: 1 },
+    }));
+    await open(s, workspace); await request(s); await list(s);
+    const [record] = await approvals(s.ctx).store.list(workspace);
+    record!.policy!.eligibleApprovers = ["mallory"];
+    await assert.rejects(approvals(s.ctx).store.put(workspace, record!));
+  } finally { await s.close(); }
+});
+
+test("multi-party grants cannot widen scope based on the final voter", async () => {
+  const driver = new ApprovalDriver(); driver.runScope = true;
+  const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+      schemaVersion: "roleweave-approval-policy.v1", version: "scope-1",
+      default: { eligibleApprovers: ["alice", "bob"], threshold: 2 },
+    }));
+    await open(s, workspace); await request(s);
+    let snapshot = await list(s), approval = snapshot.items[0]!;
+    s.ctx.config.approvalActorId = "alice";
+    assert.equal((await api(s.baseUrl, `/approvals/${approval.id}/decision`, { token: s.token, method: "POST", body: { ...body(snapshot, approval), scope: "once" } })).status, 200);
+    snapshot = await list(s); approval = snapshot.items[0]!;
+    s.ctx.config.approvalActorId = "bob";
+    assert.equal((await api(s.baseUrl, `/approvals/${approval.id}/decision`, { token: s.token, method: "POST", body: { ...body(snapshot, approval), scope: "run" } })).status, 202);
+    await settle(s, approval.id);
+    assert.equal(driver.calls.find(call => call.envelope.pendingApproval)?.envelope.pendingApproval?.scope, "once");
+  } finally { await s.close(); }
+});
+
+test("escalation does not count grants from principals outside the escalated policy", async () => {
+  const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+      schemaVersion: "roleweave-approval-policy.v1", version: "escalation-votes-1",
+      default: { eligibleApprovers: ["alice", "bob"], threshold: 2, escalation: { afterMs: 1000, eligibleApprovers: ["incident-commander"], threshold: 1 } },
+    }));
+    await open(s, workspace); await request(s);
+    let snapshot = await list(s), approval = snapshot.items[0]!;
+    s.ctx.config.approvalActorId = "alice";
+    assert.equal((await api(s.baseUrl, `/approvals/${approval.id}/decision`, { token: s.token, method: "POST", body: body(snapshot, approval) })).status, 200);
+    const realNow = Date.now;
+    try {
+      Date.now = () => Date.parse(approval.requestedAt) + 1001;
+      snapshot = await list(s); approval = snapshot.items[0]!;
+      assert.deepEqual(approval.progress, { required: 1, granted: 0, pending: 1, escalated: true });
+    } finally { Date.now = realNow; }
+  } finally { await s.close(); }
+});
+
 test("policy escalation persists and deterministically changes the active threshold", async () => {
   const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
   try {

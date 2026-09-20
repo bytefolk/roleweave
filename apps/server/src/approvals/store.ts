@@ -8,6 +8,7 @@ import { OrgApiError, errorCodes, isApprovalChangePreview, isApprovalScopeOffer,
 import { approvalPreviewFingerprintInput } from "@roleweave/shared";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 import { projectApprovalPreview } from "./context.js";
+import { approvalPolicyDigest } from "./policy.js";
 
 const MAX_BYTES = 128 * 1024;
 const ID = /^[a-f0-9]{64}$/;
@@ -99,6 +100,8 @@ function valid(value: unknown): value is ApprovalRecord {
     const p = a.policy;
     const actor = (v: unknown) => typeof v === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(v);
     if (!p || !actor(p.version) || !/^sha256:[a-f0-9]{64}$/.test(p.digest) || !Array.isArray(p.eligibleApprovers) || !p.eligibleApprovers.every(actor) || !Number.isSafeInteger(p.threshold) || p.threshold < 1 || p.threshold > p.eligibleApprovers.length || !p.delegations || typeof p.delegations !== "object" || Array.isArray(p.delegations) || !Object.entries(p.delegations).every(([from, to]) => actor(from) && Array.isArray(to) && to.every(actor)) || (p.escalation !== undefined && (!time(p.escalation.at) || !Array.isArray(p.escalation.eligibleApprovers) || !p.escalation.eligibleApprovers.every(actor) || !Number.isSafeInteger(p.escalation.threshold) || p.escalation.threshold < 1 || p.escalation.threshold > p.escalation.eligibleApprovers.length)) || !Array.isArray(a.decisions) || a.decisions.length > 64 || !a.decisions.every(d => /^[a-f0-9-]{36}$/.test(d.requestId) && Number.isSafeInteger(d.expectedVersion) && d.expectedVersion >= 1 && ["granted", "denied"].includes(d.decision) && (d.scope === "once" || d.scope === "run") && actor(d.actor) && time(d.decidedAt) && (d.delegatedFrom === undefined || actor(d.delegatedFrom)) && (d.reason === undefined || text(d.reason))) || !a.progress || !Number.isSafeInteger(a.progress.required) || !Number.isSafeInteger(a.progress.granted) || !Number.isSafeInteger(a.progress.pending) || typeof a.progress.escalated !== "boolean") return false;
+    const { digest: _digest, ...policyPayload } = p;
+    if (p.digest !== approvalPolicyDigest(policyPayload)) return false;
   }
   if (a.context !== undefined) {
     const c = a.context;
