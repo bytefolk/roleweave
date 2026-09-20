@@ -28,4 +28,5 @@ export * from "./goals.js";
 export * from "./avatar.js";
 
 export * from "./services.js";
+export * from "./deployment-auth.js";
 export * from "./attachments.js";

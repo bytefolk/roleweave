@@ -99,6 +99,14 @@ contextBridge.exposeInMainWorld("owb", {
     set: (key, value) => ipcRenderer.invoke("owb:settings:set", key, value),
     clear: (key) => ipcRenderer.invoke("owb:settings:clear", key),
   },
+  // #395 per-deployment login sessions: tokens never enter the renderer.
+  deploymentSession: {
+    save: (session) => ipcRenderer.invoke("owb:deploy-session:save", session),
+    remove: (url) => ipcRenderer.invoke("owb:deploy-session:remove", url),
+    list: () => ipcRenderer.invoke("owb:deploy-session:list"),
+    getToken: (url) => ipcRenderer.invoke("owb:deploy-session:get-token", url),
+    clear: () => ipcRenderer.invoke("owb:deploy-session:clear"),
+  },
   // #134 update surface: enumerated operations only, no generic updater
   // channel. `confirmedByUser` is passed through rather than defaulted here —
   // the service refuses an unconfirmed download or install, and that refusal is

@@ -82,6 +82,7 @@ import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
 import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
+import { DeploymentAuthProvider } from "./auth/deployment-auth-context";
 import { GoalsModule } from "./goals/GoalsModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
@@ -107,7 +108,9 @@ export function App() {
   // "useTheme must be used within a ThemeProvider".
   return (
     <ThemeProvider>
-      <AppRoot />
+      <DeploymentAuthProvider>
+        <AppRoot />
+      </DeploymentAuthProvider>
     </ThemeProvider>
   );
 }

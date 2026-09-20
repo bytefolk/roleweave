@@ -1,0 +1,144 @@
+/* #395 per-deployment login sessions */
+.owb-deploy-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.owb-deploy-session {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ui-border, #e0e0e0);
+  border-radius: 6px;
+  background: var(--ui-surface, #fff);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.owb-deploy-session:hover {
+  border-color: var(--ui-border-hover, #c0c0c0);
+}
+
+.owb-deploy-session.is-active {
+  border-color: var(--ui-accent, #0066cc);
+  background: var(--ui-accent-surface, #f0f7ff);
+}
+
+.owb-deploy-session__select {
+  margin-right: 0.25rem;
+}
+
+.owb-deploy-session__url {
+  flex: 1;
+  font-weight: 500;
+  color: var(--ui-foreground, #1a1a1a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-deploy-session__identity {
+  font-size: 0.875rem;
+  color: var(--ui-foreground-secondary, #666);
+}
+
+.owb-deploy-session__provider {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: var(--ui-surface-secondary, #f5f5f5);
+  color: var(--ui-foreground-secondary, #666);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.owb-deploy-session__remove {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--ui-danger, #dc3545);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.owb-deploy-session__remove:hover {
+  background: var(--ui-danger-surface, #ffe5e5);
+}
+
+.owb-deploy-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.owb-deploy-login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.owb-deploy-login-field label {
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--ui-foreground, #1a1a1a);
+}
+
+.owb-deploy-login-field input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ui-border, #e0e0e0);
+  border-radius: 6px;
+  background: var(--ui-surface, #fff);
+  color: var(--ui-foreground, #1a1a1a);
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease;
+}
+
+.owb-deploy-login-field input:focus {
+  outline: none;
+  border-color: var(--ui-accent, #0066cc);
+  box-shadow: 0 0 0 3px var(--ui-accent-ring, rgba(0, 102, 204, 0.1));
+}
+
+.owb-deploy-login-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.owb-deploy-login-actions button {
+  flex: 1;
+  padding: 0.625rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.owb-deploy-login-actions button[type="submit"] {
+  border: none;
+  background: var(--ui-accent, #0066cc);
+  color: #fff;
+}
+
+.owb-deploy-login-actions button[type="submit"]:hover:not(:disabled) {
+  background: var(--ui-accent-hover, #0052a3);
+}
+
+.owb-deploy-login-actions button[type="submit"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.owb-deploy-login-actions button[type="button"] {
+  border: 1px solid var(--ui-border, #e0e0e0);
+  background: var(--ui-surface, #fff);
+  color: var(--ui-foreground, #1a1a1a);
+}
+
+.owb-deploy-login-actions button[type="button"]:hover {
+  background: var(--ui-surface-secondary, #f5f5f5);
+}

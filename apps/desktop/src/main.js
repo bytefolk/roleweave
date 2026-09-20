@@ -102,6 +102,7 @@ const { createServiceConnections, registerServiceIpc } = require("./service-conn
 const { createCredentialStore, registerSettingsIpc, forwardCredentialSafeStderr } = require("./credential-settings.cjs");
 const { createConfigurationStore } = require("./configuration.cjs");
 const { registerConfigurationIpc, registerExternalUrlIpc } = require("./configuration-ipc.cjs");
+const { createDeploymentSessionStore, registerDeploymentSessionIpc } = require("./deployment-session.cjs");
 
 const SERVER_ENTRY = path.join(__dirname, "..", "..", "server", "dist", "src", "index.js");
 const ROLEWEAVE_DEV_ICON = path.resolve(
@@ -159,6 +160,11 @@ registerConfigurationIpc({ ipcMain, getStore: configurationStore, shell,
   close: () => app.quit(),
 });
 registerExternalUrlIpc({ ipcMain, shell,
+  isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
+});
+const deploymentSessionStore = () => createDeploymentSessionStore({ userDataPath: app.getPath("userData"), safeStorage });
+registerDeploymentSessionIpc({
+  ipcMain, getStore: deploymentSessionStore,
   isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
 });
 function requestConfigurationClose(event) {

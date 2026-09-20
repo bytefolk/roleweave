@@ -17,6 +17,7 @@ import type { UpdateEvent, UpdateStatus } from "@roleweave/shared";
 import { ServiceConnections } from "./ServiceConnections";
 import { ConfigurationSettings } from "./ConfigurationSettings";
 import { HostCredentials } from "./HostCredentials";
+import { LoginModule } from "../auth/LoginModule";
 import {
   stateMessage,
   unavailableMessage,
@@ -107,7 +108,7 @@ function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }
           <p className="owb-settings-module__hint">{t("settings.runtimeHint")}</p>
         </section>
       ) : null}
-      {!onlyUpdates ? <><HostCredentials /><ServiceConnections /></> : null}
+      {!onlyUpdates ? <><LoginModule /><HostCredentials /><ServiceConnections /></> : null}
 
       <section className="owb-settings-module__pane" aria-label={t("settings.updateTitle")}>
         <header className="owb-settings-module__pane-header">
