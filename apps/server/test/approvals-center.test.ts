@@ -17,24 +17,32 @@ class ApprovalDriver implements TurnRunDriver {
   invalidRunBinding = false;
   preview?: ApprovalChangePreview;
   hold?: Promise<void>;
+  approvalCount = 1;
+  actionKind: "write" | "tool" = "write";
   async turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
     this.calls.push(request);
     const runId = crypto.randomUUID(), timestamp = new Date().toISOString();
     const base = { runId, timestamp };
     const d = request.envelope.pendingApproval;
+    const batch = request.envelope.pendingApprovals;
     const events: EngineEvent[] = [{ ...base, type: "run.started" }];
-    if (d) {
+    if (d || batch) {
       await this.hold;
-      if (d.decision === "granted") events.push({ ...base, type: "approval.granted", approvalId: d.approvalId, grantedBy: "operator", scope: d.scope ?? "once" }, { ...base, type: "run.completed", output: "done", terminalReason: "goal_met" });
-      else events.push({ ...base, type: "approval.denied", approvalId: d.approvalId, deniedBy: "operator" }, { ...base, type: "run.failed", error: { code: "engine.approval_denied", message: "denied", retryable: false, terminalReason: "cancelled" } });
+      const decisions = batch ?? [d!];
+      if (decisions[0]!.decision === "granted") events.push(...decisions.map(decision => ({ ...base, type: "approval.granted" as const, approvalId: decision.approvalId, grantedBy: "operator" as const, scope: decision.scope ?? "once" as const })), { ...base, type: "run.completed", output: "done", terminalReason: "goal_met" });
+      else events.push(...decisions.map(decision => ({ ...base, type: "approval.denied" as const, approvalId: decision.approvalId, deniedBy: "operator" as const })), { ...base, type: "run.failed", error: { code: "engine.approval_denied", message: "denied", retryable: false, terminalReason: "cancelled" } });
     } else {
-      const action = { kind: "write" as const, description: "write report", target: this.target };
-      const binding = `sha256:${crypto.createHash("sha256").update(approvalRunScopeBindingInput("same-engine-id", runId, action, this.expiresAt)).digest("hex")}`;
-      events.push({ ...base, type: "approval.requested", approvalId: "same-engine-id", action: {
-        ...action,
-        ...(this.preview ? { preview: this.preview } : {}),
-        ...(this.runScope ? { scope: { version: "approval-scope-offer.v1" as const, allowed: ["once", "run"] as Array<"once" | "run">, runBinding: this.invalidRunBinding ? `sha256:${"0".repeat(64)}` : binding } } : {}),
-      }, reason: this.reason, expiresAt: this.expiresAt },
+      const action = { kind: this.actionKind, description: this.actionKind === "tool" ? "refresh local index" : "write report", target: this.target };
+      for (let index = 0; index < this.approvalCount; index += 1) {
+        const approvalId = index === 0 ? "same-engine-id" : `same-engine-id-${index + 1}`;
+        const binding = `sha256:${crypto.createHash("sha256").update(approvalRunScopeBindingInput(approvalId, runId, action, this.expiresAt)).digest("hex")}`;
+        events.push({ ...base, type: "approval.requested", approvalId, action: {
+          ...action,
+          ...(this.preview ? { preview: this.preview } : {}),
+          ...(this.runScope ? { scope: { version: "approval-scope-offer.v1" as const, allowed: ["once", "run"] as Array<"once" | "run">, runBinding: this.invalidRunBinding ? `sha256:${"0".repeat(64)}` : binding } } : {}),
+        }, reason: this.reason, expiresAt: this.expiresAt });
+      }
+      events.push(
       { ...base, type: "run.failed", error: { code: "engine.approval_required", message: "waiting", retryable: true, terminalReason: "engine_internal_error" } });
     }
     for (const event of events) request.onEvent?.(event);
@@ -201,6 +209,57 @@ test("multi-party policy rejects unauthorized actors, accepts a delegated co-sig
     assert.deepEqual(events.map(event => event.type), ["requested", "decision", "decision"]);
     assert.deepEqual(events[1], { ...events[1], actor: "carol", delegatedFrom: "alice", policyVersion: "release-7" });
     assert.ok(events.every(event => /^sha256:[a-f0-9]{64}$/.test(event.hash)));
+  } finally { await s.close(); }
+});
+
+test("#403 batches only explicit, homogeneous low-risk tool approvals into one atomic recovery", async () => {
+  const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  driver.actionKind = "tool"; driver.approvalCount = 2;
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+      schemaVersion: "roleweave-approval-policy.v1", version: "batch-tools-1",
+      default: { eligibleApprovers: ["operator"], threshold: 1, batch: { maxItems: 4, actionKinds: ["tool"] } },
+    }));
+    await open(s, workspace); await request(s);
+    const snapshot = await list(s);
+    assert.equal(snapshot.items.length, 2);
+    const payload = {
+      workspaceToken: snapshot.workspaceToken,
+      requestId: crypto.randomUUID(),
+      decision: "granted",
+      items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })),
+    };
+    const accepted = await api(s.baseUrl, "/approvals/batch/decision", { token: s.token, method: "POST", body: payload });
+    assert.equal(accepted.status, 202, JSON.stringify(accepted.body));
+    assert.deepEqual((accepted.body as { items: Array<{ status: string }> }).items.map(item => item.status), ["accepted", "accepted"]);
+    for (const approval of snapshot.items) assert.equal((await settle(s, approval.id)).execution.phase, "completed");
+    const recovery = driver.calls.find(call => call.envelope.pendingApprovals);
+    assert.ok(recovery, "one recovery envelope must carry the complete approval set");
+    assert.equal(recovery!.envelope.pendingApprovals?.length, 2);
+    assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 1);
+    const replay = await api(s.baseUrl, "/approvals/batch/decision", { token: s.token, method: "POST", body: { ...payload, workspaceToken: (await list(s)).workspaceToken } });
+    assert.equal(replay.status, 200, "a retry returns the original per-item results without another recovery");
+    assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 1);
+  } finally { await s.close(); }
+});
+
+test("#403 reports every excluded member and never dispatches a mixed-source or unclassified batch", async () => {
+  const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  driver.actionKind = "tool";
+  try {
+    await open(s, workspace); await request(s); await request(s, "community-operator");
+    const snapshot = await list(s);
+    const response = await api(s.baseUrl, "/approvals/batch/decision", {
+      token: s.token,
+      method: "POST",
+      body: { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })) },
+    });
+    assert.equal(response.status, 200);
+    const result = response.body as { items: Array<{ status: string; message?: string }> };
+    assert.deepEqual(result.items.map(item => item.status), ["rejected", "rejected"]);
+    assert.ok(result.items.every(item => item.message));
+    assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 0);
   } finally { await s.close(); }
 });
 
