@@ -141,6 +141,7 @@ const SHARED_RUNTIME_FILES = [
   "turn-engines.cjs",
   "dist/agent-binding.js",
   "dist/api.js",
+  "dist/approval-preview.js",
   "dist/approval-redaction.js",
   "dist/approvals.js",
   "dist/avatar.js",
