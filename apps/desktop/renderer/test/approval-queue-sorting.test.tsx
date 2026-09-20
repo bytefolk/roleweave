@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApprovalQueue, type ApprovalQueueItem } from "../src/approvals/ApprovalQueue";
 
 const noop = () => {};
@@ -14,19 +14,24 @@ const makeItem = (overrides: Partial<ApprovalQueueItem>): ApprovalQueueItem => (
 });
 
 describe("ApprovalQueue sorting", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("sorts pending items by urgency (critical first) then by expiry proximity", () => {
     const now = Date.parse("2026-09-20T00:00:00Z");
+    vi.setSystemTime(now);
+
     const items = [
       makeItem({ approvalId: "normal", expiresAt: "2026-09-25T00:00:00Z" }), // normal, 5 days
       makeItem({ approvalId: "expiring-late", expiresAt: "2026-09-21T12:00:00Z" }), // warning, 36h
       makeItem({ approvalId: "critical", expiresAt: "2020-01-01T00:00:00Z" }), // critical, expired
       makeItem({ approvalId: "expiring-early", expiresAt: "2026-09-21T00:00:00Z" }), // warning, 24h
     ];
-
-    vi.stubGlobal("Date", class extends Date {
-      constructor() { super(); }
-      static now() { return now; }
-    });
 
     render(
       <ApprovalQueue
@@ -42,8 +47,6 @@ describe("ApprovalQueue sorting", () => {
     expect(cards[0]).toHaveAttribute("data-approval-id", "expiring-early");
     expect(cards[1]).toHaveAttribute("data-approval-id", "expiring-late");
     expect(cards[2]).toHaveAttribute("data-approval-id", "normal");
-
-    vi.unstubAllGlobals();
   });
 
   it("sorts decided items by decision time (most recent first)", () => {
