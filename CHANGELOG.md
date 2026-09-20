@@ -17,6 +17,8 @@
 
 ### Added
 
+- #394：上报中心拍成单层五路切换（用量 / 执行 / 失败升级 / 组织审计 / 时间线）；KPI 卡对应当前视图；审计行可展开具体岗位与调岗从→到；失败升级行可追溯到该员工时间线；列表时间用相对值。
+
 - #306：对话回合支持 PNG/JPEG/WebP 图片和 PDF 附件；可通过粘贴或文件选择添加，控制面按 session 存储并做 fail-closed 校验。P0 不抽取 PDF 文本（未声明 pdfjs-dist），引擎上下文只带文件路径，且不得超过 256 KiB 输入预算。
 - #327 R1：记忆平面设计锚点。新增 ADR-0008 与 `docs/design/memory-plane-v1.md`，冻结四层所有权、FIFO/LRU/TTL 分工、链式 segment/head/index、召回收据与子 issue DAG。durable-memory 绑定 principal + grant/revocation version + permissionDigest（拒绝自由字符串 scope）。准入硬预算以 UTF-8 bytes 为准，模型 token 只作成本上限。不改变运行时；未接受修订不得被实现 PR 消费。
 - #338：iOS SwiftUI 原生客户端（`mobile/ios`）。桌面控制面 HTTP 带 `Authorization: Bearer <boot-token>`；WebSocket 指数退避重连（1s/2s/4s/8s/16s，最多 5 次）并保留 device token；组织页必须显式点选岗位后才能发指令；配对码限 6 位数字；主机与 boot-token 本地持久化。回合仍在电脑上执行。

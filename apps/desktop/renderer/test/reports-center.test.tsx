@@ -57,6 +57,17 @@ describe("consolidated reports", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起变更明细" }));
     expect(screen.queryByText(/无上级 → Boss/)).toBeNull();
   });
+  it("does not offer an empty expand panel when an audit has no substantive changes", () => {
+    const emptyAudit = {
+      ...audit,
+      changes: { hired: [], moved: [], dismissed: [], budgetUpdated: [] },
+    };
+    const withEmpty: ReportsResponse = { ...report, streams: { ...report.streams, audits: [emptyAudit], escalations: [] } };
+    render(<ReportsCenter reports={withEmpty} loading={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /组织审计/ }));
+    expect(screen.getByText("无实质变更")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "展开变更明细" })).toBeNull();
+  });
   it("does not display a fabricated zero when there is no usage observation, and refresh is explicit", () => {
     const onRefresh = vi.fn();
     render(<ReportsCenter reports={{ ...report, budgets: [{ ...report.budgets[0]!, latestTurn: null, state: "unobserved", recorded: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } }], streams: { evidence: [], audits: [], escalations: [] } }} loading={false} onRefresh={onRefresh} />);

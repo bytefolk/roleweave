@@ -254,10 +254,12 @@ function AuditRow({ entry, positionNames, localeTag }: { entry: AuditEntry; posi
             : live.map((group) => <span className="owb-report-chip" key={group.key}>{group.label} {group.count}</span>)}
           <small>{t("rep.auditPositions", { count: entry.positionCount })}</small>
         </div>
-        <button type="button" className="owb-report-expand" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? t("rep.collapseChanges") : t("rep.expandChanges")}
-        </button>
-        {open ? (
+        {live.length > 0 ? (
+          <button type="button" className="owb-report-expand" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? t("rep.collapseChanges") : t("rep.expandChanges")}
+          </button>
+        ) : null}
+        {open && live.length > 0 ? (
           <div className="owb-report-changes">
             {entry.changes.hired.length > 0 ? (
               <section><h4>{t("rep.changeHired")}</h4><ul>{entry.changes.hired.map((role) => <li key={role.id}>{nameOf(role.id)}</li>)}</ul></section>
@@ -299,7 +301,7 @@ function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline }: { ent
     { title: "Agent", dataIndex: "engine", key: "engine", render: (engine: string) => engine.startsWith("codex") ? "Codex" : engine.startsWith("claude") ? "Claude Code" : engine === "gemini" ? "Gemini" : "Qoder" },
     { title: t("rep.executionStatus"), key: "status", render: (_, entry) => <Tag color={entry.status === "failed" ? "error" : entry.status === "completed" ? "success" : "default"}>{evidenceStatusLabel(entry.status, t)}</Tag> },
     { title: t("rep.recordedTokenTotal"), key: "usage", align: "right", render: (_, entry) => entry.usage.totalTokens.toLocaleString() },
-    { title: t("rep.updatedAt"), key: "at", render: (_, entry) => formatTime(entry.updatedAt, localeTag) },
+    { title: t("rep.updatedAt"), key: "at", render: (_, entry) => <time title={formatTime(entry.updatedAt, localeTag)}>{formatRelativeTime(entry.updatedAt, localeTag, t)}</time> },
     { title: "", key: "action", render: (_, entry) => <Button type="link" size="small" onClick={() => onOpenTimeline(entry.positionId)}>{t("rep.openTimeline")}</Button> },
   ]} /></>}
   </div>;
