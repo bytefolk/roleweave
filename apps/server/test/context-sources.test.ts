@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { OrgRole } from "@roleweave/shared";
@@ -52,6 +54,22 @@ test("references that cannot be proven to stay in positions/ fall back to the fl
   ]) {
     const resolved = resolvePositionPackageDir(WORKSPACE, roleWith(reference));
     assert.equal(resolved, fallback, `expected fallback for ${reference}`);
+  }
+});
+
+test("#406 a stale localReference after reparent still finds the nested package", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-reparent-"));
+  const stale = path.join(workspace, POSITIONS_DIR, "roleweave-owner");
+  const nested = path.join(workspace, POSITIONS_DIR, "mem-owner", "roleweave-owner");
+  await fs.mkdir(nested, { recursive: true });
+  await fs.writeFile(path.join(nested, "employee.json"), "{}\n");
+  try {
+    assert.equal(
+      resolvePositionPackageDir(workspace, roleWith(stale, "roleweave-owner")),
+      nested,
+    );
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
   }
 });
 

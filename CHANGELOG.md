@@ -7,6 +7,8 @@
 
 ### Fixed
 
+- #406：把岗位拖到新上级只改汇报线。移动后仍按真实 `employee.json` 目录读取 `.workbench/agent-binding.v1.json`，不会因为过期的 `localReference` 把除 CEO 外的员工显示成默认 Claude。`org.updated` 继续发布 change-manifest 的 move/reorder，避免一次拖拽触发全量元数据重载。
+
 - 对话默认使用 Enter 发送时，Ctrl/Command + Enter 可在光标处插入换行或替换选中文字，并保留正确光标位置；保留 Shift + Enter 换行、输入法确认保护和设置中的发送快捷键选择。
 
 - #339 Android 原生客户端：release 强制 HTTPS；debug 才允许明文以便连本机 RoleWeave。WebSocket 断开按 1/2/4/8/16s 指数退避重连最多 5 次。发指令必须在组织页显式点选岗位，不再默认第一角色。`android-client.yml` 对 `mobile/android` 跑 `gradle test`（不安装已下线的 SDK `tools` 包）。
