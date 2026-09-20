@@ -269,6 +269,32 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(onOpenEvidence).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "appr-abc" }));
   });
 
+  it("renders a server-projected change preview without exposing secrets", async () => {
+    render(
+      <ApprovalQueue
+        defaultFilter="all"
+        items={[makeItem({
+          context: {
+            risk: "high", requestedCapability: "write", impact: "workspace_write",
+            permissions: { mode: "approval_required", allowedTools: ["fs.read"], deniedTools: ["fs.write"] },
+            preview: {
+              status: "available", version: "approval-change-preview.v1", previewId: "preview-1", previewFingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              files: [{ path: "reports/summary.md", change: "modify", before: "token=[redacted]", after: "published=true" }],
+            },
+          },
+        })]}
+        onApprove={noop}
+        onDeny={noop}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("approval-card-appr-abc"));
+    const preview = await screen.findByTestId("approval-change-preview");
+    expect(preview).toHaveTextContent("修改");
+    expect(preview).toHaveTextContent("reports/summary.md");
+    expect(preview).toHaveTextContent("published=true");
+    expect(preview).not.toHaveTextContent("top-secret");
+  });
+
   it("keeps unsupported group sources visibly unavailable", async () => {
     render(
       <ApprovalQueue

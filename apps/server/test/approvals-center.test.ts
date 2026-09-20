@@ -3,7 +3,8 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-import type { ApprovalList, ApprovalView, EngineEvent, GroupConversation, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
+import type { ApprovalChangePreview, ApprovalList, ApprovalView, EngineEvent, GroupConversation, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
+import { approvalPreviewFingerprintInput } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
 import { approvals } from "../src/approvals/service.js";
 
@@ -12,6 +13,7 @@ class ApprovalDriver implements TurnRunDriver {
   expiresAt = new Date(Date.now() + 60000).toISOString();
   target = "report.md";
   reason = "The write needs operator approval";
+  preview?: ApprovalChangePreview;
   hold?: Promise<void>;
   async turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
     this.calls.push(request);
@@ -23,7 +25,7 @@ class ApprovalDriver implements TurnRunDriver {
       await this.hold;
       if (d.decision === "granted") events.push({ ...base, type: "approval.granted", approvalId: d.approvalId, grantedBy: "operator", scope: "once" }, { ...base, type: "run.completed", output: "done", terminalReason: "goal_met" });
       else events.push({ ...base, type: "approval.denied", approvalId: d.approvalId, deniedBy: "operator" }, { ...base, type: "run.failed", error: { code: "engine.approval_denied", message: "denied", retryable: false, terminalReason: "cancelled" } });
-    } else events.push({ ...base, type: "approval.requested", approvalId: "same-engine-id", action: { kind: "write", description: "write report", target: this.target }, reason: this.reason, expiresAt: this.expiresAt },
+    } else events.push({ ...base, type: "approval.requested", approvalId: "same-engine-id", action: { kind: "write", description: "write report", target: this.target, ...(this.preview ? { preview: this.preview } : {}) }, reason: this.reason, expiresAt: this.expiresAt },
       { ...base, type: "run.failed", error: { code: "engine.approval_required", message: "waiting", retryable: true, terminalReason: "engine_internal_error" } });
     for (const event of events) request.onEvent?.(event);
     return { status: "trusted", events, diagnostic: "" };
@@ -148,6 +150,14 @@ test("approval views redact secrets while preserving safe decision context", asy
   const driver = new ApprovalDriver();
   driver.target = "https://alice:password@example.com/upload?token=top-secret";
   driver.reason = "Authorization: Bearer top-secret";
+  const preview = {
+    version: "approval-change-preview.v1" as const, previewId: "preview-1",
+    files: [{ path: "reports/summary.md", change: "modify" as const, before: "token=top-secret", after: "token=rotated" }],
+  };
+  driver.preview = {
+    ...preview,
+    previewFingerprint: `sha256:${crypto.createHash("sha256").update(approvalPreviewFingerprintInput("same-engine-id", { kind: "write", description: "write report", target: driver.target }, preview)).digest("hex")}`,
+  };
   const s = await startTestServer(undefined, driver);
   try {
     await open(s, await copyExampleWorkspace()); await request(s);
@@ -157,7 +167,8 @@ test("approval views redact secrets while preserving safe decision context", asy
     assert.equal(serialized.includes("top-secret"), false);
     assert.match(approval.action.target!, /\[redacted\]/);
     assert.match(approval.context?.parameterSummary ?? "", /\[redacted\]/);
-    assert.equal(approval.context?.preview.reason, "engine_preview_not_supplied");
+    assert.equal(approval.context?.preview.status, "available");
+    assert.match(JSON.stringify(approval.context?.preview), /\[redacted\]/);
   } finally { await s.close(); }
 });
 

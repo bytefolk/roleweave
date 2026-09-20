@@ -428,7 +428,7 @@ function ApprovalEmptyState({
         </div>
       </div>
       {disconnected && onNavigateToOrg ? (
-        <Button type="default" onClick={onNavigateToOrg} icon={<ArrowRight size={14} />}>
+        <Button type="primary" ghost onClick={onNavigateToOrg} icon={<ArrowRight size={14} />}>
           {t("apr.backToOrg")}
         </Button>
       ) : null}

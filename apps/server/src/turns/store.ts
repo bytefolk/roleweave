@@ -9,6 +9,8 @@ import {
   isPositionId,
   isEngineModelId,
   turnEngines,
+  approvalPreviewFingerprintInput,
+  isApprovalChangePreview,
 } from "@roleweave/shared";
 import type { ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
 import type { EngineEvent, TurnTerminalReason, TurnAttachment, AttachmentMimeType } from "@roleweave/shared";
@@ -66,6 +68,20 @@ const APPROVAL_ID_MAX_LENGTH = 256;
 const APPROVAL_ACTION_KINDS = new Set(["exec", "write", "network", "tool"]);
 const APPROVAL_DESCRIPTION_MAX_BYTES = 1024;
 const APPROVAL_TARGET_MAX_BYTES = 512;
+
+function hasBoundApprovalPreview(approvalId: string, action: Record<string, unknown>): boolean {
+  if (action.preview === undefined) return true;
+  if (!isApprovalChangePreview(action.preview)) return false;
+  const { previewFingerprint, ...preview } = action.preview;
+  const digest = crypto.createHash("sha256")
+    .update(approvalPreviewFingerprintInput(approvalId, {
+      kind: action.kind as string,
+      description: action.description as string,
+      ...(action.target === undefined ? {} : { target: action.target as string }),
+    }, preview))
+    .digest("hex");
+  return previewFingerprint === `sha256:${digest}`;
+}
 
 interface ConversationMetadata {
   schemaVersion: "conversation.v1";
@@ -571,6 +587,7 @@ function isBoundedApprovalId(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= APPROVAL_ID_MAX_LENGTH;
 }
 
+
 const ATTACHMENT_MIME_SET = new Set<string>(ATTACHMENT_ALLOWED_MIME_TYPES);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -728,12 +745,13 @@ function validateEngineEvent(raw: unknown): EngineEvent | null {
           ["reason", "expiresAt"],
         ) ||
         !isObjectRecord(value.action) ||
-        !hasExactKeys(value.action, ["kind", "description"], ["target"]) ||
+          !hasExactKeys(value.action, ["kind", "description"], ["target", "preview"]) ||
         !isBoundedApprovalId(value.approvalId) ||
         !APPROVAL_ACTION_KINDS.has(value.action.kind as string) ||
         !isBoundedNonEmptyText(value.action.description, APPROVAL_DESCRIPTION_MAX_BYTES) ||
         (value.action.target !== undefined &&
           !isBoundedNonEmptyText(value.action.target, APPROVAL_TARGET_MAX_BYTES)) ||
+        !hasBoundApprovalPreview(value.approvalId, value.action) ||
         (value.reason !== undefined &&
           !isBoundedNonEmptyText(value.reason, APPROVAL_DESCRIPTION_MAX_BYTES)) ||
         !isOptionalIsoTimestamp(value.expiresAt)
@@ -746,6 +764,7 @@ function validateEngineEvent(raw: unknown): EngineEvent | null {
           kind: value.action.kind as "exec" | "write" | "network" | "tool",
           description: value.action.description,
           ...(value.action.target !== undefined ? { target: value.action.target } : {}),
+          ...(value.action.preview !== undefined ? { preview: value.action.preview as import("@roleweave/shared").ApprovalChangePreview } : {}),
         },
         ...(value.reason !== undefined ? { reason: value.reason } : {}),
         ...(value.expiresAt !== undefined ? { expiresAt: value.expiresAt as string } : {}),

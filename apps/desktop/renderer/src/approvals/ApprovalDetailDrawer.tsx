@@ -167,7 +167,22 @@ export function ApprovalDetailDrawer({
                   <div><dt>{t("apr.permissionMode")}</dt><dd>{t(`apr.mode.${item.context.permissions.mode}`)}</dd></div>
                   <div><dt>{t("apr.allowedTools")}</dt><dd>{item.context.permissions.allowedTools.length > 0 ? item.context.permissions.allowedTools.join(", ") : t("apr.noneDeclared")}</dd></div>
                   <div><dt>{t("apr.deniedTools")}</dt><dd>{item.context.permissions.deniedTools.length > 0 ? item.context.permissions.deniedTools.join(", ") : t("apr.noneDeclared")}</dd></div>
-                  <div><dt>{t("apr.changePreview")}</dt><dd>{t(`apr.preview.${item.context.preview.status}`)}</dd></div>
+                  <div>
+                    <dt>{t("apr.changePreview")}</dt>
+                    <dd>
+                      {item.context.preview.status === "unavailable" ? t(`apr.preview.${item.context.preview.status}`) : (
+                        <div data-testid="approval-change-preview">
+                          {item.context.preview.files.map((file) => (
+                            <details key={`${file.change}:${file.path}`}>
+                              <summary><Tag color="blue">{t(`apr.preview.change.${file.change}`)}</Tag><code>{safeApprovalText(file.path)}</code></summary>
+                              {file.before !== undefined ? <pre>{safeApprovalText(file.before)}</pre> : null}
+                              {file.after !== undefined ? <pre>{safeApprovalText(file.after)}</pre> : null}
+                            </details>
+                          ))}
+                        </div>
+                      )}
+                    </dd>
+                  </div>
                 </dl>
               </>
             ) : (

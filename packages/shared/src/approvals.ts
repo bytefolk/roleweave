@@ -1,3 +1,4 @@
+import type { ApprovalChangePreview } from "./approval-preview.js";
 import type { ApprovalRequestedEvent, TurnEngine } from "./turns.js";
 
 export type ApprovalStatus = "pending" | "granted" | "denied" | "expired" | "cancelled" | "indeterminate";
@@ -18,10 +19,9 @@ export interface ApprovalContext {
     allowedTools: string[];
     deniedTools: string[];
   };
-  preview: {
-    status: "unavailable";
-    reason: "engine_preview_not_supplied";
-  };
+  preview:
+    | { status: "unavailable"; reason: "engine_preview_not_supplied" }
+    | ({ status: "available" } & ApprovalChangePreview);
 }
 
 export interface ApprovalDecisionRequest {

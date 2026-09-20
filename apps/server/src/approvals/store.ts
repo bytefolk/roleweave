@@ -3,9 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
-import { OrgApiError, errorCodes, turnEngines, validatePendingApproval, type ApprovalRecord } from "@roleweave/shared";
+import { isDeepStrictEqual } from "node:util";
+import { OrgApiError, errorCodes, isApprovalChangePreview, turnEngines, validatePendingApproval, type ApprovalRecord } from "@roleweave/shared";
+import { approvalPreviewFingerprintInput } from "@roleweave/shared";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
-import { redactApprovalText } from "./context.js";
+import { projectApprovalPreview } from "./context.js";
 
 const MAX_BYTES = 128 * 1024;
 const ID = /^[a-f0-9]{64}$/;
@@ -50,12 +52,30 @@ async function read(file: string): Promise<unknown> {
   } finally { await handle.close(); }
 }
 
+function hasBoundPreview(record: ApprovalRecord): boolean {
+  const preview = record.action.preview;
+  if (preview === undefined || !isApprovalChangePreview(preview)) return preview === undefined;
+  const { previewFingerprint, ...payload } = preview;
+  const digest = crypto.createHash("sha256")
+    .update(approvalPreviewFingerprintInput(record.approvalId, {
+      kind: record.action.kind,
+      description: record.action.description,
+      ...(record.action.target === undefined ? {} : { target: record.action.target }),
+    }, payload))
+    .digest("hex");
+  return previewFingerprint === `sha256:${digest}`;
+}
+
 function valid(value: unknown): value is ApprovalRecord {
   if (!value || typeof value !== "object") return false;
   const a = value as ApprovalRecord;
   const s = a.source;
   const text = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 8192;
   const time = (v: unknown) => typeof v === "string" && Number.isFinite(Date.parse(v));
+  const previewPayload = (preview: Exclude<NonNullable<ApprovalRecord["context"]>["preview"], { status: "unavailable" }>) => {
+    const { status: _status, ...payload } = preview;
+    return payload;
+  };
   if (a.schemaVersion !== "workbench-approval.v1" || !ID.test(a.id) || !Number.isSafeInteger(a.version) || a.version < 1 ||
       !s || !["session", "position", "group"].includes(s.kind) ||
       ![s.positionId, s.conversationId, s.turnId, s.runId, a.approvalId].every(text) || !turnEngines.includes(s.engine) ||
@@ -65,7 +85,8 @@ function valid(value: unknown): value is ApprovalRecord {
       (a.expiresAt !== undefined && !time(a.expiresAt)) ||
       !["pending", "granted", "denied", "expired", "cancelled", "indeterminate"].includes(a.status) ||
       !a.execution || !["not_started", "starting", "running", "completed", "denied", "failed", "indeterminate"].includes(a.execution.phase) ||
-      (a.execution.turnId !== undefined && !/^[a-f0-9-]{36}$/.test(a.execution.turnId))) return false;
+      (a.execution.turnId !== undefined && !/^[a-f0-9-]{36}$/.test(a.execution.turnId)) ||
+      !hasBoundPreview(a)) return false;
   if (a.decision) {
     const d = a.decision;
     if (!/^[a-f0-9-]{36}$/.test(d.requestId) || !Number.isSafeInteger(d.expectedVersion) || d.expectedVersion < 1 ||
@@ -77,11 +98,17 @@ function valid(value: unknown): value is ApprovalRecord {
     const boundedList = (v: unknown) => Array.isArray(v) && v.length <= 128 && v.every(item => typeof item === "string" && item.length <= 256);
     if (!c || !["medium", "high"].includes(c.risk) ||
         !["exec", "write", "network", "tool"].includes(c.requestedCapability) ||
-        (c.parameterSummary !== undefined && (typeof c.parameterSummary !== "string" || c.parameterSummary.length > 2048 || redactApprovalText(c.parameterSummary) !== c.parameterSummary)) ||
+        (c.parameterSummary !== undefined && (typeof c.parameterSummary !== "string" || c.parameterSummary.length > 2048)) ||
         !["workspace_write", "command_execution", "external_network", "restricted_tool"].includes(c.impact) ||
         !c.permissions || !["read_only", "approval_required"].includes(c.permissions.mode) ||
         !boundedList(c.permissions.allowedTools) || !boundedList(c.permissions.deniedTools) ||
-        !c.preview || c.preview.status !== "unavailable" || c.preview.reason !== "engine_preview_not_supplied") return false;
+        !c.preview || (c.preview.status === "unavailable"
+          ? c.preview.reason !== "engine_preview_not_supplied"
+          : c.preview.status !== "available" || !isApprovalChangePreview(previewPayload(c.preview)))) return false;
+    const expectedPreview = a.action.preview === undefined
+      ? { status: "unavailable", reason: "engine_preview_not_supplied" }
+      : projectApprovalPreview(a.action.preview);
+    if (!isDeepStrictEqual(c.preview, expectedPreview)) return false;
   }
   return true;
 }
