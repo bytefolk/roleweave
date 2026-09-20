@@ -41,6 +41,9 @@ export interface ApprovalPolicySnapshot {
   eligibleApprovers: string[];
   threshold: number;
   delegations: Record<string, string[]>;
+  /** Explicit opt-in for #403. The server accepts only `tool` here; writes,
+   * commands and network requests are never batchable by configuration. */
+  batch?: { maxItems: number; actionKinds: Array<"tool"> };
   escalation?: { at: string; eligibleApprovers: string[]; threshold: number };
 }
 export interface ApprovalDecisionEvent {
@@ -52,6 +55,9 @@ export interface ApprovalDecisionEvent {
   delegatedFrom?: string;
   reason?: string;
   decidedAt: string;
+  /** Batch operation identity; individual requestId remains the idempotency
+   * key and audit handle for this particular member. */
+  batchId?: string;
 }
 export interface ApprovalPolicyProgress {
   required: number;
@@ -73,6 +79,7 @@ export interface ApprovalAuditEvent {
   policyDigest: string;
   previousHash?: string;
   hash: string;
+  batchId?: string;
 }
 export interface ApprovalRecord {
   schemaVersion: "workbench-approval.v1" | "workbench-approval.v2";
@@ -105,6 +112,9 @@ export interface ApprovalView extends Omit<ApprovalRecord, "policy" | "decisions
   schemaVersion: "workbench-approval.v1";
   canDecide: boolean;
   unavailableReason?: string;
+  /** Server-projected, non-sensitive #403 classification. Absence means this
+   * item must stay a single approval; it never exposes policy rosters. */
+  batch?: { maxItems: number };
 }
 export interface ApprovalList {
   items: ApprovalView[];
@@ -114,4 +124,27 @@ export interface ApprovalList {
   syncState: "ready";
   /** Opaque instance token, invalidated even by reopening the same directory. */
   workspaceToken: string;
+}
+
+/** Server-only batch input. Every member retains its own optimistic version;
+ * the outer requestId makes retries stable without reusing a single-item
+ * decision id. */
+export interface ApprovalBatchDecisionRequest {
+  requestId: string;
+  decision: "granted";
+  reason?: string;
+  items: Array<{ id: string; expectedVersion: number }>;
+}
+
+export interface ApprovalBatchDecisionResult {
+  id: string;
+  status: "accepted" | "rejected";
+  record?: ApprovalView;
+  code?: string;
+  message?: string;
+}
+
+export interface ApprovalBatchDecisionResponse {
+  requestId: string;
+  items: ApprovalBatchDecisionResult[];
 }
