@@ -716,6 +716,8 @@ export const enCatalog: Record<string, string> = {
   "rep.readFailOffline": "Failed to read report data: local service unavailable",
   "rep.loading": "Reading local report facts…",
   "rep.unavailable": "Report data unavailable",
+  "rep.dataStateDisconnected": "Reports disconnected — local service unreachable",
+  "rep.viewTurn": "View turn",
   "rep.center": "Reports Center",
   "rep.lede": "Aggregates org changes, turn outcomes and resource consumption into traceable local facts, so the owner can locate anomalies first, then re-check them along the timeline.",
   "rep.streamTabpanelAria": "{tab} data",

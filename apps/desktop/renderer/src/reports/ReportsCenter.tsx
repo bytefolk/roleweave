@@ -15,10 +15,12 @@ export interface ReportsCenterProps {
   positionNames?: Record<string, string>;
   positionColors?: Record<string, string>;
   onOpenTimeline?: (positionId: string) => void;
+  onViewTurn?: (turnId: string) => void;
   focusTurnId?: string;
+  dataState?: "ready" | "not-connected";
 }
 
-export function ReportsCenter({ reports, loading, positionNames, positionColors, focusTurnId, onOpenTimeline, onRefresh }: ReportsCenterProps) {
+export function ReportsCenter({ reports, loading, positionNames, positionColors, focusTurnId, onOpenTimeline, onViewTurn, onRefresh, dataState = "ready" }: ReportsCenterProps) {
   const t = useT();
   const timelineEvents = useMemo<AuditTimelineEvent[]>(
     () => (reports ? buildTimelineEventsFromReports(reports, t) : []),
@@ -30,7 +32,20 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
   const [tabOverride, setTabOverride] = useState<Tab | null>(null);
   const [timelinePosition, setTimelinePosition] = useState<string | null>(null);
   if (loading && !reports) return <section className="owb-reports" aria-label={t("rep.loading")}><Skeleton active paragraph={{ rows: 6 }} /></section>;
-  if (!reports) return <section className="owb-reports"><p className="owb-muted">{t("rep.unavailable")}</p>{onRefresh ? <Button onClick={onRefresh}>{t("rep.refresh")}</Button> : null}</section>;
+  if (!reports) {
+    const disconnected = dataState === "not-connected";
+    return (
+      <section className="owb-reports" aria-label={t("rep.center")}>
+        <header className="owb-reports__hero">
+          <div className="owb-reports__hero-copy">
+            <h1>{t("rep.center")}</h1>
+            <p>{disconnected ? t("rep.dataStateDisconnected") : t("rep.unavailable")}</p>
+          </div>
+          {onRefresh ? <Button icon={<RefreshCw size={14} />} loading={loading} onClick={onRefresh}>{t("rep.refresh")}</Button> : null}
+        </header>
+      </section>
+    );
+  }
   const tab = tabOverride ?? (focusTurnId ? "evidence" : firstReportTab(reports, timelineEvents.length));
   const total = reports.budgets.reduce((sum, budget) => sum + budget.recorded.totalTokens, 0);
   const exceptions = new Set([...reports.streams.escalations.map((item) => item.turnId), ...reports.streams.evidence.filter((item) => item.status === "failed" || item.status === "indeterminate").map((item) => item.turnId)]).size;
@@ -75,9 +90,9 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
             onOpenTimeline={openTimeline}
           />
         ) : null}
-        {tab === "escalations" ? <Escalations entries={reports.streams.escalations} positionNames={positionNames} /> : null}
+        {tab === "escalations" ? <Escalations entries={reports.streams.escalations} positionNames={positionNames} onViewTurn={onViewTurn} /> : null}
         {tab === "audits" ? <Audits entries={reports.streams.audits} /> : null}
-        {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} /> : null}
+        {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} onViewTurn={onViewTurn} /> : null}
         {tab === "timeline" && timelinePosition ? <div className="owb-report-filter-note"><span>{positionNames?.[timelinePosition] ?? timelinePosition}</span><Button type="link" onClick={() => setTimelinePosition(null)}>{t("rep.clearScope")}</Button></div> : null}
         {tab === "timeline" ? (
           <AuditTimeline
@@ -204,13 +219,13 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
 
 function Empty({ text }: { text: string }) { return <p className="owb-report-empty">{text}</p>; }
 
-function Escalations({ entries, positionNames }: { entries: EscalationEntry[]; positionNames?: Record<string, string> }) {
+function Escalations({ entries, positionNames, onViewTurn }: { entries: EscalationEntry[]; positionNames?: Record<string, string>; onViewTurn?: (turnId: string) => void }) {
   const t = useT();
   const localeTag = useLocaleTag();
   if (entries.length === 0) return <Empty text={t("rep.noEscalations")} />;
   return <ol>{entries.map((entry) => {
     const summary = entry.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation");
-    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time>{formatTime(entry.at, localeTag)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div></div></li>;
+    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time>{formatTime(entry.at, localeTag)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div>{onViewTurn ? <button className="owb-report-card__action" onClick={() => onViewTurn(entry.turnId)}>{t("rep.viewTurn")}</button> : null}</div></li>;
   })}</ol>;
 }
 
@@ -229,7 +244,7 @@ function Audits({ entries }: { entries: AuditEntry[] }) {
   })}</ol>;
 }
 
-function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline }: { entries: EvidenceEntry[]; positionNames?: Record<string, string>; focusTurnId?: string; onOpenTimeline: (id: string) => void }) {
+function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline, onViewTurn }: { entries: EvidenceEntry[]; positionNames?: Record<string, string>; focusTurnId?: string; onOpenTimeline: (id: string) => void; onViewTurn?: (turnId: string) => void }) {
   const t = useT();
   const localeTag = useLocaleTag();
   const [query, setQuery] = useState("");
@@ -251,7 +266,7 @@ function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline }: { ent
     { title: t("rep.executionStatus"), key: "status", render: (_, entry) => <Tag color={entry.status === "failed" ? "error" : entry.status === "completed" ? "success" : "default"}>{evidenceStatusLabel(entry.status, t)}</Tag> },
     { title: t("rep.recordedTokenTotal"), key: "usage", align: "right", render: (_, entry) => entry.usage.totalTokens.toLocaleString() },
     { title: t("rep.updatedAt"), key: "at", render: (_, entry) => formatTime(entry.updatedAt, localeTag) },
-    { title: "", key: "action", render: (_, entry) => <Button type="link" size="small" onClick={() => onOpenTimeline(entry.positionId)}>{t("rep.openTimeline")}</Button> },
+    { title: "", key: "action", render: (_, entry) => <>{onViewTurn ? <Button type="link" size="small" onClick={() => onViewTurn(entry.turnId)}>{t("rep.viewTurn")}</Button> : null}<Button type="link" size="small" onClick={() => onOpenTimeline(entry.positionId)}>{t("rep.openTimeline")}</Button></> },
   ]} /></>}
   </div>;
 }

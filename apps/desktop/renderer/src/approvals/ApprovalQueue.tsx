@@ -12,6 +12,7 @@ import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import {
   approvalExpiryState,
+  approvalUrgency,
   isActionablePending,
   isDecided,
   isPermissionOverreach,
@@ -154,7 +155,7 @@ export function ApprovalQueue({
 
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
-    return items.filter((item) => {
+    const filtered = items.filter((item) => {
       if (filter === "pending" && !isActionablePending(item, now)) return false;
       if (filter === "decided" && !isDecided(item)) return false;
       if (positionFilter && item.positionId !== positionFilter) return false;
@@ -182,6 +183,28 @@ export function ApprovalQueue({
         if (!haystack.includes(needle)) return false;
       }
       return true;
+    });
+    // Sort by urgency (critical first) then expiry proximity for pending; by decision time for decided
+    return filtered.sort((a, b) => {
+      if (filter === "pending") {
+        const urgencyA = approvalUrgency(a, now);
+        const urgencyB = approvalUrgency(b, now);
+        const urgencyOrder = { critical: 0, warning: 1, normal: 2 };
+        if (urgencyOrder[urgencyA] !== urgencyOrder[urgencyB]) {
+          return urgencyOrder[urgencyA] - urgencyOrder[urgencyB];
+        }
+        // Then by expiry proximity (earlier expiry first)
+        const expiryA = a.expiresAt ? new Date(a.expiresAt).getTime() : Infinity;
+        const expiryB = b.expiresAt ? new Date(b.expiresAt).getTime() : Infinity;
+        return expiryA - expiryB;
+      }
+      if (filter === "decided") {
+        // Most recent decision first
+        const decidedAtA = a.decision.decidedAt ? new Date(a.decision.decidedAt).getTime() : 0;
+        const decidedAtB = b.decision.decidedAt ? new Date(b.decision.decidedAt).getTime() : 0;
+        return decidedAtB - decidedAtA;
+      }
+      return 0;
     });
   }, [categoryFilter, executionFilter, expiryFilter, filter, fromDate, items, now, positionFilter, query, toDate]);
 

@@ -719,6 +719,8 @@ export const zhCatalog: Record<string, string> = {
   "rep.readFailOffline": "上报数据读取失败：本地服务不可用",
   "rep.loading": "正在读取本地上报事实…",
   "rep.unavailable": "上报数据不可用",
+  "rep.dataStateDisconnected": "上报中心已断开 — 本地服务不可达",
+  "rep.viewTurn": "查看回合",
   "rep.center": "上报中心",
   "rep.lede": "查看员工用量、执行结果与异常，按需追溯协作记录。",
   "rep.streamTabpanelAria": "{tab}数据",
