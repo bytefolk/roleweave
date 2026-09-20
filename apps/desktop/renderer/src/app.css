@@ -5813,8 +5813,8 @@ body,
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  min-height: 138px;
-  padding: 24px 28px;
+  min-height: 96px;
+  padding: 18px 22px;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-lg, 14px);
   background:
@@ -5839,8 +5839,8 @@ body,
 .owb-approval-queue__title {
   margin: 4px 0 0;
   font-family: var(--owb-font-display);
-  font-size: 24px;
-  line-height: 1.15;
+  font-size: 20px;
+  line-height: 1.2;
   font-weight: 600;
   color: var(--ui-foreground);
 }
@@ -5852,17 +5852,19 @@ body,
   gap: 10px;
 }
 
+/* Tag-like pill for the data-source state. Ready and not-connected share the
+ * geometry; only the color triad changes so the badge reads at a glance. */
 .owb-approval-queue__state {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid var(--ui-border);
+  padding: 2px 10px;
+  border: 1px solid var(--ui-success);
   border-radius: 999px;
-  background: var(--ui-surface-raised);
-  color: var(--ui-foreground-muted);
+  background: color-mix(in srgb, var(--ui-success) 12%, transparent);
+  color: var(--ui-success);
   font-size: 11px;
-  line-height: 1;
+  line-height: 1.5;
 }
 
 .owb-approval-queue__state > span {
@@ -5874,7 +5876,8 @@ body,
 
 .owb-approval-queue__state.is-not-connected {
   border-color: var(--ui-warning);
-  color: var(--ui-warning-strong);
+  background: color-mix(in srgb, var(--ui-warning) 14%, transparent);
+  color: var(--ui-warning-strong, var(--ui-warning));
 }
 
 .owb-approval-queue__state.is-not-connected > span {
@@ -5889,23 +5892,25 @@ body,
   max-width: 76ch;
 }
 
+/* Count badge on the right of the hero. Reads as a chip, not a card:
+ * inset surface, soft radius, no heavy border. */
 .owb-approval-queue__metric {
   display: flex;
   flex: none;
   align-items: center;
   gap: 10px;
-  min-width: 118px;
-  padding: 12px 14px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
-  background: color-mix(in srgb, var(--ui-surface-inset) 72%, transparent);
+  min-width: 108px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--ui-surface-inset);
 }
 
 .owb-approval-queue__metric-icon {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--ui-radius-sm, 6px);
   background: var(--ui-primary-soft);
   color: var(--ui-primary);
@@ -5919,7 +5924,7 @@ body,
 .owb-approval-queue__metric-copy strong {
   color: var(--ui-foreground);
   font-family: var(--ui-font-mono);
-  font-size: 21px;
+  font-size: 20px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -5929,16 +5934,17 @@ body,
   font-size: 11px;
 }
 
+/* Toolbar reads as a bar with a bottom rule, not a boxed card. Keeps the
+ * segmented filter on the left and floats a chip-styled count on the right. */
 .owb-approval-queue__toolbar {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 8px 12px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-md, 10px);
-  background: var(--ui-surface-raised);
+  padding: 4px 4px 12px;
+  border-bottom: 1px solid var(--ui-border);
+  background: transparent;
 }
 
 .owb-approval-queue__search {
@@ -5966,6 +5972,10 @@ body,
 }
 
 .owb-approval-queue__count {
+  margin-left: auto;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--ui-surface-inset);
   color: var(--ui-foreground-subtle);
   font-family: var(--ui-font-mono);
   font-size: 11px;
@@ -5996,7 +6006,7 @@ body,
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 56px 28px 52px;
+  padding: 28px 24px;
   border: 1px dashed var(--ui-border-strong);
   border-radius: var(--ui-radius-lg, 14px);
   background: var(--ui-surface);
@@ -6008,19 +6018,23 @@ body,
   background: linear-gradient(135deg, var(--ui-warning-soft), var(--ui-surface));
 }
 
+/* Icon circle: brand-hued for the ready-but-empty variants (nothing to
+ * approve is a healthy zero); warning-hued only when the data source is
+ * genuinely disconnected. */
 .owb-approval-queue__empty-icon {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  margin-bottom: 14px;
-  border: 1px solid var(--ui-border);
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+  border: 1px solid transparent;
   border-radius: 50%;
-  background: var(--ui-surface-inset);
-  color: var(--ui-success);
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
 }
 
 .owb-approval-queue__empty.is-disconnected .owb-approval-queue__empty-icon {
+  background: var(--ui-warning-soft);
   color: var(--ui-warning);
 }
 
@@ -6032,7 +6046,7 @@ body,
 }
 
 .owb-approval-queue__empty h2 {
-  margin: 8px 0;
+  margin: 6px 0;
   color: var(--ui-foreground);
   font-family: var(--owb-font-display);
   font-size: 18px;
@@ -6044,7 +6058,7 @@ body,
   margin: 0;
   color: var(--ui-foreground-muted);
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.65;
 }
 
 .owb-approval-queue__rules {
@@ -6052,14 +6066,23 @@ body,
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   width: min(720px, 100%);
-  margin: 24px 0;
+  margin: 18px 0 4px;
   text-align: start;
+}
+
+/* Collapse the "when / how" rules onto a single column below 540px so the
+ * empty state stays legible in the drawer-narrow layout without spilling
+ * onto a second scroll. */
+@media (max-width: 540px) {
+  .owb-approval-queue__rules {
+    grid-template-columns: 1fr;
+  }
 }
 
 .owb-approval-queue__rules > div {
   display: grid;
   gap: 4px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-md, 10px);
   background: var(--ui-surface-raised);
@@ -6078,6 +6101,7 @@ body,
 
 .owb-approval-queue__empty .ant-btn {
   min-width: 132px;
+  margin-top: 4px;
 }
 
 @media (max-width: 720px) {
@@ -6087,7 +6111,7 @@ body,
 
   .owb-approval-queue__hero {
     flex-direction: column;
-    padding: 20px;
+    padding: 16px 18px;
   }
 
   .owb-approval-queue__metric {
@@ -6104,8 +6128,8 @@ body,
     flex-direction: column;
   }
 
-  .owb-approval-queue__rules {
-    grid-template-columns: 1fr;
+  .owb-approval-queue__count {
+    margin-left: 0;
   }
 }
 
@@ -6117,7 +6141,8 @@ body,
   background: var(--ui-surface);
   transition:
     background-color var(--owb-duration-fast) var(--owb-ease-out),
-    border-color var(--owb-duration-mid) var(--owb-ease-out);
+    border-color var(--owb-duration-mid) var(--owb-ease-out),
+    opacity var(--owb-duration-mid) var(--owb-ease-out);
 }
 
 .owb-approval-card[data-decision-state="pending"] {
@@ -6138,8 +6163,18 @@ body,
   background: var(--ui-surface-inset);
 }
 
+/* Overreach dominates the left-rule accent regardless of decision state:
+ * the operator's eye should be pulled to the risky card first. */
 .owb-approval-card[data-overreach="true"] {
+  border-left-color: var(--ui-danger);
   background: var(--ui-danger-soft);
+}
+
+/* Decided cards recede visually: still readable and clickable, but they
+ * stop competing with the pending row above them. */
+.owb-approval-card[data-decided="true"] {
+  opacity: 0.82;
+  border-left-color: var(--ui-border-strong);
 }
 
 .owb-approval-card:hover {
@@ -6152,7 +6187,7 @@ body,
   display: block;
   width: 100%;
   text-align: start;
-  padding: 14px 16px;
+  padding: 12px 14px;
   background: transparent;
   border: none;
   cursor: pointer;
@@ -6170,7 +6205,7 @@ body,
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 
@@ -6185,7 +6220,7 @@ body,
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .owb-approval-card__title strong {
@@ -6206,9 +6241,10 @@ body,
 }
 
 .owb-approval-card__description {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   color: var(--ui-foreground);
   font-size: 12px;
+  line-height: 1.55;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -6216,10 +6252,11 @@ body,
 }
 
 .owb-approval-card__target {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   color: var(--ui-foreground-muted);
   font-family: var(--ui-font-mono);
   font-size: 11px;
+  line-height: 1.5;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6231,6 +6268,10 @@ body,
   flex-wrap: wrap;
   gap: 12px;
   margin: 0;
+}
+
+.owb-approval-card__meta:empty {
+  display: none;
 }
 
 .owb-approval-card__expires {
