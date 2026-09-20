@@ -12,7 +12,7 @@ import type {
   TurnRunResult,
   TurnTerminalReason,
 } from "@roleweave/shared";
-import { approvalPreviewDigestInput, isApprovalChangePreview } from "@roleweave/shared";
+import { approvalPreviewFingerprintInput, isApprovalChangePreview } from "@roleweave/shared";
 import { splitCommand } from "./probe.js";
 import {
   bundledElectronRunAsNode,
@@ -71,15 +71,15 @@ function exactKeys(value: Record<string, unknown>, required: string[], optional:
 function hasBoundPreview(approvalId: string, action: Record<string, unknown>): boolean {
   if (action.preview === undefined) return true;
   if (!isApprovalChangePreview(action.preview)) return false;
-  const { actionDigest, ...preview } = action.preview;
+  const { previewFingerprint, ...preview } = action.preview;
   const digest = crypto.createHash("sha256")
-    .update(approvalPreviewDigestInput(approvalId, {
+    .update(approvalPreviewFingerprintInput(approvalId, {
       kind: action.kind as string,
       description: action.description as string,
       ...(action.target === undefined ? {} : { target: action.target as string }),
     }, preview))
     .digest("hex");
-  return actionDigest === `sha256:${digest}`;
+  return previewFingerprint === `sha256:${digest}`;
 }
 
 function boundedJsonBytes(value: unknown, limit: number): boolean {

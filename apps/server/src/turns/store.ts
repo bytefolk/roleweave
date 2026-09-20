@@ -9,7 +9,7 @@ import {
   isPositionId,
   isEngineModelId,
   turnEngines,
-  approvalPreviewDigestInput,
+  approvalPreviewFingerprintInput,
   isApprovalChangePreview,
 } from "@roleweave/shared";
 import type { ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
@@ -71,15 +71,15 @@ const APPROVAL_TARGET_MAX_BYTES = 512;
 function hasBoundApprovalPreview(approvalId: string, action: Record<string, unknown>): boolean {
   if (action.preview === undefined) return true;
   if (!isApprovalChangePreview(action.preview)) return false;
-  const { actionDigest, ...preview } = action.preview;
+  const { previewFingerprint, ...preview } = action.preview;
   const digest = crypto.createHash("sha256")
-    .update(approvalPreviewDigestInput(approvalId, {
+    .update(approvalPreviewFingerprintInput(approvalId, {
       kind: action.kind as string,
       description: action.description as string,
       ...(action.target === undefined ? {} : { target: action.target as string }),
     }, preview))
     .digest("hex");
-  return actionDigest === `sha256:${digest}`;
+  return previewFingerprint === `sha256:${digest}`;
 }
 
 interface ConversationMetadata {

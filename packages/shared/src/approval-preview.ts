@@ -1,8 +1,4 @@
-/**
- * Additive engine.v1 preview payload for a write-like approval. The digest is
- * over the approval id, action fields, and this payload excluding digest; the
- * control plane verifies that binding before it accepts an engine event.
- */
+/** Additive engine.v1 preview payload for a write-like approval. */
 export const APPROVAL_CHANGE_PREVIEW_VERSION = "approval-change-preview.v1" as const;
 export const MAX_APPROVAL_PREVIEW_FILES = 16;
 export const MAX_APPROVAL_PREVIEW_PATH_BYTES = 512;
@@ -21,9 +17,8 @@ export interface ApprovalChangePreviewFile {
 export interface ApprovalChangePreview {
   version: typeof APPROVAL_CHANGE_PREVIEW_VERSION;
   previewId: string;
-  /** `sha256:` of `approvalPreviewDigestInput(...)`; never a digest supplied
-   * for a different action or preview. */
-  actionDigest: string;
+  /** `sha256:` fingerprint of the approval action and preview content. */
+  previewFingerprint: string;
   files: ApprovalChangePreviewFile[];
 }
 
@@ -33,13 +28,25 @@ export interface ApprovalPreviewAction {
   target?: string;
 }
 
-/** Stable JSON input shared with engines implementing this additive contract. */
-export function approvalPreviewDigestInput(
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+        .map(([key, entry]) => [key, canonicalize(entry)]),
+    );
+  }
+  return value;
+}
+
+/** Canonical JSON input shared with engines implementing this additive contract. */
+export function approvalPreviewFingerprintInput(
   approvalId: string,
   action: ApprovalPreviewAction,
-  preview: Omit<ApprovalChangePreview, "actionDigest">,
+  preview: Omit<ApprovalChangePreview, "previewFingerprint">,
 ): string {
-  return JSON.stringify({
+  return JSON.stringify(canonicalize({
     approvalId,
     action: {
       kind: action.kind,
@@ -47,7 +54,7 @@ export function approvalPreviewDigestInput(
       ...(action.target === undefined ? {} : { target: action.target }),
     },
     preview,
-  });
+  }));
 }
 
 function boundedText(value: unknown, maximum: number): value is string {
@@ -59,10 +66,10 @@ export function isApprovalChangePreview(value: unknown): value is ApprovalChange
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const preview = value as Record<string, unknown>;
   if (
-    Object.keys(preview).some(key => !["version", "previewId", "actionDigest", "files"].includes(key)) ||
+    Object.keys(preview).some(key => !["version", "previewId", "previewFingerprint", "files"].includes(key)) ||
     preview.version !== APPROVAL_CHANGE_PREVIEW_VERSION ||
     !boundedText(preview.previewId, 128) ||
-    typeof preview.actionDigest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(preview.actionDigest) ||
+    typeof preview.previewFingerprint !== "string" || !/^sha256:[a-f0-9]{64}$/.test(preview.previewFingerprint) ||
     !Array.isArray(preview.files) || preview.files.length === 0 || preview.files.length > MAX_APPROVAL_PREVIEW_FILES
   ) return false;
   for (const file of preview.files) {

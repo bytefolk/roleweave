@@ -12,8 +12,9 @@ import type {
   TurnRunRequest,
   TurnRunResult,
 } from "@roleweave/shared";
-import { approvalPreviewDigestInput, isApprovalChangePreview, validatePendingApproval } from "@roleweave/shared";
+import { approvalPreviewFingerprintInput, isApprovalChangePreview, validatePendingApproval } from "@roleweave/shared";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
+import { ApprovalStore, approvalIdentity } from "../src/approvals/store.js";
 import { createTurnEnvelope } from "../src/turns/envelope.js";
 import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
@@ -107,9 +108,61 @@ function changePreview(approvalId: string, action: { kind: string; description: 
   };
   return {
     ...preview,
-    actionDigest: `sha256:${crypto.createHash("sha256").update(approvalPreviewDigestInput(approvalId, action, preview)).digest("hex")}`,
+    previewFingerprint: `sha256:${crypto.createHash("sha256").update(approvalPreviewFingerprintInput(approvalId, action, preview)).digest("hex")}`,
   };
 }
+
+test("preview fingerprints use canonical JSON key ordering", () => {
+  const first = approvalPreviewFingerprintInput("approval-1", {
+    kind: "write", description: "write report", target: "report.md",
+  }, {
+    version: "approval-change-preview.v1", previewId: "preview-1",
+    files: [{ path: "report.md", change: "modify", before: "old", after: "new" }],
+  });
+  const second = approvalPreviewFingerprintInput("approval-1", {
+    target: "report.md", description: "write report", kind: "write",
+  }, {
+    files: [{ after: "new", change: "modify", before: "old", path: "report.md" }],
+    previewId: "preview-1", version: "approval-change-preview.v1",
+  });
+  assert.equal(first, second);
+});
+
+test("approval store retains legacy records with unsanitized preview text", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-approval-valid-"));
+  const store = new ApprovalStore();
+  const source = {
+    kind: "position" as const, positionId: "repo-owner", conversationId: "conversation-1",
+    turnId: "turn-1", runId: "run-1", engine: "qoder" as const,
+  };
+  const action = { kind: "write" as const, description: "write report", target: "report.md" };
+  const preview = {
+    version: "approval-change-preview.v1" as const, previewId: "preview-1",
+    files: [{ path: "report.md", change: "modify" as const, before: "token=old", after: "token=new" }],
+  };
+  const previewFingerprint = `sha256:${crypto.createHash("sha256").update(approvalPreviewFingerprintInput("approval-1", action, preview)).digest("hex")}`;
+  const now = new Date().toISOString();
+  const record = {
+    schemaVersion: "workbench-approval.v1" as const,
+    id: approvalIdentity(source, "approval-1"), version: 1, approvalId: "approval-1", source,
+    action: { ...action, preview: { ...preview, previewFingerprint } },
+    context: {
+      risk: "high" as const, requestedCapability: "write" as const, parameterSummary: "token=old",
+      impact: "workspace_write" as const,
+      permissions: { mode: "approval_required" as const, allowedTools: [], deniedTools: [] },
+      preview: { status: "available" as const, ...preview, previewFingerprint },
+    },
+    requestedAt: now, status: "pending" as const, execution: { phase: "not_started" as const },
+    createdAt: now, updatedAt: now,
+  };
+  try {
+    await store.put(workspace, record);
+    assert.equal((await store.list(workspace))[0]?.approvalId, "approval-1");
+  } finally {
+    await store.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test("CLI driver mirrors the engine.v1 approval events verbatim into a trusted stream", async () => {
   const command = await fixtureCli(`

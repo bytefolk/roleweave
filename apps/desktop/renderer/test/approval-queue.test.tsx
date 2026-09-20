@@ -278,7 +278,7 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
             risk: "high", requestedCapability: "write", impact: "workspace_write",
             permissions: { mode: "approval_required", allowedTools: ["fs.read"], deniedTools: ["fs.write"] },
             preview: {
-              status: "available", version: "approval-change-preview.v1", previewId: "preview-1", actionDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              status: "available", version: "approval-change-preview.v1", previewId: "preview-1", previewFingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               files: [{ path: "reports/summary.md", change: "modify", before: "token=[redacted]", after: "published=true" }],
             },
           },

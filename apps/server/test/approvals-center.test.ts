@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { ApprovalChangePreview, ApprovalList, ApprovalView, EngineEvent, GroupConversation, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
-import { approvalPreviewDigestInput } from "@roleweave/shared";
+import { approvalPreviewFingerprintInput } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
 import { approvals } from "../src/approvals/service.js";
 
@@ -156,7 +156,7 @@ test("approval views redact secrets while preserving safe decision context", asy
   };
   driver.preview = {
     ...preview,
-    actionDigest: `sha256:${crypto.createHash("sha256").update(approvalPreviewDigestInput("same-engine-id", { kind: "write", description: "write report", target: driver.target }, preview)).digest("hex")}`,
+    previewFingerprint: `sha256:${crypto.createHash("sha256").update(approvalPreviewFingerprintInput("same-engine-id", { kind: "write", description: "write report", target: driver.target }, preview)).digest("hex")}`,
   };
   const s = await startTestServer(undefined, driver);
   try {
