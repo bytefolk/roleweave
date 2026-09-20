@@ -902,6 +902,7 @@ export const enCatalog: Record<string, string> = {
   "apr.unavailable.unknown": "Approval unavailable. Refresh to check again.",
   "apr.dataStateReady": "Data connected",
   "apr.dataStateDisconnected": "Data source not connected",
+  "apr.viewTurn": "View turn",
   "apr.centerLede": "When an Agent hits a command, write, network call or restricted tool that needs a human check, it pauses here. Review the target and expiry, then approve or deny. Normal tasks never pass through this page.",
   "apr.decisionStatus": "Decision status",
   "apr.totalRecords": "{count} records in total",

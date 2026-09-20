@@ -41,6 +41,8 @@ export interface ApprovalQueueProps extends ApprovalQueueCallbacks {
    * from turn history/SSE yet; it must not be presented as a real zero. */
   dataState?: ApprovalQueueDataState;
   onNavigateToOrg?: () => void;
+  /** Jump to the related turn (e.g., in reports). */
+  onViewTurn?: (turnId: string) => void;
 }
 
 const FILTER_OPTIONS: { labelKey: string; value: ApprovalQueueFilter }[] = [
@@ -102,6 +104,7 @@ export function ApprovalQueue({
   defaultFilter = "pending",
   dataState = "ready",
   onNavigateToOrg,
+  onViewTurn,
   onApprove,
   onDeny,
   onOpenSource,
@@ -200,9 +203,13 @@ export function ApprovalQueue({
       }
       if (filter === "decided") {
         // Most recent decision first
-        const decidedAtA = a.decision.decidedAt ? new Date(a.decision.decidedAt).getTime() : 0;
-        const decidedAtB = b.decision.decidedAt ? new Date(b.decision.decidedAt).getTime() : 0;
-        return decidedAtB - decidedAtA;
+        const getDecidedAt = (item: ApprovalQueueItem) => {
+          if (item.decision.kind === "granted" || item.decision.kind === "denied") {
+            return item.decision.decidedAt ? new Date(item.decision.decidedAt).getTime() : 0;
+          }
+          return 0;
+        };
+        return getDecidedAt(b) - getDecidedAt(a);
       }
       return 0;
     });
@@ -387,6 +394,7 @@ export function ApprovalQueue({
                 item={item}
                 now={now}
                 onOpen={() => setSelectedId(item.approvalId)}
+                onViewTurn={onViewTurn}
               />
             </List.Item>
           )}
@@ -463,9 +471,10 @@ interface ApprovalCardProps {
   item: ApprovalQueueItem;
   now: number;
   onOpen: () => void;
+  onViewTurn?: (turnId: string) => void;
 }
 
-function ApprovalCard({ item, now, onOpen }: ApprovalCardProps) {
+function ApprovalCard({ item, now, onOpen, onViewTurn }: ApprovalCardProps) {
   const t = useT();
   const localeTag = useOwbLocale() === "en" ? "en-US" : "zh-CN";
   const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
@@ -541,6 +550,15 @@ function ApprovalCard({ item, now, onOpen }: ApprovalCardProps) {
             <Tooltip title={item.expiresAt}>
               <span className="owb-approval-card__expires">{t("apr.expires", { at: formatApprovalTime(item.expiresAt, t, localeTag) })}</span>
             </Tooltip>
+          ) : null}
+          {onViewTurn && item.source?.turnId ? (
+            <button
+              type="button"
+              className="owb-approval-card__view-turn"
+              onClick={(e) => { e.stopPropagation(); onViewTurn(item.source.turnId!); }}
+            >
+              {t("apr.viewTurn")}
+            </button>
           ) : null}
         </p>
       </button>

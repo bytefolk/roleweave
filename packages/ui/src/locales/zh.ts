@@ -905,6 +905,7 @@ export const zhCatalog: Record<string, string> = {
   "apr.unavailable.unknown": "审批暂不可操作，请刷新",
   "apr.dataStateReady": "数据已接入",
   "apr.dataStateDisconnected": "数据源未接入",
+  "apr.viewTurn": "查看回合",
   "apr.centerLede": "Agent 遇到需要人工确认的命令、写入、联网或受限工具调用时，会在这里暂停。你可以查看目标和有效期，然后批准或拒绝。普通任务不会经过此页。",
   "apr.decisionStatus": "裁决状态",
   "apr.totalRecords": "共 {count} 条记录",

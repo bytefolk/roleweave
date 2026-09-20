@@ -120,6 +120,20 @@ export function isActionablePending(item: ApprovalQueueItem, now: number): boole
  * clock outside this helper lets the queue, card, and detail drawer update in
  * lockstep on the same minute tick.
  */
+/**
+ * Urgency projection for pending-item sorting. Expired pending items are
+ * `critical` (they should have been decided already), items within the 24 h
+ * expiry window are `warning`, the rest are `normal`.
+ */
+export type ApprovalUrgency = "critical" | "warning" | "normal";
+
+export function approvalUrgency(item: ApprovalQueueItem, now: number): ApprovalUrgency {
+  const expiry = approvalExpiryState(item, now);
+  if (expiry === "expired") return "critical";
+  if (expiry === "expiring") return "warning";
+  return "normal";
+}
+
 export function approvalExpiryState(item: ApprovalQueueItem, now: number): ApprovalExpiryState {
   if (item.decision.kind === "expired") return "expired";
   if (item.decision.kind !== "pending" || !item.expiresAt) return "active";

@@ -50,4 +50,40 @@ describe("consolidated reports", () => {
     expect(screen.getByText("回合 missing-turn 暂无执行证据")).toBeInTheDocument();
     expect(screen.queryByText("1 条记录")).toBeNull();
   });
+
+  it("shows disconnected message when dataState is not-connected and reports is null", () => {
+    render(<ReportsCenter reports={null} loading={false} dataState="not-connected" />);
+    expect(screen.getByText("上报中心已断开 — 本地服务不可达")).toBeInTheDocument();
+  });
+
+  it("shows unavailable message when dataState is ready but reports is null", () => {
+    render(<ReportsCenter reports={null} loading={false} dataState="ready" />);
+    expect(screen.getByText("上报数据不可用")).toBeInTheDocument();
+  });
+
+  it("renders View turn buttons in escalations when onViewTurn is provided", () => {
+    const onViewTurn = vi.fn();
+    render(<ReportsCenter reports={report} loading={false} onViewTurn={onViewTurn} />);
+    fireEvent.click(screen.getByRole("button", { name: /治理/ }));
+    const viewTurnButtons = screen.getAllByRole("button", { name: "查看回合" });
+    expect(viewTurnButtons.length).toBeGreaterThan(0);
+    fireEvent.click(viewTurnButtons[0]);
+    expect(onViewTurn).toHaveBeenCalledWith("failed-1");
+  });
+
+  it("renders View turn buttons in evidence table when onViewTurn is provided", () => {
+    const onViewTurn = vi.fn();
+    render(<ReportsCenter reports={report} loading={false} onViewTurn={onViewTurn} />);
+    fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
+    const viewTurnButtons = screen.getAllByRole("button", { name: "查看回合" });
+    expect(viewTurnButtons.length).toBeGreaterThan(0);
+    fireEvent.click(viewTurnButtons[0]);
+    expect(onViewTurn).toHaveBeenCalled();
+  });
+
+  it("does not render View turn buttons when onViewTurn is not provided", () => {
+    render(<ReportsCenter reports={report} loading={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
+    expect(screen.queryByRole("button", { name: "查看回合" })).toBeNull();
+  });
 });

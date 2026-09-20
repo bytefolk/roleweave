@@ -1319,6 +1319,12 @@ function AppInner({
     void loadReports();
   }, [loadReports, setActiveModule]);
 
+  const viewTurnInReports = useCallback((turnId: string) => {
+    setReportsFocusTurnId(turnId);
+    setActiveModule("reports");
+    void loadReports();
+  }, [loadReports, setActiveModule]);
+
   const openWorkspace = useCallback(async () => {
     if (workspaceOpening) return;
     setWorkspaceOpening(true);
@@ -2045,6 +2051,8 @@ function AppInner({
             positionNames={positionNames}
             positionColors={positionColors}
             focusTurnId={reportsFocusTurnId ?? undefined}
+            dataState={reportsError ? "not-connected" : "ready"}
+            onViewTurn={viewTurnInReports}
           />
         ) : activeModule === "approvals" ? (
           <ApprovalQueue
@@ -2057,6 +2065,7 @@ function AppInner({
             onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
+            onViewTurn={viewTurnInReports}
           />
         ) : activeModule === "groups" ? (
           <GroupsPanel
