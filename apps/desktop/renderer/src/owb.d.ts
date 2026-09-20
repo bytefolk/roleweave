@@ -175,7 +175,6 @@ export interface OwbBridge {
     save(session: import("@roleweave/shared").DeploymentSession): Promise<{ ok: boolean }>;
     remove(url: string): Promise<{ ok: boolean }>;
     list(): Promise<OwbApiResponse<{ sessions: import("@roleweave/shared").DeploymentSessionSummary[] }>>;
-    getToken(url: string): Promise<{ token: string | null }>;
     clear(): Promise<{ ok: boolean }>;
   };
   /** #134 update surface. Null means the shell declined to answer this frame. */

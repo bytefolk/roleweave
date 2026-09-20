@@ -36,6 +36,8 @@ function isValidToken(value) {
 function normalizeUrl(raw) {
   try {
     const url = new URL(raw);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    if (url.username || url.password || url.hash) return null;
     return url.origin + url.pathname.replace(/\/+$/, "");
   } catch { return null; }
 }
@@ -180,12 +182,6 @@ function registerDeploymentSessionIpc({ ipcMain, getStore, isTrusted }) {
     try {
       if (!isTrusted(event)) return failure("untrusted_sender");
       return getStore().list();
-    } catch { return failure("storage_unavailable"); }
-  });
-  ipcMain.handle("owb:deploy-session:get-token", (event, url) => {
-    try {
-      if (!isTrusted(event)) return failure("untrusted_sender");
-      return getStore().getToken(url);
     } catch { return failure("storage_unavailable"); }
   });
   ipcMain.handle("owb:deploy-session:clear", (event) => {

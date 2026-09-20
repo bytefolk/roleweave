@@ -104,7 +104,6 @@ contextBridge.exposeInMainWorld("owb", {
     save: (session) => ipcRenderer.invoke("owb:deploy-session:save", session),
     remove: (url) => ipcRenderer.invoke("owb:deploy-session:remove", url),
     list: () => ipcRenderer.invoke("owb:deploy-session:list"),
-    getToken: (url) => ipcRenderer.invoke("owb:deploy-session:get-token", url),
     clear: () => ipcRenderer.invoke("owb:deploy-session:clear"),
   },
   // #134 update surface: enumerated operations only, no generic updater
