@@ -674,7 +674,7 @@ function AppInner({
   const loadPosition = useCallback(async (id: string, requestedEngine?: TurnEngine) => {
     const version = selectionVersion.current;
     const read = ++positionReadVersion.current;
-    setCard({ loading: true, data: null, notFound: false });
+    setCard((prev) => ({ loading: true, data: prev.data, notFound: false }));
     setModelStates(current => ({ ...current, [id]: { loading: true } }));
     try {
     const engine = requestedEngine ?? positionEnginesRef.current[id] ?? defaultTurnEngineRef.current;
@@ -838,7 +838,6 @@ function AppInner({
     setHistoryLoading(true);
     if (sessionId === null) {
       setHistoryLoading(false);
-      setTurns([]);
       return true;
     }
     try {
@@ -871,6 +870,8 @@ function AppInner({
         setSessions([]);
         setSelectedSessionId(null);
         selectedSessionIdRef.current = null;
+        setTurns([]);
+        setHistoryLoading(false);
         setTurnError(apiErrorMessage(res.body, t("turn.sessionsFail")));
         return false;
       }
@@ -883,6 +884,12 @@ function AppInner({
       const next = matched ? current : (fallbackToActive ? list.activeSessionId : null);
       selectedSessionIdRef.current = next;
       if (next) selectedSessions.current[JSON.stringify([workspacePathRef.current, id])] = next;
+      else {
+        // Stale-while-revalidate ends once this employee is known to have no
+        // session; otherwise A's thread stays on B's panel (#413 review).
+        setTurns([]);
+        setHistoryLoading(false);
+      }
       setSelectedSessionId(next);
       if (preferredSessionId && !matched && !fallbackToActive) {
         setTurnError(t("apr.sourceUnavailable"));
@@ -891,7 +898,11 @@ function AppInner({
       }
       return true;
     } catch {
-      if (version === selectionVersion.current && selectedIdRef.current === id) setTurnError(t("turn.sessionsFailOffline"));
+      if (version === selectionVersion.current && selectedIdRef.current === id) {
+        setTurns([]);
+        setHistoryLoading(false);
+        setTurnError(t("turn.sessionsFailOffline"));
+      }
       return false;
     }
   }, [t]);
@@ -938,7 +949,6 @@ function AppInner({
       setTurnError(null);
       return;
     }
-    setTurns([]);
     setTurnError(null);
     void loadPosition(selectedId);
     void ensureActiveSession(selectedId);
@@ -1013,7 +1023,6 @@ function AppInner({
     selectedSessionIdRef.current = null;
     setSelectedSessionId(null);
     setSessions([]);
-    setTurns([]);
     setSelectedId(id);
   }, []);
 

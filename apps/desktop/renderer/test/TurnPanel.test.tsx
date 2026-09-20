@@ -79,6 +79,14 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(createTurn).not.toHaveBeenCalled();
   });
 
+  it("#413 does not keep the empty-state node in the DOM under a loading skeleton", () => {
+    const { container } = render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner"
+      engine="qoder" engineAvailability={availability} turns={[]} sessions={[]}
+      selectedSessionId={null} sessionBusy historyLoading onCreateTurn={vi.fn()} />);
+    expect(container.querySelector(".owb-turn-thread--loading")).not.toBeNull();
+    expect(container.querySelector(".ui-org-empty-state")).toBeNull();
+  });
+
   it("keeps session controls out of a direct employee conversation and shows its fixed Agent identity", () => {
     const active = {
       schemaVersion: "workbench-session.v1" as const,

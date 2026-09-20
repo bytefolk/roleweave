@@ -13,6 +13,11 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(css).toMatch(/\.ui-org-tree\s*\{[^}]*padding:\s*6px 8px 12px/s);
     expect(css).toMatch(/\.ui-org-tree__row\s*\{[^}]*box-sizing:\s*border-box/s);
   });
+
+  it("#413 does not crossfade selected-row fill so two employees cannot glow at once", () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../src/styles.css"), "utf8");
+    expect(css).not.toMatch(/\.ui-org-tree__row\s*\{[^}]*transition:\s*background/s);
+  });
   it("leads with people: owner at the top level, children by reportTo, no project pseudo-row", () => {
     render(<OrgTree snapshot={SNAPSHOT} />);
     const tree = screen.getByRole("tree");

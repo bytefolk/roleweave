@@ -33,7 +33,9 @@ export interface PositionCardProps {
  * (dual lane), permission chips, context sources. antd still supplies the
  * controls (Button/Skeleton) per DL5.
  *
- * States: empty guidance / loading skeleton / 404 after disband / record.
+ * States: empty guidance / loading skeleton (only with no record) /
+ * 404 after disband / record. A previous record stays visible while the next
+ * employee loads (#413).
  */
 export function PositionCard({
   position,
@@ -46,7 +48,9 @@ export function PositionCard({
   className,
 }: PositionCardProps) {
   const t = useT();
-  if (loading) {
+  // #413: keep the previous record on screen while the next employee loads.
+  // Skeleton only when there is nothing to show yet (first selection / cold fetch).
+  if (loading && !position) {
     return (
       <section className={cn("owb-panel", "ui-org-position-card", className)} aria-label={t("pos.title")}>
         <header className="owb-panel-head">

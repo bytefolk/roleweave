@@ -4973,6 +4973,11 @@ body,
   background: var(--ui-surface-inset);
 }
 
+/* #413: author `display:flex` otherwise beats the UA [hidden] { display:none }. */
+.owb-turn-thread--empty[hidden] {
+  display: none;
+}
+
 .owb-turn {
   position: relative;
   display: grid;

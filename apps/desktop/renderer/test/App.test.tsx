@@ -1486,6 +1486,113 @@ it("runs A/B/C independently and keeps late responses, streams and cancellation 
   // slower CI workers need more than the default five seconds for the full flow.
 }, 10_000);
 
+it("#413 keeps employee A's card and thread while B's position fetch is in flight", async () => {
+  const tree = {
+    ...snapshot,
+    positionCount: 2,
+    tree: [{
+      ...snapshot.tree[0]!,
+      children: [{ id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }],
+    }],
+  };
+  const employeeB = { ...activeSession, positionId: "docs-writer", sessionId: "22222222-2222-4222-8222-222222222222" };
+  let holdB = false;
+  let finishB!: (value: Awaited<ReturnType<OwbBridge["position"]>>) => void;
+  const positionRead = vi.fn((id: string) => {
+    if (id === "docs-writer" && holdB) {
+      return new Promise<Awaited<ReturnType<OwbBridge["position"]>>>((resolve) => { finishB = resolve; });
+    }
+    return Promise.resolve({ status: 200, body: { position: { ...position, id, name: id === "repo-owner" ? "代码库负责人" : id }, agentEngine: "qoder" } });
+  });
+  openedBridge({
+    orgTree: vi.fn().mockResolvedValue({ status: 200, body: tree }),
+    position: positionRead,
+    sessions: vi.fn(async (id: string) => ({
+      status: 200,
+      body: {
+        schemaVersion: "workbench-session-list.v1",
+        positionId: id,
+        activeSessionId: id === "docs-writer" ? employeeB.sessionId : activeSession.sessionId,
+        sessions: id === "docs-writer" ? [employeeB] : [activeSession],
+      },
+    })),
+    sessionTurnHistory: vi.fn(async (sessionId: string) => ({
+      status: 200,
+      body: history([apiTurn({
+        conversationId: sessionId,
+        positionId: sessionId === employeeB.sessionId ? "docs-writer" : "repo-owner",
+        turnId: sessionId === employeeB.sessionId ? "turn-b" : "turn-a",
+        input: sessionId === employeeB.sessionId ? "B 的任务" : "历史任务",
+        output: sessionId === employeeB.sessionId ? "B 的结果" : "历史结果",
+      })]),
+    })),
+  });
+  render(<App />);
+  const choose = async (id: string) => {
+    fireEvent.click((await screen.findByRole("tree")).querySelector(`[data-org-node-id="${id}"]`)!);
+  };
+  await choose("repo-owner");
+  expect(await screen.findByRole("heading", { name: "代码库负责人" })).toBeInTheDocument();
+  expect(await screen.findByText("历史结果")).toBeInTheDocument();
+
+  holdB = true;
+  await choose("docs-writer");
+  expect(screen.getByRole("heading", { name: "代码库负责人" })).toBeInTheDocument();
+  expect(screen.getByText("历史结果")).toBeInTheDocument();
+  expect(document.querySelector(".ui-org-position-card__skeleton-title")).toBeNull();
+  expect(document.querySelector(".owb-turn-thread--loading")).toBeNull();
+
+  await act(async () => finishB({
+    status: 200,
+    body: { position: { ...position, id: "docs-writer", name: "文档负责人" }, agentEngine: "qoder" },
+  }));
+  expect(await screen.findByRole("heading", { name: "文档负责人" })).toBeInTheDocument();
+  expect(await screen.findByText("B 的结果")).toBeInTheDocument();
+  expect(screen.queryByText("历史结果")).not.toBeInTheDocument();
+});
+
+it("#413 clears employee A's thread once B is confirmed to have no session", async () => {
+  const tree = {
+    ...snapshot,
+    positionCount: 2,
+    tree: [{
+      ...snapshot.tree[0]!,
+      children: [{ id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }],
+    }],
+  };
+  openedBridge({
+    orgTree: vi.fn().mockResolvedValue({ status: 200, body: tree }),
+    position: vi.fn(async (id: string) => ({
+      status: 200,
+      body: { position: { ...position, id, name: id === "repo-owner" ? "代码库负责人" : "文档负责人" }, agentEngine: "qoder" },
+    })),
+    sessions: vi.fn(async (id: string) => ({
+      status: 200,
+      body: {
+        schemaVersion: "workbench-session-list.v1",
+        positionId: id,
+        activeSessionId: id === "docs-writer" ? null : activeSession.sessionId,
+        sessions: id === "docs-writer" ? [] : [activeSession],
+      },
+    })),
+    createSession: vi.fn(() => new Promise(() => { /* attach stays open so a stale thread cannot hide behind create */ })),
+    sessionTurnHistory: vi.fn(async (sessionId: string) => ({
+      status: 200,
+      body: history([apiTurn({ conversationId: sessionId, output: "历史结果" })]),
+    })),
+  });
+  render(<App />);
+  const choose = async (id: string) => {
+    fireEvent.click((await screen.findByRole("tree")).querySelector(`[data-org-node-id="${id}"]`)!);
+  };
+  await choose("repo-owner");
+  expect(await screen.findByText("历史结果")).toBeInTheDocument();
+
+  await choose("docs-writer");
+  expect(await screen.findByRole("heading", { name: "文档负责人" })).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByText("历史结果")).not.toBeInTheDocument());
+});
+
 it("keeps B usable during A's delayed automatic session creation, then restores A", async () => {
   const employeeB = { ...activeSession, positionId: "docs-writer", sessionId: "22222222-2222-4222-8222-222222222222" };
   const tree = { ...snapshot, positionCount: 2, tree: [{ ...snapshot.tree[0]!, children: [{ id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }] }] };

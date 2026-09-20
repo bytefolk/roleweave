@@ -349,10 +349,12 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
   return (
     <>
       {loading && turns.length === 0 ? <div className="owb-turn-thread owb-turn-thread--loading" aria-label={copy.preparing} aria-busy="true"><span /><span /><span /></div> : null}
-      <div className="owb-turn-thread owb-turn-thread--empty" hidden={turns.length > 0 || loading}>
+      {turns.length === 0 && !loading ? (
+      <div className="owb-turn-thread owb-turn-thread--empty">
         <EmptyState icon={<MessagesSquare size={32} strokeWidth={1.5} />}
           title={emptyPrompt ?? t("turn.emptyStart")} description={emptyDescription} />
       </div>
+      ) : null}
       <ol ref={threadRef} className={`owb-turn-thread${turns.length === 0 ? " owb-turn-thread--empty" : ""}`} role="log" aria-live="polite" aria-label={t("turn.threadAria")} hidden={turns.length === 0}>
         {turns.map((turn) => {
         const retryable = turn.status === "failed" || turn.status === "indeterminate";

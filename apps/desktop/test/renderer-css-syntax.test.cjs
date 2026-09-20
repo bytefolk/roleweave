@@ -18,3 +18,8 @@ test("renderer stylesheet guard rejects an unclosed block (#100)", () => {
     /Unclosed block/,
   );
 });
+
+test("#413 empty thread [hidden] wins over display:flex so skeleton cannot stack on empty-state", () => {
+  const css = fs.readFileSync(stylesheet, "utf8");
+  assert.match(css, /\.owb-turn-thread--empty\[hidden\]\s*\{[^}]*display:\s*none/s);
+});

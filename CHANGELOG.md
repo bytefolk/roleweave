@@ -7,6 +7,8 @@
 
 ### Fixed
 
+- #413：切换员工时工作台不再先清空成骨架屏。岗位卡与对话线程保持上一位员工的内容直到新数据返回；空态节点在加载中不入 DOM，且 `.owb-turn-thread--empty[hidden]` 盖过 `display:flex`；组织树选中底不再 120ms 交叉淡入，避免两行同时发亮。切到尚无 session 的员工时，待空 session 确认后再清掉上一位的线程。
+
 - #412：失败回合里错误块与「创建新回合重试」之间补回气泡内既有 10–16px 间距节奏（retry 行 `margin-top: 12px`）；错误块多行行高与正文对齐，并使用对称内边距。纯视觉，不改重试行为。
 
 - #406：把岗位拖到新上级只改汇报线。移动后仍按真实 `employee.json` 目录读取 `.workbench/agent-binding.v1.json`，不会因为过期的 `localReference` 把除 CEO 外的员工显示成默认 Claude。`org.updated` 继续发布 change-manifest 的 move/reorder，避免一次拖拽触发全量元数据重载。

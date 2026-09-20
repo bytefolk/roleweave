@@ -44,17 +44,10 @@
   color: var(--ui-foreground);
   user-select: none;
   font-size: 12.5px;
-  transition: background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
 .ui-org-tree__row:hover {
   background: color-mix(in srgb, var(--ui-surface) 60%, transparent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ui-org-tree__row {
-    transition: none;
-  }
 }
 
 .ui-org-tree__row:focus-visible {

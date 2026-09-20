@@ -59,6 +59,13 @@ describe("PositionCard (D1 spec §3)", () => {
     expect(document.querySelector(".ui-org-position-card__skeleton-title")).not.toBeNull();
   });
 
+  it("#413 keeps the previous record visible while the next employee is loading", () => {
+    render(<PositionCard position={POSITION} loading />);
+    expect(screen.getByRole("heading", { name: "Repo Owner" })).toBeInTheDocument();
+    expect(document.querySelector(".ui-org-position-card__skeleton-title")).toBeNull();
+    expect(screen.getByRole("heading", { name: /预算声明/ })).toBeInTheDocument();
+  });
+
   it("renders the 404 notice after disband with a refresh action", () => {
     const onRefresh = vi.fn();
     render(<PositionCard position={null} notFound onRefresh={onRefresh} />);
