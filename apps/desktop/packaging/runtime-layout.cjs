@@ -146,6 +146,7 @@ const SHARED_RUNTIME_FILES = [
   "dist/api.js",
   "dist/approval-preview.js",
   "dist/approval-redaction.js",
+  "dist/approval-scope.js",
   "dist/approvals.js",
   "dist/attachments.js",
   "dist/avatar.js",
