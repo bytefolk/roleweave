@@ -135,6 +135,16 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(onDeny).toHaveBeenCalledWith("appr-abc", "\u8d85\u51fa Context Scope");
   });
 
+  it("only offers server-eligible run scope and records the selected boundary", async () => {
+    const onApprove = vi.fn();
+    render(<ApprovalQueue items={[makeItem({ scopeAllowed: ["once", "run"] })]} onApprove={onApprove} onDeny={noop} />);
+    fireEvent.click(screen.getByTestId("approval-card-appr-abc"));
+    expect(await screen.findByTestId("approval-scope-choice")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "仅本回合" }));
+    fireEvent.click(screen.getByTestId("approval-approve-button"));
+    expect(onApprove).toHaveBeenCalledWith("appr-abc", undefined, "run");
+  });
+
   it("\u5df2\u88c1\u51b3\u9879\u9501\u5b9a\uff1a\u4e0d\u80fd\u91cd\u590d\u88c1\u51b3\uff0c\u62d2\u7edd\u8bc1\u636e\u63d0\u793a\u4fdd\u7559", async () => {
     const onApprove = vi.fn();
     const onDeny = vi.fn();

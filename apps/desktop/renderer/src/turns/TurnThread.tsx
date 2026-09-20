@@ -24,7 +24,7 @@ export interface TurnThreadProps {
   canRetry?: (turn: TurnRecord) => boolean;
   onRetry?: (turn: TurnRecord) => void;
   /** Operator verdict for a turn settled as engine.approval_required. */
-  onVerdict?: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void;
+  onVerdict?: (turn: TurnRecord, decision: "granted" | "denied", reason?: string, scope?: "once" | "run") => void;
   /** Approval ids whose verdict was already dispatched; their cards settle
    * into a decided state so the operator cannot submit duplicate or
    * contradictory verdicts after a history reload. */
@@ -183,7 +183,7 @@ function ApprovalCard({
   turn: TurnRecord;
   busy: boolean;
   decided: boolean;
-  onVerdict: (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => void;
+  onVerdict: (turn: TurnRecord, decision: "granted" | "denied", reason?: string, scope?: "once" | "run") => void;
 }) {
   const t = useT();
   const kindCopy: Record<string, string> = {
@@ -193,6 +193,7 @@ function ApprovalCard({
     tool: t("apr.kind.tool"),
   };
   const [reason, setReason] = useState("");
+  const [scope, setScope] = useState<"once" | "run">("once");
   const request = turn.approvalRequest;
   if (request === undefined) return null;
   const trimmedReason = reason.trim();
@@ -225,11 +226,17 @@ function ApprovalCard({
             onChange={(event) => setReason(event.target.value)}
           />
           <div className="owb-turn__approval-actions">
+            {request.scopeAllowed?.includes("run") ? <select aria-label={t("apr.scopeTitle")} value={scope} disabled={disabled} onChange={(event) => setScope(event.target.value as "once" | "run")}>
+              <option value="once">{t("apr.scope.once")}</option>
+              <option value="run">{t("apr.scope.run")}</option>
+            </select> : null}
             <button
               type="button"
               className="owb-turn__approval-grant"
               disabled={disabled}
-              onClick={() => trimmedReason ? onVerdict(turn, "granted", trimmedReason) : onVerdict(turn, "granted")}
+              onClick={() => scope === "run"
+                ? onVerdict(turn, "granted", trimmedReason || undefined, scope)
+                : trimmedReason ? onVerdict(turn, "granted", trimmedReason) : onVerdict(turn, "granted")}
             >
               {t("apr.grant")}
             </button>

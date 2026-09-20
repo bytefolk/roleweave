@@ -62,15 +62,15 @@ export function useApprovals(workspacePath: string | undefined) {
     return () => { if (current()) owner.current = {}; clearInterval(timer); window.removeEventListener("focus", focus); };
   }, [workspacePath, t]);
 
-  const decide = useCallback(async (id: string, decision: "granted" | "denied", reason?: string) => {
+  const decide = useCallback(async (id: string, decision: "granted" | "denied", reason?: string, scope: "once" | "run" = "once") => {
     const generation = owner.current;
     const item = cache.current.items.find(a => a.id === id);
     if (!item || !cache.current.token || !item.canDecide || inFlight.current.has(id)) return;
     const prior = pending.current.get(id);
-    if (prior && (prior.decision !== decision || prior.reason !== reason)) {
+    if (prior && (prior.decision !== decision || prior.reason !== reason || prior.scope !== scope)) {
       setErrors(e => ({ ...e, [id]: t("apr.retrySameDecision") })); return;
     }
-    const request = prior ?? { requestId: crypto.randomUUID(), expectedVersion: item.version, decision, ...(reason ? { reason } : {}) };
+    const request = prior ?? { requestId: crypto.randomUUID(), expectedVersion: item.version, decision, scope, ...(reason ? { reason } : {}) };
     pending.current.set(id, request); inFlight.current.add(id); setBusy(new Set(inFlight.current));
     setErrors(e => { const next = { ...e }; delete next[id]; return next; });
     try {

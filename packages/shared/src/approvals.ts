@@ -22,12 +22,14 @@ export interface ApprovalContext {
     status: "unavailable";
     reason: "engine_preview_not_supplied";
   };
+  scope: { allowed: Array<"once" | "run"> };
 }
 
 export interface ApprovalDecisionRequest {
   requestId: string;
   expectedVersion: number;
   decision: "granted" | "denied";
+  scope: "once" | "run";
   reason?: string;
 }
 export interface ApprovalRecord {
@@ -49,7 +51,7 @@ export interface ApprovalRecord {
   requestedAt: string;
   expiresAt?: string;
   status: ApprovalStatus;
-  decision?: ApprovalDecisionRequest & { decidedBy: "operator"; decidedAt: string; scope: "once" };
+  decision?: ApprovalDecisionRequest & { decidedBy: "operator"; decidedAt: string };
   execution: { phase: ApprovalPhase; turnId?: string; errorCode?: string };
   createdAt: string;
   updatedAt: string;

@@ -6,6 +6,7 @@ import {
   TURN_HISTORY_SCHEMA_VERSION,
   TURN_RECORD_SCHEMA_VERSION,
   errorCodes,
+  isApprovalScopeOffer,
   isPositionId,
   isEngineModelId,
   turnEngines,
@@ -695,7 +696,7 @@ function validateEngineEvent(raw: unknown): EngineEvent | null {
           ["reason", "expiresAt"],
         ) ||
         !isObjectRecord(value.action) ||
-        !hasExactKeys(value.action, ["kind", "description"], ["target"]) ||
+        !hasExactKeys(value.action, ["kind", "description"], ["target", "scope"]) ||
         !isBoundedApprovalId(value.approvalId) ||
         !APPROVAL_ACTION_KINDS.has(value.action.kind as string) ||
         !isBoundedNonEmptyText(value.action.description, APPROVAL_DESCRIPTION_MAX_BYTES) ||
@@ -703,7 +704,8 @@ function validateEngineEvent(raw: unknown): EngineEvent | null {
           !isBoundedNonEmptyText(value.action.target, APPROVAL_TARGET_MAX_BYTES)) ||
         (value.reason !== undefined &&
           !isBoundedNonEmptyText(value.reason, APPROVAL_DESCRIPTION_MAX_BYTES)) ||
-        !isOptionalIsoTimestamp(value.expiresAt)
+        !isOptionalIsoTimestamp(value.expiresAt) ||
+        (value.action.scope !== undefined && !isApprovalScopeOffer(value.action.scope))
       ) return null;
       return {
         ...base,
@@ -713,6 +715,7 @@ function validateEngineEvent(raw: unknown): EngineEvent | null {
           kind: value.action.kind as "exec" | "write" | "network" | "tool",
           description: value.action.description,
           ...(value.action.target !== undefined ? { target: value.action.target } : {}),
+          ...(value.action.scope !== undefined ? { scope: value.action.scope } : {}),
         },
         ...(value.reason !== undefined ? { reason: value.reason } : {}),
         ...(value.expiresAt !== undefined ? { expiresAt: value.expiresAt as string } : {}),

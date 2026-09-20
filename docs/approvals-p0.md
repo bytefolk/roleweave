@@ -4,17 +4,25 @@
 
 ## 行为
 
-审批中心和会话卡通过同一个本地审批服务读取状态和提交裁决。服务端绑定原岗位、原会话、原回合与引擎；批准范围固定为 `once`，保留原到期时间。裁决保存与后续执行结果分别展示。
+审批中心和会话卡通过同一个本地审批服务读取状态和提交裁决。服务端绑定原岗位、原会话、原回合与引擎；默认批准范围为 `once`，保留原到期时间。裁决保存与后续执行结果分别展示。
 
 个人 session 和旧版岗位会话可以裁决。群聊来源只读展示，批准和拒绝按钮固定禁用，不能由审批中心裁决；已归档会话必须重新发起任务。旧接口直接提交 `pendingApproval` 返回 `409 approval_endpoint_required`，不会启动引擎。
 
 批准或拒绝会启动一条携带 `pendingApproval` 的新恢复回合；原始 `engine.approval_required` 回合及其事件记录保持不变，不会在原回合上续写或改写终态。
 
+### #401：一次性与本回合范围
+
+引擎可以在 `approval.requested.action.scope` 中声明 `approval-scope-offer.v1`。`allowed` 必须以 `once` 开始；只有同时声明 `run` 和 `runBinding` 时，才可能选择本回合范围。`runBinding` 是 `sha256:` 加十六进制 SHA-256，输入为 shared 的 `approvalRunScopeBindingInput(approvalId, sourceRunId, {kind, description, target}, expiresAt)` 的规范 JSON。
+
+服务端重新计算摘要并在写入裁决前比对：绑定到不同审批编号、请求 run、动作（含目标）或有效期的 offer 一律不能升级为 `run`。`run` 只允许批准，不允许拒绝；来源已过期、失配、重放或版本冲突仍按原路径拒绝。审计记录持久化实际 `decision.scope`，同一个 `requestId` 重试时必须携带完全相同的范围。
+
+对 UI，服务端只投影校验通过的 `context.scope.allowed`；默认与旧记录均仅显示“仅此动作”。选择“仅本回合”仅会把该恢复回合的 `pendingApproval.scope` 设为 `run`，不会放宽该岗位、后续回合或其他动作。审批历史显示实际生效范围。
+
 ## 接口
 
 - `GET /approvals?status=all|pending|decided&limit=50&cursor=...&workspacePath=...`：返回分页 items、pendingCount、revision、workspaceToken、nextCursor 和 syncState。limit 最大 200。快照改变后旧游标返回 `409 approval_snapshot_changed`。
 - `GET /approvals/:id`：详情含 `canDecide` 和 `unavailableReason`。
-- `POST /approvals/:id/decision`：请求包含 `workspaceToken`、`requestId`、`expectedVersion`、`decision` 和可选 `reason`。理由上限为 1024 UTF-8 字节。
+- `POST /approvals/:id/decision`：请求包含 `workspaceToken`、`requestId`、`expectedVersion`、`decision`、可选 `scope`（省略即 `once`）和可选 `reason`。理由上限为 1024 UTF-8 字节。`scope: run` 仅接受引擎声明且服务端验证了绑定的批准请求。
 - 首次持久化成功返回 202；相同请求幂等返回 200；相反裁决、旧版本或工作区实例失配返回 409；过期返回 410；格式错误返回 400。
 - `approvals.changed` 在记录落盘后发布，携带工作区路径、审批记录 ID 和版本。客户端将 SSE 作为刷新提示，重连、聚焦、返回审批中心及每 10 秒补查快照。
 

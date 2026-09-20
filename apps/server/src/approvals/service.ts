@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { OrgApiError, errorCodes, validatePendingApproval, type ApprovalRecord, type ApprovalView, type ApprovalDecisionRequest, type TurnRecord, type WorkbenchSession } from "@roleweave/shared";
+import { OrgApiError, approvalRunScopeBindingInput, errorCodes, validatePendingApproval, type ApprovalRecord, type ApprovalView, type ApprovalDecisionRequest, type TurnRecord, type WorkbenchSession } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
 import { assertTurnWorkspace, executeTurn } from "../routes/turns.js";
@@ -18,12 +18,29 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function parseDecision(value: unknown): ApprovalDecisionRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new OrgApiError(errorCodes.approval_request_invalid, 400, "Invalid decision");
   const d = value as ApprovalDecisionRequest;
-  if (Object.keys(d).some(k => !["requestId", "expectedVersion", "decision", "reason"].includes(k)) ||
+  if (Object.keys(d).some(k => !["requestId", "expectedVersion", "decision", "reason", "scope"].includes(k)) ||
       typeof d.requestId !== "string" || !uuid.test(d.requestId) || !Number.isSafeInteger(d.expectedVersion) || d.expectedVersion < 1 ||
+      (d.scope !== undefined && d.scope !== "once" && d.scope !== "run") ||
       !validatePendingApproval({ approvalId: "validation", decision: d.decision, decidedBy: "operator", ...(d.reason === undefined ? {} : { reason: d.reason }) }).ok) {
     throw new OrgApiError(errorCodes.approval_request_invalid, 400, "Invalid decision or reason (maximum 1024 UTF-8 bytes)");
   }
-  return d;
+  return { ...d, scope: d.scope ?? "once" };
+}
+
+function validRunScopeBinding(record: ApprovalRecord): boolean {
+  const offer = record.action.scope;
+  if (!offer?.allowed.includes("run") || !offer.runBinding) return false;
+  const input = approvalRunScopeBindingInput(record.approvalId, record.source.runId, record.action, record.expiresAt);
+  const expected = `sha256:${crypto.createHash("sha256").update(input).digest("hex")}`;
+  return crypto.timingSafeEqual(Buffer.from(offer.runBinding), Buffer.from(expected));
+}
+
+function approvalContext(record: ApprovalRecord, role: Parameters<typeof buildApprovalContext>[1]) {
+  const context = buildApprovalContext(record.action, role);
+  // The engine may declare a syntactically valid offer, but it becomes visible
+  // as a selectable boundary only after the control plane verifies that it is
+  // bound to this exact approval, source run, action and expiry.
+  return { ...context, scope: { allowed: validRunScopeBinding(record) ? ["once", "run"] as Array<"once" | "run"> : ["once"] as Array<"once" | "run"> } };
 }
 
 function publicView(record: ApprovalRecord): ApprovalRecord {
@@ -90,11 +107,11 @@ export class ApprovalService {
         const record: ApprovalRecord = {
           schemaVersion: "workbench-approval.v1", id, version: 1, approvalId: event.approvalId, source,
           action: event.action, ...(event.reason ? { requestReason: event.reason } : {}),
-          ...(role ? { context: buildApprovalContext(event.action, role) } : {}),
           requestedAt: event.timestamp, ...(event.expiresAt ? { expiresAt: event.expiresAt } : {}),
           status: turn.error?.code === "engine.approval_required" ? "pending" : "indeterminate",
           execution: { phase: "not_started" }, createdAt: now, updatedAt: now,
         };
+        if (role) record.context = approvalContext(record, role);
         await this.save(ws, record); byId.set(id, record);
       }
     }
@@ -102,7 +119,7 @@ export class ApprovalService {
       const before = JSON.stringify(a);
       if (!a.context) {
         const role = ws.organization.roles.find(entry => entry.id === a.source.positionId);
-        if (role) a.context = buildApprovalContext(a.action, role);
+        if (role) a.context = approvalContext(a, role);
       }
       if (a.execution.turnId && !this.active.has(`${ws.dir}\0${a.id}`)) {
         const result = turns.find(t => t.turnId === a.execution.turnId && t.positionId === a.source.positionId && t.conversationId === a.source.conversationId);
@@ -171,10 +188,11 @@ export class ApprovalService {
       if (!a) throw new OrgApiError(errorCodes.approval_missing, 404, "Approval not found");
       const prior = items.find(x => x.decision?.requestId === request.requestId);
       if (prior) {
-        if (prior.id !== id || prior.decision!.decision !== request.decision || prior.decision!.reason !== request.reason || prior.decision!.expectedVersion !== request.expectedVersion) throw conflict("Request id was already used for another decision");
+        if (prior.id !== id || prior.decision!.decision !== request.decision || prior.decision!.scope !== request.scope || prior.decision!.reason !== request.reason || prior.decision!.expectedVersion !== request.expectedVersion) throw conflict("Request id was already used for another decision");
         return { status: 200, record: await this.view(ws, prior) };
       }
       if (a.status === "expired") throw new OrgApiError(errorCodes.approval_expired, 410, "Approval expired");
+      if (request.scope === "run" && (request.decision !== "granted" || !validRunScopeBinding(a))) throw conflict("This approval is not eligible for run scope");
       const view = await this.view(ws, a);
       if (!view.canDecide || a.version !== request.expectedVersion) throw conflict(view.unavailableReason ?? "Approval changed; refresh before deciding");
       const source = turns.find(t => t.turnId === a.source.turnId && t.positionId === a.source.positionId && (t.conversationRef ?? t.conversationId) === a.source.conversationId);
@@ -189,7 +207,7 @@ export class ApprovalService {
         this.assertToken(ws, token);
         if (a.expiresAt && Date.now() >= Date.parse(a.expiresAt)) throw new OrgApiError(errorCodes.approval_expired, 410, "Approval expired");
         a.status = request.decision;
-        a.decision = { ...request, scope: "once", decidedBy: "operator", decidedAt: new Date().toISOString() };
+        a.decision = { ...request, decidedBy: "operator", decidedAt: new Date().toISOString() };
         // Starting is persisted BEFORE any dispatch. A crash here is deliberately
         // indeterminate: replaying an external side effect would be unsafe.
         a.execution = { phase: "starting", turnId };
@@ -208,7 +226,7 @@ export class ApprovalService {
           const result = await executeTurn(this.ctx, undefined, {
             positionId: a.source.positionId, engine: a.source.engine,
             input: `${request.decision === "granted" ? "[审批裁决] 请继续执行以下原任务中已批准的动作" : "[审批裁决] 已拒绝以下原任务的动作，不得执行"}\n${source.input}`,
-            pendingApproval: { approvalId: a.approvalId, decision: request.decision, decidedBy: "operator", scope: "once", ...(request.reason ? { reason: request.reason } : {}), ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}) },
+            pendingApproval: { approvalId: a.approvalId, decision: request.decision, decidedBy: "operator", scope: request.scope, ...(request.reason ? { reason: request.reason } : {}), ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}) },
           }, session, undefined, undefined, ws, {
             turnId, reservation,
             beforeRun: async () => {

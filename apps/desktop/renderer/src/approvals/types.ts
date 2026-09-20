@@ -47,6 +47,8 @@ export interface ApprovalQueueItem {
   category: ApprovalCategory;
   description: string;
   target?: string;
+  /** The server's projection of the engine-declared eligible grant scopes. */
+  scopeAllowed?: Array<"once" | "run">;
   requestedAt?: string;
   expiresAt?: string;
   /** Snapshot of the position permissions.toolDeny list; only used for the
@@ -59,8 +61,9 @@ export interface ApprovalQueueItem {
 }
 
 export interface ApprovalQueueCallbacks {
-  /** granted defaults to scope=once (contract default per §5.1); reason optional. */
-  onApprove: (approvalId: string, reason?: string) => void;
+  /** granted defaults to scope=once; run is available only when the server
+   * projected it as eligible. */
+  onApprove: (approvalId: string, reason?: string, scope?: "once" | "run") => void;
   /** denied MUST allow an empty reason (contract permits absent reason). */
   onDeny: (approvalId: string, reason?: string) => void;
   /** Open the persisted source conversation when the source is addressable. */

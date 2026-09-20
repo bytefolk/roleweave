@@ -36,5 +36,6 @@ export function buildApprovalContext(
       deniedTools: role.toolDeny.slice(0, 128),
     },
     preview: { status: "unavailable", reason: "engine_preview_not_supplied" },
+    scope: { allowed: action.scope?.allowed ?? ["once"] },
   };
 }

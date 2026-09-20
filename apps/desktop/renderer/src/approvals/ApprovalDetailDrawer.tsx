@@ -14,7 +14,7 @@
  *   the operator's verdict; audit details remain in the run history.
  */
 import { useEffect, useState } from "react";
-import { Alert, Button, Drawer, Input, Space, Tag } from "antd";
+import { Alert, Button, Drawer, Input, Radio, Space, Tag } from "antd";
 import { useT } from "@roleweave/ui";
 import {
   approvalExpiryState,
@@ -50,11 +50,13 @@ export function ApprovalDetailDrawer({
 }: ApprovalDetailDrawerProps) {
   const t = useT();
   const [reason, setReason] = useState("");
+  const [scope, setScope] = useState<"once" | "run">("once");
 
   useEffect(() => {
     // Reset the reason field whenever the drawer switches to a different
     // approval or closes; do not leak reasons across items.
     setReason("");
+    setScope("once");
   }, [item?.approvalId, open]);
 
   if (!item) {
@@ -88,7 +90,8 @@ export function ApprovalDetailDrawer({
 
   const handleApprove = () => {
     if (disabled) return;
-    onApprove(item.approvalId, reasonForCallback);
+    if (scope === "run") onApprove(item.approvalId, reasonForCallback, scope);
+    else onApprove(item.approvalId, reasonForCallback);
   };
   const handleDeny = () => {
     if (disabled) return;
@@ -234,29 +237,39 @@ export function ApprovalDetailDrawer({
                     ? t("apr.alertDenied")
                     : t(`apr.status.${item.decision.kind}`)
               }
-              description={
-                item.decision.kind === "denied" && item.decision.reason
+              description={item.decision.kind === "granted"
+                ? t("apr.effectiveScope", { scope: t(`apr.scope.${item.decision.scope}`) })
+                : item.decision.kind === "denied" && item.decision.reason
                   ? t("apr.reasonPrefix", { reason: safeApprovalText(item.decision.reason) })
-                  : undefined
-              }
+                  : undefined}
               showIcon
             />
           ) : expired ? (
             <Alert type="warning" showIcon message={t("apr.alertExpired")} />
           ) : (
-            <section>
-              <h3 className="owb-approval-drawer__section-title">{t("apr.reasonOptional")}</h3>
-              <Input.TextArea
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                placeholder={t("apr.reasonPh")}
-                autoSize={{ minRows: 2, maxRows: 4 }}
-                maxLength={MAX_APPROVAL_REASON_BYTES}
-                showCount
-                data-testid="approval-reason-input"
-                disabled={disabled}
-              />
-            </section>
+            <>
+              {item.scopeAllowed?.includes("run") ? <section data-testid="approval-scope-choice">
+                <h3 className="owb-approval-drawer__section-title">{t("apr.scopeTitle")}</h3>
+                <Radio.Group value={scope} onChange={(event) => setScope(event.target.value)} disabled={disabled}>
+                  <Radio value="once">{t("apr.scope.once")}</Radio>
+                  <Radio value="run">{t("apr.scope.run")}</Radio>
+                </Radio.Group>
+                <p className="owb-muted">{t("apr.scopeRunHint")}</p>
+              </section> : null}
+              <section>
+                <h3 className="owb-approval-drawer__section-title">{t("apr.reasonOptional")}</h3>
+                <Input.TextArea
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  placeholder={t("apr.reasonPh")}
+                  autoSize={{ minRows: 2, maxRows: 4 }}
+                  maxLength={MAX_APPROVAL_REASON_BYTES}
+                  showCount
+                  data-testid="approval-reason-input"
+                  disabled={disabled}
+                />
+              </section>
+            </>
           )}
 
           <div className="owb-approval-drawer__actions">

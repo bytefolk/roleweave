@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { ApprovalList, ApprovalView, EngineEvent, GroupConversation, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
+import { approvalRunScopeBindingInput } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
 import { approvals } from "../src/approvals/service.js";
 
@@ -12,6 +13,8 @@ class ApprovalDriver implements TurnRunDriver {
   expiresAt = new Date(Date.now() + 60000).toISOString();
   target = "report.md";
   reason = "The write needs operator approval";
+  runScope = false;
+  invalidRunBinding = false;
   hold?: Promise<void>;
   async turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
     this.calls.push(request);
@@ -21,10 +24,17 @@ class ApprovalDriver implements TurnRunDriver {
     const events: EngineEvent[] = [{ ...base, type: "run.started" }];
     if (d) {
       await this.hold;
-      if (d.decision === "granted") events.push({ ...base, type: "approval.granted", approvalId: d.approvalId, grantedBy: "operator", scope: "once" }, { ...base, type: "run.completed", output: "done", terminalReason: "goal_met" });
+      if (d.decision === "granted") events.push({ ...base, type: "approval.granted", approvalId: d.approvalId, grantedBy: "operator", scope: d.scope ?? "once" }, { ...base, type: "run.completed", output: "done", terminalReason: "goal_met" });
       else events.push({ ...base, type: "approval.denied", approvalId: d.approvalId, deniedBy: "operator" }, { ...base, type: "run.failed", error: { code: "engine.approval_denied", message: "denied", retryable: false, terminalReason: "cancelled" } });
-    } else events.push({ ...base, type: "approval.requested", approvalId: "same-engine-id", action: { kind: "write", description: "write report", target: this.target }, reason: this.reason, expiresAt: this.expiresAt },
+    } else {
+      const action = { kind: "write" as const, description: "write report", target: this.target };
+      const binding = `sha256:${crypto.createHash("sha256").update(approvalRunScopeBindingInput("same-engine-id", runId, action, this.expiresAt)).digest("hex")}`;
+      events.push({ ...base, type: "approval.requested", approvalId: "same-engine-id", action: {
+        ...action,
+        ...(this.runScope ? { scope: { version: "approval-scope-offer.v1" as const, allowed: ["once", "run"] as Array<"once" | "run">, runBinding: this.invalidRunBinding ? `sha256:${"0".repeat(64)}` : binding } } : {}),
+      }, reason: this.reason, expiresAt: this.expiresAt },
       { ...base, type: "run.failed", error: { code: "engine.approval_required", message: "waiting", retryable: true, terminalReason: "engine_internal_error" } });
+    }
     for (const event of events) request.onEvent?.(event);
     return { status: "trusted", events, diagnostic: "" };
   }
@@ -102,6 +112,61 @@ test("approval center restores the source session, preserves expiry, is idempote
     const repeated = await api(s.baseUrl, route, { token: s.token, method: "POST", body: { ...decision, workspaceToken: reloaded.workspaceToken } });
     assert.equal(repeated.status, 200);
     assert.equal(driver.calls.filter(c => c.envelope.pendingApproval).length, 1);
+  } finally { await s.close(); }
+});
+
+test("run scope is opt-in, source-bound, durable, and idempotent", async () => {
+  const driver = new ApprovalDriver();
+  driver.runScope = true;
+  const s = await startTestServer(undefined, driver);
+  try {
+    await open(s, await copyExampleWorkspace()); await request(s);
+    const snapshot = await list(s), a = snapshot.items[0]!, route = `/approvals/${a.id}/decision`;
+    assert.deepEqual(a.context?.scope.allowed, ["once", "run"]);
+    const decision = { ...body(snapshot, a), scope: "run" as const };
+    const accepted = await api(s.baseUrl, route, { token: s.token, method: "POST", body: decision });
+    assert.equal(accepted.status, 202);
+    assert.equal((accepted.body as ApprovalView).decision?.scope, "run");
+    const done = await settle(s, a.id);
+    assert.equal(done.decision?.scope, "run");
+    assert.equal(driver.calls.find(call => call.envelope.pendingApproval)?.envelope.pendingApproval?.scope, "run");
+    const replay = await api(s.baseUrl, route, { token: s.token, method: "POST", body: { ...decision, workspaceToken: (await list(s)).workspaceToken } });
+    assert.equal(replay.status, 200, "same request retains the original scope");
+    const changedScope = await api(s.baseUrl, route, { token: s.token, method: "POST", body: { ...decision, scope: "once", workspaceToken: (await list(s)).workspaceToken } });
+    assert.equal(changedScope.status, 409, "a request id cannot be replayed with a wider or narrower boundary");
+  } finally { await s.close(); }
+});
+
+test("run scope rejects undeclared, tampered, denied, and expired offers before dispatch", async () => {
+  for (const variant of ["undeclared", "tampered"] as const) {
+    const driver = new ApprovalDriver();
+    driver.runScope = variant === "tampered";
+    driver.invalidRunBinding = variant === "tampered";
+    const s = await startTestServer(undefined, driver);
+    try {
+      await open(s, await copyExampleWorkspace()); await request(s);
+      const snapshot = await list(s), a = snapshot.items[0]!;
+      assert.deepEqual(a.context?.scope.allowed, ["once"], `${variant} offer must not be rendered as an eligible run scope`);
+      const response = await api(s.baseUrl, `/approvals/${a.id}/decision`, { token: s.token, method: "POST", body: { ...body(snapshot, a), scope: "run" } });
+      assert.equal(response.status, 409, variant);
+      assert.equal(driver.calls.filter(call => call.envelope.pendingApproval).length, 0, variant);
+    } finally { await s.close(); }
+  }
+  const driver = new ApprovalDriver(); driver.runScope = true;
+  const s = await startTestServer(undefined, driver);
+  try {
+    await open(s, await copyExampleWorkspace()); await request(s);
+    const snapshot = await list(s), a = snapshot.items[0]!;
+    const denied = await api(s.baseUrl, `/approvals/${a.id}/decision`, { token: s.token, method: "POST", body: { ...body(snapshot, a, "denied"), scope: "run" } });
+    assert.equal(denied.status, 409);
+    driver.expiresAt = new Date(Date.now() - 1).toISOString();
+    // Existing records retain their request expiry; creating a new expiring
+    // request proves expiry wins before a run-scope grant can be dispatched.
+    await request(s, "community-operator");
+    const expired = (await list(s)).items.find(item => item.source.positionId === "community-operator")!;
+    assert.equal(expired.status, "expired");
+    const response = await api(s.baseUrl, `/approvals/${expired.id}/decision`, { token: s.token, method: "POST", body: { ...body(await list(s), expired), scope: "run" } });
+    assert.equal(response.status, 410);
   } finally { await s.close(); }
 });
 

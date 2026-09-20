@@ -44,6 +44,23 @@ describe("authoritative approval state", () => {
     await act(() => result.current.decide(row.id, "denied", "reason"));
     expect(decideApproval.mock.calls[0]![0].requestId).toBe(decideApproval.mock.calls[1]![0].requestId);
   });
+  it("sends a run boundary only when the caller selected it and keeps it for retry", async () => {
+    const eligible = { ...row, context: {
+      risk: "high" as const, requestedCapability: "write" as const, impact: "workspace_write" as const,
+      permissions: { mode: "approval_required" as const, allowedTools: [], deniedTools: [] },
+      preview: { status: "unavailable" as const, reason: "engine_preview_not_supplied" as const },
+      scope: { allowed: ["once", "run"] as Array<"once" | "run"> },
+    } };
+    const decideApproval = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ status: 202, body: { ...eligible, status: "granted", decision: { scope: "run" } } });
+    bridge({ listApprovals: vi.fn(async () => page([eligible])), decideApproval });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(() => result.current.decide(row.id, "granted", undefined, "run"));
+    await act(() => result.current.decide(row.id, "granted", undefined, "run"));
+    expect(decideApproval.mock.calls[0]![0].scope).toBe("run");
+    expect(decideApproval.mock.calls[1]![0].scope).toBe("run");
+    expect(decideApproval.mock.calls[0]![0].requestId).toBe(decideApproval.mock.calls[1]![0].requestId);
+  });
   it("drops responses from a prior workspace generation including A → B → A", async () => {
     let release!: (value: unknown) => void;
     const listApprovals = vi.fn().mockImplementationOnce(() => new Promise(resolve => { release = resolve; })).mockImplementation(async () => page([], "new"));

@@ -32,6 +32,7 @@ function approvalRequest(record: ApiTurnRecord): TurnApprovalRequest | undefined
         kind: event.action.kind,
         description: event.action.description,
         ...(event.action.target !== undefined ? { target: event.action.target } : {}),
+        ...(event.action.scope !== undefined ? { scopeAllowed: event.action.scope.allowed } : {}),
         ...(event.expiresAt !== undefined ? { expiresAt: event.expiresAt } : {}),
       };
     }

@@ -353,7 +353,8 @@ function AppInner({
     approvalId: a.id, positionId: a.source.positionId, positionName: positionNames[a.source.positionId],
     category: a.action.kind, description: a.action.description, target: a.action.target,
     requestedAt: a.requestedAt, expiresAt: a.expiresAt,
-    decision: a.status === "granted" ? { kind: "granted", scope: "once", decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy, reason: a.decision?.reason } : a.status === "denied" ? { kind: "denied", reason: a.decision?.reason, decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy } : { kind: a.status },
+    decision: a.status === "granted" ? { kind: "granted", scope: a.decision?.scope ?? "once", decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy, reason: a.decision?.reason } : a.status === "denied" ? { kind: "denied", reason: a.decision?.reason, decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy } : { kind: a.status },
+    scopeAllowed: a.context?.scope.allowed ?? ["once"],
     canDecide: a.canDecide, busy: approvalState.busy.has(a.id), error: approvalState.errors[a.id],
     unavailableReason: a.unavailableReason, executionPhase: a.execution.phase,
     requestReason: a.requestReason, context: a.context, source: a.source, executionTurnId: a.execution.turnId, executionErrorCode: a.execution.errorCode,
@@ -1284,9 +1285,9 @@ function AppInner({
 
   /** Both approval entry points use the same durable server-owned decision. */
   const verdictTurn = useCallback(
-    async (turn: TurnRecord, decision: "granted" | "denied", reason?: string) => {
+    async (turn: TurnRecord, decision: "granted" | "denied", reason?: string, scope: "once" | "run" = "once") => {
       const approval = approvalState.items.find(a => a.source.turnId === turn.id && a.source.positionId === turn.positionId && a.approvalId === turn.approvalRequest?.approvalId);
-      if (approval) await approvalState.decide(approval.id, decision, reason);
+      if (approval) await approvalState.decide(approval.id, decision, reason, scope);
     },
     [approvalState.items, approvalState.decide],
   );
@@ -2051,7 +2052,7 @@ function AppInner({
             loading={approvalState.loading && !approvalState.ready}
             errorMessage={approvalState.error}
             onNavigateToOrg={() => setActiveModule("org")}
-            onApprove={(id, reason) => { void approvalState.decide(id, "granted", reason); }}
+            onApprove={(id, reason, scope) => { void approvalState.decide(id, "granted", reason, scope); }}
             onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
