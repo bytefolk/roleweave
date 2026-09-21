@@ -254,6 +254,9 @@ function AuditRow({ entry, positionNames, localeTag }: { entry: AuditEntry; posi
             : live.map((group) => <span className="owb-report-chip" key={group.key}>{group.label} {group.count}</span>)}
           <small>{t("rep.auditPositions", { count: entry.positionCount })}</small>
         </div>
+        {entry.uncoveredGoalIds && entry.uncoveredGoalIds.length > 0 ? (
+          <p data-testid="rep-audit-uncovered">{t("rep.jev.uncoveredGoals", { ids: entry.uncoveredGoalIds.join(", ") })}</p>
+        ) : null}
         {live.length > 0 ? (
           <button type="button" className="owb-report-expand" aria-expanded={open} onClick={() => setOpen(!open)}>
             {open ? t("rep.collapseChanges") : t("rep.expandChanges")}
