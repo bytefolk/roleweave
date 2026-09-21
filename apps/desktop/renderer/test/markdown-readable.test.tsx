@@ -31,6 +31,15 @@ describe("shared Markdown reading contract", () => {
     fireEvent.click(screen.getByRole("button", { name: "复制" }));
     await waitFor(() => expect(screen.getByText("复制失败")).toBeInTheDocument());
   });
+  it("renders safe deterministic icons before final-answer links without remote favicon requests", () => {
+    const { container } = render(<Markdown content={'[GitHub](https://github.com/bytefolk/roleweave) [Docs](https://docs.google.com/document/d/1) [Site](https://example.com) [Mail](mailto:team@example.com) [Section](#rw-heading-1)'} />);
+    expect(screen.getByRole("link", { name: "GitHub" }).querySelector('[data-link-icon="github"]')).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Docs" }).querySelector('[data-link-icon="document"]')).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Site" }).querySelector('[data-link-icon="website"]')).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Mail" }).querySelector('[data-link-icon="mail"]')).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Section" }).querySelector('[data-link-icon]')).toBeNull();
+    expect(container.querySelectorAll('.owb-markdown-link__icon img')).toHaveLength(0);
+  });
   it("blocks dangerous protocols, local paths, raw HTML and authenticated URLs", () => {
     const { container } = render(<Markdown content={'[bad](javascript:alert%281%29)\n\n[local](file:///etc/passwd)\n\n[good](https://example.com)\n\n<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>'} />);
     expect(screen.queryByRole("link", { name: "bad" })).not.toBeInTheDocument();

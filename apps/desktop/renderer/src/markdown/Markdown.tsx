@@ -1,7 +1,7 @@
 import { Children, isValidElement, useId, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, FileText, Github, Globe2, Mail } from "lucide-react";
 import { useConversationCopy } from "../locales/conversation";
 import { remarkReadableEmphasis, remarkHeadingIds } from "./markdown-content";
 import "./markdown.css";
@@ -37,6 +37,35 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   return failed || !src ? <span className="owb-markdown-image-error" role="img" aria-label={alt || copy.imageFailed}>{copy.imageFailed}{alt ? ` · ${alt}` : ""}</span>
     : <img src={src} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
 }
+function linkIcon(href: string): ReactNode {
+  if (href.startsWith("#")) return null;
+  if (href.startsWith("mailto:")) return <Mail data-link-icon="mail" aria-hidden="true" />;
+  try {
+    const host = new URL(href).hostname.toLowerCase();
+    if (host === "github.com" || host.endsWith(".github.com")) return <Github data-link-icon="github" aria-hidden="true" />;
+    if (/^(?:docs|drive)\.google\.com$/.test(host) || host === "notion.so" || host.endsWith(".notion.site")) {
+      return <FileText data-link-icon="document" aria-hidden="true" />;
+    }
+  } catch { return null; }
+  return <Globe2 data-link-icon="website" aria-hidden="true" />;
+}
+
+function MarkdownLink({ href, children, onFailure }: { href: string; children: ReactNode; onFailure: () => void }) {
+  const external = !href.startsWith("#");
+  return <a className={external ? "owb-markdown-link" : undefined} href={href} target={external ? "_blank" : undefined}
+    rel="noopener noreferrer" onClick={event => {
+      if (!external) return;
+      const open = (window.owb as unknown as { openExternalUrl?: (url: string) => Promise<{ ok: boolean }> } | undefined)?.openExternalUrl;
+      if (open) {
+        event.preventDefault();
+        void open(href).then(result => { if (!result.ok) onFailure(); }).catch(onFailure);
+      }
+    }}>
+    {external ? <span className="owb-markdown-link__icon">{linkIcon(href)}</span> : null}
+    <span className={external ? "owb-markdown-link__text" : undefined}>{children}</span>
+  </a>;
+}
+
 export function Markdown({ content, className = "", headingPrefix }: { content: string; className?: string; headingPrefix?: string }) {
   const copy = useConversationCopy();
   const instance = useId();
@@ -49,14 +78,7 @@ export function Markdown({ content, className = "", headingPrefix }: { content: 
         table: ({ children }) => <div className="owb-markdown-table" tabIndex={0}><table>{children}</table></div>,
         img: ({ src, alt }) => <MarkdownImage key={src} src={src} alt={alt} />,
         input: ({ checked }) => <input type="checkbox" checked={checked ?? false} readOnly disabled />,
-        a: ({ href, children }) => href ? <a href={href} target={href.startsWith("#") ? undefined : "_blank"} rel="noopener noreferrer" onClick={event => {
-          if (href.startsWith("#")) return;
-          const open = (window.owb as unknown as { openExternalUrl?: (url: string) => Promise<{ ok: boolean }> } | undefined)?.openExternalUrl;
-          if (open) {
-            event.preventDefault();
-            void open(href).then(result => setLinkFailed(!result.ok)).catch(() => setLinkFailed(true));
-          }
-        }}>{children}</a> : <span>{children}</span>,
+        a: ({ href, children }) => href ? <MarkdownLink href={href} onFailure={() => setLinkFailed(true)}>{children}</MarkdownLink> : <span>{children}</span>,
       }}>{content}</ReactMarkdown>
     {linkFailed ? <p role="alert" className="owb-markdown-error">{copy.openFailed}</p> : null}
   </div>;
