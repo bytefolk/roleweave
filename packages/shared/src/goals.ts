@@ -79,6 +79,8 @@ export interface GoalDetail {
   activity: GoalActivity[];
   /** Advisory Jev Choice when enabled; never written to persisted goal.health. */
   healthOverlay?: GoalHealthStatus;
+  /** Advisory stall signal; never written to persisted goal.health. */
+  staleOverlay?: boolean;
 }
 
 export interface GoalsCreateRequest {
@@ -107,6 +109,7 @@ export interface GoalsDetailResponse {
   goal: Goal;
   activity: GoalActivity[];
   healthOverlay?: GoalHealthStatus;
+  staleOverlay?: boolean;
 }
 
 const allowedGoalTransitions: Record<GoalStatus, readonly GoalStatus[]> = {

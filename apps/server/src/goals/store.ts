@@ -26,6 +26,7 @@ import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.j
 import type { TurnRecord } from "@roleweave/shared";
 import { askJev, type JevAsk } from "../jev/client.js";
 import { jevEnabled } from "../jev/config.js";
+import { resolveStaleOverlay } from "../jev/stale.js";
 
 const GOAL_ROOT_SEGMENTS = [".digital-employee", "workbench", "goals"];
 const MAX_GOALS = 64;
@@ -369,7 +370,7 @@ export class GoalStore {
     goalId: string,
     turns?: readonly TurnRecord[],
     deps: ResolveGoalHealthDeps = {},
-  ): Promise<{ goal: Goal; activity: GoalActivity[]; healthOverlay?: GoalHealthStatus }> {
+  ): Promise<{ goal: Goal; activity: GoalActivity[]; healthOverlay?: GoalHealthStatus; staleOverlay?: boolean }> {
     const goal = await this.get(workspace, goalId);
     const activity = await this.readActivity(workspace, goalId);
     let current = goal;
@@ -398,9 +399,19 @@ export class GoalStore {
         currentActivity = [...activity, healthActivity];
       }
       const overlay = await resolveJevHealthOverlay(current, turns, deps);
-      if (overlay != null && overlay !== current.health) {
-        return { goal: current, activity: currentActivity, healthOverlay: overlay };
-      }
+      const bound = turns.filter((turn) => turn.goalId === current.goalId);
+      const last = [...bound].sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)).at(-1);
+      const stale = await resolveStaleOverlay({
+        updatedAt: current.updatedAt,
+        boundTurnCount: bound.length,
+        ...(last ? { lastTerminalAt: last.updatedAt } : {}),
+      }, deps);
+      return {
+        goal: current,
+        activity: currentActivity,
+        ...(overlay != null && overlay !== current.health ? { healthOverlay: overlay } : {}),
+        ...(stale ? { staleOverlay: true } : {}),
+      };
     }
     return { goal: current, activity: currentActivity };
   }

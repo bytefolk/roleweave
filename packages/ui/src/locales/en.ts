@@ -1171,6 +1171,7 @@ export const enCatalog: Record<string, string> = {
   "goals.health.on_track": "On Track",
   "goals.health.at_risk": "At Risk",
   "goals.health.blocked": "Blocked",
+  "goals.health.stale": "possibly stalled",
   "goals.health.unknown": "Unknown",
   "goals.health.rule": "Rule health",
   "goals.health.jevSuggestion": "Jev suggestion",

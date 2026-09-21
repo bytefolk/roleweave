@@ -1174,6 +1174,7 @@ export const zhCatalog: Record<string, string> = {
   "goals.health.on_track": "正常",
   "goals.health.at_risk": "有风险",
   "goals.health.blocked": "已阻塞",
+  "goals.health.stale": "可能已停摆",
   "goals.health.unknown": "未知",
   "goals.health.rule": "规则健康",
   "goals.health.jevSuggestion": "Jev 建议",

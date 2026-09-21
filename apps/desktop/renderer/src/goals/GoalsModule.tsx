@@ -495,6 +495,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, onOpenApprovals, onOpenBo
                         </span>
                       )}
                     </div>
+                    {detail.staleOverlay ? (
+                      <p data-testid="goals-health-stale">
+                        {t("goals.health.jevSuggestion")}: {t("goals.health.stale")}
+                        {detail.goal.health === "on_track" ? (
+                          <em> {t("goals.health.suggestionNotAdopted")}</em>
+                        ) : null}
+                      </p>
+                    ) : null}
                     {detail.healthOverlay === "blocked" ? (
                       <div className="owb-goals-health-actions">
                         {detail.goal.branches.some((branch) => branch.positionId) ? (
