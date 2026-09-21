@@ -172,11 +172,12 @@ export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRec
 }
 
 function ActivityTrace({ turn }: { turn: TurnRecord }) {
+  const t = useT();
   const tools = turn.trace?.filter(item => item.kind === "tool") ?? [];
   const agents = turn.trace?.filter(item => item.kind === "agent") ?? [];
   const [toolsOpen, setToolsOpen] = useState(false);
   if (tools.length === 0 && agents.length === 0) return null;
-  const label = `执行工具 ${tools.length} 次`;
+  const label = t("turn.toolsExecuted", { count: tools.length });
   return <div className="owb-activity-trace">
     {tools.length > 0 ? <div className="owb-activity-trace__group" role="group" aria-label={label}>
       <button type="button" aria-expanded={toolsOpen} onClick={() => setToolsOpen(!toolsOpen)}>
@@ -191,7 +192,7 @@ function ActivityTrace({ turn }: { turn: TurnRecord }) {
     {agents.map(item => <div className={`owb-activity-trace__agent is-${item.status}`} key={`${item.activityId}:${item.status}`}>
       <Bot size={14} aria-hidden="true" /><span>{item.title}{item.detail ? ` · ${item.detail}` : ""}</span>
     </div>)}
-    {turn.status === "running" ? <div className="owb-activity-trace__continuing" aria-current="step"><LoaderCircle size={13} aria-hidden="true" />继续推理…</div> : null}
+    {turn.status === "running" ? <div className="owb-activity-trace__continuing" aria-current="step"><LoaderCircle size={13} aria-hidden="true" />{t("turn.continueReasoning")}</div> : null}
   </div>;
 }
 

@@ -536,7 +536,7 @@ export function GroupsPanel({
             errorCode: undefined,
             ...(run.text !== "" ? { output: run.text } : {}),
             ...(run.totalTokens !== null ? { totalTokens: run.totalTokens } : {}),
-            ...(run.trace.length > 0 ? { trace: run.trace } : {}),
+            ...(run.trace && run.trace.length > 0 ? { trace: run.trace } : {}),
           },
         };
       });

@@ -254,6 +254,8 @@ export const zhCatalog: Record<string, string> = {
   "turn.progressAria": "执行进展",
   "turn.elapsed": "耗时 {duration}",
   "turn.progressProcessing": "处理请求",
+  "turn.toolsExecuted": "执行工具 {count} 次",
+  "turn.continueReasoning": "继续推理…",
   "turn.unconfirmedOutput": "未确认的输出",
   "turn.progressTitle": "执行进展",
   "turn.progressDetails": "查看过程详情",

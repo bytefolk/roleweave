@@ -460,7 +460,7 @@ export function applyTurnEvent(
       const next: import("./types").TurnTraceActivity = { activityId, kind, status, title, at,
         ...(stringField(payload, "detail") ? { detail: stringField(payload, "detail")! } : {}),
         ...(stringField(payload, "parentActivityId") ? { parentActivityId: stringField(payload, "parentActivityId")! } : {}) };
-      const trace = existing.trace.filter(item => item.activityId !== activityId).concat(next).slice(-128);
+      const trace = (existing.trace ?? []).filter(item => item.activityId !== activityId).concat(next).slice(-128);
       return { ...state, seq: nextSeq, runs: { ...state.runs, [entry[0]]: { ...existing, trace } } };
     }
     case "turn.usage": {

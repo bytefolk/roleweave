@@ -251,6 +251,8 @@ export const enCatalog: Record<string, string> = {
   "turn.progressAria": "Execution progress",
   "turn.elapsed": "Elapsed {duration}",
   "turn.progressProcessing": "Processing request",
+  "turn.toolsExecuted": "Used tools {count} times",
+  "turn.continueReasoning": "Continuing…",
   "turn.unconfirmedOutput": "Unconfirmed output",
   "turn.progressTitle": "Execution progress",
   "turn.progressDetails": "View process details",
