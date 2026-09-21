@@ -7,6 +7,7 @@ import type { RunningTurnRegistry } from "./turns/running.js";
 import type { SessionStore } from "./sessions/store.js";
 import type { GroupStore } from "./groups/store.js";
 import type { GoalStore } from "./goals/store.js";
+import type { TaskBoardStore } from "./tasks/store.js";
 import type { ContextExportService } from "./context-export/exporter.js";
 
 export interface ControlPlaneContext {
@@ -29,6 +30,8 @@ export interface ControlPlaneContext {
   groupStore: GroupStore;
   /** #222 workspace-local user-owned goal persistence. */
   goalStore: GoalStore;
+  /** Per-Agent durable project queue and collaboration requests. */
+  taskBoardStore: TaskBoardStore;
   /** Server-owned durable turn exporter; never exposed to renderer/IPC. */
   contextExporter: ContextExportService;
 }

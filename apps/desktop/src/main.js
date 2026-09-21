@@ -721,6 +721,10 @@ ipcMain.handle("owb:goal:create", async (_event, request) => {
 });
 
 ipcMain.handle("owb:goal:list", async () => apiRequest("/goals"));
+ipcMain.handle("owb:task:list", async (_event, positionId) => apiRequest(`/tasks${typeof positionId === "string" && positionId ? `?positionId=${encodeURIComponent(positionId)}` : ""}`));
+ipcMain.handle("owb:task:create", async (_event, request) => apiRequest("/tasks", { method: "POST", body: request }));
+ipcMain.handle("owb:task:decision", async (_event, request) => apiRequest(`/tasks/${encodeURIComponent(request.taskId)}/decision`, { method: "PATCH", body: { actorPositionId: request.actorPositionId, decision: request.decision } }));
+ipcMain.handle("owb:task:status", async (_event, request) => apiRequest(`/tasks/${encodeURIComponent(request.taskId)}/status`, { method: "PATCH", body: { actorPositionId: request.actorPositionId, status: request.status } }));
 
 ipcMain.handle("owb:goal:get", async (_event, goalId) => {
   const pathname = goalPath(goalId);

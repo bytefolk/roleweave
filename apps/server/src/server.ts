@@ -46,6 +46,7 @@ import {
 import { handleTurnCancel, handleTurnHistory, handleTurnPost } from "./routes/turns.js";
 import { handleAttachmentRead, handleAttachmentUpload } from "./attachments/routes.js";
 import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceInitialize, handleWorkspaceOpen } from "./routes/workspace.js";
+import { handleTaskCreate, handleTaskDecision, handleTaskList, handleTaskStatus } from "./routes/tasks.js";
 
 /**
  * Loopback-only control-plane HTTP server (frozen v0 contract).
@@ -302,6 +303,21 @@ async function dispatch(
     }
     if (pathname === routes.goals && method === "POST") {
       await handleGoalCreate(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.tasks && method === "GET") {
+      await handleTaskList(ctx, res, url.searchParams.get("positionId") ?? undefined);
+      return;
+    }
+    if (pathname === routes.tasks && method === "POST") {
+      await handleTaskCreate(ctx, req, res);
+      return;
+    }
+    const taskMatch = pathname.match(/^\/tasks\/([^/]+)\/(decision|status)$/);
+    if (taskMatch && method === "PATCH") {
+      const taskId = decodeURIComponent(taskMatch[1]!);
+      if (taskMatch[2] === "decision") await handleTaskDecision(ctx, req, res, taskId);
+      else await handleTaskStatus(ctx, req, res, taskId);
       return;
     }
     if (pathname === routes.goals && method === "GET") {
