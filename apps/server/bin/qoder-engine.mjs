@@ -1120,10 +1120,8 @@ async function turnRunQoder(workspaceDir, positionId, input) {
       if (event?.type === "user" && Array.isArray(event?.message?.content)) {
         for (const block of event.message.content) {
           if (block?.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
-          const content = typeof block.content === "string" ? block.content.trim().slice(0, 2048) : undefined;
           emit({ type: "trace.activity", runId, timestamp: now(), activityId: block.tool_use_id.slice(0, 256), kind: "tool",
-            status: block.is_error === true ? "failed" : "completed", title: toolNames.get(block.tool_use_id) ?? "Tool",
-            ...(content ? { detail: content } : {}) });
+            status: block.is_error === true ? "failed" : "completed", title: toolNames.get(block.tool_use_id) ?? "Tool" });
         }
       }
       if (event?.type === "result") {

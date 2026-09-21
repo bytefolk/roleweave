@@ -651,7 +651,7 @@ test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and pa
   const trace = events.filter((event) => event.type === "trace.activity");
   assert.deepEqual(trace, [
     { type: "trace.activity", runId, timestamp: trace[0]?.timestamp, activityId: "tool-1", kind: "tool", status: "running", title: "Bash", detail: "npm test" },
-    { type: "trace.activity", runId, timestamp: trace[1]?.timestamp, activityId: "tool-1", kind: "tool", status: "completed", title: "Bash", detail: "tests passed" },
+    { type: "trace.activity", runId, timestamp: trace[1]?.timestamp, activityId: "tool-1", kind: "tool", status: "completed", title: "Bash" },
   ]);
   assert.ok(!result.stdout.includes("internal"), "private reasoning is never emitted");
   assert.ok(!result.stdout.includes("must-not-leak"), "secret-shaped tool input is never emitted");
