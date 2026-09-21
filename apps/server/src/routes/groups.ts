@@ -204,7 +204,14 @@ export async function handleGroupList(
   res: ServerResponse,
 ): Promise<void> {
   const workspace = ctx.workspace.requireOpen();
-  sendJson(res, 200, await ctx.groupStore.list(workspace.dir));
+  const list = await ctx.groupStore.list(workspace.dir);
+  const members = workspace.organization.roles.map((role) => ({ id: role.id, name: role.name }));
+  const groups = [];
+  for (const group of list.groups) {
+    const overlay = await resolveDispatchOverlay(group, members);
+    groups.push(overlay ? { ...group, dispatchOverlay: overlay } : group);
+  }
+  sendJson(res, 200, { ...list, groups });
 }
 
 export async function handleGroupGet(
