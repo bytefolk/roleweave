@@ -92,6 +92,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/jev/assignee.js",
   "dist/src/jev/client.js",
   "dist/src/jev/config.js",
+  "dist/src/jev/dispatch.js",
   "dist/src/jev/escalation.js",
   "dist/src/local-provider-config.js",
   "dist/src/model-selection.js",

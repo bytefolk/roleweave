@@ -28,6 +28,7 @@ import { createTurnEnvelope } from "../turns/envelope.js";
 import { compactThreadContextHandoff, type SupplementalContext } from "../turns/thread-context.js";
 import { compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 import { resolvePositionAgentEngine } from "../agent-binding.js";
+import { resolveDispatchOverlay } from "../jev/dispatch.js";
 
 const MAX_INPUT_BYTES = MAX_GROUP_INPUT_BYTES;
 
@@ -212,7 +213,12 @@ export async function handleGroupGet(
   conversationRef: string,
 ): Promise<void> {
   const workspace = ctx.workspace.requireOpen();
-  sendJson(res, 200, await ctx.groupStore.get(workspace.dir, assertConversationRef(conversationRef)));
+  const group = await ctx.groupStore.get(workspace.dir, assertConversationRef(conversationRef));
+  const overlay = await resolveDispatchOverlay(
+    group,
+    workspace.organization.roles.map((role) => ({ id: role.id, name: role.name })),
+  );
+  sendJson(res, 200, overlay ? { ...group, dispatchOverlay: overlay } : group);
 }
 
 export async function handleGroupDismiss(

@@ -7,6 +7,7 @@
 
 ### Added
 
+- #431：群聊发送栏可预填 Jev 建议的 @ 与并行/接力；套用后仍需发送。`handleGroupTurnPost` 不改 mention/mode。
 - #430：组织树在当前选中旁展示 Jev 建议员工；点建议只选中岗位，不发回合。
 - #428：上报失败升级行可叠加 Jev `category` + `needsAttention`；不删行、不改 turn 状态/错误码；「不必看」仍保留该行。
 - #422：可选 Jev（TypeSafe System One）适配器，默认关闭。`ROLEWEAVE_JEV_ENABLED=1` 且配置 `ROLEWEAVE_JEV_API_KEY` 后，目标分支健康可走 Choice（`on_track` / `at_risk` / `blocked` / `unknown`）作为 `healthOverlay`；持久化 `goal.health` 仍只由 `computeHealthFromTurns` 写入。Choice 请求只带 turn `status` / `errorCode`，不发送 input/output。非法或外部 option 不能把 failed/indeterminate 分支改成 on_track。失败或超时回退启发式。不改变审批策略与回合终态推导。
