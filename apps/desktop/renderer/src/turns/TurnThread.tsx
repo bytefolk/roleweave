@@ -97,16 +97,9 @@ function formatElapsed(seconds: number): string {
 
 /** A live clock only while executing. Missing terminal timestamps stay absent;
  * a historical response must not acquire a duration from today's clock. */
-function ElapsedTime({ turn }: { turn: TurnRecord }) {
+function ElapsedTime({ turn, now }: { turn: TurnRecord; now: number }) {
   const t = useT();
   const running = turn.status === "running";
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!running) return;
-    setNow(Date.now());
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [running, turn.createdAt]);
   const terminalStep = turn.progress?.slice().reverse().find((step) =>
     ["completed", "failed", "unknown", "awaiting_approval"].includes(step.kind));
   const seconds = elapsedSeconds(turn.createdAt, running ? now : turn.completedAt ?? terminalStep?.at);
@@ -123,6 +116,13 @@ export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRec
   const progress = turn.progress?.length ? turn.progress : fallbackProgress(turn);
   const awaitingApproval = turn.approvalRequest !== undefined;
   const running = turn.status === "running" && !awaitingApproval;
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!running) return;
+    setNow(Date.now());
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [running, turn.createdAt]);
   // A user's disclosure choice survives streamed text updates. A new terminal
   // phase starts collapsed, leaving the final response in the foreground.
   const phase = `${turn.id}:${turn.status}:${approvalDecided}`;
@@ -150,19 +150,20 @@ export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRec
           <span className="owb-turn-progress__toggle"><ChevronRight className="owb-turn-progress__chevron" aria-hidden="true" size={11} /></span>
           <span className="owb-turn-progress__title">{summary}</span>
         </button>
-        <ElapsedTime turn={turn} />
+        <ElapsedTime turn={turn} now={now} />
       </div>
       <ol id={stepsId} className="owb-turn-progress__steps" hidden={!open}>
         {progress.map((step, index) => {
           const active = running && index === progress.length - 1;
-          const offset = elapsedSeconds(turn.createdAt, step.at);
+          const phaseEnd = progress[index + 1]?.at ?? (running ? now : turn.completedAt ?? progress.at(-1)?.at);
+          const phaseSeconds = step.at === undefined || phaseEnd === undefined ? null : elapsedSeconds(step.at, phaseEnd);
           return (
             <li className={`owb-turn-progress__step is-${step.kind}${active ? " is-current" : ""}`}
               key={`${step.kind}-${step.at}-${index}`} aria-current={active ? "step" : undefined}
               data-motion={active ? "active" : undefined} style={{ "--progress-step": index } as CSSProperties}>
               <span className="owb-turn-progress__icon"><ProgressIcon kind={step.kind} active={active} /></span>
               <span className="owb-turn-progress__copy">{labels[step.kind]}</span>
-              {offset !== null ? <time className="owb-turn-progress__at" dateTime={step.at}>{formatElapsed(offset)}</time> : null}
+              {phaseSeconds !== null ? <time className="owb-turn-progress__at" dateTime={`PT${phaseSeconds}S`}>{formatElapsed(phaseSeconds)}</time> : null}
             </li>
           );
         })}
@@ -183,7 +184,7 @@ function ActivityTrace({ turn }: { turn: TurnRecord }) {
       <button type="button" aria-expanded={toolsOpen} onClick={() => setToolsOpen(!toolsOpen)}>
         <span className="owb-turn-progress__toggle"><ChevronRight size={11} aria-hidden="true" /></span>{label}
       </button>
-      <ol hidden={!toolsOpen}>{tools.map(item => <li key={`${item.activityId}:${item.status}`} className={`is-${item.status}`}>
+      <ol className="owb-activity-trace__list" hidden={!toolsOpen}>{tools.map(item => <li key={`${item.activityId}:${item.status}`} className={`is-${item.status}`}>
         <span className="owb-activity-trace__icon">{item.title.toLowerCase().includes("terminal") || item.title.toLowerCase().includes("bash") ? <Terminal size={13} /> : <Wrench size={13} />}</span>
         <span><strong>{item.title}</strong>{item.detail ? ` · ${item.detail}` : ""}</span>
         {item.status === "completed" ? <Check size={12} aria-hidden="true" /> : item.status === "failed" ? <AlertTriangle size={12} aria-hidden="true" /> : <LoaderCircle size={12} className="owb-turn-progress__spinner" aria-hidden="true" />}
@@ -454,7 +455,13 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
               {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
 
               {turn.error ? (
-                <div className="owb-bubble__error" title={turn.error}>{turn.error}</div>
+                <div className="owb-turn-failure" role="alert">
+                  <div className="owb-turn-failure__title"><AlertTriangle aria-hidden="true" size={14} />
+                    {t(turn.errorCode === "turn_timeout" ? "turn.timeoutTitle" : "turn.failedTitle")}
+                  </div>
+                  {turn.errorCode === "turn_timeout" && turn.output ? <p>{t("turn.timeoutPreserved")}</p> : turn.error !== t("turn.failedTitle") ? <p>{turn.error}</p> : null}
+                  {turn.errorCode !== "turn_timeout" ? <small>{t("turn.failedHelp")}</small> : null}
+                </div>
               ) : null}
               {turn.diagnostic ? (
                 <details className="owb-turn__diagnostic">

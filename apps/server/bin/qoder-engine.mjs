@@ -1078,10 +1078,13 @@ async function turnRunQoder(workspaceDir, positionId, input) {
     const publicDetail = (block) => {
       const input = block?.input;
       if (!input || typeof input !== "object") return undefined;
-      for (const key of ["command", "path", "file_path", "query", "url", "description"]) {
-        if (typeof input[key] === "string" && input[key].trim()) return input[key].trim().slice(0, 2048);
+      const details = [];
+      for (const key of ["command", "path", "file_path", "query", "url", "description", "paths", "files", "file_paths"]) {
+        const value = input[key];
+        if (typeof value === "string" && value.trim()) details.push(value.trim());
+        else if (Array.isArray(value)) details.push(...value.filter(item => typeof item === "string" && item.trim()).map(item => item.trim()));
       }
-      return undefined;
+      return details.length > 0 ? [...new Set(details)].join(" · ").slice(0, 2048) : undefined;
     };
     child.stdout.on("data", (chunk) => {
       buffer += String(chunk);

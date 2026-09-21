@@ -26,10 +26,10 @@ describe("conversation progress disclosure", () => {
     const acceptedStep = screen.getByText("任务已接收").closest("li");
     expect(acceptedStep).toHaveAttribute("aria-current", "step");
     expect(acceptedStep?.querySelector(".owb-turn-progress__spinner")).not.toBeNull();
-    expect(screen.queryByText("处理请求")).not.toBeInTheDocument();
+    expect(screen.queryByText("处理中")).not.toBeInTheDocument();
 
     rerender(<TurnThread turns={[turn()]} />);
-    const workingStep = screen.getByText("处理请求").closest("li");
+    const workingStep = screen.getByText("处理中").closest("li");
     expect(screen.getByText("任务已接收").closest("li")).not.toHaveAttribute("aria-current");
     expect(screen.getByText("任务已接收").closest("li")?.querySelector(".owb-turn-progress__spinner")).toBeNull();
     expect(workingStep).toHaveAttribute("aria-current", "step");
@@ -43,9 +43,41 @@ describe("conversation progress disclosure", () => {
     expect(document.querySelector(".owb-turn-progress__spinner")).toBeNull();
     fireEvent.click(disclosure());
     expect(screen.getByText("任务已接收")).toBeVisible();
-    expect(screen.getByText("处理请求")).toBeVisible();
+    expect(screen.getByText("处理中")).toBeVisible();
     expect(screen.getByText("回合已完成")).toBeVisible();
     expect(screen.getByRole("region", { name: "最终结论" })).toHaveTextContent("检查完成。");
+  });
+
+  it("shows bounded scrollable tool details, filenames, and a structured timeout failure", () => {
+    const trace = Array.from({ length: 18 }, (_, index) => ({
+      activityId: `tool-${index}`, kind: "tool" as const, status: index === 17 ? "failed" as const : "completed" as const,
+      title: index % 2 === 0 ? "Read" : "Terminal", detail: index === 0 ? "src/App.tsx · packages/ui/src/locales/zh.ts" : `command-${index}`,
+      at: `2026-09-10T06:00:${String(index).padStart(2, "0")}.000Z`,
+    }));
+    render(<TurnThread turns={[turn({ status: "indeterminate", completedAt: "2026-09-10T06:02:00.000Z",
+      errorCode: "turn_timeout", error: "the turn exceeded its time budget", trace,
+      progress: [...turn().progress!, { kind: "unknown", at: "2026-09-10T06:02:00.000Z" }] })]} onRetry={vi.fn()} />);
+    const group = screen.getByRole("group", { name: "执行工具 18 次" });
+    expect(group.querySelector("ol")).toHaveClass("owb-activity-trace__list");
+    fireEvent.click(within(group).getByRole("button"));
+    expect(group).toHaveTextContent("src/App.tsx");
+    expect(group).toHaveTextContent("packages/ui/src/locales/zh.ts");
+    expect(screen.getByRole("alert")).toHaveTextContent("执行超时");
+    expect(screen.getByRole("alert")).toHaveTextContent("已保留本次收到的内容");
+    expect(screen.getByRole("button", { name: "重新执行" })).toBeVisible();
+  });
+
+  it("shows elapsed duration for both accepted and current processing phases", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-10T06:00:08.000Z"));
+    render(<TurnThread turns={[turn({ progress: [
+      { kind: "received", at: started },
+      { kind: "working", at: "2026-09-10T06:00:02.000Z" },
+    ] })]} />);
+    expect(screen.getByText("任务已接收").closest("li")).toHaveTextContent("2s");
+    expect(screen.getByText("处理中").closest("li")).toHaveTextContent("6s");
+    act(() => vi.advanceTimersByTime(2000));
+    expect(screen.getByText("处理中").closest("li")).toHaveTextContent("8s");
   });
 
   it("renders truthful Qoder-style activity groups, details, agent status, and a live continuation marker", () => {
@@ -190,7 +222,7 @@ describe("conversation progress disclosure", () => {
     expect(screen.queryByRole("region", { name: "最终结论" })).not.toBeInTheDocument();
     expect(screen.getByText("执行未完成")).toBeVisible();
     fireEvent.click(disclosure());
-    expect(screen.getByText("处理请求")).toBeVisible();
+    expect(screen.getByText("处理中")).toBeVisible();
     expect(document.querySelector(".owb-turn-progress__spinner")).toBeNull();
   });
 
