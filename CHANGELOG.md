@@ -7,6 +7,7 @@
 
 ### Added
 
+- #432：记忆来源列表可展示 Jev 建议轨道；不改招聘 memoryScope、不改会话上文开关。
 - #431：群聊发送栏可预填 Jev 建议的 @ 与并行/接力；套用后仍需发送。`handleGroupTurnPost` 不改 mention/mode。
 - #430：组织树在当前选中旁展示 Jev 建议员工；点建议只选中岗位，不发回合。
 - #428：上报失败升级行可叠加 Jev `category` + `needsAttention`；不删行、不改 turn 状态/错误码；「不必看」仍保留该行。
