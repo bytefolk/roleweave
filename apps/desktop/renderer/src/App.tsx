@@ -1690,6 +1690,7 @@ function AppInner({
             createdAt: run.startedAt,
             ...(run.text !== "" ? { output: run.text } : {}),
             ...(run.totalTokens !== null ? { totalTokens: run.totalTokens } : {}),
+            ...(run.trace.length > 0 ? { trace: run.trace } : {}),
           }));
     const pending = selectedId === null ? undefined : turnStream.pending[selectedId];
     if (pending?.sessionId === selectedSessionId && live.length === 0 &&
