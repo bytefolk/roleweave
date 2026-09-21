@@ -249,3 +249,275 @@
 .owb-report-changes ul { margin: 3px 0 0; padding-left: 16px; display: grid; gap: 2px; font-size: 12px; color: var(--ui-foreground); }
 .owb-report-move { margin-left: 8px; font-size: 11px; color: var(--ui-foreground-muted); }
 .owb-report-card .owb-report-trace { padding-left: 0; }
+
+/* --------------------------------------------------------------------------
+ * Reports center — reference UI implementation (#425)
+ *
+ * The reporting page deliberately stays fact-first: the hierarchy comes from
+ * borders, spacing and type, never decorative gradients or status colour
+ * washes. Green remains reserved for selected/primary affordances; warning
+ * and danger are used only where the report data declares them.
+ * -------------------------------------------------------------------------- */
+[data-theme] .owb-app .owb-reports {
+  display: block;
+  width: min(1080px, 100%);
+  margin-inline: auto;
+  padding: 22px 26px 64px;
+  overflow: visible;
+}
+
+[data-theme] .owb-app .owb-reports__hero {
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+[data-theme] .owb-app .owb-reports__hero h1 {
+  margin: 0;
+  font-family: var(--ui-font-sans);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+[data-theme] .owb-app .owb-reports__hero p {
+  max-width: 780px;
+  margin-top: 7px;
+  font-size: 12.5px;
+  line-height: 1.72;
+}
+
+[data-theme] .owb-app .owb-reports__hero .ant-btn {
+  height: 28px;
+  padding-inline: 11px;
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.owb-report-overview {
+  margin-top: 20px;
+  gap: 10px;
+}
+
+.owb-report-metric {
+  gap: 3px;
+  min-height: 92px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.owb-report-metric::before {
+  inset: 10px auto 10px 0;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: transparent;
+}
+
+.owb-report-metric:hover,
+.owb-report-metric:focus-visible {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+.owb-report-metric:hover::before,
+.owb-report-metric:focus-visible::before { background: transparent; }
+.owb-report-metric.is-active { border-color: var(--ui-primary); background: color-mix(in srgb, var(--ui-primary) 6%, var(--ui-surface)); }
+.owb-report-metric.is-active::before { background: var(--ui-primary); }
+.owb-report-metric.is-warning::before { background: transparent; }
+.owb-report-metric.is-warning strong { color: var(--ui-warning); }
+.owb-report-metric > span { font-size: 11px; color: var(--ui-foreground-subtle); }
+.owb-report-metric strong { font-size: 19px; letter-spacing: -0.02em; }
+.owb-report-metric small { width: auto; margin-top: 0; padding-top: 0; border: 0; font-size: 10.5px; line-height: 1.45; color: var(--ui-foreground-subtle); }
+
+.owb-report-scope {
+  max-width: 830px;
+  margin: 13px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-foreground-subtle);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+[data-theme] .owb-app .owb-report-tabs {
+  gap: 2px;
+  margin-top: 24px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.owb-report-tabs button {
+  position: relative;
+  height: 34px;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: 0;
+  color: var(--ui-foreground-subtle);
+  font-size: 12.5px;
+}
+
+.owb-report-tabs button:hover { background: transparent; color: var(--ui-foreground); }
+.owb-report-tabs button[aria-pressed="true"] { background: transparent; color: var(--ui-foreground); font-weight: 600; }
+.owb-report-tabs button[aria-pressed="true"]::after {
+  position: absolute;
+  right: 8px;
+  bottom: -1px;
+  left: 8px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--ui-primary);
+  content: "";
+}
+
+.owb-report-tabs button span {
+  min-width: 17px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-subtle);
+  font-size: 10.5px;
+  line-height: 14px;
+}
+
+.owb-report-tabs button[aria-pressed="true"] span {
+  border-color: var(--ui-border-strong);
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-muted);
+}
+
+[data-theme] .owb-app .owb-report-stream {
+  margin-top: 18px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.owb-budget-dash { gap: 12px; }
+.owb-budget-dash__toolbar { gap: 8px; }
+.owb-budget-dash__search { max-width: 280px; }
+.owb-budget-dash__table,
+.owb-execution-records .ant-table-wrapper {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.owb-budget-dash__table .ant-table-thead > tr > th,
+.owb-execution-records .ant-table-thead > tr > th {
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-subtle);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.owb-budget-dash__table .ant-table-tbody > tr.is-exceeded > td {
+  background: color-mix(in srgb, var(--ui-danger-soft) 54%, var(--ui-surface));
+  box-shadow: inset 2px 0 0 var(--ui-danger);
+}
+
+.owb-budget-dash__table .ant-table-tbody > tr.is-approaching > td { background: color-mix(in srgb, var(--ui-warning-soft) 42%, var(--ui-surface)); }
+.owb-budget-dash__avatar { width: 8px; height: 8px; border: 0; border-radius: 50%; }
+.owb-budget-dash__cell-position { gap: 8px; }
+.owb-budget-dash__tag { border: 1px solid var(--ui-border); border-radius: 5px; background: var(--ui-surface-inset); }
+.owb-budget-dash__tag.is-danger { border-color: color-mix(in srgb, var(--ui-danger) 30%, var(--ui-border)); }
+.owb-budget-dash__tag.is-warning { border-color: color-mix(in srgb, var(--ui-warning) 34%, var(--ui-border)); }
+.owb-budget-dash__tag.is-success { border-color: color-mix(in srgb, var(--ui-success) 30%, var(--ui-border)); }
+
+.owb-budget-dash__alert {
+  border-radius: 8px;
+  box-shadow: none;
+  animation: none;
+}
+
+.owb-budget-dash__escalations {
+  border-width: 1px 1px 1px 3px;
+  border-radius: 8px;
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+.owb-report-card {
+  gap: 9px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.owb-report-card > svg { color: var(--ui-foreground-subtle); }
+.owb-report-card.is-escalation { border-color: color-mix(in srgb, var(--ui-warning) 30%, var(--ui-border)); }
+.owb-report-card.is-escalation > svg { color: var(--ui-warning); }
+.owb-report-card header time { color: var(--ui-foreground-subtle); font-family: var(--ui-font-mono); font-size: 10.5px; }
+.owb-report-chain span { border: 1px solid var(--ui-border); border-left-width: 2px; border-radius: 4px; background: var(--ui-surface-inset); color: var(--ui-foreground-muted); }
+.owb-report-trace.ant-btn-link { height: auto; padding: 6px 0 0; color: var(--ui-primary); font-size: 11.5px; }
+
+.owb-report-chips { margin-top: 5px; }
+.owb-report-chip { border-radius: 999px; font-size: 11px; }
+.owb-report-expand { font-family: var(--ui-font-sans); }
+
+.owb-report-toolbar { gap: 8px; margin-bottom: 12px; }
+.owb-report-toolbar > .ant-input-affix-wrapper { max-width: 280px; }
+.owb-report-toolbar > span:last-child { margin-left: auto; border: 0; border-radius: 0; background: transparent; color: var(--ui-foreground-subtle); font-family: var(--ui-font-mono); padding: 0; }
+.owb-execution-records .ant-table-cell { padding-block: 9px; }
+
+.owb-timeline { gap: 12px; }
+.owb-timeline__toolbar {
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.owb-timeline__filter { min-width: 136px; }
+.owb-timeline__filter--position,
+.owb-timeline__filter--class { min-width: 156px; }
+.owb-timeline__filter--range { min-width: 230px; }
+.owb-timeline__count { color: var(--ui-foreground-subtle); font-size: 11.5px; }
+.owb-timeline__groups .ant-collapse-item { border-radius: 8px; }
+.owb-timeline__groups .ant-collapse-header { padding: 10px 12px !important; }
+.owb-timeline__groups .ant-collapse-content-box { padding: 0 !important; }
+.owb-timeline__group.is-completed { border-color: var(--ui-border); }
+.owb-timeline__group.is-running { border-color: var(--ui-border); }
+.owb-timeline__group-head { gap: 9px; }
+.owb-timeline__group-who { color: var(--ui-foreground); font-weight: 600; }
+.owb-timeline__group-status,
+.owb-timeline__group-time { color: var(--ui-foreground-subtle); }
+.owb-timeline__dot { width: 9px; height: 9px; }
+.owb-timeline__card { padding: 9px 12px; border-bottom: 1px solid color-mix(in srgb, var(--ui-border) 68%, transparent); }
+.owb-timeline__event:last-child .owb-timeline__card { border-bottom: 0; }
+.owb-timeline__chain span { border: 1px solid var(--ui-border); border-radius: 4px; background: var(--ui-surface-inset); color: var(--ui-foreground-subtle); }
+.owb-timeline__pagination { justify-content: center; }
+
+.owb-budget-drawer .ant-drawer-header { padding: 14px 16px; border-bottom-color: var(--ui-border); }
+.owb-budget-drawer .ant-drawer-body { padding: 16px; }
+.owb-budget-drawer__body { gap: 14px; }
+.owb-budget-drawer__stats { border: 1px solid var(--ui-border); border-radius: 8px; padding: 10px; }
+
+@media (max-width: 720px) {
+  [data-theme] .owb-app .owb-reports { padding: 18px 16px 48px; }
+  [data-theme] .owb-app .owb-reports__hero { display: grid; gap: 14px; }
+  .owb-report-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .owb-report-tabs button { padding-inline: 8px; }
+  .owb-budget-dash__toolbar > * { flex: 1 1 100%; }
+  .owb-budget-dash__search,
+  .owb-report-toolbar > .ant-input-affix-wrapper { max-width: none; }
+  .owb-timeline__filter,
+  .owb-timeline__filter--position,
+  .owb-timeline__filter--class,
+  .owb-timeline__filter--range { flex: 1 1 100%; min-width: 0; }
+  .owb-timeline__count { width: 100%; margin-left: 0; }
+}
