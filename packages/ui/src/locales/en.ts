@@ -948,7 +948,6 @@ export const enCatalog: Record<string, string> = {
   "apr.policyProgress": "Approval progress",
   "apr.policyProgressValue": "{granted}/{required} approvals",
   "apr.escalated": "Escalated",
-  "apr.risk.low": "Low risk",
   "apr.risk.medium": "Medium risk",
   "apr.risk.high": "High risk",
   "apr.requestedCapability": "Requested capability",

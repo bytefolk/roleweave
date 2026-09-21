@@ -27,7 +27,7 @@ import {
 } from "./routes/goals.js";
 import { handleHealth } from "./routes/health.js";
 import { handleQoderLoginStart, handleQoderLoginStatus } from "./routes/qoder-login.js";
-import { handleHirePost, handleHireSuggest } from "./routes/hire.js";
+import { handleHirePost } from "./routes/hire.js";
 import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
 import { handlePositionAgentEngine, handlePositionGet, handlePositionModel, handlePositionProfilePatch } from "./routes/positions.js";
@@ -134,10 +134,6 @@ async function dispatch(
     }
     if (pathname === routes.hire && method === "POST") {
       await handleHirePost(ctx, req, res);
-      return;
-    }
-    if (pathname === routes.hireSuggest && method === "POST") {
-      await handleHireSuggest(ctx, req, res);
       return;
     }
     if (pathname === routes.avatarGenerate && method === "POST") {

@@ -16,7 +16,6 @@ import type { ControlPlaneContext } from "../context.js";
 import { sendJson } from "../http.js";
 import { RUNTIME_DIR } from "../org/apply.js";
 import type { ServerResponse } from "node:http";
-import { overlayEscalation } from "../jev/judgments.js";
 
 const MAX_AUDIT_BYTES = 16 * 1024 * 1024;
 
@@ -33,16 +32,7 @@ export async function handleReports(
     throw invalidReports();
   }
   const evidence = records.map(toEvidence);
-  const escalations = [];
-  for (const record of records) {
-    for (const entry of toEscalation(record, ws.organization.roles)) {
-      const overlay = await overlayEscalation(record);
-      const next: EscalationEntry = overlay
-        ? { ...entry, category: overlay.category, needsAttention: overlay.needsAttention }
-        : entry;
-      escalations.push(next);
-    }
-  }
+  const escalations = records.flatMap((record) => toEscalation(record, ws.organization.roles));
   const body: ReportsResponse = {
     schemaVersion: "reports.v1",
     streams: {

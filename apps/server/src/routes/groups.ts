@@ -25,10 +25,9 @@ import { readJsonBody, sendJson } from "../http.js";
 import { MAX_GROUP_MEMBERS, MAX_GROUP_INPUT_BYTES, assertConversationRef } from "../groups/store.js";
 import { assertPositionExists, assertTurnWorkspace, executeTurn, type GroupEventAttribution } from "./turns.js";
 import { createTurnEnvelope } from "../turns/envelope.js";
-import { compactThreadContextHandoffAsync, type SupplementalContext } from "../turns/thread-context.js";
+import { compactThreadContextHandoff, type SupplementalContext } from "../turns/thread-context.js";
 import { compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 import { resolvePositionAgentEngine } from "../agent-binding.js";
-import { overlayDispatchPlan, overlayRelayNext, shouldAutoDispatch } from "../jev/judgments.js";
 
 const MAX_INPUT_BYTES = MAX_GROUP_INPUT_BYTES;
 
@@ -277,17 +276,10 @@ export async function handleGroupTurnPost(
     }
     assertPositionExists(ctx, mention);
   }
-  const roles = workspace.organization.roles.filter((role) => body.mentions.includes(role.id));
-  const dispatchPlan = await overlayDispatchPlan(body.mentions, roles);
-  const planned = shouldAutoDispatch() && dispatchPlan
-    ? dispatchPlan.mentions.filter((id) => body.mentions.includes(id))
-    : body.mentions;
-  const mentions = planned.length > 0 ? planned : body.mentions;
-  const mode = shouldAutoDispatch() && dispatchPlan ? dispatchPlan.mode : body.mode;
   // Resolve and persist every member's binding before accepting the group
   // message. This makes the 202 spawn identities self-contained: a later
   // relay/recovery cannot be redirected by a global host selection.
-  const spawns = await Promise.all(mentions.map(async (positionId) => ({
+  const spawns = await Promise.all(body.mentions.map(async (positionId) => ({
     turnId: crypto.randomUUID(),
     positionId,
     engine: await resolvePositionAgentEngine(
@@ -308,15 +300,15 @@ export async function handleGroupTurnPost(
     message = await ctx.groupStore.appendMessage(workspace.dir, ref, {
       messageId,
       input: body.input,
-      mentions,
-      mode,
+      mentions: body.mentions,
+      mode: body.mode,
       spawns,
       // Retained as the old-message fallback; new spawns carry their own
       // resolved engine so mixed-Agent groups remain faithfully attributable.
       engine: body.engine,
       createdAt: now,
     });
-    sendJson(res, 202, { conversationRef: ref, messageId, spawns, mode, ...(dispatchPlan ? { dispatchPlan } : {}) });
+    sendJson(res, 202, { conversationRef: ref, messageId, spawns, mode: body.mode });
   } catch (error) {
     releaseDispatch();
     throw error;
@@ -348,41 +340,24 @@ export async function handleGroupTurnPost(
           error instanceof OrgApiError && error.code === errorCodes.session_conflict ? "group_employee_busy" : "group_spawn_failed", message.createdAt);
       }
     };
-    if (mode === "parallel") {
+    if (body.mode === "parallel") {
       // Every promise starts before we await any terminal result. One failed
       // employee must not prevent an independent employee from starting.
       await Promise.allSettled(spawns.map(run));
       return;
     }
     let blocked = false;
-    const pending = [...spawns];
-    let last: TurnRecord | null = null;
-    while (pending.length > 0) {
+    for (const spawn of spawns) {
       if (blocked) {
-        for (const spawn of pending) {
-          await persistUnexecutedTurn(ctx, workspace.dir, body.input, {
-            groupRef: ref, messageId: message.messageId, turnId: spawn.turnId,
-            positionId: spawn.positionId, engine: spawn.engine,
-          }, "group_relay_blocked", message.createdAt);
-        }
-        break;
-      }
-      const pick = shouldAutoDispatch()
-        ? await overlayRelayNext(
-          pending.map((spawn) => spawn.positionId),
-          last ? { status: last.status, errorCode: last.error?.code } : undefined,
-        )
-        : null;
-      if (pick === "STOP") {
-        blocked = true;
+        await persistUnexecutedTurn(ctx, workspace.dir, body.input, {
+          groupRef: ref, messageId: message.messageId, turnId: spawn.turnId,
+          positionId: spawn.positionId, engine: spawn.engine,
+        }, "group_relay_blocked", message.createdAt);
         continue;
       }
-      const index = pick ? pending.findIndex((spawn) => spawn.positionId === pick) : 0;
-      const spawn = pending.splice(index >= 0 ? index : 0, 1)[0]!;
       const record = await run(spawn);
-      last = record;
       if (record?.status !== "completed") blocked = true;
-      else handoffs.push(await compactThreadContextHandoffAsync({ label: `Completed relay step: ${spawn.positionId}`, input: body.input, output: record.output }));
+      else handoffs.push(compactThreadContextHandoff({ label: `Completed relay step: ${spawn.positionId}`, input: body.input, output: record.output }));
     }
   })().catch(async () => {
     // Contain unexpected orchestration errors after accepted tasks settle.

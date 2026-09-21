@@ -24,7 +24,6 @@ import { assertPositionId, compareRfc3339Instants, compareCodeUnitOrdinal } from
 import { compactThreadContextHistory, materializeThreadContext, type SupplementalContext, type ThreadContextSource } from "../turns/thread-context.js";
 import { readPositionAgentBinding, resolvePositionAgentEngine } from "../agent-binding.js";
 import { employeeModelConfig } from "../model-selection.js";
-import { overlayNextOwner, overlayTurnPolicy } from "../jev/judgments.js";
 import { readAttachmentMetas, attachmentFilePath } from "../attachments/store.js";
 import { assertAttachmentBatch, assertAttachmentId } from "../attachments/validate.js";
 import type { TurnAttachment } from "@roleweave/shared";
@@ -377,16 +376,6 @@ export async function executeTurn(
       redacted: historyRedacted,
       ...(supplementalContext !== undefined ? { supplementalContext } : {}),
     });
-    const role = workspace.organization.roles.find((entry) => entry.id === body.positionId);
-    const turnPolicy = await overlayTurnPolicy({
-      attachmentCount: Array.isArray(body.attachmentIds) ? body.attachmentIds.length : 0,
-      historyCount: history.length,
-      omittedTurnCount,
-      contextBytes: context.metadata.contextBytes,
-      mode: role?.mode ?? "approval_required",
-      perTaskTokens: role?.budget?.perTask.tokens,
-    });
-    if (turnPolicy) console.info("[jev]", JSON.stringify({ seam: "turn-policy-exec", positionId: body.positionId, ...turnPolicy }));
     const envelope = createTurnEnvelope({
       workspaceRef: workspace.dir,
       positionId: body.positionId,
@@ -520,12 +509,6 @@ export async function executeTurn(
         // No raw adapter or turn content crosses into the HTTP response/report.
       }
     }
-    void overlayNextOwner(
-      workspace.organization.roles.map((entry) => entry.id).filter((id) => id !== body.positionId),
-      { status: record.status, errorCode: record.error?.code, positionId: body.positionId },
-    ).then((suggestion) => {
-      if (suggestion) console.info("[jev]", JSON.stringify({ seam: "next-owner", positionId: body.positionId, suggestion }));
-    }).catch(() => undefined);
     if (record.status === "indeterminate") {
       ctx.bus.publish("turn.indeterminate", {
         code: record.error?.code ?? "turn_protocol_invalid",

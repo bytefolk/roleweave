@@ -168,9 +168,6 @@ export interface EscalationEntry {
   code: string;
   reportingChain: string[];
   budgetRelated: boolean;
-  /** Advisory Jev triage; omitted when the flag is off or Jev fails. */
-  category?: "budget" | "permission" | "engine-error" | "user-cancelled" | "benign";
-  needsAttention?: boolean;
 }
 
 export interface BudgetReport {

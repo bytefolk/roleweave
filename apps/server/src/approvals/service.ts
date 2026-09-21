@@ -6,7 +6,6 @@ import { assertTurnWorkspace, executeTurn } from "../routes/turns.js";
 import { resolvePositionAgentEngine } from "../agent-binding.js";
 import { ApprovalStore, approvalIdentity } from "./store.js";
 import { buildApprovalContext, redactApprovalText } from "./context.js";
-import { overlayApprovalRisk } from "../jev/judgments.js";
 import { canActForPolicy, policyProgress, resolveApprovalPolicy } from "./policy.js";
 
 const instances = new WeakMap<ControlPlaneContext, ApprovalService>();
@@ -38,17 +37,12 @@ function validRunScopeBinding(record: ApprovalRecord): boolean {
   return crypto.timingSafeEqual(Buffer.from(offer.runBinding), Buffer.from(expected));
 }
 
-async function approvalContext(record: ApprovalRecord, role: Parameters<typeof buildApprovalContext>[1]) {
+function approvalContext(record: ApprovalRecord, role: Parameters<typeof buildApprovalContext>[1]) {
   const context = buildApprovalContext(record.action, role);
-  const riskOverlay = await overlayApprovalRisk(record.action);
   // The engine may declare a syntactically valid offer, but it becomes visible
   // as a selectable boundary only after the control plane verifies that it is
   // bound to this exact approval, source run, action and expiry.
-  return {
-    ...context,
-    ...(riskOverlay ? { riskOverlay } : {}),
-    scope: { allowed: validRunScopeBinding(record) ? ["once", "run"] as Array<"once" | "run"> : ["once"] as Array<"once" | "run"> },
-  };
+  return { ...context, scope: { allowed: validRunScopeBinding(record) ? ["once", "run"] as Array<"once" | "run"> : ["once"] as Array<"once" | "run"> } };
 }
 
 function publicView(record: ApprovalRecord): Omit<ApprovalView, "canDecide" | "unavailableReason"> {
@@ -144,7 +138,7 @@ export class ApprovalService {
           status: turn.error?.code === "engine.approval_required" ? "pending" : "indeterminate",
           execution: { phase: "not_started" }, createdAt: now, updatedAt: now,
         };
-        if (role) record.context = await approvalContext(record, role);
+        if (role) record.context = approvalContext(record, role);
         record.policy = await resolveApprovalPolicy(ws.dir, record);
         record.decisions = [];
         record.progress = policyProgress(record.policy, record.decisions);
@@ -169,7 +163,7 @@ export class ApprovalService {
       }
       if (!a.context) {
         const role = ws.organization.roles.find(entry => entry.id === a.source.positionId);
-        if (role) a.context = await approvalContext(a, role);
+        if (role) a.context = approvalContext(a, role);
       }
       if (a.execution.turnId && !this.active.has(`${ws.dir}\0${a.id}`)) {
         const result = turns.find(t => t.turnId === a.execution.turnId && t.positionId === a.source.positionId && t.conversationId === a.source.conversationId);

@@ -46,7 +46,6 @@ import {
 } from "../org/apply.js";
 import { validatePermissions } from "../org/permissions.js";
 import { parentKey } from "../org/layout.js";
-import { overlayHireSuggest } from "../jev/judgments.js";
 
 const MAX_NAME_BYTES = 128;
 /**
@@ -227,22 +226,6 @@ export async function handleHirePost(
   const request = assertHireRequest(await readJsonBody<unknown>(req));
   const outcome = await withOrgMutationLock(ctx.workspace.requireOpen().dir, () => hireUnlocked(ctx, request));
   sendJson(res, outcome.status, outcome.body);
-}
-
-export async function handleHireSuggest(
-  ctx: ControlPlaneContext,
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<void> {
-  const ws = ctx.workspace.requireOpen();
-  const body = await readJsonBody<unknown>(req);
-  const record = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
-  const description = typeof record.description === "string" ? record.description : "";
-  const prompt = typeof record.prompt === "string" ? record.prompt : undefined;
-  const allocatedPerDay = ws.organization.roles.reduce((total, role) => total + (role.budget?.perDay.tokens ?? 0), 0);
-  const remainingPool = Math.max(0, (ctx.config.budgetPoolTokens ?? 10_000_000) - allocatedPerDay);
-  const suggestion = await overlayHireSuggest({ description, prompt }, remainingPool);
-  sendJson(res, 200, { suggestion });
 }
 
 /**

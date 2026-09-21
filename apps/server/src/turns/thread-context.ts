@@ -59,15 +59,6 @@ function sanitize(text: string): string {
 }
 
 /** Match recognizable credentials before shortening their visible surface. */
-export async function compactThreadContextHandoffAsync(source: SupplementalContext): Promise<SupplementalContext> {
-  const base = compactThreadContextHandoff(source);
-  const { overlaySecretSecondPass } = await import("../jev/judgments.js");
-  const outputText = typeof base.output === "string" ? base.output : "";
-  const hit = (await overlaySecretSecondPass(base.input)) || (await overlaySecretSecondPass(outputText));
-  if (!hit) return base;
-  return { ...base, input: sanitize(base.input), output: "[credential redacted]", redacted: true };
-}
-
 export function compactThreadContextHandoff(source: SupplementalContext): SupplementalContext {
   let redacted = source.redacted ?? false;
   let truncated = source.truncated ?? false;

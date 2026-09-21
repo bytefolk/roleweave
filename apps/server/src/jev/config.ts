@@ -4,13 +4,6 @@ export function jevEnabled(env: NodeJS.Dict<string> = process.env): boolean {
   return value === "1" || value === "true" || value === "yes";
 }
 
-/** Opt-in only: reorder group mentions from a Jev plan. Default keeps mention order. */
-export function jevAutoDispatch(env: NodeJS.Dict<string> = process.env): boolean {
-  if (!jevEnabled(env)) return false;
-  const value = env.ROLEWEAVE_JEV_AUTO_DISPATCH?.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "yes";
-}
-
 export function jevRequestConfig(env: NodeJS.Dict<string> = process.env): {
   url: string;
   apiKey: string;
