@@ -12,6 +12,9 @@
 .owb-task-card .owb-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .owb-task-card p, .owb-task-card small { margin: 6px 0 0 38px; color: var(--ui-text-muted); }
 .owb-task-card__contractor { display: flex; align-items: center; gap: 5px; }
+.owb-task-card__actions { display: flex; gap: 6px; margin: 8px 0 0 38px; }
+.owb-task-card__actions button { border: 1px solid var(--ui-border); border-radius: 6px; padding: 3px 8px; color: var(--ui-text); background: var(--ui-surface-raised); cursor: pointer; }
+.owb-task-board .ant-modal-root { grid-column: 1 / -1; }
 @media (max-width: 980px) { .owb-task-board { grid-template-columns: repeat(2, minmax(210px, 1fr)); } }
 
 /* RoleWeave data components, shared by light and dark.
