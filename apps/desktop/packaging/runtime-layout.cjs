@@ -118,6 +118,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/routes/reports.js",
   "dist/src/routes/services.js",
   "dist/src/routes/sessions.js",
+  "dist/src/routes/tasks.js",
   "dist/src/routes/turns.js",
   "dist/src/routes/workspace.js",
   "dist/src/server.js",
@@ -127,6 +128,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/services/probes.js",
   "dist/src/sessions/store.js",
   "dist/src/stable-read.js",
+  "dist/src/tasks/store.js",
   "dist/src/turns/delta-forwarder.js",
   "dist/src/turns/envelope.js",
   "dist/src/turns/running.js",
@@ -135,6 +137,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/windows-launcher.js",
   "dist/src/workbuddy-binary.js",
   "dist/src/workbuddy-runtime.js",
+  "dist/src/workspace-metadata.js",
   "dist/src/workspace-state.js",
 ];
 
@@ -171,6 +174,7 @@ const SHARED_RUNTIME_FILES = [
   "dist/semantic-runtime.js",
   "dist/services.js",
   "dist/sessions.js",
+  "dist/task-board.js",
   "dist/turns.js",
   "dist/updates.js",
   "dist/workflows.js",
