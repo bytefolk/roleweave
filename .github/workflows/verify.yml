@@ -36,7 +36,7 @@ jobs:
       - name: Check out pinned design system
         uses: actions/checkout@v6
         with:
-          repository: ${{ github.repository_owner }}/design-system
+          repository: bytefolk/design-system
           ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
@@ -76,7 +76,7 @@ jobs:
       - name: Check out pinned design system
         uses: actions/checkout@v6
         with:
-          repository: ${{ github.repository_owner }}/design-system
+          repository: bytefolk/design-system
           ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
@@ -140,7 +140,7 @@ jobs:
       - name: Check out pinned design system
         uses: actions/checkout@v6
         with:
-          repository: ${{ github.repository_owner }}/design-system
+          repository: bytefolk/design-system
           ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
@@ -204,7 +204,7 @@ jobs:
       - name: Check out pinned design system
         uses: actions/checkout@v6
         with:
-          repository: ${{ github.repository_owner }}/design-system
+          repository: bytefolk/design-system
           ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
@@ -248,7 +248,7 @@ jobs:
       - name: Check out pinned design system
         uses: actions/checkout@v6
         with:
-          repository: ${{ github.repository_owner }}/design-system
+          repository: bytefolk/design-system
           ref: 910456901dda74da4d5b0320cd03d36ad18650b0
           path: design-system
 
