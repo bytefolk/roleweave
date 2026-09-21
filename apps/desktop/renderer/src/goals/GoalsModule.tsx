@@ -19,6 +19,7 @@ interface GoalsModuleProps {
   positionNames?: Record<string, string>;
   positionAvatars?: Record<string, import("../PositionAvatar.js").AvatarValue>;
   positionAvatarSources?: Record<string, string>;
+  ownerPositionId?: string;
 }
 const rememberedSelection = new Map<string, string>();
 const STATUS_BADGE: Record<string, string> = {
@@ -51,7 +52,7 @@ export function GoalsModule(props: GoalsModuleProps) {
   );
 }
 
-function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, positionAvatars = {}, positionAvatarSources = {} }: GoalsModuleProps) {
+function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, positionAvatars = {}, positionAvatarSources = {}, ownerPositionId }: GoalsModuleProps) {
   const t = useT();
   const [view, setView] = useState<"goals" | "board">("goals");
   const [tasks, setTasks] = useState<AgentTask[]>([]);
@@ -187,14 +188,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
     if (response.status === 200) setTasks(response.body.tasks);
   }, []);
   const createTask = useCallback(async () => {
-    const owner = Object.keys(positionNames)[0];
+    const owner = ownerPositionId;
     if (!owner || !taskTarget || !taskTitle.trim()) return;
     const response = await window.owb.createTask({ actorPositionId: owner, targetPositionId: taskTarget, title: taskTitle.trim(), urgent: taskUrgent, contractor: taskContractor });
     if (response.status === 201) {
       setShowTaskCreate(false); setTaskTitle(""); setTaskUrgent(false); setTaskContractor(false);
       await reloadTasks();
     }
-  }, [positionNames, reloadTasks, taskContractor, taskTarget, taskTitle, taskUrgent]);
+  }, [ownerPositionId, reloadTasks, taskContractor, taskTarget, taskTitle, taskUrgent]);
   const decideTask = useCallback(async (task: AgentTask, decision: "accept" | "decline") => {
     const response = await window.owb.decideTask({ taskId: task.taskId, actorPositionId: task.assigneePositionId, decision });
     if (response.status === 200) await reloadTasks();

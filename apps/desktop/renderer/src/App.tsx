@@ -2107,7 +2107,7 @@ function AppInner({
             onReconcileTimeline={reconcileGroup}
           />
         ) : activeModule === "goals" ? (
-          <GoalsModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} positionNames={positionNames} positionAvatars={positionAvatars} positionAvatarSources={avatarUrls} />
+          <GoalsModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} positionNames={positionNames} positionAvatars={positionAvatars} positionAvatarSources={avatarUrls} ownerPositionId={snapshot?.owner} />
         ) : activeModule === "settings" ? (
           <SettingsModule />
         ) : activeModule === "docs" ? (
