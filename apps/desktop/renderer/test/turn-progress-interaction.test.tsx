@@ -23,15 +23,12 @@ describe("conversation progress disclosure", () => {
   it("moves the animated milestone from acceptance to processing and stops it on completion", () => {
     const received = turn({ output: undefined, progress: [{ kind: "received", at: started }] });
     const { rerender } = render(<TurnThread turns={[received]} />);
-    const acceptedStep = screen.getByText("任务已接收").closest("li");
-    expect(acceptedStep).toHaveAttribute("aria-current", "step");
-    expect(acceptedStep?.querySelector(".owb-turn-progress__spinner")).not.toBeNull();
+    expect(screen.queryByText("任务已接收")).not.toBeInTheDocument();
     expect(screen.queryByText("处理中")).not.toBeInTheDocument();
 
     rerender(<TurnThread turns={[turn()]} />);
     const workingStep = screen.getByText("处理中").closest("li");
-    expect(screen.getByText("任务已接收").closest("li")).not.toHaveAttribute("aria-current");
-    expect(screen.getByText("任务已接收").closest("li")?.querySelector(".owb-turn-progress__spinner")).toBeNull();
+    expect(screen.queryByText("任务已接收")).not.toBeInTheDocument();
     expect(workingStep).toHaveAttribute("aria-current", "step");
     expect(workingStep?.querySelector(".owb-turn-progress__spinner")).not.toBeNull();
     expect(document.querySelectorAll(".owb-turn-progress__spinner")).toHaveLength(1);
@@ -42,7 +39,7 @@ describe("conversation progress disclosure", () => {
     expect(document.querySelector('[aria-current="step"]')).toBeNull();
     expect(document.querySelector(".owb-turn-progress__spinner")).toBeNull();
     fireEvent.click(disclosure());
-    expect(screen.getByText("任务已接收")).toBeVisible();
+    expect(screen.queryByText("任务已接收")).not.toBeInTheDocument();
     expect(screen.getByText("处理中")).toBeVisible();
     expect(screen.getByText("回合已完成")).toBeVisible();
     expect(screen.getByRole("region", { name: "最终结论" })).toHaveTextContent("检查完成。");
@@ -67,17 +64,20 @@ describe("conversation progress disclosure", () => {
     expect(screen.getByRole("button", { name: "重新执行" })).toBeVisible();
   });
 
-  it("shows elapsed duration for both accepted and current processing phases", () => {
+  it("shows one total duration and omits transport-only acceptance from the timeline", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-10T06:00:08.000Z"));
     render(<TurnThread turns={[turn({ progress: [
       { kind: "received", at: started },
       { kind: "working", at: "2026-09-10T06:00:02.000Z" },
     ] })]} />);
-    expect(screen.getByText("任务已接收").closest("li")).toHaveTextContent("2s");
-    expect(screen.getByText("处理中").closest("li")).toHaveTextContent("6s");
+    expect(screen.queryByText("任务已接收")).not.toBeInTheDocument();
+    expect(screen.getByText("处理中").closest("li")?.querySelector("time")).toBeNull();
+    expect(screen.getAllByRole("timer")).toHaveLength(1);
+    expect(screen.getByRole("timer")).toHaveTextContent("8s");
     act(() => vi.advanceTimersByTime(2000));
-    expect(screen.getByText("处理中").closest("li")).toHaveTextContent("8s");
+    expect(screen.getAllByRole("timer")).toHaveLength(1);
+    expect(screen.getByRole("timer")).toHaveTextContent("10s");
   });
 
   it("renders truthful Qoder-style activity groups, details, agent status, and a live continuation marker", () => {
@@ -155,7 +155,7 @@ describe("conversation progress disclosure", () => {
     rerender(<TurnThread turns={[turn({ output: "追加了新的公开结果。" })]} />);
     expect(disclosure()).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("追加了新的公开结果。")).toBeVisible();
-    expect(screen.getByText("任务已接收")).not.toBeVisible();
+    expect(screen.queryByText("任务已接收")).not.toBeInTheDocument();
   });
 
   it("collapses on completion and freezes the clock, but can reopen the recorded milestones", () => {
@@ -172,7 +172,7 @@ describe("conversation progress disclosure", () => {
     act(() => vi.advanceTimersByTime(30000));
     expect(screen.getByRole("timer")).toHaveTextContent("12s");
     fireEvent.click(disclosure());
-    expect(screen.getByText("任务已接收")).toBeVisible();
+    expect(screen.queryByText("任务已接收")).not.toBeInTheDocument();
     rerender(<TurnThread turns={[{ ...complete }]} />);
     expect(disclosure()).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("region", { name: "最终结论" })).toHaveTextContent("检查完成。");

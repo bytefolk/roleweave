@@ -113,7 +113,11 @@ export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRec
   const t = useT();
   const copy = useConversationCopy();
   const stepsId = useId();
-  const progress = turn.progress?.length ? turn.progress : fallbackProgress(turn);
+  // "Received" is transport bookkeeping. The header owns the single
+  // authoritative duration for the whole turn; milestones do not carry
+  // separate clocks.
+  const progress = (turn.progress?.length ? turn.progress : fallbackProgress(turn))
+    .filter((step) => step.kind !== "received");
   const awaitingApproval = turn.approvalRequest !== undefined;
   const running = turn.status === "running" && !awaitingApproval;
   const [now, setNow] = useState(Date.now);
@@ -155,15 +159,13 @@ export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRec
       <ol id={stepsId} className="owb-turn-progress__steps" hidden={!open}>
         {progress.map((step, index) => {
           const active = running && index === progress.length - 1;
-          const phaseEnd = progress[index + 1]?.at ?? (running ? now : turn.completedAt ?? progress.at(-1)?.at);
-          const phaseSeconds = step.at === undefined || phaseEnd === undefined ? null : elapsedSeconds(step.at, phaseEnd);
           return (
             <li className={`owb-turn-progress__step is-${step.kind}${active ? " is-current" : ""}`}
               key={`${step.kind}-${step.at}-${index}`} aria-current={active ? "step" : undefined}
               data-motion={active ? "active" : undefined} style={{ "--progress-step": index } as CSSProperties}>
               <span className="owb-turn-progress__icon"><ProgressIcon kind={step.kind} active={active} /></span>
               <span className="owb-turn-progress__copy">{labels[step.kind]}</span>
-              {phaseSeconds !== null ? <time className="owb-turn-progress__at" dateTime={`PT${phaseSeconds}S`}>{formatElapsed(phaseSeconds)}</time> : null}
+
             </li>
           );
         })}
