@@ -1551,6 +1551,77 @@ it("#413 keeps employee A's card and thread while B's position fetch is in fligh
   expect(screen.queryByText("历史结果")).not.toBeInTheDocument();
 });
 
+it("#420 does not dismiss B under A's name while B's position fetch is in flight", async () => {
+  const tree = {
+    ...snapshot,
+    positionCount: 2,
+    tree: [{
+      ...snapshot.tree[0]!,
+      children: [{ id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }],
+    }],
+  };
+  const employeeB = { ...activeSession, positionId: "docs-writer", sessionId: "22222222-2222-4222-8222-222222222222" };
+  let holdB = false;
+  let finishB!: (value: Awaited<ReturnType<OwbBridge["position"]>>) => void;
+  const orgApply = vi.fn().mockResolvedValue({ status: 200, body: { status: "applied" } });
+  openedBridge({
+    orgTree: vi.fn().mockResolvedValue({ status: 200, body: tree }),
+    orgApply,
+    position: vi.fn((id: string) => {
+      if (id === "docs-writer" && holdB) {
+        return new Promise<Awaited<ReturnType<OwbBridge["position"]>>>((resolve) => { finishB = resolve; });
+      }
+      return Promise.resolve({ status: 200, body: { position: { ...position, id, name: id === "repo-owner" ? "代码库负责人" : id }, agentEngine: "qoder" } });
+    }),
+    sessions: vi.fn(async (id: string) => ({
+      status: 200,
+      body: {
+        schemaVersion: "workbench-session-list.v1",
+        positionId: id,
+        activeSessionId: id === "docs-writer" ? employeeB.sessionId : activeSession.sessionId,
+        sessions: id === "docs-writer" ? [employeeB] : [activeSession],
+      },
+    })),
+    sessionTurnHistory: vi.fn(async (sessionId: string) => ({
+      status: 200,
+      body: history([apiTurn({
+        conversationId: sessionId,
+        positionId: sessionId === employeeB.sessionId ? "docs-writer" : "repo-owner",
+        output: sessionId === employeeB.sessionId ? "B 的结果" : "历史结果",
+      })]),
+    })),
+  });
+  render(<App />);
+  const choose = async (id: string) => {
+    fireEvent.click((await screen.findByRole("tree")).querySelector(`[data-org-node-id="${id}"]`)!);
+  };
+  const card = () => screen.getByRole("region", { name: "岗位档案" });
+  await choose("repo-owner");
+  expect(await screen.findByRole("heading", { name: "代码库负责人" })).toBeInTheDocument();
+  expect(within(card()).getByRole("button", { name: "编辑" })).toBeInTheDocument();
+  expect(within(card()).queryByRole("button", { name: "裁撤" })).toBeNull();
+
+  holdB = true;
+  await choose("docs-writer");
+  expect(screen.getByRole("heading", { name: "代码库负责人" })).toBeInTheDocument();
+  expect(within(card()).queryByRole("button", { name: "裁撤" })).toBeNull();
+  expect(within(card()).queryByRole("button", { name: "编辑" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "确认裁撤 代码库负责人" })).toBeNull();
+
+  await act(async () => finishB({
+    status: 200,
+    body: { position: { ...position, id: "docs-writer", name: "文档负责人" }, agentEngine: "qoder" },
+  }));
+  expect(await within(card()).findByRole("heading", { name: "文档负责人" })).toBeInTheDocument();
+  fireEvent.click(within(card()).getByRole("button", { name: "裁撤" }));
+  expect(screen.getByRole("heading", { name: "确认裁撤 文档负责人" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "确认裁撤并留痕" }));
+  await waitFor(() => expect(orgApply).toHaveBeenCalledWith({
+    schemaVersion: "change-manifest.v1",
+    changes: [{ op: "delete", id: "docs-writer" }],
+  }));
+});
+
 it("#413 clears employee A's thread once B is confirmed to have no session", async () => {
   const tree = {
     ...snapshot,

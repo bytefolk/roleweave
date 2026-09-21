@@ -1559,8 +1559,11 @@ function AppInner({
 
   const engineOk = health?.engine?.available === true;
   /** The frozen org-tree.v1 carries ids/budgets only; display names and modes
-   * arrive via the selected position card (/positions/:id). */
-  const selectedPosition = card.data;
+   * arrive via the selected position card (`/positions/:id`). Stale-while-revalidate
+   * may keep the previous card on screen (#413) while `selectedId` is already the
+   * next employee. Mutating actions wait until the record matches, or the dismiss
+   * dialog names A and deletes B (#420). */
+  const actionPosition = card.data?.id === selectedId ? card.data : null;
   const positions = useMemo<PositionMentionOption[]>(() => {
     if (!snapshot) return [];
     return flattenPositionIds(snapshot.tree).map((id) => ({ id, name: positionNames[id] ?? t("org.unknownPosition") }));
@@ -2144,7 +2147,7 @@ function AppInner({
                     setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
                     setActiveModule("docs");
                   }}
-                  actions={selectedPosition && selectedId ? (
+                  actions={actionPosition ? (
                     <>
                       {/* Editing the record is available on every position, the
                           company owner included: the owner is an employee with
@@ -2156,15 +2159,15 @@ function AppInner({
                       <button
                         type="button"
                         className="owb-edit"
-                        onClick={() => setEditTargetId(selectedId)}
+                        onClick={() => setEditTargetId(actionPosition.id)}
                         disabled={orgBusy}
                         title={t("profile.editTitle")}
                       >
                         <PencilLine aria-hidden="true" size={13} />
                         {t("profile.edit")}
                       </button>
-                      {selectedId !== snapshot?.owner ? (
-                        <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} />
+                      {actionPosition.id !== snapshot?.owner ? (
+                        <DismissPositionDialog positionName={actionPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(actionPosition.id)} />
                       ) : null}
                     </>
                   ) : undefined}
