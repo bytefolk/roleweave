@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { AlertTriangle, Check, ChevronRight, LoaderCircle, MessagesSquare, RotateCcw, ShieldAlert, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, Bot, Check, ChevronRight, LoaderCircle, MessagesSquare, RotateCcw, ShieldAlert, ShieldQuestion, Terminal, Wrench } from "lucide-react";
 import { Markdown, markdownToPlainText } from "../markdown/Markdown";
 import { useConversationCopy } from "../locales/conversation";
 import type { ConversationViewport } from "./conversation-memory";
@@ -169,6 +169,30 @@ export function ProgressTrail({ turn, approvalDecided = false }: { turn: TurnRec
       </ol>
     </div>
   );
+}
+
+function ActivityTrace({ turn }: { turn: TurnRecord }) {
+  const tools = turn.trace?.filter(item => item.kind === "tool") ?? [];
+  const agents = turn.trace?.filter(item => item.kind === "agent") ?? [];
+  const [toolsOpen, setToolsOpen] = useState(false);
+  if (tools.length === 0 && agents.length === 0) return null;
+  const label = `执行工具 ${tools.length} 次`;
+  return <div className="owb-activity-trace">
+    {tools.length > 0 ? <div className="owb-activity-trace__group" role="group" aria-label={label}>
+      <button type="button" aria-expanded={toolsOpen} onClick={() => setToolsOpen(!toolsOpen)}>
+        <span className="owb-turn-progress__toggle"><ChevronRight size={11} aria-hidden="true" /></span>{label}
+      </button>
+      <ol hidden={!toolsOpen}>{tools.map(item => <li key={`${item.activityId}:${item.status}`} className={`is-${item.status}`}>
+        <span className="owb-activity-trace__icon">{item.title.toLowerCase().includes("terminal") || item.title.toLowerCase().includes("bash") ? <Terminal size={13} /> : <Wrench size={13} />}</span>
+        <span><strong>{item.title}</strong>{item.detail ? ` · ${item.detail}` : ""}</span>
+        {item.status === "completed" ? <Check size={12} aria-hidden="true" /> : item.status === "failed" ? <AlertTriangle size={12} aria-hidden="true" /> : <LoaderCircle size={12} className="owb-turn-progress__spinner" aria-hidden="true" />}
+      </li>)}</ol>
+    </div> : null}
+    {agents.map(item => <div className={`owb-activity-trace__agent is-${item.status}`} key={`${item.activityId}:${item.status}`}>
+      <Bot size={14} aria-hidden="true" /><span>{item.title}{item.detail ? ` · ${item.detail}` : ""}</span>
+    </div>)}
+    {turn.status === "running" ? <div className="owb-activity-trace__continuing" aria-current="step"><LoaderCircle size={13} aria-hidden="true" />继续推理…</div> : null}
+  </div>;
 }
 
 /** Approval verdict card (#187 Option 1, spec ③): embedded inside the
@@ -406,6 +430,7 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
               </header>
 
               <ProgressTrail turn={turn} approvalDecided={decidedApprovalIds?.has(turn.id) === true || decidedApprovalIds?.has(turn.approvalRequest?.approvalId ?? "") === true} />
+              <ActivityTrace turn={turn} />
 
               {turn.output ? (
                 <section

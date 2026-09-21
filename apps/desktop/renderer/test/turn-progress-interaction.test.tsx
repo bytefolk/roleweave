@@ -48,6 +48,29 @@ describe("conversation progress disclosure", () => {
     expect(screen.getByRole("region", { name: "最终结论" })).toHaveTextContent("检查完成。");
   });
 
+  it("renders truthful Qoder-style activity groups, details, agent status, and a live continuation marker", () => {
+    render(<TurnThread turns={[turn({ trace: [
+      { activityId: "t1", kind: "tool", status: "completed", title: "Read", detail: "src/App.tsx", at: started },
+      { activityId: "t2", kind: "tool", status: "completed", title: "Terminal", detail: "npm test", at: "2026-09-10T06:00:02.000Z" },
+      { activityId: "a1", kind: "agent", status: "running", title: "general-purpose", detail: "核对数据字段", at: "2026-09-10T06:00:03.000Z" },
+    ] })]} />);
+    const tools = screen.getByRole("group", { name: "执行工具 2 次" });
+    expect(within(tools).getByText("执行工具 2 次")).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(within(tools).getByText("执行工具 2 次"));
+    expect(within(tools).getByText("Read")).toBeVisible();
+    expect(within(tools).getByText("npm test")).toBeVisible();
+    expect(screen.getByText(/general-purpose.*核对数据字段/)).toBeVisible();
+    expect(screen.getByText("继续推理…")).toHaveAttribute("aria-current", "step");
+  });
+
+  it("collapses detailed execution and removes continuation when terminal", () => {
+    render(<TurnThread turns={[turn({ status: "completed", completedAt: ended, output: "done", trace: [
+      { activityId: "t1", kind: "tool", status: "completed", title: "Read", detail: "src/App.tsx", at: started },
+    ], progress: [...turn().progress!, { kind: "completed", at: ended }] })]} />);
+    expect(screen.getByRole("group", { name: "执行工具 1 次" }).querySelector("button")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("继续推理…")).not.toBeInTheDocument();
+  });
+
   it("opens a live run, shows its elapsed time, and marks only the current milestone", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-10T06:00:08.000Z"));

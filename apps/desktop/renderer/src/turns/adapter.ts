@@ -132,6 +132,13 @@ export function adaptTurnRecord(
     envelopeDigest: record.envelopeDigest,
     ...(record.threadContext !== undefined ? { threadContext: record.threadContext } : {}),
     ...(progress.length > 0 ? { progress } : {}),
+    ...(() => {
+      const trace = record.events.filter((event): event is Extract<EngineEvent, { type: "trace.activity" }> => event.type === "trace.activity")
+        .map(event => ({ activityId: event.activityId, kind: event.kind, status: event.status, title: event.title,
+          ...(event.detail !== undefined ? { detail: event.detail } : {}),
+          ...(event.parentActivityId !== undefined ? { parentActivityId: event.parentActivityId } : {}), at: event.timestamp }));
+      return trace.length > 0 ? { trace } : {};
+    })(),
     ...(usage !== undefined ? { totalTokens: usage } : {}),
     ...(record.attachments !== undefined ? { attachments: record.attachments } : {}),
   };
