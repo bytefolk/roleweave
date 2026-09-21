@@ -249,3 +249,5 @@
 .owb-report-changes ul { margin: 3px 0 0; padding-left: 16px; display: grid; gap: 2px; font-size: 12px; color: var(--ui-foreground); }
 .owb-report-move { margin-left: 8px; font-size: 11px; color: var(--ui-foreground-muted); }
 .owb-report-card .owb-report-trace { padding-left: 0; }
+.owb-jev-overlay { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 8px 0; font-size: 12px; color: var(--ui-foreground-muted); }
+.owb-jev-overlay em { font-style: normal; color: var(--ui-foreground-muted); }

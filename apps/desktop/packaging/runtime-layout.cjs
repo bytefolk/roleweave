@@ -89,6 +89,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/history-limits.js",
   "dist/src/http.js",
   "dist/src/index.js",
+  "dist/src/jev/assignee.js",
   "dist/src/jev/client.js",
   "dist/src/jev/config.js",
   "dist/src/jev/escalation.js",

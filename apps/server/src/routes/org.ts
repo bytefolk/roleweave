@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
+import { resolveAssigneeOverlay } from "../jev/assignee.js";
 import { applyChangeManifest, undoLastOrgAdjustment } from "../org/apply.js";
 import { listOrgBackups, restoreOrgBackup } from "../org/restore.js";
 
@@ -8,7 +9,15 @@ export async function handleOrgTree(
   ctx: ControlPlaneContext,
   res: ServerResponse,
 ): Promise<void> {
-  sendJson(res, 200, ctx.workspace.snapshot());
+  const snapshot = ctx.workspace.snapshot();
+  const overlay = await resolveAssigneeOverlay(
+    ctx.workspace.requireOpen().organization.roles.map((role) => ({
+      id: role.id,
+      name: role.name,
+      mode: role.mode,
+    })),
+  );
+  sendJson(res, 200, overlay ? { ...snapshot, assigneeOverlay: overlay } : snapshot);
 }
 
 export async function handleOrgBackups(

@@ -92,6 +92,8 @@ export interface OrgTreeSnapshot {
   positionCount: number;
   depth: number;
   tree: OrgTreeNodeV1[];
+  /** Advisory Jev assignee; never written to org.json. */
+  assigneeOverlay?: { positionId: string };
 }
 
 export interface WorkspaceManifest {
