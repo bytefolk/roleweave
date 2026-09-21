@@ -428,7 +428,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
     expect(createTurn).not.toHaveBeenCalled();
     expect(screen.getByText(/系统不会自动重试/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "创建新回合重试" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新执行" }));
     await waitFor(() => {
       expect(createTurn).toHaveBeenCalledTimes(1);
       expect(createTurn).toHaveBeenCalledWith({

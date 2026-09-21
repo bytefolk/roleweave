@@ -455,7 +455,7 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
               {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
 
               {turn.error ? (
-                <div className="owb-turn-failure" role="alert">
+                <div className="owb-bubble__error owb-turn-failure" role="alert" title={turn.error}>
                   <div className="owb-turn-failure__title"><AlertTriangle aria-hidden="true" size={14} />
                     {t(turn.errorCode === "turn_timeout" ? "turn.timeoutTitle" : "turn.failedTitle")}
                   </div>
