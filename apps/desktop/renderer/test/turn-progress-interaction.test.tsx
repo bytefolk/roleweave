@@ -58,8 +58,8 @@ describe("conversation progress disclosure", () => {
     expect(within(tools).getByText("执行工具 2 次")).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(within(tools).getByText("执行工具 2 次"));
     expect(within(tools).getByText("Read")).toBeVisible();
-    expect(within(tools).getByText("npm test")).toBeVisible();
-    expect(screen.getByText(/general-purpose.*核对数据字段/)).toBeVisible();
+    expect(within(tools).getByText("Terminal").parentElement).toHaveTextContent("npm test");
+    expect(document.querySelector(".owb-activity-trace__agent")).toHaveTextContent("general-purpose · 核对数据字段");
     expect(screen.getByText("继续推理…")).toHaveAttribute("aria-current", "step");
   });
 
