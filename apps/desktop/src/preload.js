@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld("owb", {
   reports: () => ipcRenderer.invoke("owb:reports:get"),
   listApprovals: (request) => ipcRenderer.invoke("owb:approvals:list", request),
   decideApproval: (request) => ipcRenderer.invoke("owb:approvals:decide", request),
+  decideApprovalsBatch: (request) => ipcRenderer.invoke("owb:approvals:batch-decide", request),
   position: (positionId, engine) => ipcRenderer.invoke("owb:position:get", positionId, engine),
   setPositionAgentEngine: (request) => ipcRenderer.invoke("owb:position:agent-engine", request),
   updatePositionProfile: (request) => ipcRenderer.invoke("owb:position:profile", request),

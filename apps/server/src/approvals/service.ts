@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { OrgApiError, approvalRunScopeBindingInput, errorCodes, validatePendingApproval, type ApprovalRecord, type ApprovalView, type ApprovalDecisionRequest, type TurnRecord, type WorkbenchSession } from "@roleweave/shared";
+import { OrgApiError, approvalRunScopeBindingInput, errorCodes, validatePendingApproval, type ApprovalRecord, type ApprovalView, type ApprovalDecisionRequest, type ApprovalBatchDecisionRequest, type ApprovalBatchDecisionResponse, type TurnRecord, type WorkbenchSession } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
 import { assertTurnWorkspace, executeTurn } from "../routes/turns.js";
@@ -27,6 +27,42 @@ export function parseDecision(value: unknown): ApprovalDecisionRequest {
     throw new OrgApiError(errorCodes.approval_request_invalid, 400, "Invalid decision or reason (maximum 1024 UTF-8 bytes)");
   }
   return { ...d, scope: d.scope ?? "once" };
+}
+
+const batchUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function parseBatchDecision(value: unknown): ApprovalBatchDecisionRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new OrgApiError(errorCodes.approval_request_invalid, 400, "Invalid batch decision");
+  const request = value as ApprovalBatchDecisionRequest;
+  if (Object.keys(request).some(key => !["requestId", "decision", "reason", "items"].includes(key)) ||
+      typeof request.requestId !== "string" || !batchUuid.test(request.requestId) || request.decision !== "granted" ||
+      !validatePendingApproval({ approvalId: "validation", decision: request.decision, decidedBy: "operator", ...(request.reason === undefined ? {} : { reason: request.reason }) }).ok ||
+      !Array.isArray(request.items) || request.items.length < 2 || request.items.length > 32 ||
+      request.items.some(item => !item || typeof item !== "object" || Array.isArray(item) || Object.keys(item).some(key => !["id", "expectedVersion"].includes(key)) || typeof item.id !== "string" || !/^[a-f0-9]{64}$/.test(item.id) || !Number.isSafeInteger(item.expectedVersion) || item.expectedVersion < 1) ||
+      new Set(request.items.map(item => item.id)).size !== request.items.length) {
+    throw new OrgApiError(errorCodes.approval_request_invalid, 400, "Invalid batch decision");
+  }
+  return request;
+}
+
+/** UUID-shaped deterministic member key: a retry of one batch operation
+ * reaches the same per-record idempotency slot without reusing that key for
+ * a different member. */
+function batchMemberRequestId(batchId: string, approvalId: string): string {
+  const digest = crypto.createHash("sha256").update(`${batchId}\0${approvalId}`).digest("hex");
+  const variant = ((Number.parseInt(digest[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-${variant}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
+
+/** An append-only audit ledger cannot delete an intent that failed to commit.
+ * Give its compensating event a distinct deterministic id so retrying the
+ * same failed batch records the same reversal rather than another verdict. */
+function batchMemberRollbackRequestId(batchId: string, approvalId: string): string {
+  return batchMemberRequestId(`rollback:${batchId}`, approvalId);
+}
+
+function sourceSignature(record: ApprovalRecord): string {
+  const source = record.source;
+  return JSON.stringify([source.kind, source.positionId, source.conversationId, source.turnId, source.runId, source.engine]);
 }
 
 function validRunScopeBinding(record: ApprovalRecord): boolean {
@@ -209,7 +245,10 @@ export class ApprovalService {
         else throw error;
       }
     }
-    return { ...publicView(a), canDecide: !unavailableReason, ...(unavailableReason ? { unavailableReason } : {}) };
+    const batch = a.status === "pending" && a.action.kind === "tool" && a.context?.risk === "medium" && a.policy?.batch
+      ? { maxItems: a.policy.batch.maxItems }
+      : undefined;
+    return { ...publicView(a), canDecide: !unavailableReason, ...(batch ? { batch } : {}), ...(unavailableReason ? { unavailableReason } : {}) };
   }
 
   async list(ws: OpenWorkspace): Promise<ApprovalView[]> {
@@ -321,6 +360,198 @@ export class ApprovalService {
       this.jobs.add(job);
       void job.catch(() => { this.active.delete(activeKey); }).finally(() => this.jobs.delete(job));
       return { status: 202, record: accepted };
+    });
+  }
+
+  /**
+   * Settle a policy-classified group through one recovery turn.  This is not
+   * a convenience loop around `decide`: all members are checked before any
+   * record changes, share one source/run reservation, and reach the engine as
+   * `pendingApprovals` so an expired member cannot leave a partially resumed
+   * batch behind.
+   */
+  async decideBatch(ws: OpenWorkspace, token: unknown, request: ApprovalBatchDecisionRequest, actor: string): Promise<{ status: number; response: ApprovalBatchDecisionResponse }> {
+    return this.serial(async () => {
+      if (this.closed) throw conflict("Approval service is closing");
+      this.assertToken(ws, token);
+      const { items, turns } = await this.synchronize(ws);
+      this.assertToken(ws, token);
+      const requestedById = new Map(request.items.map(item => [item.id, item]));
+      const prior = items.filter(item => item.decisions?.some(decision => decision.batchId === request.requestId));
+      if (prior.length) {
+        const same = prior.length === request.items.length && prior.every(item => {
+          const input = requestedById.get(item.id);
+          const decision = item.decisions?.find(entry => entry.batchId === request.requestId);
+          return input !== undefined && decision?.decision === "granted" && decision.scope === "once" &&
+            decision.expectedVersion === input.expectedVersion && decision.reason === request.reason;
+        });
+        if (!same) throw conflict("Batch request id was already used for another decision");
+        return { status: 200, response: { requestId: request.requestId, items: await Promise.all(request.items.map(async item => ({ id: item.id, status: "accepted" as const, record: await this.view(ws, items.find(entry => entry.id === item.id)!) }))) } };
+      }
+
+      const candidates = request.items.map(item => ({ input: item, record: items.find(entry => entry.id === item.id) }));
+      const errors = new Map<string, string>();
+      const firstSource = candidates[0]?.record;
+      for (const candidate of candidates) {
+        const a = candidate.record;
+        if (!a) { errors.set(candidate.input.id, "Approval not found"); continue; }
+        if (a.version !== candidate.input.expectedVersion) { errors.set(a.id, "Approval changed; refresh before deciding"); continue; }
+        const view = await this.view(ws, a);
+        if (!view.canDecide) { errors.set(a.id, view.unavailableReason ?? "Approval is unavailable"); continue; }
+        // Classification is explicit and frozen on each request. No default
+        // policy permits batching, and only medium-risk restricted tools may
+        // opt in; write/exec/network are structurally excluded.
+        if (a.action.kind !== "tool" || a.context?.risk !== "medium" || a.action.scope?.allowed.includes("run") || !a.policy?.batch || !a.policy.batch.actionKinds.includes("tool") || a.policy.batch.maxItems < request.items.length) {
+          errors.set(a.id, "Approval is not eligible for a restricted-tool batch"); continue;
+        }
+        if (!a.decisions || !a.progress || a.progress.pending !== 1 || !canActForPolicy(a.policy, actor, undefined)) {
+          errors.set(a.id, "Approval policy does not permit this batch decision"); continue;
+        }
+        if (!firstSource || sourceSignature(a) !== sourceSignature(firstSource)) {
+          errors.set(a.id, "Batch approvals must have the same source run"); continue;
+        }
+        const source = turns.find(turn => turn.turnId === a.source.turnId && turn.positionId === a.source.positionId && (turn.conversationRef ?? turn.conversationId) === a.source.conversationId);
+        if (!source || source.error?.code !== "engine.approval_required" || !source.events.some(event => event.type === "approval.requested" && event.approvalId === a.approvalId && event.runId === a.source.runId && JSON.stringify(event.action) === JSON.stringify(a.action) && event.expiresAt === a.expiresAt)) {
+          errors.set(a.id, "Approval source no longer matches");
+        }
+      }
+      if (errors.size) {
+        return {
+          status: 200,
+          response: {
+            requestId: request.requestId,
+            items: request.items.map(item => ({ id: item.id, status: "rejected" as const, code: errorCodes.approval_conflict, message: errors.get(item.id) ?? "Batch contains an ineligible approval; nothing was decided" })),
+          },
+        };
+      }
+
+      const members = candidates.map(candidate => ({ record: candidate.record!, input: candidate.input, requestId: batchMemberRequestId(request.requestId, candidate.input.id) }));
+      // Keep an exact before-image until every member has reached durable
+      // storage. The preflight above is intentionally all-or-nothing; a
+      // storage failure must not turn it into a partially granted batch.
+      const originals = new Map(members.map(member => [member.record.id, structuredClone(member.record)]));
+      const appendAuditReversals = async (audited: typeof members): Promise<void> => {
+        for (const member of audited) {
+          const original = originals.get(member.record.id)!;
+          await this.store.appendAudit(ws.dir, {
+            approvalId: original.id,
+            requestId: batchMemberRollbackRequestId(request.requestId, original.id),
+            revertedRequestId: member.requestId,
+            batchId: request.requestId,
+            timestamp: new Date().toISOString(),
+            type: "decision_reverted",
+            actor,
+            policyVersion: original.policy!.version,
+            policyDigest: original.policy!.digest,
+          });
+        }
+      };
+      const sourceRecord = members[0]!.record;
+      const source = turns.find(turn => turn.turnId === sourceRecord.source.turnId && turn.positionId === sourceRecord.source.positionId && (turn.conversationRef ?? turn.conversationId) === sourceRecord.source.conversationId)!;
+      const turnId = crypto.randomUUID();
+      const reservation = this.ctx.runningTurns.reserve(ws.dir, sourceRecord.source.positionId, turnId);
+      let session: WorkbenchSession | undefined;
+      const decidedAt = new Date().toISOString();
+      try {
+        if (sourceRecord.source.kind === "session") session = await this.ctx.sessionStore.reserveTurn(ws.dir, sourceRecord.source.conversationId);
+        const engine = await resolvePositionAgentEngine(ws, sourceRecord.source.positionId, sourceRecord.source.engine, this.ctx.turnStore, this.ctx.sessionStore);
+        if (engine !== sourceRecord.source.engine) throw conflict("Employee engine changed; request new approvals");
+        this.assertToken(ws, token);
+        if (members.some(member => member.record.expiresAt && Date.now() >= Date.parse(member.record.expiresAt))) throw new OrgApiError(errorCodes.approval_expired, 410, "One or more approvals expired");
+        for (const member of members) {
+          const a = member.record;
+          a.decisions!.push({ requestId: member.requestId, expectedVersion: member.input.expectedVersion, decision: "granted", scope: "once", actor, ...(request.reason ? { reason: request.reason } : {}), decidedAt, batchId: request.requestId });
+          a.progress = policyProgress(a.policy!, a.decisions!);
+          // A batch is valid only when this vote completes every member.
+          if (a.progress.pending !== 0) throw conflict("Approval policy did not settle the batch member");
+          a.status = "granted";
+          a.decision = { requestId: member.requestId, expectedVersion: member.input.expectedVersion, decision: "granted", scope: "once", ...(request.reason ? { reason: request.reason } : {}), decidedBy: "operator", decidedAt };
+          a.execution = { phase: "starting", turnId };
+          a.version++; a.updatedAt = decidedAt;
+        }
+        // Audit is append-only, so make every durable audit append succeed
+        // before publishing any approval record. If an append partway through
+        // fails, reverse every decision that did reach the ledger; otherwise
+        // an audit export would claim an approval that stayed pending.
+        const audited: typeof members = [];
+        try {
+          for (const member of members) {
+            const a = member.record;
+            await this.store.appendAudit(ws.dir, { approvalId: a.id, requestId: member.requestId, batchId: request.requestId, timestamp: decidedAt, type: "decision", actor, decision: "granted", scope: "once", policyVersion: a.policy!.version, policyDigest: a.policy!.digest });
+            audited.push(member);
+          }
+        } catch (error) {
+          for (const member of members) member.record = structuredClone(originals.get(member.record.id)!);
+          try { await appendAuditReversals(audited); }
+          catch (compensationError) {
+            for (const member of members) this.ctx.bus.publish("approvals.changed", { workspacePath: ws.dir, id: member.record.id, version: member.record.version });
+            throw new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval batch audit failed and compensation could not be confirmed", true, { cause: compensationError });
+          }
+          throw new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval batch audit failed; every written decision was reverted", true, { cause: error });
+        }
+        try {
+          for (const member of members) {
+            await this.save(ws, member.record);
+          }
+        } catch (error) {
+          // `atomicWriteJson` prevents a torn individual record. Restore all
+          // members nevertheless, including the write that reported failure,
+          // so neither a failed loop nor a subsequent retry exposes a subset.
+          // The ledger is append-only: a completed restore therefore receives
+          // a per-member reversal, which makes the earlier granted intent
+          // non-final to every audit consumer.
+          for (const member of members) member.record = structuredClone(originals.get(member.record.id)!);
+          const restoreFailures: unknown[] = [];
+          for (const member of members) {
+            try { await this.save(ws, member.record); }
+            catch (restoreError) { restoreFailures.push(restoreError); }
+          }
+          if (restoreFailures.length) {
+            // A failed rollback must be visible to clients: they must refresh
+            // from disk rather than trusting the failed operation's response.
+            for (const member of members) this.ctx.bus.publish("approvals.changed", { workspacePath: ws.dir, id: member.record.id, version: member.record.version });
+            throw new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval batch persistence failed and rollback could not be confirmed", true, { cause: restoreFailures[0] });
+          }
+          await appendAuditReversals(members);
+          throw new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval batch persistence failed; every member was restored", true, { cause: error });
+        }
+      } catch (error) {
+        reservation.release();
+        if (session) this.ctx.sessionStore.releaseTurn(ws.dir, session.sessionId);
+        throw error;
+      }
+      const activeKeys = members.map(member => `${ws.dir}\0${member.record.id}`);
+      activeKeys.forEach(key => this.active.add(key));
+      const accepted = await Promise.all(members.map(async member => ({ id: member.record.id, status: "accepted" as const, record: await this.view(ws, structuredClone(member.record)) })));
+      const job = (async () => {
+        try {
+          const result = await executeTurn(this.ctx, undefined, {
+            positionId: sourceRecord.source.positionId, engine: sourceRecord.source.engine,
+            input: `[审批批量裁决] 请继续执行原任务中这一组已批准的受限工具动作\n${source.input}`,
+            pendingApprovals: members.map(member => ({ approvalId: member.record.approvalId, decision: "granted" as const, decidedBy: "operator" as const, scope: "once" as const, ...(request.reason ? { reason: request.reason } : {}), ...(member.record.expiresAt ? { expiresAt: member.record.expiresAt } : {}) })),
+          }, session, undefined, undefined, ws, {
+            turnId, reservation,
+            beforeRun: async () => {
+              if (members.some(member => member.record.expiresAt && Date.now() >= Date.parse(member.record.expiresAt))) throw new OrgApiError(errorCodes.approval_expired, 410, "Approval expired before execution");
+              for (const member of members) { member.record.execution.phase = "running"; member.record.version++; member.record.updatedAt = new Date().toISOString(); await this.serial(() => this.save(ws, member.record)); }
+            },
+          });
+          for (const member of members) member.record.execution = { turnId, ...this.outcome(member.record, result) };
+        } catch (error) {
+          for (const member of members) member.record.execution = { turnId, phase: "indeterminate", errorCode: error instanceof OrgApiError ? error.code : "approval_execution_unknown" };
+        } finally {
+          reservation.release();
+          if (session) this.ctx.sessionStore.releaseTurn(ws.dir, session.sessionId);
+        }
+        await this.serial(async () => {
+          try {
+            for (const member of members) { member.record.version++; member.record.updatedAt = new Date().toISOString(); await this.save(ws, member.record); }
+          } finally { activeKeys.forEach(key => this.active.delete(key)); }
+        });
+      })();
+      this.jobs.add(job);
+      void job.catch(() => { activeKeys.forEach(key => this.active.delete(key)); }).finally(() => this.jobs.delete(job));
+      return { status: 202, response: { requestId: request.requestId, items: accepted } };
     });
   }
 

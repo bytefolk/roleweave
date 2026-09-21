@@ -52,6 +52,9 @@ export interface ApprovalQueueItem {
   target?: string;
   /** The server's projection of the engine-declared eligible grant scopes. */
   scopeAllowed?: Array<"once" | "run">;
+  /** Non-sensitive server projection: this member is policy-classified for a
+   * restricted-tool batch, subject to final source/version checks at submit time. */
+  batchMaxItems?: number;
   requestedAt?: string;
   expiresAt?: string;
   /** Snapshot of the position permissions.toolDeny list; only used for the
@@ -69,6 +72,7 @@ export interface ApprovalQueueCallbacks {
   onApprove: (approvalId: string, reason?: string, scope?: "once" | "run") => void;
   /** denied MUST allow an empty reason (contract permits absent reason). */
   onDeny: (approvalId: string, reason?: string) => void;
+  onApproveBatch?: (approvalIds: string[]) => void;
   /** Open the persisted source conversation when the source is addressable. */
   onOpenSource?: (item: ApprovalQueueItem) => void;
   /** Open the reports surface; it may still be empty when no receipt exists. */

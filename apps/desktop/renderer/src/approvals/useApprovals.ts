@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApprovalDecisionRequest, ApprovalList, ApprovalView } from "@roleweave/shared";
+import type { ApprovalBatchDecisionRequest, ApprovalDecisionRequest, ApprovalList, ApprovalView } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
 
 function errorText(body: unknown, fallback: string): string {
@@ -20,13 +20,14 @@ export function useApprovals(workspacePath: string | undefined) {
   const cache = useRef<{ items: ApprovalView[]; token?: string }>({ items: [] });
   const pending = useRef(new Map<string, ApprovalDecisionRequest>());
   const inFlight = useRef(new Set<string>());
+  const batchPending = useRef(new Map<string, ApprovalBatchDecisionRequest>());
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const generation = {};
     owner.current = generation;
     let running = false, again = false;
-    cache.current = { items: [] }; pending.current.clear(); inFlight.current.clear();
+    cache.current = { items: [] }; pending.current.clear(); batchPending.current.clear(); inFlight.current.clear();
     setItems([]); setReady(false); setError(undefined); setErrors({}); setBusy(new Set());
     const current = () => owner.current === generation;
     const refresh = async () => {
@@ -90,6 +91,40 @@ export function useApprovals(workspacePath: string | undefined) {
       if (owner.current === generation) { inFlight.current.delete(id); setBusy(new Set(inFlight.current)); await refreshRef.current(); }
     }
   }, [t]);
+  const decideBatch = useCallback(async (ids: string[], reason?: string) => {
+    const generation = owner.current;
+    const unique = [...new Set(ids)].sort();
+    const selected = unique.map(id => cache.current.items.find(item => item.id === id));
+    if (unique.length < 2 || selected.some(item => !item || !item.canDecide) || !cache.current.token || unique.some(id => inFlight.current.has(id))) return;
+    const key = unique.join(",");
+    const previous = batchPending.current.get(key);
+    if (previous && previous.reason !== reason) {
+      setErrors(errors => Object.fromEntries(unique.map(id => [id, t("apr.retrySameDecision")]))); return;
+    }
+    const request = previous ?? {
+      requestId: crypto.randomUUID(), decision: "granted" as const,
+      ...(reason ? { reason } : {}),
+      items: selected.map(item => ({ id: item!.id, expectedVersion: item!.version })),
+    };
+    batchPending.current.set(key, request); unique.forEach(id => inFlight.current.add(id)); setBusy(new Set(inFlight.current));
+    setErrors(errors => { const next = { ...errors }; unique.forEach(id => delete next[id]); return next; });
+    try {
+      const response = await window.owb.decideApprovalsBatch({ ...request, workspaceToken: cache.current.token });
+      if (owner.current !== generation) return;
+      if (response.status !== 200 && response.status !== 202) throw new Error(errorText(response.body, t("apr.submitFailed")));
+      const body = response.body;
+      const updates = new Map(body.items.filter(item => item.status === "accepted" && item.record).map(item => [item.id, item.record!]));
+      cache.current.items = cache.current.items.map(item => updates.get(item.id) ?? item);
+      setItems([...cache.current.items]);
+      const rejected = body.items.filter(item => item.status === "rejected");
+      if (rejected.length) setErrors(errors => ({ ...errors, ...Object.fromEntries(rejected.map(item => [item.id, item.message ?? t("apr.submitFailed")])) }));
+      else batchPending.current.delete(key);
+    } catch (error) {
+      if (owner.current === generation) setErrors(errors => ({ ...errors, ...Object.fromEntries(unique.map(id => [id, error instanceof Error ? error.message : t("apr.submitFailed")])) }));
+    } finally {
+      if (owner.current === generation) { unique.forEach(id => inFlight.current.delete(id)); setBusy(new Set(inFlight.current)); await refreshRef.current(); }
+    }
+  }, [t]);
   const refresh = useCallback(() => refreshRef.current(), []);
-  return { items, loading, ready, error, errors, busy, decide, refresh };
+  return { items, loading, ready, error, errors, busy, decide, decideBatch, refresh };
 }
