@@ -455,6 +455,19 @@ describe("App removed-employee recovery", () => {
 });
 
 describe("App runtime bridge", () => {
+  it("shows immediate truthful startup stages until service and workspace are ready", async () => {
+    let finish!: (value: unknown) => void;
+    const status = vi.fn(() => new Promise<any>((resolve) => { finish = resolve; }));
+    installBridge({ status });
+    render(<App />);
+    const loading = screen.getByRole("status", { name: "RoleWeave 正在启动" });
+    expect(loading).toHaveTextContent("正在启动本地服务");
+    expect(document.querySelector(".owb-app")).toHaveAttribute("aria-busy", "true");
+    finish({ running: false, state: "failed" });
+    expect(await screen.findByRole("alert")).toHaveTextContent("本地服务未能连接");
+    expect(screen.queryByRole("status", { name: "RoleWeave 正在启动" })).not.toBeInTheDocument();
+  });
+
   it("finishes startup with a recoverable error when the local service cannot start", async () => {
     const bridge = installBridge({ status: vi.fn().mockResolvedValue({ running: false, state: "failed" }) });
     render(<App />);

@@ -270,6 +270,7 @@ function AppInner({
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityCheckFailed, setAvailabilityCheckFailed] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
+  const [startupStage, setStartupStage] = useState<"service" | "workspace" | "organization" | "ready">("service");
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const approvalState = useApprovals(workspaceInfo?.open ? workspaceInfo.path : undefined);
   const [orgOverview, setOrgOverview] = useState(false);
@@ -533,6 +534,7 @@ function AppInner({
   }, [t]);
 
   const refresh = useCallback(async (reusePositionMetadata = false) => {
+    setStartupStage("service");
     const refreshRead = ++refreshReadVersion.current;
     const isCurrentRefresh = () => refreshRead === refreshReadVersion.current;
     const healthRead = ++healthReadVersion.current;
@@ -542,8 +544,10 @@ function AppInner({
     if (healthRead === healthReadVersion.current) setHealth(statusRes.health ?? null);
     if (!statusRes.running) {
       setStartupError(t("misc.serviceFailed"));
+      setStartupStage("ready");
       return;
     }
+    setStartupStage("workspace");
     // Publish only the latest summary: a delayed workspace read must not
     // reset the recovery scope after a newer workspace has already opened.
     const workspaceRead = window.owb.workspace();
@@ -570,6 +574,7 @@ function AppInner({
     const backupScope = backupWorkspace.current;
     setWorkspaceInfo(ws);
     if (ws?.open === true) {
+      setStartupStage("organization");
       // Recovery is independent of the organization tree; a failed tree read
       // must not leave this footer waiting for a request that never started.
       const backupLoad = loadBackups(backupScope);
@@ -660,9 +665,15 @@ function AppInner({
       setReportsError(null);
     }
     } catch {
-      if (isCurrentRefresh()) setStartupError(t("misc.serviceFailed"));
+      if (isCurrentRefresh()) {
+        setStartupError(t("misc.serviceFailed"));
+        setStartupStage("ready");
+      }
     } finally {
-      if (isCurrentRefresh()) setTreeLoading(false);
+      if (isCurrentRefresh()) {
+        setTreeLoading(false);
+        setStartupStage("ready");
+      }
     }
   }, [loadBackups, loadReports, locale, t]);
 
@@ -1763,7 +1774,17 @@ function AppInner({
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
-    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`}>
+    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`} aria-busy={startupStage !== "ready"}>
+      {startupStage !== "ready" ? (
+        <div className="owb-startup" role="status" aria-label={t("startup.aria")}>
+          <div className="owb-startup__mark" aria-hidden="true"><span /><span /><span /></div>
+          <div className="owb-startup__copy">
+            <strong>RoleWeave</strong>
+            <span>{t(`startup.${startupStage}`)}</span>
+          </div>
+          <div className="owb-startup__track" aria-hidden="true"><i data-stage={startupStage} /></div>
+        </div>
+      ) : null}
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
         targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
         avatar={positionAvatars[managementTarget]}
