@@ -12,6 +12,8 @@ import { approvalPolicyDigest } from "./policy.js";
 
 const MAX_BYTES = 128 * 1024;
 const ID = /^[a-f0-9]{64}$/;
+const REQUEST_ID = /^[a-f0-9-]{36}$/;
+const auditTypes = new Set<ApprovalAuditEvent["type"]>(["requested", "decision", "escalated", "decision_reverted"]);
 const failure = () => new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval storage is unavailable or invalid");
 const locked = () => new OrgApiError(errorCodes.approval_writer_busy, 409, "Another local control plane owns approvals for this workspace");
 const auditFailure = () => new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval audit is unavailable or invalid");
@@ -202,7 +204,7 @@ export class ApprovalStore {
       const existing = await this.audit(workspace);
       const repeated = event.requestId === undefined ? undefined : existing.find(item => item.approvalId === event.approvalId && item.requestId === event.requestId);
       if (repeated) {
-        const same = repeated.type === event.type && repeated.actor === event.actor && repeated.delegatedFrom === event.delegatedFrom && repeated.decision === event.decision && repeated.scope === event.scope && repeated.batchId === event.batchId && repeated.policyVersion === event.policyVersion && repeated.policyDigest === event.policyDigest;
+        const same = repeated.type === event.type && repeated.actor === event.actor && repeated.delegatedFrom === event.delegatedFrom && repeated.decision === event.decision && repeated.scope === event.scope && repeated.batchId === event.batchId && repeated.revertedRequestId === event.revertedRequestId && repeated.policyVersion === event.policyVersion && repeated.policyDigest === event.policyDigest;
         if (!same) throw new OrgApiError(errorCodes.approval_conflict, 409, "Request id was already used for another audit decision");
         return repeated;
       }
@@ -228,7 +230,8 @@ export class ApprovalStore {
         const value = JSON.parse(line) as ApprovalAuditEvent;
         const { hash, ...unsigned } = value;
         const expected = `sha256:${crypto.createHash("sha256").update(JSON.stringify(unsigned)).digest("hex")}`;
-        if (!/^sha256:[a-f0-9]{64}$/.test(hash) || hash !== expected || value.seq !== events.length + 1 || value.previousHash !== events.at(-1)?.hash || !ID.test(value.approvalId) || (value.requestId !== undefined && !/^[a-f0-9-]{36}$/.test(value.requestId)) || (value.batchId !== undefined && !/^[a-f0-9-]{36}$/.test(value.batchId))) throw auditFailure();
+        const reversal = value.type === "decision_reverted";
+        if (!/^sha256:[a-f0-9]{64}$/.test(hash) || hash !== expected || value.seq !== events.length + 1 || value.previousHash !== events.at(-1)?.hash || !auditTypes.has(value.type) || !ID.test(value.approvalId) || (value.requestId !== undefined && !REQUEST_ID.test(value.requestId)) || (value.batchId !== undefined && !REQUEST_ID.test(value.batchId)) || (value.revertedRequestId !== undefined && !REQUEST_ID.test(value.revertedRequestId)) || (reversal && (value.requestId === undefined || value.batchId === undefined || value.revertedRequestId === undefined)) || (!reversal && value.revertedRequestId !== undefined)) throw auditFailure();
         events.push(value);
       }
       return id ? events.filter(e => e.approvalId === id) : events;

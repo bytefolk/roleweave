@@ -53,6 +53,13 @@ function batchMemberRequestId(batchId: string, approvalId: string): string {
   return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-${variant}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
+/** An append-only audit ledger cannot delete an intent that failed to commit.
+ * Give its compensating event a distinct deterministic id so retrying the
+ * same failed batch records the same reversal rather than another verdict. */
+function batchMemberRollbackRequestId(batchId: string, approvalId: string): string {
+  return batchMemberRequestId(`rollback:${batchId}`, approvalId);
+}
+
 function sourceSignature(record: ApprovalRecord): string {
   const source = record.source;
   return JSON.stringify([source.kind, source.positionId, source.conversationId, source.turnId, source.runId, source.engine]);
@@ -395,7 +402,7 @@ export class ApprovalService {
         // policy permits batching, and only medium-risk restricted tools may
         // opt in; write/exec/network are structurally excluded.
         if (a.action.kind !== "tool" || a.context?.risk !== "medium" || a.action.scope?.allowed.includes("run") || !a.policy?.batch || !a.policy.batch.actionKinds.includes("tool") || a.policy.batch.maxItems < request.items.length) {
-          errors.set(a.id, "Approval is not eligible for a low-risk batch"); continue;
+          errors.set(a.id, "Approval is not eligible for a restricted-tool batch"); continue;
         }
         if (!a.decisions || !a.progress || a.progress.pending !== 1 || !canActForPolicy(a.policy, actor, undefined)) {
           errors.set(a.id, "Approval policy does not permit this batch decision"); continue;
@@ -423,6 +430,22 @@ export class ApprovalService {
       // storage. The preflight above is intentionally all-or-nothing; a
       // storage failure must not turn it into a partially granted batch.
       const originals = new Map(members.map(member => [member.record.id, structuredClone(member.record)]));
+      const appendAuditReversals = async (audited: typeof members): Promise<void> => {
+        for (const member of audited) {
+          const original = originals.get(member.record.id)!;
+          await this.store.appendAudit(ws.dir, {
+            approvalId: original.id,
+            requestId: batchMemberRollbackRequestId(request.requestId, original.id),
+            revertedRequestId: member.requestId,
+            batchId: request.requestId,
+            timestamp: new Date().toISOString(),
+            type: "decision_reverted",
+            actor,
+            policyVersion: original.policy!.version,
+            policyDigest: original.policy!.digest,
+          });
+        }
+      };
       const sourceRecord = members[0]!.record;
       const source = turns.find(turn => turn.turnId === sourceRecord.source.turnId && turn.positionId === sourceRecord.source.positionId && (turn.conversationRef ?? turn.conversationId) === sourceRecord.source.conversationId)!;
       const turnId = crypto.randomUUID();
@@ -447,11 +470,24 @@ export class ApprovalService {
           a.version++; a.updatedAt = decidedAt;
         }
         // Audit is append-only, so make every durable audit append succeed
-        // before publishing any approval record. A retry recognizes the same
-        // member request ids and reuses these entries.
-        for (const member of members) {
-          const a = member.record;
-          await this.store.appendAudit(ws.dir, { approvalId: a.id, requestId: member.requestId, batchId: request.requestId, timestamp: decidedAt, type: "decision", actor, decision: "granted", scope: "once", policyVersion: a.policy!.version, policyDigest: a.policy!.digest });
+        // before publishing any approval record. If an append partway through
+        // fails, reverse every decision that did reach the ledger; otherwise
+        // an audit export would claim an approval that stayed pending.
+        const audited: typeof members = [];
+        try {
+          for (const member of members) {
+            const a = member.record;
+            await this.store.appendAudit(ws.dir, { approvalId: a.id, requestId: member.requestId, batchId: request.requestId, timestamp: decidedAt, type: "decision", actor, decision: "granted", scope: "once", policyVersion: a.policy!.version, policyDigest: a.policy!.digest });
+            audited.push(member);
+          }
+        } catch (error) {
+          for (const member of members) member.record = structuredClone(originals.get(member.record.id)!);
+          try { await appendAuditReversals(audited); }
+          catch (compensationError) {
+            for (const member of members) this.ctx.bus.publish("approvals.changed", { workspacePath: ws.dir, id: member.record.id, version: member.record.version });
+            throw new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval batch audit failed and compensation could not be confirmed", true, { cause: compensationError });
+          }
+          throw new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval batch audit failed; every written decision was reverted", true, { cause: error });
         }
         try {
           for (const member of members) {
@@ -461,12 +497,23 @@ export class ApprovalService {
           // `atomicWriteJson` prevents a torn individual record. Restore all
           // members nevertheless, including the write that reported failure,
           // so neither a failed loop nor a subsequent retry exposes a subset.
-          await Promise.all(members.map(async member => {
-            const original = originals.get(member.record.id)!;
-            await this.save(ws, original);
-            Object.assign(member.record, structuredClone(original));
-          })).catch(() => undefined);
-          throw error;
+          // The ledger is append-only: a completed restore therefore receives
+          // a per-member reversal, which makes the earlier granted intent
+          // non-final to every audit consumer.
+          for (const member of members) member.record = structuredClone(originals.get(member.record.id)!);
+          const restoreFailures: unknown[] = [];
+          for (const member of members) {
+            try { await this.save(ws, member.record); }
+            catch (restoreError) { restoreFailures.push(restoreError); }
+          }
+          if (restoreFailures.length) {
+            // A failed rollback must be visible to clients: they must refresh
+            // from disk rather than trusting the failed operation's response.
+            for (const member of members) this.ctx.bus.publish("approvals.changed", { workspacePath: ws.dir, id: member.record.id, version: member.record.version });
+            throw new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval batch persistence failed and rollback could not be confirmed", true, { cause: restoreFailures[0] });
+          }
+          await appendAuditReversals(members);
+          throw new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval batch persistence failed; every member was restored", true, { cause: error });
         }
       } catch (error) {
         reservation.release();
@@ -480,7 +527,7 @@ export class ApprovalService {
         try {
           const result = await executeTurn(this.ctx, undefined, {
             positionId: sourceRecord.source.positionId, engine: sourceRecord.source.engine,
-            input: `[审批批量裁决] 请继续执行原任务中这一组已批准的低风险动作\n${source.input}`,
+            input: `[审批批量裁决] 请继续执行原任务中这一组已批准的受限工具动作\n${source.input}`,
             pendingApprovals: members.map(member => ({ approvalId: member.record.approvalId, decision: "granted" as const, decidedBy: "operator" as const, scope: "once" as const, ...(request.reason ? { reason: request.reason } : {}), ...(member.record.expiresAt ? { expiresAt: member.record.expiresAt } : {}) })),
           }, session, undefined, undefined, ws, {
             turnId, reservation,

@@ -53,7 +53,7 @@ export interface ApprovalQueueItem {
   /** The server's projection of the engine-declared eligible grant scopes. */
   scopeAllowed?: Array<"once" | "run">;
   /** Non-sensitive server projection: this member is policy-classified for a
-   * low-risk batch, subject to final source/version checks at submit time. */
+   * restricted-tool batch, subject to final source/version checks at submit time. */
   batchMaxItems?: number;
   requestedAt?: string;
   expiresAt?: string;

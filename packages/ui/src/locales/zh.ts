@@ -896,7 +896,7 @@ export const zhCatalog: Record<string, string> = {
   "apr.submitFailed": "提交结果尚未确认，请刷新后重试",
   "apr.retrySameDecision": "上次提交结果尚未确认，请使用相同裁决和理由重试",
   "apr.batchSelect": "选择加入策略受控批量批准",
-  "apr.batchSummary": "已从 {source} 选择 {count} 项低风险审批",
+  "apr.batchSummary": "已从 {source} 选择 {count} 项受限工具审批",
   "apr.batchNeedMore": "请从同一来源回合再选择一项审批以形成批量。",
   "apr.batchBoundary": "提交前服务端会重新校验每项版本、策略分类、来源和到期时间，并且只启动一个恢复回合。",
   "apr.batchApprove": "批准所选项",

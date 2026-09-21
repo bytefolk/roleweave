@@ -376,7 +376,7 @@ test("approval views redact secrets while preserving safe decision context", asy
   } finally { await s.close(); }
 });
 
-test("#403 batches one homogeneous low-risk tool source through one recovery turn", async () => {
+test("#403 batches one homogeneous restricted-tool source through one recovery turn", async () => {
   const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
   const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
   try {
@@ -384,18 +384,57 @@ test("#403 batches one homogeneous low-risk tool source through one recovery tur
     await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify(batchPolicy()));
     await open(s, workspace); await request(s);
     const snapshot = await list(s);
+    const payload = {
+      workspaceToken: snapshot.workspaceToken,
+      requestId: crypto.randomUUID(),
+      decision: "granted",
+      items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })),
+    };
     const response = await api(s.baseUrl, "/approvals/batch/decision", {
       token: s.token, method: "POST",
-      body: { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })) },
+      body: payload,
     });
     assert.equal(response.status, 202, JSON.stringify(response.body));
+    const replay = await api(s.baseUrl, "/approvals/batch/decision", { token: s.token, method: "POST", body: payload });
+    assert.equal(replay.status, 200, "the same batch request must reuse its member decisions");
     for (const item of snapshot.items) assert.equal((await settle(s, item.id)).execution.phase, "completed");
     assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 1);
     assert.equal(driver.calls.find(call => call.envelope.pendingApprovals)?.envelope.pendingApprovals?.length, 2);
   } finally { await s.close(); }
 });
 
-test("#403 rolls back every member when one batch persistence write fails", async () => {
+test("#403 rejects unclassified tool batches before dispatch", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
+  await rejectBatch(driver, {
+    schemaVersion: "roleweave-approval-policy.v1",
+    version: "single-tool-only-1",
+    default: { eligibleApprovers: ["operator"], threshold: 1 },
+  });
+});
+
+test("#403 rejects classified tool members from different source runs before dispatch", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool";
+  const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify(batchPolicy()));
+    await open(s, workspace);
+    await request(s, "repo-owner");
+    await request(s, "community-operator");
+    const snapshot = await list(s);
+    assert.equal(snapshot.items.length, 2);
+    const response = await api(s.baseUrl, "/approvals/batch/decision", {
+      token: s.token,
+      method: "POST",
+      body: { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })) },
+    });
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    assert.deepEqual((response.body as { items: Array<{ status: string }> }).items.map(item => item.status), ["rejected", "rejected"]);
+    assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 0);
+  } finally { await s.close(); }
+});
+
+test("#403 rolls back every member and compensates the audit ledger when one batch persistence write fails", async () => {
   const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
   const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
   try {
@@ -411,17 +450,118 @@ test("#403 rolls back every member when one batch persistence write fails", asyn
       }
       await originalPut(directory, record);
     };
+    const failedPayload = { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted" as const, items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })) };
     try {
       const response = await api(s.baseUrl, "/approvals/batch/decision", {
         token: s.token, method: "POST",
-        body: { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })) },
+        body: failedPayload,
       });
       assert.equal(response.status, 500, JSON.stringify(response.body));
+      assert.equal((response.body as { code: string }).code, "approval_storage_failed");
+      assert.equal((response.body as { message: string }).message, "Approval batch persistence failed; every member was restored", JSON.stringify(response.body));
     } finally {
       service.store.put = originalPut;
     }
     const restored = await list(s);
     assert.ok(restored.items.every(item => item.status === "pending" && item.execution.phase === "not_started" && item.decision === undefined));
+    assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 0);
+    for (const item of restored.items) {
+      const audit = await api(s.baseUrl, `/approvals/${item.id}/audit`, { token: s.token });
+      assert.equal(audit.status, 200, JSON.stringify(audit.body));
+      const events = (audit.body as { events: Array<{ type: string; requestId?: string; revertedRequestId?: string; batchId?: string }> }).events;
+      assert.deepEqual(events.map(event => event.type), ["requested", "decision", "decision_reverted"]);
+      assert.equal(events[1]!.batchId, failedPayload.requestId);
+      assert.equal(events[2]!.batchId, failedPayload.requestId);
+      assert.equal(events[2]!.revertedRequestId, events[1]!.requestId);
+    }
+    const retry = await api(s.baseUrl, "/approvals/batch/decision", {
+      token: s.token,
+      method: "POST",
+      body: { workspaceToken: restored.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: restored.items.map(item => ({ id: item.id, expectedVersion: item.version })) },
+    });
+    assert.equal(retry.status, 202, JSON.stringify(retry.body));
+    for (const item of restored.items) await settle(s, item.id);
+    for (const item of restored.items) {
+      const audit = await api(s.baseUrl, `/approvals/${item.id}/audit`, { token: s.token });
+      const events = (audit.body as { events: Array<{ type: string; requestId?: string; revertedRequestId?: string }> }).events;
+      const reverted = new Set(events.filter(event => event.type === "decision_reverted").map(event => event.revertedRequestId));
+      assert.equal(events.filter(event => event.type === "decision" && !reverted.has(event.requestId)).length, 1, "only the retry is an unreverted grant");
+    }
+  } finally { await s.close(); }
+});
+
+test("#403 compensates already-appended decisions when the second audit append fails", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
+  const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify(batchPolicy()));
+    await open(s, workspace); await request(s);
+    const snapshot = await list(s), service = approvals(s.ctx);
+    const originalAppend = service.store.appendAudit.bind(service.store);
+    let decisionAppends = 0;
+    service.store.appendAudit = async (directory, event) => {
+      if (event.type === "decision" && ++decisionAppends === 2) throw new Error("synthetic second-member audit failure");
+      return originalAppend(directory, event);
+    };
+    const payload = { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })) };
+    try {
+      const response = await api(s.baseUrl, "/approvals/batch/decision", { token: s.token, method: "POST", body: payload });
+      assert.equal(response.status, 500, JSON.stringify(response.body));
+      assert.equal((response.body as { code: string }).code, "approval_storage_failed");
+    } finally {
+      service.store.appendAudit = originalAppend;
+    }
+    const restored = await list(s);
+    assert.ok(restored.items.every(item => item.status === "pending" && item.execution.phase === "not_started" && item.decision === undefined));
+    const audits = await Promise.all(restored.items.map(async item => {
+      const response = await api(s.baseUrl, `/approvals/${item.id}/audit`, { token: s.token });
+      assert.equal(response.status, 200, JSON.stringify(response.body));
+      return (response.body as { events: Array<{ type: string; requestId?: string; revertedRequestId?: string; batchId?: string }> }).events;
+    }));
+    const events = audits.flat();
+    const decisions = events.filter(event => event.type === "decision");
+    const reversals = events.filter(event => event.type === "decision_reverted");
+    assert.equal(decisions.length, 1);
+    assert.equal(reversals.length, 1);
+    assert.equal(reversals[0]!.batchId, payload.requestId);
+    assert.equal(reversals[0]!.revertedRequestId, decisions[0]!.requestId);
+    assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 0);
+  } finally { await s.close(); }
+});
+
+test("#403 makes a failed record rollback observable", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
+  const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify(batchPolicy()));
+    await open(s, workspace); await request(s);
+    const snapshot = await list(s), service = approvals(s.ctx);
+    const published: Array<{ id?: string }> = [];
+    const unsubscribe = s.ctx.bus.subscribe(event => {
+      if (event.type === "approvals.changed") published.push(event.payload as { id?: string });
+    });
+    const originalPut = service.store.put.bind(service.store);
+    let grantedWrites = 0, rollbackWrites = 0;
+    service.store.put = async (directory, record) => {
+      if (record.status === "granted" && record.execution.phase === "starting" && ++grantedWrites === 2) throw new Error("synthetic second-member write failure");
+      if (record.status === "pending" && ++rollbackWrites === 1) throw new Error("synthetic rollback write failure");
+      await originalPut(directory, record);
+    };
+    try {
+      const response = await api(s.baseUrl, "/approvals/batch/decision", {
+        token: s.token,
+        method: "POST",
+        body: { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })) },
+      });
+      assert.equal(response.status, 500, JSON.stringify(response.body));
+      assert.deepEqual(response.body, { code: "approval_storage_failed", message: "Approval batch persistence failed and rollback could not be confirmed", retryable: true });
+    } finally {
+      service.store.put = originalPut;
+      unsubscribe();
+    }
+    assert.deepEqual(new Set(published.map(event => event.id)), new Set(snapshot.items.map(item => item.id)));
     assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 0);
   } finally { await s.close(); }
 });
@@ -451,7 +591,7 @@ test("#403 rejects version-conflicted approvals at the batch boundary", async ()
   await rejectBatch(driver, batchPolicy(), version => version + 1);
 });
 
-test("#403 rejects batches that need more than one approval principal", async () => {
+test("#403 rejects batches that still need more than one approval principal", async () => {
   const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
   await rejectBatch(driver, batchPolicy({ eligibleApprovers: ["operator", "reviewer"], threshold: 2 }));
 });

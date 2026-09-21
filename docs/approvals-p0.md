@@ -107,16 +107,19 @@ npm run build:renderer
 立即终止请求，批准只有在达到当前门槛后才会启动恢复回合。
 
 队列只显示聚合的 `granted/required` 和是否升级，不暴露候选审批人或委派图。
-`GET /approvals/:id/audit` 为已认证客户端导出该请求的 `requested`、`decision`
-和 `escalated` 事件。事件记录实际 actor、可选委派来源、策略版本/摘要，并以
+`GET /approvals/:id/audit` 为已认证客户端导出该请求的 `requested`、`decision`、
+`decision_reverted` 和 `escalated` 事件。批量记录在某成员落盘失败后会为每个已写入
+的 decision 追加同 batch ID、关联原 request ID 的 `decision_reverted`，因此哈希链
+会明确表达该裁决未提交。事件记录实际 actor、可选委派来源、策略版本/摘要，并以
 跨记录的 SHA-256 前序哈希链连接；格式或链不完整时导出会失败关闭。
 
-## 同源低风险批量裁决（#403）
+## 同源受限工具批量裁决（#403）
 
 批量批准不是客户端对单项接口的循环调用。策略必须在请求创建时显式冻结
 `batch` 分类；没有该配置的请求永远只能逐项裁决。唯一可配置的类别是 `tool`，
 服务端还要求请求上下文风险为 `medium`。`write`、`exec`、`network`、群聊来源、
-过期项、已裁决项、升级中的多人门槛和 `run` scope 都不允许加入批量。
+过期项、已裁决项、仍需多于一票的多人门槛和 `run` scope 都不允许加入批量。已有
+足够的先前同意、且本次裁决恰好完成每个成员门槛的最后一票可以批量收尾。
 
 ```json
 {

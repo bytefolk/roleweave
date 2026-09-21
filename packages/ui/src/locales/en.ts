@@ -893,7 +893,7 @@ export const enCatalog: Record<string, string> = {
   "apr.submitFailed": "Decision receipt is unconfirmed. Refresh before retrying.",
   "apr.retrySameDecision": "The last submission is unconfirmed. Retry with the same decision and reason.",
   "apr.batchSelect": "Select for policy-controlled batch approval",
-  "apr.batchSummary": "{count} low-risk approvals selected from {source}",
+  "apr.batchSummary": "{count} restricted-tool approvals selected from {source}",
   "apr.batchNeedMore": "Select one more approval from this exact source run to create a batch.",
   "apr.batchBoundary": "The server will re-check every version, policy classification, source, and expiry before one recovery run starts.",
   "apr.batchApprove": "Approve selected",

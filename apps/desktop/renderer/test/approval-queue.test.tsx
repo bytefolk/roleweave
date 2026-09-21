@@ -145,7 +145,7 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(onApprove).toHaveBeenCalledWith("appr-abc", undefined, "run");
   });
 
-  it("#403 shows the exact same-source low-risk selection before one batch callback", () => {
+  it("#403 shows the exact same-source restricted-tool selection before one batch callback", () => {
     const onApproveBatch = vi.fn();
     const source = { kind: "session" as const, positionId: "writer-1", conversationId: "session-1", turnId: "turn-1", runId: "run-1", engine: "qoder" as const };
     render(<ApprovalQueue items={[
@@ -155,7 +155,7 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     ]} onApprove={noop} onDeny={noop} onApproveBatch={onApproveBatch} />);
     const selectors = screen.getAllByRole("checkbox", { name: "选择加入策略受控批量批准" });
     fireEvent.click(selectors[0]!); fireEvent.click(selectors[1]!);
-    expect(screen.getByText(/已从 writer-1 · session-1 选择 2 项低风险审批/)).toBeInTheDocument();
+    expect(screen.getByText(/已从 writer-1 · session-1 选择 2 项受限工具审批/)).toBeInTheDocument();
     expect(selectors[2]).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "批准所选项" }));
     expect(onApproveBatch).toHaveBeenCalledWith(["batch-a", "batch-b"]);

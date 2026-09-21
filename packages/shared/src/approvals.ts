@@ -69,7 +69,7 @@ export interface ApprovalAuditEvent {
   approvalId: string;
   seq: number;
   timestamp: string;
-  type: "requested" | "decision" | "escalated";
+  type: "requested" | "decision" | "escalated" | "decision_reverted";
   requestId?: string;
   actor?: string;
   delegatedFrom?: string;
@@ -80,6 +80,8 @@ export interface ApprovalAuditEvent {
   previousHash?: string;
   hash: string;
   batchId?: string;
+  /** The decision request invalidated by an append-only batch rollback. */
+  revertedRequestId?: string;
 }
 export interface ApprovalRecord {
   schemaVersion: "workbench-approval.v1" | "workbench-approval.v2";
