@@ -5,6 +5,7 @@ import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption,
 import { decodeStableUtf8, readStableBoundedFile } from "./stable-read.js";
 import { LocalProviderConfigError, resolveClaudeProviderConfig, resolveQoderProviderConfig } from "./local-provider-config.js";
 import { qoderModelCatalog } from "./qoder-model-catalog.js";
+import { overlayModelTier } from "./jev/judgments.js";
 
 const MAX_MODEL_CACHE_BYTES = 4 * 1024 * 1024;
 
@@ -85,9 +86,10 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       const stable = await readStableBoundedFile(file, MAX_MODEL_CACHE_BYTES);
       const cache = JSON.parse(decodeStableUtf8(stable.buffer));
       if (Array.isArray(cache.models)) {
-        options = cache.models.filter((m: any) => m.visibility === "list" && isModelId(m.slug)).slice(0, 64).map((m: any): EmployeeModelOption => ({
-          id: m.slug, name: typeof m.display_name === "string" ? m.display_name.slice(0, 100) : m.slug,
-          tier: /luna|mini|spark/i.test(m.slug) ? "economy" : /astra|pro|opus/i.test(m.slug) ? "powerful" : "balanced",
+        options = await Promise.all(cache.models.filter((m: any) => m.visibility === "list" && isModelId(m.slug)).slice(0, 64).map(async (m: any): Promise<EmployeeModelOption> => {
+          const name = typeof m.display_name === "string" ? m.display_name.slice(0, 100) : m.slug;
+          const tier = await overlayModelTier(m.slug, name);
+          return { id: m.slug, name, tier };
         }));
         if (options.length > 0) source = "local-cache";
       }

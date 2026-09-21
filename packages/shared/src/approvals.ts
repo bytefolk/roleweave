@@ -11,6 +11,8 @@ export type ApprovalImpactKind = "workspace_write" | "command_execution" | "exte
  * raw credentials, command arguments, or opaque engine payloads. */
 export interface ApprovalContext {
   risk: ApprovalRiskLevel;
+  /** Advisory Jev display risk; never used for grant/deny or policy.digest. */
+  riskOverlay?: "low" | "medium" | "high";
   requestedCapability: "exec" | "write" | "network" | "tool";
   parameterSummary?: string;
   impact: ApprovalImpactKind;

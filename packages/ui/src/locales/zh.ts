@@ -951,6 +951,7 @@ export const zhCatalog: Record<string, string> = {
   "apr.policyProgress": "审批进度",
   "apr.policyProgressValue": "{granted}/{required} 项已审批",
   "apr.escalated": "已升级",
+  "apr.risk.low": "低风险",
   "apr.risk.medium": "中风险",
   "apr.risk.high": "高风险",
   "apr.requestedCapability": "请求能力",

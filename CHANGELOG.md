@@ -7,7 +7,7 @@
 
 ### Added
 
-- #422：可选 Jev（TypeSafe System One）适配器，默认关闭。`ROLEWEAVE_JEV_ENABLED=1` 且配置 `ROLEWEAVE_JEV_API_KEY` 后，目标分支健康可走 Choice（`on_track` / `at_risk` / `blocked` / `unknown`）作为 `healthOverlay`；持久化 `goal.health` 仍只由 `computeHealthFromTurns` 写入。Choice 请求只带 turn `status` / `errorCode`，不发送 input/output。非法或外部 option 不能把 failed/indeterminate 分支改成 on_track。失败或超时回退启发式。不改变审批策略与回合终态推导。
+- #422：可选 Jev 判断层，默认关闭。`ROLEWEAVE_JEV_ENABLED=1` + `ROLEWEAVE_JEV_API_KEY` 后：目标健康 `healthOverlay`（含 blocked，不落盘）；审批 `riskOverlay`（不改 policy.digest）；升级 `category`/`needsAttention`；招聘 `POST /hire/suggest` 预填；未知模型 slug 档位；回合策略仅日志；群聊 `dispatchPlan` 挂在 202 上，只有 `ROLEWEAVE_JEV_AUTO_DISPATCH=1` 才改 mentions 顺序。脱敏仍先走 regex。失败回退现规则。
 
 ### Fixed
 

@@ -67,6 +67,22 @@ describe("GoalsModule", () => {
     await waitFor(() => expect(screen.getByText("还没有目标")).toBeInTheDocument());
   });
 
+  it("renders Jev healthOverlay on the detail dot without changing list health", async () => {
+    installBridge({
+      goal: vi.fn().mockResolvedValue({
+        status: 200,
+        body: {
+          ...goalDetail,
+          goal: { ...goalDetail.goal, health: "at_risk" },
+          healthOverlay: "blocked",
+        },
+      }),
+    });
+    render(<GoalsModule workspaceOpen />);
+    fireEvent.click(await screen.findByRole("option", { name: /Ship v1.0/ }));
+    await waitFor(() => expect(screen.getByText(/已阻塞|Blocked/)).toBeInTheDocument());
+  });
+
   it("renders goal list and detail on selection", async () => {
     installBridge();
     render(<GoalsModule workspaceOpen />);

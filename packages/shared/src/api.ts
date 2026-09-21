@@ -30,6 +30,8 @@ export const routes = {
   orgRestore: "/org/restore",
   orgUndo: "/org/undo",
   hire: "/hire",
+  /** Additive #422: Jev hire pre-fill. POST /hire is unchanged. */
+  hireSuggest: "/hire/suggest",
   /** One local-proxy image generation request for an employee portrait. */
   avatarGenerate: "/avatar/generate",
   positions: "/positions",

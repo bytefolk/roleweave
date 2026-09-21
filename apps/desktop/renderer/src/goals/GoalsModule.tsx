@@ -457,10 +457,10 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey }: GoalsModuleProps) {
                         aria-label={t("goals.statusChange")}
                       />
                       <span
-                        className={`owb-health-dot ${HEALTH_DOT[detail.goal.health]}`}
+                        className={`owb-health-dot ${HEALTH_DOT[detail.healthOverlay ?? detail.goal.health]}`}
                       >
                         {t("reading.goals.health")}:{" "}
-                        {t(`goals.health.${detail.goal.health}`)}
+                        {t(`goals.health.${detail.healthOverlay ?? detail.goal.health}`)}
                       </span>
                     </div>
                     {actionError && (
