@@ -163,6 +163,22 @@ function parseEngineEvent(line: string): EngineEvent {
         throw new EngineProtocolError("engine.v1 model.delta text is invalid or unbounded");
       }
       return { ...base, type: "model.delta", text: unknownEvent.text };
+    case "trace.activity": {
+      exactKeys(unknownEvent, ["type", "runId", "timestamp", "activityId", "kind", "status", "title"], ["detail", "parentActivityId"]);
+      const bounded = (value: unknown, max: number) => typeof value === "string" && value.length > 0 && Buffer.byteLength(value, "utf8") <= max;
+      if (!bounded(unknownEvent.activityId, 256) ||
+          (unknownEvent.kind !== "tool" && unknownEvent.kind !== "agent") ||
+          !["running", "completed", "failed"].includes(unknownEvent.status as string) ||
+          !bounded(unknownEvent.title, 256) ||
+          (unknownEvent.detail !== undefined && !bounded(unknownEvent.detail, 2048)) ||
+          (unknownEvent.parentActivityId !== undefined && !bounded(unknownEvent.parentActivityId, 256))) {
+        throw new EngineProtocolError("engine.v1 trace.activity fields are invalid or unbounded");
+      }
+      return { ...base, type: "trace.activity", activityId: unknownEvent.activityId as string,
+        kind: unknownEvent.kind as "tool" | "agent", status: unknownEvent.status as "running" | "completed" | "failed",
+        title: unknownEvent.title as string, ...(unknownEvent.detail !== undefined ? { detail: unknownEvent.detail as string } : {}),
+        ...(unknownEvent.parentActivityId !== undefined ? { parentActivityId: unknownEvent.parentActivityId as string } : {}) };
+    }
     case "usage": {
       exactKeys(
         unknownEvent,

@@ -1074,6 +1074,15 @@ async function turnRunQoder(workspaceDir, positionId, input) {
     }
 
     let buffer = "";
+    const toolNames = new Map();
+    const publicDetail = (block) => {
+      const input = block?.input;
+      if (!input || typeof input !== "object") return undefined;
+      for (const key of ["command", "path", "file_path", "query", "url", "description"]) {
+        if (typeof input[key] === "string" && input[key].trim()) return input[key].trim().slice(0, 2048);
+      }
+      return undefined;
+    };
     child.stdout.on("data", (chunk) => {
       buffer += String(chunk);
       let newline = buffer.indexOf("\n");
@@ -1100,7 +1109,21 @@ async function turnRunQoder(workspaceDir, positionId, input) {
         for (const block of event.message.content) {
           if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
             emit({ type: "model.delta", runId, timestamp: now(), text: block.text });
+          } else if (block?.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
+            toolNames.set(block.id, block.name.slice(0, 256));
+            const detail = publicDetail(block);
+            emit({ type: "trace.activity", runId, timestamp: now(), activityId: block.id.slice(0, 256), kind: "tool",
+              status: "running", title: block.name.slice(0, 256), ...(detail ? { detail } : {}) });
           }
+        }
+      }
+      if (event?.type === "user" && Array.isArray(event?.message?.content)) {
+        for (const block of event.message.content) {
+          if (block?.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
+          const content = typeof block.content === "string" ? block.content.trim().slice(0, 2048) : undefined;
+          emit({ type: "trace.activity", runId, timestamp: now(), activityId: block.tool_use_id.slice(0, 256), kind: "tool",
+            status: block.is_error === true ? "failed" : "completed", title: toolNames.get(block.tool_use_id) ?? "Tool",
+            ...(content ? { detail: content } : {}) });
         }
       }
       if (event?.type === "result") {

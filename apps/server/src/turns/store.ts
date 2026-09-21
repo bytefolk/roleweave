@@ -692,6 +692,18 @@ function validateEngineEvent(raw: unknown): EngineEvent | null {
         typeof value.text === "string" && isBoundedCodePoints(value.text, MAX_MODEL_CHARACTERS)
         ? { ...base, type: "model.delta", text: value.text }
         : null;
+    case "trace.activity": {
+      if (!hasExactKeys(value, ["type", "runId", "timestamp", "activityId", "kind", "status", "title"], ["detail", "parentActivityId"]) ||
+        !isBoundedIdentifier(value.activityId) || (value.kind !== "tool" && value.kind !== "agent") ||
+        !["running", "completed", "failed"].includes(value.status as string) ||
+        !isBoundedNonEmptyText(value.title, 256) ||
+        (value.detail !== undefined && !isBoundedNonEmptyText(value.detail, 2048)) ||
+        (value.parentActivityId !== undefined && !isBoundedIdentifier(value.parentActivityId))) return null;
+      return { ...base, type: "trace.activity", activityId: value.activityId as string,
+        kind: value.kind as "tool" | "agent", status: value.status as "running" | "completed" | "failed",
+        title: value.title as string, ...(value.detail !== undefined ? { detail: value.detail as string } : {}),
+        ...(value.parentActivityId !== undefined ? { parentActivityId: value.parentActivityId as string } : {}) };
+    }
     case "usage": {
       if (!hasExactKeys(
         value,

@@ -97,9 +97,22 @@ export interface ApprovalDeniedEvent extends EngineEventBase {
   reason?: string;
 }
 
+export interface PublicTraceActivityEvent extends EngineEventBase {
+  type: "trace.activity";
+  activityId: string;
+  kind: "tool" | "agent";
+  status: "running" | "completed" | "failed";
+  /** Public tool/agent label supplied by the engine adapter. */
+  title: string;
+  /** Optional bounded, redacted summary; never raw arguments, output, or reasoning. */
+  detail?: string;
+  parentActivityId?: string;
+}
+
 export type EngineEvent =
   | (EngineEventBase & { type: "run.started" })
   | (EngineEventBase & { type: "model.delta"; text: string })
+  | PublicTraceActivityEvent
   | (EngineEventBase & {
       type: "usage";
       inputTokens?: number;

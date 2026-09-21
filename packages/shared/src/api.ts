@@ -82,6 +82,7 @@ export const sseEventTypes = [
   "org.updated",
   "turn.started",
   "turn.model.delta",
+  "turn.trace.activity",
   "turn.usage",
   "turn.completed",
   "turn.failed",
