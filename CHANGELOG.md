@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- #422：可选 Jev（TypeSafe System One）适配器，默认关闭。`ROLEWEAVE_JEV_ENABLED=1` 且配置 `ROLEWEAVE_JEV_API_KEY` 后，目标分支健康可走 Choice（`on_track` / `at_risk` / `blocked` / `unknown`）；失败或超时回退 `computeHealthFromTurns`。不改变审批策略与回合终态推导。
+
 ### Fixed
 
 - #413：切换员工时工作台不再先清空成骨架屏。岗位卡与对话线程保持上一位员工的内容直到新数据返回；空态节点在加载中不入 DOM，且 `.owb-turn-thread--empty[hidden]` 盖过 `display:flex`；组织树选中底不再 120ms 交叉淡入，避免两行同时发亮。切到尚无 session 的员工时，待空 session 确认后再清掉上一位的线程。

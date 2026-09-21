@@ -24,6 +24,8 @@ import {
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 import type { TurnRecord } from "@roleweave/shared";
+import { askJev, type JevAsk } from "../jev/client.js";
+import { jevEnabled } from "../jev/config.js";
 
 const GOAL_ROOT_SEGMENTS = [".digital-employee", "workbench", "goals"];
 const MAX_GOALS = 64;
@@ -170,18 +172,105 @@ export function computeHealthFromTurns(goal: Goal, turns: readonly TurnRecord[])
   for (const branch of goal.branches) {
     const bound = turns.filter((t) => t.goalId === goal.goalId && t.branchId === branch.branchId);
     if (bound.length === 0) continue;
-    let branchHealth: GoalHealthStatus = "on_track";
-    for (const turn of bound) {
-      if (turn.status === "failed" || turn.status === "indeterminate") {
-        branchHealth = "at_risk";
-        break;
-      }
-    }
+    const branchHealth = heuristicBranchHealth(bound);
     if (worst === null || HEALTH_SEVERITY[branchHealth] < HEALTH_SEVERITY[worst]) {
       worst = branchHealth;
     }
   }
   return worst ?? "unknown";
+}
+
+function heuristicBranchHealth(bound: readonly TurnRecord[]): GoalHealthStatus {
+  for (const turn of bound) {
+    if (turn.status === "failed" || turn.status === "indeterminate") return "at_risk";
+  }
+  return "on_track";
+}
+
+const GOAL_HEALTH_OPTIONS = ["on_track", "at_risk", "blocked", "unknown"] as const;
+
+function isGoalHealthStatus(value: string): value is GoalHealthStatus {
+  return (GOAL_HEALTH_OPTIONS as readonly string[]).includes(value);
+}
+
+function truncateText(value: unknown, max = 240): string {
+  const text = typeof value === "string" ? value : value == null ? "" : JSON.stringify(value);
+  return text.length <= max ? text : `${text.slice(0, max)}…`;
+}
+
+function branchJudgmentState(bound: readonly TurnRecord[]) {
+  return bound.slice(0, 12).map((turn) => ({
+    status: turn.status,
+    errorCode: turn.error?.code,
+    input: truncateText(turn.input),
+    output: truncateText(turn.output),
+  }));
+}
+
+export interface ResolveGoalHealthDeps {
+  env?: NodeJS.Dict<string>;
+  ask?: JevAsk;
+  log?: (entry: Record<string, unknown>) => void;
+}
+
+/**
+ * Deterministic heuristic first. When ROLEWEAVE_JEV_ENABLED is on, a Choice
+ * may override with on_track/at_risk/blocked/unknown. Invalid/failed Jev
+ * answers fall back to computeHealthFromTurns.
+ */
+export async function resolveGoalHealth(
+  goal: Goal,
+  turns: readonly TurnRecord[],
+  deps: ResolveGoalHealthDeps = {},
+): Promise<GoalHealthStatus> {
+  const heuristic = computeHealthFromTurns(goal, turns);
+  const env = deps.env ?? process.env;
+  if (!jevEnabled(env) || goal.branches.length === 0) return heuristic;
+
+  const ask = deps.ask ?? ((request) => askJev(request, { env }));
+  const log = deps.log ?? ((entry) => console.info("[jev]", JSON.stringify(entry)));
+
+  try {
+    let worst: GoalHealthStatus | null = null;
+    for (const branch of goal.branches) {
+      const bound = turns.filter((t) => t.goalId === goal.goalId && t.branchId === branch.branchId);
+      if (bound.length === 0) continue;
+      const fallback = heuristicBranchHealth(bound);
+      let branchHealth = fallback;
+      const answers = await ask({
+        state: { goalId: goal.goalId, branchId: branch.branchId, turns: branchJudgmentState(bound) },
+        questions: {
+          health: {
+            type: "choice",
+            instructions:
+              "Classify this goal branch. blocked = cannot proceed without a human or external fix. at_risk = failing or indeterminate work. on_track = advancing. unknown = not enough evidence. Do not treat a cancelled turn as failure by itself.",
+            criteria: {
+              on_track: "Bound turns are completing and the branch is advancing",
+              at_risk: "Failed or indeterminate turns show the branch is slipping",
+              blocked: "The branch cannot continue without intervention",
+              unknown: "Not enough bound turn evidence",
+            },
+          },
+        },
+      });
+      const answer = answers?.health;
+      const selected = answer?.type === "choice" ? answer.selected : undefined;
+      const usedJev = typeof selected === "string" && isGoalHealthStatus(selected);
+      if (usedJev) branchHealth = selected;
+      log({
+        goalId: goal.goalId,
+        branchId: branch.branchId,
+        option: usedJev ? selected : fallback,
+        probability: answer?.type === "choice" ? answer.probabilities[selected ?? ""] : undefined,
+        confidence: answer?.type === "choice" ? answer.confidence : undefined,
+        fallback: !usedJev,
+      });
+      if (worst === null || HEALTH_SEVERITY[branchHealth] < HEALTH_SEVERITY[worst]) worst = branchHealth;
+    }
+    return worst ?? "unknown";
+  } catch {
+    return heuristic;
+  }
 }
 
 export class GoalStore {
@@ -267,7 +356,7 @@ export class GoalStore {
     const goal = await this.get(workspace, goalId);
     const activity = await this.readActivity(workspace, goalId);
     if (turns !== undefined && goal.branches.length > 0) {
-      const computed = computeHealthFromTurns(goal, turns);
+      const computed = await resolveGoalHealth(goal, turns);
       if (computed !== goal.health) {
         const now = new Date().toISOString();
         const updated: Goal = { ...goal, health: computed, updatedAt: now };
