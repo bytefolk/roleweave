@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import type { Goal, TurnRecord } from "@roleweave/shared";
 import { jevEnabled } from "../src/jev/config.js";
 import { askJev } from "../src/jev/client.js";
-import { computeHealthFromTurns, resolveGoalHealth, resolveJevHealthOverlay } from "../src/goals/store.js";
+import { computeHealthFromTurns, GoalStore, resolveGoalHealth, resolveJevHealthOverlay } from "../src/goals/store.js";
 
 function branchedGoal(): Goal {
   const now = "2026-01-01T00:00:00.000Z";
@@ -157,7 +160,7 @@ test("resolveGoalHealth stays on the heuristic when Jev is enabled", async () =>
 
 test("resolveJevHealthOverlay returns a Choice without sending turn bodies", async () => {
   const goal = branchedGoal();
-  const failed = turn("failed");
+  const failed = { ...turn("failed"), input: "secret prompt", output: "secret tool payload" };
   let seen: unknown;
   const overlay = await resolveJevHealthOverlay(goal, [failed], {
     env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
@@ -177,7 +180,48 @@ test("resolveJevHealthOverlay returns a Choice without sending turn bodies", asy
   assert.equal(overlay, "blocked");
   assert.equal(computeHealthFromTurns(goal, [failed]), "at_risk");
   const turns = (seen as { state: { turns: Array<Record<string, unknown>> } }).state.turns;
+  assert.equal(turns.length, 1);
   assert.deepEqual(Object.keys(turns[0]!).sort(), ["errorCode", "status"]);
+  assert.equal(turns[0]!.status, "failed");
+  assert.equal(turns[0]!.errorCode, "engine_internal_error");
+  assert.equal("input" in turns[0]!, false);
+  assert.equal("output" in turns[0]!, false);
+  const serialized = JSON.stringify(seen);
+  assert.equal(serialized.includes("secret"), false);
+  assert.equal(serialized.includes("do the work"), false);
+});
+
+test("resolveJevHealthOverlay does not let on_track or an invalid option clear failed/indeterminate", async () => {
+  const goal = branchedGoal();
+  const failed = turn("failed");
+  const enabled = { env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" }, log: () => {} };
+  assert.equal(
+    await resolveJevHealthOverlay(goal, [failed], {
+      ...enabled,
+      ask: async () => ({
+        health: { type: "choice", selected: "on_track", probabilities: { on_track: 1 }, confidence: 1 },
+      }),
+    }),
+    null,
+  );
+  assert.equal(
+    await resolveJevHealthOverlay(goal, [turn("indeterminate")], {
+      ...enabled,
+      ask: async () => ({
+        health: { type: "choice", selected: "unknown", probabilities: { unknown: 1 }, confidence: 1 },
+      }),
+    }),
+    null,
+  );
+  assert.equal(
+    await resolveJevHealthOverlay(goal, [failed], {
+      ...enabled,
+      ask: async () => ({
+        health: { type: "choice", selected: "external", probabilities: { external: 1 }, confidence: 1 },
+      }),
+    }),
+    null,
+  );
 });
 
 test("resolveJevHealthOverlay falls back to null when Jev throws or returns an invalid option", async () => {
@@ -199,6 +243,50 @@ test("resolveJevHealthOverlay falls back to null when Jev throws or returns an i
       log: () => {},
       ask: async () => ({ health: { type: "choice", selected: "not-a-status", probabilities: {}, confidence: 0 } }),
     }),
-    "at_risk",
+    null,
   );
+});
+
+test("getDetail persists heuristic health and exposes Jev only as healthOverlay", async () => {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "rw-jev-goal-"));
+  try {
+    const store = new GoalStore();
+    const created = await store.create(workspace, { title: "Ship", description: "desc" });
+    const stored = await store.get(workspace, created.goalId);
+    const branched: Goal = {
+      ...stored,
+      branches: [{ branchId: "main", title: "main", status: "open", createdAt: stored.createdAt, updatedAt: stored.updatedAt }],
+    };
+    await fs.writeFile(
+      path.join(workspace, ".digital-employee", "workbench", "goals", created.goalId, "goal.json"),
+      JSON.stringify(branched),
+    );
+    const failed: TurnRecord = { ...turn("failed"), goalId: created.goalId };
+    const jevOn = {
+      env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
+      log: () => {},
+    };
+
+    const overlay = await store.getDetail(workspace, created.goalId, [failed], {
+      ...jevOn,
+      ask: async () => ({
+        health: { type: "choice", selected: "blocked", probabilities: { blocked: 1 }, confidence: 0.9 },
+      }),
+    });
+    assert.equal(overlay.goal.health, "at_risk");
+    assert.equal(overlay.healthOverlay, "blocked");
+    assert.equal((await store.get(workspace, created.goalId)).health, "at_risk");
+
+    const cleared = await store.getDetail(workspace, created.goalId, [failed], {
+      ...jevOn,
+      ask: async () => ({
+        health: { type: "choice", selected: "on_track", probabilities: { on_track: 1 }, confidence: 1 },
+      }),
+    });
+    assert.equal(cleared.goal.health, "at_risk");
+    assert.equal(cleared.healthOverlay, undefined);
+    assert.equal((await store.get(workspace, created.goalId)).health, "at_risk");
+  } finally {
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
 });

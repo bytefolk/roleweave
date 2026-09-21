@@ -194,10 +194,13 @@ function isGoalHealthStatus(value: string): value is GoalHealthStatus {
 }
 
 function branchJudgmentState(bound: readonly TurnRecord[]) {
-  return bound.slice(0, 12).map((turn) => ({
-    status: turn.status,
-    errorCode: turn.error?.code,
-  }));
+  return bound.slice(0, 12).map((turn) => {
+    const entry: { status: TurnRecord["status"]; errorCode?: string } = { status: turn.status };
+    if (typeof turn.error?.code === "string" && turn.error.code.length > 0) {
+      entry.errorCode = turn.error.code;
+    }
+    return entry;
+  });
 }
 
 export interface ResolveGoalHealthDeps {
@@ -206,19 +209,20 @@ export interface ResolveGoalHealthDeps {
   log?: (entry: Record<string, unknown>) => void;
 }
 
-/**
- * Persisted health is always computeHealthFromTurns. Jev, when enabled, is an
- * advisory overlay only — it must not replace failed/indeterminate heuristic
- * health on disk (#422 / #423 review).
- */
+/** Persisted health is always computeHealthFromTurns. */
 export async function resolveGoalHealth(
   goal: Goal,
   turns: readonly TurnRecord[],
-  deps: ResolveGoalHealthDeps = {},
+  _deps: ResolveGoalHealthDeps = {},
 ): Promise<GoalHealthStatus> {
   return computeHealthFromTurns(goal, turns);
 }
 
+/**
+ * Advisory Jev overlay. Invalid/external options never apply. A Choice of
+ * on_track/unknown cannot clear failed/indeterminate. Null when disabled,
+ * failed, or nothing valid to overlay.
+ */
 export async function resolveJevHealthOverlay(
   goal: Goal,
   turns: readonly TurnRecord[],
@@ -232,6 +236,7 @@ export async function resolveJevHealthOverlay(
 
   try {
     let worst: GoalHealthStatus | null = null;
+    let applied = false;
     for (const branch of goal.branches) {
       const bound = turns.filter((t) => t.goalId === goal.goalId && t.branchId === branch.branchId);
       if (bound.length === 0) continue;
@@ -256,20 +261,25 @@ export async function resolveJevHealthOverlay(
       const answer = answers?.health;
       const selected = answer?.type === "choice" ? answer.selected : undefined;
       const usedJev = typeof selected === "string" && isGoalHealthStatus(selected);
-      if (usedJev) branchHealth = selected;
+      const clearsFailedBranch =
+        fallback === "at_risk" && selected !== "at_risk" && selected !== "blocked";
+      if (usedJev && !clearsFailedBranch) {
+        branchHealth = selected;
+        applied = true;
+      }
       log({
         goalId: goal.goalId,
         branchId: branch.branchId,
-        option: usedJev ? selected : fallback,
+        option: branchHealth,
         heuristic: fallback,
-        overlay: usedJev ? selected : null,
+        overlay: usedJev && !clearsFailedBranch ? selected : null,
         probability: answer?.type === "choice" ? answer.probabilities[selected ?? ""] : undefined,
         confidence: answer?.type === "choice" ? answer.confidence : undefined,
-        fallback: !usedJev,
+        fallback: branchHealth === fallback,
       });
       if (worst === null || HEALTH_SEVERITY[branchHealth] < HEALTH_SEVERITY[worst]) worst = branchHealth;
     }
-    return worst ?? null;
+    return applied ? worst : null;
   } catch {
     return null;
   }
@@ -354,12 +364,18 @@ export class GoalStore {
     return parsed.value;
   }
 
-  async getDetail(workspace: string, goalId: string, turns?: readonly TurnRecord[]): Promise<{ goal: Goal; activity: GoalActivity[] }> {
+  async getDetail(
+    workspace: string,
+    goalId: string,
+    turns?: readonly TurnRecord[],
+    deps: ResolveGoalHealthDeps = {},
+  ): Promise<{ goal: Goal; activity: GoalActivity[]; healthOverlay?: GoalHealthStatus }> {
     const goal = await this.get(workspace, goalId);
     const activity = await this.readActivity(workspace, goalId);
+    let current = goal;
+    let currentActivity = activity;
     if (turns !== undefined && goal.branches.length > 0) {
       const computed = computeHealthFromTurns(goal, turns);
-      void resolveJevHealthOverlay(goal, turns);
       if (computed !== goal.health) {
         const now = new Date().toISOString();
         const updated: Goal = { ...goal, health: computed, updatedAt: now };
@@ -378,10 +394,15 @@ export class GoalStore {
           createdAt: now,
         };
         await this.appendActivity(workspace, goalId, healthActivity);
-        return { goal: updated, activity: [...activity, healthActivity] };
+        current = updated;
+        currentActivity = [...activity, healthActivity];
+      }
+      const overlay = await resolveJevHealthOverlay(current, turns, deps);
+      if (overlay != null && overlay !== current.health) {
+        return { goal: current, activity: currentActivity, healthOverlay: overlay };
       }
     }
-    return { goal, activity };
+    return { goal: current, activity: currentActivity };
   }
 
   async update(workspace: string, goalId: string, request: unknown, now = new Date().toISOString()): Promise<Goal> {

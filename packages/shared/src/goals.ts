@@ -77,6 +77,8 @@ export type GoalSummary = Omit<Goal, "branches"> & { branchCount: number };
 export interface GoalDetail {
   goal: Goal;
   activity: GoalActivity[];
+  /** Advisory Jev Choice when enabled; never written to persisted goal.health. */
+  healthOverlay?: GoalHealthStatus;
 }
 
 export interface GoalsCreateRequest {
@@ -104,6 +106,7 @@ export interface GoalsListResponse {
 export interface GoalsDetailResponse {
   goal: Goal;
   activity: GoalActivity[];
+  healthOverlay?: GoalHealthStatus;
 }
 
 const allowedGoalTransitions: Record<GoalStatus, readonly GoalStatus[]> = {
