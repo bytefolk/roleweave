@@ -263,7 +263,7 @@ test("timeline keeps healthy group members readable when another accepted turn i
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   const corrupt = body.spawns.find((spawn) => spawn.positionId === "release-engineer")!;
-  const corruptFile = path.join(workspace, ".digital-employee/workbench/conversations/release-engineer/turns", `${corrupt.turnId}.json`);
+  const corruptFile = path.join(workspace, ".roleweave/conversations/release-engineer/turns", `${corrupt.turnId}.json`);
   await fs.writeFile(corruptFile, "{broken");
   const response = await api(server.baseUrl, `/groups/${group.conversationRef}/turns`, { token: server.token });
   assert.equal(response.status, 200);
@@ -280,7 +280,7 @@ test("single-turn reads isolate sibling corruption and retain identity validatio
   const store = new TurnStore();
   const turnId = crypto.randomUUID();
   const running = await store.begin({ workspace, positionId: "repo-owner", turnId, engine: "qoder", message: "Retain this task", envelopeDigest: digest, now: originalTime });
-  const turnsDir = path.join(workspace, ".digital-employee/workbench/conversations/repo-owner/turns");
+  const turnsDir = path.join(workspace, ".roleweave/conversations/repo-owner/turns");
   await fs.writeFile(path.join(turnsDir, "broken.json"), "{broken");
   assert.deepEqual(await store.readPositionTurn(workspace, "repo-owner", turnId, originalTime), running);
   assert.equal(await store.readPositionTurn(workspace, "repo-owner", "missing", originalTime), null);
@@ -308,7 +308,7 @@ test("group messages sort by RFC 3339 instant with nanoseconds and reject invali
   for (const entry of entries) await store.appendMessage(workspace, group.conversationRef, { ...entry, input: "timeline", mentions: ["repo-owner"] });
   assert.deepEqual((await store.readMessages(workspace, group.conversationRef)).map((message) => message.messageId), ["first", "B-same", "a-same", "second"]);
   await assert.rejects(store.appendMessage(workspace, group.conversationRef, { messageId: "invalid", input: "timeline", mentions: ["repo-owner"], createdAt: "yesterday" }), /message is invalid/);
-  const file = path.join(workspace, ".digital-employee/workbench/groups", group.conversationRef, "messages/first.json");
+  const file = path.join(workspace, ".roleweave/groups", group.conversationRef, "messages/first.json");
   const record = JSON.parse(await fs.readFile(file, "utf8"));
   record.createdAt = "2026-02-30T00:00:00Z";
   await fs.writeFile(file, JSON.stringify(record));
@@ -381,7 +381,7 @@ test("context message references retain no original inputs and preserve legacy i
   assert.ok(references.every((message) => !Object.hasOwn(message, "input")));
   assert.ok(Buffer.byteLength(JSON.stringify(references)) < 8 * 1024, "retained context references must stay small independently of the original input size");
   assert.equal(references[0]?.spawns, undefined, "legacy mention-only messages must retain their fallback identity");
-  const file = path.join(workspace, ".digital-employee/workbench/groups", group.conversationRef, "messages/message-01.json");
+  const file = path.join(workspace, ".roleweave/groups", group.conversationRef, "messages/message-01.json");
   const invalid = JSON.parse(await fs.readFile(file, "utf8"));
   invalid.input = "x".repeat(256 * 1024 + 1);
   await fs.writeFile(file, JSON.stringify(invalid));

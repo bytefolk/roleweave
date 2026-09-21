@@ -18,6 +18,7 @@ import type {
   WorkspaceManifest,
 } from "@roleweave/shared";
 import { emptyLayout, orderChildren, parentKey, readLayout, reconcileLayout, writeLayoutAtomic } from "./org/layout.js";
+import { migrateRoleWeaveState } from "./workspace-metadata.js";
 
 export const ORGANIZATION_FILE = "organization.v1alpha1.json";
 export const MANIFEST_FILE = "workspace.json";
@@ -57,6 +58,7 @@ export class WorkspaceState {
     if (!stat.isDirectory()) {
       throw new OrgApiError(errorCodes.workspace_invalid, 422, `not a directory: ${dir}`);
     }
+    await migrateRoleWeaveState(dir);
     const manifest = await this.readJson<WorkspaceManifest>(
       path.join(dir, MANIFEST_FILE),
       "workspace manifest missing (workspace.json)",

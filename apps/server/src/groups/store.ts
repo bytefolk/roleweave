@@ -36,7 +36,7 @@ import { atomicWriteJson, nodeAtomicTurnWriteOperations, parseRfc3339Instant, co
 
 export { MAX_GROUP_MEMBERS } from "../history-limits.js";
 
-const GROUPS_ROOT = path.join(".digital-employee", "workbench", "groups");
+const GROUPS_ROOT = path.join(".roleweave", "groups");
 const MAX_GROUPS = 64;
 const MAX_GROUP_MESSAGES = 256;
 const MAX_GROUP_RECORD_BYTES = 16 * 1024;
@@ -114,7 +114,7 @@ async function prepareGroupDirectories(workspace: string, conversationRef: strin
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
     throw storageError("workspace must be a real directory for local group state");
   }
-  const segments = [".digital-employee", "workbench", "groups", conversationRef, "messages"];
+  const segments = [".roleweave", "groups", conversationRef, "messages"];
   let current = workspace;
   for (let index = 0; index < segments.length; index += 1) {
     current = path.join(current, segments[index]!);

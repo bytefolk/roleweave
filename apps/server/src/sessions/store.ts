@@ -13,7 +13,7 @@ import { PerKeyLock } from "../per-key-lock.js";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 
-const SESSION_ROOT_SEGMENTS = [".digital-employee", "workbench", "sessions"];
+const SESSION_ROOT_SEGMENTS = [".roleweave", "sessions"];
 const POSITIONS_SEGMENT = "positions";
 const WORKSPACE_RECORD = "workspace-instance.json";
 const WORKSPACE_SCHEMA_VERSION = "workspace-instance.v1";
@@ -234,7 +234,7 @@ async function ensureRealDirectories(workspace: string): Promise<void> {
         throw sessionError("local session directory creation raced with an unsafe path");
       }
     }
-    if (segment !== ".digital-employee") await fs.chmod(current, 0o700);
+    if (segment !== ".roleweave") await fs.chmod(current, 0o700);
   }
 }
 

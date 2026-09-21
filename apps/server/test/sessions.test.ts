@@ -116,7 +116,7 @@ for (const engine of ["claude-local", "workbuddy"] as const) {
       assert.equal(readback.status, 200);
       assert.equal((readback.body as { turns: TurnRecord[] }).turns[0]?.engine, engine);
       const record = response.body as TurnRecord;
-      const turnFile = path.join(workspace, ".digital-employee", "workbench", "sessions", "conversations", session.sessionId, "turns", `${record.turnId}.json`);
+      const turnFile = path.join(workspace, ".roleweave", "sessions", "conversations", session.sessionId, "turns", `${record.turnId}.json`);
       await assertPosixMode(turnFile, 0o600);
     } finally {
       await server.close();
@@ -151,7 +151,7 @@ test("explicit session create, turn, rotate, and restart preserve an empty succe
     assert.equal(first.principal, "position.repo-owner");
     assert.equal(first.status, "active");
     assert.doesNotMatch(JSON.stringify(created.body), /owb-workspace-|Authorization|Bearer|TOKEN|API_KEY/);
-    const sessionRoot = path.join(workspace, ".digital-employee", "workbench", "sessions");
+    const sessionRoot = path.join(workspace, ".roleweave", "sessions");
     await assertPosixMode(sessionRoot, 0o700);
     await assertPosixMode(path.join(sessionRoot, "workspace-instance.json"), 0o600);
     await assertPosixMode(path.join(sessionRoot, "positions", "repo-owner.json"), 0o600);
@@ -253,8 +253,7 @@ test("session history rejects credential-shaped and invalid persisted event fiel
     const turnId = String((turn.body as { turnId: string }).turnId);
     const turnFile = path.join(
       workspace,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "conversations",
       session.sessionId,
@@ -307,8 +306,7 @@ test("session history compares persisted record timestamps as instants across of
     const valid = turn.body as Record<string, unknown>;
     const turnFile = path.join(
       workspace,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "conversations",
       session.sessionId,
@@ -460,7 +458,7 @@ test("unsafe, corrupt, wrong-workspace, and unbounded persisted session state fa
   const workspace = await copyExampleWorkspace();
   const store = new SessionStore();
   const created = await store.create(workspace, "repo-owner", "2026-08-24T00:00:00.000Z");
-  const positionsDir = path.join(workspace, ".digital-employee", "workbench", "sessions", "positions");
+  const positionsDir = path.join(workspace, ".roleweave", "sessions", "positions");
   const stateFile = path.join(positionsDir, "repo-owner.json");
   const valid = await fs.readFile(stateFile, "utf8");
 

@@ -100,7 +100,7 @@ test("group create anchors a real session, persists 0o700/0o600 state, and lists
     assert.ok(ids.includes(group.sessionId), "group must bind an existing session");
 
     // Storage discipline: dirs 0o700, records 0o600.
-    const groupDir = path.join(workspace, ".digital-employee", "workbench", "groups", group.conversationRef);
+    const groupDir = path.join(workspace, ".roleweave", "groups", group.conversationRef);
     await assertPosixMode(groupDir, 0o700);
     await assertPosixMode(path.join(groupDir, "group.json"), 0o600);
 
@@ -513,8 +513,7 @@ test("corrupt or unsafe local group state fails closed without echoing content",
     const group = await createGroup(server.baseUrl, server.token);
     const groupFile = path.join(
       workspace,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "groups",
       group.conversationRef,
       "group.json",
@@ -544,8 +543,8 @@ test("corrupt or unsafe local group state fails closed without echoing content",
     const listBody = leaked.body as { groups: Array<{ conversationRef: string }> };
     assert.equal(listBody.groups.some((g) => g.conversationRef === group.conversationRef), false);
 
-    await fs.rm(path.join(workspace, ".digital-employee", "workbench", "groups", group.conversationRef), { recursive: true });
-    const real = path.join(workspace, ".digital-employee", "workbench", "groups", group.conversationRef);
+    await fs.rm(path.join(workspace, ".roleweave", "groups", group.conversationRef), { recursive: true });
+    const real = path.join(workspace, ".roleweave", "groups", group.conversationRef);
     await fs.mkdir(real, { mode: 0o700 });
     await fs.writeFile(path.join(real, "group.json"), `${JSON.stringify(group)}\n`, { mode: 0o600 });
     await fs.rename(real, `${real}.real`);

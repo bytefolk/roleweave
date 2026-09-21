@@ -13,7 +13,7 @@ import {
 
 const EXPORT_SCHEMA_VERSION = "context-export-state.v1" as const;
 const OCCURRENCE_SCHEMA_VERSION = "context-occurrence.v1" as const;
-const EXPORT_ROOT = [".digital-employee", "workbench", "context-exports"] as const;
+const EXPORT_ROOT = [".roleweave", "context-exports"] as const;
 const MAX_OCCURRENCE_BYTES = 64 * 1024;
 const MAX_EXPORT_STATE_BYTES = 64 * 1024;
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/;

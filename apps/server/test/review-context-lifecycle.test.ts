@@ -66,7 +66,7 @@ test("review #3 an explicit turn owner remains cancellable after opening another
       body: { positionId: "repo-owner", workspacePath: first, turnId } });
     assert.equal(cancelled.status, 200, JSON.stringify(cancelled.body));
     assert.equal((await pending).error?.code, "turn_cancelled");
-    await assert.rejects(fs.access(path.join(second, ".digital-employee", "workbench", "conversations")), { code: "ENOENT" });
+    await assert.rejects(fs.access(path.join(second, ".roleweave", "conversations")), { code: "ENOENT" });
   } finally { driver.cleanup(); await pending; await server.close(); await fs.rm(first, { recursive: true, force: true }); await fs.rm(second, { recursive: true, force: true }); }
 });
 
@@ -118,14 +118,14 @@ test("review #4 group context isolates unrelated corruption and retains healthy 
     }
     await run("repo-owner");
     await server.ctx.turnStore.history(workspace, "release-engineer", now);
-    const badFile = path.join(workspace, ".digital-employee", "workbench", "conversations", "release-engineer", "turns", "unrelated.json");
+    const badFile = path.join(workspace, ".roleweave", "conversations", "release-engineer", "turns", "unrelated.json");
     await fs.writeFile(badFile, '{"personal":"CORRUPTED-PRIVATE-SECRET"');
     await run("repo-owner");
     assert.match(captured[1]!.envelope.input, /HEALTHY-GROUP-RESULT/);
     assert.doesNotMatch(captured[1]!.envelope.input, /CORRUPTED-PRIVATE-SECRET/);
     await fs.rm(badFile);
     const badGroup = await run("release-engineer");
-    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "conversations", "release-engineer", "turns", `${badGroup.turnId}.json`), '{"output":"CORRUPTED-GROUP-RESULT"');
+    await fs.writeFile(path.join(workspace, ".roleweave", "conversations", "release-engineer", "turns", `${badGroup.turnId}.json`), '{"output":"CORRUPTED-GROUP-RESULT"');
     const next = await run("repo-owner");
     assert.match(captured.at(-1)!.envelope.input, /HEALTHY-GROUP-RESULT/);
     assert.doesNotMatch(captured.at(-1)!.envelope.input, /CORRUPTED-GROUP-RESULT/);

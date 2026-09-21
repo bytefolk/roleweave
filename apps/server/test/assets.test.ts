@@ -10,7 +10,7 @@ import {
 import type { AssetRecord, AssetsListResponse } from "@roleweave/shared";
 import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
-const DRIVE = path.join(".digital-employee", "workbench", "drive", "assets");
+const DRIVE = path.join(".roleweave", "drive", "assets");
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {
   const opened = await api(baseUrl, routes.workspaceOpen, {
