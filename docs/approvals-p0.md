@@ -64,7 +64,7 @@ npm run build:renderer
 - Windows 目录 fsync 的耐久性限制沿用现有原子写实现。
 - 已接受的恢复若因工作区切换或崩溃未能完成，不自动执行第二次；页面保留结果待核实。
 - 历史扫描不是常驻全量索引；分页读取会核对完整有界快照。
-- 群聊恢复、多审批人权限、批量批准和外部通知不属于本期。
+- 群聊恢复和外部通知不属于本期。
 
 ## 多人审批策略（#402）
 
@@ -110,3 +110,32 @@ npm run build:renderer
 `GET /approvals/:id/audit` 为已认证客户端导出该请求的 `requested`、`decision`
 和 `escalated` 事件。事件记录实际 actor、可选委派来源、策略版本/摘要，并以
 跨记录的 SHA-256 前序哈希链连接；格式或链不完整时导出会失败关闭。
+
+## 同源低风险批量裁决（#403）
+
+批量批准不是客户端对单项接口的循环调用。策略必须在请求创建时显式冻结
+`batch` 分类；没有该配置的请求永远只能逐项裁决。唯一可配置的类别是 `tool`，
+服务端还要求请求上下文风险为 `medium`。`write`、`exec`、`network`、群聊来源、
+过期项、已裁决项、升级中的多人门槛和 `run` scope 都不允许加入批量。
+
+```json
+{
+  "default": {
+    "eligibleApprovers": ["operator"],
+    "threshold": 1,
+    "batch": { "maxItems": 16, "actionKinds": ["tool"] }
+  }
+}
+```
+
+`POST /approvals/batch/decision` 接收工作区 token、一个 batch `requestId`、
+固定的 `decision: "granted"` 和每项 `{id, expectedVersion}`。服务端在改写任何
+记录前重验全部成员：每项版本、来源回合、策略快照、actor、到期时间和精确来源
+元组（kind、岗位、会话、turn、run、engine）必须一致。若有成员不合格，响应逐项
+给出 `rejected` 原因，且不裁决任何成员。
+
+有效集合以每项确定性派生的幂等键写入独立审计事件（关联同一 batch ID），并由
+一个恢复回合携带 `pendingApprovals` 结算。引擎在发出任一批准事件或消费模型前
+校验完整集合；任何过期或无效成员使整组失败关闭。所有成员共享同一 recovery
+turn；进程在持久化 intent 后中断时，照单项语义显示 `indeterminate`，绝不猜测或
+重放外部动作。队列只投影可批量分类和最大数量，不泄露审批人名单。

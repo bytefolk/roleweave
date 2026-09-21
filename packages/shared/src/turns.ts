@@ -144,6 +144,9 @@ export interface TurnEnvelope {
   turnId: string;
   input: string;
   pendingApproval?: TurnPendingApproval;
+  /** #403 atomic recovery set. Only the approval service can construct this
+   * field; public turn endpoints still reject direct verdicts. */
+  pendingApprovals?: TurnPendingApproval[];
   /** Upstream de#205 (DE-CONVREF-001): only present under v1alpha2; the
    * builder pairs field⇔schemaVersion strictly (v1 + field is fail-closed
    * upstream, so that combination is never produced locally). Non-empty,

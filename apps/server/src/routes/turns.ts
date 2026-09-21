@@ -69,6 +69,8 @@ export interface TurnPostBody {
   engine: TurnEngine;
   /** Operator verdict for a resume turn (#193); optional, additive. */
   pendingApproval?: TurnPendingApproval;
+  /** Internal-only atomic recovery input assembled by ApprovalService. */
+  pendingApprovals?: TurnPendingApproval[];
   /** Additive #52: set only by the group spawn path, never by a route body. */
   groupRef?: string;
   /** Additive #222: optional goal binding. */
@@ -383,6 +385,9 @@ export async function executeTurn(
       message: context.input,
       ...(body.pendingApproval !== undefined
         ? { pendingApproval: body.pendingApproval }
+        : {}),
+      ...(body.pendingApprovals !== undefined
+        ? { pendingApprovals: body.pendingApprovals }
         : {}),
       ...(conversationRef !== undefined ? { conversationRef } : {}),
     });

@@ -355,6 +355,7 @@ function AppInner({
     requestedAt: a.requestedAt, expiresAt: a.expiresAt,
     decision: a.status === "granted" ? { kind: "granted", scope: a.decision?.scope ?? "once", decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy, reason: a.decision?.reason } : a.status === "denied" ? { kind: "denied", reason: a.decision?.reason, decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy } : { kind: a.status },
     scopeAllowed: a.context?.scope.allowed ?? ["once"],
+    batchMaxItems: a.batch?.maxItems,
     canDecide: a.canDecide, busy: approvalState.busy.has(a.id), error: approvalState.errors[a.id],
     unavailableReason: a.unavailableReason, executionPhase: a.execution.phase,
     requestReason: a.requestReason, context: a.context, policyProgress: a.progress, source: a.source, executionTurnId: a.execution.turnId, executionErrorCode: a.execution.errorCode,
@@ -2064,6 +2065,7 @@ function AppInner({
             onNavigateToOrg={() => setActiveModule("org")}
             onApprove={(id, reason, scope) => { void approvalState.decide(id, "granted", reason, scope); }}
             onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
+            onApproveBatch={(ids) => { void approvalState.decideBatch(ids); }}
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
           />

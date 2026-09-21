@@ -13,6 +13,8 @@ class ApprovalDriver implements TurnRunDriver {
   expiresAt = new Date(Date.now() + 60000).toISOString();
   target = "report.md";
   reason = "The write needs operator approval";
+  actionKind: "write" | "exec" | "network" | "tool" = "write";
+  approvalCount = 1;
   runScope = false;
   invalidRunBinding = false;
   preview?: ApprovalChangePreview;
@@ -22,19 +24,25 @@ class ApprovalDriver implements TurnRunDriver {
     const runId = crypto.randomUUID(), timestamp = new Date().toISOString();
     const base = { runId, timestamp };
     const d = request.envelope.pendingApproval;
+    const batch = request.envelope.pendingApprovals;
     const events: EngineEvent[] = [{ ...base, type: "run.started" }];
-    if (d) {
+    if (d || batch) {
       await this.hold;
-      if (d.decision === "granted") events.push({ ...base, type: "approval.granted", approvalId: d.approvalId, grantedBy: "operator", scope: d.scope ?? "once" }, { ...base, type: "run.completed", output: "done", terminalReason: "goal_met" });
-      else events.push({ ...base, type: "approval.denied", approvalId: d.approvalId, deniedBy: "operator" }, { ...base, type: "run.failed", error: { code: "engine.approval_denied", message: "denied", retryable: false, terminalReason: "cancelled" } });
+      const decisions = batch ?? [d!];
+      if (decisions[0]!.decision === "granted") events.push(...decisions.map(decision => ({ ...base, type: "approval.granted" as const, approvalId: decision.approvalId, grantedBy: "operator" as const, scope: decision.scope ?? "once" })), { ...base, type: "run.completed", output: "done", terminalReason: "goal_met" });
+      else events.push(...decisions.map(decision => ({ ...base, type: "approval.denied" as const, approvalId: decision.approvalId, deniedBy: "operator" as const })), { ...base, type: "run.failed", error: { code: "engine.approval_denied", message: "denied", retryable: false, terminalReason: "cancelled" } });
     } else {
-      const action = { kind: "write" as const, description: "write report", target: this.target };
-      const binding = `sha256:${crypto.createHash("sha256").update(approvalRunScopeBindingInput("same-engine-id", runId, action, this.expiresAt)).digest("hex")}`;
-      events.push({ ...base, type: "approval.requested", approvalId: "same-engine-id", action: {
-        ...action,
-        ...(this.preview ? { preview: this.preview } : {}),
-        ...(this.runScope ? { scope: { version: "approval-scope-offer.v1" as const, allowed: ["once", "run"] as Array<"once" | "run">, runBinding: this.invalidRunBinding ? `sha256:${"0".repeat(64)}` : binding } } : {}),
-      }, reason: this.reason, expiresAt: this.expiresAt },
+      for (let index = 0; index < this.approvalCount; index++) {
+        const approvalId = this.approvalCount === 1 ? "same-engine-id" : `same-engine-id-${index + 1}`;
+        const action = { kind: this.actionKind, description: "write report", target: this.target };
+        const binding = `sha256:${crypto.createHash("sha256").update(approvalRunScopeBindingInput(approvalId, runId, action, this.expiresAt)).digest("hex")}`;
+        events.push({ ...base, type: "approval.requested", approvalId, action: {
+          ...action,
+          ...(this.preview ? { preview: this.preview } : {}),
+          ...(this.runScope ? { scope: { version: "approval-scope-offer.v1" as const, allowed: ["once", "run"] as Array<"once" | "run">, runBinding: this.invalidRunBinding ? `sha256:${"0".repeat(64)}` : binding } } : {}),
+        }, reason: this.reason, expiresAt: this.expiresAt });
+      }
+      events.push(
       { ...base, type: "run.failed", error: { code: "engine.approval_required", message: "waiting", retryable: true, terminalReason: "engine_internal_error" } });
     }
     for (const event of events) request.onEvent?.(event);
@@ -71,6 +79,29 @@ async function settle(s: TestServer, id: string) {
     await new Promise(r => setTimeout(r, 5));
   }
   throw new Error("Approval did not settle");
+}
+
+const batchPolicy = (overrides: Record<string, unknown> = {}) => ({
+  schemaVersion: "roleweave-approval-policy.v1",
+  version: "batch-tools-1",
+  default: { eligibleApprovers: ["operator"], threshold: 1, batch: { maxItems: 4, actionKinds: ["tool"] }, ...overrides },
+});
+
+async function rejectBatch(driver: ApprovalDriver, policy: Record<string, unknown>, versions?: (version: number) => number) {
+  const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify(policy));
+    await open(s, workspace); await request(s);
+    const snapshot = await list(s);
+    const response = await api(s.baseUrl, "/approvals/batch/decision", {
+      token: s.token, method: "POST",
+      body: { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: snapshot.items.map(item => ({ id: item.id, expectedVersion: versions?.(item.version) ?? item.version })) },
+    });
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    assert.deepEqual((response.body as { items: Array<{ status: string }> }).items.map(item => item.status), snapshot.items.map(() => "rejected"));
+    assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 0);
+  } finally { await s.close(); }
 }
 
 test("approval center restores the source session, preserves expiry, is idempotent and survives restart", async () => {
@@ -343,6 +374,91 @@ test("approval views redact secrets while preserving safe decision context", asy
     assert.equal(approval.context?.preview.status, "available");
     assert.match(JSON.stringify(approval.context?.preview), /\[redacted\]/);
   } finally { await s.close(); }
+});
+
+test("#403 batches one homogeneous low-risk tool source through one recovery turn", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
+  const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify(batchPolicy()));
+    await open(s, workspace); await request(s);
+    const snapshot = await list(s);
+    const response = await api(s.baseUrl, "/approvals/batch/decision", {
+      token: s.token, method: "POST",
+      body: { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })) },
+    });
+    assert.equal(response.status, 202, JSON.stringify(response.body));
+    for (const item of snapshot.items) assert.equal((await settle(s, item.id)).execution.phase, "completed");
+    assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 1);
+    assert.equal(driver.calls.find(call => call.envelope.pendingApprovals)?.envelope.pendingApprovals?.length, 2);
+  } finally { await s.close(); }
+});
+
+test("#403 rolls back every member when one batch persistence write fails", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
+  const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
+  try {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify(batchPolicy()));
+    await open(s, workspace); await request(s);
+    const snapshot = await list(s), service = approvals(s.ctx);
+    const originalPut = service.store.put.bind(service.store);
+    let grantedWrites = 0;
+    service.store.put = async (directory, record) => {
+      if (record.status === "granted" && record.execution.phase === "starting" && ++grantedWrites === 2) {
+        throw new Error("synthetic second-member write failure");
+      }
+      await originalPut(directory, record);
+    };
+    try {
+      const response = await api(s.baseUrl, "/approvals/batch/decision", {
+        token: s.token, method: "POST",
+        body: { workspaceToken: snapshot.workspaceToken, requestId: crypto.randomUUID(), decision: "granted", items: snapshot.items.map(item => ({ id: item.id, expectedVersion: item.version })) },
+      });
+      assert.equal(response.status, 500, JSON.stringify(response.body));
+    } finally {
+      service.store.put = originalPut;
+    }
+    const restored = await list(s);
+    assert.ok(restored.items.every(item => item.status === "pending" && item.execution.phase === "not_started" && item.decision === undefined));
+    assert.equal(driver.calls.filter(call => call.envelope.pendingApprovals).length, 0);
+  } finally { await s.close(); }
+});
+
+test("#403 rejects write approvals at the batch boundary", async () => {
+  const driver = new ApprovalDriver(); driver.approvalCount = 2;
+  await rejectBatch(driver, batchPolicy());
+});
+
+test("#403 rejects exec approvals at the batch boundary", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "exec"; driver.approvalCount = 2;
+  await rejectBatch(driver, batchPolicy());
+});
+
+test("#403 rejects network approvals at the batch boundary", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "network"; driver.approvalCount = 2;
+  await rejectBatch(driver, batchPolicy());
+});
+
+test("#403 rejects expired approvals at the batch boundary", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2; driver.expiresAt = new Date(Date.now() - 1000).toISOString();
+  await rejectBatch(driver, batchPolicy());
+});
+
+test("#403 rejects version-conflicted approvals at the batch boundary", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
+  await rejectBatch(driver, batchPolicy(), version => version + 1);
+});
+
+test("#403 rejects batches that need more than one approval principal", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2;
+  await rejectBatch(driver, batchPolicy({ eligibleApprovers: ["operator", "reviewer"], threshold: 2 }));
+});
+
+test("#403 rejects run-scope offers at the batch boundary", async () => {
+  const driver = new ApprovalDriver(); driver.actionKind = "tool"; driver.approvalCount = 2; driver.runScope = true;
+  await rejectBatch(driver, batchPolicy());
 });
 
 test("expired, rotated and stale-workspace approvals cannot execute", async () => {
