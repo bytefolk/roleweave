@@ -168,6 +168,10 @@ export interface EscalationEntry {
   code: string;
   reportingChain: string[];
   budgetRelated: boolean;
+  /** Advisory Jev category; never deletes the row or changes `code`. */
+  category?: "budget" | "permission" | "engine-error" | "user-cancelled" | "benign";
+  /** Advisory; false must not hide the row. */
+  needsAttention?: boolean;
 }
 
 export interface BudgetReport {

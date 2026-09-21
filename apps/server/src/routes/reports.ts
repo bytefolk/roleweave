@@ -14,6 +14,7 @@ import type {
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { sendJson } from "../http.js";
+import { overlayEscalations } from "../jev/escalation.js";
 import { RUNTIME_DIR } from "../org/apply.js";
 import type { ServerResponse } from "node:http";
 
@@ -32,7 +33,9 @@ export async function handleReports(
     throw invalidReports();
   }
   const evidence = records.map(toEvidence);
-  const escalations = records.flatMap((record) => toEscalation(record, ws.organization.roles));
+  const escalations = await overlayEscalations(
+    records.flatMap((record) => toEscalation(record, ws.organization.roles)),
+  );
   const body: ReportsResponse = {
     schemaVersion: "reports.v1",
     streams: {
