@@ -14,6 +14,8 @@ import { GoalCreateDialog } from "./GoalCreateDialog.js";
 interface GoalsModuleProps {
   workspaceOpen: boolean;
   workspaceKey?: string;
+  onOpenApprovals?: () => void;
+  onOpenBoundSession?: (positionId: string, sessionId?: string) => void;
 }
 const rememberedSelection = new Map<string, string>();
 const STATUS_BADGE: Record<string, string> = {
@@ -46,7 +48,7 @@ export function GoalsModule(props: GoalsModuleProps) {
   );
 }
 
-function GoalsWorkspace({ workspaceOpen, workspaceKey }: GoalsModuleProps) {
+function GoalsWorkspace({ workspaceOpen, workspaceKey, onOpenApprovals, onOpenBoundSession }: GoalsModuleProps) {
   const t = useT();
   const [goals, setGoals] = useState<GoalSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() =>
@@ -456,13 +458,78 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey }: GoalsModuleProps) {
                           }))}
                         aria-label={t("goals.statusChange")}
                       />
-                      <span
-                        className={`owb-health-dot ${HEALTH_DOT[detail.goal.health]}`}
-                      >
-                        {t("reading.goals.health")}:{" "}
-                        {t(`goals.health.${detail.goal.health}`)}
-                      </span>
+                      {detail.healthOverlay &&
+                      detail.healthOverlay !== detail.goal.health ? (
+                        <div
+                          className="owb-goals-health-split"
+                          data-testid="goals-health-overlay"
+                        >
+                          <span
+                            data-testid="goals-health-rule"
+                            className={`owb-health-dot ${HEALTH_DOT[detail.goal.health]}`}
+                          >
+                            {t("goals.health.rule")}:{" "}
+                            {t(`goals.health.${detail.goal.health}`)}
+                          </span>
+                          <span
+                            data-testid="goals-health-jev"
+                            className={`owb-health-dot ${HEALTH_DOT[detail.healthOverlay]}`}
+                          >
+                            {t("goals.health.jevSuggestion")}:{" "}
+                            {t(`goals.health.${detail.healthOverlay}`)}
+                            {detail.goal.health === "at_risk" &&
+                            detail.healthOverlay === "on_track" ? (
+                              <em data-testid="goals-health-not-adopted">
+                                {" "}
+                                {t("goals.health.suggestionNotAdopted")}
+                              </em>
+                            ) : null}
+                          </span>
+                        </div>
+                      ) : (
+                        <span
+                          className={`owb-health-dot ${HEALTH_DOT[detail.goal.health]}`}
+                        >
+                          {t("reading.goals.health")}:{" "}
+                          {t(`goals.health.${detail.goal.health}`)}
+                        </span>
+                      )}
                     </div>
+                    {detail.healthOverlay === "blocked" ? (
+                      <div className="owb-goals-health-actions">
+                        {detail.goal.branches.some((branch) => branch.positionId) ? (
+                          <AntButton
+                            data-testid="goals-health-open-turn"
+                            onClick={() => {
+                              const branch = detail.goal.branches.find(
+                                (item) => item.positionId,
+                              );
+                              if (branch?.positionId)
+                                onOpenBoundSession?.(
+                                  branch.positionId,
+                                  branch.sessionId,
+                                );
+                            }}
+                          >
+                            {t("goals.health.openBoundTurn")}
+                          </AntButton>
+                        ) : null}
+                        {onOpenApprovals ? (
+                          <AntButton
+                            data-testid="goals-health-open-approvals"
+                            onClick={() => onOpenApprovals()}
+                          >
+                            {t("goals.health.openApprovals")}
+                          </AntButton>
+                        ) : null}
+                        {!detail.goal.branches.some((branch) => branch.positionId) &&
+                        !onOpenApprovals ? (
+                          <p data-testid="goals-health-blocked-empty">
+                            {t("goals.health.blockedNoTarget")}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {actionError && (
                       <p className="owb-goals-error" role="alert">
                         {actionError}

@@ -7,6 +7,8 @@
 
 ### Added
 
+- #428：Goals 详情并排展示落盘规则健康与 Jev `healthOverlay`；列表点只跟 `goal.health`。`at_risk` 上的 `on_track` overlay 标明「建议未采纳」。`blocked` overlay 可跳到绑定岗位会话或审批中心，不自动改目标。上报升级 overlay 仍是后续独立 PR。
+
 - #422：可选 Jev（TypeSafe System One）适配器，默认关闭。`ROLEWEAVE_JEV_ENABLED=1` 且配置 `ROLEWEAVE_JEV_API_KEY` 后，目标分支健康可走 Choice（`on_track` / `at_risk` / `blocked` / `unknown`）作为 `healthOverlay`；持久化 `goal.health` 仍只由 `computeHealthFromTurns` 写入。Choice 请求只带 turn `status` / `errorCode`，不发送 input/output。非法或外部 option 不能把 failed/indeterminate 分支改成 on_track。失败或超时回退启发式。不改变审批策略与回合终态推导。
 
 ### Fixed

@@ -2085,7 +2085,18 @@ function AppInner({
             onReconcileTimeline={reconcileGroup}
           />
         ) : activeModule === "goals" ? (
-          <GoalsModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} />
+          <GoalsModule
+            workspaceOpen={workspaceInfo?.open === true}
+            workspaceKey={workspaceInfo?.path}
+            onOpenApprovals={() => setActiveModule("approvals")}
+            onOpenBoundSession={(positionId, sessionId) => {
+              selectPosition(positionId);
+              if (sessionId) {
+                selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+              }
+              setActiveModule("org");
+            }}
+          />
         ) : activeModule === "settings" ? (
           <SettingsModule />
         ) : activeModule === "docs" ? (

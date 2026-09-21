@@ -203,3 +203,75 @@ describe("Goal state integrity (#294)", () => {
     await screen.findByRole("heading", { name: "Second goal" });
   });
 });
+
+describe("Jev health overlay (#428)", () => {
+  it("keeps the list dot on persisted health and shows overlay beside it in detail", async () => {
+    const atRisk = { ...goalSummary, health: "at_risk" as const };
+    const overlayDetail: GoalDetail = {
+      ...goalDetail,
+      goal: { ...goalDetail.goal, health: "at_risk" },
+      healthOverlay: "on_track",
+    };
+    installBridge({
+      goals: vi.fn().mockResolvedValue({ status: 200, body: { goals: [atRisk] } }),
+      goal: vi.fn().mockResolvedValue({ status: 200, body: overlayDetail }),
+    });
+    render(<GoalsModule workspaceOpen />);
+    const row = await screen.findByRole("option", { name: /Ship v1.0/ });
+    expect(row.querySelector(".owb-health--warn")).toBeTruthy();
+    expect(row.querySelector(".owb-health--ok")).toBeNull();
+    await screen.findByTestId("goals-health-overlay");
+    expect(screen.getByTestId("goals-health-rule")).toHaveClass("owb-health--warn");
+    expect(screen.getByTestId("goals-health-jev")).toHaveClass("owb-health--ok");
+    expect(screen.getByTestId("goals-health-not-adopted")).toHaveTextContent("建议未采纳");
+  });
+
+  it("does not render a Jev row when overlay is absent", async () => {
+    installBridge();
+    render(<GoalsModule workspaceOpen />);
+    await screen.findByText(goalDetail.goal.description);
+    expect(screen.queryByTestId("goals-health-overlay")).not.toBeInTheDocument();
+    expect(screen.getByText(/健康度/)).toBeInTheDocument();
+  });
+
+  it("exposes blocked actions without mutating the goal", async () => {
+    const updateGoal = vi.fn();
+    const onOpenApprovals = vi.fn();
+    const onOpenBoundSession = vi.fn();
+    const blocked: GoalDetail = {
+      ...goalDetail,
+      goal: {
+        ...goalDetail.goal,
+        health: "at_risk",
+        branches: [
+          {
+            branchId: "b1",
+            title: "Work",
+            status: "in_progress",
+            positionId: "owner",
+            sessionId: "sess-1",
+            createdAt: goalDetail.goal.createdAt,
+            updatedAt: goalDetail.goal.updatedAt,
+          },
+        ],
+      },
+      healthOverlay: "blocked",
+    };
+    installBridge({
+      updateGoal,
+      goal: vi.fn().mockResolvedValue({ status: 200, body: blocked }),
+    });
+    render(
+      <GoalsModule
+        workspaceOpen
+        onOpenApprovals={onOpenApprovals}
+        onOpenBoundSession={onOpenBoundSession}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("goals-health-open-turn"));
+    fireEvent.click(screen.getByTestId("goals-health-open-approvals"));
+    expect(onOpenBoundSession).toHaveBeenCalledWith("owner", "sess-1");
+    expect(onOpenApprovals).toHaveBeenCalledTimes(1);
+    expect(updateGoal).not.toHaveBeenCalled();
+  });
+});
