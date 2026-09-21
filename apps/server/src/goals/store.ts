@@ -193,17 +193,10 @@ function isGoalHealthStatus(value: string): value is GoalHealthStatus {
   return (GOAL_HEALTH_OPTIONS as readonly string[]).includes(value);
 }
 
-function truncateText(value: unknown, max = 240): string {
-  const text = typeof value === "string" ? value : value == null ? "" : JSON.stringify(value);
-  return text.length <= max ? text : `${text.slice(0, max)}…`;
-}
-
 function branchJudgmentState(bound: readonly TurnRecord[]) {
   return bound.slice(0, 12).map((turn) => ({
     status: turn.status,
     errorCode: turn.error?.code,
-    input: truncateText(turn.input),
-    output: truncateText(turn.output),
   }));
 }
 
@@ -214,18 +207,25 @@ export interface ResolveGoalHealthDeps {
 }
 
 /**
- * Deterministic heuristic first. When ROLEWEAVE_JEV_ENABLED is on, a Choice
- * may override with on_track/at_risk/blocked/unknown. Invalid/failed Jev
- * answers fall back to computeHealthFromTurns.
+ * Persisted health is always computeHealthFromTurns. Jev, when enabled, is an
+ * advisory overlay only — it must not replace failed/indeterminate heuristic
+ * health on disk (#422 / #423 review).
  */
 export async function resolveGoalHealth(
   goal: Goal,
   turns: readonly TurnRecord[],
   deps: ResolveGoalHealthDeps = {},
 ): Promise<GoalHealthStatus> {
-  const heuristic = computeHealthFromTurns(goal, turns);
+  return computeHealthFromTurns(goal, turns);
+}
+
+export async function resolveJevHealthOverlay(
+  goal: Goal,
+  turns: readonly TurnRecord[],
+  deps: ResolveGoalHealthDeps = {},
+): Promise<GoalHealthStatus | null> {
   const env = deps.env ?? process.env;
-  if (!jevEnabled(env) || goal.branches.length === 0) return heuristic;
+  if (!jevEnabled(env) || goal.branches.length === 0) return null;
 
   const ask = deps.ask ?? ((request) => askJev(request, { env }));
   const log = deps.log ?? ((entry) => console.info("[jev]", JSON.stringify(entry)));
@@ -261,15 +261,17 @@ export async function resolveGoalHealth(
         goalId: goal.goalId,
         branchId: branch.branchId,
         option: usedJev ? selected : fallback,
+        heuristic: fallback,
+        overlay: usedJev ? selected : null,
         probability: answer?.type === "choice" ? answer.probabilities[selected ?? ""] : undefined,
         confidence: answer?.type === "choice" ? answer.confidence : undefined,
         fallback: !usedJev,
       });
       if (worst === null || HEALTH_SEVERITY[branchHealth] < HEALTH_SEVERITY[worst]) worst = branchHealth;
     }
-    return worst ?? "unknown";
+    return worst ?? null;
   } catch {
-    return heuristic;
+    return null;
   }
 }
 
@@ -356,7 +358,8 @@ export class GoalStore {
     const goal = await this.get(workspace, goalId);
     const activity = await this.readActivity(workspace, goalId);
     if (turns !== undefined && goal.branches.length > 0) {
-      const computed = await resolveGoalHealth(goal, turns);
+      const computed = computeHealthFromTurns(goal, turns);
+      void resolveJevHealthOverlay(goal, turns);
       if (computed !== goal.health) {
         const now = new Date().toISOString();
         const updated: Goal = { ...goal, health: computed, updatedAt: now };

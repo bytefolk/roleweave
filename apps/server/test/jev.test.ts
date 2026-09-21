@@ -3,7 +3,7 @@ import test from "node:test";
 import type { Goal, TurnRecord } from "@roleweave/shared";
 import { jevEnabled } from "../src/jev/config.js";
 import { askJev } from "../src/jev/client.js";
-import { computeHealthFromTurns, resolveGoalHealth } from "../src/goals/store.js";
+import { computeHealthFromTurns, resolveGoalHealth, resolveJevHealthOverlay } from "../src/goals/store.js";
 
 function branchedGoal(): Goal {
   const now = "2026-01-01T00:00:00.000Z";
@@ -135,39 +135,66 @@ test("resolveGoalHealth keeps the heuristic when Jev is off", async () => {
   assert.equal(await resolveGoalHealth(goal, [turn("completed")], { env: {} }), "on_track");
 });
 
-test("resolveGoalHealth uses a Jev Choice when enabled and the option is a GoalHealthStatus", async () => {
-  const goal = branchedGoal();
-  const failed = turn("failed");
-  const health = await resolveGoalHealth(goal, [failed], {
-    env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
-    log: () => {},
-    ask: async () => ({
-      health: {
-        type: "choice",
-        selected: "blocked",
-        probabilities: { blocked: 1 },
-        confidence: 0.9,
-      },
-    }),
-  });
-  assert.equal(health, "blocked");
-});
-
-test("resolveGoalHealth falls back to the heuristic when Jev throws or returns an invalid option", async () => {
+test("resolveGoalHealth stays on the heuristic when Jev is enabled", async () => {
   const goal = branchedGoal();
   const failed = turn("failed");
   assert.equal(
     await resolveGoalHealth(goal, [failed], {
       env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
       log: () => {},
+      ask: async () => ({
+        health: {
+          type: "choice",
+          selected: "blocked",
+          probabilities: { blocked: 1 },
+          confidence: 0.9,
+        },
+      }),
+    }),
+    "at_risk",
+  );
+});
+
+test("resolveJevHealthOverlay returns a Choice without sending turn bodies", async () => {
+  const goal = branchedGoal();
+  const failed = turn("failed");
+  let seen: unknown;
+  const overlay = await resolveJevHealthOverlay(goal, [failed], {
+    env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
+    log: () => {},
+    ask: async (request) => {
+      seen = request;
+      return {
+        health: {
+          type: "choice",
+          selected: "blocked",
+          probabilities: { blocked: 1 },
+          confidence: 0.9,
+        },
+      };
+    },
+  });
+  assert.equal(overlay, "blocked");
+  assert.equal(computeHealthFromTurns(goal, [failed]), "at_risk");
+  const turns = (seen as { state: { turns: Array<Record<string, unknown>> } }).state.turns;
+  assert.deepEqual(Object.keys(turns[0]!).sort(), ["errorCode", "status"]);
+});
+
+test("resolveJevHealthOverlay falls back to null when Jev throws or returns an invalid option", async () => {
+  const goal = branchedGoal();
+  const failed = turn("failed");
+  assert.equal(
+    await resolveJevHealthOverlay(goal, [failed], {
+      env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
+      log: () => {},
       ask: async () => {
         throw new Error("boom");
       },
     }),
-    "at_risk",
+    null,
   );
   assert.equal(
-    await resolveGoalHealth(goal, [failed], {
+    await resolveJevHealthOverlay(goal, [failed], {
       env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
       log: () => {},
       ask: async () => ({ health: { type: "choice", selected: "not-a-status", probabilities: {}, confidence: 0 } }),
