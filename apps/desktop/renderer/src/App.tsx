@@ -534,7 +534,6 @@ function AppInner({
   }, [t]);
 
   const refresh = useCallback(async (reusePositionMetadata = false) => {
-    setStartupStage("service");
     const refreshRead = ++refreshReadVersion.current;
     const isCurrentRefresh = () => refreshRead === refreshReadVersion.current;
     const healthRead = ++healthReadVersion.current;
