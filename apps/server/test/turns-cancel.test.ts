@@ -61,7 +61,7 @@ test("POST /turns/cancel aborts the in-flight turn as indeterminate/turn_cancell
     assert.equal(record.status, "indeterminate");
     assert.deepEqual(record.error, {
       code: "turn_cancelled",
-      message: "the turn was cancelled by the operator; partial output was preserved",
+      message: "the turn was cancelled by the operator before any output was received",
       retryable: true,
     });
 
