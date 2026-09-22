@@ -107,7 +107,7 @@ describe("BudgetDashboard — 摘要/表格/超限/详情", () => {
     expect(rows[rows.length - 1].getAttribute("data-position-id")).toBe("intern");
   });
 
-  it("点击行触发 Drawer 打开并展示岗位名", () => {
+  it("点击行触发 Drawer 打开并展示参考样式所需的标题层级", () => {
     const { container } = render(
       <BudgetDashboard
         budgets={budgets}
@@ -121,6 +121,8 @@ describe("BudgetDashboard — 摘要/表格/超限/详情", () => {
     const dialog = screen.getByRole("dialog");
     expect(dialog).toBeInTheDocument();
     expect(dialog).toHaveTextContent("内容写作员");
+    expect(within(dialog).getByRole("heading", { level: 3, name: "内容写作员 · 预算详情" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { level: 4, name: "预算声明 × 事实" })).toBeInTheDocument();
   });
 
   it("Drawer「查看时间线」按钮触发 onOpenTimeline", () => {

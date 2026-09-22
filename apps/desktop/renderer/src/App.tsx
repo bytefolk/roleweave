@@ -357,6 +357,7 @@ function AppInner({
     requestedAt: a.requestedAt, expiresAt: a.expiresAt,
     decision: a.status === "granted" ? { kind: "granted", scope: a.decision?.scope ?? "once", decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy, reason: a.decision?.reason } : a.status === "denied" ? { kind: "denied", reason: a.decision?.reason, decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy } : { kind: a.status },
     scopeAllowed: a.context?.scope.allowed ?? ["once"],
+    batchMaxItems: a.batch?.maxItems,
     canDecide: a.canDecide, busy: approvalState.busy.has(a.id), error: approvalState.errors[a.id],
     unavailableReason: a.unavailableReason, executionPhase: a.execution.phase,
     requestReason: a.requestReason, context: a.context, policyProgress: a.progress, source: a.source, executionTurnId: a.execution.turnId, executionErrorCode: a.execution.errorCode,
@@ -1582,8 +1583,11 @@ function AppInner({
 
   const engineOk = health?.engine?.available === true;
   /** The frozen org-tree.v1 carries ids/budgets only; display names and modes
-   * arrive via the selected position card (/positions/:id). */
-  const selectedPosition = card.data;
+   * arrive via the selected position card (`/positions/:id`). Stale-while-revalidate
+   * may keep the previous card on screen (#413) while `selectedId` is already the
+   * next employee. Mutating actions wait until the record matches, or the dismiss
+   * dialog names A and deletes B (#420). */
+  const actionPosition = card.data?.id === selectedId ? card.data : null;
   const positions = useMemo<PositionMentionOption[]>(() => {
     if (!snapshot) return [];
     return flattenPositionIds(snapshot.tree).map((id) => ({ id, name: positionNames[id] ?? t("org.unknownPosition") }));
@@ -1782,11 +1786,13 @@ function AppInner({
     } : {}),
   }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
 
+  const sidebarlessModule = activeModule === "reports" || activeModule === "approvals" || activeModule === "settings";
+
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
-    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`} aria-busy={startupStage !== "ready"}>
+    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`} aria-busy={startupStage !== "ready"}>
       {startupStage !== "ready" ? (
         <div className="owb-startup" role="status" aria-label={t("startup.aria")}>
           <div className="owb-startup__mark" aria-hidden="true"><span /><span /><span /></div>
@@ -2098,6 +2104,7 @@ function AppInner({
             onNavigateToOrg={() => setActiveModule("org")}
             onApprove={(id, reason, scope) => { void approvalState.decide(id, "granted", reason, scope); }}
             onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
+            onApproveBatch={(ids) => { void approvalState.decideBatch(ids); }}
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
           />
@@ -2179,7 +2186,7 @@ function AppInner({
                     setMemorySource(source.kind === "mem_drive" ? "drive" : "docs");
                     setActiveModule("docs");
                   }}
-                  actions={selectedPosition && selectedId ? (
+                  actions={actionPosition ? (
                     <>
                       {/* Editing the record is available on every position, the
                           company owner included: the owner is an employee with
@@ -2191,15 +2198,15 @@ function AppInner({
                       <button
                         type="button"
                         className="owb-edit"
-                        onClick={() => setEditTargetId(selectedId)}
+                        onClick={() => setEditTargetId(actionPosition.id)}
                         disabled={orgBusy}
                         title={t("profile.editTitle")}
                       >
                         <PencilLine aria-hidden="true" size={13} />
                         {t("profile.edit")}
                       </button>
-                      {selectedId !== snapshot?.owner ? (
-                        <DismissPositionDialog positionName={selectedPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(selectedId)} />
+                      {actionPosition.id !== snapshot?.owner ? (
+                        <DismissPositionDialog positionName={actionPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(actionPosition.id)} />
                       ) : null}
                     </>
                   ) : undefined}

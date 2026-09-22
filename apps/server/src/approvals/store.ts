@@ -12,6 +12,8 @@ import { approvalPolicyDigest } from "./policy.js";
 
 const MAX_BYTES = 128 * 1024;
 const ID = /^[a-f0-9]{64}$/;
+const REQUEST_ID = /^[a-f0-9-]{36}$/;
+const auditTypes = new Set<ApprovalAuditEvent["type"]>(["requested", "decision", "escalated", "decision_reverted"]);
 const failure = () => new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval storage is unavailable or invalid");
 const locked = () => new OrgApiError(errorCodes.approval_writer_busy, 409, "Another local control plane owns approvals for this workspace");
 const auditFailure = () => new OrgApiError(errorCodes.approval_storage_failed, 500, "Approval audit is unavailable or invalid");
@@ -99,7 +101,7 @@ function valid(value: unknown): value is ApprovalRecord {
   if (a.schemaVersion === "workbench-approval.v2") {
     const p = a.policy;
     const actor = (v: unknown) => typeof v === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(v);
-    if (!p || !actor(p.version) || !/^sha256:[a-f0-9]{64}$/.test(p.digest) || !Array.isArray(p.eligibleApprovers) || !p.eligibleApprovers.every(actor) || !Number.isSafeInteger(p.threshold) || p.threshold < 1 || p.threshold > p.eligibleApprovers.length || !p.delegations || typeof p.delegations !== "object" || Array.isArray(p.delegations) || !Object.entries(p.delegations).every(([from, to]) => actor(from) && Array.isArray(to) && to.every(actor)) || (p.escalation !== undefined && (!time(p.escalation.at) || !Array.isArray(p.escalation.eligibleApprovers) || !p.escalation.eligibleApprovers.every(actor) || !Number.isSafeInteger(p.escalation.threshold) || p.escalation.threshold < 1 || p.escalation.threshold > p.escalation.eligibleApprovers.length)) || !Array.isArray(a.decisions) || a.decisions.length > 64 || !a.decisions.every(d => /^[a-f0-9-]{36}$/.test(d.requestId) && Number.isSafeInteger(d.expectedVersion) && d.expectedVersion >= 1 && ["granted", "denied"].includes(d.decision) && (d.scope === "once" || d.scope === "run") && actor(d.actor) && time(d.decidedAt) && (d.delegatedFrom === undefined || actor(d.delegatedFrom)) && (d.reason === undefined || text(d.reason))) || !a.progress || !Number.isSafeInteger(a.progress.required) || !Number.isSafeInteger(a.progress.granted) || !Number.isSafeInteger(a.progress.pending) || typeof a.progress.escalated !== "boolean") return false;
+    if (!p || !actor(p.version) || !/^sha256:[a-f0-9]{64}$/.test(p.digest) || !Array.isArray(p.eligibleApprovers) || !p.eligibleApprovers.every(actor) || !Number.isSafeInteger(p.threshold) || p.threshold < 1 || p.threshold > p.eligibleApprovers.length || !p.delegations || typeof p.delegations !== "object" || Array.isArray(p.delegations) || !Object.entries(p.delegations).every(([from, to]) => actor(from) && Array.isArray(to) && to.every(actor)) || (p.batch !== undefined && (!Number.isSafeInteger(p.batch.maxItems) || p.batch.maxItems < 2 || p.batch.maxItems > 32 || !Array.isArray(p.batch.actionKinds) || p.batch.actionKinds.length !== 1 || p.batch.actionKinds[0] !== "tool")) || (p.escalation !== undefined && (!time(p.escalation.at) || !Array.isArray(p.escalation.eligibleApprovers) || !p.escalation.eligibleApprovers.every(actor) || !Number.isSafeInteger(p.escalation.threshold) || p.escalation.threshold < 1 || p.escalation.threshold > p.escalation.eligibleApprovers.length)) || !Array.isArray(a.decisions) || a.decisions.length > 64 || !a.decisions.every(d => /^[a-f0-9-]{36}$/.test(d.requestId) && Number.isSafeInteger(d.expectedVersion) && d.expectedVersion >= 1 && ["granted", "denied"].includes(d.decision) && (d.scope === "once" || d.scope === "run") && actor(d.actor) && time(d.decidedAt) && (d.delegatedFrom === undefined || actor(d.delegatedFrom)) && (d.reason === undefined || text(d.reason)) && (d.batchId === undefined || /^[a-f0-9-]{36}$/.test(d.batchId))) || !a.progress || !Number.isSafeInteger(a.progress.required) || !Number.isSafeInteger(a.progress.granted) || !Number.isSafeInteger(a.progress.pending) || typeof a.progress.escalated !== "boolean") return false;
     const { digest: _digest, ...policyPayload } = p;
     if (p.digest !== approvalPolicyDigest(policyPayload)) return false;
   }
@@ -202,7 +204,7 @@ export class ApprovalStore {
       const existing = await this.audit(workspace);
       const repeated = event.requestId === undefined ? undefined : existing.find(item => item.approvalId === event.approvalId && item.requestId === event.requestId);
       if (repeated) {
-        const same = repeated.type === event.type && repeated.actor === event.actor && repeated.delegatedFrom === event.delegatedFrom && repeated.decision === event.decision && repeated.scope === event.scope && repeated.policyVersion === event.policyVersion && repeated.policyDigest === event.policyDigest;
+        const same = repeated.type === event.type && repeated.actor === event.actor && repeated.delegatedFrom === event.delegatedFrom && repeated.decision === event.decision && repeated.scope === event.scope && repeated.batchId === event.batchId && repeated.revertedRequestId === event.revertedRequestId && repeated.policyVersion === event.policyVersion && repeated.policyDigest === event.policyDigest;
         if (!same) throw new OrgApiError(errorCodes.approval_conflict, 409, "Request id was already used for another audit decision");
         return repeated;
       }
@@ -228,7 +230,8 @@ export class ApprovalStore {
         const value = JSON.parse(line) as ApprovalAuditEvent;
         const { hash, ...unsigned } = value;
         const expected = `sha256:${crypto.createHash("sha256").update(JSON.stringify(unsigned)).digest("hex")}`;
-        if (!/^sha256:[a-f0-9]{64}$/.test(hash) || hash !== expected || value.seq !== events.length + 1 || value.previousHash !== events.at(-1)?.hash || !ID.test(value.approvalId) || (value.requestId !== undefined && !/^[a-f0-9-]{36}$/.test(value.requestId))) throw auditFailure();
+        const reversal = value.type === "decision_reverted";
+        if (!/^sha256:[a-f0-9]{64}$/.test(hash) || hash !== expected || value.seq !== events.length + 1 || value.previousHash !== events.at(-1)?.hash || !auditTypes.has(value.type) || !ID.test(value.approvalId) || (value.requestId !== undefined && !REQUEST_ID.test(value.requestId)) || (value.batchId !== undefined && !REQUEST_ID.test(value.batchId)) || (value.revertedRequestId !== undefined && !REQUEST_ID.test(value.revertedRequestId)) || (reversal && (value.requestId === undefined || value.batchId === undefined || value.revertedRequestId === undefined)) || (!reversal && value.revertedRequestId !== undefined)) throw auditFailure();
         events.push(value);
       }
       return id ? events.filter(e => e.approvalId === id) : events;

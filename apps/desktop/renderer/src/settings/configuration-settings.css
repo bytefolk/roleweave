@@ -1,10 +1,10 @@
 /* Settings-only organization; keep the approved application frame and theme. */
 .owb-config-settings { display:flex; flex-direction:column; min-height:0; height:100%; overflow:hidden; }
-.owb-config-tabs { display:flex; flex-wrap:wrap; gap:4px; padding:0 24px 12px; border-bottom:1px solid var(--ui-border,#e5e7eb); }
+.owb-config-tabs { display:flex; flex-wrap:wrap; gap:4px; margin-inline:var(--owb-module-gutter-negative, -24px); padding:0 var(--owb-module-gutter, 24px) 12px; border-bottom:1px solid var(--ui-border,#e5e7eb); }
 .owb-config-tabs button { border:0; border-radius:6px; padding:8px 12px; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .owb-config-tabs button[aria-selected="true"] { background:var(--ui-primary-soft); color:var(--ui-foreground); font-weight:600; }
 .owb-config-tabs button:focus-visible { outline:2px solid var(--ui-primary,#1677ff); outline-offset:2px; }
-.owb-config-content { flex:1; min-height:0; overflow:auto; padding:16px 24px 24px; }
+.owb-config-content { flex:1; min-height:0; overflow:auto; margin-inline:var(--owb-module-gutter-negative, -24px); padding:16px var(--owb-module-gutter, 24px) 24px; }
 .owb-config-content > [role="tabpanel"] { max-width:960px; }
 .owb-config-content [hidden] { display:none !important; }
 .owb-config-content .ant-alert { margin-bottom:12px; }
@@ -25,7 +25,7 @@
 .owb-config-secret .owb-config-checkbox { margin:0; }
 .owb-config-service { padding:12px 0 20px; border-bottom:1px solid var(--ui-border,#e5e7eb); }
 .owb-config-service h3 { margin:0; font-size:15px; }
-.owb-config-savebar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 24px; border-top:1px solid var(--ui-border,#e5e7eb); }
+.owb-config-savebar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-inline:var(--owb-module-gutter-negative, -24px); padding:12px var(--owb-module-gutter, 24px); border-top:1px solid var(--ui-border,#e5e7eb); }
 .owb-config-savebar > span { flex:1; font-size:12px; }
 .owb-config-file-head { display:flex; align-items:center; justify-content:space-between; gap:16px; }
 .owb-config-file-head h2 { font-size:15px; margin:0 0 8px; }

@@ -13,6 +13,9 @@ type Rule = {
   threshold: number;
   delegations?: Record<string, string[]>;
   escalation?: { afterMs: number; eligibleApprovers: string[]; threshold: number };
+  /** Explicit #403 classification: only medium-risk tools may opt into a
+   * homogeneous recovery batch. */
+  batch?: { maxItems: number; actionKinds: Array<"tool"> };
 };
 type PolicyFile = { schemaVersion: "roleweave-approval-policy.v1"; version: string; default: Rule; rules?: Rule[] };
 
@@ -23,12 +26,13 @@ function validPeople(value: unknown): value is string[] {
 function validRule(value: unknown): value is Rule {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const r = value as Rule;
-  return Object.keys(r).every(k => ["positionId", "actionKinds", "eligibleApprovers", "threshold", "delegations", "escalation"].includes(k)) &&
+  return Object.keys(r).every(k => ["positionId", "actionKinds", "eligibleApprovers", "threshold", "delegations", "escalation", "batch"].includes(k)) &&
     (r.positionId === undefined || (typeof r.positionId === "string" && ACTOR.test(r.positionId))) &&
     (r.actionKinds === undefined || (Array.isArray(r.actionKinds) && r.actionKinds.length > 0 && r.actionKinds.every(k => ["write", "exec", "network", "tool"].includes(k)))) &&
     validPeople(r.eligibleApprovers) && Number.isSafeInteger(r.threshold) && r.threshold >= 1 && r.threshold <= r.eligibleApprovers.length &&
     (r.delegations === undefined || (typeof r.delegations === "object" && !Array.isArray(r.delegations) && Object.entries(r.delegations).every(([from, to]) => ACTOR.test(from) && validPeople(to)))) &&
-    (r.escalation === undefined || (typeof r.escalation === "object" && Number.isSafeInteger(r.escalation.afterMs) && r.escalation.afterMs > 0 && r.escalation.afterMs <= 31_536_000_000 && validPeople(r.escalation.eligibleApprovers) && Number.isSafeInteger(r.escalation.threshold) && r.escalation.threshold >= 1 && r.escalation.threshold <= r.escalation.eligibleApprovers.length));
+    (r.escalation === undefined || (typeof r.escalation === "object" && Number.isSafeInteger(r.escalation.afterMs) && r.escalation.afterMs > 0 && r.escalation.afterMs <= 31_536_000_000 && validPeople(r.escalation.eligibleApprovers) && Number.isSafeInteger(r.escalation.threshold) && r.escalation.threshold >= 1 && r.escalation.threshold <= r.escalation.eligibleApprovers.length)) &&
+    (r.batch === undefined || (typeof r.batch === "object" && !Array.isArray(r.batch) && Object.keys(r.batch).every(k => ["maxItems", "actionKinds"].includes(k)) && Number.isSafeInteger(r.batch.maxItems) && r.batch.maxItems >= 2 && r.batch.maxItems <= 32 && Array.isArray(r.batch.actionKinds) && r.batch.actionKinds.length === 1 && r.batch.actionKinds[0] === "tool"));
 }
 
 function defaultFile(): PolicyFile {
@@ -67,7 +71,7 @@ export async function resolveApprovalPolicy(workspace: string, record: Pick<Appr
     threshold: selected.escalation.threshold,
   } : undefined;
   const snapshot = { version: policy.version, eligibleApprovers: selected.eligibleApprovers, threshold: selected.threshold,
-    delegations: selected.delegations ?? {}, ...(escalation ? { escalation } : {}) };
+    delegations: selected.delegations ?? {}, ...(selected.batch ? { batch: selected.batch } : {}), ...(escalation ? { escalation } : {}) };
   return { ...snapshot, digest: approvalPolicyDigest(snapshot) };
 }
 

@@ -7,7 +7,7 @@
  * conversation and constructs the resume turn; the UI never chooses it.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Input, List, Select, Segmented, Tag, Tooltip } from "antd";
+import { Alert, Button, Checkbox, Input, List, Select, Segmented, Tag, Tooltip } from "antd";
 import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import {
@@ -105,6 +105,7 @@ export function ApprovalQueue({
   onDeny,
   onOpenSource,
   onOpenEvidence,
+  onApproveBatch,
 }: ApprovalQueueProps) {
   const t = useT();
   const [filter, setFilter] = useState<ApprovalQueueFilter>(defaultFilter);
@@ -116,6 +117,7 @@ export function ApprovalQueue({
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [batchSelection, setBatchSelection] = useState<ReadonlySet<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
   const [notificationPermission, setNotificationPermission] = useState<DesktopNotificationPermission>(desktopNotificationPermission);
   const notificationSnapshot = useRef<Map<string, { status: ApprovalQueueItem["decision"]["kind"]; expiry: ReturnType<typeof approvalExpiryState> }>>();
@@ -207,6 +209,23 @@ export function ApprovalQueue({
     () => items.find((item) => item.approvalId === selectedId) ?? null,
     [items, selectedId],
   );
+  const batchSelectedItems = useMemo(() => items.filter(item => batchSelection.has(item.approvalId)), [batchSelection, items]);
+  const batchSource = batchSelectedItems[0]?.source;
+  const batchSourceLabel = batchSource ? `${batchSource.positionId} · ${batchSource.conversationId}` : "";
+  const canBatchItem = (item: ApprovalQueueItem) => item.batchMaxItems !== undefined && item.canDecide !== false &&
+    item.busy !== true && isActionablePending(item, now) && item.source !== undefined && item.source.kind !== "group";
+  const selectBatchItem = (item: ApprovalQueueItem, checked: boolean) => {
+    if (!canBatchItem(item)) return;
+    setBatchSelection(current => {
+      const next = new Set(current);
+      if (!checked) { next.delete(item.approvalId); return next; }
+      const selected = items.find(candidate => current.has(candidate.approvalId));
+      if (selected?.source && item.source && (selected.source.kind !== item.source.kind || selected.source.positionId !== item.source.positionId || selected.source.conversationId !== item.source.conversationId || selected.source.turnId !== item.source.turnId || selected.source.runId !== item.source.runId || selected.source.engine !== item.source.engine)) return current;
+      const maximum = Math.min(item.batchMaxItems ?? 0, ...(selected ? [selected.batchMaxItems ?? 0] : []));
+      if (next.size >= maximum) return current;
+      next.add(item.approvalId); return next;
+    });
+  };
 
   return (
     <section className="owb-approval-queue" aria-label={t("apr.center")}>
@@ -354,20 +373,35 @@ export function ApprovalQueue({
           onNavigateToOrg={onNavigateToOrg}
         />
       ) : (
-        <List
-          className="owb-approval-queue__list"
-          dataSource={visible}
-          rowKey={(item) => item.approvalId}
-          renderItem={(item) => (
-            <List.Item className="owb-approval-queue__item">
-              <ApprovalCard
-                item={item}
-                now={now}
-                onOpen={() => setSelectedId(item.approvalId)}
-              />
-            </List.Item>
-          )}
-        />
+        <>
+          {batchSelectedItems.length > 0 ? (
+            <Alert
+              className="owb-approval-queue__batch-summary"
+              type="info"
+              showIcon
+              message={t("apr.batchSummary", { count: batchSelectedItems.length, source: batchSourceLabel })}
+              description={batchSelectedItems.length < 2 ? t("apr.batchNeedMore") : t("apr.batchBoundary")}
+              action={<Button type="primary" size="small" disabled={batchSelectedItems.length < 2 || !onApproveBatch} onClick={() => onApproveBatch?.(batchSelectedItems.map(item => item.approvalId))}>{t("apr.batchApprove")}</Button>}
+            />
+          ) : null}
+          <List
+            className="owb-approval-queue__list"
+            dataSource={visible}
+            rowKey={(item) => item.approvalId}
+            renderItem={(item) => (
+              <List.Item className="owb-approval-queue__item">
+                <ApprovalCard
+                  item={item}
+                  now={now}
+                  batchSelected={batchSelection.has(item.approvalId)}
+                  batchDisabled={!canBatchItem(item) || (batchSelectedItems.length > 0 && batchSource !== undefined && (!item.source || item.source.kind !== batchSource.kind || item.source.positionId !== batchSource.positionId || item.source.conversationId !== batchSource.conversationId || item.source.turnId !== batchSource.turnId || item.source.runId !== batchSource.runId || item.source.engine !== batchSource.engine))}
+                  onBatchChange={(checked) => selectBatchItem(item, checked)}
+                  onOpen={() => setSelectedId(item.approvalId)}
+                />
+              </List.Item>
+            )}
+          />
+        </>
       )}
 
       <ApprovalDetailDrawer
@@ -440,9 +474,12 @@ interface ApprovalCardProps {
   item: ApprovalQueueItem;
   now: number;
   onOpen: () => void;
+  batchSelected: boolean;
+  batchDisabled: boolean;
+  onBatchChange: (checked: boolean) => void;
 }
 
-function ApprovalCard({ item, now, onOpen }: ApprovalCardProps) {
+function ApprovalCard({ item, now, onOpen, batchSelected, batchDisabled, onBatchChange }: ApprovalCardProps) {
   const t = useT();
   const localeTag = useOwbLocale() === "en" ? "en-US" : "zh-CN";
   const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
@@ -475,6 +512,7 @@ function ApprovalCard({ item, now, onOpen }: ApprovalCardProps) {
       data-decided={decided ? "true" : "false"}
       onClick={onOpen}
     >
+      {item.batchMaxItems !== undefined ? <Checkbox className="owb-approval-card__batch-select" checked={batchSelected} disabled={batchDisabled} onClick={(event) => event.stopPropagation()} onChange={(event) => onBatchChange(event.target.checked)} aria-label={t("apr.batchSelect")} /> : null}
       <button
         type="button"
         className="owb-approval-card__row"

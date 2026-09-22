@@ -444,7 +444,7 @@ ipcMain.handle("owb:hire:create", async (_event, request) => {
 });
 
 ipcMain.handle("owb:reports:get", async () => apiRequest("/reports"));
-const { approvalList, approvalDecision } = require("./approvals-center-ipc.cjs");
+const { approvalList, approvalDecision, approvalBatchDecision } = require("./approvals-center-ipc.cjs");
 ipcMain.handle("owb:approvals:list", async (event, request) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
   return approvalList(request, apiRequest);
@@ -452,6 +452,10 @@ ipcMain.handle("owb:approvals:list", async (event, request) => {
 ipcMain.handle("owb:approvals:decide", async (event, request) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
   return approvalDecision(request, apiRequest);
+});
+ipcMain.handle("owb:approvals:batch-decide", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  return approvalBatchDecision(request, apiRequest);
 });
 
 ipcMain.handle("owb:position:get", async (_event, positionId, engine) => {

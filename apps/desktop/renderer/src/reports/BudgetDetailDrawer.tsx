@@ -1,7 +1,7 @@
 import { Button, Drawer, Statistic } from "antd";
 import { BudgetBar, useT } from "@roleweave/ui";
 import type { BudgetReport } from "@roleweave/shared";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
 
 export interface BudgetDetailDrawerProps {
   open: boolean;
@@ -27,14 +27,23 @@ export function BudgetDetailDrawer({ open, budget, onClose, onOpenTimeline }: Bu
       className="owb-budget-drawer"
       open={open}
       onClose={onClose}
-      title={title}
-      width={420}
-      destroyOnClose
+      title={<h3 className="owb-budget-drawer__title">{title}</h3>}
+      size={420}
+      destroyOnHidden
       aria-label={t("rep.budgetDetailAria")}
+      closeIcon={<X aria-hidden="true" size={15} />}
+      classNames={{
+        mask: "owb-budget-drawer__mask",
+        header: "owb-budget-drawer__header",
+        title: "owb-budget-drawer__title-wrap",
+        body: "owb-budget-drawer__panel-body",
+        close: "owb-budget-drawer__close",
+      }}
     >
       {budget ? (
         <div className="owb-budget-drawer__body">
-          <section aria-label={t("rep.declaredFactsAria")}>
+          <section className="owb-budget-drawer__section" aria-label={t("rep.declaredFactsAria")}>
+            <h4>{t("rep.budgetBarLabel")}</h4>
             <BudgetBar
               declared={{
                 taskLimit: budget.declared.perTask,
@@ -45,7 +54,7 @@ export function BudgetDetailDrawer({ open, budget, onClose, onOpenTimeline }: Bu
               label={t("rep.budgetBarLabel")}
             />
           </section>
-          <section aria-label={t("rep.lastTurnUsageAria")} className="owb-budget-drawer__usage">
+          <section aria-label={t("rep.lastTurnUsageAria")} className="owb-budget-drawer__section owb-budget-drawer__usage">
             <h4>{t("rep.lastTurnUsage")}</h4>
             {budget.latestTurn ? (
               <div className="owb-budget-drawer__stats">
@@ -57,7 +66,7 @@ export function BudgetDetailDrawer({ open, budget, onClose, onOpenTimeline }: Bu
               <p className="owb-muted">{t("rep.noTurnsYet")}</p>
             )}
           </section>
-          <section aria-label={t("rep.colRecorded")} className="owb-budget-drawer__usage">
+          <section aria-label={t("rep.colRecorded")} className="owb-budget-drawer__section owb-budget-drawer__usage">
             <h4>{t("rep.colRecorded")}</h4>
             <div className="owb-budget-drawer__stats">
               <Statistic title="input" value={budget.recorded.inputTokens} />
