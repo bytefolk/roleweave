@@ -355,6 +355,7 @@ function AppInner({
     requestedAt: a.requestedAt, expiresAt: a.expiresAt,
     decision: a.status === "granted" ? { kind: "granted", scope: a.decision?.scope ?? "once", decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy, reason: a.decision?.reason } : a.status === "denied" ? { kind: "denied", reason: a.decision?.reason, decidedAt: a.decision?.decidedAt, decidedBy: a.decision?.decidedBy } : { kind: a.status },
     scopeAllowed: a.context?.scope.allowed ?? ["once"],
+    batchMaxItems: a.batch?.maxItems,
     canDecide: a.canDecide, busy: approvalState.busy.has(a.id), error: approvalState.errors[a.id],
     unavailableReason: a.unavailableReason, executionPhase: a.execution.phase,
     requestReason: a.requestReason, context: a.context, policyProgress: a.progress, source: a.source, executionTurnId: a.execution.turnId, executionErrorCode: a.execution.errorCode,
@@ -1761,11 +1762,13 @@ function AppInner({
     } : {}),
   }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
 
+  const sidebarlessModule = activeModule === "reports" || activeModule === "approvals" || activeModule === "settings";
+
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
-    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`}>
+    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`}>
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
         targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
         avatar={positionAvatars[managementTarget]}
@@ -2067,6 +2070,7 @@ function AppInner({
             onNavigateToOrg={() => setActiveModule("org")}
             onApprove={(id, reason, scope) => { void approvalState.decide(id, "granted", reason, scope); }}
             onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
+            onApproveBatch={(ids) => { void approvalState.decideBatch(ids); }}
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
           />

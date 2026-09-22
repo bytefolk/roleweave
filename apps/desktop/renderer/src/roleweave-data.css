@@ -1,6 +1,23 @@
 /* RoleWeave data components, shared by light and dark.
  * State labels, errors, provenance and controls remain visible. */
 
+/* Page-level modules share one left gutter and one title scale. Individual
+ * modules may vary their dense content below the header, but their entry point
+ * should never jump as operators move between surfaces. */
+.owb-app {
+  --owb-module-gutter: 24px;
+  --owb-module-gutter-negative: -24px;
+  --owb-module-title-size: 20px;
+}
+
+@media (max-width: 1100px) {
+  .owb-app { --owb-module-gutter: 20px; --owb-module-gutter-negative: -20px; }
+}
+
+@media (max-width: 760px) {
+  .owb-app { --owb-module-gutter: 16px; --owb-module-gutter-negative: -16px; }
+}
+
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
   .owb-memory-module, .owb-docs-module, .owb-drive-module, .owb-reports,
   .owb-approval-queue, .owb-settings-module, .owb-goals-module
@@ -16,7 +33,7 @@
 ) {
   margin: 0;
   font-family: var(--ui-font-sans);
-  font-size: 20px;
+  font-size: var(--owb-module-title-size);
   line-height: 1.4;
   font-weight: 600;
   letter-spacing: normal;
@@ -492,15 +509,13 @@
   padding: 8px 0 12px;
 }
 
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__stat .ant-statistic-title,
-:is([data-theme="light"], [data-theme="dark"]) .owb-budget-drawer__stats .ant-statistic-title {
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__stat .ant-statistic-title {
   font-size: 12px;
   letter-spacing: normal;
   text-transform: none;
 }
 
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__stat .ant-statistic-content,
-:is([data-theme="light"], [data-theme="dark"]) .owb-budget-drawer__stats .ant-statistic-content {
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-budget-dash__stat .ant-statistic-content {
   font-family: var(--ui-font-sans);
   font-size: 20px;
   font-weight: 500;
@@ -563,11 +578,38 @@
   padding: 12px 0 0;
 }
 
+:is([data-theme="light"], [data-theme="dark"]) .owb-budget-drawer__section h4 {
+  margin: 0 0 10px;
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 :is([data-theme="light"], [data-theme="dark"]) .owb-budget-drawer__stats {
-  padding: 10px 0;
-  border-radius: 0;
-  border-bottom: 1px solid var(--ui-border);
-  background: transparent;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-md, 8px);
+  background: var(--ui-surface-inset);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-budget-drawer__stats .ant-statistic-title {
+  color: var(--ui-foreground-subtle);
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-budget-drawer__stats .ant-statistic-content {
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 /* Timeline: preserve grouped disclosure and semantic event dots. */

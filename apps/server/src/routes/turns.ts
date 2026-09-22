@@ -69,6 +69,8 @@ export interface TurnPostBody {
   engine: TurnEngine;
   /** Operator verdict for a resume turn (#193); optional, additive. */
   pendingApproval?: TurnPendingApproval;
+  /** Internal-only atomic recovery input assembled by ApprovalService. */
+  pendingApprovals?: TurnPendingApproval[];
   /** Additive #52: set only by the group spawn path, never by a route body. */
   groupRef?: string;
   /** Additive #222: optional goal binding. */
@@ -384,6 +386,9 @@ export async function executeTurn(
       ...(body.pendingApproval !== undefined
         ? { pendingApproval: body.pendingApproval }
         : {}),
+      ...(body.pendingApprovals !== undefined
+        ? { pendingApprovals: body.pendingApprovals }
+        : {}),
       ...(conversationRef !== undefined ? { conversationRef } : {}),
     });
     const beginInput = {
@@ -455,7 +460,7 @@ export async function executeTurn(
         ...(partialOutput !== undefined ? { output: partialOutput } : {}),
         error: {
           code: result.code,
-          message: indeterminateMessage(result.code),
+          message: indeterminateMessage(result.code, partialOutput !== undefined),
           retryable: result.code === "turn_timeout" || result.code === "turn_cancelled",
           ...(result.diagnostic !== "" ? { diagnostic: result.diagnostic } : {}),
         },
@@ -585,8 +590,6 @@ export async function handleTurnCancel(
 }
 
 const INDETERMINATE_MESSAGES: Record<string, string> = {
-  turn_timeout: "the turn exceeded its time budget and was terminated; partial output was preserved",
-  turn_cancelled: "the turn was cancelled by the operator; partial output was preserved",
   turn_engine_unavailable: "the engine process could not be started; check that the engine CLI is installed and reachable",
   turn_protocol_invalid: "the engine output did not conform to the expected protocol; no automatic retry was attempted",
   turn_driver_failure: "the driver encountered an internal error; no automatic retry was attempted",
@@ -594,7 +597,17 @@ const INDETERMINATE_MESSAGES: Record<string, string> = {
   turn_process_exit_1: "the engine process exited with status 1; no automatic retry was attempted",
 };
 
-function indeterminateMessage(code: string): string {
+function indeterminateMessage(code: string, hasPartialOutput: boolean): string {
+  if (code === "turn_timeout") {
+    return hasPartialOutput
+      ? "the turn exceeded its time budget and was terminated; partial output was preserved"
+      : "the turn exceeded its time budget and was terminated before any output was received";
+  }
+  if (code === "turn_cancelled") {
+    return hasPartialOutput
+      ? "the turn was cancelled by the operator; partial output was preserved"
+      : "the turn was cancelled by the operator before any output was received";
+  }
   return INDETERMINATE_MESSAGES[code] ?? `the engine process ended unexpectedly (code: ${code}); no automatic retry was attempted`;
 }
 

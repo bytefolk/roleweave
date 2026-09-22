@@ -815,6 +815,30 @@ test("turn_timeout message names the timeout and preserved output (AC-003)", asy
   }
 });
 
+test("turn_timeout does not claim to preserve output when no delta arrived", async () => {
+  const turnDriver = new FakeTurnDriver({
+    status: "indeterminate",
+    events: [{ type: "run.started", runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" }],
+    diagnostic: "",
+    code: "turn_timeout",
+  });
+  const server = await startTestServer(undefined, turnDriver);
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const response = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "hello", engine: "qoder" },
+    });
+    const record = response.body as { error: { message: string }; output?: string };
+    assert.match(record.error.message, /before any output was received/i);
+    assert.equal(record.output, undefined);
+  } finally {
+    await server.close();
+  }
+});
+
 test("diagnostic from engine stderr reaches the turn record (AC-004)", async () => {
   const turnDriver = new FakeTurnDriver({
     status: "indeterminate",

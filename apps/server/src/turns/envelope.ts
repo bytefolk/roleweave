@@ -37,6 +37,7 @@ export function createTurnEnvelope(input: {
   message: string;
   /** Operator verdict for a resume turn (#193); included in the digest. */
   pendingApproval?: TurnPendingApproval;
+  pendingApprovals?: TurnPendingApproval[];
   /** Contract-level back-link (de#205); included in the digest when present. */
   conversationRef?: string;
 }): TurnEnvelope {
@@ -57,6 +58,9 @@ export function createTurnEnvelope(input: {
     input: input.message,
     ...(input.pendingApproval !== undefined
       ? { pendingApproval: input.pendingApproval }
+      : {}),
+    ...(input.pendingApprovals !== undefined
+      ? { pendingApprovals: input.pendingApprovals }
       : {}),
     ...(hasRef ? { conversationRef: input.conversationRef } : {}),
   };
