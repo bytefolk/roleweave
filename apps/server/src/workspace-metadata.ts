@@ -22,6 +22,8 @@ async function realDirectoryOrMissing(target: string): Promise<"directory" | "mi
 }
 
 async function moveTreeWithoutOverwrite(source: string, target: string): Promise<void> {
+  // Validate every destination before descending: mkdir alone follows links.
+  await realDirectoryOrMissing(target);
   await fs.mkdir(target, { recursive: true, mode: 0o700 });
   for (const entry of await fs.readdir(source, { withFileTypes: true })) {
     const from = path.join(source, entry.name);
@@ -50,6 +52,7 @@ export async function migrateRoleWeaveState(workspace: string): Promise<void> {
   }
   const current = path.join(root, ROLEWEAVE_DIR);
   const legacy = path.join(root, LEGACY_ROOT);
+  await realDirectoryOrMissing(path.join(root, ".digital-employee"));
   const [currentState, legacyState] = await Promise.all([
     realDirectoryOrMissing(current),
     realDirectoryOrMissing(legacy),

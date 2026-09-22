@@ -10,7 +10,7 @@ import {
   type GoalStatus,
   type GoalSummary,
 } from "@roleweave/shared/goals";
-import type { AgentTask } from "@roleweave/shared";
+import { isPendingTaskCollaboration, type AgentTask } from "@roleweave/shared/task-board";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
 
 interface GoalsModuleProps {
@@ -345,7 +345,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
                       {task.priority === "urgent" ? <AlertTriangle size={14} aria-label={t("tasks.urgent")} /> : null}
                     </div>
                     <p>{positionNames[task.assigneePositionId] ?? task.assigneePositionId}</p>
-                    {task.kind === "collaboration" && task.status === "waiting" ? <><small>{t("tasks.awaitingAcceptance")}</small><div className="owb-task-card__actions"><button onClick={() => void decideTask(task, "accept")}>{t("tasks.accept")}</button><button onClick={() => void decideTask(task, "decline")}>{t("tasks.decline")}</button></div></> : null}
+                    {isPendingTaskCollaboration(task) ? <><small>{t("tasks.awaitingAcceptance")}</small><div className="owb-task-card__actions"><button onClick={() => void decideTask(task, "accept")}>{t("tasks.accept")}</button><button onClick={() => void decideTask(task, "decline")}>{t("tasks.decline")}</button></div></> : null}
                     {task.kind === "contractor" ? <small className="owb-task-card__contractor"><BriefcaseBusiness size={12} aria-hidden="true" />{t("tasks.contractorBudget", { owner: positionNames[task.budgetOwnerPositionId] ?? task.budgetOwnerPositionId })}</small> : null}
                   </article>
                 ))}

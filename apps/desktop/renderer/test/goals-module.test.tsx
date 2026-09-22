@@ -106,6 +106,53 @@ describe("GoalsModule", () => {
     render(<GoalsModule workspaceOpen={false} />);
     expect(screen.getByText("目标")).toBeInTheDocument();
   });
+
+  it("offers collaboration decisions only until acceptance, including while execution is waiting", async () => {
+    const pending: AgentTask = {
+      schemaVersion: "task-board.v1",
+      taskId: "pending-collaboration",
+      title: "等待接收的协作",
+      description: "",
+      assigneePositionId: "lead",
+      requestedByPositionId: "worker",
+      budgetOwnerPositionId: "worker",
+      kind: "collaboration",
+      mainline: true,
+      priority: "normal",
+      status: "waiting",
+      queueOrder: 0,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const accepted: AgentTask = {
+      ...pending,
+      taskId: "accepted-collaboration",
+      title: "已接收并暂停的协作",
+      acceptedAt: "2026-09-01T01:00:00.000Z",
+    };
+    const bridge = installBridge({
+      tasks: vi.fn().mockResolvedValue({ status: 200, body: { tasks: [pending, accepted] } }),
+      decideTask: vi.fn().mockResolvedValue({ status: 200, body: { ...pending, status: "queued", acceptedAt: accepted.acceptedAt } }),
+    });
+    render(<GoalsModule workspaceOpen />);
+    fireEvent.click(screen.getByRole("tab", { name: "Agent 看板" }));
+
+    const pendingCard = within((await screen.findByText(pending.title)).closest("article")!);
+    expect(pendingCard.getByText("等待接收方确认")).toBeInTheDocument();
+    expect(pendingCard.getByRole("button", { name: "接受" })).toBeInTheDocument();
+    expect(pendingCard.getByRole("button", { name: "拒绝" })).toBeInTheDocument();
+
+    const acceptedCard = within(screen.getByText(accepted.title).closest("article")!);
+    expect(acceptedCard.queryByText("等待接收方确认")).not.toBeInTheDocument();
+    expect(acceptedCard.queryByRole("button", { name: "接受" })).not.toBeInTheDocument();
+    expect(acceptedCard.queryByRole("button", { name: "拒绝" })).not.toBeInTheDocument();
+
+    fireEvent.click(pendingCard.getByRole("button", { name: "接受" }));
+    await waitFor(() => expect(bridge.decideTask).toHaveBeenCalledWith({
+      taskId: pending.taskId,
+      decision: "accept",
+    }));
+  });
 });
 
 function deferred<T>() {

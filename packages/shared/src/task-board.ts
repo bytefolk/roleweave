@@ -17,6 +17,8 @@ export interface AgentTask {
   mainline: boolean;
   priority: "normal" | "urgent";
   status: TaskStatus;
+  /** Set when a collaboration is accepted, including while its work is waiting. */
+  acceptedAt?: string;
   queueOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -31,7 +33,25 @@ export interface TaskCreateRequest {
 }
 
 export interface TaskDecisionRequest { decision: "accept" | "decline"; }
-export interface TaskStatusRequest { status: "active" | "waiting" | "done" | "failed"; }
+export const taskStatusUpdates = ["active", "waiting", "done", "failed"] as const;
+export interface TaskStatusRequest { status: (typeof taskStatusUpdates)[number]; }
+
+const allowedTaskTransitions: Record<TaskStatus, readonly TaskStatus[]> = {
+  queued: ["active", "waiting", "done", "failed"],
+  active: ["waiting", "done", "failed"],
+  waiting: ["active", "done", "failed"],
+  done: [],
+  declined: [],
+  failed: [],
+};
+
+export function canTransitionTaskStatus(from: TaskStatus, to: TaskStatus): boolean {
+  return allowedTaskTransitions[from]?.includes(to) ?? false;
+}
+
+export function isPendingTaskCollaboration(task: AgentTask): boolean {
+  return task.kind === "collaboration" && task.status === "waiting" && !task.acceptedAt;
+}
 
 export function classifyTaskAuthority(org: OrganizationFile, request: TaskCreateRequest & { actorPositionId: string }): Pick<AgentTask, "kind" | "status" | "priority" | "mainline" | "budgetOwnerPositionId"> {
   const actor = org.roles.find((role) => role.id === request.actorPositionId);

@@ -36,3 +36,45 @@ test("contractor tasks stay outside mainline and charge the delegating Agent bud
   const task = await store.create(workspace, org, "lead", { targetPositionId: "worker", title: "edge research", contractor: true });
   assert.equal(task.kind, "contractor"); assert.equal(task.mainline, false); assert.equal(task.budgetOwnerPositionId, "lead");
 });
+
+test("task store rejects malformed persisted records before list or transition", async (t) => {
+  const workspace = await copyExampleWorkspace();
+  t.after(async () => { await fs.rm(workspace, { recursive: true, force: true }); });
+  const store = new TaskBoardStore();
+  const task = await store.create(workspace, org, "lead", { targetPositionId: "worker", title: "normal" });
+  const taskFile = path.join(workspace, ".roleweave", "tasks", `${task.taskId}.json`);
+  for (const record of [null, [], { ...task, status: "bogus" }, { ...task, status: undefined }, { ...task, taskId: "other-task" },
+    { ...task, kind: "unknown" }, { ...task, queueOrder: "first" }, { ...task, createdAt: 42 }, { ...task, acceptedAt: true }]) {
+    const contents = JSON.stringify(record);
+    await fs.writeFile(taskFile, contents);
+    await assert.rejects(store.list(workspace), /invalid task record/);
+    await assert.rejects(store.transition(workspace, task.taskId, org, "owner", { status: "active" }), /invalid task record/);
+    assert.equal(await fs.readFile(taskFile, "utf8"), contents);
+  }
+});
+
+test("task status updates require a current assignee or owner position", async (t) => {
+  const workspace = await copyExampleWorkspace();
+  t.after(async () => { await fs.rm(workspace, { recursive: true, force: true }); });
+  const store = new TaskBoardStore();
+  const task = await store.create(workspace, org, "lead", { targetPositionId: "worker", title: "normal" });
+  await assert.rejects(store.transition(workspace, task.taskId, org, "lead", { status: "done" }), /only the assignee or owner/);
+  const withoutWorker = { ...org, roles: org.roles.filter((role) => role.id !== "worker") };
+  await assert.rejects(store.transition(workspace, task.taskId, withoutWorker, "worker", { status: "active" }), /only the assignee or owner/);
+  const active = await store.transition(workspace, task.taskId, org, "worker", { status: "active" });
+  assert.equal(active.status, "active");
+});
+
+test("competing collaboration decisions serialize before checking pending status", async (t) => {
+  const workspace = await copyExampleWorkspace();
+  t.after(async () => { await fs.rm(workspace, { recursive: true, force: true }); });
+  const store = new TaskBoardStore();
+  const task = await store.create(workspace, org, "worker", { targetPositionId: "lead", title: "peer request" });
+  const decisions = await Promise.allSettled([
+    store.decide(workspace, task.taskId, org, "owner", { decision: "decline" }),
+    store.decide(workspace, task.taskId, org, "lead", { decision: "accept" }),
+  ]);
+  assert.equal(decisions[0]?.status, "fulfilled");
+  assert.equal(decisions[1]?.status, "rejected");
+  assert.equal((await store.list(workspace))[0]?.status, "declined");
+});

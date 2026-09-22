@@ -7,6 +7,7 @@ import path from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { assertPosixMode } from "./helpers.js";
+import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 
 /** The adapter is a standalone script implementing the pinned digital-employee
  * CLI surface; tests drive it exactly like driver-cli spawns an engine. */
@@ -592,6 +593,47 @@ test("qoder-engine org apply keeps newly hired display names separate from packa
       assert.equal(role.package.name, "docs-writer");
     }
   }
+});
+
+test("Qoder public activity keeps multilingual paths within the driver's UTF-8 bounds", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-trace-utf8-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const files = Array.from({ length: 10 }, (_, index) => `项目/${"说明".repeat(40)}📄${index}.md`);
+  const fullDetail = files.join(" · ");
+  assert.ok(Buffer.byteLength(fullDetail, "utf8") > 2048);
+  const toolId = "调用".repeat(100);
+  const toolName = "读取".repeat(100);
+  const fakeBin = await writeFakeQoder(fixture, `#!/usr/bin/env node
+const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+write({ type: "assistant", message: { content: [{ type: "tool_use", id: ${JSON.stringify(toolId)}, name: ${JSON.stringify(toolName)}, input: { files: ${JSON.stringify(files)} } }] } });
+write({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: ${JSON.stringify(toolId)}, content: "private result" }] } });
+write({ type: "result", subtype: "success", result: "read completed" });
+`);
+  const entry = path.join(fixture, "adapter.mjs");
+  await fs.writeFile(entry, `
+process.env.ORG_WORKBENCH_QODER_BIN = ${JSON.stringify(fakeBin)};
+process.env.QODER_CONFIG_DIR = ${JSON.stringify(EMPTY_PROVIDER_CONFIG)};
+delete process.env.QODER_PERSONAL_ACCESS_TOKEN;
+process.argv[1] = ${JSON.stringify(ADAPTER)};
+await import(${JSON.stringify(pathToFileURL(ADAPTER).href)});
+`);
+  const result = await new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(entry)}`).turnRun({
+    workspace: dir, positionId: "docs-writer", engine: "qoder",
+    envelope: { schemaVersion: "turn-envelope.v1", workspaceRef: dir, positionId: "docs-writer", turnId: "utf8-trace", input: "read files", envelopeDigest: `sha256:${"a".repeat(64)}` },
+  });
+  assert.equal(result.status, "trusted", result.diagnostic);
+  assert.equal(result.events.at(-1)?.type, "run.completed");
+  const trace = result.events.filter((event) => event.type === "trace.activity");
+  assert.equal(trace.length, 2);
+  const detail = trace[0]?.detail;
+  assert.ok(detail && fullDetail.startsWith(detail));
+  assert.ok(Buffer.byteLength(detail, "utf8") <= 2048);
+  assert.ok(Buffer.byteLength(detail, "utf8") > 2044);
+  assert.equal(Buffer.from(detail, "utf8").toString("utf8"), detail, "truncation preserves complete Unicode characters");
+  assert.equal(trace[0]?.activityId, trace[1]?.activityId);
+  assert.equal(trace[0]?.title, trace[1]?.title);
+  assert.ok(trace.every((event) => Buffer.byteLength(event.activityId, "utf8") <= 256 && Buffer.byteLength(event.title, "utf8") <= 256));
 });
 
 test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and passes --agent <position>", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture; the Windows package smoke leg covers the win32 .cmd spawn path" : false }, async () => {
