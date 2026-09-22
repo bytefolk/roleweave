@@ -6,6 +6,7 @@ import type { HirePermissions, PositionProfileFailure, TurnEngine } from "@rolew
 import type { ControlPlaneContext } from "../context.js";
 import { resolveServiceConnection } from "../services/connections.js";
 import { buildContextSources } from "../context-sources.js";
+import { resolveMemorySourceOverlay } from "../jev/memory-source.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { readPositionAgentBinding, setPositionAgentEngine, setPositionModel } from "../agent-binding.js";
 import { employeeModelConfig } from "../model-selection.js";
@@ -62,6 +63,7 @@ export async function handlePositionGet(
     throw new OrgApiError(errorCodes.position_missing, 404, `position not found: ${positionId}`);
   }
   const contextSources = await buildContextSources(ws.dir, role, { memConfigured: resolveServiceConnection(ctx, "mem") !== null });
+  const memorySourceOverlay = await resolveMemorySourceOverlay(contextSources);
   const capabilities = await readCapabilitySummary(role.package.localReference);
   const permissionPolicy = await readPermissionPolicy(role.package.localReference, role.toolAllow);
   // Reading a card never migrates a legacy employee. The binding is surfaced
@@ -94,6 +96,7 @@ export async function handlePositionGet(
       capabilities,
       budget: role.budget ?? null,
       metadata: role.metadata,
+      ...(memorySourceOverlay ? { memorySourceOverlay } : {}),
     },
   });
 }

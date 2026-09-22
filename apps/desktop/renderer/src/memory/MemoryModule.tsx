@@ -195,6 +195,14 @@ export function MemoryModule({
                 active={activeSource === source} onSelect={() => setActiveSource(source)} />
             ))}
           </nav>
+          {selectedPosition?.memorySourceOverlay && selectedPosition.memorySourceOverlay !== activeSource ? (
+            <div className="owb-jev-overlay" data-testid="memory-source-overlay">
+              <span>{t("memory.jev.current")}: {sourceTitle(activeSource, t)}</span>
+              <span>{t("memory.jev.suggestion")}: {sourceTitle(selectedPosition.memorySourceOverlay, t)}</span>
+              <em>{t("memory.jev.notAdopted")}</em>
+              <Button size="small" data-testid="memory-source-apply" onClick={() => setActiveSource(selectedPosition.memorySourceOverlay!)}>{t("memory.jev.apply")}</Button>
+            </div>
+          ) : null}
           <p className="owb-memory-sidebar__hint">{t("memory.sidebarHint")}</p>
         </aside>
         <section className="owb-memory-workspace" aria-label={t("memory.detailAria")}>

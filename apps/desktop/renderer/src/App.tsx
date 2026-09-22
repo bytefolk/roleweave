@@ -1916,6 +1916,14 @@ function AppInner({
                   }
                 }}
               >
+                {snapshot.assigneeOverlay && snapshot.assigneeOverlay.positionId !== selectedId ? (
+                  <div className="owb-jev-overlay" data-testid="org-assignee-overlay">
+                    <span>{t("org.jev.current")}: {selectedId ? (positionNames[selectedId] ?? selectedId) : t("org.jev.none")}</span>
+                    <span>{t("org.jev.suggestion")}: {positionNames[snapshot.assigneeOverlay.positionId] ?? snapshot.assigneeOverlay.positionId}</span>
+                    <em>{t("org.jev.notAdopted")}</em>
+                    <AntButton size="small" data-testid="org-assignee-apply" onClick={() => openConversation(snapshot.assigneeOverlay!.positionId)}>{t("org.jev.apply")}</AntButton>
+                  </div>
+                ) : null}
                 <OrgTree
                   decorateRow={(id, row) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
                   rowActions={(id) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction} />}

@@ -196,4 +196,6 @@ export interface AuditEntry {
     budgetUpdated: string[];
   };
   positionCount: number;
+  /** Advisory; never written to org-audit.jsonl. */
+  uncoveredGoalIds?: string[];
 }
