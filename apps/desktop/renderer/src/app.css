@@ -9111,6 +9111,8 @@ body,
 .owb-org-module.is-conversation-focused { display: grid; grid-template-columns: minmax(0, 1fr); }
 .owb-org-module.is-conversation-focused > :is(.owb-org-module__pane--left, .owb-org-module__splitter) { display: none; }
 .owb-org-module.is-conversation-focused .owb-org-module__pane--right { min-width: 0; min-height: 0; }
+.owb-app.is-sidebarless-module .ui-app-shell { --ui-sidebar-width: 0px; }
+.owb-app.is-sidebarless-module .ui-app-shell__sidebar { display: none; }
 .owb-conversation-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
 .owb-agent-locked { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border: 1px solid var(--ui-border); border-radius: 4px; color: var(--ui-foreground-muted); font-size: 11px; white-space: nowrap; }
 .owb-conversation-identity__copy { min-width: 0; }

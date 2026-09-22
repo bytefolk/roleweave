@@ -1759,11 +1759,13 @@ function AppInner({
     } : {}),
   }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
 
+  const sidebarlessModule = activeModule === "reports" || activeModule === "approvals" || activeModule === "settings";
+
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
-    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}`}>
+    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`}>
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
         targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
         avatar={positionAvatars[managementTarget]}
