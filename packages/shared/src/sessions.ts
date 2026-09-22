@@ -16,6 +16,8 @@ export interface WorkbenchSession {
   rotatedAt: string | null;
   /** Workbench-owned history policy. Absent on legacy records means enabled. */
   threadContextEnabled?: boolean;
+  /** Advisory; never persisted in workbench-session.v1 on disk. */
+  contextOverlay?: { suggestRotate?: boolean; suggestDisable?: boolean };
 }
 
 export interface WorkbenchSessionList {

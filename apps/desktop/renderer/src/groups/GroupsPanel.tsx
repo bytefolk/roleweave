@@ -878,6 +878,19 @@ export function GroupsPanel({
                   }))}
                 />
               </div>
+              {selectedGroup.dispatchOverlay
+                && (selectedGroup.dispatchOverlay.mode !== dispatchMode
+                  || selectedGroup.dispatchOverlay.mentions.join(",") !== [...mentions].join(",")) ? (
+                <div className="owb-jev-overlay" data-testid="grp-dispatch-overlay">
+                  <span>{t("grp.jev.current")}: {t(dispatchMode === "relay" ? "grp.modeRelay" : "grp.modeParallel")}</span>
+                  <span>{t("grp.jev.suggestion")}: {t(selectedGroup.dispatchOverlay.mode === "relay" ? "grp.modeRelay" : "grp.modeParallel")} · {selectedGroup.dispatchOverlay.mentions.map(displayPositionName).join(" → ")}</span>
+                  <em>{t("grp.jev.notAdopted")}</em>
+                  <AntButton size="small" data-testid="grp-dispatch-apply" onClick={() => {
+                    setMentions(new Set(selectedGroup.dispatchOverlay!.mentions));
+                    setDispatchMode(selectedGroup.dispatchOverlay!.mode);
+                  }}>{t("grp.jev.apply")}</AntButton>
+                </div>
+              ) : null}
               <label className="owb-group-dispatch-mode">
                 <span>{t("grp.dispatchMode")}</span>
                 <AntSelect classNames={{ popup: { root: "owb-conversation-select-popup" } }}

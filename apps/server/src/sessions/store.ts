@@ -128,6 +128,9 @@ export function isWorkbenchSession(value: unknown): value is WorkbenchSession {
     if (typeof base.threadContextEnabled !== "boolean") return false;
     delete base.threadContextEnabled;
   }
+  if (Object.hasOwn(base, "contextOverlay")) {
+    delete base.contextOverlay;
+  }
   if (!hasExactKeys(base, [
     "schemaVersion", "sessionId", "workspaceInstanceId", "positionId", "principal",
     "status", "rotatedFrom", "rotatedTo", "createdAt", "rotatedAt",

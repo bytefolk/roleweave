@@ -34,6 +34,8 @@ export interface GroupConversation {
   members: string[];
   createdAt: string;
   updatedAt: string;
+  /** Advisory prefill; never applied inside handleGroupTurnPost. */
+  dispatchOverlay?: { mentions: string[]; mode: GroupExecutionMode };
 }
 
 export interface GroupConversationList {
