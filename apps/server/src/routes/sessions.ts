@@ -1,14 +1,45 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { OrgApiError, ATTACHMENT_MAX_COUNT, errorCodes, turnEngines } from "@roleweave/shared";
-import type { TurnEngine } from "@roleweave/shared";
+import type { TurnEngine, WorkbenchSession } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
+import { jevEnabled } from "../jev/config.js";
+import { resolveThreadContextOverlay } from "../jev/thread-context-overlay.js";
 import { assertSessionId, UUID_PATTERN } from "../sessions/store.js";
 import { assertPositionExists, assertPendingApproval, assertTurnWorkspace, executeTurn } from "./turns.js";
 import type { TurnPendingApproval } from "@roleweave/shared";
 import { assertAttachmentId } from "../attachments/validate.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
+
+async function resolveSessionContextOverlay(
+  ctx: ControlPlaneContext,
+  workspace: string,
+  session: WorkbenchSession,
+) {
+  if (!jevEnabled()) return null;
+  try {
+    const history = await ctx.turnStore.sessionHistory(
+      workspace,
+      session.sessionId,
+      session.positionId,
+      new Date().toISOString(),
+    );
+    const latest = [...history.turns].reverse().find((turn) => turn.threadContext);
+    return resolveThreadContextOverlay({
+      enabled: session.threadContextEnabled !== false,
+      sourceTurnCount: latest?.threadContext?.sourceTurnCount ?? 0,
+      contextBytes: latest?.threadContext?.contextBytes ?? 0,
+      truncated: latest?.threadContext?.truncated === true,
+      omittedTurnCount: latest?.threadContext?.omittedTurnCount ?? 0,
+      failedOrCancelledCount: history.turns.filter(
+        (turn) => turn.status === "failed" || turn.status === "indeterminate",
+      ).length,
+    });
+  } catch {
+    return null;
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -141,7 +172,25 @@ export async function handleSessionList(
   }
   assertPositionExists(ctx, positionId);
   const workspace = ctx.workspace.requireOpen();
-  sendJson(res, 200, await ctx.sessionStore.list(workspace.dir, positionId));
+  const list = await ctx.sessionStore.list(workspace.dir, positionId);
+  const active = list.sessions.find((session) => session.sessionId === list.activeSessionId);
+  if (!active) {
+    sendJson(res, 200, list);
+    return;
+  }
+  const overlay = await resolveSessionContextOverlay(ctx, workspace.dir, active);
+  sendJson(
+    res,
+    200,
+    overlay
+      ? {
+          ...list,
+          sessions: list.sessions.map((session) =>
+            session.sessionId === active.sessionId ? { ...session, contextOverlay: overlay } : session,
+          ),
+        }
+      : list,
+  );
 }
 
 export async function handleSessionGet(
@@ -150,7 +199,9 @@ export async function handleSessionGet(
   sessionId: string,
 ): Promise<void> {
   const workspace = ctx.workspace.requireOpen();
-  sendJson(res, 200, await ctx.sessionStore.get(workspace.dir, assertSessionId(sessionId)));
+  const session = await ctx.sessionStore.get(workspace.dir, assertSessionId(sessionId));
+  const overlay = await resolveSessionContextOverlay(ctx, workspace.dir, session);
+  sendJson(res, 200, overlay ? { ...session, contextOverlay: overlay } : session);
 }
 
 export async function handleSessionRotate(

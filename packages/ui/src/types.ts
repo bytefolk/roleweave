@@ -31,6 +31,8 @@ export interface PositionCardData {
   };
   budget: { perTask: BudgetCaps; perDay: BudgetCaps } | null;
   metadata: Record<string, string>;
+  /** Advisory Memory rail; never written to the employee package. */
+  memorySourceOverlay?: "docs" | "shared" | "sessions" | "drive";
 }
 
 /**
