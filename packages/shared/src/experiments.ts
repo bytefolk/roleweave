@@ -7,7 +7,13 @@ export interface ExperimentsResponse {
   revision: number;
   enabled: boolean;
   availability: "disabled" | "not_configured" | "ready" | "storage_error";
-  provider: { name: "Jev / TypeSafe"; endpointHost: "api.typesafe.ai"; configured: boolean };
+  provider: {
+    name: "Jev / TypeSafe";
+    endpointHost: "api.typesafe.ai";
+    /** Complete destination used by the provider request, including its path. */
+    endpointUrl: string;
+    configured: boolean;
+  };
   sending: ["status", "errorCode", "budgetRelated"];
 }
 

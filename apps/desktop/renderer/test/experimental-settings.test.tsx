@@ -6,7 +6,7 @@ import { ExperimentalSettings } from "../src/settings/ExperimentalSettings";
 const response = (workspacePath = "/projects/a", enabled = false): ExperimentsResponse => ({
   schemaVersion: "experiments.v1", workspacePath, workspaceSession: "session-a", revision: 0,
   enabled, availability: enabled ? "ready" : "disabled",
-  provider: { name: "Jev / TypeSafe", endpointHost: "api.typesafe.ai", configured: true },
+  provider: { name: "Jev / TypeSafe", endpointHost: "api.typesafe.ai", endpointUrl: "https://api.typesafe.ai/v1/systemone", configured: true },
   sending: ["status", "errorCode", "budgetRelated"],
 });
 function install(initial = response()) {
@@ -32,9 +32,12 @@ describe("workspace experimental settings", () => {
     const api = install(); render(<ExperimentalSettings workspacePath="/projects/a" />);
     const toggle = await screen.findByRole("switch", { name: "智能协作建议" });
     await waitFor(() => expect(toggle).toBeEnabled()); expect(toggle).not.toBeChecked();
+    const endpoint = response().provider.endpointUrl;
+    expect(screen.getByText(endpoint, { exact: true })).toBeInTheDocument();
     fireEvent.click(toggle);
     const modal = await screen.findByRole("dialog");
-    expect(within(modal).getByText("api.typesafe.ai")).toBeInTheDocument();
+    expect(within(modal).getByText(endpoint, { exact: true })).toBeInTheDocument();
+    expect(screen.getAllByText(endpoint, { exact: true })).toHaveLength(2);
     expect(within(modal).getByText(/发送范围：执行状态、规范化错误码、是否与预算相关/)).toBeInTheDocument();
     expect(within(modal).getByText(/不发送消息、任务或附件正文、员工姓名、项目路径/)).toBeInTheDocument();
     fireEvent.click(within(modal).getByRole("button", { name: "取消" }));

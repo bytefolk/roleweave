@@ -126,7 +126,28 @@ test("experiments: missing credentials remain visible, no external call or secre
     assert.equal((await advise(f.server, enabled)).status, 200);
     assert.equal(((await advise(f.server, enabled)).body as ReportsAdviceResponse).reason, "not_configured");
     assert.equal(provider.calls.length, 0);
-    assert.deepEqual(Object.keys(enabled.provider).sort(), ["configured", "endpointHost", "name"]);
+    assert.deepEqual(Object.keys(enabled.provider).sort(), ["configured", "endpointHost", "endpointUrl", "name"]);
+  } finally { await f.close(); }
+});
+
+test("experiments: disclosed full endpoint matches the provider's actual POST destination", async () => {
+  const requests: { url: string; method: string | undefined }[] = [];
+  const fetcher = (async (url, init) => {
+    requests.push({ url: String(url), method: init?.method });
+    return new Response(JSON.stringify({ answers: { item_0: { type: "choice", choice: "inspect_run", confidence: 0.9,
+      probabilities: { inspect_run: 0.9, check_connection: 0.1, inspect_budget: 0, insufficient_information: 0 } } } }));
+  }) as typeof fetch;
+  const f = await fixture(new JevAdviceProvider("test-key", "jev-latest", fetcher));
+  try {
+    const initial = await settings(f.server, f.dir);
+    assert.equal(initial.provider.endpointUrl, "https://api.typesafe.ai/v1/systemone");
+    assert.equal(initial.provider.endpointUrl, JEV_ENDPOINT);
+    const enabled = (await update(f.server, initial, true)).body as ExperimentsResponse;
+    assert.equal(enabled.provider.endpointUrl, initial.provider.endpointUrl);
+    assert.equal(requests.length, 0, "settings disclosure and consent must not send a provider request");
+    await failure(f.dir);
+    assert.equal(((await advise(f.server, enabled)).body as ReportsAdviceResponse).status, "ready");
+    assert.deepEqual(requests, [{ url: enabled.provider.endpointUrl, method: "POST" }]);
   } finally { await f.close(); }
 });
 

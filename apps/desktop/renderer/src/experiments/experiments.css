@@ -8,7 +8,8 @@
 .owb-experiment__facts { margin: 16px 0; }
 .owb-experiment__facts div { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .owb-experiment__facts dt { color: var(--ui-foreground-muted); }
-.owb-experiment__facts dd { margin: 0; overflow-wrap: anywhere; }
+.owb-experiment__facts dd { margin: 0; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.owb-experiment__endpoint { white-space: normal; overflow-wrap: anywhere; }
 .owb-experiment__state { font-weight: 600; }
 .owb-report-advice { padding: 16px; margin-bottom: 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); }
 .owb-report-advice__heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }

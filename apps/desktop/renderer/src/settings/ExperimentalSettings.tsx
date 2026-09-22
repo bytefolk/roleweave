@@ -39,7 +39,7 @@ export function ExperimentalSettings(scope: ExperimentScope) {
     {saveError ? <Alert type="error" showIcon title={c("saveError")} action={<Button onClick={() => { setSaveError(false); void refresh(); }}>{c("refresh")}</Button>} /> : null}
     {notice ? <p role="status">{c(notice)}</p> : null}
     {snapshot ? <>
-      <dl className="owb-experiment__facts"><div><dt>{c("provider")}</dt><dd>{snapshot.provider.name} · <code>{snapshot.provider.endpointHost}</code></dd></div></dl>
+      <dl className="owb-experiment__facts"><div><dt>{c("provider")}</dt><dd>{snapshot.provider.name} · <code className="owb-experiment__endpoint">{snapshot.provider.endpointUrl}</code></dd></div></dl>
       <p>{c("sends")}</p><p className="owb-settings-module__hint">{c("excludes")}</p>
       {snapshot.availability === "storage_error" ? <Alert type="warning" showIcon title={c("storageError")} action={<Button loading={saving} onClick={() => void update(false)}>{c("restoreOff")}</Button>} /> : !snapshot.provider.configured ? <Alert type={snapshot.enabled ? "warning" : "info"} showIcon title={c("unavailable")} action={<Button onClick={() => void refresh()}>{c("refresh")}</Button>} /> : null}
       <p role="status" className="owb-experiment__state">{c(snapshot.enabled ? snapshot.availability === "ready" ? "ready" : "enabledUnavailable" : "off")}</p>
@@ -47,7 +47,7 @@ export function ExperimentalSettings(scope: ExperimentScope) {
     </> : null}
     <Modal open={confirm && !!snapshot} title={c("confirmTitle")} okText={c("confirm")} cancelText={c("cancel")} cancelButtonProps={{ "aria-label": c("cancel") }} onCancel={() => setConfirm(false)} onOk={() => void update(true)}>
       <p>{c("scope")}</p><p className="owb-experiment__path"><code>{scope.workspacePath}</code></p>
-      <p>{c("provider")}：{snapshot?.provider.name} · <code>{snapshot?.provider.endpointHost}</code></p>
+      <p>{c("provider")}：{snapshot?.provider.name} · <code className="owb-experiment__endpoint">{snapshot?.provider.endpointUrl}</code></p>
       <p>{c("sends")}</p><p>{c("excludes")}</p><p>{c("incomplete")}</p>
     </Modal>
   </section>;

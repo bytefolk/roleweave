@@ -7,7 +7,7 @@ import {
 import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
 import { readReports } from "../routes/reports.js";
-import { JevAdviceProvider, MAX_ADVICE_ITEMS, normalizeAdviceMetadata, type AdviceProvider } from "./provider.js";
+import { JEV_ENDPOINT, JevAdviceProvider, MAX_ADVICE_ITEMS, normalizeAdviceMetadata, type AdviceProvider } from "./provider.js";
 import { readExperiments, writeExperiments, type StoredExperiments } from "./store.js";
 
 const conflict = () => new OrgApiError(errorCodes.experiments_conflict, 409, "workspace or experimental settings changed; reload before trying again");
@@ -112,7 +112,7 @@ export class ExperimentsService {
       schemaVersion: "experiments.v1", workspacePath: state.workspace.dir, workspaceSession: state.session,
       revision: stored.settings.revision, enabled,
       availability: !stored.valid || state.inhibited ? "storage_error" : !enabled ? "disabled" : configured ? "ready" : "not_configured",
-      provider: { name: "Jev / TypeSafe", endpointHost: "api.typesafe.ai", configured },
+      provider: { name: "Jev / TypeSafe", endpointHost: "api.typesafe.ai", endpointUrl: JEV_ENDPOINT, configured },
       sending: ["status", "errorCode", "budgetRelated"],
     };
   }

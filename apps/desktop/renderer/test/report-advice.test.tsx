@@ -4,7 +4,7 @@ import type { ExperimentsResponse, ReportsAdviceResponse, ReportsResponse } from
 import { ReportsCenter } from "../src/reports/ReportsCenter";
 import { EXPERIMENTS_CHANGED } from "../src/experiments/useWorkspaceExperiments";
 
-const experiment = (enabled = true): ExperimentsResponse => ({ schemaVersion: "experiments.v1", workspacePath: "/projects/a", workspaceSession: "session-a", revision: 1, enabled, availability: enabled ? "ready" : "disabled", provider: { name: "Jev / TypeSafe", endpointHost: "api.typesafe.ai", configured: true }, sending: ["status", "errorCode", "budgetRelated"] });
+const experiment = (enabled = true): ExperimentsResponse => ({ schemaVersion: "experiments.v1", workspacePath: "/projects/a", workspaceSession: "session-a", revision: 1, enabled, availability: enabled ? "ready" : "disabled", provider: { name: "Jev / TypeSafe", endpointHost: "api.typesafe.ai", endpointUrl: "https://api.typesafe.ai/v1/systemone", configured: true }, sending: ["status", "errorCode", "budgetRelated"] });
 const entry = { schemaVersion: "turn-escalation.v1" as const, positionId: "alice", turnId: "failed-1", status: "failed" as const, at: "2026-09-22T00:00:00Z", code: "engine.failed", reportingChain: ["alice"], budgetRelated: false };
 const report: ReportsResponse = { schemaVersion: "reports.v1", budgets: [], streams: { escalations: [entry], audits: [], evidence: [] }, page: { cursor: null, hasMore: false } };
 const advice = (): ReportsAdviceResponse => ({ workspacePath: "/projects/a", workspaceSession: "session-a", revision: 1, status: "ready", items: [{ turnId: entry.turnId, positionId: entry.positionId, at: entry.at, suggestion: "inspect_run", source: "jev" }], cached: false, considered: 1, total: 1, generatedAt: entry.at });
