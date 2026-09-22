@@ -34,7 +34,9 @@ export async function resolveUncoveredGoals(
     });
     if (answers?.uncovered?.type !== "noul" || answers.uncovered.probability < 0.5) return null;
     const uncovered = goals
-      .filter((goal) => goal.positionIds.some((id) => gone.includes(id)))
+      .filter((goal) =>
+        goal.positionIds.length > 0 && goal.positionIds.every((id) => gone.includes(id)),
+      )
       .map((goal) => goal.goalId);
     return uncovered.length > 0 ? uncovered : null;
   } catch {

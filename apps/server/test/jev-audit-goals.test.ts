@@ -23,3 +23,16 @@ test("audit overlay joins dismissed ids to goal bindings without diffs", async (
   );
   assert.deepEqual(ids, ["ship"]);
 });
+
+test("mixed binding is not uncovered when another position remains", async () => {
+  const ids = await resolveUncoveredGoals(
+    ["release-engineer"],
+    [],
+    [
+      { goalId: "ship", positionIds: ["release-engineer", "repo-owner"] },
+      { goalId: "docs", positionIds: ["release-engineer"] },
+    ],
+    { env: enabled, ask: async () => ({ uncovered: { type: "noul", probability: 0.9 } }) },
+  );
+  assert.deepEqual(ids, ["docs"]);
+});
