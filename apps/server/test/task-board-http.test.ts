@@ -113,9 +113,9 @@ test("legacy accepted collaborations retain acceptance when paused; unmarked wai
   await server.ctx.workspace.openWorkspace(workspace);
   for (const legacyStatus of ["queued", "active"] as const) {
     const pending = await pendingCollaboration(server, workspace);
-    const accepted = await patchTask(server, pending, "decision", { decision: "accept" });
-    delete accepted.acceptedAt;
-    accepted.status = legacyStatus;
+    // Seed the old on-disk format directly; HTTP acceptance now always writes
+    // acceptedAt and cannot produce this legacy fixture.
+    const accepted: AgentTask = { ...pending, status: legacyStatus };
     await fs.writeFile(taskPath(workspace, accepted), JSON.stringify(accepted));
     const waiting = await patchTask(server, accepted, "status", { status: "waiting" });
     assert.equal(waiting.acceptedAt, accepted.updatedAt);

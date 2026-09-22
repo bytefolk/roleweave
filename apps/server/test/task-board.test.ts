@@ -78,3 +78,39 @@ test("competing collaboration decisions serialize before checking pending status
   assert.equal(decisions[1]?.status, "rejected");
   assert.equal((await store.list(workspace))[0]?.status, "declined");
 });
+
+test("task reads reject oversized, invalid UTF-8, and non-regular records as storage errors", async (t) => {
+  const workspace = await copyExampleWorkspace();
+  t.after(async () => { await fs.rm(workspace, { recursive: true, force: true }); });
+  const store = new TaskBoardStore();
+  const task = await store.create(workspace, org, "lead", { targetPositionId: "worker", title: "normal" });
+  const taskFile = path.join(workspace, ".roleweave", "tasks", `${task.taskId}.json`);
+  const expectedError = { name: "OrgApiError", code: "internal", status: 500, message: "invalid task record" };
+  const invalidUtf8 = Buffer.from(JSON.stringify({ ...task, description: "!" }));
+  invalidUtf8[invalidUtf8.indexOf("!")] = 0xff;
+  for (const payload of [Buffer.from(JSON.stringify(task) + " ".repeat(32 * 1024)), invalidUtf8]) {
+    await fs.writeFile(taskFile, payload);
+    await assert.rejects(store.list(workspace), expectedError);
+    await assert.rejects(store.transition(workspace, task.taskId, org, "owner", { status: "active" }), expectedError);
+    assert.deepEqual(await fs.readFile(taskFile), payload);
+  }
+  await fs.rm(taskFile);
+  await fs.mkdir(taskFile);
+  await assert.rejects(store.transition(workspace, task.taskId, org, "owner", { status: "active" }), expectedError);
+});
+
+test("task mutations refuse symlink records without modifying their targets", { skip: process.platform === "win32" }, async (t) => {
+  const workspace = await copyExampleWorkspace();
+  t.after(async () => { await fs.rm(workspace, { recursive: true, force: true }); });
+  const store = new TaskBoardStore();
+  const task = await store.create(workspace, org, "lead", { targetPositionId: "worker", title: "normal" });
+  const taskFile = path.join(workspace, ".roleweave", "tasks", `${task.taskId}.json`);
+  const target = path.join(workspace, "task-copy.json");
+  const contents = await fs.readFile(taskFile, "utf8");
+  await fs.rename(taskFile, target);
+  await fs.symlink(target, taskFile, "file");
+  await assert.rejects(store.transition(workspace, task.taskId, org, "owner", { status: "active" }), {
+    name: "OrgApiError", code: "internal", status: 500, message: "invalid task record",
+  });
+  assert.equal(await fs.readFile(target, "utf8"), contents);
+});

@@ -8,6 +8,7 @@ import {
 } from "@roleweave/shared";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 import { PerKeyLock } from "../per-key-lock.js";
+import { decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 
 const ROOT = [".roleweave", "tasks"] as const;
 const MAX_TASKS = 512;
@@ -108,9 +109,14 @@ export class TaskBoardStore {
 
   private async get(workspace: string, id: string): Promise<AgentTask> {
     const taskFile = file(workspace, id);
-    const stat = await fs.lstat(taskFile);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_RECORD_BYTES) throw storageError("invalid task record");
-    return validateRecord(JSON.parse(await fs.readFile(taskFile, "utf8")), id);
+    let record: unknown;
+    try {
+      const stable = await readStableBoundedFile(taskFile, MAX_RECORD_BYTES);
+      record = JSON.parse(decodeStableUtf8(stable.buffer));
+    } catch {
+      throw storageError("invalid task record");
+    }
+    return validateRecord(record, id);
   }
   private async save(workspace: string, task: AgentTask): Promise<AgentTask> { await atomicWriteJson(file(workspace, task.taskId), task, MAX_RECORD_BYTES, nodeAtomicTurnWriteOperations, storageError); return task; }
 }
