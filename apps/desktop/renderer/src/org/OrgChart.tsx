@@ -116,9 +116,10 @@ export function buildKnowledgeGraph(snapshot: OrgTreeSnapshot, resources: Record
 type KnowledgeFlowData = Record<string, unknown> & KnowledgeGraphNode & { displayName: string; selected: boolean; onSelect?: (id: string) => void };
 
 function KnowledgeFlowNode({ data }: NodeProps<Node<KnowledgeFlowData>>) {
+  const t = useT();
   return <button type="button" className={`owb-knowledge-node owb-knowledge-node--${data.kind}${data.selected ? " is-selected" : ""}`}
     data-org-chart-node={data.kind === "agent" ? data.agentId : undefined}
-    aria-label={data.kind === "agent" ? `Agent ${data.displayName}` : `文档 ${data.label}，由${data.displayName}负责`}
+    aria-label={data.kind === "agent" ? t("tree.graphAgentAria", { name: data.displayName }) : t("tree.graphDocumentAria", { document: data.label, agent: data.displayName })}
     onClick={() => data.onSelect?.(data.agentId)}>
     <Handle type="target" position={Position.Top} />
     <span className="owb-knowledge-node__icon">{data.kind === "agent" ? <Network size={15} /> : <FileText size={15} />}</span>
@@ -133,6 +134,7 @@ function KnowledgeGraph({ snapshot, resources, displayNames, selectedId, onSelec
   snapshot: OrgTreeSnapshot; resources: Record<string, DocsFileEntry[]>; displayNames?: Record<string, string>;
   selectedId?: string | null; onSelect?: (id: string) => void;
 }) {
+  const t = useT();
   const [filter, setFilter] = useState<"all" | KnowledgeEdgeKind>("all");
   const graph = useMemo(() => buildKnowledgeGraph(snapshot, resources), [snapshot, resources]);
   const visibleEdges = graph.edges.filter((edge) => filter === "all" || edge.kind === filter);
@@ -154,10 +156,10 @@ function KnowledgeGraph({ snapshot, resources, displayNames, selectedId, onSelec
   });
   const edges: Edge[] = visibleEdges.map((edge) => ({ ...edge, type: "smoothstep", animated: edge.kind === "owns", className: `owb-knowledge-edge owb-knowledge-edge--${edge.kind}` }));
   return <div className="owb-knowledge-graph">
-    <div className="owb-knowledge-graph__filters" role="group" aria-label="关系筛选">
+    <div className="owb-knowledge-graph__filters" role="group" aria-label={t("tree.graphFiltersAria")}>
       {(["all", "reports", "owns"] as const).map((kind) => <button key={kind} type="button" aria-pressed={filter === kind}
-        aria-label={kind === "owns" ? "仅查看文档关系" : kind === "reports" ? "仅查看 Agent 关系" : "查看全部关系"}
-        onClick={() => setFilter(kind)}>{kind === "all" ? "全部" : kind === "reports" ? "Agent 协作" : "文档资源"}</button>)}
+        aria-label={t(kind === "owns" ? "tree.graphFilterDocumentsAria" : kind === "reports" ? "tree.graphFilterAgentsAria" : "tree.graphFilterAllAria")}
+        onClick={() => setFilter(kind)}>{t(kind === "all" ? "tree.graphAll" : kind === "reports" ? "tree.graphAgents" : "tree.graphDocuments")}</button>)}
     </div>
     <div className="owb-knowledge-graph__canvas">
       <ReactFlow nodes={nodes} edges={edges} nodeTypes={knowledgeNodeTypes} fitView minZoom={0.35} maxZoom={1.8} nodesDraggable nodesConnectable={false} elementsSelectable={false} proOptions={{ hideAttribution: true }}>
@@ -166,7 +168,7 @@ function KnowledgeGraph({ snapshot, resources, displayNames, selectedId, onSelec
       <div className="owb-knowledge-graph__edge-probes" aria-hidden="true">{visibleEdges.map((edge) => <i key={edge.id} data-graph-edge-kind={edge.kind} />)}</div>
       <div className="owb-knowledge-graph__semantic-nodes">
         {graph.nodes.filter((node) => node.kind === "document").map((node) => <button key={node.id} type="button"
-          aria-label={`文档 ${node.label}，由${displayNames?.[node.agentId] ?? node.agentId}负责`}
+          aria-label={t("tree.graphDocumentAria", { document: node.label, agent: displayNames?.[node.agentId] ?? node.agentId })}
           onClick={() => onSelect?.(node.agentId)}>{node.label}</button>)}
       </div>
     </div>

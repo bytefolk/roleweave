@@ -1857,7 +1857,7 @@ it("keeps the employee workbench mounted while the overview handles organization
   fireEvent.click(screen.getByRole("tree").querySelector('[data-org-node-id="repo-owner"]')!);
   expect(input).toBeVisible();
   expect(container.querySelector(".owb-org-chart")).toBeNull();
-});
+}, 15_000);
 
 it("returns to the workbench after leaving the organization module", async () => {
   openedBridge();

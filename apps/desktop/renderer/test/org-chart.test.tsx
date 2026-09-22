@@ -182,7 +182,7 @@ describe("Agent 资源关系图谱", () => {
     expect(container.querySelectorAll('[data-graph-edge-kind="owns"]')).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: "查看全部关系" }));
-    fireEvent.click(screen.getByRole("button", { name: "文档 product-brief.md，由文档负责人负责" }));
+    fireEvent.click(screen.getByRole("button", { name: "文档 product-brief.md，由 文档负责人 负责" }));
     expect(onSelect).toHaveBeenLastCalledWith("docs-writer");
   });
 });
