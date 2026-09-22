@@ -374,6 +374,7 @@ export const zhCatalog: Record<string, string> = {
   "tree.workbench": "员工工作台",
   "tree.overview": "组织概览",
   "tree.chart": "组织图",
+  "tree.knowledgeGraph": "Agent 关系图谱",
   "tree.chartMeta": "{count} 岗位 · 深度 {depth}",
   "tree.chartEmpty": "暂无组织数据",
   "tree.chartLoading": "组织图加载中",

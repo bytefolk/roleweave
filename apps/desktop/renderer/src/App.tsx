@@ -290,6 +290,7 @@ function AppInner({
     notFound: false,
   });
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
+  const [positionResources, setPositionResources] = useState<Record<string, import("@roleweave/shared").DocsFileEntry[]>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
   const [positionColors, setPositionColors] = useState<Record<string, string>>({});
   /** Avatar is a presentation preference scoped to this local project. It
@@ -586,6 +587,16 @@ function AppInner({
         setSnapshot(nextSnapshot);
         const positionIds = flattenPositionIds(nextSnapshot.tree);
         setSelectedId((current) => current && positionIds.includes(current) ? current : null);
+        const resourceEntries = await Promise.all(positionIds.map(async (id) => {
+          try {
+            const response = await window.owb.positionDocs(id);
+            return [id, response.status === 200 && response.body ? response.body.files : []] as const;
+          } catch {
+            return [id, []] as const;
+          }
+        }));
+        if (!isCurrentRefresh()) return;
+        setPositionResources(Object.fromEntries(resourceEntries));
         // Moves/reorders keep the sidebar's names, avatars and engines. Other
         // mutations (especially deletion/hire) still reconcile all metadata.
         if (!reusePositionMetadata) {
@@ -637,6 +648,7 @@ function AppInner({
         await Promise.all([backupLoad, loadReports()]);
       } else {
         setSnapshot(null);
+        setPositionResources({});
         positionNamesRef.current = {};
         setPositionNames({});
         setPositionColors({});
@@ -646,6 +658,7 @@ function AppInner({
       }
     } else {
       setSnapshot(null);
+      setPositionResources({});
       positionNamesRef.current = {};
       setPositionNames({});
       setPositionColors({});
@@ -2143,6 +2156,7 @@ function AppInner({
             displayNames={positionNames}
             avatarColors={positionColors}
             avatarUrls={avatarUrls}
+            resources={positionResources}
             selectedId={selectedId}
             onSelect={(id) => { openConversation(id); workbenchButtonRef.current?.focus(); }}
           /> : null}

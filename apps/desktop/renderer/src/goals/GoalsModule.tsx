@@ -190,14 +190,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
   const createTask = useCallback(async () => {
     const owner = ownerPositionId;
     if (!owner || !taskTarget || !taskTitle.trim()) return;
-    const response = await window.owb.createTask({ actorPositionId: owner, targetPositionId: taskTarget, title: taskTitle.trim(), urgent: taskUrgent, contractor: taskContractor });
+    const response = await window.owb.createTask({ targetPositionId: taskTarget, title: taskTitle.trim(), urgent: taskUrgent, contractor: taskContractor });
     if (response.status === 201) {
       setShowTaskCreate(false); setTaskTitle(""); setTaskUrgent(false); setTaskContractor(false);
       await reloadTasks();
     }
   }, [ownerPositionId, reloadTasks, taskContractor, taskTarget, taskTitle, taskUrgent]);
   const decideTask = useCallback(async (task: AgentTask, decision: "accept" | "decline") => {
-    const response = await window.owb.decideTask({ taskId: task.taskId, actorPositionId: task.assigneePositionId, decision });
+    const response = await window.owb.decideTask({ taskId: task.taskId, decision });
     if (response.status === 200) await reloadTasks();
   }, [reloadTasks]);
   useEffect(() => {

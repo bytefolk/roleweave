@@ -12,8 +12,7 @@ export const MAX_META_BYTES = 64 * 1024;
 export function attachmentDir(workspace: string, sessionId: string): string {
   return path.join(
     workspace,
-    ".digital-employee",
-    "workbench",
+    ".roleweave",
     "sessions",
     assertSessionId(sessionId),
     "attachments",

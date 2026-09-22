@@ -23,7 +23,6 @@ export interface AgentTask {
 }
 
 export interface TaskCreateRequest {
-  actorPositionId: string;
   targetPositionId: string;
   title: string;
   description?: string;
@@ -31,10 +30,10 @@ export interface TaskCreateRequest {
   contractor?: boolean;
 }
 
-export interface TaskDecisionRequest { actorPositionId: string; decision: "accept" | "decline"; }
-export interface TaskStatusRequest { actorPositionId: string; status: "active" | "waiting" | "done" | "failed"; }
+export interface TaskDecisionRequest { decision: "accept" | "decline"; }
+export interface TaskStatusRequest { status: "active" | "waiting" | "done" | "failed"; }
 
-export function classifyTaskAuthority(org: OrganizationFile, request: TaskCreateRequest): Pick<AgentTask, "kind" | "status" | "priority" | "mainline" | "budgetOwnerPositionId"> {
+export function classifyTaskAuthority(org: OrganizationFile, request: TaskCreateRequest & { actorPositionId: string }): Pick<AgentTask, "kind" | "status" | "priority" | "mainline" | "budgetOwnerPositionId"> {
   const actor = org.roles.find((role) => role.id === request.actorPositionId);
   const target = org.roles.find((role) => role.id === request.targetPositionId);
   if (!actor || !target) throw new Error("actor and target must be organization positions");

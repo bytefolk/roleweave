@@ -371,6 +371,7 @@ export const enCatalog: Record<string, string> = {
   "tree.workbench": "Employee workbench",
   "tree.overview": "Organization overview",
   "tree.chart": "Org chart",
+  "tree.knowledgeGraph": "Agent knowledge graph",
   "tree.chartMeta": "{count} positions · depth {depth}",
   "tree.chartEmpty": "No organization data",
   "tree.chartLoading": "Loading org chart",

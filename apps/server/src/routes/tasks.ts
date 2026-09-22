@@ -8,19 +8,22 @@ export async function handleTaskList(ctx: ControlPlaneContext, res: ServerRespon
 }
 export async function handleTaskCreate(ctx: ControlPlaneContext, req: IncomingMessage, res: ServerResponse) {
   const workspace = ctx.workspace.requireOpen();
-  const task = await ctx.taskBoardStore.create(workspace.dir, workspace.organization, await readJsonBody(req));
+  const task = await ctx.taskBoardStore.create(workspace.dir, workspace.organization, workspace.organization.owner, await readJsonBody(req));
   ctx.bus.publish("goal.updated", { taskId: task.taskId, workspacePath: workspace.dir });
   sendJson(res, 201, task);
 }
 export async function handleTaskDecision(ctx: ControlPlaneContext, req: IncomingMessage, res: ServerResponse, taskId: string) {
   const workspace = ctx.workspace.requireOpen();
-  const task = await ctx.taskBoardStore.decide(workspace.dir, taskId, workspace.organization, await readJsonBody(req));
+  const pending = await ctx.taskBoardStore.list(workspace.dir);
+  const assignee = pending.find((task) => task.taskId === taskId)?.assigneePositionId;
+  if (!assignee) throw new Error("task not found");
+  const task = await ctx.taskBoardStore.decide(workspace.dir, taskId, workspace.organization, assignee, await readJsonBody(req));
   ctx.bus.publish("goal.updated", { taskId, workspacePath: workspace.dir });
   sendJson(res, 200, task);
 }
 export async function handleTaskStatus(ctx: ControlPlaneContext, req: IncomingMessage, res: ServerResponse, taskId: string) {
   const workspace = ctx.workspace.requireOpen();
-  const task = await ctx.taskBoardStore.transition(workspace.dir, taskId, workspace.organization, await readJsonBody(req));
+  const task = await ctx.taskBoardStore.transition(workspace.dir, taskId, workspace.organization, workspace.organization.owner, await readJsonBody(req));
   ctx.bus.publish("goal.updated", { taskId, workspacePath: workspace.dir });
   sendJson(res, 200, task);
 }

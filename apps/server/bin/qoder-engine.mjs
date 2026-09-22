@@ -1079,7 +1079,7 @@ async function turnRunQoder(workspaceDir, positionId, input) {
       const input = block?.input;
       if (!input || typeof input !== "object") return undefined;
       const details = [];
-      for (const key of ["command", "path", "file_path", "query", "url", "description", "paths", "files", "file_paths"]) {
+      for (const key of ["path", "file_path", "paths", "files", "file_paths"]) {
         const value = input[key];
         if (typeof value === "string" && value.trim()) details.push(value.trim());
         else if (Array.isArray(value)) details.push(...value.filter(item => typeof item === "string" && item.trim()).map(item => item.trim()));

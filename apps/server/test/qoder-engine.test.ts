@@ -154,7 +154,7 @@ const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
 if (settings.disableAllHooks !== true || settings.hooksConfig?.enabled !== false) process.exit(87);
 const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
 write({ type: "system", subtype: "init" });
-write({ type: "assistant", message: { content: [{ type: "thinking", thinking: "internal" }, { type: "text", text: "正在核对" }, { type: "tool_use", id: "tool-1", name: "Read", input: { file_path: "apps/server/src/routes/turns.ts", files: ["packages/shared/src/turns.ts", "apps/desktop/renderer/src/turns/TurnThread.tsx"], token: "must-not-leak" } }], usage: { input_tokens: 10, output_tokens: 5 } } });
+write({ type: "assistant", message: { content: [{ type: "thinking", thinking: "internal" }, { type: "text", text: "正在核对" }, { type: "tool_use", id: "tool-1", name: "Read", input: { file_path: "apps/server/src/routes/turns.ts", files: ["packages/shared/src/turns.ts", "apps/desktop/renderer/src/turns/TurnThread.tsx"], command: "curl -H 'Authorization: Bearer command-secret' https://example.test", url: "https://example.test/?token=url-secret", query: "query-secret", description: "description-secret", token: "must-not-leak" } }], usage: { input_tokens: 10, output_tokens: 5 } } });
 write({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool-1", content: "tests passed", is_error: false }] } });
 write({ type: "assistant", message: { content: [{ type: "text", text: "，门禁通过" }] } });
 write({ type: "result", subtype: "success", is_error: false, result: "release gate passed", usage: { input_tokens: 100, output_tokens: 40 } });
@@ -655,6 +655,7 @@ test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and pa
   ]);
   assert.ok(!result.stdout.includes("internal"), "private reasoning is never emitted");
   assert.ok(!result.stdout.includes("must-not-leak"), "secret-shaped tool input is never emitted");
+  assert.doesNotMatch(result.stdout, /command-secret|url-secret|query-secret|description-secret/, "raw command, URL, query and description never enter public activity");
   const completed = events.at(-1);
   assert.equal(completed?.type, "run.completed");
   assert.equal(completed?.output, "release gate passed");

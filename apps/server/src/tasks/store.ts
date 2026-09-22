@@ -28,8 +28,8 @@ export class TaskBoardStore {
     return tasks.sort((a, b) => a.queueOrder - b.queueOrder || a.createdAt.localeCompare(b.createdAt));
   }
 
-  async create(workspace: string, org: OrganizationFile, raw: TaskCreateRequest): Promise<AgentTask> {
-    const request = { ...raw, actorPositionId: text(raw.actorPositionId, "actorPositionId", 128), targetPositionId: text(raw.targetPositionId, "targetPositionId", 128), title: text(raw.title, "title", 256), description: typeof raw.description === "string" ? raw.description.slice(0, 4096) : "" };
+  async create(workspace: string, org: OrganizationFile, actorPositionId: string, raw: TaskCreateRequest): Promise<AgentTask> {
+    const request = { ...raw, actorPositionId: text(actorPositionId, "actorPositionId", 128), targetPositionId: text(raw.targetPositionId, "targetPositionId", 128), title: text(raw.title, "title", 256), description: typeof raw.description === "string" ? raw.description.slice(0, 4096) : "" };
     const authority = classifyTaskAuthority(org, request);
     const tasks = await this.list(workspace, request.targetPositionId);
     const now = new Date().toISOString();
@@ -38,15 +38,15 @@ export class TaskBoardStore {
     return task;
   }
 
-  async decide(workspace: string, id: string, org: OrganizationFile, raw: TaskDecisionRequest): Promise<AgentTask> {
+  async decide(workspace: string, id: string, org: OrganizationFile, actorPositionId: string, raw: TaskDecisionRequest): Promise<AgentTask> {
     const task = await this.get(workspace, id);
-    if (task.kind !== "collaboration" || task.status !== "waiting" || raw.actorPositionId !== task.assigneePositionId || !org.roles.some((r) => r.id === raw.actorPositionId)) throw taskError("only the receiving Agent may decide a pending collaboration");
+    if (task.kind !== "collaboration" || task.status !== "waiting" || actorPositionId !== task.assigneePositionId || !org.roles.some((r) => r.id === actorPositionId)) throw taskError("only the receiving Agent may decide a pending collaboration");
     return this.save(workspace, { ...task, status: raw.decision === "accept" ? "queued" : "declined", updatedAt: new Date().toISOString() });
   }
 
-  async transition(workspace: string, id: string, org: OrganizationFile, raw: TaskStatusRequest): Promise<AgentTask> {
+  async transition(workspace: string, id: string, org: OrganizationFile, actorPositionId: string, raw: TaskStatusRequest): Promise<AgentTask> {
     const task = await this.get(workspace, id);
-    if (raw.actorPositionId !== task.assigneePositionId && raw.actorPositionId !== org.owner) throw taskError("only the assignee or owner may update a task");
+    if (actorPositionId !== task.assigneePositionId && actorPositionId !== org.owner) throw taskError("only the assignee or owner may update a task");
     return this.save(workspace, { ...task, status: raw.status, updatedAt: new Date().toISOString() });
   }
 
