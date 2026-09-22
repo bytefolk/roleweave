@@ -47,6 +47,7 @@ import { handleTurnCancel, handleTurnHistory, handleTurnPost } from "./routes/tu
 import { handleAttachmentRead, handleAttachmentUpload } from "./attachments/routes.js";
 import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceInitialize, handleWorkspaceOpen } from "./routes/workspace.js";
 import { handleTaskCreate, handleTaskDecision, handleTaskList, handleTaskStatus } from "./routes/tasks.js";
+import { handleRelationships } from "./routes/relationships.js";
 
 /**
  * Loopback-only control-plane HTTP server (frozen v0 contract).
@@ -115,6 +116,10 @@ async function dispatch(
     }
     if (pathname === routes.orgTree && method === "GET") {
       await handleOrgTree(ctx, res);
+      return;
+    }
+    if (pathname === routes.relationships && method === "GET") {
+      await handleRelationships(ctx, res, url);
       return;
     }
     if (pathname === routes.orgApply && method === "POST") {

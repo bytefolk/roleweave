@@ -69,6 +69,7 @@ export const routes = {
   /** Additive user-owned goal surface (#222). */
   goals: "/goals",
   tasks: "/tasks",
+  relationships: "/graph/relationships",
   events: "/events",
 } as const;
 

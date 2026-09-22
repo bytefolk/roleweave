@@ -725,6 +725,7 @@ ipcMain.handle("owb:goal:create", async (_event, request) => {
 });
 
 ipcMain.handle("owb:goal:list", async () => apiRequest("/goals"));
+ipcMain.handle("owb:graph:relationships", async (_event, expectedWorkspacePath) => apiRequest(`/graph/relationships${typeof expectedWorkspacePath === "string" ? `?expectedWorkspacePath=${encodeURIComponent(expectedWorkspacePath)}` : ""}`));
 ipcMain.handle("owb:task:list", async (_event, positionId) => apiRequest(`/tasks${typeof positionId === "string" && positionId ? `?positionId=${encodeURIComponent(positionId)}` : ""}`));
 ipcMain.handle("owb:task:create", async (_event, request) => apiRequest("/tasks", { method: "POST", body: { targetPositionId: request.targetPositionId, title: request.title, description: request.description, urgent: request.urgent, contractor: request.contractor } }));
 ipcMain.handle("owb:task:decision", async (_event, request) => apiRequest(`/tasks/${encodeURIComponent(request.taskId)}/decision`, { method: "PATCH", body: { decision: request.decision } }));

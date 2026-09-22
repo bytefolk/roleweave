@@ -68,7 +68,8 @@ import type {
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { EditEmployeeDrawer } from "./org/EditEmployeeDrawer";
 import { HireDrawer } from "./org/HireDrawer";
-import { OrgChart } from "./org/OrgChart";
+import { RelationshipGraph } from "./graph/RelationshipGraph";
+import { useRelationshipGraph } from "./graph/useRelationshipGraph";
 import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
 import { useConfigurationBootstrap, useSendShortcut, useWorkspaceFocus, requestSettingsLeave, persistApplicationPreference, preferenceError } from "./configuration-preferences";
 import { createConversationMemory } from "./turns/conversation-memory";
@@ -262,6 +263,7 @@ function AppInner({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [toggleRailExpanded]);
   const [memorySource, setMemorySource] = useState<MemorySource>("docs");
+  const [resourceRequest, setResourceRequest] = useState<{ positionId: string; path: string; nonce: number } | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const healthReadVersion = useRef(0);
   const refreshReadVersion = useRef(0);
@@ -274,6 +276,9 @@ function AppInner({
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const approvalState = useApprovals(workspaceInfo?.open ? workspaceInfo.path : undefined);
   const [orgOverview, setOrgOverview] = useState(false);
+  const [graphOpened, setGraphOpened] = useState(false);
+  const graph = useRelationshipGraph(workspaceInfo?.open ? workspaceInfo.path : undefined, activeModule === "org" && orgOverview);
+  useEffect(() => { setGraphOpened(false); setResourceRequest(null); }, [workspaceInfo?.path]);
   const [conversationFocused, setConversationFocused] = useWorkspaceFocus(workspaceInfo?.path ?? "");
   const sendShortcut = useSendShortcut();
   const conversationMemory = useRef(createConversationMemory());
@@ -290,7 +295,6 @@ function AppInner({
     notFound: false,
   });
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
-  const [positionResources, setPositionResources] = useState<Record<string, import("@roleweave/shared").DocsFileEntry[]>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
   const [positionColors, setPositionColors] = useState<Record<string, string>>({});
   /** Avatar is a presentation preference scoped to this local project. It
@@ -588,16 +592,6 @@ function AppInner({
         setSnapshot(nextSnapshot);
         const positionIds = flattenPositionIds(nextSnapshot.tree);
         setSelectedId((current) => current && positionIds.includes(current) ? current : null);
-        const resourceEntries = await Promise.all(positionIds.map(async (id) => {
-          try {
-            const response = await window.owb.positionDocs(id);
-            return [id, response.status === 200 && response.body ? response.body.files : []] as const;
-          } catch {
-            return [id, []] as const;
-          }
-        }));
-        if (!isCurrentRefresh()) return;
-        setPositionResources(Object.fromEntries(resourceEntries));
         // Moves/reorders keep the sidebar's names, avatars and engines. Other
         // mutations (especially deletion/hire) still reconcile all metadata.
         if (!reusePositionMetadata) {
@@ -649,7 +643,6 @@ function AppInner({
         await Promise.all([backupLoad, loadReports()]);
       } else {
         setSnapshot(null);
-        setPositionResources({});
         positionNamesRef.current = {};
         setPositionNames({});
         setPositionColors({});
@@ -659,7 +652,6 @@ function AppInner({
       }
     } else {
       setSnapshot(null);
-      setPositionResources({});
       positionNamesRef.current = {};
       setPositionNames({});
       setPositionColors({});
@@ -2139,6 +2131,7 @@ function AppInner({
             selectedPositionId={selectedId}
             position={card.data}
             initialSource={memorySource}
+            resourceRequest={resourceRequest}
           />
         ) : workspaceInfo?.open !== true ? (
           <section className="owb-workspace-welcome">
@@ -2153,20 +2146,25 @@ function AppInner({
             <AntButton ref={workbenchButtonRef} size="small" type={orgOverview ? "default" : "primary"}
               aria-pressed={!orgOverview} onClick={() => setOrgOverview(false)}>{t("tree.workbench")}</AntButton>
             <AntButton size="small" type={orgOverview ? "primary" : "default"} icon={<Network size={14} aria-hidden="true" />}
-              aria-pressed={orgOverview} onClick={() => setOrgOverview(true)}>{t("tree.overview")}</AntButton>
+              aria-pressed={orgOverview} onClick={() => { setGraphOpened(true); setOrgOverview(true); }}>{t("tree.overview")}</AntButton>
           </nav>
-          {orgOverview ? <OrgChart
-            className="owb-org-chart--overview"
-            collapsible={false}
-            snapshot={snapshot}
-            loading={treeLoading}
-            displayNames={positionNames}
-            avatarColors={positionColors}
-            avatarUrls={avatarUrls}
-            resources={positionResources}
-            selectedId={selectedId}
-            onSelect={(id) => { openConversation(id); workbenchButtonRef.current?.focus(); }}
-          /> : null}
+          {graphOpened ? <div hidden={!orgOverview} style={orgOverview ? { display: "contents" } : undefined}>
+            <RelationshipGraph
+              workspaceKey={workspaceInfo.path ?? ""}
+              visible={orgOverview}
+              data={graph.data}
+              loading={graph.loading}
+              error={graph.error}
+              onReload={graph.reload}
+              onOpenAgent={(id) => { openConversation(id); workbenchButtonRef.current?.focus(); }}
+              onOpenResource={(positionId, path) => {
+                selectPosition(positionId);
+                setResourceRequest({ positionId, path, nonce: Date.now() });
+                setMemorySource("docs");
+                setActiveModule("docs");
+              }}
+            />
+          </div> : null}
           <OrgWorkspaceSplit
           hidden={orgOverview}
           focused={conversationFocused}

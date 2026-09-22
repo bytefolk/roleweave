@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld("owb", {
   groupTimeline: (conversationRef) => ipcRenderer.invoke("owb:group:timeline", conversationRef),
   createGoal: (request) => ipcRenderer.invoke("owb:goal:create", request),
   goals: () => ipcRenderer.invoke("owb:goal:list"),
+  relationshipGraph: (expectedWorkspacePath) => ipcRenderer.invoke("owb:graph:relationships", expectedWorkspacePath),
   tasks: (positionId) => ipcRenderer.invoke("owb:task:list", positionId),
   createTask: (request) => ipcRenderer.invoke("owb:task:create", request),
   decideTask: (request) => ipcRenderer.invoke("owb:task:decision", request),

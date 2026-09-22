@@ -26,6 +26,7 @@ export * from "./context-sources.js";
 export * from "./updates.js";
 export * from "./goals.js";
 export * from "./task-board.js";
+export * from "./relationship-graph.js";
 export * from "./avatar.js";
 
 export * from "./services.js";
