@@ -14,10 +14,7 @@ export async function handleTaskCreate(ctx: ControlPlaneContext, req: IncomingMe
 }
 export async function handleTaskDecision(ctx: ControlPlaneContext, req: IncomingMessage, res: ServerResponse, taskId: string) {
   const workspace = ctx.workspace.requireOpen();
-  const pending = await ctx.taskBoardStore.list(workspace.dir);
-  const assignee = pending.find((task) => task.taskId === taskId)?.assigneePositionId;
-  if (!assignee) throw new Error("task not found");
-  const task = await ctx.taskBoardStore.decide(workspace.dir, taskId, workspace.organization, assignee, await readJsonBody(req));
+  const task = await ctx.taskBoardStore.decide(workspace.dir, taskId, workspace.organization, workspace.organization.owner, await readJsonBody(req));
   ctx.bus.publish("goal.updated", { taskId, workspacePath: workspace.dir });
   sendJson(res, 200, task);
 }

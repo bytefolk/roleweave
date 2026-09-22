@@ -25,7 +25,9 @@ test("task board preserves displaced work and enforces owner/direct/peer authori
   assert.equal(accepted.status, "queued");
   await assert.rejects(store.create(workspace, org, "lead", { actorPositionId: "owner", targetPositionId: "worker", title: "fake urgent", urgent: true } as never), /only the owner/);
   const pending = await store.create(workspace, org, "worker", { targetPositionId: "lead", title: "second ask" });
-  await assert.rejects(store.decide(workspace, pending.taskId, org, "worker", { actorPositionId: "lead", decision: "accept" } as never), /receiving Agent/);
+  await assert.rejects(store.decide(workspace, pending.taskId, org, "worker", { actorPositionId: "lead", decision: "accept" } as never), /receiving Agent or owner/);
+  const ownerAccepted = await store.decide(workspace, pending.taskId, org, "owner", { decision: "accept" });
+  assert.equal(ownerAccepted.status, "queued");
   assert.equal(await fs.readFile(path.join(workspace, ".roleweave", "tasks", `${normal.taskId}.json`), "utf8").then(Boolean), true);
 });
 

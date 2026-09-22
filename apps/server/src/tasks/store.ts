@@ -40,7 +40,11 @@ export class TaskBoardStore {
 
   async decide(workspace: string, id: string, org: OrganizationFile, actorPositionId: string, raw: TaskDecisionRequest): Promise<AgentTask> {
     const task = await this.get(workspace, id);
-    if (task.kind !== "collaboration" || task.status !== "waiting" || actorPositionId !== task.assigneePositionId || !org.roles.some((r) => r.id === actorPositionId)) throw taskError("only the receiving Agent may decide a pending collaboration");
+    if (task.kind !== "collaboration" || task.status !== "waiting" ||
+        (actorPositionId !== task.assigneePositionId && actorPositionId !== org.owner) ||
+        !org.roles.some((r) => r.id === actorPositionId)) {
+      throw taskError("only the receiving Agent or owner may decide a pending collaboration");
+    }
     return this.save(workspace, { ...task, status: raw.decision === "accept" ? "queued" : "declined", updatedAt: new Date().toISOString() });
   }
 
