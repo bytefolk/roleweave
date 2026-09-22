@@ -13,6 +13,8 @@
 
 ## 1. 通用约定
 
+#447 增量：项目实验设置 `GET/PATCH /experiments` 与显式建议 `POST /reports/advice` 的请求、工作区版本保护和外发数据约束见 [智能协作建议预览](jev-preview.md#控制面-api)。既有 `GET /reports` 保持本地事实读取，不触发外部服务。
+
 - 绑定面：仅 `127.0.0.1`。v1 不暴露 LAN；远程访问不在 v0 范围。
 - 鉴权：`Authorization: Bearer <boot-token>`。token 为每次启动生成的 32 字节随机十六进制串；仅 `/health` 免 token（供壳探活）。
 - 内容类型：请求/响应均为 UTF-8 JSON；请求体上限 1 MiB。超限时服务端先读完已声明的请求体（drain 受 10 MiB 字节上限与 2 秒截止约束）再回 400 `body_invalid`，避免客户端在上传途中收到 EPIPE；拒绝响应携带 `Connection: close`。无 `Content-Length`（chunked）的请求超过 1 MiB 后只计数不保留，读完或触及 2 秒读取截止后拒绝；服务端另受 requestTimeout 30 s / headersTimeout 10 s 全局约束，超时或超过读取上限后连接关闭、不复用。drain 或读取被中止时，服务端向 stderr 写一行原因与字节数。

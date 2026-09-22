@@ -8,6 +8,7 @@ import type { SessionStore } from "./sessions/store.js";
 import type { GroupStore } from "./groups/store.js";
 import type { GoalStore } from "./goals/store.js";
 import type { ContextExportService } from "./context-export/exporter.js";
+import type { ExperimentsService } from "./experiments/service.js";
 
 export interface ControlPlaneContext {
   config: ServerConfig;
@@ -31,4 +32,6 @@ export interface ControlPlaneContext {
   goalStore: GoalStore;
   /** Server-owned durable turn exporter; never exposed to renderer/IPC. */
   contextExporter: ContextExportService;
+  /** Lazy optional preview service, injectable without any external calls in tests. */
+  experimentsService?: ExperimentsService;
 }

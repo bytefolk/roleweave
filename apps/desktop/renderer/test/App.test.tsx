@@ -1287,6 +1287,32 @@ describe("App runtime bridge", () => {
     expect(screen.getByText("已完成")).toBeInTheDocument();
   });
 
+  it.each(["success", "rejection"])("keeps workspace report facts in B when A's delayed request finishes with %s", async outcome => {
+    let workspace = "A";
+    let finishOld!: (value: Awaited<ReturnType<OwbBridge["reports"]>>) => void;
+    let rejectOld!: (reason: Error) => void;
+    const reportWithTotal = (total: number): ReportsResponse => ({
+      ...emptyReports(),
+      budgets: [{ positionId: "repo-owner", declared: position.budget, recorded: { inputTokens: total, outputTokens: 0, totalTokens: total }, latestTurn: { inputTokens: total, outputTokens: 0, totalTokens: total }, state: "within" }],
+    });
+    const reports = vi.fn<OwbBridge["reports"]>().mockResolvedValue({ status: 200, body: reportWithTotal(22) });
+    reports.mockImplementationOnce(() => new Promise((resolve, reject) => { finishOld = resolve; rejectOld = reject; }));
+    openedBridge({ reports, workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })) });
+    await act(async () => { render(<App />); });
+    expect(reports).toHaveBeenCalledTimes(1);
+    workspace = "B";
+    await chooseExistingWorkspace();
+    expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent("Workspace B");
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "上报" })); });
+    expect(screen.getByRole("button", { name: "已记录 Token" })).toHaveTextContent("22");
+    await act(async () => {
+      if (outcome === "success") finishOld({ status: 200, body: reportWithTotal(11) });
+      else rejectOld(Error("old workspace offline"));
+    });
+    expect(screen.getByRole("button", { name: "已记录 Token" })).toHaveTextContent("22");
+    expect(screen.queryByText("old workspace offline")).not.toBeInTheDocument();
+  });
+
   it("renders D4 tabs from sanitized report facts and never displays raw turn content", async () => {
     const reports: ReportsResponse = {
       schemaVersion: "reports.v1",

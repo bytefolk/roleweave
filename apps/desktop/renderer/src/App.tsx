@@ -142,6 +142,7 @@ function AppInner({
   const [activeModule, setActiveModuleRaw] = useState<
     "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "settings"
   >("org");
+  const [settingsInitialCategory, setSettingsInitialCategory] = useState<"experiments" | undefined>();
   const setActiveModule = useCallback((next: typeof activeModule) => {
     if (next === "settings") setActiveModuleRaw(next);
     else requestSettingsLeave(() => setActiveModuleRaw(next));
@@ -342,6 +343,7 @@ function AppInner({
   const backupWorkspace = useRef<{ path: string | null }>({ path: null });
   const backupRead = useRef(0);
   const [reports, setReports] = useState<ReportsResponse | null>(null);
+  const reportsRead = useRef(0);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [reportsFocusTurnId, setReportsFocusTurnId] = useState<string | null>(null);
@@ -514,10 +516,14 @@ function AppInner({
     }
   }, []);
 
-  const loadReports = useCallback(async () => {
+  const loadReports = useCallback(async (scope = backupWorkspace.current) => {
+    if (!scope.path || scope !== backupWorkspace.current) return;
+    const read = ++reportsRead.current;
+    const isCurrent = () => scope === backupWorkspace.current && read === reportsRead.current;
     setReportsLoading(true);
     try {
       const response = await window.owb.reports();
+      if (!isCurrent()) return;
       if (response.status !== 200) {
         setReports(null);
         setReportsError(apiErrorMessage(response.body, t("rep.readFail")));
@@ -526,10 +532,12 @@ function AppInner({
       setReports(response.body as ReportsResponse);
       setReportsError(null);
     } catch {
-      setReports(null);
-      setReportsError(t("rep.readFailOffline"));
+      if (isCurrent()) {
+        setReports(null);
+        setReportsError(t("rep.readFailOffline"));
+      }
     } finally {
-      setReportsLoading(false);
+      if (isCurrent()) setReportsLoading(false);
     }
   }, [t]);
 
@@ -562,6 +570,10 @@ function AppInner({
     if (backupWorkspace.current.path !== backupPath) {
       backupWorkspace.current = { path: backupPath };
       backupRead.current += 1;
+      reportsRead.current += 1;
+      setReports(null);
+      setReportsError(null);
+      setReportsLoading(false);
       setBackups([]);
       setBackupsStatus("loading");
       positionBindingWrites.current = {};
@@ -631,7 +643,7 @@ function AppInner({
             return engines;
           });
         }
-        await Promise.all([backupLoad, loadReports()]);
+        await Promise.all([backupLoad, loadReports(backupScope)]);
       } else {
         setSnapshot(null);
         positionNamesRef.current = {};
@@ -1834,7 +1846,7 @@ function AppInner({
             // a changelog link, so it is a module rather than a third row in
             // the prefs drawer (#174), which stays two quick toggles.
             { id: "goals", label: t("rail.goals"), icon: <Flag aria-hidden="true" size={16} />, active: activeModule === "goals", onSelect: () => setActiveModule("goals") },
-            { id: "settings", label: t("rail.settings"), icon: <Settings aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
+            { id: "settings", label: t("rail.settings"), icon: <Settings aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => { setSettingsInitialCategory(undefined); setActiveModule("settings"); } },
           ]}
           footer={
             /* 导轨宽窄开关：Pro Layout 式圆形浮 chip，骑在导轨与侧栏的缝上、
@@ -2054,6 +2066,9 @@ function AppInner({
         {activeModule === "reports" ? (
           <ReportsCenter
             key={workspaceInfo?.path}
+            workspacePath={workspaceInfo?.open ? workspaceInfo.path : undefined}
+            workspaceScope={groupWorkspaceScope}
+            onOpenExperiments={() => { setSettingsInitialCategory("experiments"); setActiveModule("settings"); }}
             onRefresh={() => void loadReports()}
             reports={reports}
             loading={reportsLoading}
@@ -2094,7 +2109,7 @@ function AppInner({
         ) : activeModule === "goals" ? (
           <GoalsModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} />
         ) : activeModule === "settings" ? (
-          <SettingsModule />
+          <SettingsModule initialCategory={settingsInitialCategory} workspacePath={workspaceInfo?.open ? workspaceInfo.path : undefined} workspaceScope={groupWorkspaceScope} />
         ) : activeModule === "docs" ? (
           <MemoryModule
             key={workspaceInfo?.path}

@@ -38,6 +38,10 @@ export interface ServerConfig {
    * TODO(#35 R3): remove once the upstream API surface stabilises.
    */
   docPlaneMock: boolean;
+  /** Optional Jev preview credentials. Never included in renderer/IPC configuration. */
+  jevApiKey?: string;
+  jevModel?: string;
+  jevTimeoutMs?: number;
 }
 
 function normalizeUrl(raw: string | undefined): string | undefined {
@@ -117,6 +121,10 @@ export function resolveServerConfig(
         ? env.ORG_WORKBENCH_DOC_TOKEN
         : undefined,
     docPlaneMock: truthy(env.ORG_WORKBENCH_DOC_MOCK),
+    jevApiKey: env.ROLEWEAVE_JEV_API_KEY?.trim() || undefined,
+    jevModel: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(env.ROLEWEAVE_JEV_MODEL ?? "")
+      ? env.ROLEWEAVE_JEV_MODEL : "jev-latest",
+    jevTimeoutMs: Math.max(100, Math.min(5_000, Number(env.ROLEWEAVE_JEV_TIMEOUT_MS) || 2_000)),
   };
 }
 

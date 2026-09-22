@@ -1,0 +1,20 @@
+.owb-experiment { max-width: 880px; padding-block: 8px 24px; }
+.owb-experiment__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.owb-experiment__heading h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 16px; }
+.owb-experiment__heading p, .owb-report-advice p { margin: 8px 0; }
+.owb-experiment__heading .ant-switch { flex: 0 0 auto; margin-top: 2px; }
+.owb-experiment__scope { display: grid; gap: 6px; padding-block: 16px; border-block: 1px solid var(--ui-border); color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-experiment__scope code, .owb-experiment__path { overflow-wrap: anywhere; }
+.owb-experiment__facts { margin: 16px 0; }
+.owb-experiment__facts div { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.owb-experiment__facts dt { color: var(--ui-foreground-muted); }
+.owb-experiment__facts dd { margin: 0; overflow-wrap: anywhere; }
+.owb-experiment__state { font-weight: 600; }
+.owb-report-advice { padding: 16px; margin-bottom: 16px; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface); }
+.owb-report-advice__heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.owb-report-advice__heading h2 { margin: 0; font-size: 14px; }
+.owb-report-advice__heading > .ant-btn { margin-left: auto; }
+.owb-report-advice .ant-alert { margin-top: 12px; }
+.owb-report-advice__meta { color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-report-advice-chip { margin-top: 8px; }
+.owb-report-advice-chip .ant-tag { max-width: 100%; white-space: normal; }

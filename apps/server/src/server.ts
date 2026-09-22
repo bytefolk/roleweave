@@ -32,6 +32,7 @@ import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
 import { handlePositionAgentEngine, handlePositionGet, handlePositionModel, handlePositionProfilePatch } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
+import { handleExperimentsGet, handleExperimentsUpdate, handleReportsAdvice } from "./routes/experiments.js";
 import { handleApprovals } from "./routes/approvals.js";
 import { approvals } from "./approvals/service.js";
 import {
@@ -58,6 +59,7 @@ export function createControlPlane(ctx: ControlPlaneContext): http.Server {
   server.requestTimeout = 30000;
   server.headersTimeout = 10000;
   server.on("close", () => { void approvals(ctx).close().catch(() => undefined); });
+  server.on("close", () => { ctx.experimentsService?.close(); });
   return server;
 }
 
@@ -142,6 +144,18 @@ async function dispatch(
     }
     if (pathname === routes.reports && method === "GET") {
       await handleReports(ctx, res);
+      return;
+    }
+    if (pathname === routes.experiments && method === "GET") {
+      await handleExperimentsGet(ctx, res, url);
+      return;
+    }
+    if (pathname === routes.experiments && method === "PATCH") {
+      await handleExperimentsUpdate(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.reportsAdvice && method === "POST") {
+      await handleReportsAdvice(ctx, req, res);
       return;
     }
     if (pathname === routes.sessions && method === "POST") {

@@ -322,6 +322,16 @@ test("WSL forwards document and memory connections through stdin without exposin
   for (const [key, value] of Object.entries(environment)) assert.equal(runtime[key], value);
 });
 
+test("WSL forwards Jev preview configuration over stdin without a renderer or argv secret", () => {
+  const environment = { ROLEWEAVE_JEV_API_KEY: "fixture-jev-key", ROLEWEAVE_JEV_MODEL: "jev-latest", ROLEWEAVE_JEV_TIMEOUT_MS: "2000" };
+  const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", env: environment });
+  const config = parseConfiguration(spec.input);
+  assert.deepEqual(config.environment, environment);
+  assert.doesNotMatch(spec.args.join(" "), /fixture-jev-key/);
+  const runtime = serverEnvironment(config, { HOME: "/home/user", PATH: "/usr/bin" }, "/usr/bin/node");
+  for (const [key, value] of Object.entries(environment)) assert.equal(runtime[key], value);
+});
+
 test("WSL Claude Bearer overrides keep endpoint and credentials from the same environment", async () => {
   const { resolveClaudeProviderConfig } = await import("../../server/src/local-provider-config.js");
   const linux = {

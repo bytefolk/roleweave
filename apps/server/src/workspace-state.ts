@@ -40,6 +40,13 @@ export class WorkspaceState {
   private current: OpenWorkspace | null = null;
   private layout: OrgLayoutFile = emptyLayout();
   private seq = 0;
+  private readonly openListeners = new Set<() => void>();
+
+  /** Cancel optional work immediately when the workspace opening changes. */
+  onOpened(listener: () => void): () => void {
+    this.openListeners.add(listener);
+    return () => this.openListeners.delete(listener);
+  }
 
   /** Currently open workspace, or null. */
   get active(): OpenWorkspace | null {
@@ -94,6 +101,7 @@ export class WorkspaceState {
       organization,
       version: { seq: this.seq, updatedAt: organization.updatedAt },
     };
+    for (const listener of this.openListeners) listener();
     return this.current;
   }
 
