@@ -294,6 +294,7 @@ test("experiments: a failed disable save inhibits new work until persistence suc
 });
 
 test("experiments: manual consent revocation is rechecked before pending results are published", async () => {
+  const enabledRevision = 1;
   let started!: () => void;
   let release!: () => void;
   const start = new Promise<void>(resolve => { started = resolve; });
@@ -302,9 +303,10 @@ test("experiments: manual consent revocation is rechecked before pending results
   try {
     await failure(f.dir);
     const enabled = (await update(f.server, await settings(f.server, f.dir), true)).body as ExperimentsResponse;
+    assert.equal(enabled.revision, enabledRevision);
     const pending = advise(f.server, enabled);
     await start;
-    await fs.writeFile(path.join(f.dir, EXPERIMENTS_FILE), JSON.stringify({ schemaVersion: "experiments.v1", enabled: false, revision: enabled.revision + 1 }));
+    await fs.writeFile(path.join(f.dir, EXPERIMENTS_FILE), JSON.stringify({ schemaVersion: "experiments.v1", enabled: false, revision: enabledRevision + 1 }));
     release();
     assert.equal((await pending).status, 409);
     assert.equal((await settings(f.server, f.dir)).enabled, false);
@@ -338,10 +340,12 @@ test("experiments: invalid settings fail closed and can be explicitly reset; sym
 });
 
 test("experiments: corruption repair and revision rollback cannot revive a stale request or earlier opt-in", async () => {
+  const enabledRevision = 1;
   const provider = fakeProvider();
   const f = await fixture(provider);
   try {
     const enabled = (await update(f.server, await settings(f.server, f.dir), true)).body as ExperimentsResponse;
+    assert.equal(enabled.revision, enabledRevision);
     const file = path.join(f.dir, EXPERIMENTS_FILE);
     await fs.writeFile(file, "corrupted");
     const broken = await settings(f.server, f.dir);
@@ -349,7 +353,7 @@ test("experiments: corruption repair and revision rollback cannot revive a stale
     const repaired = (await update(f.server, broken, false)).body as ExperimentsResponse;
     assert.ok(repaired.revision > enabled.revision);
     assert.equal((await update(f.server, enabled, true)).status, 409);
-    await fs.writeFile(file, JSON.stringify({ schemaVersion: "experiments.v1", revision: enabled.revision, enabled: true }));
+    await fs.writeFile(file, JSON.stringify({ schemaVersion: "experiments.v1", revision: enabledRevision, enabled: true }));
     const rolledBack = await settings(f.server, f.dir);
     assert.equal(rolledBack.availability, "storage_error");
     assert.equal(rolledBack.enabled, false);
