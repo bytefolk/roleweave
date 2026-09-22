@@ -15,6 +15,7 @@ import type {
 import type { ControlPlaneContext } from "../context.js";
 import { sendJson } from "../http.js";
 import { overlayEscalations } from "../jev/escalation.js";
+import { resolveUncoveredGoals } from "../jev/audit-goals.js";
 import { RUNTIME_DIR } from "../org/apply.js";
 import type { ServerResponse } from "node:http";
 
@@ -36,11 +37,23 @@ export async function handleReports(
   const escalations = await overlayEscalations(
     records.flatMap((record) => toEscalation(record, ws.organization.roles)),
   );
+  const goalBindings = await loadGoalBindings(ctx, ws.dir);
+  const auditsWithOverlay = [];
+  for (const entry of audits) {
+    const uncovered = await resolveUncoveredGoals(
+      entry.changes.dismissed.map((role) => role.id),
+      entry.changes.moved.map((move) => move.id),
+      goalBindings,
+    );
+    auditsWithOverlay.push(uncovered && uncovered.length > 0
+      ? { ...entry, uncoveredGoalIds: uncovered }
+      : entry);
+  }
   const body: ReportsResponse = {
     schemaVersion: "reports.v1",
     streams: {
       escalations,
-      audits,
+      audits: auditsWithOverlay,
       evidence,
     },
     budgets: buildBudgets(ws.organization.roles, records),
@@ -108,6 +121,28 @@ async function boundedRead(handle: fs.FileHandle): Promise<string> {
 
 function invalidReports(): OrgApiError {
   return new OrgApiError(errorCodes.reports_data_invalid, 500, "local reports data is invalid");
+}
+
+async function loadGoalBindings(
+  ctx: ControlPlaneContext,
+  workspace: string,
+): Promise<Array<{ goalId: string; positionIds: string[] }>> {
+  try {
+    const summaries = await ctx.goalStore.list(workspace);
+    const bindings: Array<{ goalId: string; positionIds: string[] }> = [];
+    for (const summary of summaries) {
+      const goal = await ctx.goalStore.get(workspace, summary.goalId);
+      const positionIds = [...new Set(
+        goal.branches
+          .map((branch) => branch.positionId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0),
+      )];
+      bindings.push({ goalId: goal.goalId, positionIds });
+    }
+    return bindings;
+  } catch {
+    return [];
+  }
 }
 
 function projectAuditEntry(value: unknown): AuditEntry {
