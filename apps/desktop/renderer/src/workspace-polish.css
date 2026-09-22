@@ -1,5 +1,5 @@
 /* Shared finishing rules for the workspace, conversation and empty states. */
-[data-theme] .owb-app .owb-reports { padding: 26px 30px; min-width: 0; }
+[data-theme] .owb-app .owb-reports { padding: 26px var(--owb-module-gutter, 24px); min-width: 0; }
 [data-theme] .owb-app .owb-reports__hero { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
 [data-theme] .owb-app .owb-reports__hero p { font-size: 12px; line-height: 1.6; color: var(--ui-foreground-muted); margin-top: 4px; }
 .owb-report-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -126,7 +126,7 @@
 .owb-execution-records .ant-table-cell { font-size: 12px; font-variant-numeric: tabular-nums; padding-block: 10px; }
 .owb-execution-records .ant-table-thead > tr > th { background: var(--ui-surface-inset); font-weight: 600; }
 .owb-report-filter-note { display: flex; align-items: center; gap: 10px; font-size: 12px; }
-@media (max-width: 1100px) { .owb-report-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } [data-theme] .owb-app .owb-reports { padding: 20px; } }
+@media (max-width: 1100px) { .owb-report-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } [data-theme] .owb-app .owb-reports { padding: 20px var(--owb-module-gutter, 20px); } }
 .owb-tree-more { margin-left: auto; display: inline-flex; opacity: 0; flex-shrink: 0; }
 /* The ellipsis is the node's create/modify entry: keep it hover-revealed like
    the other row actions, but never hide it on the row the operator selected —
