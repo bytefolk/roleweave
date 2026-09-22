@@ -198,6 +198,12 @@ export function ConversationOptions({ config, saving, disabled, loading = false,
             onChange={(checked) => { if (session) void onContext?.(session.sessionId, checked); }} /></div>
           <p>{t("model.contextLimit")}</p>
           <p>{t("model.contextOffHint")}</p>
+          {session?.contextOverlay?.suggestDisable && enabled ? (
+            <p data-testid="session-context-overlay">{t("model.jev.suggestDisable")} · {t("model.jev.notAdopted")}</p>
+          ) : null}
+          {session?.contextOverlay?.suggestRotate ? (
+            <p data-testid="session-rotate-overlay">{t("model.jev.suggestRotate")}</p>
+          ) : null}
         </div>
         <div className="owb-conversation-popover__section">
           <p className="owb-context-details__stat">{latest ? t("model.lastContext", { count: latest.sourceTurnCount, bytes: latest.contextBytes.toLocaleString() }) : t("model.noContextReceipt")}</p>
