@@ -117,6 +117,37 @@ describe("authoritative approval state", () => {
     expect(decideApprovalsBatch).toHaveBeenCalledTimes(2);
     expect(decideApprovalsBatch.mock.calls[1]![0].reason).toBe("updated reason");
   });
+  it("allows retrying batch with updated reason after transport failure or 5xx error", async () => {
+    const row2: ApprovalView = { ...row, id: "b".repeat(64), approvalId: "engine-id-2" };
+    const decideApprovalsBatch = vi.fn()
+      .mockRejectedValueOnce(new Error("Network connection lost"))
+      .mockResolvedValueOnce({ status: 500, body: { message: "Internal Server Error" } })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: {
+          items: [
+            { id: row.id, status: "accepted", record: { ...row, status: "granted", canDecide: false } },
+            { id: row2.id, status: "accepted", record: { ...row2, status: "granted", canDecide: false } },
+          ],
+        },
+      });
+    bridge({ listApprovals: vi.fn(async () => page([row, row2])), decideApprovalsBatch });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    // Attempt 1: Transport / network failure
+    await act(() => result.current.decideBatch([row.id, row2.id], "attempt 1"));
+    expect(result.current.errors[row.id]).toBe("Network connection lost");
+
+    // Attempt 2: Operator retries with updated reason after network failure, hits 500
+    await act(() => result.current.decideBatch([row.id, row2.id], "attempt 2"));
+    expect(result.current.errors[row.id]).toBe("Internal Server Error");
+
+    // Attempt 3: Operator retries with updated reason after 500, succeeds
+    await act(() => result.current.decideBatch([row.id, row2.id], "attempt 3"));
+    expect(decideApprovalsBatch).toHaveBeenCalledTimes(3);
+    expect(decideApprovalsBatch.mock.calls[2]![0].reason).toBe("attempt 3");
+  });
   it("coalesces concurrent refresh requests and returns fresh items directly", async () => {
     let release!: (value: unknown) => void;
     const delayedPage = () => new Promise(resolve => { release = resolve; });

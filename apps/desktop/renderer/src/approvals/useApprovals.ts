@@ -152,7 +152,7 @@ export function useApprovals(workspacePath: string | undefined) {
       const response = await window.owb.decideApprovalsBatch({ ...request, workspaceToken: cache.current.token });
       if (owner.current !== generation) return;
       if (response.status !== 200 && response.status !== 202) {
-        if (response.status < 500) batchPending.current.delete(key);
+        batchPending.current.delete(key);
         throw new Error(errorText(response.body, t("apr.submitFailed")));
       }
       const body = response.body;
@@ -163,6 +163,7 @@ export function useApprovals(workspacePath: string | undefined) {
       const rejected = body.items.filter(item => item.status === "rejected");
       if (rejected.length) setErrors(errors => ({ ...errors, ...Object.fromEntries(rejected.map(item => [item.id, item.message ?? t("apr.submitFailed")])) }));
     } catch (error) {
+      batchPending.current.delete(key);
       if (owner.current === generation) setErrors(errors => ({ ...errors, ...Object.fromEntries(unique.map(id => [id, error instanceof Error ? error.message : t("apr.submitFailed")])) }));
     } finally {
       if (owner.current === generation) { unique.forEach(id => inFlight.current.delete(id)); setBusy(new Set(inFlight.current)); await refreshRef.current(); }
