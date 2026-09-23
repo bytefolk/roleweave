@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+      # Maintainer-created, exact-commit mirrors of fork PRs. Push checks count
+      # toward branch protection; workflow_dispatch checks are evidence only.
+      - 'validation/pr-*-codeql'
   schedule:
     - cron: '17 3 * * 1'
   workflow_dispatch:
@@ -14,7 +17,8 @@ permissions:
 
 jobs:
   dependency-review:
-    name: Dependency review
+    # A skipped validation-push job must not share the required PR check name.
+    name: ${{ github.event_name == 'pull_request' && 'Dependency review' || 'Dependency review (PR only)' }}
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10

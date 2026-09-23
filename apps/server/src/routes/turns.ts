@@ -410,6 +410,8 @@ export async function executeTurn(
       ...(group !== undefined ? { groupRef: group.groupRef } : {}),
       ...(conversationRef !== undefined ? { conversationRef } : {}),
       ...(resolvedAttachments !== undefined ? { attachments: resolvedAttachments } : {}),
+      ...(body.goalId !== undefined ? { goalId: body.goalId } : {}),
+      ...(body.branchId !== undefined ? { branchId: body.branchId } : {}),
     };
     const running = session === undefined
       ? await ctx.turnStore.begin(beginInput)

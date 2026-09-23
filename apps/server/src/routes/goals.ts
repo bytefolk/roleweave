@@ -36,7 +36,8 @@ export async function handleGoalGet(
   } catch {
     turns = undefined;
   }
-  const detail = await ctx.goalStore.getDetail(workspace.dir, goalId, turns);
+  const detail = await ctx.goalStore.getDetail(workspace.dir, goalId, turns,
+    (turn) => ctx.runningTurns.isRunning(workspace.dir, turn.positionId, turn.turnId));
   sendJson(res, 200, detail);
 }
 

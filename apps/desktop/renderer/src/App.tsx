@@ -33,7 +33,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderOpen, Network, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
+import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -84,6 +84,7 @@ import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
+import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
 import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
@@ -141,7 +142,7 @@ function AppInner({
 }) {
   const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
-    "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "settings"
+    "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings"
   >("org");
   const setActiveModule = useCallback((next: typeof activeModule) => {
     if (next === "settings") setActiveModuleRaw(next);
@@ -1778,7 +1779,7 @@ function AppInner({
     } : {}),
   }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
 
-  const sidebarlessModule = activeModule === "reports" || activeModule === "approvals" || activeModule === "settings";
+  const sidebarlessModule = activeModule === "projects" || activeModule === "reports" || activeModule === "approvals" || activeModule === "settings";
 
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
@@ -1859,6 +1860,7 @@ function AppInner({
             // #134: the update pane needs room for a version, live progress and
             // a changelog link, so it is a module rather than a third row in
             // the prefs drawer (#174), which stays two quick toggles.
+            { id: "projects", label: t("project.moduleTitle"), icon: <FolderKanban aria-hidden="true" size={16} />, active: activeModule === "projects", onSelect: () => setActiveModule("projects") },
             { id: "goals", label: t("rail.goals"), icon: <Flag aria-hidden="true" size={16} />, active: activeModule === "goals", onSelect: () => setActiveModule("goals") },
             { id: "settings", label: t("rail.settings"), icon: <Settings aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => setActiveModule("settings") },
           ]}
@@ -2117,6 +2119,8 @@ function AppInner({
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
           />
+        ) : activeModule === "projects" ? (
+          <ProjectManagementModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} positionNames={positionNames} positionEngines={positionEngines} />
         ) : activeModule === "goals" ? (
           <GoalsModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} positionNames={positionNames} positionAvatars={positionAvatars} positionAvatarSources={avatarUrls} ownerPositionId={snapshot?.owner} />
         ) : activeModule === "settings" ? (

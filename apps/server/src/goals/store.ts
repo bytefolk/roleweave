@@ -4,8 +4,6 @@ import path from "node:path";
 import {
   GOAL_ACTIVITY_SCHEMA_VERSION,
   GOAL_MAX_ACTIVITY_ENTRIES,
-  GOAL_MAX_BRANCHES,
-  GOAL_MAX_TITLE_LENGTH,
   GOAL_SCHEMA_VERSION,
   OrgApiError,
   canTransitionGoalStatus,
@@ -16,10 +14,10 @@ import {
   validateGoalUpdateRequest,
   type Goal,
   type GoalActivity,
+  type GoalDetail,
   type GoalHealthStatus,
   type GoalSummary,
-  type GoalsCreateRequest,
-  type GoalsUpdateRequest,
+  type GoalTaskExecution,
 } from "@roleweave/shared";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
@@ -27,7 +25,8 @@ import type { TurnRecord } from "@roleweave/shared";
 
 const GOAL_ROOT_SEGMENTS = [".roleweave", "goals"];
 const MAX_GOALS = 64;
-const MAX_GOAL_RECORD_BYTES = 32 * 1024;
+// 64 bounded work items can exceed the previous 32 KiB record size.
+const MAX_GOAL_RECORD_BYTES = 2 * 1024 * 1024;
 const MAX_GOAL_ACTIVITY_BYTES = 16 * 1024;
 const GOAL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -153,7 +152,7 @@ async function readBoundedJson(file: string, maxBytes: number): Promise<unknown>
 }
 
 function toSummary(goal: Goal): GoalSummary {
-  const { branches: _, ...rest } = goal;
+  const { branches: _, workItems: _workItems, ...rest } = goal;
   return { ...rest, branchCount: goal.branches.length };
 }
 
@@ -182,6 +181,29 @@ export function computeHealthFromTurns(goal: Goal, turns: readonly TurnRecord[])
     }
   }
   return worst ?? "unknown";
+}
+
+export function projectTaskExecutions(goal: Goal, turns: readonly TurnRecord[], isRunning: (turn: TurnRecord) => boolean = () => false): Record<string, GoalTaskExecution> {
+  const latest = new Map<string, TurnRecord>();
+  const tasks = new Map((goal.workItems ?? []).map((item) => [item.taskId, item]));
+  for (const turn of turns) {
+    if (turn.goalId !== goal.goalId || !turn.branchId) continue;
+    const item = tasks.get(turn.branchId);
+    if (!item?.assigneePositionId || turn.positionId !== item.assigneePositionId) continue;
+    const previous = latest.get(item.taskId);
+    // Start time identifies the newest attempt, even if an older attempt finishes later.
+    if (!previous || Date.parse(turn.createdAt) > Date.parse(previous.createdAt)
+      || (turn.createdAt === previous.createdAt && turn.turnId > previous.turnId)) {
+      latest.set(item.taskId, turn);
+    }
+  }
+  return Object.fromEntries([...latest].map(([taskId, turn]) => [taskId, {
+    turnId: turn.turnId,
+    positionId: turn.positionId,
+    status: turn.status === "running" && !isRunning(turn) ? "indeterminate" : turn.status,
+    startedAt: turn.createdAt,
+    ...(turn.status === "running" ? {} : { completedAt: turn.updatedAt }),
+  }]));
 }
 
 export class GoalStore {
@@ -263,33 +285,31 @@ export class GoalStore {
     return parsed.value;
   }
 
-  async getDetail(workspace: string, goalId: string, turns?: readonly TurnRecord[]): Promise<{ goal: Goal; activity: GoalActivity[] }> {
-    const goal = await this.get(workspace, goalId);
-    const activity = await this.readActivity(workspace, goalId);
-    if (turns !== undefined && goal.branches.length > 0) {
-      const computed = computeHealthFromTurns(goal, turns);
-      if (computed !== goal.health) {
-        const now = new Date().toISOString();
-        const updated: Goal = { ...goal, health: computed, updatedAt: now };
-        try {
-          await atomicWriteJson(goalFile(workspace, goalId), updated, MAX_GOAL_RECORD_BYTES, nodeAtomicTurnWriteOperations, goalError);
-        } catch (error) {
-          if (error instanceof OrgApiError) throw error;
-          throw goalError("local goal record could not be persisted atomically", error);
-        }
+  async getDetail(workspace: string, goalId: string, turns?: readonly TurnRecord[], isRunning?: (turn: TurnRecord) => boolean): Promise<GoalDetail> {
+    // Health remains durable for list/detail consistency, but shares the edit
+    // lock so a background refresh cannot overwrite a newer project plan.
+    return this.exclusive(`goal\0${path.resolve(workspace)}\0${goalId}`, async () => {
+      let goal = await this.get(workspace, goalId);
+      const activity = await this.readActivity(workspace, goalId);
+      if (turns === undefined) return { goal, activity, executionUnavailable: true };
+      const health = computeHealthFromTurns(goal, turns);
+      if (health !== goal.health) {
+        const updatedAt = new Date(Math.max(Date.now(), Date.parse(goal.updatedAt) + 1)).toISOString();
         const healthActivity: GoalActivity = {
           schemaVersion: GOAL_ACTIVITY_SCHEMA_VERSION,
           activityId: crypto.randomUUID(),
           goalId,
           kind: "health_changed",
-          detail: `health: ${goal.health} → ${computed}`,
-          createdAt: now,
+          detail: `health: ${goal.health} → ${health}`,
+          createdAt: updatedAt,
         };
+        goal = { ...goal, health, updatedAt };
+        await atomicWriteJson(goalFile(workspace, goalId), goal, MAX_GOAL_RECORD_BYTES, nodeAtomicTurnWriteOperations, goalError);
         await this.appendActivity(workspace, goalId, healthActivity);
-        return { goal: updated, activity: [...activity, healthActivity] };
+        activity.push(healthActivity);
       }
-    }
-    return { goal, activity };
+      return { goal, activity, taskExecutions: projectTaskExecutions(goal, turns, isRunning) };
+    });
   }
 
   async update(workspace: string, goalId: string, request: unknown, now = new Date().toISOString()): Promise<Goal> {
@@ -298,6 +318,13 @@ export class GoalStore {
 
     return this.exclusive(`goal\0${path.resolve(workspace)}\0${goalId}`, async () => {
       const existing = await this.get(workspace, goalId);
+
+      if (parsed.value.expectedUpdatedAt !== undefined && parsed.value.expectedUpdatedAt !== existing.updatedAt) {
+        throw goalConflict("goal changed since it was loaded; refresh before saving work items");
+      }
+      if (parsed.value.workItems?.some((item) => existing.branches.some((branch) => branch.branchId === item.taskId))) {
+        throw goalRequestInvalid("work item identifiers must be distinct from existing branch identifiers");
+      }
 
       if (parsed.value.status !== undefined && !canTransitionGoalStatus(existing.status, parsed.value.status)) {
         throw goalConflict(`cannot transition goal status from ${existing.status} to ${parsed.value.status}`);
@@ -310,7 +337,9 @@ export class GoalStore {
         ...(parsed.value.acceptanceCriteria !== undefined ? { acceptanceCriteria: parsed.value.acceptanceCriteria } : {}),
         ...(parsed.value.status !== undefined ? { status: parsed.value.status } : {}),
         ...(parsed.value.health !== undefined ? { health: parsed.value.health } : {}),
-        updatedAt: now,
+        ...(parsed.value.workItems !== undefined ? { workItems: parsed.value.workItems } : {}),
+        // Two writes in the same millisecond must still produce distinct revisions.
+        updatedAt: new Date(Math.max(Date.parse(now), Date.parse(existing.updatedAt) + 1)).toISOString(),
       };
 
       try {
@@ -330,6 +359,7 @@ export class GoalStore {
       if (parsed.value.title !== undefined) changes.push("title updated");
       if (parsed.value.description !== undefined) changes.push("description updated");
       if (parsed.value.acceptanceCriteria !== undefined) changes.push("acceptance criteria updated");
+      if (parsed.value.workItems !== undefined) changes.push("work items updated");
 
       const activity: GoalActivity = {
         schemaVersion: GOAL_ACTIVITY_SCHEMA_VERSION,
@@ -337,7 +367,7 @@ export class GoalStore {
         goalId,
         kind: changes.some((c) => c.startsWith("status:")) ? "status_changed" : "updated",
         detail: changes.length > 0 ? changes.join("; ") : "Goal updated",
-        createdAt: now,
+        createdAt: updated.updatedAt,
       };
       await this.appendActivity(workspace, goalId, activity);
       return updated;

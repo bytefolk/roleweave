@@ -2141,3 +2141,14 @@ it("keeps a failed model selection on the old value, exposes retry, and retains 
   expect(bridge.createSession).not.toHaveBeenCalled();
   expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
 });
+
+
+it("opens project management independently from Goals through the module rail", async () => {
+  installBridge();
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "项目管理", exact: true }));
+  expect(await screen.findByRole("heading", { name: "项目管理", level: 1 })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "目标", exact: true }));
+  expect(await screen.findByRole("heading", { name: "目标", level: 1 })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "项目管理", level: 1 })).not.toBeInTheDocument();
+});

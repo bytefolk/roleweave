@@ -1,0 +1,23 @@
+.owb-app .owb-goals-module--project .owb-goals-layout {
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 20px;
+}
+.owb-app .owb-goals-module--project .owb-goals-detail__content {
+  max-width: none;
+  padding-inline-end: 8px;
+}
+.owb-project-overview {
+  margin-block: 24px;
+  padding-block: 16px;
+  border-top: 1px solid var(--ui-border);
+}
+.owb-project-overview > summary {
+  cursor: pointer;
+  color: var(--ui-foreground-muted);
+  font-weight: 600;
+}
+@media (max-width: 1100px) {
+  .owb-app .owb-goals-module--project .owb-goals-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

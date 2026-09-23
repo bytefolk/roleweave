@@ -108,6 +108,12 @@ export class RunningTurnRegistry {
     return true;
   }
 
+  /** Exact in-process evidence; a leftover disk record is not a live turn. */
+  isRunning(workspace: string, positionId: string, turnId: string): boolean {
+    const turn = this.turns.get(this.key(workspace, positionId));
+    return turn?.kind === "turn" && turn.turnId === turnId;
+  }
+
   private key(workspace: string, positionId: string): string {
     return `${path.resolve(workspace)}\0${positionId}`;
   }

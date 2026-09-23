@@ -1,3 +1,5 @@
+import type { TurnRecordStatus } from "./turns.js";
+
 /**
  * Goal contracts (v1).
  *
@@ -19,6 +21,32 @@ export const GOAL_MAX_CRITERIA_ITEMS = 16;
 export const GOAL_MAX_BRANCHES = 32;
 export const GOAL_MAX_ACTIVITY_ENTRIES = 128;
 export const GOAL_MAX_LIST_ITEMS = 64;
+export const GOAL_MAX_WORK_ITEMS = 64;
+
+export const goalWorkItemStatuses = ["todo", "in_progress", "blocked", "review", "done"] as const;
+export type GoalWorkItemStatus = (typeof goalWorkItemStatuses)[number];
+export const goalWorkItemPriorities = ["low", "normal", "high"] as const;
+export type GoalWorkItemPriority = (typeof goalWorkItemPriorities)[number];
+
+/** Human-owned plan. Execution facts are projected separately from turn records. */
+export interface GoalWorkItem {
+  taskId: string;
+  title: string;
+  description?: string;
+  status: GoalWorkItemStatus;
+  priority: GoalWorkItemPriority;
+  assigneePositionId?: string;
+  startDate?: string;
+  dueDate?: string;
+}
+
+export interface GoalTaskExecution {
+  turnId: string;
+  positionId: string;
+  status: TurnRecordStatus;
+  startedAt?: string;
+  completedAt?: string;
+}
 
 export const goalStatuses = ["open", "in_progress", "completed", "cancelled"] as const;
 export type GoalStatus = (typeof goalStatuses)[number];
@@ -59,6 +87,8 @@ export interface Goal {
   status: GoalStatus;
   health: GoalHealthStatus;
   branches: GoalBranch[];
+  /** Optional so existing goal.v1 files remain valid without migration. */
+  workItems?: GoalWorkItem[];
   createdAt: string;
   updatedAt: string;
 }
@@ -72,11 +102,14 @@ export interface GoalActivity {
   createdAt: string;
 }
 
-export type GoalSummary = Omit<Goal, "branches"> & { branchCount: number };
+export type GoalSummary = Omit<Goal, "branches" | "workItems"> & { branchCount: number };
 
 export interface GoalDetail {
   goal: Goal;
   activity: GoalActivity[];
+  taskExecutions?: Record<string, GoalTaskExecution>;
+  /** A failed turn-history read must never look like an empty execution history. */
+  executionUnavailable?: boolean;
 }
 
 export interface GoalsCreateRequest {
@@ -91,6 +124,9 @@ export interface GoalsUpdateRequest {
   acceptanceCriteria?: string[];
   status?: GoalStatus;
   health?: GoalHealthStatus;
+  workItems?: GoalWorkItem[];
+  /** Required for replacing workItems; stale edits return HTTP 409. */
+  expectedUpdatedAt?: string;
 }
 
 export interface GoalsCreateResponse {
@@ -101,10 +137,7 @@ export interface GoalsListResponse {
   goals: GoalSummary[];
 }
 
-export interface GoalsDetailResponse {
-  goal: Goal;
-  activity: GoalActivity[];
-}
+export type GoalsDetailResponse = GoalDetail;
 
 const allowedGoalTransitions: Record<GoalStatus, readonly GoalStatus[]> = {
   open: ["in_progress", "cancelled"],
@@ -248,8 +281,70 @@ function validateCriteria(raw: unknown): GoalValidationResult<string[]> {
   return { ok: true, value: items };
 }
 
+/** Date-only values are calendar dates, never local-midnight timestamps. */
+function calendarDate(value: unknown, field: string): GoalValidationResult<string> {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000-")) {
+    return fail("goal_invalid", `${field} must be a YYYY-MM-DD calendar date`);
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    return fail("goal_invalid", `${field} is not a real calendar date`);
+  }
+  return { ok: true, value };
+}
+
+export function validateGoalWorkItems(raw: unknown): GoalValidationResult<GoalWorkItem[]> {
+  const list = boundedList(raw, "workItems", GOAL_MAX_WORK_ITEMS);
+  if (!list.ok) return list;
+  const ids = new Set<string>();
+  const items: GoalWorkItem[] = [];
+  for (let index = 0; index < list.value.length; index += 1) {
+    const item = list.value[index];
+    const field = `workItems[${index}]`;
+    if (!isRecord(item) || !keysMatch(item, ["taskId", "title", "status", "priority"], ["description", "assigneePositionId", "startDate", "dueDate"])) {
+      return fail("goal_unknown_field", `${field} has unexpected or missing fields`);
+    }
+    // Match the existing turn branchId contract so every task can be executed.
+    if (typeof item.taskId !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(item.taskId)) {
+      return fail("goal_invalid", `${field}.taskId must be a safe identifier up to 64 characters`);
+    }
+    if (ids.has(item.taskId)) return fail("goal_duplicate_reference", `${field}.taskId is a duplicate`);
+    ids.add(item.taskId);
+    const title = nonEmptyText(item.title, `${field}.title`, GOAL_MAX_TITLE_LENGTH);
+    if (!title.ok) return title;
+    const status = enumValue(item.status, goalWorkItemStatuses, `${field}.status`);
+    if (!status.ok) return status;
+    const priority = enumValue(item.priority, goalWorkItemPriorities, `${field}.priority`);
+    if (!priority.ok) return priority;
+    const result: GoalWorkItem = { taskId: item.taskId, title: title.value, status: status.value, priority: priority.value };
+    if (item.description !== undefined) {
+      const description = nonEmptyText(item.description, `${field}.description`);
+      if (!description.ok) return description;
+      result.description = description.value;
+    }
+    if (item.assigneePositionId !== undefined) {
+      if (typeof item.assigneePositionId !== "string" || item.assigneePositionId.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.assigneePositionId)) {
+        return fail("goal_invalid", `${field}.assigneePositionId must be a valid position identifier`);
+      }
+      result.assigneePositionId = item.assigneePositionId;
+    }
+    for (const key of ["startDate", "dueDate"] as const) {
+      if (item[key] !== undefined) {
+        const date = calendarDate(item[key], `${field}.${key}`);
+        if (!date.ok) return date;
+        result[key] = date.value;
+      }
+    }
+    if (result.startDate && result.dueDate && result.startDate > result.dueDate) {
+      return fail("goal_invalid", `${field}.startDate must not be after dueDate`);
+    }
+    items.push(result);
+  }
+  return { ok: true, value: items };
+}
+
 export function validateGoal(raw: unknown): GoalValidationResult<Goal> {
-  if (!isRecord(raw) || !keysMatch(raw, ["schemaVersion", "goalId", "title", "description", "acceptanceCriteria", "status", "health", "branches", "createdAt", "updatedAt"])) {
+  if (!isRecord(raw) || !keysMatch(raw, ["schemaVersion", "goalId", "title", "description", "acceptanceCriteria", "status", "health", "branches", "createdAt", "updatedAt"], ["workItems"])) {
     return fail("goal_unknown_field", "goal has unexpected or missing fields");
   }
   if (raw.schemaVersion !== GOAL_SCHEMA_VERSION) return fail("goal_invalid", "goal.schemaVersion is not supported");
@@ -271,6 +366,11 @@ export function validateGoal(raw: unknown): GoalValidationResult<Goal> {
   if (!createdAt.ok) return createdAt;
   const updatedAt = iso8601(raw.updatedAt, "goal.updatedAt");
   if (!updatedAt.ok) return updatedAt;
+  const workItems = raw.workItems === undefined ? undefined : validateGoalWorkItems(raw.workItems);
+  if (workItems && !workItems.ok) return workItems;
+  if (workItems?.ok && workItems.value.some((item) => branches.value.some((branch) => branch.branchId === item.taskId))) {
+    return fail("goal_duplicate_reference", "work item identifiers must be distinct from existing branch identifiers");
+  }
 
   return {
     ok: true,
@@ -283,6 +383,7 @@ export function validateGoal(raw: unknown): GoalValidationResult<Goal> {
       status: status.value,
       health: health.value,
       branches: branches.value,
+      ...(workItems?.ok ? { workItems: workItems.value } : {}),
       createdAt: createdAt.value,
       updatedAt: updatedAt.value,
     },
@@ -339,10 +440,22 @@ export function validateGoalCreateRequest(raw: unknown): GoalValidationResult<Go
 
 export function validateGoalUpdateRequest(raw: unknown): GoalValidationResult<GoalsUpdateRequest> {
   if (!isRecord(raw) || Object.keys(raw).length === 0) return fail("goal_invalid", "update request must not be empty");
-  const allowed = new Set(["title", "description", "acceptanceCriteria", "status", "health"]);
+  const allowed = new Set(["title", "description", "acceptanceCriteria", "status", "health", "workItems", "expectedUpdatedAt"]);
   if (Object.keys(raw).some((k) => !allowed.has(k))) return fail("goal_unknown_field", "update request has unexpected fields");
 
   const result: GoalsUpdateRequest = {};
+
+  if (raw.expectedUpdatedAt !== undefined) {
+    const timestamp = iso8601(raw.expectedUpdatedAt, "expectedUpdatedAt");
+    if (!timestamp.ok) return timestamp;
+    result.expectedUpdatedAt = timestamp.value;
+  }
+  if (raw.workItems !== undefined) {
+    if (result.expectedUpdatedAt === undefined) return fail("goal_invalid", "workItems updates require expectedUpdatedAt");
+    const workItems = validateGoalWorkItems(raw.workItems);
+    if (!workItems.ok) return workItems;
+    result.workItems = workItems.value;
+  }
 
   if (raw.title !== undefined) {
     const title = nonEmptyText(raw.title, "title", GOAL_MAX_TITLE_LENGTH);
@@ -369,5 +482,6 @@ export function validateGoalUpdateRequest(raw: unknown): GoalValidationResult<Go
     if (!health.ok) return health;
     result.health = health.value;
   }
+  if (Object.keys(result).every((key) => key === "expectedUpdatedAt")) return fail("goal_invalid", "update request must change a field");
   return { ok: true, value: result };
 }

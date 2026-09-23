@@ -10,13 +10,18 @@ import {
   type GoalStatus,
   type GoalSummary,
 } from "@roleweave/shared/goals";
+import type { TurnEngine } from "@roleweave/shared";
 import { isPendingTaskCollaboration, type AgentTask } from "@roleweave/shared/task-board";
+import { ProjectBoard } from "./ProjectBoard.js";
+import "./goals-project.css";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
 
 interface GoalsModuleProps {
   workspaceOpen: boolean;
+  presentation?: "goals" | "projects";
   workspaceKey?: string;
   positionNames?: Record<string, string>;
+  positionEngines?: Record<string, TurnEngine>;
   positionAvatars?: Record<string, import("../PositionAvatar.js").AvatarValue>;
   positionAvatarSources?: Record<string, string>;
   ownerPositionId?: string;
@@ -46,14 +51,17 @@ function errorMessage(body: unknown, fallback: string) {
 export function GoalsModule(props: GoalsModuleProps) {
   return (
     <GoalsWorkspace
-      key={`${props.workspaceOpen}:${props.workspaceKey ?? ""}`}
+      key={`${props.presentation ?? "goals"}:${props.workspaceOpen}:${props.workspaceKey ?? ""}`}
       {...props}
     />
   );
 }
 
-function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, positionAvatars = {}, positionAvatarSources = {}, ownerPositionId }: GoalsModuleProps) {
+function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", positionNames = {}, positionEngines = {}, positionAvatars = {}, positionAvatarSources = {}, ownerPositionId }: GoalsModuleProps) {
   const t = useT();
+  const projectMode = presentation === "projects";
+  const selectionKey = workspaceKey ? `${presentation}:${workspaceKey}` : undefined;
+  const Overview = projectMode ? "details" : "div";
   const [view, setView] = useState<"goals" | "board">("goals");
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
@@ -63,7 +71,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
   const [taskContractor, setTaskContractor] = useState(false);
   const [goals, setGoals] = useState<GoalSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() =>
-    workspaceKey ? (rememberedSelection.get(workspaceKey) ?? null) : null,
+    selectionKey ? (rememberedSelection.get(selectionKey) ?? null) : null,
   );
   const selectedRef = useRef(selectedId);
   const [detail, setDetail] = useState<GoalDetail | null>(null);
@@ -100,14 +108,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
       }
       selectedRef.current = id;
       setSelectedId(id);
-      if (workspaceKey) {
-        if (id) rememberedSelection.set(workspaceKey, id);
-        else rememberedSelection.delete(workspaceKey);
+      if (selectionKey) {
+        if (id) rememberedSelection.set(selectionKey, id);
+        else rememberedSelection.delete(selectionKey);
         if (rememberedSelection.size > 50)
           rememberedSelection.delete(rememberedSelection.keys().next().value!);
       }
     },
-    [workspaceKey],
+    [selectionKey],
   );
 
   const loadGoals = useCallback(
@@ -120,7 +128,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
         const response = await window.owb.goals();
         if (!alive.current || version !== listVersion.current) return;
         if (response.status !== 200)
-          throw new Error(errorMessage(response.body, t("goals.loadError")));
+          throw new Error(errorMessage(response.body, t(projectMode ? "project.projectLoadError" : "goals.loadError")));
         const next = response.body.goals;
         setGoals(next);
         const wanted = preferredId ?? selectedRef.current;
@@ -132,7 +140,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
       } catch (cause) {
         if (alive.current && version === listVersion.current)
           setError(
-            cause instanceof Error ? cause.message : t("goals.loadError"),
+            cause instanceof Error ? cause.message : t(projectMode ? "project.projectLoadError" : "goals.loadError"),
           );
       } finally {
         if (alive.current && version === listVersion.current) setLoading(false);
@@ -144,7 +152,6 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
   const loadDetail = useCallback(
     async (goalId: string) => {
       const version = ++detailVersion.current;
-      setDetail(null);
       setDetailError(null);
       try {
         const response = await window.owb.goal(goalId);
@@ -155,7 +162,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
         )
           return;
         if (response.status !== 200)
-          throw new Error(errorMessage(response.body, t("goals.loadError")));
+          throw new Error(errorMessage(response.body, t(projectMode ? "project.projectLoadError" : "goals.loadError")));
         setDetail(response.body);
       } catch (cause) {
         if (
@@ -164,7 +171,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
           selectedRef.current === goalId
         )
           setDetailError(
-            cause instanceof Error ? cause.message : t("goals.loadError"),
+            cause instanceof Error ? cause.message : t(projectMode ? "project.projectLoadError" : "goals.loadError"),
           );
       }
     },
@@ -218,6 +225,15 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
     });
   }, [workspaceOpen, loadGoals, loadDetail]);
 
+  // Refresh execution evidence without unmounting an open task editor.
+  useEffect(() => {
+    if (!workspaceOpen || !projectMode) return;
+    const timer = window.setInterval(() => {
+      if (selectedRef.current) void loadDetail(selectedRef.current);
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [workspaceOpen, projectMode, loadDetail]);
+
   const changeStatus = async (status: GoalStatus) => {
     const id = selectedRef.current;
     if (
@@ -236,13 +252,13 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
       if (!alive.current || selectedRef.current !== id) return;
       if (response.status !== 200)
         throw new Error(
-          errorMessage(response.body, t("goals.statusChangeFail")),
+          errorMessage(response.body, t(projectMode ? "project.projectStatusChangeFail" : "goals.statusChangeFail")),
         );
       await Promise.all([loadGoals(), loadDetail(id)]);
     } catch (cause) {
       if (alive.current && selectedRef.current === id)
         setActionError(
-          cause instanceof Error ? cause.message : t("goals.statusChangeFail"),
+          cause instanceof Error ? cause.message : t(projectMode ? "project.projectStatusChangeFail" : "goals.statusChangeFail"),
         );
     } finally {
       mutationLock.current = false;
@@ -255,7 +271,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
     if (!id || !detail || mutationLock.current) return;
     if (
       !window.confirm(
-        t("reading.goals.deleteNamed", { title: detail.goal.title }),
+        t(projectMode ? "project.projectDeleteNamed" : "reading.goals.deleteNamed", { title: detail.goal.title }),
       )
     )
       return;
@@ -266,7 +282,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
       const response = await window.owb.deleteGoal(id);
       if (!alive.current) return;
       if (response.status !== 200 || !response.body.deleted)
-        throw new Error(errorMessage(response.body, t("goals.deleteFail")));
+        throw new Error(errorMessage(response.body, t(projectMode ? "project.projectDeleteFail" : "goals.deleteFail")));
       const index = goals.findIndex((goal) => goal.goalId === id);
       const remaining = goals.filter((goal) => goal.goalId !== id);
       setGoals(remaining);
@@ -278,7 +294,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
     } catch (cause) {
       if (alive.current && selectedRef.current === id)
         setActionError(
-          cause instanceof Error ? cause.message : t("goals.deleteFail"),
+          cause instanceof Error ? cause.message : t(projectMode ? "project.projectDeleteFail" : "goals.deleteFail"),
         );
     } finally {
       mutationLock.current = false;
@@ -304,23 +320,25 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
       icon={<Target aria-hidden="true" size={16} />}
       onClick={() => setShowCreate(true)}
     >
-      {t("goals.create")}
+      {t(projectMode ? "project.createProject" : "goals.create")}
     </AntButton>
   );
   return (
-    <section className="owb-goals-module" aria-label={t("goals.moduleAria")}>
+    <section className={`owb-goals-module${projectMode ? " owb-goals-module--project" : ""}`} aria-label={t(projectMode ? "project.moduleAria" : "goals.moduleAria")}>
       <header className="owb-module-header">
-        <h1>{t("goals.title")}</h1>
-        <div className="owb-goals-tabs" role="tablist">
-          <button type="button" role="tab" aria-selected={view === "goals"} onClick={() => setView("goals")}>{t("goals.tabGoals")}</button>
-          <button type="button" role="tab" aria-selected={view === "board"} onClick={() => setView("board")}>{t("goals.tabBoard")}</button>
-        </div>
-        {workspaceOpen && view === "board" ? <AntButton type="primary" onClick={() => setShowTaskCreate(true)}>{t("tasks.create")}</AntButton> : null}
-        {workspaceOpen && view === "goals" && (
+        <h1>{t(projectMode ? "project.moduleTitle" : "goals.title")}</h1>
+        {!projectMode && (
+          <div className="owb-goals-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={view === "goals"} onClick={() => setView("goals")}>{t("goals.tabGoals")}</button>
+            <button type="button" role="tab" aria-selected={view === "board"} onClick={() => setView("board")}>{t("goals.tabBoard")}</button>
+          </div>
+        )}
+        {!projectMode && workspaceOpen && view === "board" ? <AntButton type="primary" onClick={() => setShowTaskCreate(true)}>{t("tasks.create")}</AntButton> : null}
+        {workspaceOpen && (projectMode || view === "goals") && (
           <>
             {((!loading && !error) || goals.length > 0) && (
               <span className="owb-module-header__count">
-                {t("goals.count", { count: goals.length })}
+                {t(projectMode ? "project.projectCount" : "goals.count", { count: goals.length })}
               </span>
             )}
             {!empty && createButton}
@@ -331,7 +349,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
         <div className="owb-goals-global-state">
           <p>{t("tree.notOpened")}</p>
         </div>
-      ) : view === "board" ? (
+      ) : !projectMode && view === "board" ? (
         <div className="owb-task-board" aria-label={t("tasks.boardAria")}>
           {(["queued", "active", "waiting", "done"] as const).map((column) => (
             <section className="owb-task-column" key={column}>
@@ -377,8 +395,8 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
           {empty && (
             <div className="owb-goals-global-state">
               <Target size={36} aria-hidden="true" />
-              <h2>{t("reading.goals.emptyTitle")}</h2>
-              <p>{t("reading.goals.emptyHint")}</p>
+              <h2>{t(projectMode ? "project.emptyTitle" : "reading.goals.emptyTitle")}</h2>
+              <p>{t(projectMode ? "project.moduleEmptyHint" : "reading.goals.emptyHint")}</p>
               {createButton}
             </div>
           )}
@@ -387,18 +405,18 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
               <div className="owb-goals-list-pane">
                 <div className="owb-goals-filters">
                   <Input
-                    aria-label={t("reading.goals.search")}
-                    placeholder={t("reading.goals.search")}
+                    aria-label={t(projectMode ? "project.searchProjects" : "reading.goals.search")}
+                    placeholder={t(projectMode ? "project.searchProjects" : "reading.goals.search")}
                     value={query}
                     allowClear
                     onChange={(e) => setQuery(e.target.value)}
                   />
                   <Select
-                    aria-label={t("reading.goals.filter")}
+                    aria-label={t(projectMode ? "project.filterProjects" : "reading.goals.filter")}
                     value={statusFilter}
                     onChange={setStatusFilter}
                     options={[
-                      { value: "all", label: t("reading.goals.all") },
+                      { value: "all", label: t(projectMode ? "project.allProjects" : "reading.goals.all") },
                       ...goalStatuses.map((status) => ({
                         value: status,
                         label: t(`goals.status.${status}`),
@@ -408,7 +426,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
                 </div>
                 {filtered.length === 0 ? (
                   <div className="owb-goals-empty">
-                    <p>{t("reading.goals.noResults")}</p>
+                    <p>{t(projectMode ? "project.noProjectResults" : "reading.goals.noResults")}</p>
                     <AntButton onClick={clearFilters}>
                       {t("reading.clearFilters")}
                     </AntButton>
@@ -417,7 +435,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
                   <ul
                     className="owb-goals-list"
                     role="listbox"
-                    aria-label={t("goals.listAria")}
+                    aria-label={t(projectMode ? "project.listAria" : "goals.listAria")}
                   >
                     {filtered.map((goal) => (
                       <li
@@ -471,9 +489,9 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
                 </AntButton>
                 {detailError ? (
                   <div className="owb-goals-error" role="alert">
-                    <p>{t("goals.loadError")}</p>
+                    <p>{t(projectMode ? "project.projectLoadError" : "goals.loadError")}</p>
                     <p>
-                      {detailError !== t("goals.loadError")
+                      {detailError !== t(projectMode ? "project.projectLoadError" : "goals.loadError")
                         ? detailError
                         : null}
                     </p>
@@ -498,7 +516,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
                           items: [
                             {
                               key: "delete",
-                              label: t("goals.deleteAction"),
+                              label: t(projectMode ? "project.projectDeleteAction" : "goals.deleteAction"),
                               danger: true,
                               disabled: mutating,
                             },
@@ -526,7 +544,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
                             value: status,
                             label: t(`goals.status.${status}`),
                           }))}
-                        aria-label={t("goals.statusChange")}
+                        aria-label={t(projectMode ? "project.projectStatusChange" : "goals.statusChange")}
                       />
                       <span
                         className={`owb-health-dot ${HEALTH_DOT[detail.goal.health]}`}
@@ -540,15 +558,27 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
                         {actionError}
                       </p>
                     )}
+                    {projectMode && <ProjectBoard
+                      key={detail.goal.goalId}
+                      detail={detail}
+                      positionNames={positionNames}
+                      positionEngines={positionEngines}
+                      onRefresh={async () => {
+                        const goalId = selectedRef.current;
+                        await Promise.all([loadGoals(), goalId ? loadDetail(goalId) : Promise.resolve()]);
+                      }}
+                    />}
+                    <Overview className={projectMode ? "owb-project-overview" : undefined}>
+                      {projectMode && <summary>{t("project.overview")}</summary>}
                     <section>
-                      <h3>{t("goals.descField")}</h3>
+                      <h3>{t(projectMode ? "project.form.descField" : "goals.descField")}</h3>
                       <p className="owb-goals-detail__desc">
                         {detail.goal.description}
                       </p>
                     </section>
                     {detail.goal.acceptanceCriteria.length > 0 && (
                       <section>
-                        <h3>{t("goals.criteria")}</h3>
+                        <h3>{t(projectMode ? "project.form.criteria" : "goals.criteria")}</h3>
                         <ol>
                           {detail.goal.acceptanceCriteria.map(
                             (criterion, index) => (
@@ -591,12 +621,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, posit
                         ))}
                       </ol>
                     </section>
+                    </Overview>
                   </div>
                 )}
               </aside>
             </div>
           )}
           <GoalCreateDialog
+            presentation={presentation}
             open={showCreate}
             onClose={() => setShowCreate(false)}
             onCreated={(id) => {
