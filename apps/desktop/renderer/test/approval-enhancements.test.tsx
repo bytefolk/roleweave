@@ -73,6 +73,26 @@ describe("Approval Center Enhancements (#456)", () => {
       expect(deleteRows.length).toBe(1);
       expect(container.querySelectorAll(".owb-diff-row.is-add").length).toBe(0);
     });
+
+    it("safely handles edge cases like empty strings and undefined delete before", () => {
+      // Undefined before on delete should not throw
+      const { container: c1 } = render(<DiffViewer change="delete" />);
+      expect(c1.querySelectorAll(".owb-diff-row").length).toBe(0);
+
+      // Empty before with content after should add lines without ghost deletion
+      const { container: c2 } = render(<DiffViewer before="" after={"first line\nsecond line"} />);
+      expect(c2.querySelectorAll(".owb-diff-row.is-add").length).toBe(2);
+      expect(c2.querySelectorAll(".owb-diff-row.is-delete").length).toBe(0);
+
+      // Content before with empty after should delete lines without ghost addition
+      const { container: c3 } = render(<DiffViewer before={"first line\nsecond line"} after="" />);
+      expect(c3.querySelectorAll(".owb-diff-row.is-delete").length).toBe(2);
+      expect(c3.querySelectorAll(".owb-diff-row.is-add").length).toBe(0);
+
+      // Both empty strings should render no rows
+      const { container: c4 } = render(<DiffViewer before="" after="" />);
+      expect(c4.querySelectorAll(".owb-diff-row").length).toBe(0);
+    });
   });
 
   describe("ApprovalDetailDrawer enhancements", () => {
@@ -190,6 +210,99 @@ describe("Approval Center Enhancements (#456)", () => {
       expect(document.querySelector('[data-audit-seq="1"]')).toBeInTheDocument();
       expect(document.querySelector('[data-audit-seq="2"]')).toBeInTheDocument();
     });
+
+    it("verifies hash chain for interleaved workspace audit events", async () => {
+      const auditMock = vi.fn().mockResolvedValue({
+        status: 200,
+        body: {
+          approvalId: "appr-1",
+          events: [
+            {
+              seq: 2,
+              type: "created",
+              timestamp: "2026-09-23T10:00:00.000Z",
+              actor: "qoder",
+              previousHash: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+              hash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            },
+            {
+              seq: 5,
+              type: "decided",
+              timestamp: "2026-09-23T10:05:00.000Z",
+              actor: "operator",
+              decision: "granted",
+              previousHash: "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+              hash: "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+            },
+          ],
+        },
+      });
+
+      window.owb = {
+        ...window.owb,
+        approvalAudit: auditMock,
+      } as unknown as typeof window.owb;
+
+      render(
+        <ApprovalDetailDrawer
+          item={makeItem()}
+          open={true}
+          onClose={() => {}}
+          onApprove={() => {}}
+          onDeny={() => {}}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("audit-verified-tag")).toBeInTheDocument();
+      });
+    });
+
+    it("rejects invalid or tampered audit chains without displaying verified tag", async () => {
+      const auditMock = vi.fn().mockResolvedValue({
+        status: 200,
+        body: {
+          approvalId: "appr-1",
+          events: [
+            {
+              seq: 1,
+              type: "created",
+              timestamp: "2026-09-23T10:00:00.000Z",
+              hash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            },
+            {
+              seq: 2,
+              type: "decided",
+              timestamp: "2026-09-23T10:05:00.000Z",
+              // Mismatched previousHash for adjacent seq 2
+              previousHash: "sha256:badbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbad1",
+              hash: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            },
+          ],
+        },
+      });
+
+      window.owb = {
+        ...window.owb,
+        approvalAudit: auditMock,
+      } as unknown as typeof window.owb;
+
+      render(
+        <ApprovalDetailDrawer
+          item={makeItem()}
+          open={true}
+          onClose={() => {}}
+          onApprove={() => {}}
+          onDeny={() => {}}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(auditMock).toHaveBeenCalled();
+      });
+
+      expect(screen.queryByTestId("audit-verified-tag")).not.toBeInTheDocument();
+    });
   });
 
   describe("ApprovalQueue enhancements", () => {
@@ -270,8 +383,8 @@ describe("Approval Center Enhancements (#456)", () => {
         status: "running",
         createdAt: "2026-09-23T10:00:00.000Z",
         approvalRequest: {
-          id: "req-1",
-          category: "write",
+          approvalId: "req-1",
+          kind: "write",
           description: "Modify schema.sql",
           requestReason: "Adding audit column",
           context: {
@@ -281,12 +394,12 @@ describe("Approval Center Enhancements (#456)", () => {
             permissions: { mode: "approval_required", allowedTools: [], deniedTools: [] },
             preview: {
               status: "available",
-              files: [{ path: "schema.sql", change: "modify" }],
+              files: [{ path: "schema.sql", change: "modify", before: "col1 INT", after: "col1 INT\ncol2 TEXT" }],
             },
           },
           preview: {
             status: "available",
-            files: [{ path: "schema.sql", change: "modify" }],
+            files: [{ path: "schema.sql", change: "modify", before: "col1 INT", after: "col1 INT\ncol2 TEXT" }],
           },
         },
       };
@@ -297,6 +410,7 @@ describe("Approval Center Enhancements (#456)", () => {
       expect(previewElement).toBeInTheDocument();
       expect(previewElement.textContent).toContain("Adding audit column");
       expect(previewElement.textContent).toContain("[modify] schema.sql");
+      expect(screen.getByTestId("approval-diff-viewer")).toBeInTheDocument();
     });
 
     it("applies is-focused-turn class and calls scrollIntoView when focusTurnId matches", () => {

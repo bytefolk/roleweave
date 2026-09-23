@@ -16,7 +16,7 @@ export interface DiffViewerProps {
 
 export function computeLineDiff(before?: string, after?: string, change?: string): DiffLine[] {
   if (change === "add" || change === "create" || before === undefined) {
-    if (after === undefined) return [];
+    if (after === undefined || after === "") return [];
     return after.split("\n").map((line, i) => ({
       type: "add",
       newLine: i + 1,
@@ -25,6 +25,7 @@ export function computeLineDiff(before?: string, after?: string, change?: string
   }
 
   if (change === "delete" || after === undefined) {
+    if (before === undefined || before === "") return [];
     return before.split("\n").map((line, i) => ({
       type: "delete",
       oldLine: i + 1,
@@ -32,10 +33,30 @@ export function computeLineDiff(before?: string, after?: string, change?: string
     }));
   }
 
-  const beforeLines = before.split("\n");
-  const afterLines = after.split("\n");
+  if (before === "" && after === "") {
+    return [];
+  }
+
+  const beforeLines = before ? before.split("\n") : [];
+  const afterLines = after ? after.split("\n") : [];
   const m = beforeLines.length;
   const n = afterLines.length;
+
+  if (m === 0) {
+    return afterLines.map((line, i) => ({
+      type: "add",
+      newLine: i + 1,
+      content: line,
+    }));
+  }
+
+  if (n === 0) {
+    return beforeLines.map((line, i) => ({
+      type: "delete",
+      oldLine: i + 1,
+      content: line,
+    }));
+  }
 
   if (m === n && beforeLines.every((line, i) => line === afterLines[i])) {
     return beforeLines.map((line, i) => ({
@@ -70,7 +91,7 @@ export function computeLineDiff(before?: string, after?: string, change?: string
   let j = n;
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && beforeLines[i - 1] === afterLines[j - 1]) {
-      diff.unshift({
+      diff.push({
         type: "normal",
         oldLine: i,
         newLine: j,
@@ -79,14 +100,14 @@ export function computeLineDiff(before?: string, after?: string, change?: string
       i--;
       j--;
     } else if (j > 0 && (i === 0 || dp[i]![j - 1]! >= dp[i - 1]![j]!)) {
-      diff.unshift({
+      diff.push({
         type: "add",
         newLine: j,
         content: afterLines[j - 1]!,
       });
       j--;
     } else if (i > 0 && (j === 0 || dp[i]![j - 1]! < dp[i - 1]![j]!)) {
-      diff.unshift({
+      diff.push({
         type: "delete",
         oldLine: i,
         content: beforeLines[i - 1]!,
@@ -94,7 +115,7 @@ export function computeLineDiff(before?: string, after?: string, change?: string
       i--;
     }
   }
-  return diff;
+  return diff.reverse();
 }
 
 export function DiffViewer({ before, after, change }: DiffViewerProps) {

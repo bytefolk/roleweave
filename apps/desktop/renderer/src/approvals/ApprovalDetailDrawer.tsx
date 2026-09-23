@@ -99,7 +99,16 @@ export function ApprovalDetailDrawer({
     if (auditEvents.length === 0) return false;
     for (let i = 0; i < auditEvents.length; i++) {
       const e = auditEvents[i]!;
-      if (i > 0 && e.previousHash !== auditEvents[i - 1]!.hash) return false;
+      if (!e.hash || !/^sha256:[a-f0-9]{64}$/.test(e.hash)) return false;
+      if (typeof e.seq !== "number" || e.seq < 1) return false;
+      if (i > 0) {
+        const prev = auditEvents[i - 1]!;
+        if (e.seq <= prev.seq) return false;
+        if (e.seq === prev.seq + 1 && e.previousHash !== prev.hash) return false;
+      } else {
+        if (e.seq === 1 && e.previousHash !== undefined) return false;
+      }
+      if (e.previousHash && !/^sha256:[a-f0-9]{64}$/.test(e.previousHash)) return false;
     }
     return true;
   }, [auditEvents]);

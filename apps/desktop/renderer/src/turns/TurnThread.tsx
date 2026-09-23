@@ -8,6 +8,7 @@ import { EmptyState, useT } from "@roleweave/ui";
 import { useEngineLabel } from "./engine-select";
 import { EngineIcon } from "./engine-icon";
 import type { TurnProgressKind, TurnRecord } from "./types";
+import { DiffViewer } from "../approvals/DiffViewer";
 
 export interface TurnThreadProps {
   turns: TurnRecord[];
@@ -265,13 +266,18 @@ function ApprovalCard({
                 <p style={{ margin: "0 0 2px" }}>
                   <strong>{t("apr.inThreadFiles", { count: request.preview.files.length })}</strong>
                 </p>
-                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                <div style={{ display: "grid", gap: 4 }}>
                   {request.preview.files.map((f) => (
-                    <li key={`${f.change}:${f.path}`}>
-                      <code>[{f.change}] {f.path}</code>
-                    </li>
+                    <details key={`${f.change}:${f.path}`} style={{ border: "1px solid var(--ui-border, #e8e8e8)", borderRadius: 4, padding: "2px 6px" }}>
+                      <summary style={{ cursor: "pointer" }}>
+                        <code>[{f.change}] {f.path}</code>
+                      </summary>
+                      {f.before !== undefined || f.after !== undefined ? (
+                        <DiffViewer before={f.before} after={f.after} change={f.change} />
+                      ) : null}
+                    </details>
                   ))}
-                </ul>
+                </div>
               </div>
             ) : null}
           </div>

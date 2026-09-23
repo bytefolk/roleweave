@@ -422,13 +422,17 @@ export function ApprovalQueue({
               description={batchSelectedItems.length < 2 ? t("apr.batchNeedMore") : t("apr.batchBoundary")}
               action={
                 <Space>
-                  {sameTurnBatchableItems.length > batchSelectedItems.length ? (
+                  {sameTurnBatchableItems.length > batchSelectedItems.length &&
+                  batchSelectedItems.length < Math.min(...sameTurnBatchableItems.map(i => i.batchMaxItems ?? 32)) ? (
                     <Button
                       size="small"
                       data-testid="approval-batch-select-all-turn"
                       onClick={() => {
                         const maximum = Math.min(...sameTurnBatchableItems.map(i => i.batchMaxItems ?? 32));
-                        const toSelect = sameTurnBatchableItems.slice(0, maximum).map(i => i.approvalId);
+                        const selectedIds = new Set(batchSelectedItems.map(i => i.approvalId));
+                        const unselected = sameTurnBatchableItems.filter(i => !selectedIds.has(i.approvalId));
+                        const ordered = [...batchSelectedItems, ...unselected];
+                        const toSelect = ordered.slice(0, maximum).map(i => i.approvalId);
                         setBatchSelection(new Set(toSelect));
                       }}
                     >
