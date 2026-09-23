@@ -1,0 +1,76 @@
+.owb-rgraph { container: rgraph / inline-size; display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--ui-foreground); }
+.owb-rgraph__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.owb-rgraph__header h1 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 19px; font-weight: 650; }
+.owb-rgraph__header p { margin: 5px 0 0; color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-rgraph__workspace { position: relative; display: grid; grid-template-columns: 176px minmax(0, 1fr) 258px; min-width: 0; border: 1px solid var(--ui-border); border-radius: 12px; overflow: hidden; background: var(--ui-surface); }
+.owb-rgraph__filters { padding: 14px 12px; border-right: 1px solid var(--ui-border); min-width: 0; }
+.owb-rgraph fieldset { border: 0; padding: 0; margin: 23px 0; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.owb-rgraph legend { margin-bottom: 10px; font-size: 11px; font-weight: 700; color: var(--ui-foreground-muted); letter-spacing: .06em; }
+.owb-rgraph fieldset .ant-checkbox-wrapper { font-size: 12px; margin: 0; align-items: center; }
+.owb-rgraph fieldset .ant-checkbox-wrapper > span:last-child { display: inline-flex; align-items: center; flex: 1; gap: 7px; }
+.owb-rgraph__filter-actions { display: flex; gap: 12px; margin-bottom: 3px; }
+.owb-rgraph__filter-actions button { border: 0; padding: 0; background: none; color: var(--ui-primary); cursor: pointer; font: inherit; font-size: 11px; }
+.owb-rgraph__kind-dot { width: 7px; height: 7px; border-radius: 2px; display: inline-block; flex: none; }
+.owb-rgraph__count { margin-left: auto; color: var(--ui-foreground-muted); font-variant-numeric: tabular-nums; }
+.owb-rgraph__coverage { border-top: 1px solid var(--ui-border); padding-top: 12px; font-size: 11px; color: var(--ui-foreground-muted); }
+.owb-rgraph__coverage summary { cursor: pointer; margin-bottom: 12px; }
+.owb-rgraph__coverage > div { display: flex; gap: 5px; flex-wrap: wrap; margin: 8px 0; overflow-wrap: anywhere; }
+.owb-rgraph__coverage .ant-tag { font-size: 10px; margin: 0; }
+.owb-rgraph__main { min-width: 0; }
+.owb-rgraph__toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px; border-bottom: 1px solid var(--ui-border); }
+.owb-rgraph__toolbar > div { display: flex; align-items: center; gap: 4px; }
+.owb-rgraph__toolbar button[aria-pressed="true"] { border-color: var(--ui-primary); color: var(--ui-primary); }
+.owb-rgraph__canvas-wrap { position: relative; }
+.owb-rgraph__canvas { height: clamp(340px, 48vh, 560px); width: 100%; background: var(--ui-surface); color: var(--ui-foreground); background-image: radial-gradient(var(--ui-border) 1px, transparent 1px); background-size: 22px 22px; }
+.owb-rgraph__canvas-message { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.owb-rgraph__canvas-message button { pointer-events: auto; }
+.owb-rgraph__spinner-space { width: 130px; height: 90px; }
+.owb-rgraph__refreshing { position: absolute; top: 12px; left: 12px; background: var(--ui-surface); border: 1px solid var(--ui-border); padding: 5px 9px; border-radius: 6px; font-size: 11px; }
+.owb-rgraph__caption { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 7px; padding: 8px 12px; color: var(--ui-foreground-muted); font-size: 10px; border-top: 1px solid var(--ui-border); }
+.owb-rgraph__results { border-top: 1px solid var(--ui-border); }
+.owb-rgraph__result-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+.owb-rgraph__result-head [role="tablist"] { display: flex; gap: 16px; }
+.owb-rgraph__result-head button { border: 0; padding: 2px 0 5px; font: inherit; font-size: 12px; cursor: pointer; color: var(--ui-foreground-muted); background: transparent; border-bottom: 2px solid transparent; }
+.owb-rgraph__result-head button[aria-selected="true"] { color: var(--ui-primary); border-color: var(--ui-primary); }
+.owb-rgraph__result-head button span { margin-left: 4px; font-variant-numeric: tabular-nums; }
+.owb-rgraph__result-head small { color: var(--ui-foreground-muted); font-size: 10px; }
+.owb-rgraph__list { list-style: none; padding: 0 10px 10px; margin: 0; max-height: 238px; overflow: auto; }
+.owb-rgraph__list li + li { border-top: 1px solid var(--ui-border); }
+.owb-rgraph__list button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 8px; text-align: left; border: 0; border-radius: 5px; color: inherit; background: transparent; cursor: pointer; font: inherit; }
+.owb-rgraph__list button[aria-pressed="true"], .owb-rgraph__list button:hover { background: var(--ui-brand-soft); }
+.owb-rgraph__list button > span:first-of-type { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.owb-rgraph__list strong { font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
+.owb-rgraph__list small { font-size: 10px; color: var(--ui-foreground-muted); overflow-wrap: anywhere; }
+.owb-rgraph__list .ant-tag { font-size: 10px; flex: none; }
+.owb-rgraph__bounded { margin: 0; padding: 8px 12px; font-size: 11px; color: var(--ui-foreground-muted); background: var(--ui-brand-soft); }
+.owb-rgraph__timestamp { padding: 8px 12px; font-size: 10px; color: var(--ui-foreground-muted); border-top: 1px solid var(--ui-border); }
+.owb-rgraph__inspector { position: sticky; top: 0; align-self: start; max-height: calc(100vh - 180px); overflow-y: auto; min-width: 0; padding: 14px; border-left: 1px solid var(--ui-border); overflow-wrap: anywhere; }
+.owb-rgraph__inspector > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+.owb-rgraph__inspector h2 { margin: 0; font-size: 12px; font-weight: 650; }
+.owb-rgraph__inspector h3 { margin: 10px 0 12px; font-size: 17px; line-height: 1.5; }
+.owb-rgraph__inspector > button { margin: 14px 0 4px; }
+.owb-rgraph__inspector .ant-alert { margin-top: 12px; font-size: 11px; }
+.owb-rgraph__inspect-empty { color: var(--ui-foreground-muted); padding-top: 45px; }
+.owb-rgraph__inspect-empty > svg { opacity: .45; }
+.owb-rgraph__inspect-empty h3 { font-size: 14px; font-weight: 550; }
+.owb-rgraph__inspect-empty p { font-size: 12px; line-height: 1.8; }
+.owb-rgraph__facts { margin: 22px 0 0; }
+.owb-rgraph__facts dt { font-size: 10px; color: var(--ui-foreground-muted); margin-top: 14px; }
+.owb-rgraph__facts dd { margin: 5px 0 0; font-size: 12px; line-height: 1.6; }
+.owb-rgraph__resource-path, .owb-rgraph__permission { font-size: 12px; line-height: 1.7; }
+.owb-rgraph button:focus-visible, .owb-rgraph summary:focus-visible { outline: 2px solid var(--ui-focus, var(--ui-primary)); outline-offset: 2px; }
+@container rgraph (max-width: 940px) {
+  .owb-rgraph__workspace { grid-template-columns: 156px minmax(0, 1fr); }
+  .owb-rgraph__inspector { display: none; }
+  .owb-rgraph__workspace.has-selection .owb-rgraph__inspector { display: block; position: absolute; z-index: 8; top: 0; right: 0; bottom: 0; width: min(285px, 78%); max-height: calc(100vh - 160px); box-sizing: border-box; background: var(--ui-surface); box-shadow: -10px 0 24px #00000014; }
+}
+@container rgraph (max-width: 620px) {
+  .owb-rgraph__workspace { grid-template-columns: 128px minmax(0, 1fr); }
+  .owb-rgraph__filters { padding: 10px 7px; }
+  .owb-rgraph__count { display: none; }
+  .owb-rgraph__canvas { height: 360px; }
+  .owb-rgraph__toolbar > div { flex-wrap: wrap; }
+  .owb-rgraph__caption span:last-child { display: none; }
+  .owb-rgraph__list button { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .owb-rgraph *, .owb-rgraph *::before, .owb-rgraph *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

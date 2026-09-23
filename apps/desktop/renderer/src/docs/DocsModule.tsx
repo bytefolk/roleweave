@@ -44,6 +44,7 @@ export interface DocsModuleProps {
   selectedPositionId: string | null;
   /** When composed by the employee-memory surface, omit the duplicate page header. */
   embedded?: boolean;
+  resourceRequest?: { positionId: string; path: string; nonce: number } | null;
 }
 
 function apiErrorMessage(body: unknown, fallback: string): string {
@@ -76,6 +77,7 @@ export function DocsModule({
   selectedPositionId,
   embedded = false,
   surface,
+  resourceRequest,
 }: DocsModuleProps) {
   const t = useT();
   const [positionId, setPositionId] = useState<string | null>(
@@ -111,6 +113,13 @@ export function DocsModule({
       createVersion.current += 1;
     };
   }, [positionId, workspaceOpen]);
+
+  useEffect(() => {
+    if (workspaceOpen && resourceRequest?.positionId === positionId) {
+      setRequestedPath(resourceRequest);
+      setReloadToken((token) => token + 1);
+    }
+  }, [positionId, workspaceOpen, resourceRequest]);
 
   const listDocs = useCallback(
     async (id: string): Promise<DocsFileListResponse> => {

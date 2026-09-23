@@ -24,7 +24,7 @@ function isRecord(value: unknown): value is Record<string, unknown> { return typ
 function requestObject(value: unknown): Record<string, unknown> { if (!isRecord(value)) throw taskError("task request must be an object"); return value; }
 function optionalBoolean(value: unknown, field: string): boolean | undefined { if (value !== undefined && typeof value !== "boolean") throw taskError(`${field} must be a boolean`); return value; }
 
-function validateRecord(value: unknown, id: string): AgentTask {
+export function validateTaskRecord(value: unknown, id: string): AgentTask {
   if (!isRecord(value) || value.schemaVersion !== "task-board.v1" || value.taskId !== id ||
       typeof value.taskId !== "string" || !safe.test(value.taskId) ||
       typeof value.status !== "string" || !(taskStatuses as readonly string[]).includes(value.status) ||
@@ -116,7 +116,7 @@ export class TaskBoardStore {
     } catch {
       throw storageError("invalid task record");
     }
-    return validateRecord(record, id);
+    return validateTaskRecord(record, id);
   }
   private async save(workspace: string, task: AgentTask): Promise<AgentTask> { await atomicWriteJson(file(workspace, task.taskId), task, MAX_RECORD_BYTES, nodeAtomicTurnWriteOperations, storageError); return task; }
 }
