@@ -74,7 +74,9 @@ export function ApprovalDetailDrawer({
   const decided = isDecided(item);
   const overreach = isPermissionOverreach(item);
   const expired = approvalExpiryState(item, now) === "expired";
-  const disabled = decided || expired || item.busy === true || item.canDecide === false || new TextEncoder().encode(reason.trim()).length > MAX_APPROVAL_REASON_BYTES;
+  const readOnlyOrBusy = decided || expired || item.busy === true || item.canDecide === false;
+  const reasonByteLength = new TextEncoder().encode(reason.trim()).length;
+  const disabled = readOnlyOrBusy || reasonByteLength > MAX_APPROVAL_REASON_BYTES;
   const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
   const description = safeApprovalText(decodeEscapedUnicode(item.description));
   const target = item.target ? safeApprovalText(decodeEscapedUnicode(item.target)) : undefined;
@@ -288,10 +290,13 @@ export function ApprovalDetailDrawer({
                   onChange={(event) => setReason(event.target.value)}
                   placeholder={t("apr.reasonPh")}
                   autoSize={{ minRows: 2, maxRows: 4 }}
-                  maxLength={MAX_APPROVAL_REASON_BYTES}
-                  showCount
+                  count={{
+                    max: MAX_APPROVAL_REASON_BYTES,
+                    strategy: (txt) => new TextEncoder().encode(txt).length,
+                    show: ({ count, maxLength }) => t("apr.byteCount", { count, max: maxLength ?? MAX_APPROVAL_REASON_BYTES }),
+                  }}
                   data-testid="approval-reason-input"
-                  disabled={disabled}
+                  disabled={readOnlyOrBusy}
                 />
               </section>
             </>

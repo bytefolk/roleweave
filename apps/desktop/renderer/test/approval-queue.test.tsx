@@ -451,4 +451,79 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
       Object.defineProperty(window, "Notification", { configurable: true, value: previous });
     }
   });
+
+  it("clears batch selection immediately upon batch approve submission", () => {
+    const onApproveBatch = vi.fn();
+    const source = { kind: "session" as const, positionId: "writer-1", conversationId: "session-1", turnId: "turn-1", runId: "run-1", engine: "qoder" as const };
+    render(<ApprovalQueue items={[
+      makeItem({ approvalId: "batch-a", category: "tool", source, batchMaxItems: 3, canDecide: true }),
+      makeItem({ approvalId: "batch-b", category: "tool", source, batchMaxItems: 3, canDecide: true }),
+    ]} onApprove={noop} onDeny={noop} onApproveBatch={onApproveBatch} />);
+    const selectors = screen.getAllByRole("checkbox", { name: "选择加入策略受控批量批准" });
+    fireEvent.click(selectors[0]!); fireEvent.click(selectors[1]!);
+    expect(screen.getByText(/已从 writer-1 · session-1 选择 2 项受限工具审批/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "批准所选项" }));
+    expect(onApproveBatch).toHaveBeenCalledWith(["batch-a", "batch-b"]);
+    expect(screen.queryByText(/已从 writer-1 · session-1 选择 2 项受限工具审批/)).toBeNull();
+  });
+
+  it("auto-prunes batch selection when selected items transition to decided", () => {
+    const source = { kind: "session" as const, positionId: "writer-1", conversationId: "session-1", turnId: "turn-1", runId: "run-1", engine: "qoder" as const };
+    const itemA = makeItem({ approvalId: "batch-a", category: "tool", source, batchMaxItems: 3, canDecide: true });
+    const itemB = makeItem({ approvalId: "batch-b", category: "tool", source, batchMaxItems: 3, canDecide: true });
+    const { rerender } = render(<ApprovalQueue items={[itemA, itemB]} onApprove={noop} onDeny={noop} />);
+    const selectors = screen.getAllByRole("checkbox", { name: "选择加入策略受控批量批准" });
+    fireEvent.click(selectors[0]!); fireEvent.click(selectors[1]!);
+    expect(screen.getByText(/已从 writer-1 · session-1 选择 2 项受限工具审批/)).toBeInTheDocument();
+
+    const decidedA = { ...itemA, decision: { kind: "granted" as const, scope: "once" as const }, canDecide: false };
+    rerender(<ApprovalQueue items={[decidedA, itemB]} onApprove={noop} onDeny={noop} />);
+    // With only 1 item remaining in selection, summary indicates need more or auto clears
+    expect(screen.queryByText(/已从 writer-1 · session-1 选择 2 项受限工具审批/)).toBeNull();
+  });
+
+  it("filters items by local calendar date rather than raw UTC string slice", () => {
+    const targetDate = new Date();
+    const year = targetDate.getFullYear();
+    const month = String(targetDate.getMonth() + 1).padStart(2, "0");
+    const day = String(targetDate.getDate()).padStart(2, "0");
+    const localDayStr = `${year}-${month}-${day}`;
+
+    // Early morning 02:00 local time
+    const localMorning = new Date(year, targetDate.getMonth(), targetDate.getDate(), 2, 0, 0);
+    const morningItem = makeItem({ approvalId: "appr-morning", requestedAt: localMorning.toISOString() });
+    render(<ApprovalQueue items={[morningItem]} defaultFilter="all" onApprove={noop} onDeny={noop} />);
+    expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
+
+    const dateInputs = screen.getAllByDisplayValue("");
+    const fromInput = dateInputs.find(input => input.getAttribute("type") === "date");
+    const toInput = dateInputs.filter(input => input.getAttribute("type") === "date")[1];
+    if (fromInput) {
+      fireEvent.change(fromInput, { target: { value: localDayStr } });
+      expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
+    }
+    if (toInput) {
+      fireEvent.change(toInput, { target: { value: localDayStr } });
+      expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
+    }
+  });
+
+  it("keeps reason textarea editable when byte length exceeds limit while disabling submit buttons", async () => {
+    const item = makeItem({ approvalId: "appr-long-reason", canDecide: true });
+    render(<ApprovalQueue items={[item]} defaultFilter="all" onApprove={noop} onDeny={noop} />);
+    fireEvent.click(screen.getByTestId("approval-card-appr-long-reason"));
+
+    const reasonInput = await screen.findByTestId("approval-reason-input");
+    const approveBtn = await screen.findByTestId("approval-approve-button");
+
+    // 350 Chinese characters * 3 bytes = 1050 bytes > 1024 bytes limit
+    const longReason = "测".repeat(350);
+    fireEvent.change(reasonInput, { target: { value: longReason } });
+
+    // Buttons are disabled due to byte overflow
+    expect(approveBtn).toBeDisabled();
+    // But textarea must NOT be disabled so operator can correct the text
+    expect(reasonInput).not.toBeDisabled();
+  });
 });

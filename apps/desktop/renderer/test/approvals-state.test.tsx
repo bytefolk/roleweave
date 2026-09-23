@@ -84,4 +84,114 @@ describe("authoritative approval state", () => {
     expect(result.current.error).toBe("offline");
     expect(result.current.items[0]!.status).toBe("expired");
   });
+  it("allows retrying batch with updated reason after partial rejection", async () => {
+    const row2: ApprovalView = { ...row, id: "b".repeat(64), approvalId: "engine-id-2" };
+    const decideApprovalsBatch = vi.fn()
+      .mockResolvedValueOnce({
+        status: 200,
+        body: {
+          items: [
+            { id: row.id, status: "rejected", message: "conflict" },
+            { id: row2.id, status: "rejected", message: "conflict" },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: {
+          items: [
+            { id: row.id, status: "accepted", record: { ...row, status: "granted", canDecide: false } },
+            { id: row2.id, status: "accepted", record: { ...row2, status: "granted", canDecide: false } },
+          ],
+        },
+      });
+    bridge({ listApprovals: vi.fn(async () => page([row, row2])), decideApprovalsBatch });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    await act(() => result.current.decideBatch([row.id, row2.id], "first reason"));
+    expect(result.current.errors[row.id]).toBe("conflict");
+
+    // After rejection, operator changes reason to retry without getting retrySameDecision error
+    await act(() => result.current.decideBatch([row.id, row2.id], "updated reason"));
+    expect(decideApprovalsBatch).toHaveBeenCalledTimes(2);
+    expect(decideApprovalsBatch.mock.calls[1]![0].reason).toBe("updated reason");
+  });
+  it("allows retrying batch with updated reason after transport failure or 5xx error", async () => {
+    const row2: ApprovalView = { ...row, id: "b".repeat(64), approvalId: "engine-id-2" };
+    const decideApprovalsBatch = vi.fn()
+      .mockRejectedValueOnce(new Error("Network connection lost"))
+      .mockResolvedValueOnce({ status: 500, body: { message: "Internal Server Error" } })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: {
+          items: [
+            { id: row.id, status: "accepted", record: { ...row, status: "granted", canDecide: false } },
+            { id: row2.id, status: "accepted", record: { ...row2, status: "granted", canDecide: false } },
+          ],
+        },
+      });
+    bridge({ listApprovals: vi.fn(async () => page([row, row2])), decideApprovalsBatch });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    // Attempt 1: Transport / network failure
+    await act(() => result.current.decideBatch([row.id, row2.id], "attempt 1"));
+    expect(result.current.errors[row.id]).toBe("Network connection lost");
+
+    // Attempt 2: Operator retries with updated reason after network failure, hits 500
+    await act(() => result.current.decideBatch([row.id, row2.id], "attempt 2"));
+    expect(result.current.errors[row.id]).toBe("Internal Server Error");
+
+    // Attempt 3: Operator retries with updated reason after 500, succeeds
+    await act(() => result.current.decideBatch([row.id, row2.id], "attempt 3"));
+    expect(decideApprovalsBatch).toHaveBeenCalledTimes(3);
+    expect(decideApprovalsBatch.mock.calls[2]![0].reason).toBe("attempt 3");
+  });
+  it("coalesces concurrent refresh requests and returns fresh items directly", async () => {
+    let release!: (value: unknown) => void;
+    const delayedPage = () => new Promise(resolve => { release = resolve; });
+    const listApprovals = vi.fn()
+      .mockResolvedValueOnce(page([row]))
+      .mockImplementationOnce(() => delayedPage())
+      .mockResolvedValue(page([{ ...row, version: 2 }]));
+    bridge({ listApprovals });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    let p1!: Promise<ApprovalView[]>;
+    let p2!: Promise<ApprovalView[]>;
+    act(() => {
+      p1 = result.current.refresh();
+      p2 = result.current.refresh();
+    });
+    let r1!: ApprovalView[], r2!: ApprovalView[];
+    await act(async () => {
+      release(page([{ ...row, version: 2 }]));
+      [r1, r2] = await Promise.all([p1, p2]);
+    });
+    expect(r1[0]!.version).toBe(2);
+    expect(r2[0]!.version).toBe(2);
+  });
+  it("fetches fresh snapshot on refresh and enables deciding newly discovered items", async () => {
+    const decideApproval = vi.fn().mockResolvedValue({ status: 202, body: { ...row, status: "granted", canDecide: false } });
+    const listApprovals = vi.fn()
+      .mockResolvedValueOnce(page([]))
+      .mockResolvedValue(page([row]));
+    bridge({ listApprovals, decideApproval });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.items).toEqual([]);
+
+    let fresh!: ApprovalView[];
+    await act(async () => {
+      fresh = await result.current.refresh();
+    });
+    expect(fresh.length).toBe(1);
+    expect(fresh[0]!.id).toBe(row.id);
+
+    await act(() => result.current.decide(fresh[0]!.id, "granted"));
+    expect(decideApproval).toHaveBeenCalledTimes(1);
+    expect(decideApproval.mock.calls[0]![0].id).toBe(row.id);
+  });
 });

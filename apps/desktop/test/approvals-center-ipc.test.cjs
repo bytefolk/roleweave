@@ -24,7 +24,11 @@ test("approval IPC forwards a bounded decision and encodes workspace path", asyn
     assert.equal(options.body.workspaceToken, request.workspaceToken);
     assert.equal(options.body.id, undefined); return { status: 202 };
   });
-  await approvalList({ workspacePath: "/workspace/a?b" }, async route => {
-    assert.equal(new URL(route, "http://localhost").searchParams.get("workspacePath"), "/workspace/a?b"); return { status: 200 };
+  await approvalList({ workspacePath: "/workspace/a?b", status: "pending" }, async route => {
+    const url = new URL(route, "http://localhost");
+    assert.equal(url.searchParams.get("workspacePath"), "/workspace/a?b");
+    assert.equal(url.searchParams.get("status"), "pending");
+    return { status: 200 };
   });
+  assert.equal((await approvalList({ workspacePath: "/workspace/a?b", status: "invalid" }, async () => { throw new Error("must not call"); })).status, 400);
 });

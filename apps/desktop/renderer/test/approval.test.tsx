@@ -205,4 +205,19 @@ describe("TurnPanel approval verdict card", () => {
     expect(screen.queryByRole("group", { name: "审批请求" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /重新执行/ })).toBeInTheDocument();
   });
+
+  it("settles the card into an expired state when approvalControl status is expired", () => {
+    const turn = {
+      ...adaptTurnRecord(apiRecord({}), "代码库负责人"),
+      approvalControl: { disabled: true, status: "expired" as const },
+    };
+    render(<VerdictPanel turns={[turn]} onVerdictTurn={vi.fn()} />);
+
+    const card = screen.getByRole("group", { name: "审批请求" });
+    expect(card).toHaveTextContent("已过期 · 命令执行");
+    expect(card).toHaveTextContent("已过期——如需放行请发起新回合");
+    expect(screen.queryByRole("button", { name: "批准并继续" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "拒绝" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "拒绝理由（可选）" })).not.toBeInTheDocument();
+  });
 });

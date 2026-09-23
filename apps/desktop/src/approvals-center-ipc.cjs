@@ -2,10 +2,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const invalid = () => ({ status: 400, body: { code: "approval_request_invalid", message: "Invalid approval request", retryable: false } });
 const object = value => value && typeof value === "object" && !Array.isArray(value);
 async function approvalList(request, apiRequest) {
-  if (!object(request) || Object.keys(request).some(k => !["workspacePath", "cursor"].includes(k)) ||
+  if (!object(request) || Object.keys(request).some(k => !["workspacePath", "cursor", "status"].includes(k)) ||
       typeof request.workspacePath !== "string" || !request.workspacePath || request.workspacePath.length > 4096 ||
+      (request.status !== undefined && !["all", "pending", "decided"].includes(request.status)) ||
       (request.cursor !== undefined && (typeof request.cursor !== "string" || request.cursor.length > 128))) return invalid();
   const query = new URLSearchParams({ workspacePath: request.workspacePath, limit: "200" });
+  if (request.status) query.set("status", request.status);
   if (request.cursor) query.set("cursor", request.cursor);
   return apiRequest(`/approvals?${query}`);
 }

@@ -225,9 +225,10 @@ function ApprovalCard({
   const request = turn.approvalRequest;
   if (request === undefined) return null;
   const trimmedReason = reason.trim();
-  const disabled = busy || turn.approvalControl?.disabled === true || new TextEncoder().encode(trimmedReason).length > 1024;
+  const isExpired = turn.approvalControl?.status === "expired";
+  const disabled = busy || turn.approvalControl?.disabled === true || isExpired || new TextEncoder().encode(trimmedReason).length > 1024;
   return (
-    <div className={`owb-turn__approval${decided ? " is-decided" : ""}`} role="group" aria-label={t("apr.request")}>
+    <div className={`owb-turn__approval${decided || isExpired ? " is-decided" : ""}`} role="group" aria-label={t("apr.request")}>
       <p className="owb-turn__approval-title">
         <ShieldAlert aria-hidden="true" size={13} />
         {turn.approvalControl?.status ? t(`apr.status.${turn.approvalControl.status}`) : decided ? t("apr.decided") : t("apr.pending")} · {kindCopy[request.kind] ?? request.kind}
@@ -243,6 +244,8 @@ function ApprovalCard({
       ) : null}
       {decided ? (
         <p className="owb-turn__approval-decided">{t("apr.decidedNote")}</p>
+      ) : isExpired ? (
+        <p className="owb-turn__approval-decided">{t("apr.alertExpired")}</p>
       ) : (
         <>
           <input
