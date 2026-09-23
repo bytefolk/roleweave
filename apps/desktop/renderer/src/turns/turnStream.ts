@@ -34,6 +34,8 @@ export interface LiveRunState {
   startedAt: string;
   /** Latest engine-reported usage; feeds the compact status line only. */
   totalTokens: number | null;
+  /** Bounded, truthful public activities received over SSE. */
+  trace: import("./types").TurnTraceActivity[];
   /** Group conversation this run belongs to (#52); absent for 1:1 turns. */
   groupRef?: string;
 }
@@ -234,6 +236,7 @@ export function beginGroupRun(
         text: "",
         startedAt: new Date().toISOString(),
         totalTokens: null,
+        trace: [],
         groupRef: spawn.groupRef,
       },
     }),
@@ -437,9 +440,28 @@ export function applyTurnEvent(
             text: delta,
             startedAt,
             totalTokens: null,
+        trace: [],
           },
         }),
       };
+    }
+    case "turn.trace.activity": {
+      if (runId === null) return { ...state, seq: nextSeq };
+      const entry = attributedRun(state, payload, runId);
+      const existing = entry?.[1];
+      const activityId = stringField(payload, "activityId");
+      const kind = stringField(payload, "kind");
+      const status = stringField(payload, "status");
+      const title = stringField(payload, "title");
+      const at = stringField(payload, "timestamp");
+      if (!entry || !existing || !activityId || !title || !at || (kind !== "tool" && kind !== "agent") ||
+          (status !== "running" && status !== "completed" && status !== "failed") ||
+          (existing.groupRef === undefined && !matchesPersonalRun(payload, existing))) return { ...state, seq: nextSeq };
+      const next: import("./types").TurnTraceActivity = { activityId, kind, status, title, at,
+        ...(stringField(payload, "detail") ? { detail: stringField(payload, "detail")! } : {}),
+        ...(stringField(payload, "parentActivityId") ? { parentActivityId: stringField(payload, "parentActivityId")! } : {}) };
+      const trace = (existing.trace ?? []).filter(item => item.activityId !== activityId).concat(next).slice(-128);
+      return { ...state, seq: nextSeq, runs: { ...state.runs, [entry[0]]: { ...existing, trace } } };
     }
     case "turn.usage": {
       if (runId === null) return { ...state, seq: nextSeq };

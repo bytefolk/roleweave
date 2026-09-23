@@ -10,10 +10,13 @@
  * 在同一页面重复堆信息。缺条目时回退岗位 id，绝不编造语义。
  */
 import type React from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Empty, Skeleton } from "antd";
-import { ZoomIn, ZoomOut } from "lucide-react";
+import { FileText, Network, ZoomIn, ZoomOut } from "lucide-react";
+import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node, type NodeProps } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import type {
+  DocsFileEntry,
   OrgTreeNodeV1,
   OrgTreeSnapshot,
 } from "@roleweave/shared";
@@ -76,9 +79,100 @@ export interface OrgChartProps {
   /** 头像底色按岗位 id（metadata.color），与侧栏树/群聊同色。 */
   avatarColors?: Record<string, string>;
   avatarUrls?: Record<string, string>;
+  /** Position-scoped resources turn the hierarchy into a navigable knowledge graph. */
+  resources?: Record<string, DocsFileEntry[]>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   className?: string;
+}
+
+export type KnowledgeNodeKind = "agent" | "document";
+export type KnowledgeEdgeKind = "reports" | "owns";
+export interface KnowledgeGraphNode { id: string; kind: KnowledgeNodeKind; agentId: string; label: string; path?: string }
+export interface KnowledgeGraphEdge { id: string; source: string; target: string; kind: KnowledgeEdgeKind }
+
+export function buildKnowledgeGraph(snapshot: OrgTreeSnapshot, resources: Record<string, DocsFileEntry[]>): {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+} {
+  const nodes: KnowledgeGraphNode[] = [];
+  const edges: KnowledgeGraphEdge[] = [];
+  const visit = (node: OrgTreeNodeV1): void => {
+    nodes.push({ id: `agent:${node.id}`, kind: "agent", agentId: node.id, label: node.id });
+    if (node.reportTo) edges.push({ id: `reports:${node.reportTo}:${node.id}`, source: `agent:${node.reportTo}`, target: `agent:${node.id}`, kind: "reports" });
+    node.children.forEach(visit);
+  };
+  snapshot.tree.forEach(visit);
+  for (const agent of nodes.filter((node) => node.kind === "agent")) {
+    for (const resource of resources[agent.agentId] ?? []) {
+      const id = `document:${agent.agentId}:${resource.path}`;
+      nodes.push({ id, kind: "document", agentId: agent.agentId, label: resource.path.split("/").at(-1) ?? resource.path, path: resource.path });
+      edges.push({ id: `owns:${agent.agentId}:${resource.path}`, source: agent.id, target: id, kind: "owns" });
+    }
+  }
+  return { nodes, edges };
+}
+
+type KnowledgeFlowData = Record<string, unknown> & KnowledgeGraphNode & { displayName: string; selected: boolean; onSelect?: (id: string) => void };
+
+function KnowledgeFlowNode({ data }: NodeProps<Node<KnowledgeFlowData>>) {
+  const t = useT();
+  return <button type="button" className={`owb-knowledge-node owb-knowledge-node--${data.kind}${data.selected ? " is-selected" : ""}`}
+    data-org-chart-node={data.kind === "agent" ? data.agentId : undefined}
+    aria-label={data.kind === "agent" ? t("tree.graphAgentAria", { name: data.displayName }) : t("tree.graphDocumentAria", { document: data.label, agent: data.displayName })}
+    onClick={() => data.onSelect?.(data.agentId)}>
+    <Handle type="target" position={Position.Top} />
+    <span className="owb-knowledge-node__icon">{data.kind === "agent" ? <Network size={15} /> : <FileText size={15} />}</span>
+    <span><strong>{data.kind === "agent" ? data.displayName : data.label}</strong><small>{data.kind === "agent" ? "Agent" : data.displayName}</small></span>
+    <Handle type="source" position={Position.Bottom} />
+  </button>;
+}
+
+const knowledgeNodeTypes = { knowledge: KnowledgeFlowNode };
+
+function KnowledgeGraph({ snapshot, resources, displayNames, selectedId, onSelect }: {
+  snapshot: OrgTreeSnapshot; resources: Record<string, DocsFileEntry[]>; displayNames?: Record<string, string>;
+  selectedId?: string | null; onSelect?: (id: string) => void;
+}) {
+  const t = useT();
+  const [filter, setFilter] = useState<"all" | KnowledgeEdgeKind>("all");
+  const graph = useMemo(() => buildKnowledgeGraph(snapshot, resources), [snapshot, resources]);
+  const visibleEdges = graph.edges.filter((edge) => filter === "all" || edge.kind === filter);
+  const visibleNodeIds = new Set(visibleEdges.flatMap((edge) => [edge.source, edge.target]));
+  const depthByAgent = new Map<string, number>();
+  const markDepth = (node: OrgTreeNodeV1, depth: number): void => { depthByAgent.set(node.id, depth); node.children.forEach((child) => markDepth(child, depth + 1)); };
+  snapshot.tree.forEach((node) => markDepth(node, 0));
+  const agents = graph.nodes.filter((node) => node.kind === "agent");
+  const agentIndex = new Map(agents.map((node, index) => [node.agentId, index]));
+  const resourceIndex = new Map<string, number>();
+  const nodes: Node<KnowledgeFlowData>[] = graph.nodes.filter((node) => filter === "all" || visibleNodeIds.has(node.id)).map((node) => {
+    const order = agentIndex.get(node.agentId) ?? 0;
+    const resourceOrder = resourceIndex.get(node.agentId) ?? 0;
+    if (node.kind === "document") resourceIndex.set(node.agentId, resourceOrder + 1);
+    return { id: node.id, type: "knowledge", position: node.kind === "agent"
+      ? { x: 90 + order * 220, y: 45 + (depthByAgent.get(node.agentId) ?? 0) * 125 }
+      : { x: 100 + order * 220 + resourceOrder * 45, y: 310 + (depthByAgent.get(node.agentId) ?? 0) * 80 },
+    data: { ...node, displayName: displayNames?.[node.agentId] ?? node.agentId, selected: selectedId === node.agentId, onSelect } };
+  });
+  const edges: Edge[] = visibleEdges.map((edge) => ({ ...edge, type: "smoothstep", animated: edge.kind === "owns", className: `owb-knowledge-edge owb-knowledge-edge--${edge.kind}` }));
+  return <div className="owb-knowledge-graph">
+    <div className="owb-knowledge-graph__filters" role="group" aria-label={t("tree.graphFiltersAria")}>
+      {(["all", "reports", "owns"] as const).map((kind) => <button key={kind} type="button" aria-pressed={filter === kind}
+        aria-label={t(kind === "owns" ? "tree.graphFilterDocumentsAria" : kind === "reports" ? "tree.graphFilterAgentsAria" : "tree.graphFilterAllAria")}
+        onClick={() => setFilter(kind)}>{t(kind === "all" ? "tree.graphAll" : kind === "reports" ? "tree.graphAgents" : "tree.graphDocuments")}</button>)}
+    </div>
+    <div className="owb-knowledge-graph__canvas">
+      <ReactFlow nodes={nodes} edges={edges} nodeTypes={knowledgeNodeTypes} fitView minZoom={0.35} maxZoom={1.8} nodesDraggable nodesConnectable={false} elementsSelectable={false} proOptions={{ hideAttribution: true }}>
+        <Background gap={22} size={1} /><Controls showInteractive={false} />
+      </ReactFlow>
+      <div className="owb-knowledge-graph__edge-probes" aria-hidden="true">{visibleEdges.map((edge) => <i key={edge.id} data-graph-edge-kind={edge.kind} />)}</div>
+      <div className="owb-knowledge-graph__semantic-nodes">
+        {graph.nodes.filter((node) => node.kind === "document").map((node) => <button key={node.id} type="button"
+          aria-label={t("tree.graphDocumentAria", { document: node.label, agent: displayNames?.[node.agentId] ?? node.agentId })}
+          onClick={() => onSelect?.(node.agentId)}>{node.label}</button>)}
+      </div>
+    </div>
+  </div>;
 }
 
 interface ChartNodeProps {
@@ -152,6 +246,7 @@ export function OrgChart({
   displayNames,
   avatarColors,
   avatarUrls,
+  resources,
   selectedId,
   onSelect,
   className,
@@ -332,8 +427,8 @@ export function OrgChart({
             <path d="M6 9l6 6 6-6" />
           </svg>
         </button> : null}
-        <span className="owb-org-chart__head-title">{t("tree.chart")}</span>
-        {snapshot && !empty ? (
+        <span className="owb-org-chart__head-title">{resources ? t("tree.knowledgeGraph") : t("tree.chart")}</span>
+        {snapshot && !empty && !resources ? (
           <span className="owb-org-chart__zoom">
             <button
               type="button"
@@ -382,6 +477,8 @@ export function OrgChart({
           </div>
         ) : empty ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("tree.chartEmpty")} />
+        ) : resources && snapshot ? (
+          <KnowledgeGraph snapshot={snapshot} resources={resources} displayNames={displayNames} selectedId={selectedId} onSelect={onSelect} />
         ) : (
           <div
             className="owb-org-chart__stage"

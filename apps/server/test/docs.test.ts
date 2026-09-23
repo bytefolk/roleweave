@@ -187,7 +187,7 @@ test("docs create lands a 0600 file and registers an asset-record.v1 with the fr
 
     const recordRaw = JSON.parse(
       await fs.readFile(
-        path.join(dir, ".digital-employee", "workbench", "drive", "assets", body.assetId, "record.json"),
+        path.join(dir, ".roleweave", "drive", "assets", body.assetId, "record.json"),
         "utf8",
       ),
     ) as unknown;
@@ -202,7 +202,7 @@ test("docs create lands a 0600 file and registers an asset-record.v1 with the fr
     assert.equal(parsed.record?.docRef?.version, body.version);
 
     const indexRaw = JSON.parse(
-      await fs.readFile(path.join(dir, ".digital-employee", "workbench", "drive", "assets", "asset-index.json"), "utf8"),
+      await fs.readFile(path.join(dir, ".roleweave", "drive", "assets", "asset-index.json"), "utf8"),
     ) as { assets: Array<{ assetId: string }> };
     assert.ok(indexRaw.assets.some((entry) => entry.assetId === body.assetId), "index ledger carries the new asset");
 

@@ -137,7 +137,7 @@ export class ApprovalStore {
   async open(workspace: string): Promise<string> {
     await directory(workspace);
     let dir = workspace;
-    for (const part of [".digital-employee", "workbench", "approvals"]) {
+    for (const part of [".roleweave", "approvals"]) {
       dir = path.join(dir, part);
       await fs.mkdir(dir, { mode: 0o700 }).catch((e: NodeJS.ErrnoException) => { if (e.code !== "EEXIST") throw e; });
       await directory(dir);

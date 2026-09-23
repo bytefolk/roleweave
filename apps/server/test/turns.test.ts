@@ -135,8 +135,7 @@ test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishe
 
     const turnFile = path.join(
       workspace,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "conversations",
       "repo-owner",
       "turns",
@@ -145,8 +144,7 @@ test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishe
     await assertPosixMode(turnFile, 0o600);
     const conversationFile = path.join(
       workspace,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "conversations",
       "repo-owner",
       "conversation.json",
@@ -219,7 +217,7 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
         assert.equal(accepted.status, 200, `${engine} must be accepted`);
         const record = accepted.body as { engine: TurnEngine; turnId: string };
         assert.equal(record.engine, engine);
-        const turnFile = path.join(freshWorkspace, ".digital-employee", "workbench", "conversations", "repo-owner", "turns", `${record.turnId}.json`);
+        const turnFile = path.join(freshWorkspace, ".roleweave", "conversations", "repo-owner", "turns", `${record.turnId}.json`);
         await assertPosixMode(turnFile, 0o600);
         assert.equal(JSON.parse(await fs.readFile(turnFile, "utf8")).engine, engine);
         // A fresh store and HTTP history must both read the actual file. A
@@ -343,8 +341,7 @@ test("legacy history rejects credential-shaped and invalid persisted event field
     const turnId = String((created.body as { turnId: string }).turnId);
     const turnFile = path.join(
       workspace,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "conversations",
       "repo-owner",
       "turns",
@@ -390,8 +387,7 @@ test("legacy history rejects date-only and non-canonical persisted record timest
     const valid = created.body as Record<string, unknown>;
     const turnFile = path.join(
       workspace,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "conversations",
       "repo-owner",
       "turns",
@@ -583,8 +579,7 @@ test("atomic turn writes clean temporary files across write, fsync, rename, and 
     );
     const turnsDir = path.join(
       workspace,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "conversations",
       "repo-owner",
       "turns",
@@ -702,8 +697,7 @@ test("turn store rejects a persisted traversal turnId without writing outside tu
   const initialized = await store.history(workspace, "repo-owner", now);
   const turnsDir = path.join(
     workspace,
-    ".digital-employee",
-    "workbench",
+    ".roleweave",
     "conversations",
     "repo-owner",
     "turns",
@@ -740,7 +734,7 @@ test("turn store rejects a symlinked local-state path instead of writing outside
   const workspace = await copyExampleWorkspace();
   const outside = await fs.mkdtemp(path.join(workspace, "..", "owb-outside-"));
   await fs.mkdir(path.join(workspace, ".digital-employee"), { recursive: true });
-  await fs.symlink(outside, path.join(workspace, ".digital-employee", "workbench"));
+  await fs.symlink(outside, path.join(workspace, ".roleweave"));
   const store = new TurnStore();
   await assert.rejects(
     store.history(workspace, "repo-owner", "2026-08-24T01:00:00.000Z"),

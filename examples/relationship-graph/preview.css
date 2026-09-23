@@ -1,0 +1,10 @@
+:root { --ui-foreground: #233043; --ui-foreground-muted: #68778a; --ui-border: #e0e6ef; --ui-surface: #fff; --ui-primary: #315be8; --ui-brand-soft: #edf2ff; --ui-focus: #315be8; font-family: Inter, system-ui, sans-serif; color: var(--ui-foreground); background: #f4f6fa; }
+body { margin: 0; }
+:root[data-theme="dark"] { --ui-foreground: #e6eaf2; --ui-foreground-muted: #9aa8bc; --ui-border: #35435b; --ui-surface: #172234; --ui-primary: #8ca9ff; --ui-brand-soft: #263d65; background: #0c1523; }
+#root { max-width: 1680px; padding: 20px 28px; margin: auto; }
+.preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.preview-header b { font-size: 20px; letter-spacing: -.7px; }
+.preview-header span { margin-left: 22px; color: var(--ui-foreground-muted); font-size: 13px; }
+#root > .ant-alert { margin: 0 0 16px; }
+.preview-footer { margin: 20px 0; color: var(--ui-foreground-muted); font-size: 12px; }
+@media (max-width: 800px) { #root { padding: 16px; } .preview-header span { display: none; } }

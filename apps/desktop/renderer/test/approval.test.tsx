@@ -124,7 +124,7 @@ describe("TurnPanel approval verdict card", () => {
     expect(card).toHaveTextContent("等待审批 · 命令执行");
     expect(card).toHaveTextContent("rm -rf build");
     expect(card).toHaveTextContent("scripts/clean.sh");
-    expect(screen.queryByRole("button", { name: /创建新回合重试/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /重新执行/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "批准并继续" }));
     expect(onVerdictTurn).toHaveBeenCalledTimes(1);
@@ -155,7 +155,7 @@ describe("TurnPanel approval verdict card", () => {
     expect(screen.queryByRole("button", { name: "批准并继续" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "拒绝" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "拒绝理由（可选）" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /创建新回合重试/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /重新执行/ })).not.toBeInTheDocument();
     expect(onVerdictTurn).not.toHaveBeenCalled();
   });
 
@@ -203,6 +203,6 @@ describe("TurnPanel approval verdict card", () => {
     );
     render(<VerdictPanel turns={[plainFailure]} onVerdictTurn={vi.fn()} />);
     expect(screen.queryByRole("group", { name: "审批请求" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /创建新回合重试/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /重新执行/ })).toBeInTheDocument();
   });
 });

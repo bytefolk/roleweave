@@ -7,6 +7,7 @@ import path from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { assertPosixMode } from "./helpers.js";
+import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 
 /** The adapter is a standalone script implementing the pinned digital-employee
  * CLI surface; tests drive it exactly like driver-cli spawns an engine. */
@@ -154,7 +155,8 @@ const settings = JSON.parse(fs.readFileSync(settingsFile, "utf8"));
 if (settings.disableAllHooks !== true || settings.hooksConfig?.enabled !== false) process.exit(87);
 const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
 write({ type: "system", subtype: "init" });
-write({ type: "assistant", message: { content: [{ type: "thinking", thinking: "internal" }, { type: "text", text: "正在核对" }], usage: { input_tokens: 10, output_tokens: 5 } } });
+write({ type: "assistant", message: { content: [{ type: "thinking", thinking: "internal" }, { type: "text", text: "正在核对" }, { type: "tool_use", id: "tool-1", name: "Read", input: { file_path: "apps/server/src/routes/turns.ts", files: ["packages/shared/src/turns.ts", "apps/desktop/renderer/src/turns/TurnThread.tsx"], command: "curl -H 'Authorization: Bearer command-secret' https://example.test", url: "https://example.test/?token=url-secret", query: "query-secret", description: "description-secret", token: "must-not-leak" } }], usage: { input_tokens: 10, output_tokens: 5 } } });
+write({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool-1", content: "tests passed", is_error: false }] } });
 write({ type: "assistant", message: { content: [{ type: "text", text: "，门禁通过" }] } });
 write({ type: "result", subtype: "success", is_error: false, result: "release gate passed", usage: { input_tokens: 100, output_tokens: 40 } });
 `;
@@ -593,6 +595,47 @@ test("qoder-engine org apply keeps newly hired display names separate from packa
   }
 });
 
+test("Qoder public activity keeps multilingual paths within the driver's UTF-8 bounds", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async (t) => {
+  const dir = await makeWorkspace();
+  const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-qoder-trace-utf8-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const files = Array.from({ length: 10 }, (_, index) => `项目/${"说明".repeat(40)}📄${index}.md`);
+  const fullDetail = files.join(" · ");
+  assert.ok(Buffer.byteLength(fullDetail, "utf8") > 2048);
+  const toolId = "调用".repeat(100);
+  const toolName = "读取".repeat(100);
+  const fakeBin = await writeFakeQoder(fixture, `#!/usr/bin/env node
+const write = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+write({ type: "assistant", message: { content: [{ type: "tool_use", id: ${JSON.stringify(toolId)}, name: ${JSON.stringify(toolName)}, input: { files: ${JSON.stringify(files)} } }] } });
+write({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: ${JSON.stringify(toolId)}, content: "private result" }] } });
+write({ type: "result", subtype: "success", result: "read completed" });
+`);
+  const entry = path.join(fixture, "adapter.mjs");
+  await fs.writeFile(entry, `
+process.env.ORG_WORKBENCH_QODER_BIN = ${JSON.stringify(fakeBin)};
+process.env.QODER_CONFIG_DIR = ${JSON.stringify(EMPTY_PROVIDER_CONFIG)};
+delete process.env.QODER_PERSONAL_ACCESS_TOKEN;
+process.argv[1] = ${JSON.stringify(ADAPTER)};
+await import(${JSON.stringify(pathToFileURL(ADAPTER).href)});
+`);
+  const result = await new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(entry)}`).turnRun({
+    workspace: dir, positionId: "docs-writer", engine: "qoder",
+    envelope: { schemaVersion: "turn-envelope.v1", workspaceRef: dir, positionId: "docs-writer", turnId: "utf8-trace", input: "read files", envelopeDigest: `sha256:${"a".repeat(64)}` },
+  });
+  assert.equal(result.status, "trusted", result.diagnostic);
+  assert.equal(result.events.at(-1)?.type, "run.completed");
+  const trace = result.events.filter((event) => event.type === "trace.activity");
+  assert.equal(trace.length, 2);
+  const detail = trace[0]?.detail;
+  assert.ok(detail && fullDetail.startsWith(detail));
+  assert.ok(Buffer.byteLength(detail, "utf8") <= 2048);
+  assert.ok(Buffer.byteLength(detail, "utf8") > 2044);
+  assert.equal(Buffer.from(detail, "utf8").toString("utf8"), detail, "truncation preserves complete Unicode characters");
+  assert.equal(trace[0]?.activityId, trace[1]?.activityId);
+  assert.equal(trace[0]?.title, trace[1]?.title);
+  assert.ok(trace.every((event) => Buffer.byteLength(event.activityId, "utf8") <= 256 && Buffer.byteLength(event.title, "utf8") <= 256));
+});
+
 test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and passes --agent <position>", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture; the Windows package smoke leg covers the win32 .cmd spawn path" : false }, async () => {
   const dir = await makeWorkspace();
   const fakeDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-qoder-"));
@@ -647,6 +690,14 @@ test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and pa
   );
   const usage = events.find((event) => event.type === "usage");
   assert.deepEqual({ input: usage?.inputTokens, output: usage?.outputTokens }, { input: 100, output: 40 });
+  const trace = events.filter((event) => event.type === "trace.activity");
+  assert.deepEqual(trace, [
+    { type: "trace.activity", runId, timestamp: trace[0]?.timestamp, activityId: "tool-1", kind: "tool", status: "running", title: "Read", detail: "apps/server/src/routes/turns.ts · packages/shared/src/turns.ts · apps/desktop/renderer/src/turns/TurnThread.tsx" },
+    { type: "trace.activity", runId, timestamp: trace[1]?.timestamp, activityId: "tool-1", kind: "tool", status: "completed", title: "Read" },
+  ]);
+  assert.ok(!result.stdout.includes("internal"), "private reasoning is never emitted");
+  assert.ok(!result.stdout.includes("must-not-leak"), "secret-shaped tool input is never emitted");
+  assert.doesNotMatch(result.stdout, /command-secret|url-secret|query-secret|description-secret/, "raw command, URL, query and description never enter public activity");
   const completed = events.at(-1);
   assert.equal(completed?.type, "run.completed");
   assert.equal(completed?.output, "release gate passed");

@@ -21,6 +21,7 @@ import { RunningTurnRegistry } from "../src/turns/running.js";
 import { SessionStore } from "../src/sessions/store.js";
 import { GroupStore } from "../src/groups/store.js";
 import { GoalStore } from "../src/goals/store.js";
+import { TaskBoardStore } from "../src/tasks/store.js";
 import { ContextExportService, type ContextAdapterClient } from "../src/context-export/exporter.js";
 
 export const TEST_TOKEN = "test-boot-token-0123456789abcdef";
@@ -132,6 +133,7 @@ export async function startTestServer(
     sessionStore: new SessionStore(),
     groupStore: new GroupStore(),
     goalStore: new GoalStore(),
+    taskBoardStore: new TaskBoardStore(),
     contextExporter,
   };
   const server = createControlPlane(ctx);

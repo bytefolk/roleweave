@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button as AntButton, Dropdown, Input, Select } from "antd";
-import { ArrowLeft, MoreHorizontal, Target } from "lucide-react";
+import { Button as AntButton, Checkbox, Dropdown, Input, Modal, Select } from "antd";
+import { ArrowLeft, MoreHorizontal, Target, AlertTriangle, BriefcaseBusiness } from "lucide-react";
+import { PositionAvatar } from "../PositionAvatar.js";
 import { useT } from "@roleweave/ui";
 import {
   canTransitionGoalStatus,
@@ -9,11 +10,16 @@ import {
   type GoalStatus,
   type GoalSummary,
 } from "@roleweave/shared/goals";
+import { isPendingTaskCollaboration, type AgentTask } from "@roleweave/shared/task-board";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
 
 interface GoalsModuleProps {
   workspaceOpen: boolean;
   workspaceKey?: string;
+  positionNames?: Record<string, string>;
+  positionAvatars?: Record<string, import("../PositionAvatar.js").AvatarValue>;
+  positionAvatarSources?: Record<string, string>;
+  ownerPositionId?: string;
 }
 const rememberedSelection = new Map<string, string>();
 const STATUS_BADGE: Record<string, string> = {
@@ -46,8 +52,15 @@ export function GoalsModule(props: GoalsModuleProps) {
   );
 }
 
-function GoalsWorkspace({ workspaceOpen, workspaceKey }: GoalsModuleProps) {
+function GoalsWorkspace({ workspaceOpen, workspaceKey, positionNames = {}, positionAvatars = {}, positionAvatarSources = {}, ownerPositionId }: GoalsModuleProps) {
   const t = useT();
+  const [view, setView] = useState<"goals" | "board">("goals");
+  const [tasks, setTasks] = useState<AgentTask[]>([]);
+  const [showTaskCreate, setShowTaskCreate] = useState(false);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskTarget, setTaskTarget] = useState("");
+  const [taskUrgent, setTaskUrgent] = useState(false);
+  const [taskContractor, setTaskContractor] = useState(false);
   const [goals, setGoals] = useState<GoalSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     workspaceKey ? (rememberedSelection.get(workspaceKey) ?? null) : null,
@@ -162,6 +175,32 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey }: GoalsModuleProps) {
     void loadGoals();
   }, [loadGoals]);
   useEffect(() => {
+    if (!workspaceOpen || view !== "board" || typeof window.owb.tasks !== "function") return;
+    let cancelled = false;
+    void window.owb.tasks().then((response) => {
+      if (!cancelled && response.status === 200) setTasks(response.body.tasks);
+    });
+    return () => { cancelled = true; };
+  }, [workspaceOpen, view]);
+  const reloadTasks = useCallback(async () => {
+    if (typeof window.owb.tasks !== "function") return;
+    const response = await window.owb.tasks();
+    if (response.status === 200) setTasks(response.body.tasks);
+  }, []);
+  const createTask = useCallback(async () => {
+    const owner = ownerPositionId;
+    if (!owner || !taskTarget || !taskTitle.trim()) return;
+    const response = await window.owb.createTask({ targetPositionId: taskTarget, title: taskTitle.trim(), urgent: taskUrgent, contractor: taskContractor });
+    if (response.status === 201) {
+      setShowTaskCreate(false); setTaskTitle(""); setTaskUrgent(false); setTaskContractor(false);
+      await reloadTasks();
+    }
+  }, [ownerPositionId, reloadTasks, taskContractor, taskTarget, taskTitle, taskUrgent]);
+  const decideTask = useCallback(async (task: AgentTask, decision: "accept" | "decline") => {
+    const response = await window.owb.decideTask({ taskId: task.taskId, decision });
+    if (response.status === 200) await reloadTasks();
+  }, [reloadTasks]);
+  useEffect(() => {
     if (selectedId) void loadDetail(selectedId);
   }, [selectedId, loadDetail]);
   useEffect(() => {
@@ -272,7 +311,12 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey }: GoalsModuleProps) {
     <section className="owb-goals-module" aria-label={t("goals.moduleAria")}>
       <header className="owb-module-header">
         <h1>{t("goals.title")}</h1>
-        {workspaceOpen && (
+        <div className="owb-goals-tabs" role="tablist">
+          <button type="button" role="tab" aria-selected={view === "goals"} onClick={() => setView("goals")}>{t("goals.tabGoals")}</button>
+          <button type="button" role="tab" aria-selected={view === "board"} onClick={() => setView("board")}>{t("goals.tabBoard")}</button>
+        </div>
+        {workspaceOpen && view === "board" ? <AntButton type="primary" onClick={() => setShowTaskCreate(true)}>{t("tasks.create")}</AntButton> : null}
+        {workspaceOpen && view === "goals" && (
           <>
             {((!loading && !error) || goals.length > 0) && (
               <span className="owb-module-header__count">
@@ -286,6 +330,34 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey }: GoalsModuleProps) {
       {!workspaceOpen ? (
         <div className="owb-goals-global-state">
           <p>{t("tree.notOpened")}</p>
+        </div>
+      ) : view === "board" ? (
+        <div className="owb-task-board" aria-label={t("tasks.boardAria")}>
+          {(["queued", "active", "waiting", "done"] as const).map((column) => (
+            <section className="owb-task-column" key={column}>
+              <header><strong>{t(`tasks.column.${column}`)}</strong><span>{tasks.filter((task) => column === "done" ? ["done", "declined", "failed"].includes(task.status) : task.status === column).length}</span></header>
+              <div className="owb-task-column__cards">
+                {tasks.filter((task) => column === "done" ? ["done", "declined", "failed"].includes(task.status) : task.status === column).map((task) => (
+                  <article className={`owb-task-card${task.priority === "urgent" ? " is-urgent" : ""}`} key={task.taskId}>
+                    <div className="owb-task-card__head">
+                      <PositionAvatar id={task.assigneePositionId} name={positionNames[task.assigneePositionId] ?? task.assigneePositionId} avatars={positionAvatars} sources={positionAvatarSources} />
+                      <strong>{task.title}</strong>
+                      {task.priority === "urgent" ? <AlertTriangle size={14} aria-label={t("tasks.urgent")} /> : null}
+                    </div>
+                    <p>{positionNames[task.assigneePositionId] ?? task.assigneePositionId}</p>
+                    {isPendingTaskCollaboration(task) ? <><small>{t("tasks.awaitingAcceptance")}</small><div className="owb-task-card__actions"><button onClick={() => void decideTask(task, "accept")}>{t("tasks.accept")}</button><button onClick={() => void decideTask(task, "decline")}>{t("tasks.decline")}</button></div></> : null}
+                    {task.kind === "contractor" ? <small className="owb-task-card__contractor"><BriefcaseBusiness size={12} aria-hidden="true" />{t("tasks.contractorBudget", { owner: positionNames[task.budgetOwnerPositionId] ?? task.budgetOwnerPositionId })}</small> : null}
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+          <Modal title={t("tasks.create")} open={showTaskCreate} onCancel={() => setShowTaskCreate(false)} onOk={() => void createTask()} okText={t("tasks.create")} cancelText={t("dlg.cancel")}>
+            <Input aria-label={t("tasks.title")} placeholder={t("tasks.title")} value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} />
+            <Select aria-label={t("tasks.assignee")} placeholder={t("tasks.assignee")} value={taskTarget || undefined} onChange={setTaskTarget} options={Object.entries(positionNames).map(([value, label]) => ({ value, label }))} />
+            <Checkbox checked={taskUrgent} onChange={(event) => setTaskUrgent(event.target.checked)}>{t("tasks.urgent")}</Checkbox>
+            <Checkbox checked={taskContractor} onChange={(event) => setTaskContractor(event.target.checked)}>{t("tasks.contractor")}</Checkbox>
+          </Modal>
         </div>
       ) : (
         <>

@@ -41,7 +41,7 @@ test("switching projects during session reservation cannot invoke a host or pers
     assert.equal(response.status, 409);
     assert.equal(calls, 0);
     for (const workspace of [firstWorkspace, secondWorkspace]) {
-      const directory = path.join(workspace, ".digital-employee", "workbench", "sessions", "conversations", session.sessionId, "turns");
+      const directory = path.join(workspace, ".roleweave", "sessions", "conversations", session.sessionId, "turns");
       const names = await fs.readdir(directory).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") return [];
         throw error;
@@ -96,7 +96,7 @@ test("body-read suspension never retargets personal, session, group, or cancella
       release();
       await rejected;
     }
-    await assert.rejects(fs.access(path.join(secondWorkspace, ".digital-employee", "workbench", "sessions")), { code: "ENOENT" });
+    await assert.rejects(fs.access(path.join(secondWorkspace, ".roleweave", "sessions")), { code: "ENOENT" });
   } finally {
     await server.close();
     await fs.rm(firstWorkspace, { recursive: true, force: true });

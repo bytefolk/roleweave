@@ -157,6 +157,11 @@ export interface OwbBridge {
   groupTimeline(conversationRef: string): Promise<OwbApiResponse<GroupTimeline>>;
   createGoal(request: { title: string; description: string; acceptanceCriteria?: string[] }): Promise<OwbApiResponse<GoalsCreateResponse>>;
   goals(): Promise<OwbApiResponse<{ goals: GoalSummary[] }>>;
+  relationshipGraph(expectedWorkspacePath?: string): Promise<OwbApiResponse<import("@roleweave/shared/relationship-graph").RelationshipGraphResponse>>;
+  tasks(positionId?: string): Promise<OwbApiResponse<{ tasks: import("@roleweave/shared").AgentTask[] }>>;
+  createTask(request: import("@roleweave/shared").TaskCreateRequest): Promise<OwbApiResponse<import("@roleweave/shared").AgentTask>>;
+  decideTask(request: import("@roleweave/shared").TaskDecisionRequest & { taskId: string }): Promise<OwbApiResponse<import("@roleweave/shared").AgentTask>>;
+  updateTaskStatus(request: import("@roleweave/shared").TaskStatusRequest & { taskId: string }): Promise<OwbApiResponse<import("@roleweave/shared").AgentTask>>;
   goal(goalId: string): Promise<OwbApiResponse<GoalDetail>>;
   updateGoal(request: { goalId: string; title?: string; description?: string; acceptanceCriteria?: string[]; status?: string; health?: string }): Promise<OwbApiResponse<{ goalId: string }>>;
   deleteGoal(goalId: string): Promise<OwbApiResponse<{ goalId: string; deleted: boolean }>>;

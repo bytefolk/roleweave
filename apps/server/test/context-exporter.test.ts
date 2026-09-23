@@ -132,8 +132,7 @@ test("completed durable session turn exports exactly two idempotent scoped occur
   assert.doesNotMatch(JSON.stringify(state), /Summarize|release remains|Authorization|Bearer|token/i);
   const stateFile = path.join(
     workspace,
-    ".digital-employee",
-    "workbench",
+    ".roleweave",
     "context-exports",
     sourceSession.sessionId,
     `${turn.turnId}.json`,
@@ -233,7 +232,7 @@ test("invalid sessions fail before export state or adapter access", async (t) =>
       await exporter.waitForIdle();
       assert.equal(adapter.calls.length, 0);
       await assert.rejects(
-        () => fs.stat(path.join(workspace, ".digital-employee", "workbench", "context-exports")),
+        () => fs.stat(path.join(workspace, ".roleweave", "context-exports")),
         { code: "ENOENT" },
       );
     });
@@ -272,7 +271,7 @@ test("symlinked or corrupted export state fails closed before adapter access", a
   {
     const workspace = await copyExampleWorkspace();
     const outside = await fs.mkdtemp(path.join(path.dirname(workspace), "owb-export-outside-"));
-    const workbench = path.join(workspace, ".digital-employee", "workbench");
+    const workbench = path.join(workspace, ".roleweave");
     await fs.mkdir(workbench, { recursive: true, mode: 0o700 });
     await fs.mkdir(path.join(outside, sourceSession.sessionId), { recursive: true, mode: 0o700 });
     await fs.writeFile(
@@ -297,8 +296,7 @@ test("symlinked or corrupted export state fails closed before adapter access", a
     await exporter.waitForIdle();
     const file = path.join(
       workspace,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "context-exports",
       sourceSession.sessionId,
       `${turn.turnId}.json`,

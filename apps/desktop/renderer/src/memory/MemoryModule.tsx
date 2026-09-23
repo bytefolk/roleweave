@@ -21,6 +21,7 @@ export interface MemoryModuleProps {
   selectedPositionId: string | null;
   position?: PositionCardData | null;
   initialSource?: MemorySource;
+  resourceRequest?: { positionId: string; path: string; nonce: number } | null;
 }
 
 function sourceKind(source: MemorySource): ContextSourceSummary["kind"] {
@@ -75,6 +76,7 @@ export function MemoryModule({
   initialSource = "docs",
   onCollaborate,
   onContinue,
+  resourceRequest,
 }: MemoryModuleProps) {
   const t = useT();
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
@@ -214,6 +216,7 @@ export function MemoryModule({
               workspaceOpen={workspaceOpen}
               positions={positions}
               selectedPositionId={positionId}
+              resourceRequest={activeSource === "docs" ? resourceRequest : null}
             />
           ) : null}
           {activeSource === "sessions" ? <SessionMemory key={positionId} positionId={positionId} onContinue={onContinue} /> : null}

@@ -368,6 +368,7 @@
   100% { transform: translateY(104px); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__continuing svg { animation: none; }
   :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__spinner,
   :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__activity-orbit,
   :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__step,
@@ -380,6 +381,24 @@
     display: none;
   }
 }
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace { display: grid; gap: 8px; margin: 8px 0 4px; color: var(--ui-foreground-muted); font-size: 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group > button { display: inline-flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group > button[aria-expanded="true"] .owb-turn-progress__toggle { transform: rotate(90deg); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group ol { display: grid; gap: 6px; max-height: min(240px, 32vh); margin: 7px 0 0 9px; padding: 3px 8px 3px 18px; overflow-y: auto; overscroll-behavior: contain; border-left: 1px solid var(--ui-border); scrollbar-gutter: stable; list-style: none; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group ol[hidden] { display: none; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group li,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__agent,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__continuing { display: flex; align-items: center; gap: 8px; min-width: 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group li > span:nth-child(2) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__icon { display: inline-flex; color: var(--ui-success); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__agent { padding: 6px 9px; border-radius: 8px; background: color-mix(in srgb, var(--ui-brand) 7%, transparent); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__continuing { color: var(--ui-foreground); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__continuing svg { color: var(--ui-brand); animation: owb-progress-spin 1s linear infinite; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-failure { display: grid; gap: 5px; margin-top: 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--ui-danger) 32%, var(--ui-border)); border-radius: 9px; background: color-mix(in srgb, var(--ui-danger) 7%, transparent); color: var(--ui-foreground); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-failure__title { display: flex; align-items: center; gap: 7px; color: var(--ui-danger); font-size: 12px; font-weight: 600; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-failure :is(p, small) { margin: 0; line-height: 1.55; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-failure small { color: var(--ui-foreground-muted); }
 
 /* Public output flows as the reply body. The header retains the explicit
  * provisional label while a response is still running. */

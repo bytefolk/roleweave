@@ -38,6 +38,33 @@ describe("conversation interaction refinements without a frame redesign", () => 
     expect(within(header as HTMLElement).getByRole("combobox", { name: "选择 Agent Host" })).toBeInTheDocument();
     expect(header.querySelector(".owb-engine-badge")).toBeNull();
   });
+  it("moves the submitted text into the conversation immediately and restores it only when acceptance fails", async () => {
+    let finish!: (value: boolean) => void;
+    const create = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    render(<TurnPanel {...props({ turns: [], onCreateTurn: create })} />);
+    const input = screen.getByLabelText("下达任务");
+    fireEvent.change(input, { target: { value: "当前什么进度了？" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(create).toHaveBeenCalledExactlyOnceWith({ positionId: "owner", engine: "codex-local", input: "当前什么进度了？" });
+    expect(input).toHaveValue("");
+    finish(false);
+    await waitFor(() => expect(input).toHaveValue("当前什么进度了？"));
+    expect(screen.getByRole("alert")).toHaveTextContent("发送失败，已保留草稿。");
+  });
+
+  it("does not overwrite a new draft when an earlier submission is rejected", async () => {
+    let finish!: (value: boolean) => void;
+    const create = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    render(<TurnPanel {...props({ turns: [], onCreateTurn: create })} />);
+    const input = screen.getByLabelText("下达任务");
+    fireEvent.change(input, { target: { value: "first" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.change(input, { target: { value: "next draft" } });
+    finish(false);
+    await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
+    expect(input).toHaveValue("next draft");
+  });
+
   it("protects an existing draft and re-edits into a new task without changing history", async () => {
     const create = vi.fn().mockResolvedValue(true);
     render(<TurnPanel {...props({ onCreateTurn: create })} />);
@@ -116,7 +143,7 @@ describe("conversation interaction refinements without a frame redesign", () => 
     const panelProps = props({ turns: [failed], onCreateTurn: create });
     const { rerender } = render(<TurnPanel {...panelProps} modelSaving />);
     const saved = save.then(() => rerender(<TurnPanel {...panelProps} modelSaving={false} />));
-    const retry = screen.getByRole("button", { name: "创建新回合重试" });
+    const retry = screen.getByRole("button", { name: "重新执行" });
     expect(retry).toBeDisabled();
     fireEvent.click(retry);
     expect(create).not.toHaveBeenCalled();
@@ -169,7 +196,7 @@ describe("conversation interaction refinements without a frame redesign", () => 
   it.each(["sessionBusy", "historyLoading"] as const)("blocks retry while %s keeps session state incomplete", async (pending) => {
     const create = vi.fn();
     render(<TurnPanel {...props({ turns: [{ ...finished, status: "failed", error: "Task failed" }], onCreateTurn: create, [pending]: true })} />);
-    const retry = screen.getByRole("button", { name: "创建新回合重试" });
+    const retry = screen.getByRole("button", { name: "重新执行" });
     expect(retry).toBeDisabled();
     fireEvent.click(retry);
     expect(create).not.toHaveBeenCalled();

@@ -206,8 +206,8 @@ test("run scope rejects undeclared, tampered, denied, and expired offers before 
 test("multi-party policy rejects unauthorized actors, accepts a delegated co-sign, and exports a verified audit trail", async () => {
   const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
   try {
-    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
-    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+    await fs.mkdir(path.join(workspace, ".roleweave"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".roleweave", "approval-policy.json"), JSON.stringify({
       schemaVersion: "roleweave-approval-policy.v1", version: "release-7",
       default: { eligibleApprovers: ["alice", "bob"], threshold: 2, delegations: { alice: ["carol"] } },
     }));
@@ -238,8 +238,8 @@ test("multi-party policy rejects unauthorized actors, accepts a delegated co-sig
 test("persisted policy snapshots remain bound to their digest", async () => {
   const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
   try {
-    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
-    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+    await fs.mkdir(path.join(workspace, ".roleweave"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".roleweave", "approval-policy.json"), JSON.stringify({
       schemaVersion: "roleweave-approval-policy.v1", version: "bound-1",
       default: { eligibleApprovers: ["alice"], threshold: 1 },
     }));
@@ -254,8 +254,8 @@ test("multi-party grants cannot widen scope based on the final voter", async () 
   const driver = new ApprovalDriver(); driver.runScope = true;
   const workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
   try {
-    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
-    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+    await fs.mkdir(path.join(workspace, ".roleweave"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".roleweave", "approval-policy.json"), JSON.stringify({
       schemaVersion: "roleweave-approval-policy.v1", version: "scope-1",
       default: { eligibleApprovers: ["alice", "bob"], threshold: 2 },
     }));
@@ -274,8 +274,8 @@ test("multi-party grants cannot widen scope based on the final voter", async () 
 test("escalation does not count grants from principals outside the escalated policy", async () => {
   const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
   try {
-    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
-    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+    await fs.mkdir(path.join(workspace, ".roleweave"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".roleweave", "approval-policy.json"), JSON.stringify({
       schemaVersion: "roleweave-approval-policy.v1", version: "escalation-votes-1",
       default: { eligibleApprovers: ["alice", "bob"], threshold: 2, escalation: { afterMs: 1000, eligibleApprovers: ["incident-commander"], threshold: 1 } },
     }));
@@ -295,8 +295,8 @@ test("escalation does not count grants from principals outside the escalated pol
 test("policy escalation persists and deterministically changes the active threshold", async () => {
   const driver = new ApprovalDriver(), workspace = await copyExampleWorkspace(), s = await startTestServer(undefined, driver);
   try {
-    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
-    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+    await fs.mkdir(path.join(workspace, ".roleweave"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".roleweave", "approval-policy.json"), JSON.stringify({
       schemaVersion: "roleweave-approval-policy.v1", version: "escalation-1",
       default: { eligibleApprovers: ["alice", "bob"], threshold: 2, escalation: { afterMs: 1, eligibleApprovers: ["escalation-oncall"], threshold: 1 } },
     }));
@@ -659,7 +659,7 @@ test("second writer and corrupt records fail explicitly instead of returning an 
     await open(s, workspace); await request(s); const snapshot = await list(s);
     await open(other, workspace);
     assert.equal((await api(other.baseUrl, "/approvals", { token: other.token })).status, 409);
-    await fs.writeFile(path.join(workspace, ".digital-employee/workbench/approvals", `${snapshot.items[0]!.id}.json`), "{}");
+    await fs.writeFile(path.join(workspace, ".roleweave/approvals", `${snapshot.items[0]!.id}.json`), "{}");
     assert.equal((await api(s.baseUrl, "/approvals", { token: s.token })).status, 500);
   } finally { await s.close(); await other.close(); }
 });

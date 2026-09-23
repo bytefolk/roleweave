@@ -21,7 +21,7 @@ async function open(server: Awaited<ReturnType<typeof startTestServer>>, dir: st
 }
 
 async function writeTurn(dir: string, record: TurnRecord): Promise<void> {
-  const conversation = path.join(dir, ".digital-employee", "workbench", "conversations", record.positionId);
+  const conversation = path.join(dir, ".roleweave", "conversations", record.positionId);
   const turns = path.join(conversation, "turns");
   await fs.mkdir(turns, { recursive: true, mode: 0o700 });
   await fs.writeFile(path.join(conversation, "conversation.json"), `${JSON.stringify({
@@ -36,8 +36,7 @@ async function writeTurn(dir: string, record: TurnRecord): Promise<void> {
 async function writeSessionTurn(dir: string, sessionId: string, record: TurnRecord): Promise<void> {
   const conversation = path.join(
     dir,
-    ".digital-employee",
-    "workbench",
+    ".roleweave",
     "sessions",
     "conversations",
     sessionId,
@@ -256,7 +255,7 @@ test("#112 reports: symlinked session conversation roots fail closed", async () 
   const dir = await copyExampleWorkspace();
   const outside = await fs.mkdtemp(path.join(dir, "..", "owb-session-report-outside-"));
   try {
-    const sessions = path.join(dir, ".digital-employee", "workbench", "sessions");
+    const sessions = path.join(dir, ".roleweave", "sessions");
     await fs.mkdir(sessions, { recursive: true, mode: 0o700 });
     await fs.symlink(outside, path.join(sessions, "conversations"));
     await open(server, dir);
@@ -290,8 +289,7 @@ test("#112 reports: inconsistent session conversation metadata fails closed", as
     assert.equal(completed.status, 200);
     const metadataFile = path.join(
       dir,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "conversations",
       session.sessionId,
@@ -341,8 +339,7 @@ test("#112 reports: wrong-workspace authoritative session state fails closed", a
     await createSessionTurn(server);
     const stateFile = path.join(
       dir,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "positions",
       "repo-owner.json",
@@ -369,8 +366,7 @@ test("#112 reports: internally consistent session facts cannot change their auth
     const { session, record } = await createSessionTurn(server);
     const conversation = path.join(
       dir,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "conversations",
       session.sessionId,
@@ -404,7 +400,7 @@ test("#112 reports: duplicate authoritative session ids across positions fail cl
   try {
     await open(server, dir);
     await createSessionTurn(server);
-    const positions = path.join(dir, ".digital-employee", "workbench", "sessions", "positions");
+    const positions = path.join(dir, ".roleweave", "sessions", "positions");
     const source = JSON.parse(await fs.readFile(path.join(positions, "repo-owner.json"), "utf8")) as {
       positionId: string;
       sessions: Array<{ positionId: string; principal: string }>;
@@ -493,8 +489,7 @@ test("#112 reports: nested turn entries fail closed", async () => {
     const { session } = await createSessionTurn(server);
     const turns = path.join(
       dir,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "conversations",
       session.sessionId,
@@ -519,8 +514,7 @@ test("#112 reports: malformed and symlinked atomic temp entries fail closed", as
       const { session } = await createSessionTurn(server);
       const turns = path.join(
         dir,
-        ".digital-employee",
-        "workbench",
+        ".roleweave",
         "sessions",
         "conversations",
         session.sessionId,
@@ -551,8 +545,7 @@ test("#112 reports: oversized atomic temp records fail closed", async () => {
     const { session } = await createSessionTurn(server);
     const temporary = path.join(
       dir,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "conversations",
       session.sessionId,
@@ -577,8 +570,7 @@ test("#112 reports: total turn-directory entries are bounded even when extras ar
     const { session } = await createSessionTurn(server);
     const turns = path.join(
       dir,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "conversations",
       session.sessionId,
@@ -610,8 +602,7 @@ test("#112 reports: each conversation accepts at most 256 otherwise-valid atomic
     const { session } = await createSessionTurn(server);
     const turns = path.join(
       dir,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "conversations",
       session.sessionId,
@@ -642,7 +633,7 @@ test("#112 reports: authoritative position files share one 64 MiB aggregate byte
   try {
     await open(server, dir);
     await createSessionTurn(server);
-    const positions = path.join(dir, ".digital-employee", "workbench", "sessions", "positions");
+    const positions = path.join(dir, ".roleweave", "sessions", "positions");
     for (let index = 0; index < 16; index += 1) {
       const temporary = path.join(
         positions,
@@ -666,8 +657,7 @@ test("#112 reports: legacy and session conversations share one global conversati
     await writeTurn(dir, turn({ turnId: "legacy-bound-turn" }));
     const sessions = path.join(
       dir,
-      ".digital-employee",
-      "workbench",
+      ".roleweave",
       "sessions",
       "conversations",
     );
@@ -774,8 +764,7 @@ test("#112 reports: malformed UTF-8 in persisted input or output text fails clos
         await writeTurn(dir, record);
         const file = path.join(
           dir,
-          ".digital-employee",
-          "workbench",
+          ".roleweave",
           "conversations",
           record.positionId,
           "turns",
@@ -839,7 +828,7 @@ test("reports: malformed persisted turn events fail closed instead of becoming i
   try {
     const malformed = turn({ turnId: "turn-malformed" });
     await writeTurn(dir, malformed);
-    const file = path.join(dir, ".digital-employee", "workbench", "conversations", malformed.positionId, "turns", `${malformed.turnId}.json`);
+    const file = path.join(dir, ".roleweave", "conversations", malformed.positionId, "turns", `${malformed.turnId}.json`);
     await fs.writeFile(file, `${JSON.stringify({ ...malformed, events: [null] })}\n`, { mode: 0o600 });
     await open(server, dir);
     const response = await api(server.baseUrl, "/reports", { token: server.token });
@@ -916,7 +905,7 @@ test("reports: symlinked local report roots are rejected without reading outside
   const dir = await copyExampleWorkspace();
   const outside = await fs.mkdtemp(path.join(dir, "..", "owb-report-outside-"));
   try {
-    const workbench = path.join(dir, ".digital-employee", "workbench");
+    const workbench = path.join(dir, ".roleweave");
     await fs.mkdir(workbench, { recursive: true, mode: 0o700 });
     await fs.symlink(outside, path.join(workbench, "conversations"));
     await open(server, dir);

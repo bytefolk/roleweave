@@ -24,7 +24,7 @@ test("rejects symlink attachment files and requires metadata/file consistency", 
 
   const filePath = path.join(
     workspace,
-    ".digital-employee/workbench/sessions",
+    ".roleweave/sessions",
     sessionId,
     "attachments",
     attachmentId,

@@ -54,7 +54,7 @@ export function approvalPolicyDigest(policy: Omit<ApprovalPolicySnapshot, "diges
 /** Read an optional workspace-local policy.  The policy is copied into each
  * request, so edits only govern future requests and cannot rewrite history. */
 export async function resolveApprovalPolicy(workspace: string, record: Pick<ApprovalRecord, "source" | "action" | "requestedAt">): Promise<ApprovalPolicySnapshot> {
-  const file = path.join(workspace, ".digital-employee", "workbench", "approval-policy.json");
+  const file = path.join(workspace, ".roleweave", "approval-policy.json");
   let raw: unknown = defaultFile();
   try { raw = JSON.parse(await fs.readFile(file, "utf8")); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw invalid(); }

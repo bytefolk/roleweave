@@ -23,10 +23,9 @@ import { MAX_TURNS_PER_POSITION } from "../history-limits.js";
 
 import { isThreadContextMetadata } from "./thread-context.js";
 
-const STATE_ROOT = path.join(".digital-employee", "workbench", "conversations");
+const STATE_ROOT = path.join(".roleweave", "conversations");
 const SESSION_CONVERSATIONS_ROOT = path.join(
-  ".digital-employee",
-  "workbench",
+  ".roleweave",
   "sessions",
   "conversations",
 );
@@ -268,8 +267,7 @@ function conversationDir(workspace: string, positionId: string): string {
 function sessionConversationDir(workspace: string, sessionId: string): string {
   return path.join(
     workspace,
-    ".digital-employee",
-    "workbench",
+    ".roleweave",
     "sessions",
     "conversations",
     assertSessionId(sessionId),
@@ -324,7 +322,7 @@ async function preparePositionDirectories(workspace: string, positionId: string)
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
     throw storageError("workspace must be a real directory for local turn state");
   }
-  const segments = [".digital-employee", "workbench", "conversations", positionId, "turns"];
+  const segments = [".roleweave", "conversations", positionId, "turns"];
   let current = workspace;
   for (let index = 0; index < segments.length; index += 1) {
     current = path.join(current, segments[index]!);
@@ -357,8 +355,7 @@ async function prepareSessionDirectories(workspace: string, sessionId: string): 
     throw storageError("workspace must be a real directory for local session turn state");
   }
   const segments = [
-    ".digital-employee",
-    "workbench",
+    ".roleweave",
     "sessions",
     "conversations",
     sessionId,
@@ -692,6 +689,18 @@ function validateEngineEvent(raw: unknown): EngineEvent | null {
         typeof value.text === "string" && isBoundedCodePoints(value.text, MAX_MODEL_CHARACTERS)
         ? { ...base, type: "model.delta", text: value.text }
         : null;
+    case "trace.activity": {
+      if (!hasExactKeys(value, ["type", "runId", "timestamp", "activityId", "kind", "status", "title"], ["detail", "parentActivityId"]) ||
+        !isBoundedIdentifier(value.activityId) || (value.kind !== "tool" && value.kind !== "agent") ||
+        !["running", "completed", "failed"].includes(value.status as string) ||
+        !isBoundedNonEmptyText(value.title, 256) ||
+        (value.detail !== undefined && !isBoundedNonEmptyText(value.detail, 2048)) ||
+        (value.parentActivityId !== undefined && !isBoundedIdentifier(value.parentActivityId))) return null;
+      return { ...base, type: "trace.activity", activityId: value.activityId as string,
+        kind: value.kind as "tool" | "agent", status: value.status as "running" | "completed" | "failed",
+        title: value.title as string, ...(value.detail !== undefined ? { detail: value.detail as string } : {}),
+        ...(value.parentActivityId !== undefined ? { parentActivityId: value.parentActivityId as string } : {}) };
+    }
     case "usage": {
       if (!hasExactKeys(
         value,

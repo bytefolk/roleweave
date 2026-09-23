@@ -59,6 +59,9 @@ function progressSteps(record: ApiTurnRecord): TurnProgressStep[] {
       case "model.delta":
         add("working", event.timestamp);
         break;
+      case "trace.activity":
+        add("working", event.timestamp);
+        break;
       case "approval.requested":
         add("awaiting_approval", event.timestamp);
         break;
@@ -101,6 +104,17 @@ function totalTokens(record: ApiTurnRecord): number | undefined {
   return undefined;
 }
 
+function traceActivities(record: ApiTurnRecord): TurnRecord["trace"] {
+  const byId = new Map<string, NonNullable<TurnRecord["trace"]>[number]>();
+  for (const event of record.events) {
+    if (event.type !== "trace.activity") continue;
+    byId.set(event.activityId, { activityId: event.activityId, kind: event.kind, status: event.status, title: event.title,
+      ...(event.detail !== undefined ? { detail: event.detail } : {}),
+      ...(event.parentActivityId !== undefined ? { parentActivityId: event.parentActivityId } : {}), at: event.timestamp });
+  }
+  return [...byId.values()];
+}
+
 /**
  * Explicit presentation adapter. The renderer never persists or reconstructs
  * turn-record.v1; it only gives the server-owned record a display shape.
@@ -113,6 +127,7 @@ export function adaptTurnRecord(
   const pendingApproval = approvalRequest(record);
   const progress = progressSteps(record);
   const usage = totalTokens(record);
+  const trace = traceActivities(record);
   return {
     id: record.turnId,
     positionId: record.positionId,
@@ -132,6 +147,7 @@ export function adaptTurnRecord(
     envelopeDigest: record.envelopeDigest,
     ...(record.threadContext !== undefined ? { threadContext: record.threadContext } : {}),
     ...(progress.length > 0 ? { progress } : {}),
+    ...(trace && trace.length > 0 ? { trace } : {}),
     ...(usage !== undefined ? { totalTokens: usage } : {}),
     ...(record.attachments !== undefined ? { attachments: record.attachments } : {}),
   };

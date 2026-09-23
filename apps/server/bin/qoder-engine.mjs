@@ -1074,6 +1074,28 @@ async function turnRunQoder(workspaceDir, positionId, input) {
     }
 
     let buffer = "";
+    const toolNames = new Map();
+    const activityText = (value, maxBytes) => {
+      let result = "";
+      let bytes = 0;
+      for (const character of value) {
+        bytes += Buffer.byteLength(character, "utf8");
+        if (bytes > maxBytes) break;
+        result += character;
+      }
+      return result;
+    };
+    const publicDetail = (block) => {
+      const input = block?.input;
+      if (!input || typeof input !== "object") return undefined;
+      const details = [];
+      for (const key of ["path", "file_path", "paths", "files", "file_paths"]) {
+        const value = input[key];
+        if (typeof value === "string" && value.trim()) details.push(value.trim());
+        else if (Array.isArray(value)) details.push(...value.filter(item => typeof item === "string" && item.trim()).map(item => item.trim()));
+      }
+      return details.length > 0 ? activityText([...new Set(details)].join(" · "), 2048) : undefined;
+    };
     child.stdout.on("data", (chunk) => {
       buffer += String(chunk);
       let newline = buffer.indexOf("\n");
@@ -1100,7 +1122,19 @@ async function turnRunQoder(workspaceDir, positionId, input) {
         for (const block of event.message.content) {
           if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
             emit({ type: "model.delta", runId, timestamp: now(), text: block.text });
+          } else if (block?.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
+            toolNames.set(block.id, activityText(block.name, 256));
+            const detail = publicDetail(block);
+            emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.id, 256), kind: "tool",
+              status: "running", title: toolNames.get(block.id), ...(detail ? { detail } : {}) });
           }
+        }
+      }
+      if (event?.type === "user" && Array.isArray(event?.message?.content)) {
+        for (const block of event.message.content) {
+          if (block?.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
+          emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.tool_use_id, 256), kind: "tool",
+            status: block.is_error === true ? "failed" : "completed", title: toolNames.get(block.tool_use_id) ?? "Tool" });
         }
       }
       if (event?.type === "result") {

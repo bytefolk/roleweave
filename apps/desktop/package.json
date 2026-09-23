@@ -26,6 +26,8 @@
     "vitest": "^3.0.0"
   },
   "dependencies": {
+    "@antv/g6": "5.1.1",
+    "@xyflow/react": "^12.11.6",
     "antd": "^6.6.1",
     "react-markdown": "^9.1.0",
     "remark-gfm": "4.0.1",

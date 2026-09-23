@@ -1,3 +1,22 @@
+.owb-task-board { display: grid; grid-template-columns: repeat(4, minmax(210px, 1fr)); gap: 12px; padding: 16px; overflow: auto; }
+.owb-goals-tabs { display: flex; gap: 4px; margin-left: 14px; padding: 3px; border-radius: 8px; background: var(--ui-surface-raised); }
+.owb-goals-tabs button { border: 0; border-radius: 6px; padding: 5px 10px; color: var(--ui-text-muted); background: transparent; cursor: pointer; }
+.owb-goals-tabs button[aria-selected="true"] { color: var(--ui-text); background: var(--ui-surface); box-shadow: var(--ui-shadow-sm); }
+.owb-task-column { min-height: 420px; padding: 10px; border: 1px solid var(--ui-border); border-radius: 12px; background: color-mix(in srgb, var(--ui-surface) 72%, transparent); }
+.owb-task-column > header { display: flex; justify-content: space-between; padding: 4px 4px 10px; color: var(--ui-text-muted); }
+.owb-task-column__cards { display: grid; gap: 8px; }
+.owb-task-card { padding: 11px; border: 1px solid var(--ui-border); border-radius: 10px; background: var(--ui-surface); box-shadow: var(--ui-shadow-sm); }
+.owb-task-card.is-urgent { border-color: var(--ui-danger); box-shadow: inset 3px 0 var(--ui-danger); }
+.owb-task-card__head { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; }
+.owb-task-card .owb-avatar { width: 28px; height: 28px; overflow: hidden; border-radius: 50%; }
+.owb-task-card .owb-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.owb-task-card p, .owb-task-card small { margin: 6px 0 0 38px; color: var(--ui-text-muted); }
+.owb-task-card__contractor { display: flex; align-items: center; gap: 5px; }
+.owb-task-card__actions { display: flex; gap: 6px; margin: 8px 0 0 38px; }
+.owb-task-card__actions button { border: 1px solid var(--ui-border); border-radius: 6px; padding: 3px 8px; color: var(--ui-text); background: var(--ui-surface-raised); cursor: pointer; }
+.owb-task-board .ant-modal-root { grid-column: 1 / -1; }
+@media (max-width: 980px) { .owb-task-board { grid-template-columns: repeat(2, minmax(210px, 1fr)); } }
+
 /* RoleWeave data components, shared by light and dark.
  * State labels, errors, provenance and controls remain visible. */
 

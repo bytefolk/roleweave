@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { OrgChart, centerOrgChartView, fitOrgChartView } from "../src/org/OrgChart";
-import type { OrgTreeSnapshot } from "@roleweave/shared";
+import { OrgChart, buildKnowledgeGraph, centerOrgChartView, fitOrgChartView } from "../src/org/OrgChart";
+import type { DocsFileEntry, OrgTreeSnapshot } from "@roleweave/shared";
 
 const snapshot: OrgTreeSnapshot = {
   schemaVersion: "org-tree.v1",
@@ -131,6 +131,59 @@ describe("P0 组织图可视化（纯展示：节点 + 汇报线 + 空态/加载
     expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("200%");
     for (let i = 0; i < 20; i += 1) fireEvent.wheel(body, { ctrlKey: true, deltaY: 100 });
     expect(screen.getByRole("button", { name: "重置缩放到 100%" }).textContent).toBe("50%");
+  });
+});
+
+const docsByAgent: Record<string, DocsFileEntry[]> = {
+  "repo-owner": [
+    { path: "AGENTS.md", kind: "file", size: 1200, modifiedAt: "2026-08-24T04:00:00.000Z" },
+  ],
+  "docs-writer": [
+    { path: "knowledge/product-brief.md", kind: "file", size: 800, modifiedAt: "2026-08-24T04:00:00.000Z" },
+  ],
+  "release-engineer": [],
+};
+
+describe("Agent 资源关系图谱", () => {
+  it("把汇报关系和 Agent 持有文档投影成带语义的节点与边", () => {
+    const graph = buildKnowledgeGraph(snapshot, docsByAgent);
+    expect(graph.nodes.map((node) => [node.id, node.kind])).toEqual([
+      ["agent:repo-owner", "agent"],
+      ["agent:docs-writer", "agent"],
+      ["agent:release-engineer", "agent"],
+      ["document:repo-owner:AGENTS.md", "document"],
+      ["document:docs-writer:knowledge/product-brief.md", "document"],
+    ]);
+    expect(graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "agent:repo-owner", target: "agent:docs-writer", kind: "reports" }),
+      expect.objectContaining({ source: "agent:docs-writer", target: "document:docs-writer:knowledge/product-brief.md", kind: "owns" }),
+    ]));
+  });
+
+  it("可按资源类型过滤，并从文档节点回到负责 Agent", () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <OrgChart
+        snapshot={snapshot}
+        displayNames={{ "repo-owner": "代码库负责人", "docs-writer": "文档负责人", "release-engineer": "发布工程师" }}
+        resources={docsByAgent}
+        selectedId="docs-writer"
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(screen.getByText("Agent 关系图谱")).toBeInTheDocument();
+    expect(screen.getAllByText("product-brief.md").length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('[data-graph-edge-kind="reports"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-graph-edge-kind="owns"]')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "仅查看文档关系" }));
+    expect(container.querySelectorAll('[data-graph-edge-kind="reports"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-graph-edge-kind="owns"]')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "查看全部关系" }));
+    fireEvent.click(screen.getByRole("button", { name: "文档 product-brief.md，由 文档负责人 负责" }));
+    expect(onSelect).toHaveBeenLastCalledWith("docs-writer");
   });
 });
 

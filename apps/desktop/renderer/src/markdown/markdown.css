@@ -8,6 +8,10 @@
 .owb-markdown h1 { font-size: 24px; } .owb-markdown h2 { font-size: 21px; } .owb-markdown h3 { font-size: 18px; }
 .owb-markdown h4, .owb-markdown h5, .owb-markdown h6 { font-size: 15px; }
 .owb-markdown a { color: var(--ui-primary); text-decoration: underline; text-underline-offset: 3px; }
+.owb-markdown-link { display: inline-flex; align-items: baseline; gap: 0.28em; }
+.owb-markdown-link__icon { display: inline-flex; flex: none; align-self: center; color: currentColor; }
+.owb-markdown-link__icon svg { width: 0.9em; height: 0.9em; stroke-width: 1.9; }
+.owb-markdown-link__text { min-width: 0; }
 .owb-markdown :is(button,a):focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
 .owb-markdown blockquote { border-left: 3px solid var(--ui-border-strong); padding: 0 16px; color: var(--ui-foreground-muted); }
 .owb-markdown hr { margin: 24px 0; border: 0; border-top: 1px solid var(--ui-border); }

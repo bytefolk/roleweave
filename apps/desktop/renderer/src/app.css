@@ -5600,6 +5600,25 @@ body,
   font-weight: 700;
 }
 
+/* Agent-resource knowledge graph, rendered with the React Flow interaction model. */
+.owb-knowledge-graph { width: 100%; }
+.owb-knowledge-graph__filters { position: absolute; z-index: 5; top: 10px; left: 14px; display: flex; gap: 6px; }
+.owb-knowledge-graph__filters button { border: 1px solid var(--ui-border); border-radius: 999px; padding: 5px 10px; background: color-mix(in srgb, var(--ui-surface) 88%, transparent); color: var(--ui-foreground-subtle); font-size: 11px; cursor: pointer; }
+.owb-knowledge-graph__filters button[aria-pressed="true"] { border-color: color-mix(in srgb, var(--ui-brand) 45%, var(--ui-border)); background: var(--ui-brand-soft); color: var(--ui-brand); }
+.owb-knowledge-graph__canvas { position: relative; width: 100%; height: min(66vh, 640px); min-height: 420px; overflow: hidden; border-radius: 12px; background: color-mix(in srgb, var(--ui-surface) 65%, transparent); }
+.owb-knowledge-node { display: flex; align-items: center; gap: 9px; width: 176px; min-height: 56px; padding: 9px 11px; border: 1px solid var(--ui-border); border-radius: 12px; background: var(--ui-surface); color: var(--ui-foreground); text-align: left; box-shadow: 0 6px 22px color-mix(in srgb, var(--ui-foreground) 8%, transparent); cursor: pointer; }
+.owb-knowledge-node--document { width: 190px; border-style: dashed; background: color-mix(in srgb, var(--ui-surface) 82%, var(--ui-brand-soft)); }
+.owb-knowledge-node.is-selected { border-color: var(--ui-brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-brand) 14%, transparent); }
+.owb-knowledge-node__icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 9px; background: var(--ui-brand-soft); color: var(--ui-brand); }
+.owb-knowledge-node > span:last-of-type { display: grid; min-width: 0; }
+.owb-knowledge-node strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.owb-knowledge-node small { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-foreground-subtle); font-size: 10px; }
+.owb-knowledge-edge--reports path { stroke: var(--ui-foreground-subtle); stroke-width: 1.5; }
+.owb-knowledge-edge--owns path { stroke: var(--ui-brand); stroke-width: 1.6; stroke-dasharray: 5 4; }
+.owb-knowledge-graph__edge-probes, .owb-knowledge-graph__semantic-nodes { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.owb-knowledge-graph .react-flow__controls { border: 1px solid var(--ui-border); box-shadow: none; }
+.owb-knowledge-graph .react-flow__controls-button { border-color: var(--ui-border); background: var(--ui-surface); color: var(--ui-foreground); }
+
 /* 不设固定高度上限——组织图按实际深度自然撑开，深层组织不再被硬顶掉根节点；
  * 选中岗位变化时会自动滚动定位（见 OrgChart.tsx 的 scrollIntoView 效果）。
  * 想省空间就用头部折叠按钮，而不是靠系统偷偷裁掉内容。

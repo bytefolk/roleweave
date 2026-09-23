@@ -285,6 +285,11 @@ export function TurnPanel({
     if (!hasContent || disabledReason || !selectedPosition || sendingRef.current.has(draftKey)) return;
     setSending(true);
     setSendErrors(current => ({ ...current, [draftKey]: "" }));
+    const submittedDraft = input;
+    // Move an accepted submission out of the composer immediately. The App
+    // creates the optimistic conversation row synchronously; retaining the same
+    // text here makes Enter look like a no-op until the HTTP request settles.
+    if (conversationMemory.drafts.get(draftKey) === submittedDraft) setInput("", draftKey);
     try {
       const attachmentIds = readyAttachments.length > 0 ? readyAttachments.map((a) => a.serverId!) : undefined;
       const created = await onCreateTurn({
@@ -294,11 +299,14 @@ export function TurnPanel({
         ...(attachmentIds !== undefined ? { attachmentIds } : {}),
       });
       if (created !== false) {
-        if (conversationMemory.drafts.get(draftKey) === input) setInput("", draftKey);
         setPendingAttachments([]);
       }
-      if (created === false) setSendErrors(current => ({ ...current, [draftKey]: copy.sendFailed }));
+      if (created === false) {
+        if ((conversationMemory.drafts.get(draftKey) ?? "") === "") setInput(submittedDraft, draftKey);
+        setSendErrors(current => ({ ...current, [draftKey]: copy.sendFailed }));
+      }
     } catch {
+      if ((conversationMemory.drafts.get(draftKey) ?? "") === "") setInput(submittedDraft, draftKey);
       setSendErrors(current => ({ ...current, [draftKey]: copy.sendFailed }));
     } finally {
       setSending(false);

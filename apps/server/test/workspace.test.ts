@@ -107,6 +107,22 @@ test("workspace: open example, org-tree.v1 snapshot, invalid skeleton rejected",
   }
 });
 
+test("workspace: migrates legacy RoleWeave state into one hidden workspace directory", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  const legacy = path.join(dir, ".digital-employee", "workbench");
+  await fs.mkdir(legacy, { recursive: true });
+  await fs.writeFile(path.join(legacy, "migration-proof.txt"), "preserved", "utf8");
+  try {
+    const open = await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    assert.equal(open.status, 200);
+    assert.equal(await fs.readFile(path.join(dir, ".roleweave", "migration-proof.txt"), "utf8"), "preserved");
+    await assert.rejects(fs.access(legacy), { code: "ENOENT" });
+  } finally {
+    await server.close();
+  }
+});
+
 test("workspace: initialize an existing source directory without overwriting its files", async () => {
   const server = await startTestServer();
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-source-tree-"));

@@ -4,7 +4,7 @@ import path from "node:path";
 import type { ContextSourceSummary, OrgRole } from "@roleweave/shared";
 import { POSITIONS_DIR } from "./workspace-state.js";
 
-const CONTEXT_EXPORT_ROOT = [".digital-employee", "workbench", "context-exports"] as const;
+const CONTEXT_EXPORT_ROOT = [".roleweave", "context-exports"] as const;
 
 /**
  * Build the source inventory shown on a position record.

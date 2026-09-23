@@ -45,6 +45,11 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
     createWorkspace: vi.fn().mockResolvedValue({ canceled: true }),
     workspace: vi.fn().mockResolvedValue({ status: 200, body: { open: false } }),
     orgTree: vi.fn().mockResolvedValue({ status: 200, body: null }),
+    relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: {
+      schemaVersion: "relationship-graph.v1", workspaceId: "example", revision: "1", generatedAt: "2026-09-22T00:00:00Z",
+      nodes: [{ id: "agent:repo-owner", kind: "agent", label: "Repo Owner", state: "ready", positionId: "repo-owner", evidence: { source: "org", locator: "repo-owner", basis: "observed", observedAt: "2026-09-22T00:00:00Z" } }],
+      edges: [], coverage: [], truncated: false, limits: { nodes: 400, edges: 800 },
+    } }),
     orgApply: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal" } }),
     hire: vi.fn().mockResolvedValue({
       status: 500,
@@ -455,6 +460,19 @@ describe("App removed-employee recovery", () => {
 });
 
 describe("App runtime bridge", () => {
+  it("shows immediate truthful startup stages until service and workspace are ready", async () => {
+    let finish!: (value: unknown) => void;
+    const status = vi.fn(() => new Promise<any>((resolve) => { finish = resolve; }));
+    installBridge({ status });
+    render(<App />);
+    const loading = screen.getByRole("status", { name: "RoleWeave 正在启动" });
+    expect(loading).toHaveTextContent("正在启动本地服务");
+    expect(document.querySelector(".owb-app")).toHaveAttribute("aria-busy", "true");
+    finish({ running: false, state: "failed" });
+    expect(await screen.findByRole("alert")).toHaveTextContent("本地服务未能连接");
+    expect(screen.queryByRole("status", { name: "RoleWeave 正在启动" })).not.toBeInTheDocument();
+  });
+
   it("finishes startup with a recoverable error when the local service cannot start", async () => {
     const bridge = installBridge({ status: vi.fn().mockResolvedValue({ running: false, state: "failed" }) });
     render(<App />);
@@ -1921,7 +1939,7 @@ it("keeps the employee workbench mounted while the overview handles organization
   screen.getByRole("button", { name: "组织概览", exact: true }).focus();
   fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
   await waitFor(() => expect(screen.queryByText("携带会话历史")).not.toBeInTheDocument());
-  expect(screen.getByRole("region", { name: "组织图" })).toBeVisible();
+  expect(screen.getByRole("region", { name: "关系图谱" })).toBeVisible();
   expect(input).not.toBeVisible();
   expect(split).toHaveAttribute("hidden");
   expect(screen.queryByRole("button", { name: "折叠组织图" })).not.toBeInTheDocument();
@@ -1931,7 +1949,9 @@ it("keeps the employee workbench mounted while the overview handles organization
   expect(split.style.getPropertyValue("--owb-org-left-width")).toBe(ratio);
 
   fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
-  fireEvent.click(container.querySelector('[data-org-chart-node="repo-owner"]')!);
+  fireEvent.click(await within(screen.getByRole("list", { name: "对象" })).findByRole("button", { name: /Repo Owner/ }));
+  expect(input).not.toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "打开员工工作台" }));
   expect(input).toBeVisible();
   expect(input).toHaveValue("draft stays with this employee");
   expect(screen.getByRole("button", { name: "员工工作台", exact: true })).toHaveFocus();
@@ -1940,8 +1960,8 @@ it("keeps the employee workbench mounted while the overview handles organization
   fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
   fireEvent.click(screen.getByRole("tree").querySelector('[data-org-node-id="repo-owner"]')!);
   expect(input).toBeVisible();
-  expect(container.querySelector(".owb-org-chart")).toBeNull();
-});
+  expect(container.querySelector(".owb-rgraph")).not.toBeVisible();
+}, 15_000);
 
 it("returns to the workbench after leaving the organization module", async () => {
   openedBridge();

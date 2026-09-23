@@ -63,8 +63,9 @@ describe("TurnThread evidence timeline (#73)", () => {
     );
     const card = container.querySelector(".owb-tc");
     expect(card?.querySelector('[aria-label="执行进展"]')).not.toBeNull();
-    expect(card?.querySelectorAll(".owb-turn-progress__step")).toHaveLength(3);
-    expect(card?.querySelector(".owb-turn-progress__step")?.querySelector("time")).toHaveTextContent("0s");
+    expect(card?.querySelectorAll(".owb-turn-progress__step")).toHaveLength(2);
+    expect(card?.querySelector(".owb-turn-progress__step")?.querySelector("time")).toBeNull();
+    expect(card?.querySelector(".owb-turn-progress__elapsed")).toHaveTextContent("1m 0s");
     expect(card?.querySelector(".owb-turn-progress__header")?.textContent).toContain("已完成");
     const disclosure = screen.getByRole("button", { name: "查看过程详情 · 已完成" });
     expect(disclosure).toHaveAttribute("aria-expanded", "false");

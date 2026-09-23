@@ -45,6 +45,14 @@
       "types": "./dist/goals.d.ts",
       "import": "./dist/goals.js"
     },
+    "./task-board": {
+      "types": "./dist/task-board.d.ts",
+      "import": "./dist/task-board.js"
+    },
+    "./relationship-graph": {
+      "types": "./dist/relationship-graph.d.ts",
+      "import": "./dist/relationship-graph.js"
+    },
     "./attachments": {
       "types": "./dist/attachments.d.ts",
       "import": "./dist/attachments.js"

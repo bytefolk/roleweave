@@ -58,6 +58,16 @@ export interface TurnApprovalRequest {
   expiresAt?: string;
 }
 
+export interface TurnTraceActivity {
+  activityId: string;
+  kind: "tool" | "agent";
+  status: "running" | "completed" | "failed";
+  title: string;
+  detail?: string;
+  parentActivityId?: string;
+  at: string;
+}
+
 export interface TurnRecord {
   model?: string;
   /** Renderer-only live/pending projection; never a persisted receipt. */
@@ -93,6 +103,8 @@ export interface TurnRecord {
   };
   /** Safe, high-level execution milestones derived from server-owned events. */
   progress?: TurnProgressStep[];
+  /** Bounded public execution activities; excludes private reasoning and raw arguments. */
+  trace?: TurnTraceActivity[];
   /** Additive #306: attachment manifest for this turn. */
   attachments?: TurnAttachment[];
 }

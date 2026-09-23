@@ -68,7 +68,8 @@ import type {
 import { BackupTray, DismissPositionDialog } from "./org/OrgControls";
 import { EditEmployeeDrawer } from "./org/EditEmployeeDrawer";
 import { HireDrawer } from "./org/HireDrawer";
-import { OrgChart } from "./org/OrgChart";
+import { RelationshipGraph } from "./graph/RelationshipGraph";
+import { useRelationshipGraph } from "./graph/useRelationshipGraph";
 import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
 import { useConfigurationBootstrap, useSendShortcut, useWorkspaceFocus, requestSettingsLeave, persistApplicationPreference, preferenceError } from "./configuration-preferences";
 import { createConversationMemory } from "./turns/conversation-memory";
@@ -263,6 +264,7 @@ function AppInner({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [toggleRailExpanded]);
   const [memorySource, setMemorySource] = useState<MemorySource>("docs");
+  const [resourceRequest, setResourceRequest] = useState<{ positionId: string; path: string; nonce: number } | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const healthReadVersion = useRef(0);
   const refreshReadVersion = useRef(0);
@@ -271,9 +273,13 @@ function AppInner({
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityCheckFailed, setAvailabilityCheckFailed] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
+  const [startupStage, setStartupStage] = useState<"service" | "workspace" | "organization" | "ready">("service");
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const approvalState = useApprovals(workspaceInfo?.open ? workspaceInfo.path : undefined);
   const [orgOverview, setOrgOverview] = useState(false);
+  const [graphOpened, setGraphOpened] = useState(false);
+  const graph = useRelationshipGraph(workspaceInfo?.open ? workspaceInfo.path : undefined, activeModule === "org" && orgOverview);
+  useEffect(() => { setGraphOpened(false); setResourceRequest(null); }, [workspaceInfo?.path]);
   const [conversationFocused, setConversationFocused] = useWorkspaceFocus(workspaceInfo?.path ?? "");
   const sendShortcut = useSendShortcut();
   const conversationMemory = useRef(createConversationMemory());
@@ -551,8 +557,10 @@ function AppInner({
     if (healthRead === healthReadVersion.current) setHealth(statusRes.health ?? null);
     if (!statusRes.running) {
       setStartupError(t("misc.serviceFailed"));
+      setStartupStage("ready");
       return;
     }
+    setStartupStage("workspace");
     // Publish only the latest summary: a delayed workspace read must not
     // reset the recovery scope after a newer workspace has already opened.
     const workspaceRead = window.owb.workspace();
@@ -583,6 +591,7 @@ function AppInner({
     const backupScope = backupWorkspace.current;
     setWorkspaceInfo(ws);
     if (ws?.open === true) {
+      setStartupStage("organization");
       // Recovery is independent of the organization tree; a failed tree read
       // must not leave this footer waiting for a request that never started.
       const backupLoad = loadBackups(backupScope);
@@ -673,9 +682,15 @@ function AppInner({
       setReportsError(null);
     }
     } catch {
-      if (isCurrentRefresh()) setStartupError(t("misc.serviceFailed"));
+      if (isCurrentRefresh()) {
+        setStartupError(t("misc.serviceFailed"));
+        setStartupStage("ready");
+      }
     } finally {
-      if (isCurrentRefresh()) setTreeLoading(false);
+      if (isCurrentRefresh()) {
+        setTreeLoading(false);
+        setStartupStage("ready");
+      }
     }
   }, [loadBackups, loadReports, locale, t]);
 
@@ -1706,6 +1721,7 @@ function AppInner({
             createdAt: run.startedAt,
             ...(run.text !== "" ? { output: run.text } : {}),
             ...(run.totalTokens !== null ? { totalTokens: run.totalTokens } : {}),
+            ...(run.trace && run.trace.length > 0 ? { trace: run.trace } : {}),
           }));
     const pending = selectedId === null ? undefined : turnStream.pending[selectedId];
     if (pending?.sessionId === selectedSessionId && live.length === 0 &&
@@ -1780,7 +1796,17 @@ function AppInner({
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
-    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`}>
+    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`} aria-busy={startupStage !== "ready"}>
+      {startupStage !== "ready" ? (
+        <div className="owb-startup" role="status" aria-label={t("startup.aria")}>
+          <div className="owb-startup__mark" aria-hidden="true"><span /><span /><span /></div>
+          <div className="owb-startup__copy">
+            <strong>RoleWeave</strong>
+            <span>{t(`startup.${startupStage}`)}</span>
+          </div>
+          <div className="owb-startup__track" aria-hidden="true"><i data-stage={startupStage} /></div>
+        </div>
+      ) : null}
       {typeof managementTarget === "string" && managedNode ? <EmployeeSettings key={`${workspaceInfo?.path}:${managementTarget}`} id={managementTarget} positions={positions}
         targets={positions.filter((p) => p.id !== managedNode.id && !containsNode(managedNode, p.id))} isOwner={managementTarget === snapshot?.owner} descendantCount={countDescendants(managedNode)}
         avatar={positionAvatars[managementTarget]}
@@ -2107,7 +2133,7 @@ function AppInner({
             onReconcileTimeline={reconcileGroup}
           />
         ) : activeModule === "goals" ? (
-          <GoalsModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} />
+          <GoalsModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} positionNames={positionNames} positionAvatars={positionAvatars} positionAvatarSources={avatarUrls} ownerPositionId={snapshot?.owner} />
         ) : activeModule === "settings" ? (
           <SettingsModule initialCategory={settingsInitialCategory} workspacePath={workspaceInfo?.open ? workspaceInfo.path : undefined} workspaceScope={groupWorkspaceScope} />
         ) : activeModule === "docs" ? (
@@ -2120,6 +2146,7 @@ function AppInner({
             selectedPositionId={selectedId}
             position={card.data}
             initialSource={memorySource}
+            resourceRequest={resourceRequest}
           />
         ) : workspaceInfo?.open !== true ? (
           <section className="owb-workspace-welcome">
@@ -2134,19 +2161,25 @@ function AppInner({
             <AntButton ref={workbenchButtonRef} size="small" type={orgOverview ? "default" : "primary"}
               aria-pressed={!orgOverview} onClick={() => setOrgOverview(false)}>{t("tree.workbench")}</AntButton>
             <AntButton size="small" type={orgOverview ? "primary" : "default"} icon={<Network size={14} aria-hidden="true" />}
-              aria-pressed={orgOverview} onClick={() => setOrgOverview(true)}>{t("tree.overview")}</AntButton>
+              aria-pressed={orgOverview} onClick={() => { setGraphOpened(true); setOrgOverview(true); }}>{t("tree.overview")}</AntButton>
           </nav>
-          {orgOverview ? <OrgChart
-            className="owb-org-chart--overview"
-            collapsible={false}
-            snapshot={snapshot}
-            loading={treeLoading}
-            displayNames={positionNames}
-            avatarColors={positionColors}
-            avatarUrls={avatarUrls}
-            selectedId={selectedId}
-            onSelect={(id) => { openConversation(id); workbenchButtonRef.current?.focus(); }}
-          /> : null}
+          {graphOpened ? <div hidden={!orgOverview} style={orgOverview ? { display: "contents" } : undefined}>
+            <RelationshipGraph
+              workspaceKey={workspaceInfo.path ?? ""}
+              visible={orgOverview}
+              data={graph.data}
+              loading={graph.loading}
+              error={graph.error}
+              onReload={graph.reload}
+              onOpenAgent={(id) => { openConversation(id); workbenchButtonRef.current?.focus(); }}
+              onOpenResource={(positionId, path) => {
+                selectPosition(positionId);
+                setResourceRequest({ positionId, path, nonce: Date.now() });
+                setMemorySource("docs");
+                setActiveModule("docs");
+              }}
+            />
+          </div> : null}
           <OrgWorkspaceSplit
           hidden={orgOverview}
           focused={conversationFocused}

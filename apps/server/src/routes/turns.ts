@@ -192,6 +192,8 @@ function eventType(event: EngineEvent): SseEventType {
       return "turn.started";
     case "model.delta":
       return "turn.model.delta";
+    case "trace.activity":
+      return "turn.trace.activity";
     case "usage":
       return "turn.usage";
     case "run.completed":

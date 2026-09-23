@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { GoalDetail, GoalSummary } from "@roleweave/shared";
+import type { GoalDetail, GoalSummary, AgentTask } from "@roleweave/shared";
 import { GoalsModule } from "../src/goals/GoalsModule";
 import type { OwbBridge } from "../src/owb";
 
@@ -86,10 +86,72 @@ describe("GoalsModule", () => {
     expect(screen.getByText("新建目标")).toBeInTheDocument();
   });
 
+  it("renders a Jira-style Agent board with urgent, collaboration, and contractor semantics", async () => {
+    const tasks: AgentTask[] = [
+      { schemaVersion: "task-board.v1", taskId: "urgent", title: "紧急修复", description: "", assigneePositionId: "worker", requestedByPositionId: "owner", budgetOwnerPositionId: "owner", kind: "direct", mainline: true, priority: "urgent", status: "queued", queueOrder: -1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" },
+      { schemaVersion: "task-board.v1", taskId: "peer", title: "跨组协作", description: "", assigneePositionId: "lead", requestedByPositionId: "worker", budgetOwnerPositionId: "worker", kind: "collaboration", mainline: true, priority: "normal", status: "waiting", queueOrder: 0, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" },
+      { schemaVersion: "task-board.v1", taskId: "edge", title: "边缘调研", description: "", assigneePositionId: "worker", requestedByPositionId: "lead", budgetOwnerPositionId: "lead", kind: "contractor", mainline: false, priority: "normal", status: "active", queueOrder: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" },
+    ];
+    installBridge({ tasks: vi.fn().mockResolvedValue({ status: 200, body: { tasks } }) } as any);
+    render(<GoalsModule workspaceOpen ownerPositionId="owner" positionNames={{ owner: "老板", lead: "组长", worker: "工程师" }} positionAvatars={{ worker: "researcher" }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Agent 看板" }));
+    expect(await screen.findByText("紧急修复")).toBeInTheDocument();
+    expect(screen.getByText("等待接收方确认")).toBeInTheDocument();
+    expect(screen.getByText("不进入主线历史 · 预算由 组长 承担")).toBeInTheDocument();
+    expect(document.querySelectorAll(".owb-task-card .owb-avatar img").length).toBeGreaterThan(0);
+  });
+
   it("shows workspace-not-opened message when workspace is closed", () => {
     installBridge();
     render(<GoalsModule workspaceOpen={false} />);
     expect(screen.getByText("目标")).toBeInTheDocument();
+  });
+
+  it("offers collaboration decisions only until acceptance, including while execution is waiting", async () => {
+    const pending: AgentTask = {
+      schemaVersion: "task-board.v1",
+      taskId: "pending-collaboration",
+      title: "等待接收的协作",
+      description: "",
+      assigneePositionId: "lead",
+      requestedByPositionId: "worker",
+      budgetOwnerPositionId: "worker",
+      kind: "collaboration",
+      mainline: true,
+      priority: "normal",
+      status: "waiting",
+      queueOrder: 0,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const accepted: AgentTask = {
+      ...pending,
+      taskId: "accepted-collaboration",
+      title: "已接收并暂停的协作",
+      acceptedAt: "2026-09-01T01:00:00.000Z",
+    };
+    const bridge = installBridge({
+      tasks: vi.fn().mockResolvedValue({ status: 200, body: { tasks: [pending, accepted] } }),
+      decideTask: vi.fn().mockResolvedValue({ status: 200, body: { ...pending, status: "queued", acceptedAt: accepted.acceptedAt } }),
+    });
+    render(<GoalsModule workspaceOpen />);
+    fireEvent.click(screen.getByRole("tab", { name: "Agent 看板" }));
+
+    const pendingCard = within((await screen.findByText(pending.title)).closest("article")!);
+    expect(pendingCard.getByText("等待接收方确认")).toBeInTheDocument();
+    expect(pendingCard.getByRole("button", { name: "接受" })).toBeInTheDocument();
+    expect(pendingCard.getByRole("button", { name: "拒绝" })).toBeInTheDocument();
+
+    const acceptedCard = within(screen.getByText(accepted.title).closest("article")!);
+    expect(acceptedCard.queryByText("等待接收方确认")).not.toBeInTheDocument();
+    expect(acceptedCard.queryByRole("button", { name: "接受" })).not.toBeInTheDocument();
+    expect(acceptedCard.queryByRole("button", { name: "拒绝" })).not.toBeInTheDocument();
+
+    fireEvent.click(pendingCard.getByRole("button", { name: "接受" }));
+    await waitFor(() => expect(bridge.decideTask).toHaveBeenCalledWith({
+      taskId: pending.taskId,
+      decision: "accept",
+    }));
   });
 });
 

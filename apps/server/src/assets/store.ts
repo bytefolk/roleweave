@@ -22,7 +22,7 @@ import { ASSET_RECORD_SCHEMA_VERSION, OrgApiError, errorCodes, parseAssetRecord 
 import type { AssetRecord } from "@roleweave/shared";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 
-const ASSETS_ROOT = path.join(".digital-employee", "workbench", "drive", "assets");
+const ASSETS_ROOT = path.join(".roleweave", "drive", "assets");
 const ASSET_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MAX_ASSET_RECORD_BYTES = 16 * 1024;
 const MAX_ASSET_INDEX_BYTES = 512 * 1024;
@@ -70,7 +70,7 @@ async function prepareAssetDirectories(workspace: string, assetId: string): Prom
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
     throw storageError("workspace must be a real directory for asset state");
   }
-  const segments = [".digital-employee", "workbench", "drive", "assets", assetId];
+  const segments = [".roleweave", "drive", "assets", assetId];
   let current = workspace;
   for (let index = 0; index < segments.length; index += 1) {
     current = path.join(current, segments[index]!);

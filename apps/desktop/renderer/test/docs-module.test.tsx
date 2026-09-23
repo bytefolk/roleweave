@@ -40,6 +40,15 @@ function installBridge(overrides: Partial<Pick<OwbBridge, "positionDocs" | "posi
 }
 
 describe("DocsModule (#35 S3)", () => {
+  it("opens the exact resource requested from the relationship graph", async () => {
+    const read = vi.fn().mockResolvedValue({ status: 200, body: { ...readBody, path: "knowledge/graph.md" } });
+    installBridge({ positionDocFile: read });
+    render(<DocsModule workspaceOpen positions={positions} selectedPositionId="repo-owner"
+      resourceRequest={{ positionId: "repo-owner", path: "knowledge/graph.md", nonce: 1 }} />);
+    await waitFor(() => expect(read).toHaveBeenCalledWith("repo-owner", "knowledge/graph.md"));
+    expect(read.mock.calls.every(([, path]) => path === "knowledge/graph.md")).toBe(true);
+  });
+
   it("shows a workspace-closed empty state without touching the bridge", () => {
     const bridge = installBridge();
     render(<DocsModule workspaceOpen={false} positions={positions} selectedPositionId={null} />);
