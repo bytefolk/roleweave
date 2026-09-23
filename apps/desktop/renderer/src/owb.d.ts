@@ -113,6 +113,7 @@ export interface OwbBridge {
   listApprovals(request: { workspacePath: string; cursor?: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalList>>;
   decideApproval(request: import("@roleweave/shared").ApprovalDecisionRequest & { id: string; workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalView>>;
   decideApprovalsBatch(request: import("@roleweave/shared").ApprovalBatchDecisionRequest & { workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalBatchDecisionResponse>>;
+  approvalAudit(request: { id: string }): Promise<OwbApiResponse<{ approvalId: string; events: import("@roleweave/shared").ApprovalAuditEvent[] }>>;
   position(positionId: string, engine?: TurnEngine): Promise<OwbApiResponse>;
   positionDocs(positionId: string): Promise<OwbApiResponse<DocsFileListResponse>>;
   positionDocFile(positionId: string, filePath: string): Promise<OwbApiResponse<DocsFileResponse>>;

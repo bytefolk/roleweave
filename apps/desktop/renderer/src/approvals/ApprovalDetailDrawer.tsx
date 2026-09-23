@@ -13,8 +13,9 @@
  *   drawer for now. The approval decision only needs the request summary and
  *   the operator's verdict; audit details remain in the run history.
  */
-import { useEffect, useState } from "react";
-import { Alert, Button, Drawer, Input, Radio, Space, Tag } from "antd";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Button, Drawer, Input, Progress, Radio, Skeleton, Space, Tag, Tooltip } from "antd";
+import type { ApprovalAuditEvent } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
 import {
   approvalExpiryState,
@@ -23,6 +24,7 @@ import {
   type ApprovalQueueCallbacks,
   type ApprovalQueueItem,
 } from "./types";
+import { DiffViewer } from "./DiffViewer";
 import { safeApprovalText } from "./safe-display";
 import { decodeEscapedUnicode } from "../display-text";
 // Mirrors packages/shared/pending-approval.cjs MAX_APPROVAL_REASON_BYTES.
@@ -51,6 +53,9 @@ export function ApprovalDetailDrawer({
   const t = useT();
   const [reason, setReason] = useState("");
   const [scope, setScope] = useState<"once" | "run">("once");
+  const [auditEvents, setAuditEvents] = useState<ApprovalAuditEvent[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   useEffect(() => {
     // Reset the reason field whenever the drawer switches to a different
@@ -58,6 +63,46 @@ export function ApprovalDetailDrawer({
     setReason("");
     setScope("once");
   }, [item?.approvalId, open]);
+
+  useEffect(() => {
+    if (!open || !item?.approvalId || !window.owb?.approvalAudit) {
+      setAuditEvents([]);
+      setAuditError(null);
+      return;
+    }
+    let active = true;
+    setAuditLoading(true);
+    setAuditError(null);
+    window.owb.approvalAudit({ id: item.approvalId })
+      .then((res) => {
+        if (!active) return;
+        if (res.status === 200 && res.body?.events) {
+          setAuditEvents(res.body.events);
+        } else {
+          const body = res.body as { message?: string } | undefined;
+          setAuditError(body?.message ?? t("apr.auditLoadFailed"));
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        setAuditError(err instanceof Error ? err.message : t("apr.auditLoadFailed"));
+      })
+      .finally(() => {
+        if (active) setAuditLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, item?.approvalId, t]);
+
+  const isChainVerified = useMemo(() => {
+    if (auditEvents.length === 0) return false;
+    for (let i = 0; i < auditEvents.length; i++) {
+      const e = auditEvents[i]!;
+      if (i > 0 && e.previousHash !== auditEvents[i - 1]!.hash) return false;
+    }
+    return true;
+  }, [auditEvents]);
 
   if (!item) {
     return (
@@ -159,10 +204,29 @@ export function ApprovalDetailDrawer({
           {item.policyProgress ? (
             <section data-testid="approval-policy-progress">
               <h3 className="owb-approval-drawer__section-title">{t("apr.policyProgress")}</h3>
-              <p className="owb-approval-drawer__meta-line">
-                {t("apr.policyProgressValue", { granted: item.policyProgress.granted, required: item.policyProgress.required })}
-                {item.policyProgress.escalated ? ` · ${t("apr.escalated")}` : ""}
-              </p>
+              <div style={{ margin: "6px 0 8px" }}>
+                <Progress
+                  percent={Math.min(100, Math.round((item.policyProgress.granted / Math.max(1, item.policyProgress.required)) * 100))}
+                  size="small"
+                  status={item.policyProgress.granted >= item.policyProgress.required ? "success" : "active"}
+                />
+              </div>
+              <div className="owb-approval-drawer__meta-line" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>
+                  {t("apr.policyProgressValue", { granted: item.policyProgress.granted, required: item.policyProgress.required })}
+                  {item.policyProgress.escalated ? ` · ${t("apr.escalated")}` : ""}
+                </span>
+                <Tag
+                  data-testid="approval-my-decision-status"
+                  color={item.canDecide ? "blue" : isDecided(item) ? (item.decision.kind === "granted" ? "green" : "red") : "default"}
+                >
+                  {item.canDecide
+                    ? t("apr.myDecisionPending")
+                    : isDecided(item)
+                    ? t(`apr.myDecision.${item.decision.kind}`)
+                    : t("apr.myDecisionVoted")}
+                </Tag>
+              </div>
             </section>
           ) : null}
 
@@ -188,10 +252,9 @@ export function ApprovalDetailDrawer({
                       {item.context.preview.status === "unavailable" ? t(`apr.preview.${item.context.preview.status}`) : (
                         <div data-testid="approval-change-preview">
                           {item.context.preview.files.map((file) => (
-                            <details key={`${file.change}:${file.path}`}>
+                            <details key={`${file.change}:${file.path}`} open>
                               <summary><Tag color="blue">{t(`apr.preview.change.${file.change}`)}</Tag><code>{safeApprovalText(file.path)}</code></summary>
-                              {file.before !== undefined ? <pre>{safeApprovalText(file.before)}</pre> : null}
-                              {file.after !== undefined ? <pre>{safeApprovalText(file.after)}</pre> : null}
+                              <DiffViewer before={file.before} after={file.after} change={file.change} />
                             </details>
                           ))}
                         </div>
@@ -220,6 +283,50 @@ export function ApprovalDetailDrawer({
                 {item.executionErrorCode ? <code>{item.executionErrorCode}</code> : null}
               </li>
             </ol>
+          </section>
+
+          <section data-testid="approval-audit-trail">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <h3 className="owb-approval-drawer__section-title" style={{ margin: 0 }}>{t("apr.auditTrail")}</h3>
+              {auditEvents.length > 0 && isChainVerified ? (
+                <Tag color="green" data-testid="audit-verified-tag">{t("apr.auditVerified")}</Tag>
+              ) : null}
+            </div>
+            {auditLoading ? (
+              <Skeleton active paragraph={{ rows: 2 }} />
+            ) : auditError ? (
+              <Alert type="warning" showIcon message={auditError} />
+            ) : auditEvents.length === 0 ? (
+              <p className="owb-muted">{t("apr.auditEmpty")}</p>
+            ) : (
+              <div className="owb-approval-audit-list" style={{ display: "grid", gap: 6 }}>
+                {auditEvents.map((event) => (
+                  <div key={`${event.seq}:${event.hash}`} className="owb-approval-audit-item" data-audit-seq={event.seq} style={{ padding: "6px 8px", background: "var(--ui-surface-inset, #f5f5f5)", borderRadius: 6, border: "1px solid var(--ui-border, #e8e8e8)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                      <Tag color="purple">{t("apr.auditSeq", { seq: event.seq })}</Tag>
+                      <strong>{event.type}</strong>
+                      <span className="owb-muted" style={{ marginLeft: "auto", fontSize: 11 }}>
+                        {formatApprovalTimestamp(event.timestamp)}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--ui-foreground-muted)" }}>
+                      {event.actor ? <span>{event.actor}</span> : null}
+                      {event.decision ? <span> · {event.decision} ({event.scope ?? "once"})</span> : null}
+                    </div>
+                    <div style={{ fontFamily: "var(--ui-font-mono)", fontSize: 10, color: "var(--ui-foreground-subtle)", marginTop: 2 }}>
+                      <Tooltip title={event.hash}>
+                        <span>{t("apr.auditHash", { hash: `${event.hash.slice(0, 19)}...` })}</span>
+                      </Tooltip>
+                      {event.previousHash ? (
+                        <Tooltip title={event.previousHash}>
+                          <span style={{ marginLeft: 8 }}>{t("apr.auditPrevHash", { hash: `${event.previousHash.slice(0, 19)}...` })}</span>
+                        </Tooltip>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           <section>

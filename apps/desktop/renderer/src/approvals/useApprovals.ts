@@ -169,6 +169,10 @@ export function useApprovals(workspacePath: string | undefined) {
       if (owner.current === generation) { unique.forEach(id => inFlight.current.delete(id)); setBusy(new Set(inFlight.current)); await refreshRef.current(); }
     }
   }, [t]);
+  const denyBatch = useCallback(async (ids: string[], reason?: string) => {
+    const unique = [...new Set(ids)];
+    await Promise.all(unique.map(id => decide(id, "denied", reason)));
+  }, [decide]);
   const refresh = useCallback(() => refreshRef.current(), []);
-  return { items, loading, ready, error, errors, busy, decide, decideBatch, refresh };
+  return { items, loading, ready, error, errors, busy, decide, decideBatch, denyBatch, refresh };
 }

@@ -56,6 +56,9 @@ export interface TurnApprovalRequest {
   target?: string;
   scopeAllowed?: Array<"once" | "run">;
   expiresAt?: string;
+  requestReason?: string;
+  preview?: import("@roleweave/shared").ApprovalChangePreview;
+  context?: import("@roleweave/shared").ApprovalContext;
 }
 
 export interface TurnTraceActivity {

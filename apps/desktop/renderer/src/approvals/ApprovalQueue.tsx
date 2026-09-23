@@ -7,7 +7,7 @@
  * conversation and constructs the resume turn; the UI never chooses it.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Button, Checkbox, Input, List, Select, Segmented, Tag, Tooltip } from "antd";
+import { Alert, Button, Checkbox, Input, List, Select, Segmented, Space, Tag, Tooltip } from "antd";
 import { ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import {
@@ -116,6 +116,7 @@ export function ApprovalQueue({
   onOpenSource,
   onOpenEvidence,
   onApproveBatch,
+  onDenyBatch,
 }: ApprovalQueueProps) {
   const t = useT();
   const [filter, setFilter] = useState<ApprovalQueueFilter>(defaultFilter);
@@ -239,6 +240,19 @@ export function ApprovalQueue({
   const batchSourceLabel = batchSource ? `${batchSource.positionId} · ${batchSource.conversationId}` : "";
   const canBatchItem = (item: ApprovalQueueItem) => item.batchMaxItems !== undefined && item.canDecide !== false &&
     item.busy !== true && isActionablePending(item, now) && item.source !== undefined && item.source.kind !== "group";
+  const sameTurnBatchableItems = useMemo(() => {
+    if (!batchSource) return [];
+    return visible.filter(item =>
+      canBatchItem(item) &&
+      item.source &&
+      item.source.kind === batchSource.kind &&
+      item.source.positionId === batchSource.positionId &&
+      item.source.conversationId === batchSource.conversationId &&
+      item.source.turnId === batchSource.turnId &&
+      item.source.runId === batchSource.runId &&
+      item.source.engine === batchSource.engine
+    );
+  }, [visible, batchSource, now]);
   const selectBatchItem = (item: ApprovalQueueItem, checked: boolean) => {
     if (!canBatchItem(item)) return;
     setBatchSelection(current => {
@@ -406,17 +420,61 @@ export function ApprovalQueue({
               showIcon
               message={t("apr.batchSummary", { count: batchSelectedItems.length, source: batchSourceLabel })}
               description={batchSelectedItems.length < 2 ? t("apr.batchNeedMore") : t("apr.batchBoundary")}
-              action={<Button type="primary" size="small" disabled={batchSelectedItems.length < 2 || !onApproveBatch} onClick={() => {
-                const ids = batchSelectedItems.map(item => item.approvalId);
-                setBatchSelection(new Set());
-                onApproveBatch?.(ids);
-              }}>{t("apr.batchApprove")}</Button>}
+              action={
+                <Space>
+                  {sameTurnBatchableItems.length > batchSelectedItems.length ? (
+                    <Button
+                      size="small"
+                      data-testid="approval-batch-select-all-turn"
+                      onClick={() => {
+                        const maximum = Math.min(...sameTurnBatchableItems.map(i => i.batchMaxItems ?? 32));
+                        const toSelect = sameTurnBatchableItems.slice(0, maximum).map(i => i.approvalId);
+                        setBatchSelection(new Set(toSelect));
+                      }}
+                    >
+                      {t("apr.batchSelectAllTurn", { count: sameTurnBatchableItems.length })}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="primary"
+                    size="small"
+                    disabled={batchSelectedItems.length < 2 || !onApproveBatch}
+                    onClick={() => {
+                      const ids = batchSelectedItems.map(item => item.approvalId);
+                      setBatchSelection(new Set());
+                      onApproveBatch?.(ids);
+                    }}
+                  >
+                    {t("apr.batchApprove")}
+                  </Button>
+                  <Button
+                    danger
+                    size="small"
+                    data-testid="approval-batch-deny-button"
+                    disabled={batchSelectedItems.length < 2 || !onDenyBatch}
+                    onClick={() => {
+                      const ids = batchSelectedItems.map(item => item.approvalId);
+                      setBatchSelection(new Set());
+                      onDenyBatch?.(ids);
+                    }}
+                  >
+                    {t("apr.batchDeny")}
+                  </Button>
+                </Space>
+              }
             />
           ) : null}
           <List
             className="owb-approval-queue__list"
             dataSource={visible}
             rowKey={(item) => item.approvalId}
+            pagination={visible.length > 20 ? {
+              pageSize: 20,
+              showSizeChanger: true,
+              pageSizeOptions: ["10", "20", "50", "100"],
+              size: "small",
+              showTotal: (total, range) => `${range[0]}-${range[1]} / ${total}`,
+            } : false}
             renderItem={(item) => (
               <List.Item className="owb-approval-queue__item">
                 <ApprovalCard

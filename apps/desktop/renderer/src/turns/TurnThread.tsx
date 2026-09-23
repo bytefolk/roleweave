@@ -32,6 +32,8 @@ export interface TurnThreadProps {
   /** #234: stable key (positionId:sessionId) so the thread can save and
    * restore the scroll viewport when the operator switches employees. */
   scrollKey?: string;
+  /** Deep linking anchor to focus and scroll to a specific turn. */
+  focusTurnId?: string | null;
 }
 
 /** Running bubble typing indicator (#61, spec ②): three 6px dots, 150ms
@@ -242,6 +244,39 @@ function ApprovalCard({
       {request.expiresAt ? (
         <p className="owb-turn__approval-expires">{t("apr.expiresAt", { date: new Date(request.expiresAt).toLocaleString() })}</p>
       ) : null}
+      {request.preview || request.requestReason || request.context ? (
+        <details className="owb-turn__approval-preview" data-testid="in-thread-approval-preview">
+          <summary style={{ fontSize: 11, cursor: "pointer", color: "var(--ui-accent, #1677ff)", margin: "4px 0" }}>
+            {t("apr.inThreadPreview")}
+          </summary>
+          <div style={{ padding: "6px 8px", background: "rgba(0,0,0,0.03)", borderRadius: 4, margin: "4px 0", fontSize: 11 }}>
+            {request.context?.risk ? (
+              <p style={{ margin: "0 0 4px" }}>
+                <strong>{t("apr.inThreadRisk", { risk: t(`apr.risk.${request.context.risk}`) })}</strong>
+              </p>
+            ) : null}
+            {request.requestReason ? (
+              <p style={{ margin: "0 0 4px" }}>
+                <em>{request.requestReason}</em>
+              </p>
+            ) : null}
+            {request.preview?.files && request.preview.files.length > 0 ? (
+              <div>
+                <p style={{ margin: "0 0 2px" }}>
+                  <strong>{t("apr.inThreadFiles", { count: request.preview.files.length })}</strong>
+                </p>
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  {request.preview.files.map((f) => (
+                    <li key={`${f.change}:${f.path}`}>
+                      <code>[{f.change}] {f.path}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
       {decided ? (
         <p className="owb-turn__approval-decided">{t("apr.decidedNote")}</p>
       ) : isExpired ? (
@@ -293,7 +328,7 @@ function ApprovalCard({
 /** Append-only conversation history with collapsible public milestones.
  * Output, approvals and errors remain visible independently of the disclosure;
  * an indeterminate result is never presented as a completed response. */
-export function TurnThread({ turns, loading = false, onEdit, viewportMemory, retrying = false, emptyPrompt, emptyDescription, canRetry, onRetry, onVerdict, decidedApprovalIds, scrollKey }: TurnThreadProps) {
+export function TurnThread({ turns, loading = false, onEdit, viewportMemory, retrying = false, emptyPrompt, emptyDescription, canRetry, onRetry, onVerdict, decidedApprovalIds, scrollKey, focusTurnId }: TurnThreadProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
   const threadRef = useRef<HTMLOListElement>(null);
@@ -377,6 +412,14 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
     };
   }, [memory]);
 
+  useEffect(() => {
+    if (!focusTurnId || !threadRef.current) return;
+    const target = threadRef.current.querySelector<HTMLElement>(`[data-turn-id="${focusTurnId}"]`);
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [focusTurnId, turns]);
+
   return (
     <>
       {loading && turns.length === 0 ? <div className="owb-turn-thread owb-turn-thread--loading" aria-label={copy.preparing} aria-busy="true"><span /><span /><span /></div> : null}
@@ -405,8 +448,9 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
         // interrupted stream as if more were still coming. The two states are
         // pinned by turn-provisional.test.tsx and turn-progress-interaction.
         const isProvisional = turn.status === "running" && Boolean(turn.output);
+        const isFocused = focusTurnId === turn.id;
         return (
-          <li className={`owb-turn ${stateClass}`} key={turn.id} data-turn-id={turn.id}>
+          <li className={`owb-turn ${stateClass}${isFocused ? " is-focused-turn" : ""}`} key={turn.id} data-turn-id={turn.id}>
             {/* #248 R2 ④：D3 升级为对话界面——操作员下达（右）与岗位回复（左）成对成线程。 */}
             <div className="owb-bubble-row owb-bubble-row--operator">
               <article className="owb-bubble owb-bubble--operator">

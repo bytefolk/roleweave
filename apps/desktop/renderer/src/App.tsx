@@ -356,6 +356,8 @@ function AppInner({
   const [reportsError, setReportsError] = useState<string | null>(null);
   const [reportsFocusTurnId, setReportsFocusTurnId] = useState<string | null>(null);
   useEffect(() => setReportsFocusTurnId(null), [workspaceInfo?.open, workspaceInfo?.path]);
+  const [sessionFocusTurnId, setSessionFocusTurnId] = useState<string | null>(null);
+  useEffect(() => setSessionFocusTurnId(null), [workspaceInfo?.open, workspaceInfo?.path]);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
   const [orgRefreshes] = useState(createOrgRefreshCoordinator);
@@ -1362,6 +1364,7 @@ function AppInner({
     setSessions([]);
     setTurns([]);
     setActiveModule("org");
+    setSessionFocusTurnId(source.turnId ?? item.executionTurnId ?? null);
     void loadSessions(source.positionId, source.conversationId, false);
   }, [loadSessions, setActiveModule]);
 
@@ -2134,6 +2137,7 @@ function AppInner({
             onApprove={(id, reason, scope) => { void approvalState.decide(id, "granted", reason, scope); }}
             onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
             onApproveBatch={(ids) => { void approvalState.decideBatch(ids); }}
+            onDenyBatch={(ids) => { void approvalState.denyBatch(ids); }}
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
           />
@@ -2297,6 +2301,7 @@ function AppInner({
             onVerdictTurn={verdictTurn}
             decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
+            focusTurnId={sessionFocusTurnId}
           />}
         /></>}
       </div>

@@ -33,4 +33,9 @@ async function approvalBatchDecision(request, apiRequest) {
       new Set(request.items.map(item => item.id)).size !== request.items.length) return invalid();
   return apiRequest("/approvals/batch/decision", { method: "POST", body: request });
 }
-module.exports = { approvalList, approvalDecision, approvalBatchDecision };
+async function approvalAudit(request, apiRequest) {
+  if (!object(request) || Object.keys(request).some(k => !["id"].includes(k)) ||
+      typeof request.id !== "string" || !/^[a-f0-9]{64}$/.test(request.id)) return invalid();
+  return apiRequest(`/approvals/${request.id}/audit`);
+}
+module.exports = { approvalList, approvalDecision, approvalBatchDecision, approvalAudit };
