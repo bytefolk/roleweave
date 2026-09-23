@@ -9,6 +9,8 @@
 
 - #460：审批队列和详情在规则风险 Tag 旁展示可选 Jev `riskOverlay`。`ROLEWEAVE_JEV_ENABLED` 默认关；关时与现网 Tag 字节一致。展示色始终跟 `capabilityContext`，overlay 更低时标明「建议未采纳」。`service` 经 `attachApprovalRiskOverlay` 接线；出站建议载荷只允许 `kind`。默认不调用外部服务。Refs #422。
 
+- #461–#469：Jev 产品 overlay 纯函数（发送前人工门 / 预算剩余 / 在途重复 / 裁撤交接 / 就绪宿主 / 审批老化 / 交付预检 / 处理回执 / 群聊 relay 停步）。默认关；缺 taskSummary 或未知剩余则 abstain；overlay 不能抬高 hire 上限、不能跳过裁撤确认、不能取消在途回合、不能隐藏 pending-high、不能把冲突材料标成 overall pass、点击 overlay 不等于已解决、不改写 mention spawn 顺序。出站建议载荷禁止回合正文。不改 envelope / dont_ask / 持久化 `PositionMode`。Refs #422。
+
 ### Changed
 
 - 组织目录树行改为「头像 + 岗位名」主信息，id / 引擎 / 运行状态作次行；树顶增加搜索与全部展开/收起；选中行圆角高亮加强。员工会话面板去掉线程渐变，复制/重试改为悬停浮现，头部与输入工具条收成一行。不改拖拽、招聘占位、审批卡片与重试语义。Refs #458。
