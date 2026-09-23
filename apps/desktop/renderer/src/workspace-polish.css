@@ -537,3 +537,7 @@
   .owb-timeline__filter--range { flex: 1 1 100%; min-width: 0; }
   .owb-timeline__count { width: 100%; margin-left: 0; }
 }
+
+.owb-goals-health-split { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.owb-goals-health-split em { font-style: normal; margin-left: 6px; color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-goals-health-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
