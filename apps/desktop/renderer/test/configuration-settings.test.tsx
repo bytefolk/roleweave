@@ -17,6 +17,15 @@ function footerSave(){return within(document.querySelector('.owb-config-savebar'
 async function fileView(){fireEvent.click(screen.getByRole('tab',{name:'高级配置'}));fireEvent.click(screen.getByRole('button',{name:'配置文件',exact:true}));return screen.getByRole('textbox',{name:'roleweave.config.jsonc'});}
 beforeEach(()=>{window.localStorage.clear();});
 describe('shared settings draft',()=>{
+ it('keeps project experiments separate from the application configuration draft',async()=>{
+  const api=install(); render(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
+  await screen.findByText('请先打开一个项目，再设置实验功能。');
+  expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','true');
+  expect(document.querySelector('.owb-config-savebar')).toBeNull();
+  expect(api.save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('tab',{name:'常规'})); await screen.findByRole('combobox',{name:'发送快捷键'});
+  expect(footerSave()).toBeDisabled();
+ });
  it('retains comments and one draft when switching categories and JSONC/form views; saves typed values',async()=>{
   const api=install();await show();
   fireEvent.mouseDown(screen.getByRole('combobox',{name:'发送快捷键'}));fireEvent.click(await screen.findByText('⌘ / Ctrl + Enter'));

@@ -8,6 +8,8 @@ import { applyConfiguration, registerSettingsLeave, CONFIGURATION_APPLIED } from
 import { CREDENTIAL_FIELDS, type CredentialKey } from './credential-settings';
 import { ServiceConnections } from './ServiceConnections';
 import './configuration-settings.css';
+import { ExperimentalSettings } from './ExperimentalSettings';
+import type { ExperimentScope } from '../experiments/useWorkspaceExperiments';
 const groups = configurationGroups;
 type Category = typeof groups[number][0];
 const hostKeys={Qoder:'qoder',Claude:'claude',Codex:'codex',Gemini:'gemini'} as const;
@@ -22,9 +24,9 @@ function differences(a:unknown,b:unknown,prefix=''):ConfigurationChange[]{
  });
 }
 const display=(value:unknown)=>value===null?'—':typeof value==='object'?JSON.stringify(value):String(value);
-export function ConfigurationSettings({updates}:{updates:ReactNode}) {
+export function ConfigurationSettings({updates, initialCategory, ...scope}:{updates:ReactNode; initialCategory?: "experiments"} & ExperimentScope) {
  const t=useT();const[snapshot,setSnapshot]=useState<ConfigurationSnapshot|null>(null),[text,setText]=useState('');
- const[category,setCategory]=useState<Category>('general'),[view,setView]=useState<'form'|'file'>('form');
+ const[category,setCategory]=useState<Category>(initialCategory ?? 'general'),[view,setView]=useState<'form'|'file'>('form');
  const[issues,setIssues]=useState<ConfigurationIssue[]>([]),[validatedText,setValidatedText]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  const[error,setError]=useState<string|null>(null),[notice,setNotice]=useState<string|null>(null),[conflict,setConflict]=useState<ConfigurationSnapshot|null>(null);
  const[preview,setPreview]=useState(false),[leaveOpen,setLeaveOpen]=useState(false),[secretVersion,setSecretVersion]=useState(0);
@@ -102,6 +104,7 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
    {snapshot?.warnings.map(message=><Alert key={message} type="warning" showIcon title={copy("Configuration recovery")} description={message}/>)}
    {snapshot?.storageAvailable===false?<Alert type="warning" showIcon title={copy("OS encrypted storage is unavailable. General preferences remain editable; unlock your keychain to change credentials.")}/>:null}
    {issues.length?<div role="alert" className="owb-config-errors">{issues.map((issue,i)=><p key={`${issue.field}-${i}`}>{copy("Line ")} {issue.line}:{issue.column} · <code>{issue.field}</code> — {issue.message}</p>)}</div>:null}
+   {category==='experiments'?<section id="settings-panel-experiments" role="tabpanel" aria-labelledby="settings-tab-experiments"><ExperimentalSettings {...scope} /></section>:null}
    {snapshot&&config?<>
     <section id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={category!=='general'}>
      <fieldset disabled={busy||formBlocked}><legend>{copy("Appearance and input")}</legend>
@@ -156,7 +159,7 @@ export function ConfigurationSettings({updates}:{updates:ReactNode}) {
     </section>
    </>:null}
   </div>
-  {snapshot?<footer className="owb-config-savebar"><span role="status">{notice==='services-restart'?copy('Saved · Launch default connections apply after restart; current connections are retained'):notice==='restart'?copy("Saved · Runtime / Host changes require restart"):notice==='services-pending'?copy("Saved. Live services are unavailable; check or retry the connection."):notice==='saved'?copy("Configuration saved"):notice==='valid'?copy("Configuration valid"):dirty?copy("Unsaved changes"):snapshot.servicesRestartRequired?copy('Saved · Launch default connections apply after restart; current connections are retained'):snapshot.pendingRestart?copy("Saved · Runtime / Host changes require restart"):copy("Configuration is up to date")}</span><Button disabled={busy||!dirty||formInvalid||validatedText!==text} onClick={()=>setPreview(true)}>{copy("Preview changes")}</Button><Button type="primary" disabled={busy||!dirty} loading={busy} onClick={()=>void save()}>{copy("Save configuration")}</Button></footer>:null}
+  {snapshot&&category!=='experiments'?<footer className="owb-config-savebar"><span role="status">{notice==='services-restart'?copy('Saved · Launch default connections apply after restart; current connections are retained'):notice==='restart'?copy("Saved · Runtime / Host changes require restart"):notice==='services-pending'?copy("Saved. Live services are unavailable; check or retry the connection."):notice==='saved'?copy("Configuration saved"):notice==='valid'?copy("Configuration valid"):dirty?copy("Unsaved changes"):snapshot.servicesRestartRequired?copy('Saved · Launch default connections apply after restart; current connections are retained'):snapshot.pendingRestart?copy("Saved · Runtime / Host changes require restart"):copy("Configuration is up to date")}</span><Button disabled={busy||!dirty||formInvalid||validatedText!==text} onClick={()=>setPreview(true)}>{copy("Preview changes")}</Button><Button type="primary" disabled={busy||!dirty} loading={busy} onClick={()=>void save()}>{copy("Save configuration")}</Button></footer>:null}
   <Modal open={preview} title={copy("Preview changes")} onCancel={()=>setPreview(false)} footer={<Button onClick={()=>setPreview(false)}>{copy("Back to editing")}</Button>} width={720}>
    {changes.map(row=><div className="owb-config-diff" key={row.field}><code>{row.field}</code><span>{display(row.before)} → {display(row.after)}</span></div>)}
    {[...secretInputs.current].map(([key,input])=><div key={key} className="owb-config-diff"><code>{key}</code><span>{clearKeys.has(key)?copy("Clear"):input.value?copy("Update"):copy("Retain")}</span></div>)}

@@ -4,11 +4,14 @@ import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import type { AuditEntry, EvidenceEntry, EscalationEntry, ReportsResponse } from "@roleweave/shared";
 import { AlertOctagon, ClipboardList, RefreshCw } from "lucide-react";
 import { BudgetDashboard } from "./BudgetDashboard";
+import { useReportAdvice, ReportAdviceControls, ReportAdviceChip, reportAdviceKey } from "./ReportAdvice";
+import type { ExperimentScope } from "../experiments/useWorkspaceExperiments";
 import { AuditTimeline, type AuditTimelineEvent } from "./AuditTimeline";
 
 type Tab = "budgets" | "escalations" | "audits" | "evidence" | "timeline";
 
-export interface ReportsCenterProps {
+export interface ReportsCenterProps extends ExperimentScope {
+  onOpenExperiments?: () => void;
   onRefresh?: () => void;
   reports: ReportsResponse | null;
   loading: boolean;
@@ -18,8 +21,9 @@ export interface ReportsCenterProps {
   focusTurnId?: string;
 }
 
-export function ReportsCenter({ reports, loading, positionNames, positionColors, focusTurnId, onOpenTimeline, onRefresh }: ReportsCenterProps) {
+export function ReportsCenter({ reports, loading, positionNames, positionColors, focusTurnId, onOpenTimeline, onRefresh, workspacePath, workspaceScope, onOpenExperiments }: ReportsCenterProps) {
   const t = useT();
+  const advice = useReportAdvice({ workspacePath, workspaceScope }, reports?.streams.escalations ?? []);
   const timelineEvents = useMemo<AuditTimelineEvent[]>(
     () => (reports ? buildTimelineEventsFromReports(reports, t) : []),
     [reports, t],
@@ -74,7 +78,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
             onOpenTimeline={openTimeline}
           />
         ) : null}
-        {tab === "escalations" ? <Escalations entries={reports.streams.escalations} positionNames={positionNames} onOpenTimeline={openTimeline} /> : null}
+        {tab === "escalations" ? <>{workspacePath ? <ReportAdviceControls controller={advice} onOpenSettings={onOpenExperiments} /> : null}<Escalations entries={reports.streams.escalations} positionNames={positionNames} onOpenTimeline={openTimeline} advice={advice.items} /></> : null}
         {tab === "audits" ? <Audits entries={reports.streams.audits} positionNames={positionNames} /> : null}
         {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} /> : null}
         {tab === "timeline" && timelinePosition ? <div className="owb-report-filter-note"><span>{positionNames?.[timelinePosition] ?? timelinePosition}</span><Button type="link" onClick={() => setTimelinePosition(null)}>{t("rep.clearScope")}</Button></div> : null}
@@ -203,13 +207,13 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
 
 function Empty({ text }: { text: string }) { return <p className="owb-report-empty">{text}</p>; }
 
-function Escalations({ entries, positionNames, onOpenTimeline }: { entries: EscalationEntry[]; positionNames?: Record<string, string>; onOpenTimeline: (id: string) => void }) {
+function Escalations({ entries, positionNames, onOpenTimeline, advice }: { entries: EscalationEntry[]; positionNames?: Record<string, string>; onOpenTimeline: (id: string) => void; advice: ReturnType<typeof useReportAdvice>["items"] }) {
   const t = useT();
   const localeTag = useLocaleTag();
   if (entries.length === 0) return <Empty text={t("rep.noEscalations")} />;
   return <ol>{entries.map((entry) => {
     const summary = entry.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation");
-    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div><Button type="link" size="small" className="owb-report-trace" onClick={() => onOpenTimeline(entry.positionId)}>{t("rep.traceRun")}</Button></div></li>;
+    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div><ReportAdviceChip advice={advice.get(reportAdviceKey(entry))} /><Button type="link" size="small" className="owb-report-trace" onClick={() => onOpenTimeline(entry.positionId)}>{t("rep.traceRun")}</Button></div></li>;
   })}</ol>;
 }
 

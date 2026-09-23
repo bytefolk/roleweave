@@ -34,6 +34,8 @@ export const routes = {
   avatarGenerate: "/avatar/generate",
   positions: "/positions",
   reports: "/reports",
+  experiments: "/experiments",
+  reportsAdvice: "/reports/advice",
   approvals: "/approvals",
   sessions: "/sessions",
   turns: "/turns",

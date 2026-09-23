@@ -13,6 +13,7 @@ import type {
   TurnRecord,
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
+import type { OpenWorkspace } from "../workspace-state.js";
 import { sendJson } from "../http.js";
 import { RUNTIME_DIR } from "../org/apply.js";
 import type { ServerResponse } from "node:http";
@@ -23,7 +24,11 @@ export async function handleReports(
   ctx: ControlPlaneContext,
   res: ServerResponse,
 ): Promise<void> {
-  const ws = ctx.workspace.requireOpen();
+  sendJson(res, 200, await readReports(ctx, ctx.workspace.requireOpen()));
+}
+
+/** Shared factual projection; advice may read this but cannot alter its streams. */
+export async function readReports(ctx: ControlPlaneContext, ws: OpenWorkspace): Promise<ReportsResponse> {
   const audits = await readOrgAudit(ws.dir, path.join(ws.dir, RUNTIME_DIR, "org-audit.jsonl"));
   let records: TurnRecord[];
   try {
@@ -43,7 +48,7 @@ export async function handleReports(
     budgets: buildBudgets(ws.organization.roles, records),
     page: { cursor: null, hasMore: false },
   };
-  sendJson(res, 200, body);
+  return body;
 }
 
 async function readOrgAudit(workspaceDir: string, file: string): Promise<AuditEntry[]> {

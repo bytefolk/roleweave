@@ -9,6 +9,9 @@
  */
 
 export const errorCodes = {
+  experiments_request_invalid: "experiments_request_invalid",
+  experiments_conflict: "experiments_conflict",
+  experiments_storage_failed: "experiments_storage_failed",
   service_request_invalid: "service_request_invalid",
   service_upstream_failed: "service_upstream_failed",
   /** Missing/invalid bearer token (401). */

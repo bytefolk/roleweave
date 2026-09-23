@@ -17,6 +17,8 @@ import type { UpdateEvent, UpdateStatus } from "@roleweave/shared";
 import { ServiceConnections } from "./ServiceConnections";
 import { ConfigurationSettings } from "./ConfigurationSettings";
 import { HostCredentials } from "./HostCredentials";
+import { ExperimentalSettings } from "./ExperimentalSettings";
+import type { ExperimentScope } from "../experiments/useWorkspaceExperiments";
 import {
   stateMessage,
   unavailableMessage,
@@ -24,8 +26,8 @@ import {
   type UpdateMessage,
 } from "./update-copy";
 
-export function SettingsModule() {
-  return window.owb.configuration ? <ConfigurationSettings updates={<LegacySettingsModule onlyUpdates />} /> : <LegacySettingsModule />;
+export function SettingsModule(props: ExperimentScope & { initialCategory?: "experiments" }) {
+  return window.owb.configuration ? <ConfigurationSettings {...props} updates={<LegacySettingsModule onlyUpdates />} /> : <><LegacySettingsModule /><ExperimentalSettings {...props} /></>;
 }
 
 function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }) {
