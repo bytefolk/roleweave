@@ -258,7 +258,7 @@ test("getDetail persists heuristic health and exposes Jev only as healthOverlay"
       branches: [{ branchId: "main", title: "main", status: "open", createdAt: stored.createdAt, updatedAt: stored.updatedAt }],
     };
     await fs.writeFile(
-      path.join(workspace, ".digital-employee", "workbench", "goals", created.goalId, "goal.json"),
+      path.join(workspace, ".roleweave", "goals", created.goalId, "goal.json"),
       JSON.stringify(branched),
     );
     const failed: TurnRecord = { ...turn("failed"), goalId: created.goalId };
@@ -267,7 +267,7 @@ test("getDetail persists heuristic health and exposes Jev only as healthOverlay"
       log: () => {},
     };
 
-    const overlay = await store.getDetail(workspace, created.goalId, [failed], {
+    const overlay = await store.getDetail(workspace, created.goalId, [failed], undefined, {
       ...jevOn,
       ask: async () => ({
         health: { type: "choice", selected: "blocked", probabilities: { blocked: 1 }, confidence: 0.9 },
@@ -277,7 +277,7 @@ test("getDetail persists heuristic health and exposes Jev only as healthOverlay"
     assert.equal(overlay.healthOverlay, "blocked");
     assert.equal((await store.get(workspace, created.goalId)).health, "at_risk");
 
-    const cleared = await store.getDetail(workspace, created.goalId, [failed], {
+    const cleared = await store.getDetail(workspace, created.goalId, [failed], undefined, {
       ...jevOn,
       ask: async () => ({
         health: { type: "choice", selected: "on_track", probabilities: { on_track: 1 }, confidence: 1 },
