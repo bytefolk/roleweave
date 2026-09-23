@@ -4,6 +4,7 @@ export { ApprovalDetailDrawer } from "./ApprovalDetailDrawer";
 export type { ApprovalDetailDrawerProps } from "./ApprovalDetailDrawer";
 export {
   APPROVAL_CATEGORY_LABEL,
+  isActionablePending,
   isDecided,
   isPermissionOverreach,
 } from "./types";

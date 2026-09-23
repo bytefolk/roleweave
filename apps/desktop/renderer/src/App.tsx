@@ -79,7 +79,7 @@ import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
-import { ApprovalQueue, type ApprovalQueueItem } from "./approvals";
+import { ApprovalQueue, isActionablePending, type ApprovalQueueItem } from "./approvals";
 import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
@@ -371,7 +371,7 @@ function AppInner({
   })), [approvalState.items, approvalState.busy, approvalState.errors, positionNames]);
   const decidedApprovals = useMemo(() => new Set(approvalState.items.filter(a =>
     a.status !== "pending" && a.source.positionId === selectedId && a.source.conversationId === selectedSessionId
-  ).map(a => a.source.turnId)), [approvalState.items, selectedId, selectedSessionId]);
+  ).flatMap(a => [a.source.turnId, a.approvalId].filter((id): id is string => Boolean(id)))), [approvalState.items, selectedId, selectedSessionId]);
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
   /** Employee-record editor (#292): opened from the position card header or
@@ -1325,10 +1325,18 @@ function AppInner({
   /** Both approval entry points use the same durable server-owned decision. */
   const verdictTurn = useCallback(
     async (turn: TurnRecord, decision: "granted" | "denied", reason?: string, scope: "once" | "run" = "once") => {
-      const approval = approvalState.items.find(a => a.source.turnId === turn.id && a.source.positionId === turn.positionId && a.approvalId === turn.approvalRequest?.approvalId);
-      if (approval) await approvalState.decide(approval.id, decision, reason, scope);
+      let approval = approvalState.items.find(a => a.source.turnId === turn.id && a.source.positionId === turn.positionId && a.approvalId === turn.approvalRequest?.approvalId);
+      if (!approval) {
+        await approvalState.refresh();
+        approval = approvalState.items.find(a => a.source.turnId === turn.id && a.source.positionId === turn.positionId && a.approvalId === turn.approvalRequest?.approvalId);
+      }
+      if (approval) {
+        await approvalState.decide(approval.id, decision, reason, scope);
+      } else {
+        message.warning(t("apr.loadFailed"));
+      }
     },
-    [approvalState.items, approvalState.decide],
+    [approvalState.items, approvalState.decide, approvalState.refresh, t],
   );
 
   const openApprovalSource = useCallback((item: ApprovalQueueItem) => {
@@ -1852,7 +1860,7 @@ function AppInner({
               label: t("rail.approvals"),
               icon: (
                 <Badge
-                  count={approvalItems.filter((a) => a.decision.kind === "pending").length}
+                  count={approvalItems.filter((a) => isActionablePending(a, Date.now())).length}
                   size="small"
                   showZero={false}
                   offset={[6, -2]}

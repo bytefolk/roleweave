@@ -94,6 +94,16 @@ function desktopNotificationPermission(): DesktopNotificationPermission {
   return window.Notification.permission;
 }
 
+function toLocalDateString(isoString?: string): string {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function ApprovalQueue({
   items,
   loading,
@@ -149,6 +159,20 @@ export function ApprovalQueue({
     }
   }, [items, notificationPermission, now, t]);
 
+  useEffect(() => {
+    setBatchSelection(current => {
+      if (current.size === 0) return current;
+      const next = new Set<string>();
+      for (const id of current) {
+        const item = items.find(candidate => candidate.approvalId === id);
+        if (item && isActionablePending(item, now)) {
+          next.add(id);
+        }
+      }
+      return next.size === current.size ? current : next;
+    });
+  }, [items, now]);
+
   const pendingCount = useMemo(
     () => items.filter((item) => isActionablePending(item, now)).length,
     [items, now],
@@ -163,8 +187,9 @@ export function ApprovalQueue({
       if (categoryFilter && item.category !== categoryFilter) return false;
       if (executionFilter && (item.executionPhase ?? "not_started") !== executionFilter) return false;
       if (expiryFilter && expiryFilter !== "all" && approvalExpiryState(item, now) !== expiryFilter) return false;
-      if (fromDate && (!item.requestedAt || item.requestedAt.slice(0, 10) < fromDate)) return false;
-      if (toDate && (!item.requestedAt || item.requestedAt.slice(0, 10) > toDate)) return false;
+      const localDate = toLocalDateString(item.requestedAt);
+      if (fromDate && (!localDate || localDate < fromDate)) return false;
+      if (toDate && (!localDate || localDate > toDate)) return false;
       if (needle) {
         const haystack = [
           item.positionName,
@@ -381,7 +406,11 @@ export function ApprovalQueue({
               showIcon
               message={t("apr.batchSummary", { count: batchSelectedItems.length, source: batchSourceLabel })}
               description={batchSelectedItems.length < 2 ? t("apr.batchNeedMore") : t("apr.batchBoundary")}
-              action={<Button type="primary" size="small" disabled={batchSelectedItems.length < 2 || !onApproveBatch} onClick={() => onApproveBatch?.(batchSelectedItems.map(item => item.approvalId))}>{t("apr.batchApprove")}</Button>}
+              action={<Button type="primary" size="small" disabled={batchSelectedItems.length < 2 || !onApproveBatch} onClick={() => {
+                const ids = batchSelectedItems.map(item => item.approvalId);
+                setBatchSelection(new Set());
+                onApproveBatch?.(ids);
+              }}>{t("apr.batchApprove")}</Button>}
             />
           ) : null}
           <List

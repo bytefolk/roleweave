@@ -58,9 +58,28 @@ export function useApprovals(workspacePath: string | undefined) {
     refreshRef.current = refresh;
     const focus = () => { void refresh(); };
     window.addEventListener("focus", focus);
-    const timer = setInterval(focus, 10000);
+    const visibility = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void refresh();
+      }
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", visibility);
+    }
+    const timer = setInterval(() => {
+      if (typeof document === "undefined" || document.visibilityState !== "hidden") {
+        void refresh();
+      }
+    }, 10000);
     void refresh();
-    return () => { if (current()) owner.current = {}; clearInterval(timer); window.removeEventListener("focus", focus); };
+    return () => {
+      if (current()) owner.current = {};
+      clearInterval(timer);
+      window.removeEventListener("focus", focus);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", visibility);
+      }
+    };
   }, [workspacePath, t]);
 
   const decide = useCallback(async (id: string, decision: "granted" | "denied", reason?: string, scope: "once" | "run" = "once") => {
@@ -111,14 +130,17 @@ export function useApprovals(workspacePath: string | undefined) {
     try {
       const response = await window.owb.decideApprovalsBatch({ ...request, workspaceToken: cache.current.token });
       if (owner.current !== generation) return;
-      if (response.status !== 200 && response.status !== 202) throw new Error(errorText(response.body, t("apr.submitFailed")));
+      if (response.status !== 200 && response.status !== 202) {
+        if (response.status < 500) batchPending.current.delete(key);
+        throw new Error(errorText(response.body, t("apr.submitFailed")));
+      }
       const body = response.body;
       const updates = new Map(body.items.filter(item => item.status === "accepted" && item.record).map(item => [item.id, item.record!]));
       cache.current.items = cache.current.items.map(item => updates.get(item.id) ?? item);
       setItems([...cache.current.items]);
+      batchPending.current.delete(key);
       const rejected = body.items.filter(item => item.status === "rejected");
       if (rejected.length) setErrors(errors => ({ ...errors, ...Object.fromEntries(rejected.map(item => [item.id, item.message ?? t("apr.submitFailed")])) }));
-      else batchPending.current.delete(key);
     } catch (error) {
       if (owner.current === generation) setErrors(errors => ({ ...errors, ...Object.fromEntries(unique.map(id => [id, error instanceof Error ? error.message : t("apr.submitFailed")])) }));
     } finally {
