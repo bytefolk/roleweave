@@ -93,3 +93,37 @@ test("validateGoalId rejects invalid IDs", () => {
   assert.equal(validateGoalId(null), false);
   assert.equal(validateGoalId(123), false);
 });
+
+const workItem = { taskId: "task-1", title: "Implement board", status: "todo", priority: "normal", assigneePositionId: "repo-owner", startDate: "2028-02-28", dueDate: "2028-02-29" };
+const expectedUpdatedAt = "2026-09-22T00:00:00.000Z";
+
+test("goal IPC preserves the complete work item edit and its concurrency revision", () => {
+  const request = { workItems: [{ ...workItem, description: "Deliver usable progress and schedule views" }], expectedUpdatedAt };
+  assert.deepEqual(validateGoalUpdateRequest(request), { ok: true, request });
+  assert.equal(validateGoalUpdateRequest({ workItems: [], expectedUpdatedAt }).ok, true);
+});
+
+test("goal IPC rejects malformed schedules, duplicate tasks, unknown fields and unguarded writes", () => {
+  const malformed = [
+    { ...workItem, startDate: "2026-02-29" },
+    { ...workItem, dueDate: "2028-02-30" },
+    { ...workItem, startDate: "0000-01-01" },
+    { ...workItem, startDate: "2028-03-01" },
+    { ...workItem, dueDate: "2028-02-29T00:00:00Z" },
+    { ...workItem, assigneePositionId: "invalid position" },
+    { ...workItem, taskId: "task/1" },
+    { ...workItem, status: "completed" },
+    { ...workItem, priority: "urgent" },
+    { ...workItem, description: "x".repeat(4097) },
+    { ...workItem, title: "bad\0text" },
+    { ...workItem, injected: true },
+  ];
+  for (const item of malformed) assert.equal(validateGoalUpdateRequest({ workItems: [item], expectedUpdatedAt }).ok, false);
+  for (const request of [
+    { workItems: [workItem] },
+    { workItems: [workItem, workItem], expectedUpdatedAt },
+    { workItems: Array.from({ length: 65 }, (_, index) => ({ ...workItem, taskId: `task-${index}` })), expectedUpdatedAt },
+    { workItems: [], expectedUpdatedAt: "invalid" },
+    { expectedUpdatedAt },
+  ]) assert.equal(validateGoalUpdateRequest(request).ok, false);
+});

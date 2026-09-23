@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { Button as AntButton, Drawer, Input } from "antd";
-import { Target, Plus, Trash2 } from "lucide-react";
+import { FolderKanban, Target, Plus, Trash2 } from "lucide-react";
 import { validateGoalCreateRequest } from "@roleweave/shared/goals";
 import { useT } from "@roleweave/ui";
 
 interface GoalCreateDialogProps {
   open: boolean;
+  presentation?: "goals" | "projects";
   onClose: () => void;
   onCreated?: (goalId: string) => void;
 }
 
 export function GoalCreateDialog({
   open,
+  presentation = "goals",
   onClose,
   onCreated,
 }: GoalCreateDialogProps) {
   const t = useT();
+  const label = (field: string) =>
+    t(`${presentation === "projects" ? "project.form" : "goals"}.${field}`);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [criteria, setCriteria] = useState<string[]>([]);
@@ -37,7 +41,7 @@ export function GoalCreateDialog({
     setCriteria([]);
     setBusy(false);
     setError(null);
-  }, [open]);
+  }, [open, presentation]);
 
   const request = {
     title: title.trim(),
@@ -83,14 +87,14 @@ export function GoalCreateDialog({
         setError(
           typeof body?.message === "string"
             ? body.message
-            : t("goals.createFail"),
+            : label("createFail"),
         );
         return;
       }
       onCreated?.(response.body.goalId);
       onClose();
     } catch {
-      if (alive.current) setError(t("goals.createFail"));
+      if (alive.current) setError(label("createFail"));
     } finally {
       creating.current = false;
       if (alive.current) setBusy(false);
@@ -99,7 +103,7 @@ export function GoalCreateDialog({
 
   return (
     <Drawer
-      title={t("goals.createTitle")}
+      title={label("createTitle")}
       rootClassName="owb-goal-create-drawer"
       footer={
         <footer className="owb-goal-create__footer">
@@ -111,9 +115,15 @@ export function GoalCreateDialog({
             onClick={() => void create()}
             loading={busy}
             disabled={!formValid}
-            icon={<Target aria-hidden="true" size={14} />}
+            icon={
+              presentation === "projects" ? (
+                <FolderKanban aria-hidden="true" size={14} />
+              ) : (
+                <Target aria-hidden="true" size={14} />
+              )
+            }
           >
-            {t("goals.createAction")}
+            {label("createAction")}
           </AntButton>
         </footer>
       }
@@ -125,42 +135,42 @@ export function GoalCreateDialog({
       destroyOnHidden
     >
       <div className="owb-goal-create">
-        <p className="owb-goal-create__hint">{t("goals.descPh")}</p>
+        <p className="owb-goal-create__hint">{label("descPh")}</p>
 
         <fieldset
           disabled={busy}
           className="owb-goal-create__form"
-          aria-label={t("goals.createTitle")}
+          aria-label={label("createTitle")}
         >
           <label>
-            <span>{t("goals.titleField")}</span>
+            <span>{label("titleField")}</span>
             <Input
               autoFocus
               value={title}
               maxLength={256}
-              placeholder={t("goals.titlePh")}
+              placeholder={label("titlePh")}
               onChange={(e) => setTitle(e.target.value)}
             />
           </label>
           <label>
-            <span>{t("goals.descField")}</span>
+            <span>{label("descField")}</span>
             <Input.TextArea
               value={description}
               maxLength={4096}
               autoSize={{ minRows: 3, maxRows: 6 }}
-              placeholder={t("goals.descPh")}
+              placeholder={label("descPh")}
               onChange={(e) => setDescription(e.target.value)}
             />
           </label>
 
           <div className="owb-goal-create__criteria">
-            <span>{t("goals.criteria")}</span>
+            <span>{label("criteria")}</span>
             {criteria.map((item, i) => (
               <div key={i} className="owb-goal-create__criteria-row">
                 <Input
                   value={item}
                   maxLength={4096}
-                  placeholder={t("goals.criteriaAdd")}
+                  placeholder={label("criteriaAdd")}
                   onChange={(e) => updateCriterion(i, e.target.value)}
                 />
                 <AntButton
@@ -168,7 +178,7 @@ export function GoalCreateDialog({
                   size="small"
                   icon={<Trash2 aria-hidden="true" size={14} />}
                   onClick={() => removeCriterion(i)}
-                  aria-label={t("goals.criteriaRemove")}
+                  aria-label={label("criteriaRemove")}
                 />
               </div>
             ))}
@@ -179,7 +189,7 @@ export function GoalCreateDialog({
                 icon={<Plus aria-hidden="true" size={14} />}
                 onClick={addCriterion}
               >
-                {t("goals.criteriaAdd")}
+                {label("criteriaAdd")}
               </AntButton>
             )}
           </div>

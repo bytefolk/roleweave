@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { describe, expect, it, vi } from "vitest";
 import type { GoalDetail, GoalSummary, AgentTask } from "@roleweave/shared";
 import { GoalsModule } from "../src/goals/GoalsModule";
+import { ProjectManagementModule } from "../src/projects/ProjectManagementModule";
 import type { OwbBridge } from "../src/owb";
 
 const goalSummary: GoalSummary = {
@@ -263,5 +264,27 @@ describe("Goal state integrity (#294)", () => {
     await waitFor(() => expect(bridge.goal).toHaveBeenCalledWith("goal-two"));
     expect(goals).toHaveBeenCalledTimes(2);
     await screen.findByRole("heading", { name: "Second goal" });
+  });
+});
+
+
+describe("independent project management module", () => {
+  it("offers the project board from its own module", async () => {
+    installBridge();
+    render(<ProjectManagementModule workspaceOpen positionNames={{}} />);
+    expect(screen.getByRole("heading", { name: "项目管理", level: 1 })).toBeInTheDocument();
+    await screen.findByRole("region", { name: "项目任务" });
+    expect(screen.getByRole("button", { name: "看板", exact: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "排期", exact: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建项目" })).toBeInTheDocument();
+  });
+
+  it("keeps the Goals module focused on the existing objective overview", async () => {
+    installBridge();
+    render(<GoalsModule workspaceOpen />);
+    await screen.findByText(goalDetail.goal.description);
+    expect(screen.getByRole("heading", { name: "目标", level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "项目任务" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "看板", exact: true })).not.toBeInTheDocument();
   });
 });
