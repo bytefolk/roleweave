@@ -174,6 +174,11 @@ export function ApprovalDetailDrawer({
                   <Tag color={item.context.risk === "high" ? "red" : "orange"}>
                     {t(`apr.risk.${item.context.risk}`)}
                   </Tag>
+                  {item.context.riskOverlay && item.context.riskOverlay !== item.context.risk ? (
+                    <Tag data-testid="approval-risk-overlay">
+                      {t("apr.riskOverlay")}: {t(`apr.risk.${item.context.riskOverlay}`)} · {t("apr.suggestionNotAdopted")}
+                    </Tag>
+                  ) : null}
                 </div>
                 <dl className="owb-approval-drawer__references">
                   <div><dt>{t("apr.requestedCapability")}</dt><dd>{t(`apr.kind.${item.context.requestedCapability}`)}</dd></div>
