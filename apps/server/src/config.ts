@@ -39,6 +39,7 @@ export interface ServerConfig {
    */
   docPlaneMock: boolean;
   /** Optional Jev preview credentials. Never included in renderer/IPC configuration. */
+  jevEnabled: boolean;
   jevApiKey?: string;
   jevModel?: string;
   jevTimeoutMs?: number;
@@ -121,6 +122,10 @@ export function resolveServerConfig(
         ? env.ORG_WORKBENCH_DOC_TOKEN
         : undefined,
     docPlaneMock: truthy(env.ORG_WORKBENCH_DOC_MOCK),
+    jevEnabled: (() => {
+      const value = env.ROLEWEAVE_JEV_ENABLED?.trim().toLowerCase();
+      return value === "1" || value === "true" || value === "yes";
+    })(),
     jevApiKey: env.ROLEWEAVE_JEV_API_KEY?.trim() || undefined,
     jevModel: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(env.ROLEWEAVE_JEV_MODEL ?? "")
       ? env.ROLEWEAVE_JEV_MODEL : "jev-latest",

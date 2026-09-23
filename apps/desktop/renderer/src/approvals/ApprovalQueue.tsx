@@ -553,6 +553,16 @@ function ApprovalCard({ item, now, onOpen, batchSelected, batchDisabled, onBatch
             <Tag color={CATEGORY_TAG_COLOR[item.category]}>
               {t(`apr.kind.${item.category}`)}
             </Tag>
+            {item.context ? (
+              <Tag color={item.context.risk === "high" ? "red" : "orange"} data-testid="approval-rule-risk">
+                {t(`apr.risk.${item.context.risk}`)}
+              </Tag>
+            ) : null}
+            {item.context?.riskOverlay && item.context.riskOverlay !== item.context.risk ? (
+              <Tag data-testid="approval-risk-overlay">
+                {t("apr.riskOverlay")}: {t(`apr.risk.${item.context.riskOverlay}`)} · {t("apr.suggestionNotAdopted")}
+              </Tag>
+            ) : null}
             {overreach ? (
               <Tag color="red" data-testid="approval-overreach-tag">
                 {t("apr.overreach")}

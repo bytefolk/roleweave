@@ -6,6 +6,7 @@ import { assertTurnWorkspace, executeTurn } from "../routes/turns.js";
 import { resolvePositionAgentEngine } from "../agent-binding.js";
 import { ApprovalStore, approvalIdentity } from "./store.js";
 import { buildApprovalContext, redactApprovalText } from "./context.js";
+import { attachApprovalRiskOverlay } from "./risk-overlay.js";
 import { canActForPolicy, policyProgress, resolveApprovalPolicy } from "./policy.js";
 
 const instances = new WeakMap<ControlPlaneContext, ApprovalService>();
@@ -248,7 +249,17 @@ export class ApprovalService {
     const batch = a.status === "pending" && a.action.kind === "tool" && a.context?.risk === "medium" && a.policy?.batch
       ? { maxItems: a.policy.batch.maxItems }
       : undefined;
-    return { ...publicView(a), canDecide: !unavailableReason, ...(batch ? { batch } : {}), ...(unavailableReason ? { unavailableReason } : {}) };
+    const projected = publicView(a);
+    const context = projected.context
+      ? await attachApprovalRiskOverlay(projected.context, a.action)
+      : projected.context;
+    return {
+      ...projected,
+      ...(context ? { context } : {}),
+      canDecide: !unavailableReason,
+      ...(batch ? { batch } : {}),
+      ...(unavailableReason ? { unavailableReason } : {}),
+    };
   }
 
   async list(ws: OpenWorkspace): Promise<ApprovalView[]> {

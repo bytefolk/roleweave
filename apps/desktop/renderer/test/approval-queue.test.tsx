@@ -47,6 +47,30 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows rule risk on the queue card and not-adopted overlay without changing rule color", () => {
+    render(
+      <ApprovalQueue
+        items={[
+          makeItem({
+            context: {
+              risk: "high",
+              riskOverlay: "medium",
+              requestedCapability: "exec",
+              impact: "command_execution",
+              permissions: { mode: "approval_required", allowedTools: [], deniedTools: [] },
+              preview: { status: "unavailable", reason: "engine_preview_not_supplied" },
+              scope: { allowed: ["once"] },
+            },
+          }),
+        ]}
+        onApprove={noop}
+        onDeny={noop}
+      />,
+    );
+    expect(screen.getByTestId("approval-rule-risk")).toHaveTextContent(/高风险|high/i);
+    expect(screen.getByTestId("approval-risk-overlay").textContent ?? "").toMatch(/建议未采纳|suggestion not adopted|apr.suggestionNotAdopted/);
+  });
+
   it("\u6e32\u67d3 pending \u5217\u8868\uff1a\u5c97\u4f4d\u540d\u3001\u63cf\u8ff0\u3001\u76ee\u6807\u5747\u5230\u4f4d", () => {
     render(
       <ApprovalQueue items={[makeItem()]} onApprove={noop} onDeny={noop} />,
@@ -285,7 +309,7 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(await screen.findByTestId("approval-lifecycle")).toBeInTheDocument();
     expect(screen.getByTestId("approval-context")).toBeInTheDocument();
     expect(screen.getByText("裁决与执行")).toBeInTheDocument();
-    expect(screen.getByText("高风险")).toBeInTheDocument();
+    expect(screen.getAllByText("高风险").length).toBeGreaterThan(0);
     expect(screen.getByText("引擎未提供")).toBeInTheDocument();
     expect(screen.getByText("session-1")).toBeInTheDocument();
     expect(screen.queryByText("top-secret")).toBeNull();

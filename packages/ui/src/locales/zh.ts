@@ -1155,6 +1155,8 @@ export const zhCatalog: Record<string, string> = {
   "apr.escalated": "已升级",
   "apr.risk.medium": "中风险",
   "apr.risk.high": "高风险",
+  "apr.riskOverlay": "Jev 建议风险",
+  "apr.suggestionNotAdopted": "建议未采纳",
   "apr.requestedCapability": "请求能力",
   "apr.impact": "可能影响",
   "apr.impact.workspace_write": "可能创建或修改工作区数据",

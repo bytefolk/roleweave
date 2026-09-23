@@ -122,6 +122,7 @@ export async function startTestServer(
       docPlaneUrl: undefined,
       docPlaneToken: undefined,
       docPlaneMock: false,
+      jevEnabled: false,
     },
     workspace: new WorkspaceState(),
     bus: new EventBus(),

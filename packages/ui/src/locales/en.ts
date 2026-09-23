@@ -1152,6 +1152,8 @@ export const enCatalog: Record<string, string> = {
   "apr.escalated": "Escalated",
   "apr.risk.medium": "Medium risk",
   "apr.risk.high": "High risk",
+  "apr.riskOverlay": "Jev suggested risk",
+  "apr.suggestionNotAdopted": "suggestion not adopted",
   "apr.requestedCapability": "Requested capability",
   "apr.impact": "Potential impact",
   "apr.impact.workspace_write": "May create or change workspace data",
