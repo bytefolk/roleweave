@@ -4,7 +4,7 @@ import { OrgApiError, errorCodes } from "@roleweave/shared";
 import { decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 
-export const EXPERIMENTS_FILE = path.join(".digital-employee", "workbench", "experiments.v1.json");
+export const EXPERIMENTS_FILE = path.join(".roleweave", "experiments.v1.json");
 const MAX_BYTES = 1_024;
 export interface ExperimentSettings {
   schemaVersion: "experiments.v1";
@@ -18,7 +18,7 @@ const storageError = () => new OrgApiError(errorCodes.experiments_storage_failed
 /** Reads do not create files. Every existing ancestor must be a real directory. */
 async function directories(workspace: string, create: boolean): Promise<boolean> {
   let current = path.resolve(workspace);
-  for (const segment of ["", ".digital-employee", "workbench"]) {
+  for (const segment of ["", ".roleweave"]) {
     current = segment === "" ? current : path.join(current, segment);
     try {
       const stat = await fs.lstat(current);

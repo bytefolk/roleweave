@@ -27,7 +27,7 @@ async function advise(server: TestServer, state: ExperimentsResponse) {
   return api(server.baseUrl, "/reports/advice", { method: "POST", token: server.token, body: binding(state) });
 }
 async function failure(dir: string, index = 0, code = "engine_unavailable"): Promise<void> {
-  const conversation = path.join(dir, ".digital-employee", "workbench", "conversations", "community-operator");
+  const conversation = path.join(dir, ".roleweave", "conversations", "community-operator");
   await fs.mkdir(path.join(conversation, "turns"), { recursive: true });
   await fs.writeFile(path.join(conversation, "conversation.json"), JSON.stringify({
     schemaVersion: "conversation.v1", conversationId: "private-conversation", positionId: "community-operator", createdAt: "2026-09-22T01:00:00.000Z",
