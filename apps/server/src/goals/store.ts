@@ -22,6 +22,8 @@ import {
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 import type { TurnRecord } from "@roleweave/shared";
+import { askJev, type JevAsk } from "../jev/client.js";
+import { jevEnabled } from "../jev/config.js";
 
 const GOAL_ROOT_SEGMENTS = [".roleweave", "goals"];
 const MAX_GOALS = 64;
@@ -206,6 +208,111 @@ export function projectTaskExecutions(goal: Goal, turns: readonly TurnRecord[], 
   }]));
 }
 
+function heuristicBranchHealth(bound: readonly TurnRecord[]): GoalHealthStatus {
+  for (const turn of bound) {
+    if (turn.status === "failed" || turn.status === "indeterminate") return "at_risk";
+  }
+  return "on_track";
+}
+
+const GOAL_HEALTH_OPTIONS = ["on_track", "at_risk", "blocked", "unknown"] as const;
+
+function isGoalHealthStatus(value: string): value is GoalHealthStatus {
+  return (GOAL_HEALTH_OPTIONS as readonly string[]).includes(value);
+}
+
+function branchJudgmentState(bound: readonly TurnRecord[]) {
+  return bound.slice(0, 12).map((turn) => {
+    const entry: { status: TurnRecord["status"]; errorCode?: string } = { status: turn.status };
+    if (typeof turn.error?.code === "string" && turn.error.code.length > 0) {
+      entry.errorCode = turn.error.code;
+    }
+    return entry;
+  });
+}
+
+export interface ResolveGoalHealthDeps {
+  env?: NodeJS.Dict<string>;
+  ask?: JevAsk;
+  log?: (entry: Record<string, unknown>) => void;
+}
+
+/** Persisted health is always computeHealthFromTurns. */
+export async function resolveGoalHealth(
+  goal: Goal,
+  turns: readonly TurnRecord[],
+  _deps: ResolveGoalHealthDeps = {},
+): Promise<GoalHealthStatus> {
+  return computeHealthFromTurns(goal, turns);
+}
+
+/**
+ * Advisory Jev overlay. Invalid/external options never apply. A Choice of
+ * on_track/unknown cannot clear failed/indeterminate. Null when disabled,
+ * failed, or nothing valid to overlay.
+ */
+export async function resolveJevHealthOverlay(
+  goal: Goal,
+  turns: readonly TurnRecord[],
+  deps: ResolveGoalHealthDeps = {},
+): Promise<GoalHealthStatus | null> {
+  const env = deps.env ?? process.env;
+  if (!jevEnabled(env) || goal.branches.length === 0) return null;
+
+  const ask = deps.ask ?? ((request) => askJev(request, { env }));
+  const log = deps.log ?? ((entry) => console.info("[jev]", JSON.stringify(entry)));
+
+  try {
+    let worst: GoalHealthStatus | null = null;
+    let applied = false;
+    for (const branch of goal.branches) {
+      const bound = turns.filter((t) => t.goalId === goal.goalId && t.branchId === branch.branchId);
+      if (bound.length === 0) continue;
+      const fallback = heuristicBranchHealth(bound);
+      let branchHealth = fallback;
+      const answers = await ask({
+        state: { goalId: goal.goalId, branchId: branch.branchId, turns: branchJudgmentState(bound) },
+        questions: {
+          health: {
+            type: "choice",
+            instructions:
+              "Classify this goal branch. blocked = cannot proceed without a human or external fix. at_risk = failing or indeterminate work. on_track = advancing. unknown = not enough evidence. Do not treat a cancelled turn as failure by itself.",
+            criteria: {
+              on_track: "Bound turns are completing and the branch is advancing",
+              at_risk: "Failed or indeterminate turns show the branch is slipping",
+              blocked: "The branch cannot continue without intervention",
+              unknown: "Not enough bound turn evidence",
+            },
+          },
+        },
+      });
+      const answer = answers?.health;
+      const selected = answer?.type === "choice" ? answer.selected : undefined;
+      const usedJev = typeof selected === "string" && isGoalHealthStatus(selected);
+      const clearsFailedBranch =
+        fallback === "at_risk" && selected !== "at_risk" && selected !== "blocked";
+      if (usedJev && !clearsFailedBranch) {
+        branchHealth = selected;
+        applied = true;
+      }
+      log({
+        goalId: goal.goalId,
+        branchId: branch.branchId,
+        option: branchHealth,
+        heuristic: fallback,
+        overlay: usedJev && !clearsFailedBranch ? selected : null,
+        probability: answer?.type === "choice" ? answer.probabilities[selected ?? ""] : undefined,
+        confidence: answer?.type === "choice" ? answer.confidence : undefined,
+        fallback: branchHealth === fallback,
+      });
+      if (worst === null || HEALTH_SEVERITY[branchHealth] < HEALTH_SEVERITY[worst]) worst = branchHealth;
+    }
+    return applied ? worst : null;
+  } catch {
+    return null;
+  }
+}
+
 export class GoalStore {
   private readonly locks = new Map<string, Promise<void>>();
 
@@ -285,7 +392,7 @@ export class GoalStore {
     return parsed.value;
   }
 
-  async getDetail(workspace: string, goalId: string, turns?: readonly TurnRecord[], isRunning?: (turn: TurnRecord) => boolean): Promise<GoalDetail> {
+  async getDetail(workspace: string, goalId: string, turns?: readonly TurnRecord[], isRunning?: (turn: TurnRecord) => boolean, deps: ResolveGoalHealthDeps = {}): Promise<GoalDetail> {
     // Health remains durable for list/detail consistency, but shares the edit
     // lock so a background refresh cannot overwrite a newer project plan.
     return this.exclusive(`goal\0${path.resolve(workspace)}\0${goalId}`, async () => {
@@ -308,7 +415,13 @@ export class GoalStore {
         await this.appendActivity(workspace, goalId, healthActivity);
         activity.push(healthActivity);
       }
-      return { goal, activity, taskExecutions: projectTaskExecutions(goal, turns, isRunning) };
+      const overlay = await resolveJevHealthOverlay(goal, turns, deps);
+      return {
+        goal,
+        activity,
+        taskExecutions: projectTaskExecutions(goal, turns, isRunning),
+        ...(overlay != null && overlay !== goal.health ? { healthOverlay: overlay } : {}),
+      };
     });
   }
 
