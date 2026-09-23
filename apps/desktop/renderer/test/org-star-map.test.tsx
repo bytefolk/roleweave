@@ -89,4 +89,18 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     render(<OrgStarMap snapshot={snapshot} />);
     expect(() => fireEvent.click(screen.getByRole("button", { name: "重置视角" }))).not.toThrow();
   });
+
+  it("合成企业恒星只是布景：不进清单也不进搜索候选", () => {
+    render(
+      <OrgStarMap
+        snapshot={{ ...snapshot, owner: "ghost" }}
+        enterpriseName="开源业务"
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "开源业务" })).not.toBeInTheDocument();
+    const input = screen.getByLabelText("定位员工：姓名或岗位 id");
+    fireEvent.change(input, { target: { value: "开源业务" } });
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+  });
 });

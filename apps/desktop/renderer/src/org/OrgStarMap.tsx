@@ -175,7 +175,12 @@ export default function OrgStarMap({
   );
 
   const entries = useMemo(
-    () => layout.bodies.map((body) => ({ id: body.id, name: nameOf(body) })),
+    () =>
+      layout.bodies
+        // The synthetic enterprise star is scenery, not an employee: it must
+        // never appear as a searchable/selectable position.
+        .filter((body) => !body.virtual)
+        .map((body) => ({ id: body.id, name: nameOf(body) })),
     [layout, nameOf],
   );
   const candidates = useMemo(() => matchStarQuery(entries, query).slice(0, 8), [entries, query]);
@@ -319,7 +324,9 @@ export default function OrgStarMap({
       const onPointerDown = (event: PointerEvent): void => {
         if (event.button !== 0) return;
         const id = pick(event.clientX, event.clientY);
-        if (!id) return;
+        // The synthetic star is a drop target (reportTo null) but never a
+        // drag source or a selection.
+        if (!id || id === VIRTUAL_STAR_ID) return;
         state.drag = { id, x: event.clientX, y: event.clientY, moved: false };
         state.controls.enabled = false;
         renderer.domElement.setPointerCapture?.(event.pointerId);
@@ -349,7 +356,7 @@ export default function OrgStarMap({
         if (!drag) return;
         const current = latest.current;
         if (!drag.moved) {
-          current.onSelect?.(drag.id);
+          if (drag.id !== VIRTUAL_STAR_ID) current.onSelect?.(drag.id);
           clearDropMarks();
           state.dropCandidate = null;
           return;
@@ -523,7 +530,9 @@ export default function OrgStarMap({
       label.className = `owb-star-label owb-star-label--${body.kind}`;
       label.textContent = nameOf(body);
       label.title = body.virtual ? nameOf(body) : `${nameOf(body)} · ${body.id}`;
-      label.addEventListener("click", () => latest.current.onSelect?.(body.id));
+      label.addEventListener("click", () => {
+        if (!body.virtual) latest.current.onSelect?.(body.id);
+      });
       const labelObject = new CSS2DObject(label);
       labelObject.position.set(0, body.size + 1.1, 0);
       mesh.add(labelObject);
@@ -677,7 +686,7 @@ export default function OrgStarMap({
         <div className="owb-star-map__fallback">
           <p>{t("star.fallback")}</p>
           <ul>
-            {layout.bodies.map((body) => (
+            {layout.bodies.filter((body) => !body.virtual).map((body) => (
               <li key={body.id}>
                 <button
                   type="button"
