@@ -2157,7 +2157,23 @@ function AppInner({
         ) : activeModule === "projects" ? (
           <ProjectManagementModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} positionNames={positionNames} positionEngines={positionEngines} />
         ) : activeModule === "goals" ? (
-          <GoalsModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} positionNames={positionNames} positionAvatars={positionAvatars} positionAvatarSources={avatarUrls} ownerPositionId={snapshot?.owner} />
+          <GoalsModule
+            workspaceOpen={workspaceInfo?.open === true}
+            workspaceKey={workspaceInfo?.path}
+            positionNames={positionNames}
+            positionAvatars={positionAvatars}
+            positionAvatarSources={avatarUrls}
+            ownerPositionId={snapshot?.owner}
+            onOpenApprovals={() => setActiveModule("approvals")}
+            onOpenBoundSession={(positionId, sessionId) => {
+              selectPosition(positionId);
+              if (sessionId) {
+                selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+              }
+              setActiveModule("org");
+            }}
+          />
+
         ) : activeModule === "settings" ? (
           <SettingsModule initialCategory={settingsInitialCategory} workspacePath={workspaceInfo?.open ? workspaceInfo.path : undefined} workspaceScope={groupWorkspaceScope} />
         ) : activeModule === "docs" ? (
