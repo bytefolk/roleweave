@@ -117,4 +117,50 @@ describe("authoritative approval state", () => {
     expect(decideApprovalsBatch).toHaveBeenCalledTimes(2);
     expect(decideApprovalsBatch.mock.calls[1]![0].reason).toBe("updated reason");
   });
+  it("coalesces concurrent refresh requests and returns fresh items directly", async () => {
+    let release!: (value: unknown) => void;
+    const delayedPage = () => new Promise(resolve => { release = resolve; });
+    const listApprovals = vi.fn()
+      .mockResolvedValueOnce(page([row]))
+      .mockImplementationOnce(() => delayedPage())
+      .mockResolvedValue(page([{ ...row, version: 2 }]));
+    bridge({ listApprovals });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    let p1!: Promise<ApprovalView[]>;
+    let p2!: Promise<ApprovalView[]>;
+    act(() => {
+      p1 = result.current.refresh();
+      p2 = result.current.refresh();
+    });
+    let r1!: ApprovalView[], r2!: ApprovalView[];
+    await act(async () => {
+      release(page([{ ...row, version: 2 }]));
+      [r1, r2] = await Promise.all([p1, p2]);
+    });
+    expect(r1[0]!.version).toBe(2);
+    expect(r2[0]!.version).toBe(2);
+  });
+  it("fetches fresh snapshot on refresh and enables deciding newly discovered items", async () => {
+    const decideApproval = vi.fn().mockResolvedValue({ status: 202, body: { ...row, status: "granted", canDecide: false } });
+    const listApprovals = vi.fn()
+      .mockResolvedValueOnce(page([]))
+      .mockResolvedValue(page([row]));
+    bridge({ listApprovals, decideApproval });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.items).toEqual([]);
+
+    let fresh!: ApprovalView[];
+    await act(async () => {
+      fresh = await result.current.refresh();
+    });
+    expect(fresh.length).toBe(1);
+    expect(fresh[0]!.id).toBe(row.id);
+
+    await act(() => result.current.decide(fresh[0]!.id, "granted"));
+    expect(decideApproval).toHaveBeenCalledTimes(1);
+    expect(decideApproval.mock.calls[0]![0].id).toBe(row.id);
+  });
 });

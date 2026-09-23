@@ -293,7 +293,7 @@ export function ApprovalDetailDrawer({
                   count={{
                     max: MAX_APPROVAL_REASON_BYTES,
                     strategy: (txt) => new TextEncoder().encode(txt).length,
-                    show: ({ count, maxLength }) => `${count} / ${maxLength} 字节`,
+                    show: ({ count, maxLength }) => t("apr.byteCount", { count, max: maxLength ?? MAX_APPROVAL_REASON_BYTES }),
                   }}
                   data-testid="approval-reason-input"
                   disabled={readOnlyOrBusy}

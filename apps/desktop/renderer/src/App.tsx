@@ -15,6 +15,7 @@ import {
 import { OrgTree, PositionCard } from "@roleweave/ui";
 import type { OrgDropPosition, PositionCardData } from "@roleweave/ui";
 import type {
+  ApprovalView,
   ChangeManifest,
   EmployeeModelConfig,
   GroupTimeline,
@@ -371,7 +372,7 @@ function AppInner({
   })), [approvalState.items, approvalState.busy, approvalState.errors, positionNames]);
   const decidedApprovals = useMemo(() => new Set(approvalState.items.filter(a =>
     a.status !== "pending" && a.source.positionId === selectedId && a.source.conversationId === selectedSessionId
-  ).flatMap(a => [a.source.turnId, a.approvalId].filter((id): id is string => Boolean(id)))), [approvalState.items, selectedId, selectedSessionId]);
+  ).flatMap(a => [a.source.turnId, a.approvalId, a.id].filter((id): id is string => Boolean(id)))), [approvalState.items, selectedId, selectedSessionId]);
   /** Tree-node "+" hire entry (#32 AC-004): undefined = closed, otherwise the preset reportTo. */
   const [treeHireParent, setTreeHireParent] = useState<string | null | undefined>(undefined);
   /** Employee-record editor (#292): opened from the position card header or
@@ -1325,10 +1326,15 @@ function AppInner({
   /** Both approval entry points use the same durable server-owned decision. */
   const verdictTurn = useCallback(
     async (turn: TurnRecord, decision: "granted" | "denied", reason?: string, scope: "once" | "run" = "once") => {
-      let approval = approvalState.items.find(a => a.source.turnId === turn.id && a.source.positionId === turn.positionId && a.approvalId === turn.approvalRequest?.approvalId);
+      const match = (a: ApprovalView) =>
+        a.source.turnId === turn.id &&
+        a.source.positionId === turn.positionId &&
+        (a.approvalId === turn.approvalRequest?.approvalId || a.id === turn.approvalRequest?.approvalId || !turn.approvalRequest?.approvalId);
+
+      let approval = approvalState.items.find(match);
       if (!approval) {
-        await approvalState.refresh();
-        approval = approvalState.items.find(a => a.source.turnId === turn.id && a.source.positionId === turn.positionId && a.approvalId === turn.approvalRequest?.approvalId);
+        const freshItems = await approvalState.refresh();
+        approval = freshItems.find(match);
       }
       if (approval) {
         await approvalState.decide(approval.id, decision, reason, scope);
@@ -1741,9 +1747,15 @@ function AppInner({
     }
     return [...turns, ...live].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(turn => {
       if (!turn.approvalRequest) return turn;
-      const a = approvalState.items.find(a => a.source.turnId === turn.id && a.source.positionId === turn.positionId && a.approvalId === turn.approvalRequest?.approvalId);
-      return { ...turn, approvalControl: { disabled: !a?.canDecide || approvalState.busy.has(a.id),
-        status: a?.status, phase: a?.execution.phase, error: a ? approvalState.errors[a.id] : approvalState.error,
+      const match = (a: ApprovalView) =>
+        a.source.turnId === turn.id &&
+        a.source.positionId === turn.positionId &&
+        (a.approvalId === turn.approvalRequest?.approvalId || a.id === turn.approvalRequest?.approvalId || !turn.approvalRequest?.approvalId);
+      const a = approvalState.items.find(match);
+      const isExpired = Boolean(a ? (!a.canDecide && a.status === "expired") : (turn.approvalRequest.expiresAt && Number.isFinite(Date.parse(turn.approvalRequest.expiresAt)) && Date.parse(turn.approvalRequest.expiresAt) <= Date.now()));
+      const status = a?.status ?? (isExpired ? "expired" : "pending");
+      return { ...turn, approvalControl: { disabled: !a?.canDecide || isExpired || (a ? approvalState.busy.has(a.id) : false),
+        status, phase: a?.execution.phase, error: a ? approvalState.errors[a.id] : approvalState.error,
         unavailableReason: a?.unavailableReason } };
     });
   }, [positionNames, selectedId, selectedSessionId, t, turnStream.pending, turnStream.runs, turns, approvalState.items, approvalState.busy, approvalState.errors, approvalState.error]);

@@ -16,7 +16,7 @@ export function useApprovals(workspacePath: string | undefined) {
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const owner = useRef<object>({});
-  const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const refreshRef = useRef<() => Promise<ApprovalView[]>>(async () => cache.current.items);
   const cache = useRef<{ items: ApprovalView[]; token?: string }>({ items: [] });
   const pending = useRef(new Map<string, ApprovalDecisionRequest>());
   const inFlight = useRef(new Set<string>());
@@ -26,41 +26,62 @@ export function useApprovals(workspacePath: string | undefined) {
   useEffect(() => {
     const generation = {};
     owner.current = generation;
-    let running = false, again = false;
+    let again = false;
+    let inFlightRefresh: Promise<ApprovalView[]> | null = null;
+    let lastRefreshTime = 0;
     cache.current = { items: [] }; pending.current.clear(); batchPending.current.clear(); inFlight.current.clear();
     setItems([]); setReady(false); setError(undefined); setErrors({}); setBusy(new Set());
     const current = () => owner.current === generation;
-    const refresh = async () => {
-      if (!workspacePath || !window.owb?.listApprovals || !current()) return;
-      if (running) { again = true; return; }
-      running = true; setLoading(true);
-      try {
-        do {
-          again = false;
-          const all: ApprovalView[] = [];
-          let cursor: string | undefined, token: string | undefined;
-          let restart = false;
+    const executeRefresh = async (): Promise<ApprovalView[]> => {
+      if (!workspacePath || !window.owb?.listApprovals || !current()) return cache.current.items;
+      if (inFlightRefresh) {
+        again = true;
+        return inFlightRefresh;
+      }
+      inFlightRefresh = (async () => {
+        setLoading(true);
+        try {
           do {
-            const response = await window.owb.listApprovals({ workspacePath, ...(cursor ? { cursor } : {}) });
-            if (!current()) return;
-            if (response.status === 409 && (response.body as { code?: string }).code === "approval_snapshot_changed") { restart = true; break; }
-            if (response.status !== 200) throw new Error(errorText(response.body, t("apr.loadFailed")));
-            const page = response.body as ApprovalList;
-            if (token && token !== page.workspaceToken) throw new Error(t("apr.loadFailed"));
-            token = page.workspaceToken; all.push(...page.items); cursor = page.nextCursor ?? undefined;
-          } while (cursor);
-          if (restart) { again = true; continue; }
-          cache.current = { items: all, token }; setItems(all); setReady(true); setError(undefined);
-        } while (again && current());
-      } catch (e) { if (current()) setError(e instanceof Error ? e.message : t("apr.loadFailed")); }
-      finally { running = false; if (current()) setLoading(false); }
+            again = false;
+            const all: ApprovalView[] = [];
+            let cursor: string | undefined, token: string | undefined;
+            let restart = false;
+            do {
+              const response = await window.owb.listApprovals({ workspacePath, ...(cursor ? { cursor } : {}) });
+              if (!current()) return cache.current.items;
+              if (response.status === 409 && (response.body as { code?: string }).code === "approval_snapshot_changed") { restart = true; break; }
+              if (response.status !== 200) throw new Error(errorText(response.body, t("apr.loadFailed")));
+              const page = response.body as ApprovalList;
+              if (token && token !== page.workspaceToken) throw new Error(t("apr.loadFailed"));
+              token = page.workspaceToken; all.push(...page.items); cursor = page.nextCursor ?? undefined;
+            } while (cursor);
+            if (restart) { again = true; continue; }
+            cache.current = { items: all, token }; setItems(all); setReady(true); setError(undefined);
+            lastRefreshTime = Date.now();
+          } while (again && current());
+          return cache.current.items;
+        } catch (e) {
+          if (current()) setError(e instanceof Error ? e.message : t("apr.loadFailed"));
+          return cache.current.items;
+        } finally {
+          inFlightRefresh = null;
+          if (current()) setLoading(false);
+        }
+      })();
+      return inFlightRefresh;
     };
-    refreshRef.current = refresh;
-    const focus = () => { void refresh(); };
+    refreshRef.current = executeRefresh;
+    const focus = () => {
+      if (Date.now() - lastRefreshTime > 2000) {
+        void executeRefresh();
+      }
+    };
     window.addEventListener("focus", focus);
     const visibility = () => {
       if (typeof document !== "undefined" && document.visibilityState === "visible") {
-        void refresh();
+        if (Date.now() - lastRefreshTime > 2000) {
+          void executeRefresh();
+        }
       }
     };
     if (typeof document !== "undefined") {
@@ -68,10 +89,10 @@ export function useApprovals(workspacePath: string | undefined) {
     }
     const timer = setInterval(() => {
       if (typeof document === "undefined" || document.visibilityState !== "hidden") {
-        void refresh();
+        void executeRefresh();
       }
     }, 10000);
-    void refresh();
+    void executeRefresh();
     return () => {
       if (current()) owner.current = {};
       clearInterval(timer);

@@ -1090,6 +1090,7 @@ export const enCatalog: Record<string, string> = {
   "apr.batchBoundary": "The server will re-check every version, policy classification, source, and expiry before one recovery run starts.",
   "apr.batchApprove": "Approve selected",
   "apr.reasonTooLong": "Reason exceeds 1024 UTF-8 bytes. Shorten it before submitting.",
+  "apr.byteCount": "{count} / {max} B",
   "apr.status.pending": "Pending",
   "apr.status.granted": "Approved",
   "apr.status.denied": "Denied",

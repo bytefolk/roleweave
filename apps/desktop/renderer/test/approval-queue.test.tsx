@@ -484,22 +484,28 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
   });
 
   it("filters items by local calendar date rather than raw UTC string slice", () => {
-    const localNow = new Date();
-    const year = localNow.getFullYear();
-    const month = String(localNow.getMonth() + 1).padStart(2, "0");
-    const day = String(localNow.getDate()).padStart(2, "0");
-    const todayStr = `${year}-${month}-${day}`;
+    const targetDate = new Date();
+    const year = targetDate.getFullYear();
+    const month = String(targetDate.getMonth() + 1).padStart(2, "0");
+    const day = String(targetDate.getDate()).padStart(2, "0");
+    const localDayStr = `${year}-${month}-${day}`;
 
-    // Item requested at current time
-    const todayItem = makeItem({ approvalId: "appr-today", requestedAt: localNow.toISOString() });
-    render(<ApprovalQueue items={[todayItem]} defaultFilter="all" onApprove={noop} onDeny={noop} />);
-    expect(screen.getByTestId("approval-card-appr-today")).toBeInTheDocument();
+    // Early morning 02:00 local time
+    const localMorning = new Date(year, targetDate.getMonth(), targetDate.getDate(), 2, 0, 0);
+    const morningItem = makeItem({ approvalId: "appr-morning", requestedAt: localMorning.toISOString() });
+    render(<ApprovalQueue items={[morningItem]} defaultFilter="all" onApprove={noop} onDeny={noop} />);
+    expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
 
     const dateInputs = screen.getAllByDisplayValue("");
     const fromInput = dateInputs.find(input => input.getAttribute("type") === "date");
+    const toInput = dateInputs.filter(input => input.getAttribute("type") === "date")[1];
     if (fromInput) {
-      fireEvent.change(fromInput, { target: { value: todayStr } });
-      expect(screen.getByTestId("approval-card-appr-today")).toBeInTheDocument();
+      fireEvent.change(fromInput, { target: { value: localDayStr } });
+      expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
+    }
+    if (toInput) {
+      fireEvent.change(toInput, { target: { value: localDayStr } });
+      expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
     }
   });
 

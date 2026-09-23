@@ -1093,6 +1093,7 @@ export const zhCatalog: Record<string, string> = {
   "apr.batchBoundary": "提交前服务端会重新校验每项版本、策略分类、来源和到期时间，并且只启动一个恢复回合。",
   "apr.batchApprove": "批准所选项",
   "apr.reasonTooLong": "理由超过 1024 字节，请缩短后提交",
+  "apr.byteCount": "{count} / {max} 字节",
   "apr.status.pending": "待审批",
   "apr.status.granted": "已批准",
   "apr.status.denied": "已拒绝",
