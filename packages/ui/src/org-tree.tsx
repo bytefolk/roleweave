@@ -187,23 +187,38 @@ export const OrgTreeNode = memo(function OrgTreeNode({
       ) : (
         <span className="ui-org-tree__spacer" aria-hidden="true" />
       )}
-      <span
-        className={cn("ui-org-tree__led", running && "is-running")}
-        role="img"
-        aria-label={running ? t("pos.running") : t("pos.ready")}
-        title={running ? t("pos.running") : t("pos.ready")}
-      />
-      <span
-        className="ui-org-tree__icon"
-        aria-hidden="true"
-        style={avatarColor ? { color: avatarColor } : undefined}
-      >
-        {avatarUrl ? <img className="ui-org-tree__avatar" src={avatarUrl} alt="" /> : expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
+      <span className="ui-org-tree__identity">
+        <span className="ui-org-tree__icon-wrap">
+          <span
+            className="ui-org-tree__icon"
+            aria-hidden="true"
+            style={avatarColor ? { color: avatarColor } : undefined}
+          >
+            {avatarUrl ? <img className="ui-org-tree__avatar" src={avatarUrl} alt="" /> : expanded ? <FolderOpen size={14} /> : <Folder size={14} />}
+          </span>
+          <span
+            className={cn("ui-org-tree__led", running && "is-running")}
+            role="img"
+            aria-label={running ? t("pos.running") : t("pos.ready")}
+            title={running ? t("pos.running") : t("pos.ready")}
+          />
+        </span>
+        <span className="ui-org-tree__label" title={displayName ?? node.id}>
+          <span className="ui-org-tree__primary">
+            <span className="ui-org-tree__name">{displayName ?? node.id}</span>
+            {hasChildren ? (
+              <span className="ui-org-tree__count" title={t("tree.childCount", { count: node.children.length })}>
+                {node.children.length}
+              </span>
+            ) : null}
+          </span>
+          <span className="ui-org-tree__secondary">
+            {displayName && displayName !== node.id ? <span className="ui-org-tree__id">{node.id}</span> : null}
+            {metadata ? <span className="ui-org-tree__metadata">{metadata}</span> : null}
+            <span className="ui-org-tree__run-label">{running ? t("pos.running") : t("pos.ready")}</span>
+          </span>
+        </span>
       </span>
-      <span className="ui-org-tree__label" title={displayName ?? node.id}>
-        <span className="ui-org-tree__name">{displayName ?? node.id}</span>
-      </span>
-      {metadata ? <span className="ui-org-tree__metadata">{metadata}</span> : null}
       {actions ?? (onGroupEntry || onHireEntry ? (
         <span className="ui-org-tree__actions">
           {onGroupEntry ? (
@@ -249,6 +264,20 @@ export function hueForId(id: string): number {
   let hash = 0;
   for (const char of id) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) % 360;
   return hash;
+}
+
+function nodeQueryHaystack(node: OrgTreeNodeV1, displayNames?: Record<string, string>): string {
+  return `${displayNames?.[node.id] ?? ""} ${node.id}`.toLowerCase();
+}
+
+function nodeMatchesQuery(node: OrgTreeNodeV1, query: string, displayNames?: Record<string, string>): boolean {
+  if (!query) return true;
+  return nodeQueryHaystack(node, displayNames).includes(query);
+}
+
+function subtreeMatchesQuery(node: OrgTreeNodeV1, query: string, displayNames?: Record<string, string>): boolean {
+  if (nodeMatchesQuery(node, query, displayNames)) return true;
+  return node.children.some((child) => subtreeMatchesQuery(child, query, displayNames));
 }
 
 function findInTree(nodes: OrgTreeNodeV1[], id: string): OrgTreeNodeV1 | null {
@@ -400,6 +429,7 @@ export function OrgTree({
 
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(allParentIds));
   const [focusedId, setFocusedId] = useState<string | null>(selectedId ?? null);
+  const [query, setQuery] = useState("");
   const [dragState] = useState(createOrgTreeDragState);
   /** Light inline toast for refused releases; auto-hides. */
   const [toast, setToast] = useState<string | null>(null);
@@ -419,19 +449,24 @@ export function OrgTree({
     });
   }, [allParentIds]);
 
+  const normalizedQuery = query.trim().toLowerCase();
+
   const flatNodes = useMemo<FlatNode[]>(() => {
     const result: FlatNode[] = [];
     const pushNode = (node: OrgTreeNodeV1, depth: number): void => {
+      if (normalizedQuery && !subtreeMatchesQuery(node, normalizedQuery, displayNames)) return;
       const hasChildren = node.children.length > 0;
-      const isExpanded = hasChildren && expanded.has(node.id);
-      result.push({ id: node.id, node, depth, hasChildren, expanded: isExpanded });
-      if (isExpanded) {
+      const showChildren = hasChildren && (normalizedQuery
+        ? node.children.some((child) => subtreeMatchesQuery(child, normalizedQuery, displayNames))
+        : expanded.has(node.id));
+      result.push({ id: node.id, node, depth, hasChildren, expanded: showChildren });
+      if (showChildren) {
         for (const child of node.children) pushNode(child, depth + 1);
       }
     };
     for (const node of topLevel) pushNode(node, 0);
     return result;
-  }, [topLevel, expanded]);
+  }, [topLevel, expanded, normalizedQuery, displayNames]);
 
   const focusedIndex = flatNodes.findIndex((entry) => entry.id === focusedId);
 
@@ -586,8 +621,11 @@ export function OrgTree({
   }
 
   const renderPosition = (node: OrgTreeNodeV1, depth: number, isLast: boolean): ReactNode => {
+    if (normalizedQuery && !subtreeMatchesQuery(node, normalizedQuery, displayNames)) return null;
     const hasChildren = node.children.length > 0;
-    const isExpanded = hasChildren && expanded.has(node.id);
+    const isExpanded = hasChildren && (normalizedQuery
+      ? node.children.some((child) => subtreeMatchesQuery(child, normalizedQuery, displayNames))
+      : expanded.has(node.id));
     return (
       <Fragment key={node.id}>
         <OrgTreeNode
@@ -671,6 +709,23 @@ export function OrgTree({
   };
 
   return (
+    <div className="ui-org-tree-shell">
+    <div className="ui-org-tree__toolbar">
+      <input
+        type="search"
+        className="ui-org-tree__search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder={t("tree.search")}
+        aria-label={t("tree.search")}
+      />
+      <button type="button" className="ui-org-tree__toolbar-btn" onClick={() => setExpanded(new Set(allParentIds))}>
+        {t("tree.expandAll")}
+      </button>
+      <button type="button" className="ui-org-tree__toolbar-btn" onClick={() => setExpanded(new Set())}>
+        {t("tree.collapseAll")}
+      </button>
+    </div>
     <div
       role="tree"
       aria-label={resolvedAriaLabel}
@@ -706,6 +761,7 @@ export function OrgTree({
           {toast}
         </div>
       ) : null}
+    </div>
     </div>
   );
 }

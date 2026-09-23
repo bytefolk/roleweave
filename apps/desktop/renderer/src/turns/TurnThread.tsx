@@ -456,7 +456,20 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
                   )}
                 </section>
               ) : null}
-              {turn.output ? <MessageActions raw={turn.output} plain={markdownToPlainText(turn.output)} /> : null}
+              <div className="owb-bubble__hover-actions">
+                {turn.output ? <MessageActions raw={turn.output} plain={markdownToPlainText(turn.output)} /> : null}
+                {turn.approvalRequest === undefined && retryable && onRetry ? (
+                  <button
+                    type="button"
+                    className="owb-turn__retry"
+                    disabled={retrying || canRetry?.(turn) === false}
+                    onClick={() => onRetry(turn)}
+                  >
+                    <RotateCcw aria-hidden="true" size={13} />
+                    {t("turn.retry")}
+                  </button>
+                ) : null}
+              </div>
               {turn.status === "running" && !turn.output ? <TypingIndicator /> : null}
 
               {turn.error ? (
@@ -488,20 +501,6 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
                   decided={decidedApprovalIds?.has(turn.id) === true || decidedApprovalIds?.has(turn.approvalRequest.approvalId) === true}
                   onVerdict={onVerdict}
                 />
-              ) : null}
-
-              {turn.approvalRequest === undefined && retryable && onRetry ? (
-                <div className="owb-bubble__retryrow">
-                  <button
-                    type="button"
-                    className="owb-turn__retry"
-                    disabled={retrying || canRetry?.(turn) === false}
-                    onClick={() => onRetry(turn)}
-                  >
-                    <RotateCcw aria-hidden="true" size={13} />
-                    {t("turn.retry")}
-                  </button>
-                </div>
               ) : null}
             </article>
             </div>
