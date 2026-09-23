@@ -34,6 +34,9 @@ export interface CelestialBody {
   /** Angular slot on the orbit ring (radians). */
   angle: number;
   childCount: number;
+  /** Declared per-task/per-day caps, served verbatim from org-tree.v1; the
+   *  focus card renders them, never inventing numbers when absent. */
+  budget: OrgTreeNodeV1["budget"] | null;
   /** Synthetic enterprise star, present only when the owner is not in tree. */
   virtual?: boolean;
 }
@@ -128,6 +131,7 @@ export function buildCelestialLayout(snapshot: OrgTreeSnapshot | null): Celestia
         orbitTilt: 0,
         angle: 0,
         childCount: starNode.children.length,
+        budget: starNode.budget,
       }
     : {
         id: VIRTUAL_STAR_ID,
@@ -140,6 +144,7 @@ export function buildCelestialLayout(snapshot: OrgTreeSnapshot | null): Celestia
         orbitTilt: 0,
         angle: 0,
         childCount: snapshot.tree.length,
+        budget: null,
         virtual: true,
       };
   bodies.push(star);
@@ -187,6 +192,7 @@ export function buildCelestialLayout(snapshot: OrgTreeSnapshot | null): Celestia
         orbitTilt: tilt,
         angle,
         childCount: child.children.length,
+        budget: child.budget,
       };
       bodies.push(body);
       if (depth > maxDepth) maxDepth = depth;

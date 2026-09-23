@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import OrgStarMap from "../src/org/OrgStarMap";
 import type { OrgTreeSnapshot } from "@roleweave/shared";
@@ -102,5 +102,27 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     const input = screen.getByLabelText("定位员工：姓名或岗位 id");
     fireEvent.change(input, { target: { value: "开源业务" } });
     expect(screen.queryByRole("option")).not.toBeInTheDocument();
+  });
+
+  it("选中后聚焦卡给出概括信息，拉远与关闭可用", () => {
+    render(
+      <OrgStarMap
+        snapshot={snapshot}
+        selectedId="docs-lead"
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+        displayTitles={{ "docs-lead": "公开文档与发布说明" }}
+        displayModes={{ "docs-lead": "read_only" }}
+      />,
+    );
+    const card = screen.getByLabelText("员工概览");
+    expect(within(card).getByText("文档负责人")).toBeInTheDocument();
+    expect(within(card).getByText("公开文档与发布说明")).toBeInTheDocument();
+    expect(within(card).getByText("只读")).toBeInTheDocument();
+    expect(within(card).getByText("汇报给 首席执行官")).toBeInTheDocument();
+    expect(within(card).getByText("0 个下属")).toBeInTheDocument();
+    expect(within(card).getByText("单任务预算: 声明期")).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole("button", { name: "拉远" }));
+    fireEvent.click(within(card).getByRole("button", { name: "关闭" }));
+    expect(screen.queryByLabelText("员工概览")).not.toBeInTheDocument();
   });
 });

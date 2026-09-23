@@ -247,3 +247,68 @@
   min-height: 320px;
   flex: 1;
 }
+
+/* Focus card: summarized employee record shown after a click zoom-in. */
+.owb-star-map__card {
+  position: absolute;
+  top: 46px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 224px;
+  padding: 10px;
+  background: rgba(10, 14, 28, 0.9);
+  border: 1px solid #262c4a;
+  border-radius: 10px;
+  color: #e8ecff;
+  font-size: 12px;
+}
+
+.owb-star-map__card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.owb-star-map__card header strong {
+  font-size: 13px;
+}
+
+.owb-star-map__card-close {
+  padding: 0 2px;
+  background: none;
+  border: 0;
+  color: #8b93b8;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.owb-star-map__card-close:hover {
+  color: #e8ecff;
+}
+
+.owb-star-map__card p {
+  margin: 0;
+}
+
+.owb-star-map__card-id {
+  color: #7d86ad;
+  font-size: 10.5px;
+}
+
+.owb-star-map__tag {
+  padding: 1px 6px;
+  border: 1px solid #2a3050;
+  border-radius: 6px;
+  font-size: 10.5px;
+  color: #c6cdea;
+}
+
+.owb-star-map__card footer {
+  display: flex;
+  gap: 6px;
+}

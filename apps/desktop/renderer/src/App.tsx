@@ -2221,6 +2221,9 @@ function AppInner({
                   enterpriseName={workspaceInfo?.business}
                   displayNames={positionNames}
                   avatarColors={positionColors}
+                  avatarUrls={avatarUrls}
+                  displayTitles={positionTitles}
+                  displayModes={positionModes}
                   runningIds={runningPositionIds}
                   selectedId={selectedId}
                   onSelect={openConversation}

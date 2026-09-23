@@ -47,6 +47,11 @@ export interface OrgStarMapProps {
   enterpriseName?: string;
   displayNames?: Record<string, string>;
   avatarColors?: Record<string, string>;
+  /** Render-ready avatar sources: bodies become portrait medallions fused
+   *  into the space scene; positions without one stay colored planets. */
+  avatarUrls?: Record<string, string>;
+  displayTitles?: Record<string, string>;
+  displayModes?: Record<string, "read_only" | "approval_required">;
   /** Position ids with a turn in flight: the halo pulses AI purple. */
   runningIds?: ReadonlySet<string>;
   selectedId?: string | null;
@@ -67,8 +72,10 @@ interface BodyView {
   halo: THREE.Sprite;
   haloMaterial: THREE.SpriteMaterial;
   material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+  medallion: THREE.Sprite | null;
   label: HTMLDivElement;
   baseColor: THREE.Color;
+  baseOpacity: number;
 }
 
 interface SceneState {
@@ -94,9 +101,67 @@ interface SceneState {
   disposed: boolean;
 }
 
-const DEFAULT_CAM: readonly [number, number, number] = [0, 30, 74];
+const DEFAULT_CAM: readonly [number, number, number] = [0, 26, 64];
 const DRAG_THRESHOLD = 4;
 const RUNNING_COLOR = "#722ed1";
+
+/** Circular portrait medallion texture: rim glow + clipped photo + ring, so
+ *  employee avatars read as planets fused into the space scene (#472 R2). */
+function makeMedallionTexture(rim: THREE.Color): {
+  texture: THREE.CanvasTexture;
+  paint: (img?: HTMLImageElement) => void;
+} {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const rimStyle = `#${rim.getHexString()}`;
+  const paint = (img?: HTMLImageElement): void => {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, 256, 256);
+    const glow = ctx.createRadialGradient(128, 128, 90, 128, 128, 128);
+    glow.addColorStop(0, `${rimStyle}99`);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(128, 128, 92, 0, Math.PI * 2);
+    ctx.clip();
+    if (img && img.width > 0 && img.height > 0) {
+      const side = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 36, 36, 184, 184);
+    } else {
+      ctx.fillStyle = rimStyle;
+      ctx.fillRect(36, 36, 184, 184);
+    }
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(128, 128, 92, 0, Math.PI * 2);
+    ctx.strokeStyle = rimStyle;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    texture.needsUpdate = true;
+  };
+  paint();
+  return { texture, paint };
+}
+
+/** Honest budget line for the focus card: declaration phase says so instead
+ *  of fabricating a number. */
+function budgetLabelText(budget: CelestialBody["budget"]): string | null {
+  const perTask = budget?.perTask;
+  if (!perTask) return null;
+  if (typeof perTask.tokens === "number") {
+    const k = perTask.tokens / 1000;
+    const compact = k >= 1 ? (Number.isInteger(k) ? k : k.toFixed(1)) : String(perTask.tokens);
+    return `${compact}/task`;
+  }
+  if (typeof perTask.iterations === "number") return `${perTask.iterations} iter/task`;
+  return null;
+}
 
 function glowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
@@ -131,6 +196,9 @@ export default function OrgStarMap({
   enterpriseName,
   displayNames,
   avatarColors,
+  avatarUrls,
+  displayTitles,
+  displayModes,
   runningIds,
   selectedId,
   onSelect,
@@ -148,6 +216,8 @@ export default function OrgStarMap({
   const [webglFailed, setWebglFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+  /** The focus card hides itself on 拉远/关闭 until the selection changes. */
+  const [cardDismissed, setCardDismissed] = useState(false);
   const reducedMotion =
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -161,6 +231,10 @@ export default function OrgStarMap({
     const timer = setTimeout(() => setToast(null), 2200);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    setCardDismissed(false);
+  }, [selectedId]);
 
   const layout = useMemo(() => buildCelestialLayout(snapshot), [snapshot]);
   layoutRef.current = layout;
@@ -217,7 +291,7 @@ export default function OrgStarMap({
       const glow = glowTexture();
 
       // Starfield: the background is space, not a void (#472).
-      const starCount = 1500;
+      const starCount = 2200;
       const positions = new Float32Array(starCount * 3);
       const colors = new Float32Array(starCount * 3);
       const palette = [new THREE.Color("#ffffff"), new THREE.Color("#9db4ff"), new THREE.Color("#ffd9a0")];
@@ -356,7 +430,11 @@ export default function OrgStarMap({
         if (!drag) return;
         const current = latest.current;
         if (!drag.moved) {
-          if (drag.id !== VIRTUAL_STAR_ID) current.onSelect?.(drag.id);
+          if (drag.id !== VIRTUAL_STAR_ID) {
+            setCardDismissed(false);
+            flyTo(drag.id, true);
+            current.onSelect?.(drag.id);
+          }
           clearDropMarks();
           state.dropCandidate = null;
           return;
@@ -477,7 +555,7 @@ export default function OrgStarMap({
       const points = curve.getPoints(96).map((point) => new THREE.Vector3(point.x, 0, point.y));
       const ring = new THREE.LineLoop(
         new THREE.BufferGeometry().setFromPoints(points),
-        new THREE.LineBasicMaterial({ color: 0x55608a, transparent: true, opacity: 0.5 }),
+        new THREE.LineBasicMaterial({ color: 0x55608a, transparent: true, opacity: 0.6 }),
       );
       ring.rotation.x = orbit.tilt;
       ring.position.set(orbit.center[0], orbit.center[1], orbit.center[2]);
@@ -523,26 +601,66 @@ export default function OrgStarMap({
         blending: THREE.AdditiveBlending,
       });
       const halo = new THREE.Sprite(haloMaterial);
-      halo.scale.setScalar(body.size * (body.kind === "star" ? 6.5 : 3.4));
+      halo.scale.setScalar(body.size * (body.kind === "star" ? 8 : 3.4));
       mesh.add(halo);
+      if (body.kind === "star") {
+        // Extra corona flare so the star anchors the scene visually.
+        const flare = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: glow,
+            color: new THREE.Color("#ff9d4d"),
+            transparent: true,
+            opacity: 0.32,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+          }),
+        );
+        flare.scale.setScalar(body.size * 13);
+        mesh.add(flare);
+      }
+
+      // Portrait medallion: the employee's own avatar fused into the body;
+      // positions without an avatar stay solid colored planets.
+      let medallion: THREE.Sprite | null = null;
+      let baseOpacity = 1;
+      const avatarSrc = body.virtual ? undefined : avatarUrls?.[body.id];
+      if (avatarSrc) {
+        const medallionTexture = makeMedallionTexture(baseColor);
+        medallion = new THREE.Sprite(
+          new THREE.SpriteMaterial({ map: medallionTexture.texture, transparent: true, depthWrite: false }),
+        );
+        medallion.scale.setScalar(body.size * (body.kind === "star" ? 3.6 : 2.8));
+        mesh.add(medallion);
+        material.transparent = true;
+        baseOpacity = 0.35;
+        material.opacity = baseOpacity;
+        const img = new Image();
+        img.onload = () => {
+          if (!state.disposed) medallionTexture.paint(img);
+        };
+        img.src = avatarSrc;
+      }
 
       const label = document.createElement("div");
       label.className = `owb-star-label owb-star-label--${body.kind}`;
       label.textContent = nameOf(body);
       label.title = body.virtual ? nameOf(body) : `${nameOf(body)} · ${body.id}`;
       label.addEventListener("click", () => {
-        if (!body.virtual) latest.current.onSelect?.(body.id);
+        if (body.virtual) return;
+        setCardDismissed(false);
+        flyTo(body.id, true);
+        latest.current.onSelect?.(body.id);
       });
       const labelObject = new CSS2DObject(label);
       labelObject.position.set(0, body.size + 1.1, 0);
       mesh.add(labelObject);
 
       state.world.add(mesh);
-      state.views.set(body.id, { body, mesh, halo, haloMaterial, material, label, baseColor });
+      state.views.set(body.id, { body, mesh, halo, haloMaterial, material, medallion, label, baseColor, baseOpacity });
     }
     applyVisualState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, avatarColors, webglFailed, nameOf]);
+  }, [layout, avatarColors, avatarUrls, webglFailed, nameOf]);
 
   /* ------------------------------------------- selection / runs / filter */
   const applyVisualState = useCallback((): void => {
@@ -561,11 +679,11 @@ export default function OrgStarMap({
       view.mesh.scale.setScalar(isSelected ? 1.18 : 1);
       const transparent = true;
       view.material.transparent = transparent;
-      view.material.opacity = dimmed ? 0.16 : 1;
+      view.material.opacity = dimmed ? 0.16 : view.baseOpacity;
       if (!isRunning) {
         view.haloMaterial.color.copy(isSelected ? view.baseColor.clone().lerp(new THREE.Color("#ffffff"), 0.35) : view.baseColor);
         view.haloMaterial.opacity = view.body.kind === "star" ? 0.85 : isSelected ? 0.5 : dimmed ? 0.05 : 0.16;
-        view.halo.scale.setScalar(view.body.size * (view.body.kind === "star" ? 6.5 : 3.4));
+        view.halo.scale.setScalar(view.body.size * (view.body.kind === "star" ? 8 : 3.4));
       } else {
         view.haloMaterial.color.set(RUNNING_COLOR);
       }
@@ -576,18 +694,18 @@ export default function OrgStarMap({
     applyVisualState();
   }, [selectedId, runningIds, query, applyVisualState, layout]);
 
-  const flyTo = useCallback((id: string): void => {
+  const flyTo = useCallback((id: string, close = false): void => {
     const state = stateRef.current;
     const body = layoutRef.current.bodies.find((entry) => entry.id === id);
     if (!state || !body) return;
     const toTarget = new THREE.Vector3(...body.position);
     if (latest.current.reducedMotion) {
       state.controls.target.copy(toTarget);
-      state.camera.position.copy(toTarget.clone().add(new THREE.Vector3(...DEFAULT_CAM).setLength(46)));
+      state.camera.position.copy(toTarget.clone().add(new THREE.Vector3(...DEFAULT_CAM).setLength(close ? Math.max(10, body.size * 8) : 46)));
       return;
     }
     const direction = state.camera.position.clone().sub(state.controls.target);
-    const distance = Math.max(30, Math.min(direction.length(), 60));
+    const distance = close ? Math.max(10, body.size * 8) : Math.max(30, Math.min(direction.length(), 60));
     state.fly = {
       fromTarget: state.controls.target.clone(),
       toTarget,
@@ -597,10 +715,29 @@ export default function OrgStarMap({
     };
   }, []);
 
+  /** 拉远: pull the camera back to the whole-system framing. */
+  const flyHome = useCallback((): void => {
+    const state = stateRef.current;
+    if (!state) return;
+    if (latest.current.reducedMotion) {
+      state.controls.target.set(0, 0, 0);
+      state.camera.position.set(...DEFAULT_CAM);
+      return;
+    }
+    state.fly = {
+      fromTarget: state.controls.target.clone(),
+      toTarget: new THREE.Vector3(0, 0, 0),
+      fromCam: state.camera.position.clone(),
+      toCam: new THREE.Vector3(...DEFAULT_CAM),
+      start: performance.now(),
+    };
+  }, []);
+
   const locate = useCallback(
     (id: string): void => {
+      setCardDismissed(false);
       latest.current.onSelect?.(id);
-      flyTo(id);
+      flyTo(id, true);
     },
     [flyTo],
   );
@@ -614,6 +751,11 @@ export default function OrgStarMap({
   }, []);
 
   /* ------------------------------------------------------------- render */
+  const selectedBody = selectedId ? layout.bodies.find((body) => body.id === selectedId) ?? null : null;
+  const parentBody = selectedBody?.parentId
+    ? layout.bodies.find((body) => body.id === selectedBody.parentId) ?? null
+    : null;
+  const selectedBudget = budgetLabelText(selectedBody?.budget ?? null);
   return (
     <section className={`owb-star-map${className ? ` ${className}` : ""}`} aria-label={t("star.title")}>
       <header className="owb-star-map__head">
@@ -666,6 +808,9 @@ export default function OrgStarMap({
           <button type="button" className="owb-star-map__btn" onClick={resetView}>
             {t("star.resetView")}
           </button>
+          <button type="button" className="owb-star-map__btn" onClick={flyHome}>
+            {t("star.zoomOut")}
+          </button>
         </div>
         <p className="owb-star-map__hint">{t("star.hint")}</p>
         {toast ? (
@@ -674,6 +819,47 @@ export default function OrgStarMap({
           </p>
         ) : null}
       </div>
+      {selectedBody && !cardDismissed ? (
+        <aside className="owb-star-map__card" aria-label={t("star.cardTitle")}>
+          <header>
+            <strong>{nameOf(selectedBody)}</strong>
+            <button
+              type="button"
+              className="owb-star-map__card-close"
+              aria-label={t("star.close")}
+              onClick={() => setCardDismissed(true)}
+            >
+              ×
+            </button>
+          </header>
+          {selectedBody.virtual ? (
+            <p>{t("star.enterpriseHint")}</p>
+          ) : (
+            <>
+              <p className="owb-star-map__card-id">{selectedBody.id}</p>
+              {displayTitles?.[selectedBody.id] ? <p>{displayTitles[selectedBody.id]}</p> : null}
+              {displayModes?.[selectedBody.id] ? (
+                <p>
+                  <span className="owb-star-map__tag">
+                    {displayModes[selectedBody.id] === "approval_required" ? t("star.modeApproval") : t("star.modeReadOnly")}
+                  </span>
+                </p>
+              ) : null}
+              <p>{t("star.reportTo", { name: parentBody ? nameOf(parentBody) : t("org.enterpriseRoot") })}</p>
+              <p>{t("star.reports", { count: selectedBody.childCount })}</p>
+              <p>{`${t("star.budget")}: ${selectedBudget ?? t("star.declaration")}`}</p>
+            </>
+          )}
+          <footer>
+            <button type="button" className="owb-star-map__btn" onClick={() => flyTo(selectedBody.id, true)}>
+              {t("star.zoomIn")}
+            </button>
+            <button type="button" className="owb-star-map__btn" onClick={flyHome}>
+              {t("star.zoomOut")}
+            </button>
+          </footer>
+        </aside>
+      ) : null}
       {loading ? (
         <div className="owb-star-map__loading">
           <Spin />
@@ -692,7 +878,10 @@ export default function OrgStarMap({
                   type="button"
                   style={{ paddingLeft: 6 + body.depth * 14 }}
                   aria-pressed={selectedId === body.id}
-                  onClick={() => latest.current.onSelect?.(body.id)}
+                  onClick={() => {
+                    setCardDismissed(false);
+                    latest.current.onSelect?.(body.id);
+                  }}
                 >
                   {nameOf(body)}
                 </button>

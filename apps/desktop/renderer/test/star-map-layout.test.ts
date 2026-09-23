@@ -60,6 +60,9 @@ describe("celestial layout (#472): deterministic orbital mapping of the reportin
     expect(byId.get("design-lead")?.kind).toBe("planet");
     expect(byId.get("frontend")?.kind).toBe("moon");
     expect(layout.maxDepth).toBe(2);
+    // The focus card renders declared budgets verbatim from org-tree.v1.
+    expect(byId.get("ceo")?.budget).toEqual({ perTask: { tokens: 40000 }, perDay: {} });
+    expect(byId.get("frontend")?.budget).toEqual({ perTask: {}, perDay: {} });
   });
 
   it("planets ride the base ring and moons ride their parent's ring", () => {
