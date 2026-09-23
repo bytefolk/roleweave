@@ -125,6 +125,15 @@
 
 /* 状态灯（设计稿 .tr-led）：岗位即端点的第一语言。诚实映射——
  * running 来自在途回合，其余为 idle；离线态仅用于恢复区归档岗位。 */
+.ui-org-tree__row.is-query-hit {
+  background: color-mix(in srgb, var(--ui-primary) 10%, var(--ui-surface));
+}
+.ui-org-tree__row.is-query-hit .ui-org-tree__name {
+  font-weight: 600;
+}
+.ui-org-tree__row.is-query-dim {
+  opacity: 0.45;
+}
 .ui-org-tree__led {
   position: absolute;
   right: -1px;
