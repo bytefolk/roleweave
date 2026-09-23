@@ -1,5 +1,6 @@
 import { redactApprovalSecrets } from "@roleweave/shared/approval-redaction";
 import type { ApprovalChangePreview, ApprovalContext, ApprovalRequestedEvent, OrgRole } from "@roleweave/shared";
+import { ruleRiskFromKind } from "./risk-overlay.js";
 
 const MAX_SUMMARY_BYTES = 2048;
 
@@ -14,11 +15,12 @@ export function redactApprovalText(value: string): string {
 }
 
 function capabilityContext(kind: ApprovalRequestedEvent["action"]["kind"]): Pick<ApprovalContext, "risk" | "impact"> {
+  const risk = ruleRiskFromKind(kind);
   switch (kind) {
-    case "write": return { risk: "high", impact: "workspace_write" };
-    case "exec": return { risk: "high", impact: "command_execution" };
-    case "network": return { risk: "high", impact: "external_network" };
-    case "tool": return { risk: "medium", impact: "restricted_tool" };
+    case "write": return { risk, impact: "workspace_write" };
+    case "exec": return { risk, impact: "command_execution" };
+    case "network": return { risk, impact: "external_network" };
+    case "tool": return { risk, impact: "restricted_tool" };
   }
 }
 

@@ -7,7 +7,7 @@
 
 ### Added
 
-- #460：审批详情在规则风险 Tag 旁展示可选 Jev `riskOverlay`；展示色始终跟 `capabilityContext` 的规则风险，overlay 更低时标明「建议未采纳」。出站建议载荷只允许 `kind`。默认不调用外部服务。Refs #422。
+- #460：审批队列和详情在规则风险 Tag 旁展示可选 Jev `riskOverlay`。`ROLEWEAVE_JEV_ENABLED` 默认关；关时与现网 Tag 字节一致。展示色始终跟 `capabilityContext`，overlay 更低时标明「建议未采纳」。`service` 经 `attachApprovalRiskOverlay` 接线；出站建议载荷只允许 `kind`。默认不调用外部服务。Refs #422。
 
 ### Changed
 

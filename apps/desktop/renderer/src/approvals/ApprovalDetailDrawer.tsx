@@ -171,7 +171,7 @@ export function ApprovalDetailDrawer({
             {item.context ? (
               <>
                 <div className="owb-approval-drawer__meta">
-                  <Tag color={item.context.risk === "high" ? "red" : "orange"}>
+                  <Tag color={item.context.risk === "high" ? "red" : "orange"} data-testid="approval-rule-risk">
                     {t(`apr.risk.${item.context.risk}`)}
                   </Tag>
                   {item.context.riskOverlay && item.context.riskOverlay !== item.context.risk ? (
