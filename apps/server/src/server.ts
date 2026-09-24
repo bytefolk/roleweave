@@ -45,6 +45,7 @@ import {
   handleSessionTurnPost,
 } from "./routes/sessions.js";
 import { handleTurnCancel, handleTurnHistory, handleTurnPost } from "./routes/turns.js";
+import { handleTurnProgressGet, handleTurnProgressList } from "./routes/progress.js";
 import { handleAttachmentRead, handleAttachmentUpload } from "./attachments/routes.js";
 import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceInitialize, handleWorkspaceOpen } from "./routes/workspace.js";
 import { handleTaskCreate, handleTaskDecision, handleTaskList, handleTaskStatus } from "./routes/tasks.js";
@@ -254,6 +255,15 @@ async function dispatch(
     }
     if (pathname === routes.turnsCancel && method === "POST") {
       await handleTurnCancel(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.turnProgress && method === "GET") {
+      await handleTurnProgressList(ctx, res);
+      return;
+    }
+    const progressMatch = pathname.match(/^\/turns\/progress\/([^/]+)$/);
+    if (progressMatch && method === "GET") {
+      await handleTurnProgressGet(ctx, res, req, decodeURIComponent(progressMatch[1]!));
       return;
     }
     if (pathname === routes.turns && method === "POST") {

@@ -3,6 +3,7 @@ import type { EventBus } from "./bus.js";
 import type { WorkspaceState } from "./workspace-state.js";
 import type { ServerConfig } from "./config.js";
 import type { TurnStore } from "./turns/store.js";
+import type { ProgressTracker } from "./turns/progress.js";
 import type { RunningTurnRegistry } from "./turns/running.js";
 import type { SessionStore } from "./sessions/store.js";
 import type { GroupStore } from "./groups/store.js";
@@ -23,6 +24,8 @@ export interface ControlPlaneContext {
   hireDriver: HireValidateDriver;
   /** Workspace-local conversation/turn persistence. */
   turnStore: TurnStore;
+  /** Manager live step-progress board (#480). In-process; snapshots also persist beside turns. */
+  progressTracker: ProgressTracker;
   /** Abort hooks for in-flight turns, keyed by positionId; backs POST /turns/cancel. */
   runningTurns: RunningTurnRegistry;
   /** Explicit workspace-local session lifecycle; never a Host auth session. */

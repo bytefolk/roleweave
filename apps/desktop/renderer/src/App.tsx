@@ -34,7 +34,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, Orbit, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
+import { Activity, Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, Orbit, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -80,6 +80,7 @@ import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
+import { ProgressBoard } from "./progress/ProgressBoard";
 import { ApprovalQueue, isActionablePending, type ApprovalQueueItem } from "./approvals";
 import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
@@ -147,7 +148,7 @@ function AppInner({
 }) {
   const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
-    "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings"
+    "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress"
   >("org");
   const [settingsInitialCategory, setSettingsInitialCategory] = useState<"experiments" | undefined>();
   const setActiveModule = useCallback((next: typeof activeModule) => {
@@ -1820,7 +1821,7 @@ function AppInner({
     } : {}),
   }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
 
-  const sidebarlessModule = activeModule === "projects" || activeModule === "reports" || activeModule === "approvals" || activeModule === "settings";
+  const sidebarlessModule = activeModule === "projects" || activeModule === "reports" || activeModule === "approvals" || activeModule === "settings" || activeModule === "progress";
 
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
@@ -1894,6 +1895,7 @@ function AppInner({
               onSelect: () => { setActiveModule("approvals"); void approvalState.refresh(); },
             },
             { id: "reports", label: t("rail.reports"), icon: <ChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setReportsFocusTurnId(null); setActiveModule("reports"); void loadReports(); } },
+            { id: "progress", label: t("rail.progress"), icon: <Activity aria-hidden="true" size={16} />, active: activeModule === "progress", onSelect: () => setActiveModule("progress") },
             // mem and position documents are two sources in one employee-memory
             // surface. Keep one entry here so the user does not have to choose
             // between two implementation-owned data planes.
@@ -2120,7 +2122,9 @@ function AppInner({
             title={t("misc.lastWorkspaceFallback", { path: fallbackNotice })}
           />
         ) : null}
-        {activeModule === "reports" ? (
+        {activeModule === "progress" ? (
+          <ProgressBoard workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
+        ) : activeModule === "reports" ? (
           <ReportsCenter
             key={workspaceInfo?.path}
             workspacePath={workspaceInfo?.open ? workspaceInfo.path : undefined}

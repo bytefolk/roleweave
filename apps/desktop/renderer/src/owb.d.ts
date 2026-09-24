@@ -42,6 +42,8 @@ import type {
   PositionProfilePatch,
   PositionProfileResult,
   ReportsResponse,
+  TaskProgressListResponse,
+  TaskProgressSnapshot,
   TurnEngine,
   TurnHistory,
   TurnPendingApproval,
@@ -105,6 +107,8 @@ export interface OwbBridge {
   hire(request: HirePositionRequest): Promise<OwbApiResponse<HireResult>>;
   generateAvatar(request: AvatarGenerateRequest): Promise<OwbApiResponse<AvatarGenerateResponse>>;
   reports(): Promise<OwbApiResponse<ReportsResponse>>;
+  turnProgress?(): Promise<OwbApiResponse<TaskProgressListResponse>>;
+  turnProgressSnapshot?(turnId: string, positionId?: string): Promise<OwbApiResponse<TaskProgressSnapshot>>;
   experiments?: {
     get(workspacePath: string): Promise<OwbApiResponse<import("@roleweave/shared").ExperimentsResponse>>;
     update(request: import("@roleweave/shared").ExperimentsUpdateRequest): Promise<OwbApiResponse<import("@roleweave/shared").ExperimentsResponse>>;

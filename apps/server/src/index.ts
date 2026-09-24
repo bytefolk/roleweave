@@ -14,6 +14,7 @@ import { DigitalEmployeeCliDriver } from "./engine/driver-cli.js";
 import { WorkspaceState } from "./workspace-state.js";
 import { createControlPlane } from "./server.js";
 import { TurnStore } from "./turns/store.js";
+import { ProgressTracker } from "./turns/progress.js";
 import { RunningTurnRegistry } from "./turns/running.js";
 import { SessionStore } from "./sessions/store.js";
 import { GroupStore } from "./groups/store.js";
@@ -29,14 +30,16 @@ const driver = new DigitalEmployeeCliDriver(
   config.engineTimeoutMs,
   config.bundledElectronEngine,
 );
+const bus = new EventBus();
 const ctx: ControlPlaneContext = {
   config,
   workspace: new WorkspaceState(),
-  bus: new EventBus(),
+  bus,
   driver,
   turnDriver: driver,
   hireDriver: driver,
   turnStore: new TurnStore(),
+  progressTracker: new ProgressTracker(bus),
   runningTurns: new RunningTurnRegistry(),
   sessionStore: new SessionStore(),
   groupStore: new GroupStore(),
