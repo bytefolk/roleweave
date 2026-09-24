@@ -250,7 +250,13 @@ function makeSkyDome(): THREE.Mesh {
   return mesh;
 }
 
-function makeStarLayer(count: number, radiusMin: number, radiusMax: number, size: number): THREE.Points {
+function makeStarLayer(
+  count: number,
+  radiusMin: number,
+  radiusMax: number,
+  size: number,
+  map: THREE.Texture,
+): THREE.Points {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   const palette = [new THREE.Color("#ffffff"), new THREE.Color("#9db4ff"), new THREE.Color("#ffd9a0"), new THREE.Color("#7cf0ff")];
@@ -273,6 +279,7 @@ function makeStarLayer(count: number, radiusMin: number, radiusMax: number, size
   return new THREE.Points(
     geometry,
     new THREE.PointsMaterial({
+      map,
       size,
       sizeAttenuation: true,
       vertexColors: true,
@@ -280,6 +287,7 @@ function makeStarLayer(count: number, radiusMin: number, radiusMax: number, size
       opacity: 1,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      alphaTest: 0.02,
     }),
   );
 }
@@ -292,7 +300,8 @@ function glowTexture(): THREE.CanvasTexture {
   if (ctx) {
     const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
     gradient.addColorStop(0, "rgba(255,255,255,1)");
-    gradient.addColorStop(0.35, "rgba(255,255,255,0.55)");
+    gradient.addColorStop(0.18, "rgba(255,255,255,0.85)");
+    gradient.addColorStop(0.45, "rgba(255,255,255,0.28)");
     gradient.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 128, 128);
@@ -416,9 +425,9 @@ export default function OrgStarMap({
 
       const sky = new THREE.Group();
       sky.add(makeSkyDome());
-      const farStars = makeStarLayer(3200, 420, 820, 1.6);
-      const midStars = makeStarLayer(1800, 160, 380, 2.4);
-      const nearStars = makeStarLayer(420, 70, 150, 4.2);
+      const farStars = makeStarLayer(3200, 420, 820, 1.6, glow);
+      const midStars = makeStarLayer(1800, 160, 380, 2.4, glow);
+      const nearStars = makeStarLayer(420, 70, 150, 4.2, glow);
       farStars.userData.spin = 0.00012;
       midStars.userData.spin = 0.00028;
       nearStars.userData.spin = 0.0005;
@@ -723,7 +732,7 @@ export default function OrgStarMap({
 
     for (const body of layout.bodies) {
       const baseColor = body.kind === "star" ? new THREE.Color("#ff4d3a") : colorFor(body.id, avatarColors);
-      const geometry = new THREE.SphereGeometry(body.size, body.kind === "star" ? 48 : 32, body.kind === "star" ? 48 : 32);
+      const geometry = new THREE.SphereGeometry(body.size, body.kind === "star" ? 64 : 48, body.kind === "star" ? 64 : 48);
       const material = new THREE.MeshBasicMaterial({
         color: baseColor.clone().multiplyScalar(body.kind === "star" ? 1.8 : 1.35),
         transparent: true,
