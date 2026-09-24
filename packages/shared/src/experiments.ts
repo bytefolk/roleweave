@@ -23,6 +23,22 @@ export interface ReportsAdviceRequest {
   revision: number;
 }
 
+export interface ReadyHostFact {
+  positionId: string;
+  engine: string;
+  ready: boolean;
+}
+
+export interface ReadyHostChoiceRequest extends ReportsAdviceRequest {
+  candidates: ReadyHostFact[];
+}
+
+export interface ReadyHostChoiceResponse extends ReportsAdviceRequest {
+  status: "ready" | "disabled" | "unavailable";
+  reason?: "not_configured" | "timeout" | "provider_error" | "settings_invalid";
+  positionId: string | null;
+}
+
 export interface ExperimentsUpdateRequest extends ReportsAdviceRequest {
   enabled: boolean;
 }
