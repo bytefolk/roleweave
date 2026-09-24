@@ -361,7 +361,7 @@ export function deriveKnowledgeLinks(
 
     // Direct non-reporting edge between positions
     if (sourcePos && targetPos && edge.kind !== "reports_to") {
-      addLink(sourcePos, targetPos, edge.kind, `协同关系: ${edge.kind}`);
+      addLink(sourcePos, targetPos, edge.kind, `Collaboration: ${edge.kind}`);
       continue;
     }
 
@@ -389,7 +389,7 @@ export function deriveKnowledgeLinks(
     const requester = taskRequesters.get(taskId);
     if (requester && requester !== assignee) {
       const task = taskNodes.get(taskId);
-      addLink(requester, assignee, "任务协同", task?.label ? `协同任务: ${task.label}` : undefined);
+      addLink(requester, assignee, "Task Collaboration", task?.label ? `Task: ${task.label}` : undefined);
     }
   }
 
@@ -401,7 +401,7 @@ export function deriveKnowledgeLinks(
       const arr = Array.from(assignees);
       for (let i = 0; i < arr.length; i++) {
         for (let j = i + 1; j < arr.length; j++) {
-          addLink(arr[i]!, arr[j]!, "目标协同", goal?.label ? `共同目标: ${goal.label}` : undefined);
+          addLink(arr[i]!, arr[j]!, "Goal Collaboration", goal?.label ? `Goal: ${goal.label}` : undefined);
         }
       }
     }

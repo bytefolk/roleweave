@@ -438,6 +438,6 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(screen.getByText("协同跨链:")).toBeInTheDocument();
     const card = screen.getByLabelText("员工概览");
     expect(within(card).getByText("知识协同链路")).toBeInTheDocument();
-    expect(within(card).getByRole("button", { name: /任务协同/ })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: /Task Collaboration/ })).toBeInTheDocument();
   });
 });
