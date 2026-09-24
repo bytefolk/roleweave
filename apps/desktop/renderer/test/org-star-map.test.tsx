@@ -172,6 +172,13 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(() => fireEvent.click(resetCamBtn)).not.toThrow();
   });
 
+  it("顶栏控制组使用当前语言的可访问名称", () => {
+    render(<OrgStarMap snapshot={snapshot} />);
+
+    expect(screen.getByRole("group", { name: "3D 布局模式" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "功能开关" })).toBeInTheDocument();
+  });
+
   it("底部素雅微雕图谱展示节点统计与图例", () => {
     render(
       <OrgStarMap

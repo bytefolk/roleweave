@@ -1238,7 +1238,7 @@ export default function OrgStarMap({
         {/* Header Dock Controls */}
         <div className="owb-star-map__controls">
           {/* Layout Mode Switcher */}
-          <div className="owb-star-map__control-group" role="group" aria-label="3D Layout Modes">
+          <div className="owb-star-map__control-group" role="group" aria-label={t("star.layoutModes")}>
             <button
               type="button"
               className={`owb-star-map__toggle-btn${layoutMode === "celestial" ? " is-active" : ""}`}
@@ -1268,7 +1268,7 @@ export default function OrgStarMap({
           </div>
 
           {/* Feature Toggles */}
-          <div className="owb-star-map__control-group" role="group" aria-label="Feature Toggles">
+          <div className="owb-star-map__control-group" role="group" aria-label={t("star.featureToggles")}>
             <button
               type="button"
               className={`owb-star-map__toggle-btn${showOrbits ? " is-active" : ""}`}

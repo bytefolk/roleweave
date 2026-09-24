@@ -579,6 +579,8 @@ export const enCatalog: Record<string, string> = {
   "star.resetCamera": "Reset Camera",
   "star.layoutCelestial": "Celestial Orbits",
   "star.layoutNetwork": "3D Topology Network",
+  "star.layoutModes": "3D layout modes",
+  "star.featureToggles": "Feature toggles",
   "star.toggleOrbits": "Orbit Rings",
   "star.toggleCrossLinks": "Knowledge Links",
   "star.toggleAutoRotate": "Auto Cruise",

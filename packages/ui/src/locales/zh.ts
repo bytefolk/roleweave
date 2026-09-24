@@ -582,6 +582,8 @@ export const zhCatalog: Record<string, string> = {
   "star.resetCamera": "视角复位",
   "star.layoutCelestial": "立体轨道星图",
   "star.layoutNetwork": "3D 拓扑星网",
+  "star.layoutModes": "3D 布局模式",
+  "star.featureToggles": "功能开关",
   "star.toggleOrbits": "轨道参考线",
   "star.toggleCrossLinks": "知识协同链",
   "star.toggleAutoRotate": "自转巡航",
