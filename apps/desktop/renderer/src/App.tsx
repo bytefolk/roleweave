@@ -2399,7 +2399,10 @@ function AppInner({
             engine={selectedId === null ? defaultTurnEngine : engineForPosition(selectedId)}
             engineLocked={selectedId !== null && lockedAgentPositions[selectedId] === true}
             engineAvailability={engineAvailability}
-            positionEngines={positionEngines}
+            readyHostFacts={positions.map((position) => {
+              const host = engineForPosition(position.id);
+              return { positionId: position.id, engine: host, ready: engineAvailability[host]?.ready === true };
+            })}
             onSelectPosition={openConversation}
             turns={displayTurns}
             busy={turnBusy}
