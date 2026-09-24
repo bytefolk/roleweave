@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Checkbox, Input, Spin, Tag } from "antd";
 import { ExternalLink, Link2, RefreshCw, Save, Unplug } from "lucide-react";
 import { useT } from "@roleweave/ui";
@@ -31,26 +31,36 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
   const [notice, setNotice] = useState<{ type: "error" | "success"; key: string } | null>(null);
   const [probe, setProbe] = useState<ServiceProbe | null>(null);
   const [release, setRelease] = useState<ServiceRelease | null>(null);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const busyRef = useRef(false);
+  const savedApiUrl = connection.apiUrl ?? "";
+  const savedWebUrl = connection.webUrl ?? "";
+  const savedWorkspaceId = connection.workspaceId ?? "";
+  const savedTokenConfigured = connection.tokenConfigured;
 
   useEffect(() => {
-    setApiUrl(connection.apiUrl ?? "");
-    setWebUrl(connection.webUrl ?? "");
-    setWorkspaceId(connection.workspaceId ?? "");
+    setApiUrl(savedApiUrl);
+    setWebUrl(savedWebUrl);
+    setWorkspaceId(savedWorkspaceId);
     setToken(""); setClearToken(false);
-  }, [connection]);
+  }, [savedApiUrl, savedWebUrl, savedWorkspaceId, savedTokenConfigured]);
 
   async function run(action: string, operation: () => Promise<void>) {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(action); setNotice(null);
     try { await operation(); }
     catch { setNotice({ type: "error", key: "services.failed" }); }
-    finally { setBusy(null); }
+    finally { busyRef.current = false; setBusy(null); }
   }
   async function save() {
+    const nextToken = tokenRef.current;
     let response;
     try {
       response = await window.owb.services.configure({ kind, apiUrl: apiUrl.trim(), webUrl: webUrl.trim(),
         ...(kind === "mem" ? { workspaceId: workspaceId.trim() } : {}),
-        ...(clearToken ? { token: "" } : token ? { token } : {}),
+        ...(clearToken ? { token: "" } : nextToken ? { token: nextToken } : {}),
       });
     } catch { setNotice({ type: "error", key: "services.failed" }); return; }
     if (response.status !== 200) { setNotice({ type: "error", key: serviceErrorKey(response.body) }); return; }

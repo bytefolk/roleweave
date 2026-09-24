@@ -37,6 +37,7 @@ function installBridge(
     addGroupMember?: () => Promise<{ status: number; body: unknown }>;
     createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
     decideGroupRelayStop?: () => Promise<{ status: number; body: unknown }>;
+    omitSseStatus?: boolean;
   } = {},
 ): OwbBridge {
   const bridge = {
@@ -55,7 +56,7 @@ function installBridge(
     ...(options.createGroupTurn ? { createGroupTurn: vi.fn(options.createGroupTurn) } : {}),
     decideGroupRelayStop: vi.fn(options.decideGroupRelayStop ?? (async () => ({ status: 200, body: {} }))),
     onEvent: vi.fn().mockReturnValue(() => {}),
-    onSseStatus: vi.fn().mockReturnValue(() => {}),
+    ...(options.omitSseStatus ? {} : { onSseStatus: vi.fn().mockReturnValue(() => {}) }),
   };
   window.owb = bridge as unknown as OwbBridge;
   return window.owb;
@@ -71,6 +72,7 @@ function renderPanel(
     addGroupMember?: () => Promise<{ status: number; body: unknown }>;
     createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
     decideGroupRelayStop?: () => Promise<{ status: number; body: unknown }>;
+    omitSseStatus?: boolean;
     engineForPosition?: (positionId: string) => TurnEngine;
     engineAvailability?: Partial<Record<TurnEngine, TurnEngineAvailability>>;
     onReconcileTimeline?: (timeline: GroupTimeline) => void;
@@ -83,6 +85,7 @@ function renderPanel(
     addGroupMember: extra.addGroupMember,
     createGroupTurn: extra.createGroupTurn,
     decideGroupRelayStop: extra.decideGroupRelayStop,
+    omitSseStatus: extra.omitSseStatus,
   });
   return {
     bridge,
@@ -645,6 +648,20 @@ it("continues a pending relay when SSE reconnects (#469)", async () => {
     messageId: "message-1",
     decision: "continue",
   }));
+});
+
+it("keeps the group panel usable when the shell omits onSseStatus (#469)", async () => {
+  const decideGroupRelayStop = vi.fn().mockResolvedValue({ status: 200, body: {} });
+  const { bridge, unmount } = renderPanel({ decideGroupRelayStop, omitSseStatus: true });
+  await screen.findByRole("combobox", { name: "选择要 @ 的成员" });
+  emitBridgeEvent(bridge, relayStopSuggestion);
+  await screen.findByRole("status", { name: "接力停止建议" });
+  unmount();
+  expect(decideGroupRelayStop).toHaveBeenCalledWith({
+    conversationRef: group.conversationRef,
+    messageId: "message-1",
+    decision: "continue",
+  });
 });
 
 it("continues a pending relay before the group panel unmounts (#469)", async () => {

@@ -397,12 +397,14 @@ export function GroupsPanel({
       if (typeof payload?.groupRef !== "string" || typeof payload.messageId !== "string") return;
       remove(payload.groupRef, payload.messageId);
     });
-    const offStatus = window.owb.onSseStatus((state) => {
+    // Older packaged shells and existing renderer fixtures may omit this hook.
+    // Fail open on unmount regardless; only subscribe when the bridge provides it.
+    const offStatus = window.owb.onSseStatus?.((state) => {
       if (state === "connecting") continueAll();
     });
     return () => {
       offEvent();
-      offStatus();
+      offStatus?.();
       continueAll(false);
     };
   }, []);
