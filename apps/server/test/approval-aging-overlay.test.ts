@@ -10,6 +10,7 @@ import {
   attachApprovalAgingOverlay,
   mapAdviceChoiceToAging,
   presentAgingQueue,
+  rankApprovalViews,
   resolveApprovalAgingOverlay,
 } from "../src/approvals/aging-overlay.js";
 
@@ -51,6 +52,20 @@ test("overlay cannot hide pending high items from the rule-risk layer", () => {
   assert.notEqual(highIndex, -1, "pending high must remain visible when overlay says wait");
   assert.equal(ranked[highIndex]?.risk, "high");
   assert.ok(highIndex < mediumIndex, "pending high stays in the high rule-risk layer above medium");
+});
+
+test("flag-off ranking preserves original order and never crosses the high risk layer", () => {
+  const mediumFirst = { id: "medium-pending", createdAt, now, decision: { kind: "pending" as const }, risk: "medium" as const };
+  const highSecond = { id: "high-pending", createdAt, now, decision: { kind: "pending" as const }, risk: "high" as const };
+  const unchanged = presentAgingQueue([mediumFirst, highSecond], {});
+  assert.deepEqual(unchanged.map((row) => row.id), ["medium-pending", "high-pending"]);
+
+  const ranked = rankApprovalViews([
+    { id: "medium-pending", createdAt, status: "pending", context: { risk: "medium", agingOverlay: "nudge" } },
+    { id: "high-pending", createdAt, status: "pending", context: { risk: "high", agingOverlay: "wait" } },
+  ], now);
+  assert.deepEqual(ranked.map((row) => row.id), ["high-pending", "medium-pending"]);
+  assert.equal(ranked[0]?.context?.risk, "high");
 });
 
 test("aging clock is deterministic against createdAt and does not invent expiry", () => {

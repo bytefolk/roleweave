@@ -34,18 +34,47 @@ export function agingAgeMs(createdAt: string, now: number): number | undefined {
   return Math.max(0, now - created);
 }
 
-/** Overlay may reorder inside a rule-risk layer. It must not drop pending high. */
+/** Overlay may reorder inside a rule-risk layer. It must not drop pending high.
+ * With no overlay, the original order is preserved so flag-off lists stay byte-stable. */
 export function presentAgingQueue<T extends AgingQueueRow>(
   items: readonly T[],
   overlays: Readonly<Record<string, AgingSuggestion | undefined>>,
 ): T[] {
-  return [...items].sort((a, b) => {
-    const layer = ruleRiskLayer(a.risk) - ruleRiskLayer(b.risk);
-    if (layer !== 0) return layer;
-    const aAttention = overlays[a.id]?.needsAttention === true ? 0 : 1;
-    const bAttention = overlays[b.id]?.needsAttention === true ? 0 : 1;
-    return aAttention - bAttention;
+  const hasOverlay = items.some((item) => overlays[item.id] !== undefined);
+  if (!hasOverlay) return [...items];
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const layer = ruleRiskLayer(a.item.risk) - ruleRiskLayer(b.item.risk);
+      if (layer !== 0) return layer;
+      const aAttention = overlays[a.item.id]?.needsAttention === true ? 0 : 1;
+      const bAttention = overlays[b.item.id]?.needsAttention === true ? 0 : 1;
+      if (aAttention !== bAttention) return aAttention - bAttention;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.item);
+}
+
+export function rankApprovalViews<T extends {
+  id: string;
+  createdAt: string;
+  status: string;
+  context?: { risk?: ApprovalRiskLevel; agingOverlay?: AgingChoice };
+}>(views: readonly T[], now: number): T[] {
+  const overlays: Record<string, AgingSuggestion | undefined> = {};
+  const rows = views.map((view) => {
+    const choice = view.context?.agingOverlay;
+    if (choice) overlays[view.id] = { choice, needsAttention: agingNeedsAttention(choice) };
+    return {
+      id: view.id,
+      createdAt: view.createdAt,
+      now,
+      decision: { kind: view.status },
+      risk: (view.context?.risk === "high" ? "high" : "medium") as ApprovalRiskLevel,
+      view,
+    };
   });
+  return presentAgingQueue(rows, overlays).map((row) => row.view);
 }
 
 /** Kind-and-clock payload. Description, target, and turn bodies are forbidden. */
