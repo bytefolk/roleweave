@@ -147,6 +147,7 @@ export function TurnPanel({
   focusTurnId,
   inFlightPositionIds = [],
   onJoinExistingTurn,
+  onSelectPosition,
 }: TurnPanelProps) {
   const t = useT();
   const experiments = useWorkspaceExperiments({ workspacePath: workspaceKey || undefined });
