@@ -2171,6 +2171,9 @@ function AppInner({
             liveRuns={turnStream.runs}
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
+            inFlightPositionIds={[...runningPositionIds]}
+            workspacePath={workspaceInfo?.path}
+            onJoinExistingTurn={openConversation}
           />
         ) : activeModule === "projects" ? (
           <ProjectManagementModule
@@ -2411,6 +2414,8 @@ function AppInner({
             decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
             focusTurnId={sessionFocusTurnId}
+            inFlightPositionIds={[...runningPositionIds]}
+            onJoinExistingTurn={openConversation}
           />}
         /></>}
       </div>

@@ -142,6 +142,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/tasks/store.js",
   "dist/src/turns/delta-forwarder.js",
   "dist/src/turns/envelope.js",
+  "dist/src/turns/in-flight-overlay.js",
   "dist/src/turns/progress.js",
   "dist/src/turns/running.js",
   "dist/src/turns/store.js",
