@@ -32,7 +32,7 @@ describe("consolidated reports", () => {
     expect(document.querySelector(".owb-budget-deck")).toBeNull();
     expect(within(screen.getByRole("navigation", { name: "上报数据流" })).getAllByRole("button")).toHaveLength(5);
   });
-  it("searches sanitized execution rows and opens a scoped timeline", () => {
+  it("searches sanitized execution rows and traces only the selected run", () => {
     render(<ReportsCenter reports={report} loading={false} positionNames={{ alice: "Alice" }} />);
     fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
     fireEvent.change(screen.getByPlaceholderText("搜索员工或 Agent"), { target: { value: "codex" } });
@@ -41,7 +41,13 @@ describe("consolidated reports", () => {
     fireEvent.click(screen.getByRole("button", { name: /查看时间线/ }));
     expect(screen.getByLabelText("执行时间线")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看全部员工" })).toBeInTheDocument();
-    expect(screen.getByText("共 4 条")).toBeInTheDocument();
+    expect(document.querySelector(".owb-timeline__count")).toHaveTextContent("3");
+
+    fireEvent.click(screen.getByRole("button", { name: "查看全部员工" }));
+    expect(document.querySelector(".owb-timeline__count")).toHaveTextContent("4");
+
+    fireEvent.click(screen.getByRole("button", { name: /时间线/ }));
+    expect(document.querySelector(".owb-timeline__count")).toHaveTextContent("4");
   });
   it("expands audit rows into concrete change details and traces escalations to the timeline", () => {
     const withAudit: ReportsResponse = { ...report, streams: { ...report.streams, audits: [audit] } };
@@ -49,6 +55,7 @@ describe("consolidated reports", () => {
     // 默认落在失败/升级：行内追溯按钮直接跳带范围的时间线。
     fireEvent.click(screen.getByRole("button", { name: "追溯这次执行" }));
     expect(screen.getByRole("button", { name: "查看全部员工" })).toBeInTheDocument();
+    expect(document.querySelector(".owb-timeline__count")).toHaveTextContent("3");
     // 组织审计：chips 只留非零组，展开后能看到"谁从哪调到哪"。
     fireEvent.click(screen.getByRole("button", { name: /组织审计/ }));
     expect(screen.getByText("调岗 1")).toBeInTheDocument();
@@ -58,7 +65,6 @@ describe("consolidated reports", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起变更明细" }));
     expect(screen.queryByText(/无上级 → Boss/)).toBeNull();
   });
-
   it("keeps audit chips and expanded move details localized in English", () => {
     const withAudit: ReportsResponse = { ...report, streams: { ...report.streams, audits: [audit] } };
     render(
@@ -73,6 +79,16 @@ describe("consolidated reports", () => {
     expect(screen.getByText(/No parent → Boss/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Hide change details" }));
     expect(screen.queryByText(/No parent → Boss/)).toBeNull();
+  });
+
+  it("falls back to the turn ID when an escalation has no evidence run ID", () => {
+    const [failed, ...remaining] = report.streams.evidence;
+    const { runId: _runId, ...failedWithoutRunId } = failed!;
+    const withoutRunId: ReportsResponse = { ...report, streams: { ...report.streams, evidence: [failedWithoutRunId, ...remaining] } };
+    render(<ReportsCenter reports={withoutRunId} loading={false} positionNames={{ alice: "Alice" }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "追溯这次执行" }));
+    expect(document.querySelector(".owb-timeline__count")).toHaveTextContent("3");
   });
   it("does not offer an empty expand panel when an audit has no substantive changes", () => {
     const emptyAudit = {
