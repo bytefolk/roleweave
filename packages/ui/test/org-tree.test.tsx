@@ -452,11 +452,18 @@ describe("OrgTree (#32 §1 insertion lines, invalid-drop rejection, ⌘ reorder)
     expect(screen.getByText("议题研究员").closest('[role="treeitem"]')?.querySelector(".ui-org-tree__count")).toBeNull();
     expect(screen.getByText("repo-owner").closest('[role="treeitem"]')?.querySelector(".ui-org-tree__count")?.textContent).toBe("3");
 
+    const scrolled: string[] = [];
+    HTMLElement.prototype.scrollIntoView = function scrollIntoView() {
+      scrolled.push(this.getAttribute("data-org-node-id") ?? "");
+    };
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索岗位" }), { target: { value: "议题" } });
     expect(screen.getByText("议题研究员")).toBeInTheDocument();
     expect(screen.getByText("repo-owner")).toBeInTheDocument();
     expect(screen.queryByText("release-engineer")).not.toBeInTheDocument();
     expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+    expect(screen.getByText("议题研究员").closest("[role='treeitem']")).toHaveClass("is-match");
+    expect(screen.getByText("repo-owner").closest("[role='treeitem']")).not.toHaveClass("is-match");
+    expect(scrolled).toContain("issue-researcher");
   });
 
   it("collapse-all hides children until expand-all restores them", () => {

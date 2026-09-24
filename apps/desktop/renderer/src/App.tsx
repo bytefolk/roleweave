@@ -34,7 +34,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
+import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, PencilLine, Plus, Settings, Sparkles, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -71,6 +71,7 @@ import { EditEmployeeDrawer } from "./org/EditEmployeeDrawer";
 import { HireDrawer } from "./org/HireDrawer";
 import { RelationshipGraph } from "./graph/RelationshipGraph";
 import { useRelationshipGraph } from "./graph/useRelationshipGraph";
+import { OrgStarMap } from "./org/OrgStarMap";
 import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
 import { useConfigurationBootstrap, useSendShortcut, useWorkspaceFocus, requestSettingsLeave, persistApplicationPreference, preferenceError } from "./configuration-preferences";
 import { createConversationMemory } from "./turns/conversation-memory";
@@ -278,15 +279,17 @@ function AppInner({
   const [startupStage, setStartupStage] = useState<"service" | "workspace" | "organization" | "ready">("service");
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const approvalState = useApprovals(workspaceInfo?.open ? workspaceInfo.path : undefined);
-  const [orgOverview, setOrgOverview] = useState(false);
+  const [orgView, setOrgView] = useState<"workbench" | "overview" | "star">("workbench");
   const [graphOpened, setGraphOpened] = useState(false);
-  const graph = useRelationshipGraph(workspaceInfo?.open ? workspaceInfo.path : undefined, activeModule === "org" && orgOverview);
-  useEffect(() => { setGraphOpened(false); setResourceRequest(null); }, [workspaceInfo?.path]);
+  const [starOpened, setStarOpened] = useState(false);
+  const orgOverview = orgView !== "workbench";
+  const graph = useRelationshipGraph(workspaceInfo?.open ? workspaceInfo.path : undefined, activeModule === "org" && orgView === "overview");
+  useEffect(() => { setGraphOpened(false); setStarOpened(false); setResourceRequest(null); }, [workspaceInfo?.path]);
   const [conversationFocused, setConversationFocused] = useWorkspaceFocus(workspaceInfo?.path ?? "");
   const sendShortcut = useSendShortcut();
   const conversationMemory = useRef(createConversationMemory());
   const workbenchButtonRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => setOrgOverview(false), [activeModule, workspaceInfo?.path, workspaceInfo?.open]);
+  useEffect(() => setOrgView("workbench"), [activeModule, workspaceInfo?.path, workspaceInfo?.open]);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
   const [managementTarget, setManagementTarget] = useState<string | null | undefined>(undefined);
   const [treeLoading, setTreeLoading] = useState(true);
@@ -1058,7 +1061,7 @@ function AppInner({
 
   /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
   const openConversation = useCallback((positionId: string) => {
-    setOrgOverview(false);
+    setOrgView("workbench");
     if (selectedIdRef.current === positionId) {
       void ensureActiveSession(positionId);
       return;
@@ -1351,7 +1354,7 @@ function AppInner({
     const workspacePath = workspacePathRef.current;
     if (!workspacePath) return;
     const key = JSON.stringify([workspacePath, source.positionId]);
-    setOrgOverview(false);
+    setOrgView("workbench");
     selectionVersion.current += 1;
     historyRequest.current += 1;
     selectedIdRef.current = source.positionId;
@@ -2198,15 +2201,17 @@ function AppInner({
           </section>
         ) : <>
           <nav className="owb-org-views" aria-label={t("tree.views")}>
-            <AntButton ref={workbenchButtonRef} size="small" type={orgOverview ? "default" : "primary"}
-              aria-pressed={!orgOverview} onClick={() => setOrgOverview(false)}>{t("tree.workbench")}</AntButton>
-            <AntButton size="small" type={orgOverview ? "primary" : "default"} icon={<Network size={14} aria-hidden="true" />}
-              aria-pressed={orgOverview} onClick={() => { setGraphOpened(true); setOrgOverview(true); }}>{t("tree.overview")}</AntButton>
+            <AntButton ref={workbenchButtonRef} size="small" type={orgView === "workbench" ? "primary" : "default"}
+              aria-pressed={orgView === "workbench"} onClick={() => setOrgView("workbench")}>{t("tree.workbench")}</AntButton>
+            <AntButton size="small" type={orgView === "overview" ? "primary" : "default"} icon={<Network size={14} aria-hidden="true" />}
+              aria-pressed={orgView === "overview"} onClick={() => { setGraphOpened(true); setOrgView("overview"); }}>{t("tree.overview")}</AntButton>
+            <AntButton size="small" type={orgView === "star" ? "primary" : "default"} icon={<Sparkles size={14} aria-hidden="true" />}
+              aria-pressed={orgView === "star"} onClick={() => { setStarOpened(true); setOrgView("star"); }}>{t("tree.starMap")}</AntButton>
           </nav>
-          {graphOpened ? <div hidden={!orgOverview} style={orgOverview ? { display: "contents" } : undefined}>
+          {graphOpened ? <div hidden={orgView !== "overview"} style={orgView === "overview" ? { display: "contents" } : undefined}>
             <RelationshipGraph
               workspaceKey={workspaceInfo.path ?? ""}
-              visible={orgOverview}
+              visible={orgView === "overview"}
               data={graph.data}
               loading={graph.loading}
               error={graph.error}
@@ -2218,6 +2223,21 @@ function AppInner({
                 setMemorySource("docs");
                 setActiveModule("docs");
               }}
+            />
+          </div> : null}
+          {starOpened ? <div hidden={orgView !== "star"} style={orgView === "star" ? { display: "contents" } : undefined}>
+            <OrgStarMap
+              snapshot={snapshot}
+              displayNames={positionNames}
+              avatarUrls={avatarUrls}
+              runningIds={runningPositionIds}
+              selectedId={selectedId}
+              onSelect={selectPosition}
+              onMove={(id, reportTo) => void movePosition(id, reportTo)}
+              onHireEntry={(parent) => setTreeHireParent(parent)}
+              onDismiss={(id) => void dismissPosition(id)}
+              onUndo={() => void undoLastAdjustment()}
+              moveDisabled={orgBusy}
             />
           </div> : null}
           <OrgWorkspaceSplit

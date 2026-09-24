@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-label="RoleWeave 3D celestial org map overview">
+  <defs>
+    <radialGradient id="space" cx="50%" cy="42%" r="70%">
+      <stop offset="0%" stop-color="#1a2a58"/>
+      <stop offset="55%" stop-color="#0b1228"/>
+      <stop offset="100%" stop-color="#070b18"/>
+    </radialGradient>
+    <radialGradient id="sun" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#fff4c8"/>
+      <stop offset="45%" stop-color="#ffcc66"/>
+      <stop offset="100%" stop-color="#c47a18"/>
+    </radialGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#space)"/>
+  <g fill="#d9e6ff">
+    <circle cx="80" cy="70" r="1.2"/><circle cx="180" cy="120" r="1"/><circle cx="260" cy="40" r="1.4"/>
+    <circle cx="980" cy="80" r="1.1"/><circle cx="1100" cy="160" r="1.3"/><circle cx="1180" cy="60" r="0.9"/>
+    <circle cx="90" cy="520" r="1"/><circle cx="220" cy="640" r="1.2"/><circle cx="1050" cy="600" r="1"/>
+    <circle cx="400" cy="90" r="0.8"/><circle cx="760" cy="50" r="1.1"/><circle cx="640" cy="680" r="1"/>
+  </g>
+  <ellipse cx="640" cy="340" rx="280" ry="108" fill="none" stroke="#8aa2d6" stroke-opacity="0.45" stroke-width="1.5"/>
+  <ellipse cx="860" cy="300" rx="92" ry="40" fill="none" stroke="#8aa2d6" stroke-opacity="0.4" stroke-width="1"/>
+  <line x1="640" y1="340" x2="860" y2="300" stroke="#6f86b8" stroke-opacity="0.45"/>
+  <line x1="640" y1="340" x2="430" y2="390" stroke="#6f86b8" stroke-opacity="0.45"/>
+  <line x1="640" y1="340" x2="720" y2="470" stroke="#6f86b8" stroke-opacity="0.45"/>
+  <circle cx="640" cy="340" r="46" fill="url(#sun)" filter="url(#glow)"/>
+  <text x="640" y="408" text-anchor="middle" fill="#f4f7ff" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15" font-weight="700">CEO · Lin Hao</text>
+  <circle cx="860" cy="300" r="24" fill="#7ea2ff"/>
+  <text x="860" y="338" text-anchor="middle" fill="#f4f7ff" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="600">Release Engineer</text>
+  <circle cx="910" cy="268" r="11" fill="#c5d0ea"/>
+  <text x="948" y="272" fill="#d5def0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11">Docs Writer</text>
+  <circle cx="430" cy="390" r="24" fill="#5d8dff"/>
+  <text x="430" y="428" text-anchor="middle" fill="#f4f7ff" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="600">Operations Lead</text>
+  <circle cx="720" cy="470" r="24" fill="#6f9bff"/>
+  <text x="720" y="508" text-anchor="middle" fill="#f4f7ff" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" font-weight="600">Researcher</text>
+  <g font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">
+    <rect x="36" y="24" width="318" height="32" rx="8" fill="#121a33" stroke="#3a4a73"/>
+    <text x="52" y="45" fill="#e8eefc">Workbench · Overview · 3D star map</text>
+    <rect x="24" y="656" width="420" height="40" rx="10" fill="#0b1224" stroke="#3a4a73"/>
+    <text x="40" y="681" fill="#e8eefc">Find a digital employee · Hire · Dismiss · Undo · Reset</text>
+  </g>
+</svg>

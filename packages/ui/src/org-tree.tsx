@@ -90,6 +90,8 @@ export interface OrgTreeNodeProps {
   dropZone?: "before" | "after" | "body";
   /** Invalid drop target (self/descendant of dragged node): greyed, no-drop. */
   dropDenied: boolean;
+  /** Row itself matches the directory search box. */
+  matched?: boolean;
   onDragStart: (event: DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
   onDragOver: (event: DragEvent<HTMLDivElement>) => void;
@@ -123,6 +125,7 @@ export const OrgTreeNode = memo(function OrgTreeNode({
   draggable,
   dropZone,
   dropDenied,
+  matched = false,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -154,6 +157,7 @@ export const OrgTreeNode = memo(function OrgTreeNode({
         draggable && "is-draggable",
         dropZone === "body" && "is-drop-target",
         dropDenied && "is-drop-denied",
+        matched && "is-match",
       )}
       style={{ "--d": depth } as CSSProperties}
       onClick={(event) => {
@@ -451,6 +455,12 @@ export function OrgTree({
 
   const normalizedQuery = query.trim().toLowerCase();
 
+  useEffect(() => {
+    if (!normalizedQuery) return;
+    const first = containerRef.current?.querySelector<HTMLElement>(".ui-org-tree__row.is-match");
+    first?.scrollIntoView({ block: "nearest" });
+  }, [normalizedQuery, snapshot]);
+
   const flatNodes = useMemo<FlatNode[]>(() => {
     const result: FlatNode[] = [];
     const pushNode = (node: OrgTreeNodeV1, depth: number): void => {
@@ -636,6 +646,7 @@ export function OrgTree({
           node={node}
           depth={depth}
           selected={selectedId === node.id}
+          matched={Boolean(normalizedQuery) && nodeMatchesQuery(node, normalizedQuery, displayNames)}
           linked={linkedIds.has(node.id)}
           isLast={isLast}
           expanded={isExpanded}
