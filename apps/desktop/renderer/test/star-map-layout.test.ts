@@ -121,4 +121,24 @@ describe("celestial layout (#472): deterministic orbital mapping of the reportin
     ];
     expect(matchStarQuery(ordered, "doc")).toEqual(["x", "doc-a"]);
   });
+
+  it("computes 3D topology network positions on a constellation sphere", () => {
+    const layout = buildCelestialLayout(snapshot);
+    const byId = new Map(layout.bodies.map((body) => [body.id, body]));
+    expect(byId.get("ceo")?.networkPosition).toEqual([0, 0, 0]);
+    const lead1 = byId.get("platform-lead")?.networkPosition;
+    const lead2 = byId.get("design-lead")?.networkPosition;
+    expect(lead1).toBeDefined();
+    expect(lead2).toBeDefined();
+    const distLead1 = Math.hypot(lead1![0], lead1![1], lead1![2]);
+    const distLead2 = Math.hypot(lead2![0], lead2![1], lead2![2]);
+    expect(distLead1).toBeCloseTo(26, 1);
+    expect(distLead2).toBeCloseTo(26, 1);
+    // Sub-member should be clustered near parent
+    const moon = byId.get("frontend")?.networkPosition;
+    expect(moon).toBeDefined();
+    const distToParent = Math.hypot(moon![0] - lead1![0], moon![1] - lead1![1], moon![2] - lead1![2]);
+    expect(distToParent).toBeGreaterThan(0);
+    expect(distToParent).toBeLessThan(15);
+  });
 });

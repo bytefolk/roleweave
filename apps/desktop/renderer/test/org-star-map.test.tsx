@@ -125,4 +125,71 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     fireEvent.click(within(card).getByRole("button", { name: "关闭" }));
     expect(screen.queryByLabelText("员工概览")).not.toBeInTheDocument();
   });
+
+  it("素雅极简顶栏支持轨道星图与拓扑星网切换，特性开关与主题切换可用", () => {
+    render(
+      <OrgStarMap
+        snapshot={snapshot}
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+      />,
+    );
+
+    // 布局模式切换
+    const celestialBtn = screen.getByRole("button", { name: /立体轨道星图/ });
+    const networkBtn = screen.getByRole("button", { name: /3D 拓扑星网/ });
+    expect(celestialBtn).toHaveClass("is-active");
+    expect(networkBtn).not.toHaveClass("is-active");
+
+    fireEvent.click(networkBtn);
+    expect(networkBtn).toHaveClass("is-active");
+    expect(celestialBtn).not.toHaveClass("is-active");
+
+    // 特性开关
+    const orbitsBtn = screen.getByRole("button", { name: /轨道参考线/ });
+    const crossLinksBtn = screen.getByRole("button", { name: /知识协同链/ });
+    const autoRotateBtn = screen.getByRole("button", { name: /自转巡航/ });
+
+    expect(orbitsBtn).toHaveClass("is-active");
+    fireEvent.click(orbitsBtn);
+    expect(orbitsBtn).not.toHaveClass("is-active");
+
+    expect(crossLinksBtn).toHaveClass("is-active");
+    fireEvent.click(crossLinksBtn);
+    expect(crossLinksBtn).not.toHaveClass("is-active");
+
+    expect(autoRotateBtn).not.toHaveClass("is-active");
+    fireEvent.click(autoRotateBtn);
+    expect(autoRotateBtn).toHaveClass("is-active");
+
+    // 主题切换（黑夜极简 <-> 素雅白纸）
+    const themeBtn = screen.getByRole("button", { name: /素雅白纸|极简黑夜/ });
+    expect(themeBtn).toHaveTextContent("素雅白纸");
+    fireEvent.click(themeBtn);
+    expect(themeBtn).toHaveTextContent("极简黑夜");
+
+    // 视角复位按钮
+    const resetCamBtn = screen.getByRole("button", { name: /视角复位/ });
+    expect(() => fireEvent.click(resetCamBtn)).not.toThrow();
+  });
+
+  it("底部素雅微雕图谱展示节点统计与图例", () => {
+    render(
+      <OrgStarMap
+        snapshot={snapshot}
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+      />,
+    );
+
+    // 统计指标
+    expect(screen.getByText("组织节点:")).toBeInTheDocument();
+    expect(screen.getByText("层级深度:")).toBeInTheDocument();
+    expect(screen.getByText("层级汇报:")).toBeInTheDocument();
+
+    // 素雅图例
+    expect(screen.getByText(/组织决策根/)).toBeInTheDocument();
+    expect(screen.getByText(/项目负责人/)).toBeInTheDocument();
+    expect(screen.getByText(/专职职能岗/)).toBeInTheDocument();
+    expect(screen.getByText("管理汇报")).toBeInTheDocument();
+    expect(screen.getByText("知识依赖")).toBeInTheDocument();
+  });
 });

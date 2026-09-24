@@ -1,37 +1,26 @@
 /**
- * 3D celestial star map of the reporting tree (#472).
+ * 3D Org Star Map & Knowledge Graph (Minimalist Monochrome Edition).
+ * Refactored according to org-star-map-minimalist.html (#482).
  *
- * The org becomes a solar system: the enterprise owner is a glowing star,
- * direct reports are planets on the base orbit ring, deeper levels are moons
- * on smaller rings around their own parent, and the whole thing floats in a
- * procedural starfield instead of a flat black canvas. Hierarchy stays
- * legible by construction — deterministic orbital layout (see
- * ./star-map-layout), orbit rings per parent, and DOM-text labels rendered
- * through CSS2DRenderer so names stay pixel-crisp at every zoom level
- * (canvas-baked sprites smear; this view forbids that).
- *
- * Interactions: left-drag orbits the camera, wheel zooms, right-drag pans;
- * clicking a body selects the position (same channel as the directory tree);
- * dragging a body onto another body proposes a reporting-line move through
- * the existing change-manifest channel, with the cycle guard refusing
- * self/descendant drops visibly. The dock offers locate-by-name/id with a
- * camera fly-to, hire-under-selection, caller-owned dismiss and undo — no new
- * mutation path is invented here.
- *
- * three.js is imported by this module only; App lazy-loads it, so the default
- * renderer bundle never pays for WebGL. Environments without a WebGL context
- * (jsdom tests, blocked GPUs) degrade to an accessible list of the same
- * bodies plus the same dock, never a blank panel.
+ * Visual principles:
+ * - Minimalist monochrome visual design: clean black/white canvas (#09090b / #f8f9fa)
+ *   with subtle spatial floor grid, zero bloom/glare light pollution.
+ * - Solid sphere meshes with outer geometric precision rings for root & leads,
+ *   crisp wireframe reticle for selection and hover states.
+ * - Dual 3D layout modes:
+ *   1. Celestial Orbit: Deterministic solar system hierarchy.
+ *   2. 3D Constellation Topology: Fibonacci spherical layout with smooth lerp transitions.
+ * - Hairline orbit reference rings (toggleable).
+ * - Reporting hierarchy tree lines and knowledge dependency cross-links with active focus dimming.
+ * - Full backward compatibility: drag-and-drop reparenting (cycle guard), hire-under,
+ *   dismiss slot, undo, search locate fly-to, and accessible WebGL-less fallback.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Spin } from "antd";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
-import { hueForId, useT } from "@roleweave/ui";
+import { useT } from "@roleweave/ui";
 import type { OrgTreeSnapshot } from "@roleweave/shared";
 import {
   buildCelestialLayout,
@@ -43,6 +32,13 @@ import {
 } from "./star-map-layout";
 import "./OrgStarMap.css";
 
+export interface OrgKnowledgeLink {
+  source: string;
+  target: string;
+  label?: string;
+  desc?: string;
+}
+
 export interface OrgStarMapProps {
   snapshot: OrgTreeSnapshot | null;
   loading?: boolean;
@@ -50,47 +46,62 @@ export interface OrgStarMapProps {
   enterpriseName?: string;
   displayNames?: Record<string, string>;
   avatarColors?: Record<string, string>;
-  /** Render-ready avatar sources: bodies become portrait medallions fused
-   *  into the space scene; positions without one stay colored planets. */
   avatarUrls?: Record<string, string>;
   displayTitles?: Record<string, string>;
   displayModes?: Record<string, "read_only" | "approval_required">;
-  /** Position ids with a turn in flight: the halo pulses AI purple. */
   runningIds?: ReadonlySet<string>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
-  /** Reporting-line move proposal; the caller owns validation/apply. */
   onMove?: (id: string, reportTo: string | null) => void;
   onHireEntry?: (parentId: string) => void;
   onUndo?: () => void;
   moveDisabled?: boolean;
-  /** Caller-owned dismiss trigger (confirm dialog) for the selected position. */
   dismissSlot?: ReactNode;
+  knowledgeLinks?: OrgKnowledgeLink[];
   className?: string;
 }
 
 interface BodyView {
   body: CelestialBody;
-  mesh: THREE.Mesh;
-  halo: THREE.Sprite;
-  haloMaterial: THREE.SpriteMaterial;
-  material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
-  medallion: THREE.Sprite | null;
+  group: THREE.Group;
+  coreMesh: THREE.Mesh;
+  ringMesh: THREE.Mesh | null;
+  reticleMesh: THREE.Mesh;
   label: HTMLDivElement;
-  baseColor: THREE.Color;
-  baseOpacity: number;
+  currentPos: THREE.Vector3;
+  targetPos: THREE.Vector3;
+}
+
+interface LinkView {
+  source: string;
+  target: string;
+  line: THREE.Line;
+  material: THREE.LineBasicMaterial;
+}
+
+interface CrossLinkView {
+  source: string;
+  target: string;
+  label?: string;
+  desc?: string;
+  line: THREE.Line;
+  material: THREE.LineDashedMaterial;
 }
 
 interface SceneState {
   renderer: THREE.WebGLRenderer;
-  composer: EffectComposer;
-  bloom: UnrealBloomPass;
   labelRenderer: CSS2DRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
-  world: THREE.Group;
+  grid: THREE.GridHelper;
+  orbitsGroup: THREE.Group;
+  treeLinesGroup: THREE.Group;
+  crossLinksGroup: THREE.Group;
+  nodesGroup: THREE.Group;
   views: Map<string, BodyView>;
+  links: LinkView[];
+  crossLinks: CrossLinkView[];
   raycaster: THREE.Raycaster;
   clock: THREE.Clock;
   frame: number;
@@ -100,63 +111,16 @@ interface SceneState {
     fromCam: THREE.Vector3;
     toCam: THREE.Vector3;
     start: number;
+    duration: number;
   } | null;
   drag: { id: string; x: number; y: number; moved: boolean } | null;
   dropCandidate: string | null;
   disposed: boolean;
-  sky: THREE.Group;
 }
 
-const DEFAULT_CAM: readonly [number, number, number] = [0, 26, 64];
+const DEFAULT_CAM: readonly [number, number, number] = [0, 36, 68];
 const DRAG_THRESHOLD = 4;
-const RUNNING_COLOR = "#722ed1";
 
-/** Circular portrait medallion texture: rim glow + clipped photo + ring, so
- *  employee avatars read as planets fused into the space scene (#472 R2). */
-function makeMedallionTexture(rim: THREE.Color): {
-  texture: THREE.CanvasTexture;
-  paint: (img?: HTMLImageElement) => void;
-} {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext("2d");
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const rimStyle = `#${rim.getHexString()}`;
-  const paint = (img?: HTMLImageElement): void => {
-    if (!ctx) return;
-    ctx.clearRect(0, 0, 256, 256);
-    const glow = ctx.createRadialGradient(128, 128, 90, 128, 128, 128);
-    glow.addColorStop(0, `${rimStyle}99`);
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, 256, 256);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(128, 128, 92, 0, Math.PI * 2);
-    ctx.clip();
-    if (img && img.width > 0 && img.height > 0) {
-      const side = Math.min(img.width, img.height);
-      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 36, 36, 184, 184);
-    } else {
-      ctx.fillStyle = rimStyle;
-      ctx.fillRect(36, 36, 184, 184);
-    }
-    ctx.restore();
-    ctx.beginPath();
-    ctx.arc(128, 128, 92, 0, Math.PI * 2);
-    ctx.strokeStyle = rimStyle;
-    ctx.lineWidth = 5;
-    ctx.stroke();
-    texture.needsUpdate = true;
-  };
-  paint();
-  return { texture, paint };
-}
-
-/** Honest budget line for the focus card: declaration phase says so instead
- *  of fabricating a number. */
 function budgetLabelText(budget: CelestialBody["budget"]): string | null {
   const perTask = budget?.perTask;
   if (!perTask) return null;
@@ -169,154 +133,12 @@ function budgetLabelText(budget: CelestialBody["budget"]): string | null {
   return null;
 }
 
-function makeGlowBeam(from: THREE.Vector3, to: THREE.Vector3, hex: number): THREE.Mesh {
-  const direction = to.clone().sub(from);
-  const length = Math.max(0.01, direction.length());
-  const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.045, 0.045, length, 10, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: hex,
-      transparent: true,
-      opacity: 0.92,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  mesh.position.copy(from).add(direction.clone().multiplyScalar(0.5));
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
-  return mesh;
-}
-
-function paintSkyCanvas(): HTMLCanvasElement {
-  const width = 1024;
-  const height = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return canvas;
-  ctx.fillStyle = "#02040c";
-  ctx.fillRect(0, 0, width, height);
-  ctx.save();
-  ctx.translate(width / 2, height / 2);
-  ctx.rotate(-0.38);
-  const milky = ctx.createLinearGradient(0, -36, 0, 36);
-  milky.addColorStop(0, "rgba(70,120,255,0)");
-  milky.addColorStop(0.35, "rgba(90,150,255,0.16)");
-  milky.addColorStop(0.5, "rgba(200,220,255,0.32)");
-  milky.addColorStop(0.65, "rgba(255,90,160,0.12)");
-  milky.addColorStop(1, "rgba(70,120,255,0)");
-  ctx.fillStyle = milky;
-  ctx.fillRect(-width, -40, width * 2, 80);
-  ctx.restore();
-  for (const [color, x, y, r, a] of [
-    ["70, 90, 255", 220, 180, 220, 0.22],
-    ["0, 180, 255", 760, 300, 260, 0.18],
-    ["255, 40, 120", 520, 90, 180, 0.1],
-    ["120, 40, 255", 880, 120, 160, 0.12],
-  ] as const) {
-    const g = ctx.createRadialGradient(x, y, 8, x, y, r);
-    g.addColorStop(0, `rgba(${color},${a})`);
-    g.addColorStop(1, `rgba(${color},0)`);
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  for (let i = 0; i < 2400; i += 1) {
-    const x = Math.random() * width;
-    const y = Math.random() * height;
-    const s = Math.random() * Math.random() * 1.6;
-    const c = Math.random();
-    ctx.fillStyle = c > 0.7 ? "rgba(160,190,255,0.9)" : c > 0.4 ? "rgba(255,255,255,0.85)" : "rgba(255,220,170,0.7)";
-    ctx.fillRect(x, y, s, s);
-  }
-  return canvas;
-}
-
-function makeSkyDome(): THREE.Mesh {
-  const texture = new THREE.CanvasTexture(paintSkyCanvas());
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(900, 48, 32),
-    new THREE.MeshBasicMaterial({
-      map: texture,
-      side: THREE.BackSide,
-      depthWrite: false,
-    }),
-  );
-  return mesh;
-}
-
-function makeStarLayer(count: number, radiusMin: number, radiusMax: number, size: number): THREE.Points {
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  const palette = [new THREE.Color("#ffffff"), new THREE.Color("#9db4ff"), new THREE.Color("#ffd9a0"), new THREE.Color("#7cf0ff")];
-  for (let i = 0; i < count; i += 1) {
-    const radius = radiusMin + Math.random() * (radiusMax - radiusMin);
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = radius * Math.cos(phi);
-    positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-    const tint = palette[Math.floor(Math.random() * palette.length)] ?? palette[0]!;
-    const dim = 0.35 + Math.random() * 0.65;
-    colors[i * 3] = tint.r * dim;
-    colors[i * 3 + 1] = tint.g * dim;
-    colors[i * 3 + 2] = tint.b * dim;
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  return new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({
-      size,
-      sizeAttenuation: true,
-      vertexColors: true,
-      transparent: true,
-      opacity: 1,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
-}
-
-function glowTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gradient.addColorStop(0, "rgba(255,255,255,1)");
-    gradient.addColorStop(0.35, "rgba(255,255,255,0.55)");
-    gradient.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 128, 128);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function colorFor(id: string, avatarColors?: Record<string, string>): THREE.Color {
-  const declared = avatarColors?.[id];
-  if (typeof declared === "string" && declared.trim()) {
-    const parsed = new THREE.Color(declared);
-    if (!Number.isNaN(parsed.r) || !Number.isNaN(parsed.g) || !Number.isNaN(parsed.b)) return parsed;
-  }
-  return new THREE.Color(`hsl(${hueForId(id)}, 82%, 58%)`);
-}
-
 export default function OrgStarMap({
   snapshot,
   loading = false,
   enterpriseName,
   displayNames,
-  avatarColors,
+  avatarColors: _avatarColors,
   avatarUrls,
   displayTitles,
   displayModes,
@@ -328,28 +150,67 @@ export default function OrgStarMap({
   onUndo,
   moveDisabled = false,
   dismissSlot,
+  knowledgeLinks,
   className,
 }: OrgStarMapProps) {
   const t = useT();
   const stageRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<SceneState | null>(null);
   const layoutRef = useRef<CelestialLayout>({ bodies: [], orbits: [], starId: "", maxDepth: 0 });
+
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [layoutMode, setLayoutMode] = useState<"celestial" | "network">("celestial");
+  const [showOrbits, setShowOrbits] = useState(true);
+  const [showCrossLinks, setShowCrossLinks] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(false);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
   const [webglFailed, setWebglFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
-  /** The focus card hides itself on 拉远/关闭 until the selection changes. */
   const [cardDismissed, setCardDismissed] = useState(false);
+
   const reducedMotion =
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const latest = useRef({ onSelect, onMove, moveDisabled, selectedId, runningIds, query, reducedMotion, t });
-  latest.current = { onSelect, onMove, moveDisabled, selectedId, runningIds, query, reducedMotion, t };
+  const latest = useRef({
+    onSelect,
+    onMove,
+    moveDisabled,
+    selectedId,
+    hoveredId,
+    runningIds,
+    query,
+    reducedMotion,
+    t,
+    theme,
+    layoutMode,
+    showOrbits,
+    showCrossLinks,
+    autoRotate,
+  });
+  latest.current = {
+    onSelect,
+    onMove,
+    moveDisabled,
+    selectedId,
+    hoveredId,
+    runningIds,
+    query,
+    reducedMotion,
+    t,
+    theme,
+    layoutMode,
+    showOrbits,
+    showCrossLinks,
+    autoRotate,
+  };
 
   useEffect(() => {
     if (toast === null) return;
-    const timer = setTimeout(() => setToast(null), 2200);
+    const timer = setTimeout(() => setToast(null), 2400);
     return () => clearTimeout(timer);
   }, [toast]);
 
@@ -372,8 +233,6 @@ export default function OrgStarMap({
   const entries = useMemo(
     () =>
       layout.bodies
-        // The synthetic enterprise star is scenery, not an employee: it must
-        // never appear as a searchable/selectable position.
         .filter((body) => !body.virtual)
         .map((body) => ({ id: body.id, name: nameOf(body) })),
     [layout, nameOf],
@@ -385,118 +244,75 @@ export default function OrgStarMap({
     const host = stageRef.current;
     if (!host) return;
     let state: SceneState;
+
     try {
-      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      const width = host.clientWidth || 640;
+      const height = host.clientHeight || 420;
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      renderer.setSize(host.clientWidth || 640, host.clientHeight || 420);
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.15;
+      renderer.setSize(width, height);
+      renderer.setClearColor(theme === "dark" ? 0x09090b : 0xf8f9fa, 1.0);
+
       const labelRenderer = new CSS2DRenderer();
-      labelRenderer.setSize(host.clientWidth || 640, host.clientHeight || 420);
+      labelRenderer.setSize(width, height);
       labelRenderer.domElement.style.position = "absolute";
       labelRenderer.domElement.style.top = "0";
       labelRenderer.domElement.style.left = "0";
       labelRenderer.domElement.style.pointerEvents = "none";
+
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color("#02040a");
-      scene.fog = new THREE.FogExp2(0x02040a, 0.0016);
-      const camera = new THREE.PerspectiveCamera(
-        55,
-        (host.clientWidth || 640) / (host.clientHeight || 420),
-        0.1,
-        4000,
-      );
+
+      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
       camera.position.set(...DEFAULT_CAM);
+
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
-      controls.minDistance = 8;
-      controls.maxDistance = 320;
-      const glow = glowTexture();
+      controls.minDistance = 10;
+      controls.maxDistance = 240;
+      controls.autoRotate = autoRotate;
+      controls.autoRotateSpeed = 0.8;
+      controls.target.set(0, 0, 0);
 
-      const sky = new THREE.Group();
-      sky.add(makeSkyDome());
-      const farStars = makeStarLayer(3200, 420, 820, 1.6);
-      const midStars = makeStarLayer(1800, 160, 380, 2.4);
-      const nearStars = makeStarLayer(420, 70, 150, 4.2);
-      farStars.userData.spin = 0.00012;
-      midStars.userData.spin = 0.00028;
-      nearStars.userData.spin = 0.0005;
-      sky.add(farStars, midStars, nearStars);
-      for (let i = 0; i < 28; i += 1) {
-        const radius = 95 + Math.random() * 70;
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const sprite = new THREE.Sprite(
-          new THREE.SpriteMaterial({
-            map: glow,
-            color: new THREE.Color(["#ffffff", "#9db4ff", "#ffd9a0"][i % 3]),
-            transparent: true,
-            opacity: 0.55,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        sprite.scale.setScalar(6 + Math.random() * 10);
-        sprite.position.set(
-          radius * Math.sin(phi) * Math.cos(theta),
-          radius * Math.cos(phi),
-          radius * Math.sin(phi) * Math.sin(theta),
-        );
-        sky.add(sprite);
-      }
-      for (const [color, scale, pos, opacity] of [
-        ["#3a1cff", 520, [-280, 160, -520], 0.34],
-        ["#0090ff", 460, [310, -170, -540], 0.28],
-        ["#ff2a7a", 360, [50, 240, -420], 0.16],
-      ] as const) {
-        const sprite = new THREE.Sprite(
-          new THREE.SpriteMaterial({
-            map: glow,
-            color: new THREE.Color(color),
-            transparent: true,
-            opacity,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        sprite.scale.setScalar(scale);
-        sprite.position.set(pos[0], pos[1], pos[2]);
-        sky.add(sprite);
-      }
-      scene.add(sky);
-
-      scene.add(new THREE.AmbientLight(0x1a2a55, 0.22));
-      const sunLight = new THREE.PointLight(0xfff1c2, 2800, 0, 2);
-      scene.add(sunLight);
-      const rim = new THREE.DirectionalLight(0x7ecbff, 0.55);
-      rim.position.set(60, 90, 40);
-      scene.add(rim);
-
-      const world = new THREE.Group();
-      scene.add(world);
-      const composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      const bloom = new UnrealBloomPass(
-        new THREE.Vector2(host.clientWidth || 640, host.clientHeight || 420),
-        reducedMotion ? 0.35 : 1.12,
-        0.62,
-        0.2,
+      // Subtle Spatial Floor Grid
+      const grid = new THREE.GridHelper(
+        120,
+        24,
+        theme === "dark" ? 0x1c1c24 : 0xe5e7eb,
+        theme === "dark" ? 0x14141a : 0xd1d5db,
       );
-      composer.addPass(bloom);
+      grid.position.y = -16;
+      scene.add(grid);
+
+      // World Groups
+      const orbitsGroup = new THREE.Group();
+      const treeLinesGroup = new THREE.Group();
+      const crossLinksGroup = new THREE.Group();
+      const nodesGroup = new THREE.Group();
+
+      scene.add(orbitsGroup);
+      scene.add(treeLinesGroup);
+      scene.add(crossLinksGroup);
+      scene.add(nodesGroup);
+
       host.appendChild(renderer.domElement);
       host.appendChild(labelRenderer.domElement);
 
       state = {
         renderer,
-        composer,
-        bloom,
         labelRenderer,
         scene,
         camera,
         controls,
-        world,
+        grid,
+        orbitsGroup,
+        treeLinesGroup,
+        crossLinksGroup,
+        nodesGroup,
         views: new Map(),
+        links: [],
+        crossLinks: [],
         raycaster: new THREE.Raycaster(),
         clock: new THREE.Clock(),
         frame: 0,
@@ -504,7 +320,6 @@ export default function OrgStarMap({
         drag: null,
         dropCandidate: null,
         disposed: false,
-        sky,
       };
       stateRef.current = state;
 
@@ -516,7 +331,7 @@ export default function OrgStarMap({
           -((clientY - rect.top) / rect.height) * 2 + 1,
         );
         state.raycaster.setFromCamera(pointer, camera);
-        const meshes = [...state.views.values()].map((view) => view.mesh);
+        const meshes = [...state.views.values()].map((v) => v.coreMesh);
         const hit = state.raycaster.intersectObjects(meshes, false)[0];
         if (!hit) return null;
         const id = hit.object.userData.positionId;
@@ -532,16 +347,19 @@ export default function OrgStarMap({
       const onPointerDown = (event: PointerEvent): void => {
         if (event.button !== 0) return;
         const id = pick(event.clientX, event.clientY);
-        // The synthetic star is a drop target (reportTo null) but never a
-        // drag source or a selection.
         if (!id || id === VIRTUAL_STAR_ID) return;
         state.drag = { id, x: event.clientX, y: event.clientY, moved: false };
         state.controls.enabled = false;
         renderer.domElement.setPointerCapture?.(event.pointerId);
       };
+
       const onPointerMove = (event: PointerEvent): void => {
         const drag = state.drag;
-        if (!drag) return;
+        if (!drag) {
+          const id = pick(event.clientX, event.clientY);
+          setHoveredId(id);
+          return;
+        }
         if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < DRAG_THRESHOLD) return;
         drag.moved = true;
         const target = pick(event.clientX, event.clientY);
@@ -550,18 +368,25 @@ export default function OrgStarMap({
         if (state.dropCandidate) {
           const view = state.views.get(state.dropCandidate);
           if (view) {
-            const invalid = isInvalidStarDrop(layoutRef.current, drag.id, state.dropCandidate)
-              || latest.current.moveDisabled;
+            const invalid =
+              isInvalidStarDrop(layoutRef.current, drag.id, state.dropCandidate) || latest.current.moveDisabled;
             view.label.classList.add(invalid ? "is-drop-bad" : "is-drop-ok");
           }
         }
       };
+
       const onPointerUp = (event: PointerEvent): void => {
         const drag = state.drag;
         state.drag = null;
         state.controls.enabled = true;
         renderer.domElement.releasePointerCapture?.(event.pointerId);
-        if (!drag) return;
+        if (!drag) {
+          const id = pick(event.clientX, event.clientY);
+          if (!id) {
+            latest.current.onSelect?.("");
+          }
+          return;
+        }
         const current = latest.current;
         if (!drag.moved) {
           if (drag.id !== VIRTUAL_STAR_ID) {
@@ -583,6 +408,7 @@ export default function OrgStarMap({
         }
         current.onMove(drag.id, target === VIRTUAL_STAR_ID ? null : target);
       };
+
       renderer.domElement.addEventListener("pointerdown", onPointerDown);
       renderer.domElement.addEventListener("pointermove", onPointerMove);
       renderer.domElement.addEventListener("pointerup", onPointerUp);
@@ -592,42 +418,52 @@ export default function OrgStarMap({
         if (state.disposed) return;
         state.frame = requestAnimationFrame(animate);
         const elapsed = state.clock.getElapsedTime();
+
+        // Smooth camera fly
         if (state.fly) {
-          const progress = Math.min((performance.now() - state.fly.start) / 620, 1);
+          const progress = Math.min((performance.now() - state.fly.start) / state.fly.duration, 1);
           const eased = 1 - Math.pow(1 - progress, 3);
           state.controls.target.lerpVectors(state.fly.fromTarget, state.fly.toTarget, eased);
           state.camera.position.lerpVectors(state.fly.fromCam, state.fly.toCam, eased);
           if (progress >= 1) state.fly = null;
         }
-        if (!latest.current.reducedMotion) {
-          state.sky.children.forEach((child) => {
-            const spin = child.userData.spin;
-            if (typeof spin === "number") child.rotation.y += spin;
-          });
-        }
+
+        // Billboarding & Smooth Node Position Interpolation
+        let moved = false;
         for (const view of state.views.values()) {
-          const running = latest.current.runningIds?.has(view.body.id) === true;
-          if (running && !latest.current.reducedMotion) {
-            const pulse = 1 + Math.sin(elapsed * 4.2) * 0.16;
-            view.halo.scale.setScalar(view.body.size * 8.4 * pulse);
-            view.haloMaterial.opacity = 0.78 + Math.sin(elapsed * 4.2) * 0.18;
+          view.reticleMesh.quaternion.copy(state.camera.quaternion);
+
+          if (view.currentPos.distanceTo(view.targetPos) > 0.005) {
+            view.currentPos.lerp(view.targetPos, 0.12);
+            view.group.position.copy(view.currentPos);
+            moved = true;
+          }
+
+          // Active running turn pulse
+          const isRunning = latest.current.runningIds?.has(view.body.id) === true;
+          if (isRunning && !latest.current.reducedMotion) {
+            const pulse = 1 + Math.sin(elapsed * 4.2) * 0.12;
+            view.coreMesh.scale.setScalar(pulse);
           }
         }
+
+        if (moved) {
+          updateLinePositions();
+        }
+
         state.controls.update();
-        state.composer.render();
+        state.renderer.render(state.scene, state.camera);
         state.labelRenderer.render(state.scene, state.camera);
       };
       animate();
 
       const observer = new ResizeObserver(() => {
-        const width = host.clientWidth;
-        const height = host.clientHeight;
-        if (width <= 0 || height <= 0) return;
-        renderer.setSize(width, height);
-        state.composer.setSize(width, height);
-        state.bloom.setSize(width, height);
-        labelRenderer.setSize(width, height);
-        camera.aspect = width / height;
+        const w = host.clientWidth;
+        const h = host.clientHeight;
+        if (w <= 0 || h <= 0) return;
+        renderer.setSize(w, h);
+        labelRenderer.setSize(w, h);
+        camera.aspect = w / h;
         camera.updateProjectionMatrix();
       });
       observer.observe(host);
@@ -643,223 +479,402 @@ export default function OrgStarMap({
         renderer.domElement.removeEventListener("pointercancel", onPointerUp);
         controls.dispose();
         for (const view of state.views.values()) view.label.remove();
-        state.world.traverse((object) => {
+        state.scene.traverse((object) => {
           const mesh = object as THREE.Mesh;
           if (mesh.geometry) mesh.geometry.dispose();
           const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
-          if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
-          else {
-            material?.dispose();
-            (material as THREE.SpriteMaterial | null)?.map?.dispose();
-          }
+          if (Array.isArray(material)) material.forEach((m) => m.dispose());
+          else material?.dispose();
         });
-        state.scene.traverse((object) => {
-          const sprite = object as THREE.Sprite;
-          sprite.material?.dispose?.();
-        });
-        state.composer.dispose();
         renderer.dispose();
         host.removeChild(renderer.domElement);
         host.removeChild(labelRenderer.domElement);
         stateRef.current = null;
       };
     } catch {
-      // No WebGL (jsdom tests, blocked GPUs): the dock + list fallback below
-      // keeps every operation reachable.
       setWebglFailed(true);
       return;
     }
-    // Re-runs only when the stage element (re)appears: the initial loading
-    // flip, workspace open/close, or a WebGL-failure fallback transition.
   }, [loading, isEmpty, webglFailed]);
+
+  /* ------------------------------------------------- rebuild orbits */
+  const rebuildOrbits = useCallback((): void => {
+    const state = stateRef.current;
+    if (!state) return;
+
+    while (state.orbitsGroup.children.length > 0) {
+      const child = state.orbitsGroup.children[0];
+      state.orbitsGroup.remove(child!);
+    }
+
+    if (latest.current.layoutMode !== "celestial" || !latest.current.showOrbits) return;
+
+    const ringColor = latest.current.theme === "dark" ? 0x22222a : 0xd1d5db;
+    const subRingColor = latest.current.theme === "dark" ? 0x181820 : 0xe5e7eb;
+
+    // Major Base Orbit around root
+    const baseCurve = new THREE.EllipseCurve(0, 0, 26, 26, 0, Math.PI * 2, false, 0);
+    const basePoints = baseCurve.getPoints(96).map((p) => new THREE.Vector3(p.x, 0, p.y));
+    const baseGeo = new THREE.BufferGeometry().setFromPoints(basePoints);
+    const baseMat = new THREE.LineBasicMaterial({ color: ringColor, transparent: true, opacity: 0.85 });
+    const baseLoop = new THREE.LineLoop(baseGeo, baseMat);
+    state.orbitsGroup.add(baseLoop);
+
+    // Sub-orbits for parents with children
+    for (const orbit of layout.orbits) {
+      const curve = new THREE.EllipseCurve(0, 0, orbit.radius, orbit.radius, 0, Math.PI * 2, false, 0);
+      const points = curve.getPoints(64).map((p) => new THREE.Vector3(p.x, 0, p.y));
+      const geo = new THREE.BufferGeometry().setFromPoints(points);
+      const mat = new THREE.LineBasicMaterial({ color: subRingColor, transparent: true, opacity: 0.65 });
+      const loop = new THREE.LineLoop(geo, mat);
+      loop.rotation.x = orbit.tilt;
+      loop.position.set(...orbit.center);
+      state.orbitsGroup.add(loop);
+    }
+  }, [layout]);
+
+  /* ------------------------------------------- update line positions */
+  const updateLinePositions = useCallback((): void => {
+    const state = stateRef.current;
+    if (!state) return;
+
+    for (const link of state.links) {
+      const src = state.views.get(link.source);
+      const tgt = state.views.get(link.target);
+      if (!src || !tgt) continue;
+      const posAttr = link.line.geometry.attributes.position as THREE.BufferAttribute;
+      posAttr.setXYZ(0, src.currentPos.x, src.currentPos.y, src.currentPos.z);
+      posAttr.setXYZ(1, tgt.currentPos.x, tgt.currentPos.y, tgt.currentPos.z);
+      posAttr.needsUpdate = true;
+    }
+
+    for (const cl of state.crossLinks) {
+      const src = state.views.get(cl.source);
+      const tgt = state.views.get(cl.target);
+      if (!src || !tgt) continue;
+      const posAttr = cl.line.geometry.attributes.position as THREE.BufferAttribute;
+      posAttr.setXYZ(0, src.currentPos.x, src.currentPos.y, src.currentPos.z);
+      posAttr.setXYZ(1, tgt.currentPos.x, tgt.currentPos.y, tgt.currentPos.z);
+      posAttr.needsUpdate = true;
+      cl.line.computeLineDistances();
+    }
+  }, []);
 
   /* ------------------------------------------------------- data → scene */
   useEffect(() => {
     const state = stateRef.current;
     if (!state || webglFailed) return;
-    // Rebuild the world group from the layout; dispose the previous bodies.
+
+    // Clear previous
     for (const view of state.views.values()) view.label.remove();
-    state.world.traverse((object) => {
-      const mesh = object as THREE.Mesh;
-      if (mesh.geometry) mesh.geometry.dispose();
-      const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
-      else {
-        material?.dispose();
-        (material as THREE.SpriteMaterial | null)?.map?.dispose();
-      }
-    });
-    state.world.clear();
+    state.nodesGroup.clear();
+    state.treeLinesGroup.clear();
+    state.crossLinksGroup.clear();
     state.views.clear();
-    const glow = glowTexture();
+    state.links = [];
+    state.crossLinks = [];
 
-    for (const orbit of layout.orbits) {
-      const curve = new THREE.EllipseCurve(0, 0, orbit.radius, orbit.radius, 0, Math.PI * 2, false, 0);
-      const points = curve.getPoints(96).map((point) => new THREE.Vector3(point.x, 0, point.y));
-      const ring = new THREE.LineLoop(
-        new THREE.BufferGeometry().setFromPoints(points),
-        new THREE.LineBasicMaterial({
-          color: 0x66d8ff,
-          transparent: true,
-          opacity: 0.55,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        }),
-      );
-      ring.rotation.x = orbit.tilt;
-      ring.position.set(orbit.center[0], orbit.center[1], orbit.center[2]);
-      state.world.add(ring);
-    }
+    const isDark = theme === "dark";
 
-    const byId = new Map(layout.bodies.map((body) => [body.id, body]));
-    for (const body of layout.bodies) {
-      if (body.parentId && byId.has(body.parentId)) {
-        const parent = byId.get(body.parentId)!;
-        const from = new THREE.Vector3(...parent.position);
-        const to = new THREE.Vector3(...body.position);
-        state.world.add(makeGlowBeam(from, to, body.kind === "planet" ? 0xd7f6ff : 0x7cf0ff));
-      }
-    }
+    // 1. Build Nodes
+    const nodeGeometries = {
+      root: new THREE.SphereGeometry(1.8, 24, 24),
+      lead: new THREE.SphereGeometry(1.1, 20, 20),
+      member: new THREE.SphereGeometry(0.62, 16, 16),
+    };
 
     for (const body of layout.bodies) {
-      const baseColor = body.kind === "star" ? new THREE.Color("#ff4d3a") : colorFor(body.id, avatarColors);
-      const geometry = new THREE.SphereGeometry(body.size, body.kind === "star" ? 48 : 32, body.kind === "star" ? 48 : 32);
-      const material = new THREE.MeshBasicMaterial({
-        color: baseColor.clone().multiplyScalar(body.kind === "star" ? 1.8 : 1.35),
-        transparent: true,
-        opacity: 1,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(...body.position);
-      mesh.userData.positionId = body.id;
-      const haloMaterial = new THREE.SpriteMaterial({
-        map: glow,
-        color: baseColor.clone(),
-        transparent: true,
-        opacity: body.kind === "star" ? 1 : 0.72,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      });
-      const halo = new THREE.Sprite(haloMaterial);
-      halo.scale.setScalar(body.size * (body.kind === "star" ? 16 : 7.2));
-      mesh.add(halo);
+      const group = new THREE.Group();
+      const pos = layoutMode === "celestial" ? body.position : body.networkPosition;
+      group.position.set(...pos);
+
+      // Core Solid Sphere
+      const color =
+        body.kind === "star"
+          ? (isDark ? 0xffffff : 0x000000)
+          : body.kind === "planet"
+            ? (isDark ? 0xe4e4e7 : 0x1f2937)
+            : (isDark ? 0xa1a1aa : 0x6b7280);
+
+      const material = new THREE.MeshBasicMaterial({ color });
+      const coreGeo =
+        body.kind === "star"
+          ? nodeGeometries.root
+          : body.kind === "planet"
+            ? nodeGeometries.lead
+            : nodeGeometries.member;
+
+      const coreMesh = new THREE.Mesh(coreGeo, material);
+      coreMesh.userData = { positionId: body.id };
+      group.add(coreMesh);
+
+      // Outer Geometric Precision Ring for Root and Leads
+      let ringMesh: THREE.Mesh | null = null;
       if (body.kind === "star") {
-        const flare = new THREE.Sprite(
-          new THREE.SpriteMaterial({
-            map: glow,
-            color: new THREE.Color("#ffd27a"),
-            transparent: true,
-            opacity: 0.7,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        flare.scale.setScalar(body.size * 22);
-        mesh.add(flare);
-        const core = new THREE.PointLight(0xff6a3c, 90, 80, 2);
-        mesh.add(core);
-      } else {
-        const lamp = new THREE.PointLight(baseColor, body.kind === "planet" ? 18 : 8, body.size * 18, 2);
-        mesh.add(lamp);
+        const ringGeo = new THREE.RingGeometry(2.4, 2.58, 48);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: isDark ? 0x52525b : 0xadb5bd,
+          side: THREE.DoubleSide,
+        });
+        ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.rotation.x = Math.PI / 2;
+        group.add(ringMesh);
+      } else if (body.kind === "planet") {
+        const ringGeo = new THREE.RingGeometry(1.5, 1.62, 36);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: isDark ? 0x3f3f46 : 0xd1d5db,
+          side: THREE.DoubleSide,
+        });
+        ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.rotation.x = Math.PI / 2;
+        group.add(ringMesh);
       }
 
-      // Portrait medallion: the employee's own avatar fused into the body;
-      // positions without an avatar stay solid colored planets.
-      let medallion: THREE.Sprite | null = null;
-      let baseOpacity = 1;
-      const avatarSrc = body.virtual ? undefined : avatarUrls?.[body.id];
-      if (avatarSrc) {
-        const medallionTexture = makeMedallionTexture(baseColor);
-        medallion = new THREE.Sprite(
-          new THREE.SpriteMaterial({ map: medallionTexture.texture, transparent: true, depthWrite: false }),
-        );
-        medallion.scale.setScalar(body.size * (body.kind === "star" ? 3.6 : 2.8));
-        mesh.add(medallion);
-        material.transparent = true;
-        baseOpacity = 0.35;
-        material.opacity = baseOpacity;
-        const img = new Image();
-        img.onload = () => {
-          if (!state.disposed) medallionTexture.paint(img);
-        };
-        img.src = avatarSrc;
-      }
+      // Selection Wire Reticle
+      const reticleGeo = new THREE.RingGeometry(body.size * 1.5, body.size * 1.65, 32);
+      const reticleMat = new THREE.MeshBasicMaterial({
+        color: isDark ? 0xffffff : 0x111827,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0,
+      });
+      const reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
+      group.add(reticleMesh);
 
+      // CSS2D DOM Label
       const label = document.createElement("div");
       label.className = `owb-star-label owb-star-label--${body.kind}`;
       label.textContent = nameOf(body);
       label.title = body.virtual ? nameOf(body) : `${nameOf(body)} · ${body.id}`;
-      label.addEventListener("click", () => {
+      label.addEventListener("click", (e) => {
+        e.stopPropagation();
         if (body.virtual) return;
         setCardDismissed(false);
         flyTo(body.id, true);
         latest.current.onSelect?.(body.id);
       });
-      const labelObject = new CSS2DObject(label);
-      labelObject.position.set(0, body.size + 1.1, 0);
-      mesh.add(labelObject);
+      label.addEventListener("mouseenter", () => setHoveredId(body.id));
+      label.addEventListener("mouseleave", () => setHoveredId(null));
 
-      state.world.add(mesh);
-      state.views.set(body.id, { body, mesh, halo, haloMaterial, material, medallion, label, baseColor, baseOpacity });
+      const labelObject = new CSS2DObject(label);
+      labelObject.position.set(0, body.size + 1.2, 0);
+      group.add(labelObject);
+
+      state.nodesGroup.add(group);
+
+      const targetPos = new THREE.Vector3(...pos);
+      state.views.set(body.id, {
+        body,
+        group,
+        coreMesh,
+        ringMesh,
+        reticleMesh,
+        label,
+        currentPos: targetPos.clone(),
+        targetPos,
+      });
     }
+
+    // 2. Build Hierarchy Lines
+    const defaultColor = isDark ? 0x2e2e38 : 0xd1d5db;
+    for (const body of layout.bodies) {
+      if (!body.parentId || !state.views.has(body.parentId)) continue;
+      const parentPos = state.views.get(body.parentId)!.currentPos;
+      const childPos = state.views.get(body.id)!.currentPos;
+
+      const geometry = new THREE.BufferGeometry().setFromPoints([parentPos, childPos]);
+      const material = new THREE.LineBasicMaterial({
+        color: defaultColor,
+        transparent: true,
+        opacity: 0.75,
+      });
+      const line = new THREE.Line(geometry, material);
+      state.treeLinesGroup.add(line);
+      state.links.push({ source: body.parentId, target: body.id, line, material });
+    }
+
+    // 3. Build Knowledge Cross Links (if any)
+    const crossColor = isDark ? 0x383844 : 0x9ca3af;
+    if (knowledgeLinks && knowledgeLinks.length > 0) {
+      for (const cl of knowledgeLinks) {
+        if (!state.views.has(cl.source) || !state.views.has(cl.target)) continue;
+        const srcPos = state.views.get(cl.source)!.currentPos;
+        const tgtPos = state.views.get(cl.target)!.currentPos;
+
+        const geometry = new THREE.BufferGeometry().setFromPoints([srcPos, tgtPos]);
+        const material = new THREE.LineDashedMaterial({
+          color: crossColor,
+          dashSize: 0.8,
+          gapSize: 0.6,
+          transparent: true,
+          opacity: 0.65,
+        });
+        const line = new THREE.Line(geometry, material);
+        line.computeLineDistances();
+        state.crossLinksGroup.add(line);
+        state.crossLinks.push({
+          source: cl.source,
+          target: cl.target,
+          label: cl.label,
+          desc: cl.desc,
+          line,
+          material,
+        });
+      }
+    }
+
+    rebuildOrbits();
     applyVisualState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, avatarColors, avatarUrls, webglFailed, nameOf]);
+  }, [layout, theme, webglFailed, nameOf, knowledgeLinks, rebuildOrbits]);
 
-  /* ------------------------------------------- selection / runs / filter */
+  /* ------------------------------------------- apply visual state */
   const applyVisualState = useCallback((): void => {
     const state = stateRef.current;
     if (!state) return;
-    const { selectedId: selected, runningIds: running, query: rawQuery } = latest.current;
+
+    const { selectedId: selected, hoveredId: hovered, query: rawQuery, theme: curTheme, showCrossLinks: curShowCross } = latest.current;
+    const isDark = curTheme === "dark";
     const q = rawQuery.trim().toLowerCase();
+    const activeId = hovered || selected;
+
+    const connectedNodeIds = new Set<string>();
+    const activeLinkIndices = new Set<number>();
+    const activeCrossLinkIndices = new Set<number>();
+
+    if (activeId) {
+      connectedNodeIds.add(activeId);
+      state.links.forEach((l, idx) => {
+        if (l.source === activeId || l.target === activeId) {
+          connectedNodeIds.add(l.source);
+          connectedNodeIds.add(l.target);
+          activeLinkIndices.add(idx);
+        }
+      });
+      state.crossLinks.forEach((cl, idx) => {
+        if (cl.source === activeId || cl.target === activeId) {
+          connectedNodeIds.add(cl.source);
+          connectedNodeIds.add(cl.target);
+          activeCrossLinkIndices.add(idx);
+        }
+      });
+    }
+
+    // Nodes
     for (const view of state.views.values()) {
       const name = view.label.textContent ?? "";
       const haystack = `${name} ${view.body.id}`.toLowerCase();
-      const dimmed = q.length > 0 && !haystack.includes(q);
+      const matchesSearch = q.length === 0 || haystack.includes(q);
+
       const isSelected = view.body.id === selected;
-      const isRunning = running?.has(view.body.id) === true;
-      view.label.classList.toggle("is-dimmed", dimmed);
+      const isHovered = view.body.id === hovered;
+      const isConnected = !activeId || connectedNodeIds.has(view.body.id);
+      const isDimmed = !matchesSearch || (!!activeId && !isConnected);
+
+      view.label.classList.toggle("is-dimmed", isDimmed);
       view.label.classList.toggle("is-selected", isSelected);
-      view.mesh.scale.setScalar(isSelected ? 1.18 : 1);
-      const transparent = true;
-      view.material.transparent = transparent;
-      view.material.opacity = dimmed ? 0.16 : view.baseOpacity;
-      if (!isRunning) {
-        view.haloMaterial.color.copy(isSelected ? view.baseColor.clone().lerp(new THREE.Color("#ffffff"), 0.35) : view.baseColor);
-        view.haloMaterial.opacity = view.body.kind === "star" ? 1 : isSelected ? 0.95 : dimmed ? 0.08 : 0.72;
-        view.halo.scale.setScalar(view.body.size * (view.body.kind === "star" ? 16 : isSelected ? 9.5 : 7.2));
+
+      // Reticle Wireframe Ring
+      if (isSelected) {
+        (view.reticleMesh.material as THREE.MeshBasicMaterial).opacity = 0.95;
+        (view.reticleMesh.material as THREE.MeshBasicMaterial).color.set(isDark ? 0xffffff : 0x111827);
+      } else if (isHovered) {
+        (view.reticleMesh.material as THREE.MeshBasicMaterial).opacity = 0.45;
+        (view.reticleMesh.material as THREE.MeshBasicMaterial).color.set(isDark ? 0xa1a1aa : 0x4b5563);
       } else {
-        view.haloMaterial.color.set(RUNNING_COLOR);
+        (view.reticleMesh.material as THREE.MeshBasicMaterial).opacity = 0;
       }
+
+      // Group scale
+      const scale = isSelected ? 1.25 : isHovered ? 1.15 : 1.0;
+      view.coreMesh.scale.set(scale, scale, scale);
     }
+
+    // Hierarchy Lines
+    const lineTreeBase = isDark ? 0x2e2e38 : 0xd1d5db;
+    const lineTreeActive = isDark ? 0xffffff : 0x111827;
+
+    state.links.forEach((l, idx) => {
+      if (!activeId) {
+        l.material.color.set(lineTreeBase);
+        l.material.opacity = 0.75;
+      } else if (activeLinkIndices.has(idx)) {
+        l.material.color.set(lineTreeActive);
+        l.material.opacity = 1.0;
+      } else {
+        l.material.color.set(lineTreeBase);
+        l.material.opacity = 0.12;
+      }
+    });
+
+    // Knowledge Cross Links
+    const lineCrossBase = isDark ? 0x383844 : 0x9ca3af;
+    const lineCrossActive = isDark ? 0xd4d4d8 : 0x374151;
+
+    state.crossLinks.forEach((cl, idx) => {
+      cl.line.visible = curShowCross;
+      if (!curShowCross) return;
+      if (!activeId) {
+        cl.material.color.set(lineCrossBase);
+        cl.material.opacity = 0.65;
+      } else if (activeCrossLinkIndices.has(idx)) {
+        cl.material.color.set(lineCrossActive);
+        cl.material.opacity = 1.0;
+      } else {
+        cl.material.color.set(lineCrossBase);
+        cl.material.opacity = 0.1;
+      }
+    });
   }, []);
 
   useEffect(() => {
     applyVisualState();
-  }, [selectedId, runningIds, query, applyVisualState, layout]);
+  }, [selectedId, hoveredId, query, applyVisualState, theme, showCrossLinks]);
 
+  /* ------------------------------------------------- layout switching */
+  const switchLayoutMode = useCallback(
+    (mode: "celestial" | "network"): void => {
+      if (layoutMode === mode) return;
+      setLayoutMode(mode);
+      const state = stateRef.current;
+      if (!state) return;
+
+      for (const view of state.views.values()) {
+        const p = mode === "celestial" ? view.body.position : view.body.networkPosition;
+        view.targetPos.set(...p);
+      }
+      rebuildOrbits();
+    },
+    [layoutMode, rebuildOrbits],
+  );
+
+  /* ------------------------------------------------- camera glide */
   const flyTo = useCallback((id: string, close = false): void => {
     const state = stateRef.current;
-    const body = layoutRef.current.bodies.find((entry) => entry.id === id);
-    if (!state || !body) return;
-    const toTarget = new THREE.Vector3(...body.position);
+    const view = state?.views.get(id);
+    if (!state || !view) return;
+
+    const toTarget = view.currentPos.clone();
     if (latest.current.reducedMotion) {
       state.controls.target.copy(toTarget);
-      state.camera.position.copy(toTarget.clone().add(new THREE.Vector3(...DEFAULT_CAM).setLength(close ? Math.max(10, body.size * 8) : 46)));
+      state.camera.position.copy(toTarget.clone().add(new THREE.Vector3(...DEFAULT_CAM).setLength(close ? 18 : 46)));
       return;
     }
+
     const direction = state.camera.position.clone().sub(state.controls.target);
-    const distance = close ? Math.max(10, body.size * 8) : Math.max(30, Math.min(direction.length(), 60));
+    const distance = close ? Math.max(16, view.body.size * 9) : Math.max(30, Math.min(direction.length(), 60));
+    direction.y = Math.max(direction.y, 8);
+
     state.fly = {
       fromTarget: state.controls.target.clone(),
       toTarget,
       fromCam: state.camera.position.clone(),
-      toCam: toTarget.clone().add(direction.setLength(distance)),
+      toCam: toTarget.clone().add(direction.normalize().multiplyScalar(distance)),
       start: performance.now(),
+      duration: 650,
     };
   }, []);
 
-  /** 拉远: pull the camera back to the whole-system framing. */
   const flyHome = useCallback((): void => {
     const state = stateRef.current;
     if (!state) return;
@@ -874,8 +889,13 @@ export default function OrgStarMap({
       fromCam: state.camera.position.clone(),
       toCam: new THREE.Vector3(...DEFAULT_CAM),
       start: performance.now(),
+      duration: 750,
     };
   }, []);
+
+  const resetView = useCallback((): void => {
+    flyHome();
+  }, [flyHome]);
 
   const locate = useCallback(
     (id: string): void => {
@@ -886,40 +906,166 @@ export default function OrgStarMap({
     [flyTo],
   );
 
-  const resetView = useCallback((): void => {
+  const toggleTheme = useCallback((): void => {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
     const state = stateRef.current;
-    if (!state) return;
-    state.fly = null;
-    state.controls.target.set(0, 0, 0);
-    state.camera.position.set(...DEFAULT_CAM);
+    if (state) {
+      state.renderer.setClearColor(nextTheme === "dark" ? 0x09090b : 0xf8f9fa, 1.0);
+      state.grid.material.color.set(nextTheme === "dark" ? 0x1c1c24 : 0xe5e7eb);
+    }
+  }, [theme]);
+
+  const toggleAutoRotation = useCallback((): void => {
+    setAutoRotate((prev) => {
+      const next = !prev;
+      if (stateRef.current) {
+        stateRef.current.controls.autoRotate = next;
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleOrbitLines = useCallback((): void => {
+    setShowOrbits((prev) => !prev);
+  }, []);
+
+  const toggleCrossLinksVisibility = useCallback((): void => {
+    setShowCrossLinks((prev) => !prev);
   }, []);
 
   /* ------------------------------------------------------------- render */
-  const selectedBody = selectedId ? layout.bodies.find((body) => body.id === selectedId) ?? null : null;
+  const selectedBody = selectedId ? layout.bodies.find((b) => b.id === selectedId) ?? null : null;
   const parentBody = selectedBody?.parentId
-    ? layout.bodies.find((body) => body.id === selectedBody.parentId) ?? null
+    ? layout.bodies.find((b) => b.id === selectedBody.parentId) ?? null
     : null;
   const selectedBudget = budgetLabelText(selectedBody?.budget ?? null);
+
+  const directReports = useMemo(() => {
+    if (!selectedBody) return [];
+    return layout.bodies.filter((b) => b.parentId === selectedBody.id);
+  }, [layout.bodies, selectedBody]);
+
   return (
-    <section className={`owb-star-map${className ? ` ${className}` : ""}`} aria-label={t("star.title")}>
+    <section
+      className={`owb-star-map owb-star-map--${theme}${className ? ` ${className}` : ""}`}
+      aria-label={t("star.title")}
+    >
+      {/* Top Header Bar */}
       <header className="owb-star-map__head">
-        <strong>{t("star.title")}</strong>
-        {snapshot && !isEmpty ? (
-          <span className="owb-star-map__meta">{t("star.meta", { count: snapshot.positionCount, depth: snapshot.depth })}</span>
-        ) : null}
+        <div className="owb-star-map__brand">
+          <div className="owb-star-map__brand-mark">
+            <div className="owb-star-map__brand-icon" />
+            <strong className="owb-star-map__title">{t("star.title")}</strong>
+          </div>
+          <div className="owb-star-map__divider" />
+          {snapshot && !isEmpty ? (
+            <span className="owb-star-map__meta">{t("star.meta", { count: snapshot.positionCount, depth: snapshot.depth })}</span>
+          ) : null}
+        </div>
+
+        {/* Header Dock Controls */}
+        <div className="owb-star-map__controls">
+          {/* Layout Mode Switcher */}
+          <div className="owb-star-map__control-group" role="group" aria-label="3D Layout Modes">
+            <button
+              type="button"
+              className={`owb-star-map__toggle-btn${layoutMode === "celestial" ? " is-active" : ""}`}
+              onClick={() => switchLayoutMode("celestial")}
+              title="切换为立体轨道星图"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3.6 9h16.8M3.6 15h16.8" />
+              </svg>
+              {t("star.layoutCelestial") || "立体轨道星图"}
+            </button>
+            <button
+              type="button"
+              className={`owb-star-map__toggle-btn${layoutMode === "network" ? " is-active" : ""}`}
+              onClick={() => switchLayoutMode("network")}
+              title="切换为3D拓扑星网"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="6" cy="6" r="3" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="12" cy="18" r="3" />
+                <path d="M8 8l8 8M16 8l-8 8" />
+              </svg>
+              {t("star.layoutNetwork") || "3D 拓扑星网"}
+            </button>
+          </div>
+
+          {/* Feature Toggles */}
+          <div className="owb-star-map__control-group" role="group" aria-label="Feature Toggles">
+            <button
+              type="button"
+              className={`owb-star-map__toggle-btn${showOrbits ? " is-active" : ""}`}
+              onClick={toggleOrbitLines}
+              title="显示/隐藏天体轨道参考线"
+            >
+              {t("star.toggleOrbits") || "轨道参考线"}
+            </button>
+            <button
+              type="button"
+              className={`owb-star-map__toggle-btn${showCrossLinks ? " is-active" : ""}`}
+              onClick={toggleCrossLinksVisibility}
+              title="显示/隐藏跨项目协同链"
+            >
+              {t("star.toggleCrossLinks") || "知识协同链"}
+            </button>
+            <button
+              type="button"
+              className={`owb-star-map__toggle-btn${autoRotate ? " is-active" : ""}`}
+              onClick={toggleAutoRotation}
+              title="开启/停止视口缓动自转"
+            >
+              {t("star.toggleAutoRotate") || "自转巡航"}
+            </button>
+          </div>
+
+          {/* Theme Switcher */}
+          <button
+            type="button"
+            className="owb-star-map__icon-btn"
+            onClick={toggleTheme}
+            title={theme === "dark" ? "切换为素雅白纸模式" : "切换为极简黑夜模式"}
+          >
+            <span>{theme === "dark" ? "◐" : "◑"}</span>
+            <span>{theme === "dark" ? t("star.themePaper") || "素雅白纸" : t("star.themeDark") || "极简黑夜"}</span>
+          </button>
+
+          {/* Reset View */}
+          <button type="button" className="owb-star-map__icon-btn" onClick={resetView} title={t("star.resetCamera") || "视角复位"}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+            {t("star.resetCamera") || "视角复位"}
+          </button>
+        </div>
       </header>
+
+      {/* Main Search & Actions Dock */}
       <div className="owb-star-map__dock">
         <div className="owb-star-map__search">
+          <span className="owb-star-map__search-icon">🔍</span>
           <input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && candidates[0]) locate(candidates[0]);
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && candidates[0]) locate(candidates[0]);
+              else if (e.key === "Escape") setQuery("");
             }}
             placeholder={t("star.search")}
             aria-label={t("star.search")}
           />
+          {query.trim() ? (
+            <button type="button" className="owb-star-map__search-clear" onClick={() => setQuery("")}>
+              ×
+            </button>
+          ) : null}
           {query.trim() && candidates.length > 0 ? (
             <ul className="owb-star-map__candidates" role="listbox" aria-label={t("star.search")}>
               {candidates.map((id) => (
@@ -933,6 +1079,7 @@ export default function OrgStarMap({
             </ul>
           ) : null}
         </div>
+
         <div className="owb-star-map__actions">
           <button
             type="button"
@@ -956,6 +1103,7 @@ export default function OrgStarMap({
             {t("star.zoomOut")}
           </button>
         </div>
+
         <p className="owb-star-map__hint">{t("star.hint")}</p>
         {toast ? (
           <p className="owb-star-map__toast" role="status">
@@ -963,10 +1111,22 @@ export default function OrgStarMap({
           </p>
         ) : null}
       </div>
+
+      {/* Focus Inspector Card */}
       {selectedBody && !cardDismissed ? (
         <aside className="owb-star-map__card" aria-label={t("star.cardTitle")}>
           <header>
-            <strong>{nameOf(selectedBody)}</strong>
+            <div className="owb-star-map__card-title-wrap">
+              <span className="owb-star-map__card-role-badge">
+                {selectedBody.kind === "star"
+                  ? t("star.layerRoot") || "ORG ROOT"
+                  : selectedBody.kind === "planet"
+                    ? t("star.layerLead") || "PROJECT LEAD"
+                    : t("star.layerMember") || "SPECIALIST"}
+              </span>
+              <strong>{nameOf(selectedBody)}</strong>
+              {!selectedBody.virtual ? <div className="owb-star-map__card-id">{selectedBody.id}</div> : null}
+            </div>
             <button
               type="button"
               className="owb-star-map__card-close"
@@ -976,34 +1136,64 @@ export default function OrgStarMap({
               ×
             </button>
           </header>
-          {selectedBody.virtual ? (
-            <p>{t("star.enterpriseHint")}</p>
-          ) : (
-            <>
-              <p className="owb-star-map__card-id">{selectedBody.id}</p>
-              {displayTitles?.[selectedBody.id] ? <p>{displayTitles[selectedBody.id]}</p> : null}
-              {displayModes?.[selectedBody.id] ? (
-                <p>
-                  <span className="owb-star-map__tag">
-                    {displayModes[selectedBody.id] === "approval_required" ? t("star.modeApproval") : t("star.modeReadOnly")}
-                  </span>
-                </p>
-              ) : null}
-              <p>{t("star.reportTo", { name: parentBody ? nameOf(parentBody) : t("org.enterpriseRoot") })}</p>
-              <p>{t("star.reports", { count: selectedBody.childCount })}</p>
-              <p>{`${t("star.budget")}: ${selectedBudget ?? t("star.declaration")}`}</p>
-            </>
-          )}
+
+          <div className="owb-star-map__card-body">
+            {selectedBody.virtual ? (
+              <p>{t("star.enterpriseHint")}</p>
+            ) : (
+              <>
+                <p className="owb-star-map__card-id">{selectedBody.id}</p>
+                {displayTitles?.[selectedBody.id] ? (
+                  <p className="owb-star-map__card-desc">{displayTitles[selectedBody.id]}</p>
+                ) : null}
+                {displayModes?.[selectedBody.id] ? (
+                  <p>
+                    <span className="owb-star-map__tag">
+                      {displayModes?.[selectedBody.id] === "approval_required"
+                        ? t("star.modeApproval")
+                        : t("star.modeReadOnly")}
+                    </span>
+                  </p>
+                ) : null}
+                <p>{t("star.reportTo", { name: parentBody ? nameOf(parentBody) : t("org.enterpriseRoot") })}</p>
+                <p>{t("star.reports", { count: selectedBody.childCount })}</p>
+                <p>{`${t("star.budget")}: ${selectedBudget ?? t("star.declaration")}`}</p>
+                {directReports.length > 0 ? (
+                  <div className="owb-star-map__card-section">
+                    <div className="owb-star-map__card-section-label">直接下属</div>
+                    <ul className="owb-star-map__card-links-list">
+                      {directReports.slice(0, 5).map((sub) => (
+                        <li key={sub.id}>
+                          <button type="button" onClick={() => locate(sub.id)}>
+                            <span>{nameOf(sub)}</span>
+                            <span className="owb-star-map__card-id">{sub.id}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+
           <footer>
-            <button type="button" className="owb-star-map__btn" onClick={() => flyTo(selectedBody.id, true)}>
+            <button
+              type="button"
+              className="owb-star-map__btn primary"
+              style={{ flex: 1 }}
+              onClick={() => flyTo(selectedBody.id, true)}
+            >
               {t("star.zoomIn")}
             </button>
-            <button type="button" className="owb-star-map__btn" onClick={flyHome}>
+            <button type="button" className="owb-star-map__btn" style={{ flex: 1 }} onClick={flyHome}>
               {t("star.zoomOut")}
             </button>
           </footer>
         </aside>
       ) : null}
+
+      {/* 3D Viewport or Fallback State */}
       {loading ? (
         <div className="owb-star-map__loading">
           <Spin />
@@ -1016,26 +1206,75 @@ export default function OrgStarMap({
         <div className="owb-star-map__fallback">
           <p>{t("star.fallback")}</p>
           <ul>
-            {layout.bodies.filter((body) => !body.virtual).map((body) => (
-              <li key={body.id}>
-                <button
-                  type="button"
-                  style={{ paddingLeft: 6 + body.depth * 14 }}
-                  aria-pressed={selectedId === body.id}
-                  onClick={() => {
-                    setCardDismissed(false);
-                    latest.current.onSelect?.(body.id);
-                  }}
-                >
-                  {nameOf(body)}
-                </button>
-              </li>
-            ))}
+            {layout.bodies
+              .filter((body) => !body.virtual)
+              .map((body) => (
+                <li key={body.id}>
+                  <button
+                    type="button"
+                    style={{ paddingLeft: 8 + body.depth * 14 }}
+                    aria-pressed={selectedId === body.id}
+                    onClick={() => {
+                      setCardDismissed(false);
+                      latest.current.onSelect?.(body.id);
+                    }}
+                  >
+                    {nameOf(body)}
+                  </button>
+                </li>
+              ))}
           </ul>
         </div>
       ) : (
         <div className="owb-star-map__stage" ref={stageRef} />
       )}
+
+      {/* Bottom Status & Minimalist Legend Dock */}
+      <footer className="owb-star-map__bottom">
+        <div className="owb-star-map__metrics">
+          <div className="owb-star-map__metric-item">
+            <span>{t("star.metricsNodes") || "组织节点"}:</span>
+            <span className="owb-star-map__metric-val">{layout.bodies.filter((b) => !b.virtual).length}</span>
+          </div>
+          <div className="owb-star-map__metric-sep" />
+          <div className="owb-star-map__metric-item">
+            <span>{t("star.metricsDepth") || "层级深度"}:</span>
+            <span className="owb-star-map__metric-val">{layout.maxDepth}</span>
+          </div>
+          <div className="owb-star-map__metric-sep" />
+          <div className="owb-star-map__metric-item">
+            <span>{t("star.metricsLinks") || "层级汇报"}:</span>
+            <span className="owb-star-map__metric-val">
+              {layout.bodies.filter((b) => !b.virtual && b.parentId !== null).length}
+            </span>
+          </div>
+        </div>
+
+        <div className="owb-star-map__legend">
+          <div className="owb-star-map__legend-item">
+            <span className="owb-star-map__legend-dot root" />
+            <span>{t("star.layerRoot") || "组织决策根"}</span>
+          </div>
+          <div className="owb-star-map__legend-item">
+            <span className="owb-star-map__legend-dot lead" />
+            <span>{t("star.layerLead") || "项目负责人"}</span>
+          </div>
+          <div className="owb-star-map__legend-item">
+            <span className="owb-star-map__legend-dot member" />
+            <span>{t("star.layerMember") || "专职职能岗"}</span>
+          </div>
+          <div className="owb-star-map__legend-item">
+            <span className="owb-star-map__legend-line solid" />
+            <span>{t("star.legendHierarchy") || "管理汇报"}</span>
+          </div>
+          {showCrossLinks ? (
+            <div className="owb-star-map__legend-item">
+              <span className="owb-star-map__legend-line dashed" />
+              <span>{t("star.legendCross") || "知识依赖"}</span>
+            </div>
+          ) : null}
+        </div>
+      </footer>
     </section>
   );
 }

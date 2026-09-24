@@ -25,6 +25,8 @@ export interface CelestialBody {
   depth: number;
   kind: CelestialKind;
   position: readonly [number, number, number];
+  /** 3D spherical constellation/topology network position. */
+  networkPosition: readonly [number, number, number];
   /** Visual sphere radius. */
   size: number;
   /** Radius of the orbit ring this body rides on; null for the star. */
@@ -111,6 +113,54 @@ interface ParentFrame {
   siblings: number;
 }
 
+function normalize3(v: readonly [number, number, number]): [number, number, number] {
+  const len = Math.hypot(v[0], v[1], v[2]);
+  if (len === 0) return [0, 1, 0];
+  return [v[0] / len, v[1] / len, v[2] / len];
+}
+
+function cross3(a: readonly [number, number, number], b: readonly [number, number, number]): [number, number, number] {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+const NETWORK_SPHERE_R = 26;
+
+function fibonacciSpherePoint(index: number, total: number, radius: number): [number, number, number] {
+  if (total <= 1) return [radius, 0, 0];
+  const phi = Math.acos(-1 + (2 * index) / (total - 1));
+  const theta = Math.sqrt(total * Math.PI) * phi;
+  return [
+    radius * Math.cos(theta) * Math.sin(phi),
+    radius * Math.sin(theta) * Math.sin(phi),
+    radius * Math.cos(phi),
+  ];
+}
+
+function clusterAroundParent(
+  parentPos: readonly [number, number, number],
+  childIndex: number,
+  childCount: number,
+  dist: number,
+): [number, number, number] {
+  const [px, py, pz] = parentPos;
+  const normal = normalize3([px, py, pz]);
+  const arbitrary: [number, number, number] = Math.abs(normal[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const u = normalize3(cross3(normal, arbitrary));
+  const v = normalize3(cross3(normal, u));
+  const angle = (childIndex / Math.max(childCount, 1)) * Math.PI * 2;
+  const cosA = Math.cos(angle) * dist;
+  const sinA = Math.sin(angle) * dist;
+  return [
+    px + u[0] * cosA + v[0] * sinA + normal[0] * 2.0,
+    py + u[1] * cosA + v[1] * sinA + normal[1] * 2.0,
+    pz + u[2] * cosA + v[2] * sinA + normal[2] * 2.0,
+  ];
+}
+
 export function buildCelestialLayout(snapshot: OrgTreeSnapshot | null): CelestialLayout {
   const bodies: CelestialBody[] = [];
   const orbits: CelestialOrbit[] = [];
@@ -126,6 +176,7 @@ export function buildCelestialLayout(snapshot: OrgTreeSnapshot | null): Celestia
         depth: 0,
         kind: "star",
         position: [0, 0, 0],
+        networkPosition: [0, 0, 0],
         size: bodySize(0),
         orbitRadius: null,
         orbitTilt: 0,
@@ -139,6 +190,7 @@ export function buildCelestialLayout(snapshot: OrgTreeSnapshot | null): Celestia
         depth: 0,
         kind: "star",
         position: [0, 0, 0],
+        networkPosition: [0, 0, 0],
         size: bodySize(0),
         orbitRadius: null,
         orbitTilt: 0,
@@ -181,12 +233,18 @@ export function buildCelestialLayout(snapshot: OrgTreeSnapshot | null): Celestia
     orbits.push({ centerId: parent.id, center: parent.position, radius, tilt });
     children.forEach((child, index) => {
       const angle = offset + (Math.PI * 2 * index) / count;
+      const netPos =
+        depth === 1
+          ? fibonacciSpherePoint(index, count, NETWORK_SPHERE_R)
+          : clusterAroundParent(parent.networkPosition, index, count, 7.5 * Math.pow(0.72, depth - 2));
+
       const body: CelestialBody = {
         id: child.id,
         parentId: parent.id,
         depth,
         kind: depth === 1 ? "planet" : "moon",
         position: orbitPoint(parent.position, radius, tilt, angle),
+        networkPosition: netPos,
         size: bodySize(depth),
         orbitRadius: radius,
         orbitTilt: tilt,
