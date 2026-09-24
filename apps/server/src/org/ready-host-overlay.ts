@@ -13,23 +13,35 @@ export interface ReadyHostChoiceDeps {
 }
 
 const ALLOWED_FACT_KEYS = new Set(["positionId", "engine", "ready"]);
+export const READY_HOST_ENGINES = [
+  "qoder",
+  "claude-code",
+  "claude-local",
+  "codex",
+  "codex-local",
+  "workbuddy",
+  "gemini",
+] as const;
+export const MAX_READY_HOST_CANDIDATES = 16;
 
 export function sanitizeReadyHostFact(value: unknown): ReadyHostFact | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (Object.keys(record).some((key) => !ALLOWED_FACT_KEYS.has(key))) return null;
   if (typeof record.positionId !== "string" || record.positionId.length === 0 || record.positionId.length > 128) return null;
-  if (typeof record.engine !== "string" || record.engine.length === 0 || record.engine.length > 32) return null;
+  if (typeof record.engine !== "string" || !(READY_HOST_ENGINES as readonly string[]).includes(record.engine)) return null;
   if (typeof record.ready !== "boolean") return null;
   return { positionId: record.positionId, engine: record.engine, ready: record.ready };
 }
 
 export function sanitizeReadyHostFacts(value: unknown): ReadyHostFact[] {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value) || value.length > MAX_READY_HOST_CANDIDATES) return [];
   const facts: ReadyHostFact[] = [];
+  const seen = new Set<string>();
   for (const item of value) {
     const fact = sanitizeReadyHostFact(item);
-    if (fact === null) return [];
+    if (fact === null || seen.has(fact.positionId)) return [];
+    seen.add(fact.positionId);
     facts.push(fact);
   }
   return facts;
