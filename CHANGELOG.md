@@ -7,6 +7,8 @@
 
 ### Added
 
+- #452：冻结多员工共享协商通道设计（`docs/design/negotiation-channel-v1.md`）。投递=作者/@/显式订阅、operator 全量可见；mention-wake 上限 12/硬顶 16；human 插话排队到 trusted terminal；append-only schema；有界模型投影；与 #327 无 silent dual-write；failed/blocked/cancelled 必须在通道可见。仅设计，无运行时。Refs #452。
+
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
 
 - #480：管理者实时任务进度看板。工作台自报 thread-context / spawn / streaming / persist / terminal 五步，经现有 `GET /events` 广播 `turn.progress`，快照落在 `.roleweave/conversations/<positionId>/progress/<turnId>.json`。列表合并内存与落盘，刷新或控制面重启后仍可回看。不新开 WebSocket，不改 spawn/finish 契约。Refs #480。
