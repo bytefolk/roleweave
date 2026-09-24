@@ -525,6 +525,39 @@ test("buildPositionSkeletonFiles: numeric position ids stay quoted in SKILL.md f
   assert.equal(frontmatterName, JSON.stringify(employee.name));
 });
 
+test("buildPositionSkeletonFiles: SKILL.md territory section does not enter employee.json (#360)", () => {
+  const files = buildPositionSkeletonFiles({
+    id: "docs-writer",
+    name: "Docs Writer",
+    description: "Keeps documentation current.",
+    mode: "read_only",
+    budget: { perTask: { tokens: 1000 }, perDay: { tokens: 2000 } },
+    workTerritory: true,
+  });
+  const skill = files.get("SKILL.md")!;
+  assert.match(skill, /your exclusive work directory is work\/docs-writer\//);
+  assert.match(skill, /never write positions\//);
+  assert.match(skill, /repos\/ changes only in an assigned repo on a git branch/);
+  assert.match(skill, /do not touch other positions' work\//);
+  const employeeBytes = files.get("employee.json")!;
+  assert.equal(employeeBytes.includes("work/docs-writer"), false);
+  assert.equal(employeeBytes.includes("Territory"), false);
+});
+
+test("buildPositionSkeletonFiles: owner skeleton does not name a missing work territory (#360)", () => {
+  const files = buildPositionSkeletonFiles({
+    id: "source-tree-owner",
+    name: "项目负责人",
+    description: "负责整体目标。",
+    mode: "read_only",
+    budget: { perTask: { tokens: 1000 }, perDay: { tokens: 2000 } },
+  });
+  const skill = files.get("SKILL.md")!;
+  assert.equal(skill.includes("Territory"), false);
+  assert.equal(skill.includes("work/source-tree-owner"), false);
+  assert.equal(skill.includes("your exclusive work directory"), false);
+});
+
 /**
  * #92: the invariant that matters is not a constant but a relationship — the
  * longest description POST /hire accepts must still satisfy every upstream
