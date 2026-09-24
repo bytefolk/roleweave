@@ -85,7 +85,7 @@ import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
-import { OverlayOutcomeRuntime, bindOverlayApprovalDecision } from "./overlays/overlay-outcome-runtime";
+import { OverlayOutcomeRuntime, bindOverlayApprovalDecision, consumeOverlaySystemEvent } from "./overlays/overlay-outcome-runtime";
 import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
@@ -1005,6 +1005,9 @@ function AppInner({
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const offEvent = window.owb.onEvent((event) => {
       const envelope = event as { type?: string; payload?: { workspacePath?: unknown } };
+      const owner = typeof envelope.payload?.workspacePath === "string" ? envelope.payload.workspacePath :
+        workspaceStreams.current.size <= 1 ? workspacePathRef.current : undefined;
+      if (owner !== undefined) consumeOverlaySystemEvent(event, owner);
       if ((envelope.type === "approvals.changed" || ["turn.completed", "turn.failed", "turn.indeterminate"].includes(envelope.type ?? "")) &&
           (typeof envelope.payload?.workspacePath !== "string" || envelope.payload.workspacePath === workspacePathRef.current)) {
         void approvalState.refresh();

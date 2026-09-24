@@ -147,14 +147,9 @@ export function consumeOverlaySystemEvent(raw: unknown, fallbackWorkspaceKey?: s
   }
 }
 
-/** App/workspace-lifetime listener. Must outlive Goals/Reports detail panels. */
+/** Typed-outcome bus only. SSE consumption belongs on App's existing onEvent. */
 export function OverlayOutcomeRuntime({ workspaceKey }: { workspaceKey?: string }) {
   useEffect(() => {
-    const subscribe = window.owb?.onEvent;
-    const offEvent =
-      typeof subscribe === "function"
-        ? subscribe((raw) => consumeOverlaySystemEvent(raw, workspaceKey))
-        : undefined;
     const onOutcome = (event: Event) => {
       const detail = (event as CustomEvent<OverlayActionOutcomeDetail>).detail;
       if (!detail?.itemId || !detail.actionId || typeof detail.ok !== "boolean") return;
@@ -167,7 +162,6 @@ export function OverlayOutcomeRuntime({ workspaceKey }: { workspaceKey?: string 
     };
     window.addEventListener(OVERLAY_ACTION_OUTCOME, onOutcome);
     return () => {
-      offEvent?.();
       window.removeEventListener(OVERLAY_ACTION_OUTCOME, onOutcome);
     };
   }, [workspaceKey]);

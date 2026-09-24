@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GoalDetail, GoalSummary, AgentTask } from "@roleweave/shared";
 import { GoalsModule } from "../src/goals/GoalsModule";
 import { ProjectManagementModule } from "../src/projects/ProjectManagementModule";
-import { OverlayOutcomeRuntime, bindOverlayApprovalDecision, resetOverlayOutcomeRuntimeForTests } from "../src/overlays/overlay-outcome-runtime";
+import { OverlayOutcomeRuntime, bindOverlayApprovalDecision, consumeOverlaySystemEvent, resetOverlayOutcomeRuntimeForTests } from "../src/overlays/overlay-outcome-runtime";
 import { resetOverlayReceiptStoreForTests } from "../src/overlays/overlay-receipt-store";
 import type { OwbBridge } from "../src/owb";
 
@@ -372,7 +372,6 @@ describe("Laya health overlay (#428)", () => {
   });
 
   it("keeps mixed split after leaving the detail and receiving terminal system events", async () => {
-    const listeners = new Set<(event: unknown) => void>();
     const blocked: GoalDetail = {
       ...goalDetail,
       goal: {
@@ -394,12 +393,6 @@ describe("Laya health overlay (#428)", () => {
     };
     installBridge({
       goal: vi.fn().mockResolvedValue({ status: 200, body: blocked }),
-      onEvent: vi.fn((listener) => {
-        listeners.add(listener);
-        return () => {
-          listeners.delete(listener);
-        };
-      }),
     });
     function Flow() {
       const [page, setPage] = useState<"goals" | "away">("goals");
@@ -425,39 +418,33 @@ describe("Laya health overlay (#428)", () => {
     fireEvent.click(await screen.findByTestId("goals-health-open-turn"));
     expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
     await act(async () => {
-      listeners.forEach((listener) =>
-        listener({
-          type: "turn.completed",
-          payload: {
-            workspacePath: "ws-unmount",
-            positionId: "owner",
-            sessionId: "sess-1",
-            turnId: "old-turn",
-          },
-        }),
-      );
-      listeners.forEach((listener) =>
-        listener({
-          type: "turn.started",
-          payload: {
-            workspacePath: "ws-unmount",
-            positionId: "owner",
-            sessionId: "sess-1",
-            turnId: "turn-new",
-          },
-        }),
-      );
-      listeners.forEach((listener) =>
-        listener({
-          type: "turn.completed",
-          payload: {
-            workspacePath: "ws-unmount",
-            positionId: "owner",
-            sessionId: "sess-1",
-            turnId: "turn-new",
-          },
-        }),
-      );
+      consumeOverlaySystemEvent({
+        type: "turn.completed",
+        payload: {
+          workspacePath: "ws-unmount",
+          positionId: "owner",
+          sessionId: "sess-1",
+          turnId: "old-turn",
+        },
+      });
+      consumeOverlaySystemEvent({
+        type: "turn.started",
+        payload: {
+          workspacePath: "ws-unmount",
+          positionId: "owner",
+          sessionId: "sess-1",
+          turnId: "turn-new",
+        },
+      });
+      consumeOverlaySystemEvent({
+        type: "turn.completed",
+        payload: {
+          workspacePath: "ws-unmount",
+          positionId: "owner",
+          sessionId: "sess-1",
+          turnId: "turn-new",
+        },
+      });
     });
     fireEvent.click(screen.getByTestId("return-item"));
     await screen.findByTestId("overlay-receipts");
@@ -465,18 +452,14 @@ describe("Laya health overlay (#428)", () => {
     expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
     await act(async () => {
       bindOverlayApprovalDecision("ws-unmount", "apr-1");
-      listeners.forEach((listener) =>
-        listener({
-          type: "turn.approval.denied",
-          payload: { workspacePath: "ws-unmount", approvalId: "apr-other" },
-        }),
-      );
-      listeners.forEach((listener) =>
-        listener({
-          type: "turn.approval.denied",
-          payload: { workspacePath: "ws-unmount", approvalId: "apr-1" },
-        }),
-      );
+      consumeOverlaySystemEvent({
+        type: "turn.approval.denied",
+        payload: { workspacePath: "ws-unmount", approvalId: "apr-other" },
+      });
+      consumeOverlaySystemEvent({
+        type: "turn.approval.denied",
+        payload: { workspacePath: "ws-unmount", approvalId: "apr-1" },
+      });
     });
     fireEvent.click(screen.getByTestId("return-item"));
     const split = await screen.findByTestId("overlay-receipt-split");
