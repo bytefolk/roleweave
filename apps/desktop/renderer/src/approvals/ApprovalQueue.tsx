@@ -650,6 +650,11 @@ function ApprovalCard({ item, now, onOpen, batchSelected, batchDisabled, onBatch
                 {t("apr.riskOverlay")}: {t(`apr.risk.${item.context.riskOverlay}`)} · {t("apr.suggestionNotAdopted")}
               </Tag>
             ) : null}
+            {item.context?.agingOverlay ? (
+              <Tag data-testid="approval-aging-overlay">
+                {t("apr.agingOverlay")}: {t(`apr.aging.${item.context.agingOverlay}`)}
+              </Tag>
+            ) : null}
             {overreach ? (
               <Tag color="red" data-testid="approval-overreach-tag">
                 {t("apr.overreach")}

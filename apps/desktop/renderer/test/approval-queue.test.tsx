@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ApprovalQueue } from "../src/approvals/ApprovalQueue";
-import type { ApprovalQueueItem } from "../src/approvals/types";
+import { approvalExpiryState, isActionablePending, type ApprovalQueueItem } from "../src/approvals/types";
 import { pickSelectOption } from "./select-helper";
 
 function makeItem(over: Partial<ApprovalQueueItem> = {}): ApprovalQueueItem {
@@ -69,6 +69,68 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     );
     expect(screen.getByTestId("approval-rule-risk")).toHaveTextContent(/高风险|high/i);
     expect(screen.getByTestId("approval-risk-overlay").textContent ?? "").toMatch(/建议未采纳|suggestion not adopted|apr.suggestionNotAdopted/);
+  });
+
+  it("aging overlay cannot hide pending high and click opens the item without posting a decision", () => {
+    const onApprove = vi.fn();
+    const onDeny = vi.fn();
+    const highPending = makeItem({
+      approvalId: "high-pending",
+      category: "exec",
+      context: {
+        risk: "high",
+        agingOverlay: "wait",
+        requestedCapability: "exec",
+        impact: "command_execution",
+        permissions: { mode: "approval_required", allowedTools: [], deniedTools: [] },
+        preview: { status: "unavailable", reason: "engine_preview_not_supplied" },
+        scope: { allowed: ["once"] },
+      },
+    });
+    const mediumPending = makeItem({
+      approvalId: "medium-pending",
+      category: "tool",
+      description: "restricted tool",
+      context: {
+        risk: "medium",
+        agingOverlay: "nudge",
+        requestedCapability: "tool",
+        impact: "restricted_tool",
+        permissions: { mode: "approval_required", allowedTools: [], deniedTools: [] },
+        preview: { status: "unavailable", reason: "engine_preview_not_supplied" },
+        scope: { allowed: ["once"] },
+      },
+    });
+    render(<ApprovalQueue items={[mediumPending, highPending]} onApprove={onApprove} onDeny={onDeny} />);
+    const highCard = screen.getByTestId("approval-card-high-pending");
+    expect(highCard).toBeInTheDocument();
+    expect(within(highCard).getByTestId("approval-aging-overlay")).toHaveTextContent(/继续等待|wait/i);
+    fireEvent.click(within(highCard).getByTestId("approval-aging-overlay"));
+    const drawer = screen.getByTestId("approval-detail-drawer");
+    expect(drawer).toBeInTheDocument();
+    expect(drawer.querySelector('[data-approval-id="high-pending"]')).not.toBeNull();
+    expect(drawer.querySelector('[data-approval-id="medium-pending"]')).toBeNull();
+    expect(onApprove).not.toHaveBeenCalled();
+    expect(onDeny).not.toHaveBeenCalled();
+  });
+
+  it("expired vs pending still use existing clock helpers when aging overlay is present", () => {
+    const now = Date.parse("2026-08-27T14:00:00.000Z");
+    const context = {
+      risk: "high" as const,
+      agingOverlay: "nudge" as const,
+      requestedCapability: "exec" as const,
+      impact: "command_execution" as const,
+      permissions: { mode: "approval_required" as const, allowedTools: [], deniedTools: [] },
+      preview: { status: "unavailable" as const, reason: "engine_preview_not_supplied" as const },
+      scope: { allowed: ["once" as const] },
+    };
+    const pending = makeItem({ expiresAt: "2026-08-28T12:00:00.000Z", context });
+    const expired = makeItem({ approvalId: "expired", expiresAt: "2026-08-27T13:00:00.000Z", context });
+    expect(approvalExpiryState(pending, now)).toBe("expiring");
+    expect(isActionablePending(pending, now)).toBe(true);
+    expect(approvalExpiryState(expired, now)).toBe("expired");
+    expect(isActionablePending(expired, now)).toBe(false);
   });
 
   it("\u6e32\u67d3 pending \u5217\u8868\uff1a\u5c97\u4f4d\u540d\u3001\u63cf\u8ff0\u3001\u76ee\u6807\u5747\u5230\u4f4d", () => {

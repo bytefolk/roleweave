@@ -234,6 +234,11 @@ export function ApprovalDetailDrawer({
                       {t("apr.riskOverlay")}: {t(`apr.risk.${item.context.riskOverlay}`)} · {t("apr.suggestionNotAdopted")}
                     </Tag>
                   ) : null}
+                  {item.context.agingOverlay ? (
+                    <Tag data-testid="approval-aging-overlay">
+                      {t("apr.agingOverlay")}: {t(`apr.aging.${item.context.agingOverlay}`)}
+                    </Tag>
+                  ) : null}
                 </div>
                 <dl className="owb-approval-drawer__references">
                   <div><dt>{t("apr.requestedCapability")}</dt><dd>{t(`apr.kind.${item.context.requestedCapability}`)}</dd></div>

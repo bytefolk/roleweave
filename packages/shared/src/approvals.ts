@@ -25,6 +25,8 @@ export interface ApprovalContext {
   scope: { allowed: Array<"once" | "run"> };
   /** Projection-only Laya suggestion. Never authoritative for Tag color or policy.digest. */
   riskOverlay?: ApprovalRiskLevel;
+  /** Projection-only Jev aging copy. Never a verdict and never hides pending high. */
+  agingOverlay?: "nudge" | "wait" | "discuss-close";
 }
 
 export interface ApprovalDecisionRequest {
