@@ -236,12 +236,8 @@ export class ExperimentsService {
     });
     if ("response" in prepared) return prepared.response;
 
-    const reports = await readReports(this.ctx, workspace);
     this.assertGeneration(state, prepared.generation);
-    const fact = projectBudgetRemainingFact(
-      request.positionId,
-      reports.budgets.find(candidate => candidate.positionId === request.positionId),
-    );
+    const fact = projectBudgetRemainingFact(request.positionId);
     const base: BudgetRemainingAdviceResponse = { ...prepared.base, fact };
     if (fact.remainingPerTask === null || fact.remainingPerDay === null) {
       return { ...base, status: "abstained", reason: "unknown_remaining" };

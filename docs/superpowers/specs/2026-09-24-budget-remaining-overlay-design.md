@@ -11,22 +11,22 @@ The feature is off by default. It must not change hire-time caps, organization d
 RoleWeave's persisted report contract currently proves only:
 
 - the employee's declared `perTask` and `perDay` caps;
-- exact usage of the latest persisted turn, which can support a per-task token remainder; and
+- exact usage of the latest persisted turn, without the `taskId` needed to bind that usage to the current unsent task; and
 - lifetime recorded usage, which is not a daily bucket.
 
-`docs/api-contract-v0.md` and `BudgetDashboard.tsx` explicitly state that there is no per-day time-bucket fact and that the UI must not reuse a per-task ratio for the daily lane. Upstream digital-employee accepts a caller-provided, bounded `dayKey`, but does not define a UTC or local calendar boundary that RoleWeave can reconstruct. RoleWeave also does not persist that `dayKey` with its turn records.
+Upstream accounting keys usage by `(positionId, taskId, dayKey)`. RoleWeave's current `TurnRecord`, envelope, and reports projection preserve neither `taskId` nor `dayKey`. A latest-turn total may belong to a previous task, so subtracting it from the cap would understate a new task's budget or incorrectly carry an old overrun forward. `docs/api-contract-v0.md` and `BudgetDashboard.tsx` also state that there is no per-day time-bucket fact and that the UI must not reuse a per-task ratio for the daily lane. Upstream digital-employee accepts a caller-provided, bounded `dayKey`, but does not define a UTC or local calendar boundary that RoleWeave can reconstruct.
 
-Therefore this change must project `remainingPerDay` as unknown until a separate authoritative daily ledger contract exists. It must not sum records by `createdAt`, treat lifetime `recorded.totalTokens` as today's use, invent a day boundary, or read an unrelated engine-internal file. Because advice requires both remainders, the current production path abstains whenever the daily fact is unknown. This limitation is visible and intentional.
+Therefore this change must project both `remainingPerTask` and `remainingPerDay` as unknown until an authoritative keyed ledger contract exists. It must not reuse `latestTurn`, sum records by `createdAt`, treat lifetime `recorded.totalTokens` as today's use, invent a day boundary, or read an unrelated engine-internal file. Because advice requires both remainders, the current production path abstains before inference. This limitation is visible and intentional.
 
 ## Considered approaches
 
-1. **Add an honest, forward-compatible fact and advice boundary (selected).** Compute the per-task remainder from the latest persisted turn when a token cap exists, carry the daily remainder as unknown, show the deterministic facts, and abstain before Laya unless both are finite non-negative integers. This ships the safe UI and contract without fabricating data; a future authoritative daily projection can activate advice without changing the Laya payload.
+1. **Add an honest, forward-compatible fact and advice boundary (selected).** Carry both remainders as unknown and abstain before Laya unless an authoritative source supplies both as finite non-negative integers. This ships the safe UI and contract without fabricating data; a future keyed ledger projection can activate advice without changing the Laya payload.
 2. **Infer daily use from turn `createdAt`.** This could activate suggestions immediately, but it would invent timezone and day-boundary semantics and contradict the frozen reports contract. It is rejected.
 3. **Add daily accounting to turn execution in the same PR.** This would require changing the turn envelope, defining and persisting `dayKey`, migrating existing records, and reconciling all personal/group/retry paths. That is a separate execution-accounting feature and is out of scope for this composer overlay.
 
 ## Components and data flow
 
-1. A pure server projection reads the selected role and persisted turn reports. It computes `remainingPerTask = max(0, perTask.tokens - latestTurn.totalTokens)` when both operands are authoritative; otherwise it returns unknown. `remainingPerDay` remains unknown under the current report contract.
+1. A pure server projection binds the fact to the selected role but returns both remainders as unknown. Persisted turn reports are deliberately not consulted because they cannot identify the current `taskId` or `dayKey`.
 2. A dedicated authenticated control-plane route accepts only the current workspace path/session/revision and `positionId`. The renderer cannot upload remaining values, caps, usage, composer text, turn text, or a chosen action.
 3. The route re-reads workspace experiment consent and the selected role from the open workspace. Disabled consent returns `disabled`; a missing remainder returns `abstained` without calling Laya.
 4. When a future authoritative source supplies both remainders, Laya receives exactly `{ remainingPerTask, remainingPerDay, positionId }`, all finite non-negative integers, plus one Choice question with exactly `shrink`, `switch_employee`, and `send_anyway`.
@@ -39,7 +39,7 @@ Therefore this change must project `remainingPerDay` as unknown until a separate
 - The deterministic fact uses nullable remainders so unknown is explicit and cannot be confused with zero.
 - Advice status is one of `ready`, `disabled`, `abstained`, or `unavailable`, with finite reason codes.
 - Flag off keeps the composer DOM and direct-send behavior unchanged.
-- Flag on shows the compact fact strip. The current production state displays known per-task remainder when available, marks daily remainder unavailable, and displays no Laya suggestion.
+- Flag on shows the compact fact strip. The current production state marks both task and daily remainder unavailable and displays no Laya suggestion.
 - A valid future suggestion is labelled as not adopted until the user applies it. Applying `switch_employee` does not switch the employee automatically; it only records that unsent local choice so the operator remains in control.
 - The existing composer draft is never read by the advice request and never leaves through this path.
 
@@ -49,13 +49,13 @@ Therefore this change must project `remainingPerDay` as unknown until a separate
 - Missing role, stale workspace/session/revision, changed consent, storage corruption, and invalid provider output fail closed.
 - Provider timeout or failure does not block the existing Send action.
 - No task text, draft, turn body, attachment, path, employee name, cap, raw usage event, or report record is sent to Laya.
-- The server never accepts client-supplied remaining values and clamps a proven overrun to zero instead of emitting a negative remainder.
+- The server never accepts client-supplied remaining values and never carries historical task usage or overruns into a new task.
 
 ## Verification
 
 Tests are written in red-green order for:
 
-- server projection of a finite per-task remainder, explicit unknown daily remainder, no negative values, and missing token-cap handling;
+- server projection that keeps both remainders unknown and does not reuse either an under-cap or over-cap previous task;
 - abstention before inference whenever either remainder is unknown;
 - exact outbound Laya payload and exact Choice vocabulary with injected fully known facts;
 - rejection of extra fields, non-finite confidence/probabilities, incomplete/extra probability maps, low confidence, inconsistent selection, and unknown choices;

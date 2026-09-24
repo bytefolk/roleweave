@@ -25,22 +25,22 @@ function budget(overrides: Partial<BudgetReport> = {}): BudgetReport {
   };
 }
 
-test("budget advice projects only the provable per-task remainder", () => {
+test("budget advice does not reuse a previous task's usage for the current task remainder", () => {
   assert.deepEqual(projectBudgetRemainingFact("repo-owner", budget()), {
     positionId: "repo-owner",
-    remainingPerTask: 60,
+    remainingPerTask: null,
     remainingPerDay: null,
   });
 });
 
-test("budget advice never emits a negative remaining value", () => {
+test("budget advice does not turn a previous task's overrun into zero remaining for a new task", () => {
   assert.equal(projectBudgetRemainingFact("repo-owner", budget({
     latestTurn: { inputTokens: 80, outputTokens: 30, totalTokens: 110 },
     state: "exceeded",
-  })).remainingPerTask, 0);
+  })).remainingPerTask, null);
 });
 
-test("budget advice treats missing or invalid token operands as unknown", () => {
+test("budget advice keeps missing or invalid historical report values unknown", () => {
   for (const report of [
     budget({ declared: { perTask: {}, perDay: { tokens: 500 } } }),
     budget({ declared: { perTask: { tokens: Number.NaN }, perDay: { tokens: 500 } } }),

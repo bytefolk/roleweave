@@ -28,20 +28,18 @@ export function parseBudgetRemainingChoice(
 }
 
 /**
- * Project only facts already proved by reports.v1. The report contract has no
- * authoritative daily bucket, so daily remaining stays explicitly unknown.
+ * reports.v1 does not identify the current task or its day bucket. A budget
+ * report is therefore historical context only and cannot prove either
+ * remainder for the unsent task. Keep the optional argument so regression
+ * tests can prove that historical reports never affect this projection.
  */
 export function projectBudgetRemainingFact(
   positionId: string,
-  budget: BudgetReport | undefined,
+  _historicalBudget?: BudgetReport,
 ): BudgetRemainingFact {
-  const cap = budget?.declared.perTask.tokens;
-  const used = budget?.latestTurn?.totalTokens;
-  const known = Number.isSafeInteger(cap) && (cap as number) >= 0 &&
-    Number.isSafeInteger(used) && (used as number) >= 0;
   return {
     positionId,
-    remainingPerTask: known ? Math.max(0, cap! - used!) : null,
+    remainingPerTask: null,
     remainingPerDay: null,
   };
 }

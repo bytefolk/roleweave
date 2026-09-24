@@ -16,7 +16,7 @@ RoleWeave 使用开源 Laya 的 Jev 兼容 `POST /v1/systemone` 协议，但只�
 
 ## 本地数据范围
 
-报告建议只向本机 Laya 进程传入执行状态、规范化错误码、是否与预算相关三个元数据字段，以及固定 Choice 问题。发送前预算建议只传入 `{ remainingPerTask, remainingPerDay, positionId }`；客户端不能上传额度、使用量、剩余额度或草稿。当前报告事实没有权威的单日时间桶，因此 `remainingPerDay` 保持未知并在调用 Laya 前弃权，不从累计使用量或本地日界线猜测。未知错误码归入 `other`。关联 ID、员工姓名、汇报链、项目路径、消息、任务、文档和附件正文不会进入推理请求。
+报告建议只向本机 Laya 进程传入执行状态、规范化错误码、是否与预算相关三个元数据字段，以及固定 Choice 问题。发送前预算建议只传入 `{ remainingPerTask, remainingPerDay, positionId }`；客户端不能上传额度、使用量、剩余额度或草稿。上游预算按 `(positionId, taskId, dayKey)` 记账，而当前 RoleWeave 记录没有权威的 `taskId` 和 `dayKey`，因此单任务与单日剩余均保持未知并在调用 Laya 前弃权；不复用上一任务用量，也不从累计使用量或本地日界线猜测。未知错误码归入 `other`。关联 ID、员工姓名、汇报链、项目路径、消息、任务、文档和附件正文不会进入推理请求。
 
 Laya 输出只能选择本地定义的调查步骤。低置信度显示“信息不足”；当前 `0.6` 阈值是保守保护线，不是业务准确率承诺。规则事实仍然权威，Laya overlay 不能降低风险、清除失败或替代产品验收。
 
