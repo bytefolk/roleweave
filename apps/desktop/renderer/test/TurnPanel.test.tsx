@@ -15,6 +15,8 @@ const availability: TurnPanelProps["engineAvailability"] = {
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
+  gemini: { configured: true, ready: true },
+  "openai-compatible": { configured: true, ready: true },
 };
 
 function ControlledPanel({ onCreateTurn }: { onCreateTurn: (request: CreateTurnRequest) => void }) {
@@ -631,6 +633,7 @@ describe("TurnThread #234 — preserve conversation viewport on employee switch"
 it.each([
   ["qoder", "Qoder"], ["claude-code", "Claude Code"], ["claude-local", "Claude Code"],
   ["codex", "Codex"], ["codex-local", "Codex"], ["workbuddy", "WorkBuddy"],
+  ["gemini", "Gemini"],
   ["openai-compatible", "OpenAI Compatible"],
 ] as const)("never renders %s diagnostics without weakening send guards", async (engine, label) => {
   const createTurn = vi.fn();
