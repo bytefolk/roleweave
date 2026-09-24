@@ -115,7 +115,8 @@ restart RoleWeave:
 
 - `OPENAI_API_KEY` — the service credential (Bearer token).
 - `OPENAI_BASE_URL` — the provider root, e.g. `https://tokenrhythm.studio/v1`.
-  The engine appends `/chat/completions`. Defaults to `https://api.openai.com/v1`.
+  The engine appends `/chat/completions`. There is no default: the URL must use
+  HTTPS, or loopback HTTP, and cannot contain credentials, a query, or fragment.
 - `OPENAI_MODEL` — a model id the provider's catalog serves, e.g.
   `deepseek-v4-flash`.
 

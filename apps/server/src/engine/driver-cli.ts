@@ -435,6 +435,8 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, mod
     if (source.OPENAI_BASE_URL !== undefined) environment.OPENAI_BASE_URL = source.OPENAI_BASE_URL;
     if (source.OPENAI_MODEL !== undefined) environment.OPENAI_MODEL = source.OPENAI_MODEL;
   } else if (engine === "gemini") {
+    if (source.GEMINI_API_KEY !== undefined) environment.GEMINI_API_KEY = source.GEMINI_API_KEY;
+    if (source.GEMINI_MODEL !== undefined) environment.GEMINI_MODEL = source.GEMINI_MODEL;
     if (source.GEMINI_CLI_HOME !== undefined) environment.GEMINI_CLI_HOME = source.GEMINI_CLI_HOME;
     if (source.GOOGLE_GEMINI_BASE_URL !== undefined) environment.GOOGLE_GEMINI_BASE_URL = source.GOOGLE_GEMINI_BASE_URL;
     if (source.DIGITAL_EMPLOYEE_GEMINI_CLIENT !== undefined) environment.DIGITAL_EMPLOYEE_GEMINI_CLIENT = source.DIGITAL_EMPLOYEE_GEMINI_CLIENT;

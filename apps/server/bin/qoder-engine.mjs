@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
-import { resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
+import { openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
 import { resolveGeminiClient, validatedGeminiModel } from "../src/gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../src/workbuddy-binary.js";
 import { workbuddyConfiguration, workbuddyEnvironment, workbuddyVersionProfile, probeWorkbuddyExecutable, workbuddyTurnArgs, createWorkbuddyParser } from "../src/workbuddy-runtime.js";
@@ -745,11 +745,9 @@ async function turnRunOpenAICompatible(workspaceDir, positionId, input) {
     error: { code, message: `OpenAI-compatible request failed (${code}); check OPENAI_API_KEY, OPENAI_BASE_URL and the selected model.`, retryable, terminalReason: "engine_internal_error" },
   });
 
-  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.ROLEWEAVE_TURN_MODEL ?? process.env.OPENAI_MODEL;
-  if (!apiKey?.trim()) { fail("openai.api_key_missing"); return; }
-  if (!model?.trim()) { fail("openai.model_missing"); return; }
+  const configuration = openAICompatibleConfiguration(process.env);
+  if (!configuration.ready) { fail(configuration.code ?? "openai.configuration_invalid"); return; }
+  const { apiKey, baseUrl, model } = configuration;
 
   try {
     const controller = new AbortController();
@@ -769,9 +767,8 @@ async function turnRunOpenAICompatible(workspaceDir, positionId, input) {
     });
     clearTimeout(timeout);
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
       const code = `openai.http_${response.status}`;
-      emit({ type: "model.delta", runId, timestamp: now(), text: `Provider returned ${response.status}: ${body.slice(0, 200)}` });
+      await response.body?.cancel().catch(() => {});
       fail(code); return;
     }
 

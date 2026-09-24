@@ -5,6 +5,7 @@ import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption,
 import { decodeStableUtf8, readStableBoundedFile } from "./stable-read.js";
 import { LocalProviderConfigError, resolveClaudeProviderConfig, resolveQoderProviderConfig } from "./local-provider-config.js";
 import { qoderModelCatalog } from "./qoder-model-catalog.js";
+import { openAICompatibleConfiguration } from "./codex-binary.js";
 
 const MAX_MODEL_CACHE_BYTES = 4 * 1024 * 1024;
 
@@ -88,19 +89,19 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
     followLocalDefault = true;
     allowCustomModel = true;
     customModelFormat = "strict";
-    selectedDefault = isModelId(env.OPENAI_MODEL) ? env.OPENAI_MODEL : undefined;
-    const hasKey = typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.trim().length > 0;
-    const baseUrl = typeof env.OPENAI_BASE_URL === "string" ? env.OPENAI_BASE_URL : undefined;
-    const hasUrl = baseUrl !== undefined && baseUrl.trim().length > 0;
+    const configuration = openAICompatibleConfiguration(env);
+    selectedDefault = configuration.ready ? configuration.model : undefined;
     let endpointHost: string | undefined;
-    if (hasUrl) { try { endpointHost = new URL(baseUrl).hostname; } catch { /* invalid url stays absent */ } }
+    if (configuration.ready && configuration.baseUrl) endpointHost = new URL(configuration.baseUrl).hostname;
+    const hasProviderInput = [env.OPENAI_API_KEY, env.OPENAI_BASE_URL, env.OPENAI_MODEL]
+      .some((value) => typeof value === "string" && value.length > 0);
     connection = {
-      source: hasKey || hasUrl ? "environment" : "official",
+      source: hasProviderInput ? "environment" : "official",
       kind: "gateway",
       billing: "provider",
-      status: hasKey && hasUrl ? "configured" : "invalid",
+      status: configuration.ready ? "configured" : "invalid",
       ...(endpointHost ? { endpointHost } : {}),
-      ...(hasKey && hasUrl ? {} : { message: "Set OPENAI_API_KEY and OPENAI_BASE_URL to use this agent" }),
+      ...(configuration.ready ? {} : { message: "Set a valid OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL to use this agent" }),
     };
   } else {
     source = "default";
