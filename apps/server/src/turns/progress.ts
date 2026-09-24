@@ -161,6 +161,7 @@ export class ProgressTracker {
     if (!snapshot) return;
     const step = snapshot.steps[stepIndex];
     if (!step) return;
+    if (step.status === "failed" && status !== "failed") return;
     const timestamp = this.now();
     const startedAt = status === "running" ? timestamp : step.startedAt;
     const finishedAt = status === "running" ? undefined : timestamp;

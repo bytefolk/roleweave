@@ -468,7 +468,11 @@ export async function executeTurn(
       // and callbacks before durable completion and reservation release.
       forwarder.close();
     }
-    if (result.status !== "indeterminate" || result.events.length > 0) {
+    const terminalEvent = result.events[result.events.length - 1];
+    const streamingFailed = result.status === "indeterminate" || terminalEvent?.type === "run.failed";
+    if (streamingFailed) {
+      tracker.reportStepFail(turnId, 2, result.status === "indeterminate" ? result.code : terminalEvent?.type === "run.failed" ? terminalEvent.error.code : "turn_failed");
+    } else {
       tracker.reportStepFinish(turnId, 2);
     }
     tracker.reportStepStart(turnId, 3);

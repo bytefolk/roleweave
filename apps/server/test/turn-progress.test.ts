@@ -1,9 +1,29 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import test from "node:test";
+import type { TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
 import { EventBus } from "../src/bus.js";
 import { ProgressTracker } from "../src/turns/progress.js";
 import { WORKBENCH_PROGRESS_STEPS, STALE_PROGRESS_MS } from "@roleweave/shared";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
+
+class EventsThenIndeterminateDriver implements TurnRunDriver {
+  constructor(private readonly code: string) {}
+  async turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
+    const runId = "partial-run";
+    const timestamp = new Date().toISOString();
+    const events: TurnRunResult["events"] = [{ type: "run.started", runId, timestamp }];
+    for (const event of events) request.onEvent?.(event);
+    return { status: "indeterminate", events, diagnostic: "partial", code: this.code };
+  }
+}
+
+class ThrowingAfterEventsDriver implements TurnRunDriver {
+  async turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
+    request.onEvent?.({ type: "run.started", runId: "boom", timestamp: new Date().toISOString() });
+    throw new Error("driver crashed");
+  }
+}
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {
   const opened = await api(baseUrl, "/workspace/open", { method: "POST", token, body: { path: dir } });
@@ -39,6 +59,89 @@ test("progress tracker marks a running snapshot stuck after the stale window", (
   tracker.begin({ workspacePath: "/tmp/ws", taskId: "t-stale", positionId: "pos" });
   now = STALE_PROGRESS_MS + 1;
   assert.equal(tracker.getSnapshot("t-stale")?.overallStatus, "stuck");
+});
+
+test("a failed streaming step stays failed and overall does not return to running", () => {
+  const tracker = new ProgressTracker(new EventBus(), () => 1_000);
+  tracker.begin({ workspacePath: "/tmp/ws", taskId: "t-fail", positionId: "pos" });
+  tracker.reportStepFinish("t-fail", 0);
+  tracker.reportStepStart("t-fail", 1);
+  tracker.reportStepFinish("t-fail", 1);
+  tracker.reportStepStart("t-fail", 2);
+  tracker.reportStepFail("t-fail", 2, "turn_driver_failure");
+  tracker.reportStepFinish("t-fail", 2);
+  tracker.reportStepStart("t-fail", 3);
+  tracker.reportStepFinish("t-fail", 3);
+  const snapshot = tracker.getSnapshot("t-fail");
+  assert.equal(snapshot?.steps[2]?.status, "failed");
+  assert.equal(snapshot?.overallStatus, "failed");
+});
+
+test("failCurrent / abort marks overall failed", () => {
+  const tracker = new ProgressTracker(new EventBus(), () => 1_000);
+  tracker.begin({ workspacePath: "/tmp/ws", taskId: "t-abort", positionId: "pos" });
+  tracker.reportStepStart("t-abort", 0);
+  tracker.failCurrent("t-abort", "turn_cancelled");
+  assert.equal(tracker.getSnapshot("t-abort")?.overallStatus, "failed");
+  assert.equal(tracker.getSnapshot("t-abort")?.steps[0]?.status, "failed");
+});
+
+test("persisted snapshot can be loaded after a restart and served by GET", async () => {
+  const workspace = await copyExampleWorkspace();
+  const server = await startTestServer();
+  try {
+    const tracker = new ProgressTracker(new EventBus(), () => 1_000);
+    tracker.begin({ workspacePath: workspace, taskId: "t-disk", positionId: "repo-owner" });
+    tracker.reportStepFail("t-disk", 0, "engine.timeout");
+    await tracker.persist(workspace, "repo-owner", "t-disk");
+    const restarted = new ProgressTracker(new EventBus(), () => 1_000);
+    const loaded = await restarted.loadPersisted(workspace, "repo-owner", "t-disk");
+    assert.equal(loaded?.overallStatus, "failed");
+    assert.equal(loaded?.steps[0]?.status, "failed");
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const one = await api(server.baseUrl, "/turns/progress/t-disk?positionId=repo-owner", { token: server.token });
+    assert.equal(one.status, 200);
+    assert.equal((one.body as { overallStatus: string }).overallStatus, "failed");
+  } finally {
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+async function postTurnProgress(
+  turnDriver: TurnRunDriver,
+): Promise<{ status: number; turnId: string; snapshot: { steps: Array<{ status: string }>; overallStatus: string; progress: number } }> {
+  const server = await startTestServer(undefined, turnDriver);
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const created = await api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", input: "summarize open issues", engine: "qoder" },
+    });
+    assert.equal(created.status, 200);
+    const turnId = (created.body as { turnId: string }).turnId;
+    const one = await api(server.baseUrl, `/turns/progress/${turnId}?positionId=repo-owner`, { token: server.token });
+    assert.equal(one.status, 200);
+    return { status: created.status, turnId, snapshot: one.body as { steps: Array<{ status: string }>; overallStatus: string; progress: number } };
+  } finally {
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+}
+
+test("POST /turns with forwarded events then indeterminate keeps streaming failed", async () => {
+  const { snapshot } = await postTurnProgress(new EventsThenIndeterminateDriver("turn_cancelled"));
+  assert.equal(snapshot.steps[2]?.status, "failed");
+  assert.equal(snapshot.overallStatus, "failed");
+  assert.notEqual(snapshot.steps[2]?.status, "success");
+});
+
+test("POST /turns driver throw after events keeps overall failed", async () => {
+  const { snapshot } = await postTurnProgress(new ThrowingAfterEventsDriver());
+  assert.equal(snapshot.steps[2]?.status, "failed");
+  assert.equal(snapshot.overallStatus, "failed");
 });
 
 test("POST /turns reports all five workbench steps and GET /turns/progress lists them", async () => {

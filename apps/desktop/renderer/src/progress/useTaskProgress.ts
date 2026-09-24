@@ -8,14 +8,12 @@ export interface UseTaskProgressResult {
   select: (taskId: string | null) => void;
 }
 
-function applyEvent(current: TaskProgressSnapshot[], event: TaskProgressEvent, workspacePath?: string): TaskProgressSnapshot[] {
-  if (workspacePath && event.positionId && current[0] && current.every((item) => item.workspacePath !== workspacePath) && current.length === 0) {
-    // keep going — empty list is fine
-  }
+export function applyProgressEvent(current: TaskProgressSnapshot[], event: TaskProgressEvent): TaskProgressSnapshot[] {
   const existing = current.find((item) => item.taskId === event.taskId);
   if (!existing) return current;
   const steps = existing.steps.map((step, index) => {
     if (index !== event.stepIndex) return step;
+    if (step.status === "failed" && event.stepStatus !== "failed") return step;
     return {
       ...step,
       status: event.stepStatus,
@@ -25,13 +23,14 @@ function applyEvent(current: TaskProgressSnapshot[], event: TaskProgressEvent, w
       ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
     };
   });
+  const failed = existing.overallStatus === "failed" || event.stepStatus === "failed" || steps.some((step) => step.status === "failed");
   const next: TaskProgressSnapshot = {
     ...existing,
     steps,
     progress: event.progress,
     currentStep: event.stepIndex,
     updatedAt: event.timestamp,
-    overallStatus: event.stepStatus === "failed" ? "failed" : event.progress >= 100 ? "success" : existing.overallStatus === "stuck" ? "stuck" : "running",
+    overallStatus: failed ? "failed" : event.progress >= 100 ? "success" : existing.overallStatus === "stuck" ? "stuck" : "running",
   };
   return [next, ...current.filter((item) => item.taskId !== event.taskId)];
 }
@@ -79,7 +78,7 @@ export function useTaskProgress(workspaceOpen: boolean): UseTaskProgressResult {
           void reload();
           return current;
         }
-        return applyEvent(current, payload);
+        return applyProgressEvent(current, payload);
       });
     });
   }, [reload]);
