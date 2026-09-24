@@ -35,5 +35,10 @@ test("ready-host IPC rejects extra candidate fields before HTTP", async () => {
   let calls = 0;
   const api = async () => { calls++; };
   assert.equal((await readyHostChoice({ ...scope, candidates: [{ positionId: "a", engine: "qoder", ready: true, prompt: "secret" }] }, api)).status, 400);
+  assert.equal((await readyHostChoice({ ...scope, candidates: [{ positionId: "a", engine: "unknown", ready: true }] }, api)).status, 400);
+  assert.equal((await readyHostChoice({
+    ...scope,
+    candidates: [{ positionId: "a", engine: "qoder", ready: true }, { positionId: "a", engine: "codex", ready: true }],
+  }, api)).status, 400);
   assert.equal(calls, 0);
 });
