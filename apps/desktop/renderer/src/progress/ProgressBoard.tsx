@@ -1,4 +1,4 @@
-import { Button, Drawer, Progress, Skeleton, Tag } from "antd";
+import { Button, Drawer, Progress, Skeleton, Space, Tag } from "antd";
 import { useT } from "@roleweave/ui";
 import type { TaskProgressSnapshot, TurnProgressStepStatus } from "@roleweave/shared";
 import { Activity, RefreshCw } from "lucide-react";
@@ -47,10 +47,16 @@ export function ProgressBoard({ workspaceOpen, positionNames }: { workspaceOpen:
         <ul className="owb-progress__list">
           {snapshots.map((snapshot) => (
             <li key={snapshot.taskId}>
-              <button type="button" className="owb-progress__row" onClick={() => select(snapshot.taskId)}>
+              <button type="button" className={`owb-progress__row is-${snapshot.overallStatus}`} onClick={() => select(snapshot.taskId)}>
+                <span className={`owb-progress__dot is-${snapshot.overallStatus}`} aria-hidden="true" />
                 <span className="owb-progress__who">{snapshot.employeeName ?? positionNames?.[snapshot.positionId] ?? snapshot.positionId}</span>
                 <span className="owb-progress__title">{snapshot.taskTitle ?? snapshot.taskId}</span>
-                <Progress percent={snapshot.progress} size="small" status={snapshot.overallStatus === "failed" ? "exception" : snapshot.overallStatus === "success" ? "success" : "active"} />
+                <Progress
+                  className={snapshot.overallStatus === "stuck" ? "owb-progress__bar is-stuck" : "owb-progress__bar"}
+                  percent={snapshot.progress}
+                  size="small"
+                  status={snapshot.overallStatus === "failed" ? "exception" : snapshot.overallStatus === "success" ? "success" : "active"}
+                />
                 <span className="owb-progress__step">{stepLabel(snapshot)}</span>
                 <span className="owb-progress__elapsed">{elapsed(snapshot)}</span>
                 <Tag color={statusTone[snapshot.overallStatus]}>{t(`progress.status.${snapshot.overallStatus}`)}</Tag>
@@ -65,6 +71,12 @@ export function ProgressBoard({ workspaceOpen, positionNames }: { workspaceOpen:
         onClose={() => select(null)}
         width={480}
         destroyOnClose
+        footer={selected ? (
+          <Space>
+            <Button disabled aria-label={t("progress.abort")} title={t("progress.abortHint")}>{t("progress.abort")}</Button>
+            <Button disabled aria-label={t("progress.retry")} title={t("progress.retryHint")}>{t("progress.retry")}</Button>
+          </Space>
+        ) : null}
       >
         {selected ? <TaskProgressTimeline snapshot={selected} /> : null}
       </Drawer>

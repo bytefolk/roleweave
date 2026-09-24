@@ -8,8 +8,14 @@ function duration(step: TurnProgressStepView): string {
   return `${(step.durationMs / 1000).toFixed(1)}s`;
 }
 
+function started(step: TurnProgressStepView): string {
+  if (step.startedAt === undefined) return "";
+  return new Date(step.startedAt).toLocaleTimeString();
+}
+
 export function TaskProgressTimeline({ snapshot }: { snapshot: TaskProgressSnapshot }) {
   const t = useT();
+  const tail = snapshot.steps.map((step) => step.message).filter((message): message is string => Boolean(message)).slice(-8);
   return (
     <div className="owb-progress-timeline">
       <p className="owb-progress-timeline__meta">
@@ -22,12 +28,27 @@ export function TaskProgressTimeline({ snapshot }: { snapshot: TaskProgressSnaps
           children: (
             <div>
               <strong>{step.name}</strong>
-              <span className="owb-muted"> · {t(`progress.step.${step.status}`)}{duration(step) ? ` · ${duration(step)}` : ""}</span>
+              <span className="owb-muted">
+                {" · "}
+                {t(`progress.step.${step.status}`)}
+                {started(step) ? ` · ${t("progress.startedAt")} ${started(step)}` : ""}
+                {duration(step) ? ` · ${duration(step)}` : ""}
+              </span>
               {step.message ? <p className="owb-progress-timeline__message">{step.message}</p> : null}
             </div>
           ),
         }))}
       />
+      {tail.length > 0 ? (
+        <div className="owb-progress-timeline__tail">
+          <h2>{t("progress.logTail")}</h2>
+          <ol>
+            {tail.map((line, index) => (
+              <li key={`${index}-${line}`}>{line}</li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
     </div>
   );
 }

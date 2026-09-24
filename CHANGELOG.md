@@ -7,7 +7,7 @@
 
 ### Added
 
-- #480：管理者实时任务进度看板。工作台自报 thread-context / spawn / streaming / persist / terminal 五步，经现有 `GET /events` 广播 `turn.progress`，快照落在回合目录。不新开 WebSocket，不改 spawn/finish 契约。Refs #480。
+- #480：管理者实时任务进度看板。工作台自报 thread-context / spawn / streaming / persist / terminal 五步，经现有 `GET /events` 广播 `turn.progress`，快照落在 `.roleweave/conversations/<positionId>/progress/<turnId>.json`。列表合并内存与落盘，刷新或控制面重启后仍可回看。不新开 WebSocket，不改 spawn/finish 契约。Refs #480。
 
 - #472：组织模块新增可选 3D 星图（恒星/行星/卫星、Bloom 霓虹连线、3D 星空穹顶与视差星层）。标签为 DOM 文字保持清晰。搜索定位、拖拽改汇报线、招聘/撤销复用现通道。无 WebGL 退化为列表。Refs #472。
 

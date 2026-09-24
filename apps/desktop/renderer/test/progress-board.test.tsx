@@ -103,4 +103,36 @@ describe("ProgressBoard", () => {
     renderBoard();
     await screen.findByText("还没有进行中或刚结束的回合。");
   });
+
+  it("marks a stale row stuck and keeps reserved abort/retry in the drawer", async () => {
+    installBridge({
+      turnProgress: vi.fn().mockResolvedValue({
+        status: 200,
+        body: { snapshots: [{ ...snapshot, overallStatus: "stuck", steps: snapshot.steps.map((step, index) => index === 2 ? { ...step, message: "waiting on engine" } : step) }] },
+      }),
+    });
+    renderBoard();
+    await screen.findByText("疑似卡住");
+    fireEvent.click(screen.getByRole("button", { name: /summarize open issues/ }));
+    await waitFor(() => expect(screen.getByText("步骤摘要")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "中止" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "重试" })).toBeDisabled();
+    expect(screen.getAllByText("waiting on engine").length).toBeGreaterThan(0);
+  });
+
+  it("unsticks when a later progress event arrives", () => {
+    const stuck: TaskProgressSnapshot = { ...snapshot, overallStatus: "stuck" };
+    const event: TaskProgressEvent = {
+      taskId: "turn-1",
+      employeeId: "repo-owner",
+      positionId: "repo-owner",
+      stepIndex: 2,
+      stepName: "Engine streaming",
+      stepStatus: "running",
+      totalSteps: 5,
+      progress: 40,
+      timestamp: Date.now(),
+    };
+    expect(applyProgressEvent([stuck], event)[0]?.overallStatus).toBe("running");
+  });
 });

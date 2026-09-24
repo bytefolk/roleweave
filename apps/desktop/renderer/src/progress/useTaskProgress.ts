@@ -30,7 +30,7 @@ export function applyProgressEvent(current: TaskProgressSnapshot[], event: TaskP
     progress: event.progress,
     currentStep: event.stepIndex,
     updatedAt: event.timestamp,
-    overallStatus: failed ? "failed" : event.progress >= 100 ? "success" : existing.overallStatus === "stuck" ? "stuck" : "running",
+    overallStatus: failed ? "failed" : event.progress >= 100 ? "success" : "running",
   };
   return [next, ...current.filter((item) => item.taskId !== event.taskId)];
 }

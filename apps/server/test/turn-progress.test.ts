@@ -168,7 +168,75 @@ test("POST /turns reports all five workbench steps and GET /turns/progress lists
     const one = await api(server.baseUrl, `/turns/progress/${turnId}?positionId=repo-owner`, { token: server.token });
     assert.equal(one.status, 200);
     assert.equal((one.body as { taskId: string }).taskId, turnId);
+    assert.equal((await api(server.baseUrl, "/reports", { token: server.token })).status, 200);
+    assert.equal((await api(server.baseUrl, "/approvals", { token: server.token })).status, 200);
   } finally {
     await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
   }
+});
+
+test("GET /turns/progress lists a snapshot written before this process started", async () => {
+  const workspace = await copyExampleWorkspace();
+  const server = await startTestServer();
+  try {
+    const writer = new ProgressTracker(new EventBus(), () => 1_000);
+    writer.begin({ workspacePath: workspace, taskId: "t-history", positionId: "repo-owner", taskTitle: "prior run" });
+    writer.reportStepFail("t-history", 0, "engine.timeout");
+    await writer.persist(workspace, "repo-owner", "t-history");
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const list = await api(server.baseUrl, "/turns/progress", { token: server.token });
+    assert.equal(list.status, 200);
+    const snapshots = (list.body as { snapshots: Array<{ taskId: string; overallStatus: string }> }).snapshots;
+    const mine = snapshots.find((item) => item.taskId === "t-history");
+    assert.ok(mine, "persisted history must appear on the list without a live Map entry");
+    assert.equal(mine.overallStatus, "failed");
+  } finally {
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("three concurrent turns keep isolated snapshots", async () => {
+  const server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const bodies = [
+      { positionId: "repo-owner", input: "task-a" },
+      { positionId: "issue-researcher", input: "task-b" },
+      { positionId: "release-engineer", input: "task-c" },
+    ];
+    const created = await Promise.all(bodies.map((body) => api(server.baseUrl, "/turns", {
+      method: "POST",
+      token: server.token,
+      body: { ...body, engine: "qoder" },
+    })));
+    for (const response of created) assert.equal(response.status, 200);
+    const list = await api(server.baseUrl, "/turns/progress", { token: server.token });
+    assert.equal(list.status, 200);
+    const snapshots = (list.body as { snapshots: Array<{ taskId: string; positionId: string; taskTitle?: string; progress: number }> }).snapshots;
+    for (const body of bodies) {
+      const row = snapshots.find((item) => item.positionId === body.positionId);
+      assert.ok(row, `${body.positionId} must have its own snapshot`);
+      assert.equal(row.taskTitle, body.input);
+      assert.equal(row.progress, 100);
+      assert.equal(snapshots.filter((item) => item.taskId === row.taskId).length, 1);
+    }
+    const ids = new Set(created.map((response) => (response.body as { turnId: string }).turnId));
+    assert.equal(ids.size, 3);
+  } finally {
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("reportStepFinish stays under one millisecond on average", () => {
+  const tracker = new ProgressTracker(new EventBus(), () => 1_000);
+  tracker.begin({ workspacePath: "/tmp/ws", taskId: "t-perf", positionId: "pos" });
+  const rounds = 400;
+  const started = performance.now();
+  for (let i = 0; i < rounds; i++) tracker.reportStepFinish("t-perf", 0);
+  const average = (performance.now() - started) / rounds;
+  assert.ok(average < 1, `reportStepFinish averaged ${average}ms`);
 });

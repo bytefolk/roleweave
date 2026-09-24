@@ -5,7 +5,7 @@ import { sendJson } from "../http.js";
 
 export async function handleTurnProgressList(ctx: ControlPlaneContext, res: ServerResponse): Promise<void> {
   const workspace = ctx.workspace.requireOpen();
-  sendJson(res, 200, { snapshots: ctx.progressTracker.listActive(workspace.dir) });
+  sendJson(res, 200, { snapshots: await ctx.progressTracker.listAll(workspace.dir) });
 }
 
 export async function handleTurnProgressGet(

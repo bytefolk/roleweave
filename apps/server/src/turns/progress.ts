@@ -130,6 +130,54 @@ export class ProgressTracker {
       .sort((left, right) => right.updatedAt - left.updatedAt);
   }
 
+  /**
+   * Merge live snapshots with files under
+   * `.roleweave/conversations/<positionId>/progress/`. Live rows win on
+   * `taskId`. Used by GET /turns/progress so a control-plane restart still
+   * shows finished history.
+   */
+  async listAll(workspacePath: string): Promise<TaskProgressSnapshot[]> {
+    const live = this.listActive(workspacePath);
+    const seen = new Set(live.map((snapshot) => snapshot.taskId));
+    const persisted = await this.listPersisted(workspacePath);
+    const merged = [...live, ...persisted.filter((snapshot) => !seen.has(snapshot.taskId))];
+    merged.sort((left, right) => right.updatedAt - left.updatedAt);
+    return merged.slice(0, MAX_FINISHED);
+  }
+
+  async listPersisted(workspacePath: string): Promise<TaskProgressSnapshot[]> {
+    const root = path.join(workspacePath, ".roleweave", "conversations");
+    let positions: string[] = [];
+    try {
+      const entries = await fs.readdir(root, { withFileTypes: true });
+      positions = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    } catch {
+      return [];
+    }
+    const loaded: TaskProgressSnapshot[] = [];
+    for (const positionId of positions) {
+      const dir = path.join(root, positionId, "progress");
+      let files: string[] = [];
+      try {
+        files = (await fs.readdir(dir)).filter((name) => name.endsWith(".json"));
+      } catch {
+        continue;
+      }
+      for (const name of files) {
+        try {
+          const parsed = JSON.parse(await fs.readFile(path.join(dir, name), "utf8")) as TaskProgressSnapshot;
+          if (parsed.schemaVersion !== TURN_PROGRESS_SCHEMA_VERSION) continue;
+          if (typeof parsed.taskId !== "string" || parsed.workspacePath !== workspacePath) continue;
+          loaded.push(this.refreshStuck(parsed));
+        } catch {
+          // A corrupt snapshot must not fail the list.
+        }
+      }
+    }
+    loaded.sort((left, right) => right.updatedAt - left.updatedAt);
+    return loaded.slice(0, MAX_FINISHED);
+  }
+
   async persist(workspacePath: string, positionId: string, taskId: string): Promise<void> {
     const snapshot = this.snapshots.get(taskId);
     if (!snapshot) return;
