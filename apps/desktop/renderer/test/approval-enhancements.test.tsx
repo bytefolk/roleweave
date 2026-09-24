@@ -156,7 +156,7 @@ describe("Approval Center Enhancements (#456)", () => {
       expect(screen.getByTestId("approval-diff-viewer")).toBeInTheDocument();
     });
 
-    it("fetches cryptographic audit trail and renders verified tag for valid hash chain", async () => {
+    it("fetches audit trail and renders server-validated tag with real event types", async () => {
       const auditMock = vi.fn().mockResolvedValue({
         status: 200,
         body: {
@@ -164,20 +164,34 @@ describe("Approval Center Enhancements (#456)", () => {
           events: [
             {
               seq: 1,
-              type: "created",
+              type: "requested",
               timestamp: "2026-09-23T10:00:00.000Z",
               actor: "qoder",
               hash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
             },
             {
               seq: 2,
-              type: "decided",
+              type: "decision",
               timestamp: "2026-09-23T10:05:00.000Z",
               actor: "operator",
               decision: "granted",
               scope: "once",
               previousHash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
               hash: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            },
+            {
+              seq: 3,
+              type: "escalated",
+              timestamp: "2026-09-23T10:06:00.000Z",
+              actor: "lead",
+              hash: "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            },
+            {
+              seq: 4,
+              type: "decision_reverted",
+              timestamp: "2026-09-23T10:07:00.000Z",
+              actor: "operator",
+              hash: "sha256:4444444444444444444444444444444444444444444444444444444444444444",
             },
           ],
         },
@@ -203,82 +217,26 @@ describe("Approval Center Enhancements (#456)", () => {
       });
 
       await waitFor(() => {
-        expect(screen.getByTestId("audit-verified-tag")).toBeInTheDocument();
+        expect(screen.getByTestId("audit-server-validated-tag")).toBeInTheDocument();
       });
 
       expect(screen.getByTestId("approval-audit-trail")).toBeInTheDocument();
       expect(document.querySelector('[data-audit-seq="1"]')).toBeInTheDocument();
       expect(document.querySelector('[data-audit-seq="2"]')).toBeInTheDocument();
+      expect(document.querySelector('[data-audit-seq="3"]')).toBeInTheDocument();
+      expect(document.querySelector('[data-audit-seq="4"]')).toBeInTheDocument();
+      expect(screen.getByText("requested")).toBeInTheDocument();
+      expect(screen.getByText("decision")).toBeInTheDocument();
+      expect(screen.getByText("escalated")).toBeInTheDocument();
+      expect(screen.getByText("decision_reverted")).toBeInTheDocument();
     });
 
-    it("verifies hash chain for interleaved workspace audit events", async () => {
+    it("displays warning alert when server returns audit verification failure", async () => {
       const auditMock = vi.fn().mockResolvedValue({
-        status: 200,
+        status: 500,
         body: {
-          approvalId: "appr-1",
-          events: [
-            {
-              seq: 2,
-              type: "created",
-              timestamp: "2026-09-23T10:00:00.000Z",
-              actor: "qoder",
-              previousHash: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-              hash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-            },
-            {
-              seq: 5,
-              type: "decided",
-              timestamp: "2026-09-23T10:05:00.000Z",
-              actor: "operator",
-              decision: "granted",
-              previousHash: "sha256:4444444444444444444444444444444444444444444444444444444444444444",
-              hash: "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-            },
-          ],
-        },
-      });
-
-      window.owb = {
-        ...window.owb,
-        approvalAudit: auditMock,
-      } as unknown as typeof window.owb;
-
-      render(
-        <ApprovalDetailDrawer
-          item={makeItem()}
-          open={true}
-          onClose={() => {}}
-          onApprove={() => {}}
-          onDeny={() => {}}
-        />,
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId("audit-verified-tag")).toBeInTheDocument();
-      });
-    });
-
-    it("rejects invalid or tampered audit chains without displaying verified tag", async () => {
-      const auditMock = vi.fn().mockResolvedValue({
-        status: 200,
-        body: {
-          approvalId: "appr-1",
-          events: [
-            {
-              seq: 1,
-              type: "created",
-              timestamp: "2026-09-23T10:00:00.000Z",
-              hash: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-            },
-            {
-              seq: 2,
-              type: "decided",
-              timestamp: "2026-09-23T10:05:00.000Z",
-              // Mismatched previousHash for adjacent seq 2
-              previousHash: "sha256:badbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbad1",
-              hash: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-            },
-          ],
+          code: "approval_storage_failed",
+          message: "Approval audit ledger verification failed",
         },
       });
 
@@ -301,16 +259,20 @@ describe("Approval Center Enhancements (#456)", () => {
         expect(auditMock).toHaveBeenCalled();
       });
 
-      expect(screen.queryByTestId("audit-verified-tag")).not.toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText("Approval audit ledger verification failed")).toBeInTheDocument();
+      });
+
+      expect(screen.queryByTestId("audit-server-validated-tag")).not.toBeInTheDocument();
     });
   });
 
   describe("ApprovalQueue enhancements", () => {
-    it("supports select all tools from the same turn and batch deny", () => {
-      const onDenyBatch = vi.fn();
+    it("pins select-all source boundary adversarially across turnId, runId, conversationId, positionId, and engine", () => {
+      const onDenyBatch = vi.fn().mockResolvedValue({ succeeded: ["appr-1", "appr-2"], failed: [] });
       const onApproveBatch = vi.fn();
 
-      const source = {
+      const baseSource = {
         kind: "session" as const,
         positionId: "engineer-1",
         conversationId: "sess-1",
@@ -319,13 +281,18 @@ describe("Approval Center Enhancements (#456)", () => {
         engine: "qoder" as const,
       };
 
-      const item1 = makeItem({ approvalId: "appr-1", source });
-      const item2 = makeItem({ approvalId: "appr-2", source });
-      const item3 = makeItem({ approvalId: "appr-3", source });
+      const item1 = makeItem({ approvalId: "appr-1", source: baseSource, batchMaxItems: 3 });
+      const item2 = makeItem({ approvalId: "appr-2", source: baseSource, batchMaxItems: 3 });
+      // Adversarial negative cases
+      const itemDiffTurn = makeItem({ approvalId: "appr-diff-turn", source: { ...baseSource, turnId: "turn-2" }, batchMaxItems: 3 });
+      const itemDiffRun = makeItem({ approvalId: "appr-diff-run", source: { ...baseSource, runId: "run-2" }, batchMaxItems: 3 });
+      const itemDiffConv = makeItem({ approvalId: "appr-diff-conv", source: { ...baseSource, conversationId: "sess-2" }, batchMaxItems: 3 });
+      const itemDiffPos = makeItem({ approvalId: "appr-diff-pos", source: { ...baseSource, positionId: "engineer-2" }, batchMaxItems: 3 });
+      const itemDiffEngine = makeItem({ approvalId: "appr-diff-engine", source: { ...baseSource, engine: "codex" as any }, batchMaxItems: 3 });
 
       render(
         <ApprovalQueue
-          items={[item1, item2, item3]}
+          items={[item1, item2, itemDiffTurn, itemDiffRun, itemDiffConv, itemDiffPos, itemDiffEngine]}
           onApprove={() => {}}
           onDeny={() => {}}
           onApproveBatch={onApproveBatch}
@@ -338,21 +305,69 @@ describe("Approval Center Enhancements (#456)", () => {
       const checkbox1 = within(card1).getByRole("checkbox");
       fireEvent.click(checkbox1);
 
-      // "Select all in turn" button appears
+      // "Select all in turn" button appears and count is ONLY 2 (item1 and item2)
       const selectAllBtn = screen.getByTestId("approval-batch-select-all-turn");
       expect(selectAllBtn).toBeInTheDocument();
-      expect(selectAllBtn.textContent).toContain("3");
+      expect(selectAllBtn.textContent).toContain("2");
 
       // Click "Select all in turn"
       fireEvent.click(selectAllBtn);
 
-      // Batch deny button is now enabled
+      // Verify adversarial items remain UNSELECTED
+      for (const id of ["appr-diff-turn", "appr-diff-run", "appr-diff-conv", "appr-diff-pos", "appr-diff-engine"]) {
+        const card = screen.getByTestId(`approval-card-${id}`);
+        const checkbox = within(card).getByRole("checkbox");
+        expect(checkbox).not.toBeChecked();
+      }
+
+      // Bulk deny button is now enabled
       const denyBatchBtn = screen.getByTestId("approval-batch-deny-button");
       expect(denyBatchBtn).not.toBeDisabled();
 
-      // Click Batch Deny
+      // Click Bulk Deny
       fireEvent.click(denyBatchBtn);
-      expect(onDenyBatch).toHaveBeenCalledWith(["appr-1", "appr-2", "appr-3"]);
+      expect(onDenyBatch).toHaveBeenCalledWith(["appr-1", "appr-2"]);
+    });
+
+    it("enforces batch-limit boundary when selecting all items in turn", () => {
+      const baseSource = {
+        kind: "session" as const,
+        positionId: "engineer-1",
+        conversationId: "sess-1",
+        turnId: "turn-1",
+        runId: "run-1",
+        engine: "qoder" as const,
+      };
+
+      // 4 items available with batchMaxItems: 2
+      const item1 = makeItem({ approvalId: "limit-1", source: baseSource, batchMaxItems: 2 });
+      const item2 = makeItem({ approvalId: "limit-2", source: baseSource, batchMaxItems: 2 });
+      const item3 = makeItem({ approvalId: "limit-3", source: baseSource, batchMaxItems: 2 });
+      const item4 = makeItem({ approvalId: "limit-4", source: baseSource, batchMaxItems: 2 });
+
+      render(
+        <ApprovalQueue
+          items={[item1, item2, item3, item4]}
+          onApprove={() => {}}
+          onDeny={() => {}}
+          onApproveBatch={() => {}}
+          onDenyBatch={() => {}}
+        />,
+      );
+
+      // Select first item checkbox
+      const card1 = screen.getByTestId("approval-card-limit-1");
+      fireEvent.click(within(card1).getByRole("checkbox"));
+
+      // Click "Select all in turn"
+      const selectAllBtn = screen.getByTestId("approval-batch-select-all-turn");
+      fireEvent.click(selectAllBtn);
+
+      // Should only select up to batchMaxItems (2 items)
+      expect(within(screen.getByTestId("approval-card-limit-1")).getByRole("checkbox")).toBeChecked();
+      expect(within(screen.getByTestId("approval-card-limit-2")).getByRole("checkbox")).toBeChecked();
+      expect(within(screen.getByTestId("approval-card-limit-3")).getByRole("checkbox")).not.toBeChecked();
+      expect(within(screen.getByTestId("approval-card-limit-4")).getByRole("checkbox")).not.toBeChecked();
     });
 
     it("renders pagination controls when visible items exceed 20", () => {

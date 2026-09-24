@@ -129,6 +129,7 @@ export function ApprovalQueue({
   const [toDate, setToDate] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [batchSelection, setBatchSelection] = useState<ReadonlySet<string>>(new Set());
+  const [batchOperating, setBatchOperating] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [notificationPermission, setNotificationPermission] = useState<DesktopNotificationPermission>(desktopNotificationPermission);
   const notificationSnapshot = useRef<Map<string, { status: ApprovalQueueItem["decision"]["kind"]; expiry: ReturnType<typeof approvalExpiryState> }>>();
@@ -419,13 +420,23 @@ export function ApprovalQueue({
               type="info"
               showIcon
               message={t("apr.batchSummary", { count: batchSelectedItems.length, source: batchSourceLabel })}
-              description={batchSelectedItems.length < 2 ? t("apr.batchNeedMore") : t("apr.batchBoundary")}
+              description={
+                batchSelectedItems.length < 2 ? (
+                  t("apr.batchNeedMore")
+                ) : (
+                  <div>
+                    <div>{t("apr.batchBoundary")}</div>
+                    <div style={{ marginTop: 2, opacity: 0.85 }}>{t("apr.batchDenyBoundary")}</div>
+                  </div>
+                )
+              }
               action={
                 <Space>
                   {sameTurnBatchableItems.length > batchSelectedItems.length &&
                   batchSelectedItems.length < Math.min(...sameTurnBatchableItems.map(i => i.batchMaxItems ?? 32)) ? (
                     <Button
                       size="small"
+                      disabled={batchOperating}
                       data-testid="approval-batch-select-all-turn"
                       onClick={() => {
                         const maximum = Math.min(...sameTurnBatchableItems.map(i => i.batchMaxItems ?? 32));
@@ -442,7 +453,8 @@ export function ApprovalQueue({
                   <Button
                     type="primary"
                     size="small"
-                    disabled={batchSelectedItems.length < 2 || !onApproveBatch}
+                    disabled={batchSelectedItems.length < 2 || !onApproveBatch || batchOperating}
+                    loading={batchOperating}
                     onClick={() => {
                       const ids = batchSelectedItems.map(item => item.approvalId);
                       setBatchSelection(new Set());
@@ -455,14 +467,25 @@ export function ApprovalQueue({
                     danger
                     size="small"
                     data-testid="approval-batch-deny-button"
-                    disabled={batchSelectedItems.length < 2 || !onDenyBatch}
-                    onClick={() => {
+                    disabled={batchSelectedItems.length < 2 || !onDenyBatch || batchOperating}
+                    loading={batchOperating}
+                    onClick={async () => {
                       const ids = batchSelectedItems.map(item => item.approvalId);
-                      setBatchSelection(new Set());
-                      onDenyBatch?.(ids);
+                      setBatchOperating(true);
+                      try {
+                        const result = await onDenyBatch?.(ids);
+                        if (result && typeof result === "object" && "succeeded" in result && Array.isArray((result as { succeeded: string[] }).succeeded)) {
+                          const succeededSet = new Set((result as { succeeded: string[] }).succeeded);
+                          setBatchSelection(current => new Set([...current].filter(id => !succeededSet.has(id))));
+                        } else {
+                          setBatchSelection(new Set());
+                        }
+                      } finally {
+                        setBatchOperating(false);
+                      }
                     }}
                   >
-                    {t("apr.batchDeny")}
+                    {t("apr.bulkDeny")}
                   </Button>
                 </Space>
               }

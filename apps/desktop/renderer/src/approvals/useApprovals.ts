@@ -169,10 +169,76 @@ export function useApprovals(workspacePath: string | undefined) {
       if (owner.current === generation) { unique.forEach(id => inFlight.current.delete(id)); setBusy(new Set(inFlight.current)); await refreshRef.current(); }
     }
   }, [t]);
-  const denyBatch = useCallback(async (ids: string[], reason?: string) => {
+  const denyBatch = useCallback(async (ids: string[], reason?: string): Promise<{ succeeded: string[]; failed: string[] }> => {
+    const generation = owner.current;
     const unique = [...new Set(ids)];
-    await Promise.all(unique.map(id => decide(id, "denied", reason)));
-  }, [decide]);
+    const candidates = unique.map(id => cache.current.items.find(item => item.id === id)).filter(Boolean) as ApprovalView[];
+    if (candidates.length === 0 || !cache.current.token) return { succeeded: [], failed: unique };
+
+    unique.forEach(id => inFlight.current.add(id));
+    setBusy(new Set(inFlight.current));
+    setErrors(errors => {
+      const next = { ...errors };
+      unique.forEach(id => delete next[id]);
+      return next;
+    });
+
+    const succeeded: string[] = [];
+    const failed: string[] = [];
+
+    try {
+      for (const item of candidates) {
+        if (owner.current !== generation) break;
+        if (!item.canDecide) {
+          failed.push(item.id);
+          setErrors(es => ({ ...es, [item.id]: t("apr.submitFailed") }));
+          continue;
+        }
+        const prior = pending.current.get(item.id);
+        if (prior && (prior.decision !== "denied" || prior.reason !== reason)) {
+          failed.push(item.id);
+          setErrors(es => ({ ...es, [item.id]: t("apr.retrySameDecision") }));
+          continue;
+        }
+        const request = prior ?? {
+          requestId: crypto.randomUUID(),
+          expectedVersion: item.version,
+          decision: "denied" as const,
+          scope: "once" as const,
+          ...(reason ? { reason } : {}),
+        };
+        pending.current.set(item.id, request);
+        try {
+          const response = await window.owb.decideApproval({ ...request, id: item.id, workspaceToken: cache.current.token });
+          if (owner.current !== generation) break;
+          if (response.status !== 200 && response.status !== 202) {
+            pending.current.delete(item.id);
+            failed.push(item.id);
+            setErrors(es => ({ ...es, [item.id]: errorText(response.body, t("apr.submitFailed")) }));
+          } else {
+            pending.current.delete(item.id);
+            succeeded.push(item.id);
+            const updated = response.body as ApprovalView;
+            cache.current.items = cache.current.items.map(a => a.id === item.id ? updated : a);
+          }
+        } catch (err) {
+          pending.current.delete(item.id);
+          failed.push(item.id);
+          setErrors(es => ({ ...es, [item.id]: err instanceof Error ? err.message : t("apr.submitFailed") }));
+        }
+      }
+      if (owner.current === generation) {
+        setItems([...cache.current.items]);
+      }
+    } finally {
+      if (owner.current === generation) {
+        unique.forEach(id => inFlight.current.delete(id));
+        setBusy(new Set(inFlight.current));
+        await refreshRef.current();
+      }
+    }
+    return { succeeded, failed };
+  }, [t]);
   const refresh = useCallback(() => refreshRef.current(), []);
   return { items, loading, ready, error, errors, busy, decide, decideBatch, denyBatch, refresh };
 }

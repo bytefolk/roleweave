@@ -95,24 +95,6 @@ export function ApprovalDetailDrawer({
     };
   }, [open, item?.approvalId, t]);
 
-  const isChainVerified = useMemo(() => {
-    if (auditEvents.length === 0) return false;
-    for (let i = 0; i < auditEvents.length; i++) {
-      const e = auditEvents[i]!;
-      if (!e.hash || !/^sha256:[a-f0-9]{64}$/.test(e.hash)) return false;
-      if (typeof e.seq !== "number" || e.seq < 1) return false;
-      if (i > 0) {
-        const prev = auditEvents[i - 1]!;
-        if (e.seq <= prev.seq) return false;
-        if (e.seq === prev.seq + 1 && e.previousHash !== prev.hash) return false;
-      } else {
-        if (e.seq === 1 && e.previousHash !== undefined) return false;
-      }
-      if (e.previousHash && !/^sha256:[a-f0-9]{64}$/.test(e.previousHash)) return false;
-    }
-    return true;
-  }, [auditEvents]);
-
   if (!item) {
     return (
       <Drawer
@@ -297,8 +279,8 @@ export function ApprovalDetailDrawer({
           <section data-testid="approval-audit-trail">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <h3 className="owb-approval-drawer__section-title" style={{ margin: 0 }}>{t("apr.auditTrail")}</h3>
-              {auditEvents.length > 0 && isChainVerified ? (
-                <Tag color="green" data-testid="audit-verified-tag">{t("apr.auditVerified")}</Tag>
+              {auditEvents.length > 0 && !auditError ? (
+                <Tag color="blue" data-testid="audit-server-validated-tag">{t("apr.auditServerValidated")}</Tag>
               ) : null}
             </div>
             {auditLoading ? (
