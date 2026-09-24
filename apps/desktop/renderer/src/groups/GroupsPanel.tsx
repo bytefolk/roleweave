@@ -85,6 +85,32 @@ export interface GroupsPanelProps {
 const GROUP_RECONCILE_INTERVAL_MS = 1_000;
 const GROUP_RECONCILE_MAX_READS = 180;
 
+interface RelayStopSuggestion {
+  groupRef: string;
+  messageId: string;
+  completedTurnId: string;
+  remainingCount: number;
+  probability: number;
+  expiresAt: string;
+}
+
+function parseRelayStopSuggestion(payload: unknown): RelayStopSuggestion | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const value = payload as Partial<RelayStopSuggestion>;
+  if (
+    typeof value.groupRef !== "string" || typeof value.messageId !== "string" ||
+    typeof value.completedTurnId !== "string" ||
+    !Number.isInteger(value.remainingCount) || value.remainingCount! < 1 ||
+    typeof value.probability !== "number" || !Number.isFinite(value.probability) ||
+    typeof value.expiresAt !== "string"
+  ) return null;
+  return value as RelayStopSuggestion;
+}
+
+function relayStopKey(groupRef: string, messageId: string): string {
+  return `${groupRef}\0${messageId}`;
+}
+
 function filterPositionOption(input: string, option?: { label?: unknown; value?: unknown }): boolean {
   return `${String(option?.label ?? "")} ${String(option?.value ?? "")}`
     .toLocaleLowerCase()
@@ -204,6 +230,8 @@ export function GroupsPanel({
   const [panelError, setPanelError] = useState<string | null>(null);
   const [dismissOpen, setDismissOpen] = useState(false);
   const [dismissing, setDismissing] = useState(false);
+  const [relayStopSuggestions, setRelayStopSuggestions] = useState<Record<string, RelayStopSuggestion>>({});
+  const relayStopSuggestionsRef = useRef<Record<string, RelayStopSuggestion>>({});
 
   useEffect(() => {
     selectedRefRef.current = selectedRef;
@@ -325,6 +353,58 @@ export function GroupsPanel({
       if (selectedRefRef.current === ref) setSelectedRef(null);
     });
     return off;
+  }, []);
+
+  // #469: Laya advice is advisory only. A live relay pauses until its owner
+  // explicitly decides; losing the renderer always fails open to Continue so
+  // the accepted mention order cannot remain stranded behind a vanished UI.
+  useEffect(() => {
+    const remove = (groupRef: string, messageId: string) => {
+      const key = relayStopKey(groupRef, messageId);
+      const next = { ...relayStopSuggestionsRef.current };
+      delete next[key];
+      relayStopSuggestionsRef.current = next;
+      setRelayStopSuggestions(next);
+    };
+    const continueAll = (clearState = true) => {
+      const pending = Object.values(relayStopSuggestionsRef.current);
+      if (pending.length === 0) return;
+      relayStopSuggestionsRef.current = {};
+      if (clearState) setRelayStopSuggestions({});
+      for (const suggestion of pending) {
+        void window.owb.decideGroupRelayStop({
+          conversationRef: suggestion.groupRef,
+          messageId: suggestion.messageId,
+          decision: "continue",
+        }).catch(() => undefined);
+      }
+    };
+    const offEvent = window.owb.onEvent((event) => {
+      const envelope = event as { type?: string; payload?: unknown };
+      if (envelope.type === "group.relay.stop.suggested") {
+        const suggestion = parseRelayStopSuggestion(envelope.payload);
+        if (suggestion === null) return;
+        const next = {
+          ...relayStopSuggestionsRef.current,
+          [relayStopKey(suggestion.groupRef, suggestion.messageId)]: suggestion,
+        };
+        relayStopSuggestionsRef.current = next;
+        setRelayStopSuggestions(next);
+        return;
+      }
+      if (envelope.type !== "group.relay.stop.resolved") return;
+      const payload = envelope.payload as { groupRef?: unknown; messageId?: unknown } | null;
+      if (typeof payload?.groupRef !== "string" || typeof payload.messageId !== "string") return;
+      remove(payload.groupRef, payload.messageId);
+    });
+    const offStatus = window.owb.onSseStatus((state) => {
+      if (state === "connecting") continueAll();
+    });
+    return () => {
+      offEvent();
+      offStatus();
+      continueAll(false);
+    };
   }, []);
 
   const selectedReconcileSignature = useMemo(() => {
@@ -503,6 +583,31 @@ export function GroupsPanel({
     t,
   ]);
 
+  const decideRelayStop = useCallback(async (
+    suggestion: RelayStopSuggestion,
+    decision: "stop" | "continue",
+  ) => {
+    const isCurrent = captureScope();
+    const key = relayStopKey(suggestion.groupRef, suggestion.messageId);
+    const next = { ...relayStopSuggestionsRef.current };
+    delete next[key];
+    relayStopSuggestionsRef.current = next;
+    setRelayStopSuggestions(next);
+    try {
+      const response = await window.owb.decideGroupRelayStop({
+        conversationRef: suggestion.groupRef,
+        messageId: suggestion.messageId,
+        decision,
+      });
+      if (!isCurrent()) return;
+      if (response.status !== 200 && response.status !== 409) {
+        setPanelError(apiErrorMessage(response.body, t("grp.relayStopFail")));
+      }
+    } catch {
+      if (isCurrent()) setPanelError(t("grp.relayStopFailOffline"));
+    }
+  }, [captureScope, t]);
+
   const unrenderableOutput = t("turn.unrenderableOutput");
 
   /** Merge persisted timeline with live SSE buffers for this group into a single
@@ -569,6 +674,9 @@ export function GroupsPanel({
     }
     return ids;
   }, [liveRuns, selectedRef, timeline]);
+
+  const selectedRelayStopSuggestions = Object.values(relayStopSuggestions)
+    .filter((suggestion) => suggestion.groupRef === selectedRef);
 
   const nonMembers = positions.filter(
     (position) => selectedGroup !== null && !selectedGroup.members.includes(position.id),
@@ -815,7 +923,7 @@ export function GroupsPanel({
                           </time>
                         )}
                       </header>
-                      {isLive ? <ProgressTrail turn={turn} /> : turn.errorCode !== "group_relay_blocked" ? <ProgressTrail turn={turn} /> : null}
+                      {isLive || !["group_relay_blocked", "group_relay_stopped"].includes(turn.errorCode ?? "") ? <ProgressTrail turn={turn} /> : null}
                       {turn.output ? (
                         <GroupBubbleExpand
                           summaryClassName="owb-turn__output owb-clamp-2"
@@ -837,7 +945,13 @@ export function GroupsPanel({
                         />
                       ) : null}
                       {!isLive && turn.status === "indeterminate" ? (
-                        <p className="owb-turn__warning owb-clamp-2">{t(turn.errorCode === "group_relay_blocked" ? "grp.relayBlocked" : "grp.untrustedWarning")}</p>
+                        <p className="owb-turn__warning owb-clamp-2">{t(
+                          turn.errorCode === "group_relay_blocked"
+                            ? "grp.relayBlocked"
+                            : turn.errorCode === "group_relay_stopped"
+                              ? "grp.relayStopped"
+                              : "grp.untrustedWarning",
+                        )}</p>
                       ) : null}
                     </article>
                   </div>
@@ -848,6 +962,28 @@ export function GroupsPanel({
               ) : null}
               </div>
             </div>
+
+            {selectedRelayStopSuggestions.map((suggestion) => (
+              <section
+                key={relayStopKey(suggestion.groupRef, suggestion.messageId)}
+                className="owb-groups__relay-stop"
+                role="status"
+                aria-label={t("grp.relayStopTitle")}
+              >
+                <div>
+                  <strong>{t("grp.relayStopTitle")}</strong>
+                  <p>{t("grp.relayStopBody", { count: suggestion.remainingCount })}</p>
+                </div>
+                <div className="owb-groups__relay-stop-actions">
+                  <AntButton size="small" danger onClick={() => void decideRelayStop(suggestion, "stop")}>
+                    {t("grp.relayStopConfirm")}
+                  </AntButton>
+                  <AntButton size="small" type="primary" onClick={() => void decideRelayStop(suggestion, "continue")}>
+                    {t("grp.relayStopContinue")}
+                  </AntButton>
+                </div>
+              </section>
+            ))}
 
             <form
               className="owb-turn-composer owb-groups__composer"

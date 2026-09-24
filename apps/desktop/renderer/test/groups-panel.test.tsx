@@ -36,6 +36,7 @@ function installBridge(
     createGroup?: () => Promise<{ status: number; body: unknown }>;
     addGroupMember?: () => Promise<{ status: number; body: unknown }>;
     createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
+    decideGroupRelayStop?: () => Promise<{ status: number; body: unknown }>;
   } = {},
 ): OwbBridge {
   const bridge = {
@@ -52,7 +53,9 @@ function installBridge(
     ...(options.createGroup ? { createGroup: vi.fn(options.createGroup) } : {}),
     ...(options.addGroupMember ? { addGroupMember: vi.fn(options.addGroupMember) } : {}),
     ...(options.createGroupTurn ? { createGroupTurn: vi.fn(options.createGroupTurn) } : {}),
+    decideGroupRelayStop: vi.fn(options.decideGroupRelayStop ?? (async () => ({ status: 200, body: {} }))),
     onEvent: vi.fn().mockReturnValue(() => {}),
+    onSseStatus: vi.fn().mockReturnValue(() => {}),
   };
   window.owb = bridge as unknown as OwbBridge;
   return window.owb;
@@ -67,6 +70,7 @@ function renderPanel(
     createGroup?: () => Promise<{ status: number; body: unknown }>;
     addGroupMember?: () => Promise<{ status: number; body: unknown }>;
     createGroupTurn?: () => Promise<{ status: number; body: unknown }>;
+    decideGroupRelayStop?: () => Promise<{ status: number; body: unknown }>;
     engineForPosition?: (positionId: string) => TurnEngine;
     engineAvailability?: Partial<Record<TurnEngine, TurnEngineAvailability>>;
     onReconcileTimeline?: (timeline: GroupTimeline) => void;
@@ -78,6 +82,7 @@ function renderPanel(
     createGroup: extra.createGroup,
     addGroupMember: extra.addGroupMember,
     createGroupTurn: extra.createGroupTurn,
+    decideGroupRelayStop: extra.decideGroupRelayStop,
   });
   return {
     bridge,
@@ -106,6 +111,32 @@ function renderPanel(
     ),
   };
 }
+
+function emitBridgeEvent(bridge: OwbBridge, event: unknown): void {
+  const onEvent = bridge.onEvent as unknown as ReturnType<typeof vi.fn>;
+  act(() => {
+    for (const [listener] of onEvent.mock.calls) listener(event);
+  });
+}
+
+function emitSseStatus(bridge: OwbBridge, state: "connecting" | "connected"): void {
+  const onSseStatus = bridge.onSseStatus as unknown as ReturnType<typeof vi.fn>;
+  act(() => {
+    for (const [listener] of onSseStatus.mock.calls) listener(state);
+  });
+}
+
+const relayStopSuggestion = {
+  type: "group.relay.stop.suggested",
+  payload: {
+    groupRef: group.conversationRef,
+    messageId: "message-1",
+    completedTurnId: "turn-owner",
+    remainingCount: 1,
+    probability: 0.92,
+    expiresAt: "2026-09-01T00:00:32.000Z",
+  },
+};
 
 function completedTurn(): TurnRecord {
   return {
@@ -520,6 +551,7 @@ it("sends explicit relay in selected order and restores mode, outputs and blocke
     { kind: "user", schemaVersion: "group-message.v1", conversationRef: group.conversationRef, messageId: "relay-old", input: "write and review", mode: "relay", mentions: ["release-engineer", "repo-owner"], createdAt: group.createdAt },
     { kind: "member", turn: { ...completedTurn(), output: "first step draft" } },
     { kind: "member", turn: { ...completedTurn(), turnId: "blocked", positionId: "release-engineer", status: "indeterminate", output: undefined, error: { code: "group_relay_blocked", message: "Earlier step failed", retryable: false } } },
+    { kind: "member", turn: { ...completedTurn(), turnId: "stopped", positionId: "release-engineer", status: "indeterminate", output: undefined, error: { code: "group_relay_stopped", message: "Owner stopped", retryable: false } } },
   ] };
   const { bridge, container } = renderPanel({
     timeline: vi.fn().mockResolvedValue({ status: 200, body: timeline }),
@@ -530,6 +562,10 @@ it("sends explicit relay in selected order and restores mode, outputs and blocke
   const blockedReply = container.querySelector(".owb-turn__error")!.closest("article")!;
   expect(within(blockedReply).queryByRole("group", { name: "执行进展" })).not.toBeInTheDocument();
   expect(within(blockedReply).queryByRole("timer")).not.toBeInTheDocument();
+  const stoppedWarning = screen.getByText("未执行：owner 已停止剩余接力。");
+  const stoppedReply = stoppedWarning.closest("article")!;
+  expect(within(stoppedReply).queryByRole("group", { name: "执行进展" })).not.toBeInTheDocument();
+  expect(within(stoppedReply).queryByRole("timer")).not.toBeInTheDocument();
   expect(screen.getByText(/依次接力 · Release Engineer → Repo Owner/)).toBeInTheDocument();
   pickSelectOption("协作方式", "依次接力");
   pickSelectOption("选择要 @ 的成员", "Release Engineer");
@@ -538,6 +574,93 @@ it("sends explicit relay in selected order and restores mode, outputs and blocke
   fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), { target: { value: "next relay" } });
   fireEvent.click(screen.getByRole("button", { name: "发送群消息" }));
   await waitFor(() => expect(bridge.createGroupTurn).toHaveBeenCalledWith({ conversationRef: group.conversationRef, input: "next relay", engine: "qoder", engines: { "release-engineer": "qoder", "repo-owner": "qoder" }, mentions: ["release-engineer", "repo-owner"], mode: "relay" }));
+});
+
+it("shows relay STOP advice and requires an explicit owner confirmation (#469)", async () => {
+  const decideGroupRelayStop = vi.fn().mockResolvedValue({ status: 200, body: {} });
+  const { bridge } = renderPanel({
+    timeline: vi.fn().mockResolvedValue({ status: 200, body: completedTimeline() }),
+    decideGroupRelayStop,
+  });
+  await screen.findByText("OWNER_DONE");
+
+  emitBridgeEvent(bridge, relayStopSuggestion);
+
+  const suggestion = await screen.findByRole("status", { name: "接力停止建议" });
+  expect(suggestion).toHaveTextContent("1");
+  expect(decideGroupRelayStop).not.toHaveBeenCalled();
+
+  fireEvent.click(within(suggestion).getByRole("button", { name: "停止剩余步骤" }));
+  await waitFor(() => expect(decideGroupRelayStop).toHaveBeenCalledWith({
+    conversationRef: group.conversationRef,
+    messageId: "message-1",
+    decision: "stop",
+  }));
+});
+
+it("continues a paused relay only when the owner explicitly chooses Continue (#469)", async () => {
+  const decideGroupRelayStop = vi.fn().mockResolvedValue({ status: 200, body: {} });
+  const { bridge } = renderPanel({ decideGroupRelayStop });
+  await screen.findByRole("combobox", { name: "选择要 @ 的成员" });
+  emitBridgeEvent(bridge, relayStopSuggestion);
+
+  const suggestion = await screen.findByRole("status", { name: "接力停止建议" });
+  fireEvent.click(within(suggestion).getByRole("button", { name: "继续接力" }));
+
+  await waitFor(() => expect(decideGroupRelayStop).toHaveBeenCalledWith({
+    conversationRef: group.conversationRef,
+    messageId: "message-1",
+    decision: "continue",
+  }));
+  expect(screen.queryByRole("status", { name: "接力停止建议" })).not.toBeInTheDocument();
+});
+
+it("clears relay STOP advice when the server resolves the gate (#469)", async () => {
+  const decideGroupRelayStop = vi.fn().mockResolvedValue({ status: 200, body: {} });
+  const { bridge } = renderPanel({ decideGroupRelayStop });
+  await screen.findByRole("combobox", { name: "选择要 @ 的成员" });
+  emitBridgeEvent(bridge, relayStopSuggestion);
+  await screen.findByRole("status", { name: "接力停止建议" });
+
+  emitBridgeEvent(bridge, {
+    type: "group.relay.stop.resolved",
+    payload: { groupRef: group.conversationRef, messageId: "message-1", decision: "continue", reason: "timeout" },
+  });
+
+  expect(screen.queryByRole("status", { name: "接力停止建议" })).not.toBeInTheDocument();
+  expect(decideGroupRelayStop).not.toHaveBeenCalled();
+});
+
+it("continues a pending relay when SSE reconnects (#469)", async () => {
+  const decideGroupRelayStop = vi.fn().mockResolvedValue({ status: 200, body: {} });
+  const { bridge } = renderPanel({ decideGroupRelayStop });
+  await screen.findByRole("combobox", { name: "选择要 @ 的成员" });
+  emitBridgeEvent(bridge, relayStopSuggestion);
+  await screen.findByRole("status", { name: "接力停止建议" });
+
+  emitSseStatus(bridge, "connecting");
+
+  await waitFor(() => expect(decideGroupRelayStop).toHaveBeenCalledWith({
+    conversationRef: group.conversationRef,
+    messageId: "message-1",
+    decision: "continue",
+  }));
+});
+
+it("continues a pending relay before the group panel unmounts (#469)", async () => {
+  const decideGroupRelayStop = vi.fn().mockResolvedValue({ status: 200, body: {} });
+  const { bridge, unmount } = renderPanel({ decideGroupRelayStop });
+  await screen.findByRole("combobox", { name: "选择要 @ 的成员" });
+  emitBridgeEvent(bridge, relayStopSuggestion);
+  await screen.findByRole("status", { name: "接力停止建议" });
+
+  unmount();
+
+  expect(decideGroupRelayStop).toHaveBeenCalledWith({
+    conversationRef: group.conversationRef,
+    messageId: "message-1",
+    decision: "continue",
+  });
 });
 
 it.each(["create", "add"] as const)("does not refresh another workspace after an abandoned %s request finishes", async (action) => {

@@ -160,6 +160,11 @@ export interface OwbBridge {
     messageId: string;
     spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>;
   }>>;
+  decideGroupRelayStop(request: {
+    conversationRef: string;
+    messageId: string;
+    decision: "stop" | "continue";
+  }): Promise<OwbApiResponse<{ messageId: string; decision: "stop" | "continue" }>>;
   groupTimeline(conversationRef: string): Promise<OwbApiResponse<GroupTimeline>>;
   createGoal(request: { title: string; description: string; acceptanceCriteria?: string[] }): Promise<OwbApiResponse<GoalsCreateResponse>>;
   goals(): Promise<OwbApiResponse<{ goals: GoalSummary[] }>>;
