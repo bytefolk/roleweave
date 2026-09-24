@@ -198,14 +198,18 @@ function paintSkyCanvas(): HTMLCanvasElement {
   if (!ctx) return canvas;
   ctx.fillStyle = "#02040c";
   ctx.fillRect(0, 0, width, height);
-  const milky = ctx.createLinearGradient(0, 0, width, height);
-  milky.addColorStop(0, "rgba(8,12,28,0)");
-  milky.addColorStop(0.35, "rgba(70,120,255,0.16)");
-  milky.addColorStop(0.5, "rgba(180,210,255,0.28)");
-  milky.addColorStop(0.62, "rgba(255,90,160,0.12)");
-  milky.addColorStop(1, "rgba(8,12,28,0)");
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate(-0.38);
+  const milky = ctx.createLinearGradient(0, -36, 0, 36);
+  milky.addColorStop(0, "rgba(70,120,255,0)");
+  milky.addColorStop(0.35, "rgba(90,150,255,0.16)");
+  milky.addColorStop(0.5, "rgba(200,220,255,0.32)");
+  milky.addColorStop(0.65, "rgba(255,90,160,0.12)");
+  milky.addColorStop(1, "rgba(70,120,255,0)");
   ctx.fillStyle = milky;
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(-width, -40, width * 2, 80);
+  ctx.restore();
   for (const [color, x, y, r, a] of [
     ["70, 90, 255", 220, 180, 220, 0.22],
     ["0, 180, 255", 760, 300, 260, 0.18],
@@ -475,9 +479,9 @@ export default function OrgStarMap({
       composer.addPass(new RenderPass(scene, camera));
       const bloom = new UnrealBloomPass(
         new THREE.Vector2(host.clientWidth || 640, host.clientHeight || 420),
-        reducedMotion ? 0.35 : 1.35,
-        0.72,
-        0.12,
+        reducedMotion ? 0.35 : 1.12,
+        0.62,
+        0.2,
       );
       composer.addPass(bloom);
       host.appendChild(renderer.domElement);
