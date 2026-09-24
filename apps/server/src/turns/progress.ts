@@ -43,7 +43,7 @@ function overall(steps: readonly TurnProgressStepView[], updatedAt: number, now:
 }
 
 function snapshotPath(workspace: string, positionId: string, turnId: string): string {
-  return path.join(workspace, ".roleweave", "conversations", positionId, "turns", `${turnId}.progress.json`);
+  return path.join(workspace, ".roleweave", "conversations", positionId, "progress", `${turnId}.json`);
 }
 
 /**
