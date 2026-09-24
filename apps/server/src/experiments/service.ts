@@ -7,7 +7,7 @@ import {
 import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
 import { readReports } from "../routes/reports.js";
-import { JEV_ENDPOINT, JevAdviceProvider, MAX_ADVICE_ITEMS, normalizeAdviceMetadata, type AdviceProvider } from "./provider.js";
+import { LAYA_ENDPOINT, LayaAdviceProvider, MAX_ADVICE_ITEMS, normalizeAdviceMetadata, type AdviceProvider } from "./provider.js";
 import { readExperiments, writeExperiments, type StoredExperiments } from "./store.js";
 
 const conflict = () => new OrgApiError(errorCodes.experiments_conflict, 409, "workspace or experimental settings changed; reload before trying again");
@@ -43,14 +43,14 @@ export function experiments(ctx: ControlPlaneContext): ExperimentsService {
   return ctx.experimentsService ??= new ExperimentsService(ctx);
 }
 
-/** Explicit user actions only; no polling, event hook, or settings read calls Jev. */
+/** Explicit user actions only; no polling, event hook, or settings read calls local Laya. */
 export class ExperimentsService {
   private active?: WorkspaceExperiments;
   private readonly provider: AdviceProvider;
   private readonly unsubscribe: () => void;
   private readonly now: () => number;
   constructor(private readonly ctx: ControlPlaneContext, options: { provider?: AdviceProvider; now?: () => number } = {}) {
-    this.provider = options.provider ?? new JevAdviceProvider(ctx.config.jevApiKey ?? "", ctx.config.jevModel);
+    this.provider = options.provider ?? new LayaAdviceProvider(ctx.config.layaUrl, ctx.config.layaModel);
     this.now = options.now ?? Date.now;
     this.unsubscribe = ctx.workspace.onOpened(() => {
       if (this.active) this.invalidate(this.active);
@@ -107,12 +107,12 @@ export class ExperimentsService {
 
   private view(state: WorkspaceExperiments, stored: StoredExperiments): ExperimentsResponse {
     const enabled = stored.valid && !state.inhibited && stored.settings.enabled;
-    const configured = Boolean(this.ctx.config.jevApiKey);
+    const configured = this.ctx.config.layaEnabled;
     return {
       schemaVersion: "experiments.v1", workspacePath: state.workspace.dir, workspaceSession: state.session,
       revision: stored.settings.revision, enabled,
       availability: !stored.valid || state.inhibited ? "storage_error" : !enabled ? "disabled" : configured ? "ready" : "not_configured",
-      provider: { name: "Jev / TypeSafe", endpointHost: "api.typesafe.ai", endpointUrl: JEV_ENDPOINT, configured },
+      provider: { name: "Laya · local", endpointHost: "127.0.0.1", endpointUrl: this.ctx.config.layaUrl || LAYA_ENDPOINT, configured },
       sending: ["status", "errorCode", "budgetRelated"],
     };
   }
@@ -155,7 +155,7 @@ export class ExperimentsService {
     const stored = state.stored!;
     if (!stored.valid || state.inhibited) return { ...base, reason: "settings_invalid" };
     if (!stored.settings.enabled) return { ...base, status: "disabled" };
-    if (!this.ctx.config.jevApiKey) return { ...base, reason: "not_configured" };
+    if (!this.ctx.config.layaEnabled) return { ...base, reason: "not_configured" };
     const reports = await readReports(this.ctx, workspace);
     this.assertGeneration(state, generation);
     const selected = reports.streams.escalations.slice(0, MAX_ADVICE_ITEMS);
@@ -209,14 +209,14 @@ export class ExperimentsService {
       const stopped = new Promise<never>((_, reject) => {
         onAbort = () => reject(timedOut ? TIMEOUT : conflict());
         controller.signal.addEventListener("abort", onAbort, { once: true });
-        timer = setTimeout(() => { timedOut = true; controller.abort(); }, Math.max(1, this.ctx.config.jevTimeoutMs ?? 2_000));
+        timer = setTimeout(() => { timedOut = true; controller.abort(); }, Math.max(1, this.ctx.config.layaTimeoutMs));
       });
       const suggestions = await Promise.race([this.provider.evaluate(metadata, controller.signal), stopped]);
       this.assertGeneration(state, generation);
       if (controller.signal.aborted) throw conflict();
       if (suggestions.length !== selected.length || suggestions.some(value => !reportAdviceSuggestions.includes(value))) throw new Error("invalid suggestions");
       return { ...base, status: "ready", generatedAt: new Date(this.now()).toISOString(), items: selected.map((item, index) => ({
-        turnId: item.turnId, positionId: item.positionId, at: item.at, suggestion: suggestions[index]!, source: "jev",
+        turnId: item.turnId, positionId: item.positionId, at: item.at, suggestion: suggestions[index]!, source: "laya",
       })) };
     } catch (error) {
       this.assertGeneration(state, generation);

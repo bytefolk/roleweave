@@ -22,8 +22,8 @@ import {
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
 import type { TurnRecord } from "@roleweave/shared";
-import { askJev, type JevAsk } from "../jev/client.js";
-import { jevEnabled } from "../jev/config.js";
+import { askLaya, type LayaAsk } from "../laya/client.js";
+import { layaEnabled } from "../laya/config.js";
 
 const GOAL_ROOT_SEGMENTS = [".roleweave", "goals"];
 const MAX_GOALS = 64;
@@ -233,7 +233,7 @@ function branchJudgmentState(bound: readonly TurnRecord[]) {
 
 export interface ResolveGoalHealthDeps {
   env?: NodeJS.Dict<string>;
-  ask?: JevAsk;
+  ask?: LayaAsk;
   log?: (entry: Record<string, unknown>) => void;
 }
 
@@ -247,20 +247,20 @@ export async function resolveGoalHealth(
 }
 
 /**
- * Advisory Jev overlay. Invalid/external options never apply. A Choice of
+ * Advisory Laya overlay. Invalid/external options never apply. A Choice of
  * on_track/unknown cannot clear failed/indeterminate. Null when disabled,
  * failed, or nothing valid to overlay.
  */
-export async function resolveJevHealthOverlay(
+export async function resolveLayaHealthOverlay(
   goal: Goal,
   turns: readonly TurnRecord[],
   deps: ResolveGoalHealthDeps = {},
 ): Promise<GoalHealthStatus | null> {
   const env = deps.env ?? process.env;
-  if (!jevEnabled(env) || goal.branches.length === 0) return null;
+  if (!layaEnabled(env) || goal.branches.length === 0) return null;
 
-  const ask = deps.ask ?? ((request) => askJev(request, { env }));
-  const log = deps.log ?? ((entry) => console.info("[jev]", JSON.stringify(entry)));
+  const ask = deps.ask ?? ((request) => askLaya(request, { env }));
+  const log = deps.log ?? ((entry) => console.info("[laya]", JSON.stringify(entry)));
 
   try {
     let worst: GoalHealthStatus | null = null;
@@ -288,10 +288,10 @@ export async function resolveJevHealthOverlay(
       });
       const answer = answers?.health;
       const selected = answer?.type === "choice" ? answer.selected : undefined;
-      const usedJev = typeof selected === "string" && isGoalHealthStatus(selected);
+      const usedLaya = typeof selected === "string" && isGoalHealthStatus(selected);
       const clearsFailedBranch =
         fallback === "at_risk" && selected !== "at_risk" && selected !== "blocked";
-      if (usedJev && !clearsFailedBranch) {
+      if (usedLaya && !clearsFailedBranch) {
         branchHealth = selected;
         applied = true;
       }
@@ -300,7 +300,7 @@ export async function resolveJevHealthOverlay(
         branchId: branch.branchId,
         option: branchHealth,
         heuristic: fallback,
-        overlay: usedJev && !clearsFailedBranch ? selected : null,
+        overlay: usedLaya && !clearsFailedBranch ? selected : null,
         probability: answer?.type === "choice" ? answer.probabilities[selected ?? ""] : undefined,
         confidence: answer?.type === "choice" ? answer.confidence : undefined,
         fallback: branchHealth === fallback,
@@ -415,7 +415,7 @@ export class GoalStore {
         await this.appendActivity(workspace, goalId, healthActivity);
         activity.push(healthActivity);
       }
-      const overlay = await resolveJevHealthOverlay(goal, turns, deps);
+      const overlay = await resolveLayaHealthOverlay(goal, turns, deps);
       return {
         goal,
         activity,

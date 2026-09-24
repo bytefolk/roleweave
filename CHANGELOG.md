@@ -14,6 +14,8 @@
 
 ### Changed
 
+- 智能协作建议、Goals 健康 overlay 与审批风险 overlay 从外部 Jev 切换为 Apache-2.0 Laya 本地推理。Provider 仅接受 loopback `POST /v1/systemone` 地址，不发送 API Key 或 Authorization header，并保留项目 opt-in、规则权威、低置信度弃权及有界失败语义。运行时改用 `ROLEWEAVE_LAYA_*` 配置。
+
 - 组织目录树行改为「头像 + 岗位名」主信息，id / 引擎 / 运行状态作次行；树顶增加搜索与全部展开/收起；选中行圆角高亮加强。员工会话面板去掉线程渐变，复制/重试改为悬停浮现，头部与输入工具条收成一行。不改拖拽、招聘占位、审批卡片与重试语义。Refs #458。
 
 ### Fixed
