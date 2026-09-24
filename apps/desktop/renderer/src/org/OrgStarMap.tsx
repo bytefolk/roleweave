@@ -1,36 +1,23 @@
 /**
- * 3D celestial star map of the reporting tree (#472).
+ * 3D orbital org map of the reporting tree (#472).
  *
- * The org becomes a solar system: the enterprise owner is a glowing star,
- * direct reports are planets on the base orbit ring, deeper levels are moons
- * on smaller rings around their own parent, and the whole thing floats in a
- * procedural starfield instead of a flat black canvas. Hierarchy stays
- * legible by construction — deterministic orbital layout (see
- * ./star-map-layout), orbit rings per parent, and DOM-text labels rendered
- * through CSS2DRenderer so names stay pixel-crisp at every zoom level
- * (canvas-baked sprites smear; this view forbids that).
+ * Hierarchy is a solar-system layout: the owner is the hub sphere, direct
+ * reports sit on the base ring, deeper levels are moons on parent rings.
+ * The stage is a dark studio (floor, grid, keyed lights, shadows) so the
+ * spheres read as volume, not flat discs. Avatars and names live on CSS2D
+ * plates; bodies stay solid colored orbs with a faint self-glow. Links and
+ * orbit tori are slightly emissive tubes, not additive neon.
  *
- * Interactions: left-drag orbits the camera, wheel zooms, right-drag pans;
- * clicking a body selects the position (same channel as the directory tree);
- * dragging a body onto another body proposes a reporting-line move through
- * the existing change-manifest channel, with the cycle guard refusing
- * self/descendant drops visibly. The dock offers locate-by-name/id with a
- * camera fly-to, hire-under-selection, caller-owned dismiss and undo — no new
- * mutation path is invented here.
- *
- * three.js is imported by this module only; App lazy-loads it, so the default
- * renderer bundle never pays for WebGL. Environments without a WebGL context
- * (jsdom tests, blocked GPUs) degrade to an accessible list of the same
- * bodies plus the same dock, never a blank panel.
+ * Interactions: left-drag orbits, wheel zooms, right-drag pans; click
+ * selects; drag onto another body proposes a reporting-line move. Dock:
+ * locate, hire-under, dismiss, undo. No WebGL → accessible list fallback.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Spin } from "antd";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { hueForId, useT } from "@roleweave/ui";
 import type { OrgTreeSnapshot } from "@roleweave/shared";
 import {
@@ -50,21 +37,17 @@ export interface OrgStarMapProps {
   enterpriseName?: string;
   displayNames?: Record<string, string>;
   avatarColors?: Record<string, string>;
-  /** Render-ready avatar sources: bodies become portrait medallions fused
-   *  into the space scene; positions without one stay colored planets. */
+  /** Shown as a chip on the name plate and the focus card. */
   avatarUrls?: Record<string, string>;
   displayTitles?: Record<string, string>;
   displayModes?: Record<string, "read_only" | "approval_required">;
-  /** Position ids with a turn in flight: the halo pulses AI purple. */
   runningIds?: ReadonlySet<string>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
-  /** Reporting-line move proposal; the caller owns validation/apply. */
   onMove?: (id: string, reportTo: string | null) => void;
   onHireEntry?: (parentId: string) => void;
   onUndo?: () => void;
   moveDisabled?: boolean;
-  /** Caller-owned dismiss trigger (confirm dialog) for the selected position. */
   dismissSlot?: ReactNode;
   className?: string;
 }
@@ -72,19 +55,14 @@ export interface OrgStarMapProps {
 interface BodyView {
   body: CelestialBody;
   mesh: THREE.Mesh;
-  halo: THREE.Sprite;
-  haloMaterial: THREE.SpriteMaterial;
-  material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
-  medallion: THREE.Sprite | null;
+  material: THREE.MeshPhysicalMaterial;
   label: HTMLDivElement;
   baseColor: THREE.Color;
-  baseOpacity: number;
+  baseEmissive: number;
 }
 
 interface SceneState {
   renderer: THREE.WebGLRenderer;
-  composer: EffectComposer;
-  bloom: UnrealBloomPass;
   labelRenderer: CSS2DRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
@@ -104,59 +82,15 @@ interface SceneState {
   drag: { id: string; x: number; y: number; moved: boolean } | null;
   dropCandidate: string | null;
   disposed: boolean;
-  sky: THREE.Group;
+  pmrem: THREE.PMREMGenerator;
 }
 
-const DEFAULT_CAM: readonly [number, number, number] = [0, 26, 64];
+/** Lower, closer camera so rings foreshorten instead of reading as a 2D oval. */
+const DEFAULT_CAM: readonly [number, number, number] = [36, 28, 48];
 const DRAG_THRESHOLD = 4;
 const RUNNING_COLOR = "#722ed1";
+const STUDIO = 0x12151c;
 
-/** Circular portrait medallion texture: rim glow + clipped photo + ring, so
- *  employee avatars read as planets fused into the space scene (#472 R2). */
-function makeMedallionTexture(rim: THREE.Color): {
-  texture: THREE.CanvasTexture;
-  paint: (img?: HTMLImageElement) => void;
-} {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext("2d");
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const rimStyle = `#${rim.getHexString()}`;
-  const paint = (img?: HTMLImageElement): void => {
-    if (!ctx) return;
-    ctx.clearRect(0, 0, 256, 256);
-    const glow = ctx.createRadialGradient(128, 128, 90, 128, 128, 128);
-    glow.addColorStop(0, `${rimStyle}99`);
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, 256, 256);
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(128, 128, 92, 0, Math.PI * 2);
-    ctx.clip();
-    if (img && img.width > 0 && img.height > 0) {
-      const side = Math.min(img.width, img.height);
-      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 36, 36, 184, 184);
-    } else {
-      ctx.fillStyle = rimStyle;
-      ctx.fillRect(36, 36, 184, 184);
-    }
-    ctx.restore();
-    ctx.beginPath();
-    ctx.arc(128, 128, 92, 0, Math.PI * 2);
-    ctx.strokeStyle = rimStyle;
-    ctx.lineWidth = 5;
-    ctx.stroke();
-    texture.needsUpdate = true;
-  };
-  paint();
-  return { texture, paint };
-}
-
-/** Honest budget line for the focus card: declaration phase says so instead
- *  of fabricating a number. */
 function budgetLabelText(budget: CelestialBody["budget"]): string | null {
   const perTask = budget?.perTask;
   if (!perTask) return null;
@@ -169,146 +103,23 @@ function budgetLabelText(budget: CelestialBody["budget"]): string | null {
   return null;
 }
 
-function makeGlowBeam(from: THREE.Vector3, to: THREE.Vector3, hex: number): THREE.Mesh {
+function makeLink(from: THREE.Vector3, to: THREE.Vector3): THREE.Mesh {
   const direction = to.clone().sub(from);
   const length = Math.max(0.01, direction.length());
   const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.045, 0.045, length, 10, 1, true),
-    new THREE.MeshBasicMaterial({
-      color: hex,
-      transparent: true,
-      opacity: 0.92,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
+    new THREE.CylinderGeometry(0.05, 0.05, length, 12),
+    new THREE.MeshStandardMaterial({
+      color: 0x9ec8ea,
+      emissive: 0x3d7eb0,
+      emissiveIntensity: 0.4,
+      roughness: 0.32,
+      metalness: 0.22,
     }),
   );
   mesh.position.copy(from).add(direction.clone().multiplyScalar(0.5));
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  mesh.castShadow = true;
   return mesh;
-}
-
-function paintSkyCanvas(): HTMLCanvasElement {
-  const width = 1024;
-  const height = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return canvas;
-  ctx.fillStyle = "#02040c";
-  ctx.fillRect(0, 0, width, height);
-  ctx.save();
-  ctx.translate(width / 2, height / 2);
-  ctx.rotate(-0.38);
-  const milky = ctx.createLinearGradient(0, -36, 0, 36);
-  milky.addColorStop(0, "rgba(70,120,255,0)");
-  milky.addColorStop(0.35, "rgba(90,150,255,0.16)");
-  milky.addColorStop(0.5, "rgba(200,220,255,0.32)");
-  milky.addColorStop(0.65, "rgba(255,90,160,0.12)");
-  milky.addColorStop(1, "rgba(70,120,255,0)");
-  ctx.fillStyle = milky;
-  ctx.fillRect(-width, -40, width * 2, 80);
-  ctx.restore();
-  for (const [color, x, y, r, a] of [
-    ["70, 90, 255", 220, 180, 220, 0.22],
-    ["0, 180, 255", 760, 300, 260, 0.18],
-    ["255, 40, 120", 520, 90, 180, 0.1],
-    ["120, 40, 255", 880, 120, 160, 0.12],
-  ] as const) {
-    const g = ctx.createRadialGradient(x, y, 8, x, y, r);
-    g.addColorStop(0, `rgba(${color},${a})`);
-    g.addColorStop(1, `rgba(${color},0)`);
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  for (let i = 0; i < 2400; i += 1) {
-    const x = Math.random() * width;
-    const y = Math.random() * height;
-    const s = Math.random() * Math.random() * 1.6;
-    const c = Math.random();
-    ctx.fillStyle = c > 0.7 ? "rgba(160,190,255,0.9)" : c > 0.4 ? "rgba(255,255,255,0.85)" : "rgba(255,220,170,0.7)";
-    ctx.fillRect(x, y, s, s);
-  }
-  return canvas;
-}
-
-function makeSkyDome(): THREE.Mesh {
-  const texture = new THREE.CanvasTexture(paintSkyCanvas());
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(900, 48, 32),
-    new THREE.MeshBasicMaterial({
-      map: texture,
-      side: THREE.BackSide,
-      depthWrite: false,
-    }),
-  );
-  return mesh;
-}
-
-function makeStarLayer(
-  count: number,
-  radiusMin: number,
-  radiusMax: number,
-  size: number,
-  map: THREE.Texture,
-): THREE.Points {
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  const palette = [new THREE.Color("#ffffff"), new THREE.Color("#9db4ff"), new THREE.Color("#ffd9a0"), new THREE.Color("#7cf0ff")];
-  for (let i = 0; i < count; i += 1) {
-    const radius = radiusMin + Math.random() * (radiusMax - radiusMin);
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = radius * Math.cos(phi);
-    positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-    const tint = palette[Math.floor(Math.random() * palette.length)] ?? palette[0]!;
-    const dim = 0.35 + Math.random() * 0.65;
-    colors[i * 3] = tint.r * dim;
-    colors[i * 3 + 1] = tint.g * dim;
-    colors[i * 3 + 2] = tint.b * dim;
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  return new THREE.Points(
-    geometry,
-    new THREE.PointsMaterial({
-      map,
-      size,
-      sizeAttenuation: true,
-      vertexColors: true,
-      transparent: true,
-      opacity: 1,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      alphaTest: 0.02,
-    }),
-  );
-}
-
-function glowTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gradient.addColorStop(0, "rgba(255,255,255,1)");
-    gradient.addColorStop(0.18, "rgba(255,255,255,0.85)");
-    gradient.addColorStop(0.45, "rgba(255,255,255,0.28)");
-    gradient.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 128, 128);
-  }
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
 }
 
 function colorFor(id: string, avatarColors?: Record<string, string>): THREE.Color {
@@ -317,7 +128,7 @@ function colorFor(id: string, avatarColors?: Record<string, string>): THREE.Colo
     const parsed = new THREE.Color(declared);
     if (!Number.isNaN(parsed.r) || !Number.isNaN(parsed.g) || !Number.isNaN(parsed.b)) return parsed;
   }
-  return new THREE.Color(`hsl(${hueForId(id)}, 82%, 58%)`);
+  return new THREE.Color(`hsl(${hueForId(id)}, 58%, 52%)`);
 }
 
 export default function OrgStarMap({
@@ -346,7 +157,6 @@ export default function OrgStarMap({
   const [webglFailed, setWebglFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
-  /** The focus card hides itself on 拉远/关闭 until the selection changes. */
   const [cardDismissed, setCardDismissed] = useState(false);
   const reducedMotion =
     typeof window !== "undefined" &&
@@ -381,15 +191,12 @@ export default function OrgStarMap({
   const entries = useMemo(
     () =>
       layout.bodies
-        // The synthetic enterprise star is scenery, not an employee: it must
-        // never appear as a searchable/selectable position.
         .filter((body) => !body.virtual)
         .map((body) => ({ id: body.id, name: nameOf(body) })),
     [layout, nameOf],
   );
   const candidates = useMemo(() => matchStarQuery(entries, query).slice(0, 8), [entries, query]);
 
-  /* ---------------------------------------------------------------- scene */
   useEffect(() => {
     const host = stageRef.current;
     if (!host) return;
@@ -399,7 +206,10 @@ export default function OrgStarMap({
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setSize(host.clientWidth || 640, host.clientHeight || 420);
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.15;
+      renderer.toneMappingExposure = 1.05;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFShadowMap;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
       const labelRenderer = new CSS2DRenderer();
       labelRenderer.setSize(host.clientWidth || 640, host.clientHeight || 420);
       labelRenderer.domElement.style.position = "absolute";
@@ -407,99 +217,78 @@ export default function OrgStarMap({
       labelRenderer.domElement.style.left = "0";
       labelRenderer.domElement.style.pointerEvents = "none";
       const scene = new THREE.Scene();
-      scene.background = new THREE.Color("#02040a");
-      scene.fog = new THREE.FogExp2(0x02040a, 0.0016);
+      scene.background = new THREE.Color(STUDIO);
+      scene.fog = new THREE.Fog(STUDIO, 36, 140);
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
       const camera = new THREE.PerspectiveCamera(
-        55,
+        46,
         (host.clientWidth || 640) / (host.clientHeight || 420),
         0.1,
-        4000,
+        500,
       );
       camera.position.set(...DEFAULT_CAM);
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
-      controls.minDistance = 8;
-      controls.maxDistance = 320;
-      const glow = glowTexture();
+      controls.minDistance = 16;
+      controls.maxDistance = 120;
+      controls.minPolarAngle = 0.42;
+      controls.maxPolarAngle = Math.PI / 2.12;
+      controls.target.set(0, 0.4, 0);
 
-      const sky = new THREE.Group();
-      sky.add(makeSkyDome());
-      const farStars = makeStarLayer(3200, 420, 820, 1.6, glow);
-      const midStars = makeStarLayer(1800, 160, 380, 2.4, glow);
-      const nearStars = makeStarLayer(420, 70, 150, 4.2, glow);
-      farStars.userData.spin = 0.00012;
-      midStars.userData.spin = 0.00028;
-      nearStars.userData.spin = 0.0005;
-      sky.add(farStars, midStars, nearStars);
-      for (let i = 0; i < 28; i += 1) {
-        const radius = 95 + Math.random() * 70;
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        const sprite = new THREE.Sprite(
-          new THREE.SpriteMaterial({
-            map: glow,
-            color: new THREE.Color(["#ffffff", "#9db4ff", "#ffd9a0"][i % 3]),
-            transparent: true,
-            opacity: 0.55,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        sprite.scale.setScalar(6 + Math.random() * 10);
-        sprite.position.set(
-          radius * Math.sin(phi) * Math.cos(theta),
-          radius * Math.cos(phi),
-          radius * Math.sin(phi) * Math.sin(theta),
-        );
-        sky.add(sprite);
-      }
-      for (const [color, scale, pos, opacity] of [
-        ["#3a1cff", 520, [-280, 160, -520], 0.34],
-        ["#0090ff", 460, [310, -170, -540], 0.28],
-        ["#ff2a7a", 360, [50, 240, -420], 0.16],
-      ] as const) {
-        const sprite = new THREE.Sprite(
-          new THREE.SpriteMaterial({
-            map: glow,
-            color: new THREE.Color(color),
-            transparent: true,
-            opacity,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        sprite.scale.setScalar(scale);
-        sprite.position.set(pos[0], pos[1], pos[2]);
-        sky.add(sprite);
-      }
-      scene.add(sky);
-
-      scene.add(new THREE.AmbientLight(0x1a2a55, 0.22));
-      const sunLight = new THREE.PointLight(0xfff1c2, 2800, 0, 2);
-      scene.add(sunLight);
-      const rim = new THREE.DirectionalLight(0x7ecbff, 0.55);
-      rim.position.set(60, 90, 40);
+      const hemi = new THREE.HemisphereLight(0xc9d6ee, 0x1a1c22, 0.55);
+      scene.add(hemi);
+      const key = new THREE.DirectionalLight(0xfff4e6, 1.85);
+      key.position.set(18, 28, 16);
+      key.castShadow = true;
+      key.shadow.mapSize.set(1024, 1024);
+      key.shadow.camera.near = 2;
+      key.shadow.camera.far = 80;
+      key.shadow.camera.left = -28;
+      key.shadow.camera.right = 28;
+      key.shadow.camera.top = 28;
+      key.shadow.camera.bottom = -28;
+      scene.add(key);
+      const fill = new THREE.DirectionalLight(0x8eb4ff, 0.7);
+      fill.position.set(-22, 10, -12);
+      scene.add(fill);
+      const rim = new THREE.DirectionalLight(0xd8e8ff, 0.85);
+      rim.position.set(-8, 6, 24);
       scene.add(rim);
+
+      const studio = new THREE.Group();
+      const floor = new THREE.Mesh(
+        new THREE.CircleGeometry(48, 64),
+        new THREE.MeshStandardMaterial({ color: 0x0e1118, roughness: 0.92, metalness: 0.08 }),
+      );
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -12;
+      floor.receiveShadow = true;
+      studio.add(floor);
+      const grid = new THREE.GridHelper(48, 24, 0x2a3348, 0x1a2030);
+      grid.position.y = -11.96;
+      const gridMats = Array.isArray(grid.material) ? grid.material : [grid.material];
+      gridMats.forEach((entry) => {
+        entry.transparent = true;
+        entry.opacity = 0.22;
+      });
+      studio.add(grid);
+      const wall = new THREE.Mesh(
+        new THREE.PlaneGeometry(90, 50),
+        new THREE.MeshStandardMaterial({ color: 0x161922, roughness: 1, metalness: 0 }),
+      );
+      wall.position.set(0, 18, -42);
+      studio.add(wall);
+      scene.add(studio);
 
       const world = new THREE.Group();
       scene.add(world);
-      const composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      const bloom = new UnrealBloomPass(
-        new THREE.Vector2(host.clientWidth || 640, host.clientHeight || 420),
-        reducedMotion ? 0.35 : 1.12,
-        0.62,
-        0.2,
-      );
-      composer.addPass(bloom);
       host.appendChild(renderer.domElement);
       host.appendChild(labelRenderer.domElement);
 
       state = {
         renderer,
-        composer,
-        bloom,
         labelRenderer,
         scene,
         camera,
@@ -513,7 +302,7 @@ export default function OrgStarMap({
         drag: null,
         dropCandidate: null,
         disposed: false,
-        sky,
+        pmrem,
       };
       stateRef.current = state;
 
@@ -541,8 +330,6 @@ export default function OrgStarMap({
       const onPointerDown = (event: PointerEvent): void => {
         if (event.button !== 0) return;
         const id = pick(event.clientX, event.clientY);
-        // The synthetic star is a drop target (reportTo null) but never a
-        // drag source or a selection.
         if (!id || id === VIRTUAL_STAR_ID) return;
         state.drag = { id, x: event.clientX, y: event.clientY, moved: false };
         state.controls.enabled = false;
@@ -609,21 +396,17 @@ export default function OrgStarMap({
           if (progress >= 1) state.fly = null;
         }
         if (!latest.current.reducedMotion) {
-          state.sky.children.forEach((child) => {
-            const spin = child.userData.spin;
-            if (typeof spin === "number") child.rotation.y += spin;
-          });
-        }
-        for (const view of state.views.values()) {
-          const running = latest.current.runningIds?.has(view.body.id) === true;
-          if (running && !latest.current.reducedMotion) {
-            const pulse = 1 + Math.sin(elapsed * 4.2) * 0.16;
-            view.halo.scale.setScalar(view.body.size * 8.4 * pulse);
-            view.haloMaterial.opacity = 0.78 + Math.sin(elapsed * 4.2) * 0.18;
+          state.world.rotation.y = Math.sin(elapsed * 0.12) * 0.04;
+          for (const view of state.views.values()) {
+            view.mesh.rotation.y = elapsed * (view.body.kind === "star" ? 0.18 : 0.32);
+            const running = latest.current.runningIds?.has(view.body.id) === true;
+            if (running) {
+              view.material.emissiveIntensity = view.baseEmissive + 0.12 + Math.sin(elapsed * 3.2) * 0.08;
+            }
           }
         }
         state.controls.update();
-        state.composer.render();
+        state.renderer.render(state.scene, state.camera);
         state.labelRenderer.render(state.scene, state.camera);
       };
       animate();
@@ -633,8 +416,6 @@ export default function OrgStarMap({
         const height = host.clientHeight;
         if (width <= 0 || height <= 0) return;
         renderer.setSize(width, height);
-        state.composer.setSize(width, height);
-        state.bloom.setSize(width, height);
         labelRenderer.setSize(width, height);
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
@@ -652,71 +433,55 @@ export default function OrgStarMap({
         renderer.domElement.removeEventListener("pointercancel", onPointerUp);
         controls.dispose();
         for (const view of state.views.values()) view.label.remove();
-        state.world.traverse((object) => {
+        state.scene.traverse((object) => {
           const mesh = object as THREE.Mesh;
           if (mesh.geometry) mesh.geometry.dispose();
           const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
           if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
-          else {
-            material?.dispose();
-            (material as THREE.SpriteMaterial | null)?.map?.dispose();
-          }
+          else material?.dispose();
         });
-        state.scene.traverse((object) => {
-          const sprite = object as THREE.Sprite;
-          sprite.material?.dispose?.();
-        });
-        state.composer.dispose();
+        state.scene.environment?.dispose();
+        pmrem.dispose();
         renderer.dispose();
         host.removeChild(renderer.domElement);
         host.removeChild(labelRenderer.domElement);
         stateRef.current = null;
       };
     } catch {
-      // No WebGL (jsdom tests, blocked GPUs): the dock + list fallback below
-      // keeps every operation reachable.
       setWebglFailed(true);
       return;
     }
-    // Re-runs only when the stage element (re)appears: the initial loading
-    // flip, workspace open/close, or a WebGL-failure fallback transition.
   }, [loading, isEmpty, webglFailed]);
 
-  /* ------------------------------------------------------- data → scene */
   useEffect(() => {
     const state = stateRef.current;
     if (!state || webglFailed) return;
-    // Rebuild the world group from the layout; dispose the previous bodies.
     for (const view of state.views.values()) view.label.remove();
     state.world.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();
       const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
       if (Array.isArray(material)) material.forEach((entry) => entry.dispose());
-      else {
-        material?.dispose();
-        (material as THREE.SpriteMaterial | null)?.map?.dispose();
-      }
+      else material?.dispose();
     });
     state.world.clear();
     state.views.clear();
-    const glow = glowTexture();
 
     for (const orbit of layout.orbits) {
-      const curve = new THREE.EllipseCurve(0, 0, orbit.radius, orbit.radius, 0, Math.PI * 2, false, 0);
-      const points = curve.getPoints(96).map((point) => new THREE.Vector3(point.x, 0, point.y));
-      const ring = new THREE.LineLoop(
-        new THREE.BufferGeometry().setFromPoints(points),
-        new THREE.LineBasicMaterial({
-          color: 0x66d8ff,
-          transparent: true,
-          opacity: 0.55,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(orbit.radius, 0.06, 12, 128),
+        new THREE.MeshStandardMaterial({
+          color: 0x44587a,
+          emissive: 0x22344f,
+          emissiveIntensity: 0.28,
+          roughness: 0.4,
+          metalness: 0.35,
         }),
       );
-      ring.rotation.x = orbit.tilt;
+      ring.rotation.x = Math.PI / 2 + orbit.tilt;
       ring.position.set(orbit.center[0], orbit.center[1], orbit.center[2]);
+      ring.castShadow = true;
+      ring.receiveShadow = true;
       state.world.add(ring);
     }
 
@@ -724,79 +489,54 @@ export default function OrgStarMap({
     for (const body of layout.bodies) {
       if (body.parentId && byId.has(body.parentId)) {
         const parent = byId.get(body.parentId)!;
-        const from = new THREE.Vector3(...parent.position);
-        const to = new THREE.Vector3(...body.position);
-        state.world.add(makeGlowBeam(from, to, body.kind === "planet" ? 0xd7f6ff : 0x7cf0ff));
+        state.world.add(makeLink(new THREE.Vector3(...parent.position), new THREE.Vector3(...body.position)));
       }
     }
 
     for (const body of layout.bodies) {
-      const baseColor = body.kind === "star" ? new THREE.Color("#ff4d3a") : colorFor(body.id, avatarColors);
-      const geometry = new THREE.SphereGeometry(body.size, body.kind === "star" ? 64 : 48, body.kind === "star" ? 64 : 48);
-      const material = new THREE.MeshBasicMaterial({
-        color: baseColor.clone().multiplyScalar(body.kind === "star" ? 1.8 : 1.35),
-        transparent: true,
-        opacity: 1,
+      const baseColor = body.kind === "star" ? new THREE.Color("#d45c32") : colorFor(body.id, avatarColors);
+      const baseEmissive = body.kind === "star" ? 0.22 : 0.1;
+      const geometry = new THREE.SphereGeometry(body.size, 64, 64);
+      const material = new THREE.MeshPhysicalMaterial({
+        color: baseColor,
+        emissive: baseColor,
+        emissiveIntensity: baseEmissive,
+        roughness: 0.28,
+        metalness: 0.18,
+        clearcoat: 0.7,
+        clearcoatRoughness: 0.18,
+        envMapIntensity: 1.05,
       });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(...body.position);
       mesh.userData.positionId = body.id;
-      const haloMaterial = new THREE.SpriteMaterial({
-        map: glow,
-        color: baseColor.clone(),
-        transparent: true,
-        opacity: body.kind === "star" ? 1 : 0.72,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      });
-      const halo = new THREE.Sprite(haloMaterial);
-      halo.scale.setScalar(body.size * (body.kind === "star" ? 16 : 7.2));
-      mesh.add(halo);
-      if (body.kind === "star") {
-        const flare = new THREE.Sprite(
-          new THREE.SpriteMaterial({
-            map: glow,
-            color: new THREE.Color("#ffd27a"),
-            transparent: true,
-            opacity: 0.7,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
-        );
-        flare.scale.setScalar(body.size * 22);
-        mesh.add(flare);
-        const core = new THREE.PointLight(0xff6a3c, 90, 80, 2);
-        mesh.add(core);
-      } else {
-        const lamp = new THREE.PointLight(baseColor, body.kind === "planet" ? 18 : 8, body.size * 18, 2);
-        mesh.add(lamp);
-      }
-
-      // Portrait medallion: the employee's own avatar fused into the body;
-      // positions without an avatar stay solid colored planets.
-      let medallion: THREE.Sprite | null = null;
-      let baseOpacity = 1;
-      const avatarSrc = body.virtual ? undefined : avatarUrls?.[body.id];
-      if (avatarSrc) {
-        const medallionTexture = makeMedallionTexture(baseColor);
-        medallion = new THREE.Sprite(
-          new THREE.SpriteMaterial({ map: medallionTexture.texture, transparent: true, depthWrite: false }),
-        );
-        medallion.scale.setScalar(body.size * (body.kind === "star" ? 3.6 : 2.8));
-        mesh.add(medallion);
-        material.transparent = true;
-        baseOpacity = 0.35;
-        material.opacity = baseOpacity;
-        const img = new Image();
-        img.onload = () => {
-          if (!state.disposed) medallionTexture.paint(img);
-        };
-        img.src = avatarSrc;
-      }
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      const shell = new THREE.Mesh(
+        new THREE.SphereGeometry(body.size * 1.07, 32, 32),
+        new THREE.MeshBasicMaterial({
+          color: baseColor,
+          transparent: true,
+          opacity: 0.12,
+          depthWrite: false,
+        }),
+      );
+      mesh.add(shell);
 
       const label = document.createElement("div");
       label.className = `owb-star-label owb-star-label--${body.kind}`;
-      label.textContent = nameOf(body);
+      const avatarSrc = body.virtual ? undefined : avatarUrls?.[body.id];
+      if (avatarSrc) {
+        const img = document.createElement("img");
+        img.className = "owb-star-label__avatar";
+        img.alt = "";
+        img.src = avatarSrc;
+        label.appendChild(img);
+      }
+      const nameEl = document.createElement("span");
+      nameEl.className = "owb-star-label__name";
+      nameEl.textContent = nameOf(body);
+      label.appendChild(nameEl);
       label.title = body.virtual ? nameOf(body) : `${nameOf(body)} · ${body.id}`;
       label.addEventListener("click", () => {
         if (body.virtual) return;
@@ -805,17 +545,16 @@ export default function OrgStarMap({
         latest.current.onSelect?.(body.id);
       });
       const labelObject = new CSS2DObject(label);
-      labelObject.position.set(0, body.size + 1.1, 0);
+      labelObject.position.set(0, body.size + 1.15, 0);
       mesh.add(labelObject);
 
       state.world.add(mesh);
-      state.views.set(body.id, { body, mesh, halo, haloMaterial, material, medallion, label, baseColor, baseOpacity });
+      state.views.set(body.id, { body, mesh, material, label, baseColor, baseEmissive });
     }
     applyVisualState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, avatarColors, avatarUrls, webglFailed, nameOf]);
 
-  /* ------------------------------------------- selection / runs / filter */
   const applyVisualState = useCallback((): void => {
     const state = stateRef.current;
     if (!state) return;
@@ -829,16 +568,14 @@ export default function OrgStarMap({
       const isRunning = running?.has(view.body.id) === true;
       view.label.classList.toggle("is-dimmed", dimmed);
       view.label.classList.toggle("is-selected", isSelected);
-      view.mesh.scale.setScalar(isSelected ? 1.18 : 1);
-      const transparent = true;
-      view.material.transparent = transparent;
-      view.material.opacity = dimmed ? 0.16 : view.baseOpacity;
+      view.mesh.scale.setScalar(isSelected ? 1.12 : 1);
+      view.material.transparent = dimmed;
+      view.material.opacity = dimmed ? 0.18 : 1;
       if (!isRunning) {
-        view.haloMaterial.color.copy(isSelected ? view.baseColor.clone().lerp(new THREE.Color("#ffffff"), 0.35) : view.baseColor);
-        view.haloMaterial.opacity = view.body.kind === "star" ? 1 : isSelected ? 0.95 : dimmed ? 0.08 : 0.72;
-        view.halo.scale.setScalar(view.body.size * (view.body.kind === "star" ? 16 : isSelected ? 9.5 : 7.2));
+        view.material.emissive.copy(isSelected ? view.baseColor.clone().lerp(new THREE.Color("#ffffff"), 0.2) : view.baseColor);
+        view.material.emissiveIntensity = isSelected ? view.baseEmissive + 0.1 : view.baseEmissive;
       } else {
-        view.haloMaterial.color.set(RUNNING_COLOR);
+        view.material.emissive.set(RUNNING_COLOR);
       }
     }
   }, []);
@@ -854,11 +591,11 @@ export default function OrgStarMap({
     const toTarget = new THREE.Vector3(...body.position);
     if (latest.current.reducedMotion) {
       state.controls.target.copy(toTarget);
-      state.camera.position.copy(toTarget.clone().add(new THREE.Vector3(...DEFAULT_CAM).setLength(close ? Math.max(10, body.size * 8) : 46)));
+      state.camera.position.copy(toTarget.clone().add(new THREE.Vector3(...DEFAULT_CAM).setLength(close ? Math.max(12, body.size * 8) : 40)));
       return;
     }
     const direction = state.camera.position.clone().sub(state.controls.target);
-    const distance = close ? Math.max(10, body.size * 8) : Math.max(30, Math.min(direction.length(), 60));
+    const distance = close ? Math.max(12, body.size * 8) : Math.max(22, Math.min(direction.length(), 48));
     state.fly = {
       fromTarget: state.controls.target.clone(),
       toTarget,
@@ -868,18 +605,17 @@ export default function OrgStarMap({
     };
   }, []);
 
-  /** 拉远: pull the camera back to the whole-system framing. */
   const flyHome = useCallback((): void => {
     const state = stateRef.current;
     if (!state) return;
     if (latest.current.reducedMotion) {
-      state.controls.target.set(0, 0, 0);
+      state.controls.target.set(0, 0.4, 0);
       state.camera.position.set(...DEFAULT_CAM);
       return;
     }
     state.fly = {
       fromTarget: state.controls.target.clone(),
-      toTarget: new THREE.Vector3(0, 0, 0),
+      toTarget: new THREE.Vector3(0, 0.4, 0),
       fromCam: state.camera.position.clone(),
       toCam: new THREE.Vector3(...DEFAULT_CAM),
       start: performance.now(),
@@ -899,11 +635,10 @@ export default function OrgStarMap({
     const state = stateRef.current;
     if (!state) return;
     state.fly = null;
-    state.controls.target.set(0, 0, 0);
+    state.controls.target.set(0, 0.4, 0);
     state.camera.position.set(...DEFAULT_CAM);
   }, []);
 
-  /* ------------------------------------------------------------- render */
   const selectedBody = selectedId ? layout.bodies.find((body) => body.id === selectedId) ?? null : null;
   const parentBody = selectedBody?.parentId
     ? layout.bodies.find((body) => body.id === selectedBody.parentId) ?? null
@@ -975,7 +710,12 @@ export default function OrgStarMap({
       {selectedBody && !cardDismissed ? (
         <aside className="owb-star-map__card" aria-label={t("star.cardTitle")}>
           <header>
-            <strong>{nameOf(selectedBody)}</strong>
+            <span className="owb-star-map__card-who">
+              {selectedBody.virtual ? null : avatarUrls?.[selectedBody.id] ? (
+                <img className="owb-star-map__card-avatar" src={avatarUrls[selectedBody.id]} alt="" />
+              ) : null}
+              <strong>{nameOf(selectedBody)}</strong>
+            </span>
             <button
               type="button"
               className="owb-star-map__card-close"
