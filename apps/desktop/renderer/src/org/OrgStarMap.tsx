@@ -104,6 +104,7 @@ interface SceneState {
   drag: { id: string; x: number; y: number; moved: boolean } | null;
   dropCandidate: string | null;
   disposed: boolean;
+  sky: THREE.Group;
 }
 
 const DEFAULT_CAM: readonly [number, number, number] = [0, 26, 64];
@@ -185,6 +186,98 @@ function makeGlowBeam(from: THREE.Vector3, to: THREE.Vector3, hex: number): THRE
   mesh.position.copy(from).add(direction.clone().multiplyScalar(0.5));
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
   return mesh;
+}
+
+function paintSkyCanvas(): HTMLCanvasElement {
+  const width = 1024;
+  const height = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.fillStyle = "#02040c";
+  ctx.fillRect(0, 0, width, height);
+  const milky = ctx.createLinearGradient(0, 0, width, height);
+  milky.addColorStop(0, "rgba(8,12,28,0)");
+  milky.addColorStop(0.35, "rgba(70,120,255,0.16)");
+  milky.addColorStop(0.5, "rgba(180,210,255,0.28)");
+  milky.addColorStop(0.62, "rgba(255,90,160,0.12)");
+  milky.addColorStop(1, "rgba(8,12,28,0)");
+  ctx.fillStyle = milky;
+  ctx.fillRect(0, 0, width, height);
+  for (const [color, x, y, r, a] of [
+    ["70, 90, 255", 220, 180, 220, 0.22],
+    ["0, 180, 255", 760, 300, 260, 0.18],
+    ["255, 40, 120", 520, 90, 180, 0.1],
+    ["120, 40, 255", 880, 120, 160, 0.12],
+  ] as const) {
+    const g = ctx.createRadialGradient(x, y, 8, x, y, r);
+    g.addColorStop(0, `rgba(${color},${a})`);
+    g.addColorStop(1, `rgba(${color},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let i = 0; i < 2400; i += 1) {
+    const x = Math.random() * width;
+    const y = Math.random() * height;
+    const s = Math.random() * Math.random() * 1.6;
+    const c = Math.random();
+    ctx.fillStyle = c > 0.7 ? "rgba(160,190,255,0.9)" : c > 0.4 ? "rgba(255,255,255,0.85)" : "rgba(255,220,170,0.7)";
+    ctx.fillRect(x, y, s, s);
+  }
+  return canvas;
+}
+
+function makeSkyDome(): THREE.Mesh {
+  const texture = new THREE.CanvasTexture(paintSkyCanvas());
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(900, 48, 32),
+    new THREE.MeshBasicMaterial({
+      map: texture,
+      side: THREE.BackSide,
+      depthWrite: false,
+    }),
+  );
+  return mesh;
+}
+
+function makeStarLayer(count: number, radiusMin: number, radiusMax: number, size: number): THREE.Points {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const palette = [new THREE.Color("#ffffff"), new THREE.Color("#9db4ff"), new THREE.Color("#ffd9a0"), new THREE.Color("#7cf0ff")];
+  for (let i = 0; i < count; i += 1) {
+    const radius = radiusMin + Math.random() * (radiusMax - radiusMin);
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = radius * Math.cos(phi);
+    positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+    const tint = palette[Math.floor(Math.random() * palette.length)] ?? palette[0]!;
+    const dim = 0.35 + Math.random() * 0.65;
+    colors[i * 3] = tint.r * dim;
+    colors[i * 3 + 1] = tint.g * dim;
+    colors[i * 3 + 2] = tint.b * dim;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return new THREE.Points(
+    geometry,
+    new THREE.PointsMaterial({
+      size,
+      sizeAttenuation: true,
+      vertexColors: true,
+      transparent: true,
+      opacity: 1,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }),
+  );
 }
 
 function glowTexture(): THREE.CanvasTexture {
@@ -302,12 +395,12 @@ export default function OrgStarMap({
       labelRenderer.domElement.style.pointerEvents = "none";
       const scene = new THREE.Scene();
       scene.background = new THREE.Color("#02040a");
-      scene.fog = new THREE.FogExp2(0x02040a, 0.0045);
+      scene.fog = new THREE.FogExp2(0x02040a, 0.0016);
       const camera = new THREE.PerspectiveCamera(
         55,
         (host.clientWidth || 640) / (host.clientHeight || 420),
         0.1,
-        2000,
+        4000,
       );
       camera.position.set(...DEFAULT_CAM);
       const controls = new OrbitControls(camera, renderer.domElement);
@@ -317,46 +410,41 @@ export default function OrgStarMap({
       controls.maxDistance = 320;
       const glow = glowTexture();
 
-      // Starfield: the background is space, not a void (#472).
-      const starCount = 2200;
-      const positions = new Float32Array(starCount * 3);
-      const colors = new Float32Array(starCount * 3);
-      const palette = [new THREE.Color("#ffffff"), new THREE.Color("#9db4ff"), new THREE.Color("#ffd9a0")];
-      for (let i = 0; i < starCount; i += 1) {
-        const radius = 280 + Math.random() * 320;
+      const sky = new THREE.Group();
+      sky.add(makeSkyDome());
+      const farStars = makeStarLayer(3200, 420, 820, 1.6);
+      const midStars = makeStarLayer(1800, 160, 380, 2.4);
+      const nearStars = makeStarLayer(420, 70, 150, 4.2);
+      farStars.userData.spin = 0.00012;
+      midStars.userData.spin = 0.00028;
+      nearStars.userData.spin = 0.0005;
+      sky.add(farStars, midStars, nearStars);
+      for (let i = 0; i < 28; i += 1) {
+        const radius = 95 + Math.random() * 70;
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
-        positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-        positions[i * 3 + 1] = radius * Math.cos(phi);
-        positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-        const tint = palette[Math.floor(Math.random() * palette.length)] ?? palette[0]!;
-        const dim = 0.45 + Math.random() * 0.55;
-        colors[i * 3] = tint.r * dim;
-        colors[i * 3 + 1] = tint.g * dim;
-        colors[i * 3 + 2] = tint.b * dim;
+        const sprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: glow,
+            color: new THREE.Color(["#ffffff", "#9db4ff", "#ffd9a0"][i % 3]),
+            transparent: true,
+            opacity: 0.55,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+          }),
+        );
+        sprite.scale.setScalar(6 + Math.random() * 10);
+        sprite.position.set(
+          radius * Math.sin(phi) * Math.cos(theta),
+          radius * Math.cos(phi),
+          radius * Math.sin(phi) * Math.sin(theta),
+        );
+        sky.add(sprite);
       }
-      const starGeometry = new THREE.BufferGeometry();
-      starGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-      starGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-      const stars = new THREE.Points(
-        starGeometry,
-        new THREE.PointsMaterial({
-          size: 2.4,
-          sizeAttenuation: true,
-          vertexColors: true,
-          transparent: true,
-          opacity: 1,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        }),
-      );
-      scene.add(stars);
-
-      // Faint nebulae for depth; additive, far behind the system.
       for (const [color, scale, pos, opacity] of [
-        ["#3a1cff", 380, [-240, 130, -420], 0.28],
-        ["#0090ff", 320, [270, -150, -460], 0.22],
-        ["#ff2a7a", 260, [40, 220, -380], 0.12],
+        ["#3a1cff", 520, [-280, 160, -520], 0.34],
+        ["#0090ff", 460, [310, -170, -540], 0.28],
+        ["#ff2a7a", 360, [50, 240, -420], 0.16],
       ] as const) {
         const sprite = new THREE.Sprite(
           new THREE.SpriteMaterial({
@@ -370,8 +458,9 @@ export default function OrgStarMap({
         );
         sprite.scale.setScalar(scale);
         sprite.position.set(pos[0], pos[1], pos[2]);
-        scene.add(sprite);
+        sky.add(sprite);
       }
+      scene.add(sky);
 
       scene.add(new THREE.AmbientLight(0x1a2a55, 0.22));
       const sunLight = new THREE.PointLight(0xfff1c2, 2800, 0, 2);
@@ -411,6 +500,7 @@ export default function OrgStarMap({
         drag: null,
         dropCandidate: null,
         disposed: false,
+        sky,
       };
       stateRef.current = state;
 
@@ -504,6 +594,12 @@ export default function OrgStarMap({
           state.controls.target.lerpVectors(state.fly.fromTarget, state.fly.toTarget, eased);
           state.camera.position.lerpVectors(state.fly.fromCam, state.fly.toCam, eased);
           if (progress >= 1) state.fly = null;
+        }
+        if (!latest.current.reducedMotion) {
+          state.sky.children.forEach((child) => {
+            const spin = child.userData.spin;
+            if (typeof spin === "number") child.rotation.y += spin;
+          });
         }
         for (const view of state.views.values()) {
           const running = latest.current.runningIds?.has(view.body.id) === true;
