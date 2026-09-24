@@ -399,4 +399,6 @@ test("jev config: server-only ROLEWEAVE environment and bounded timeout", () => 
   assert.equal(config.jevTimeoutMs, 5_000);
   assert.equal(config.jevModel, "jev-latest");
   assert.equal(resolveServerConfig({}, []).jevApiKey, undefined);
+  assert.equal(resolveServerConfig({}, []).jevEnabled, false);
+  assert.equal(resolveServerConfig({ ROLEWEAVE_JEV_ENABLED: "1" }, []).jevEnabled, true);
 });

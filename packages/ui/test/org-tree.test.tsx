@@ -105,8 +105,7 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(screen.queryByText("issue-researcher")).not.toBeInTheDocument();
   });
 
-  // The directory row is intentionally only status + folder + human name. The
-  // internal position id is kept for routing, not repeated in the UI.
+  // Primary = avatar + display name; secondary = routing id when it differs.
   it("renders human display names and the folder/status-light identity block", () => {
     const { container } = render(
       <OrgTree
@@ -118,7 +117,7 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(screen.getByText("议题研究员")).toBeInTheDocument();
 
     const row = screen.getByText("议题研究员").closest('[role="treeitem"]')!;
-    expect(row.querySelector(".ui-org-tree__id")).toBeNull();
+    expect(row.querySelector(".ui-org-tree__id")?.textContent).toBe("issue-researcher");
     const icon = row.querySelector<HTMLElement>(".ui-org-tree__icon")!;
     expect(icon.style.color).toContain("rgb(201, 106, 18)");
 
@@ -443,5 +442,29 @@ describe("OrgTree (#32 §1 insertion lines, invalid-drop rejection, ⌘ reorder)
     fireEvent.click(screen.getByRole("button", { name: "与 release-engineer 发起群聊" }));
     expect(onGroupEntry).toHaveBeenCalledWith("release-engineer");
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("keeps toolbar chrome outside treeitem and filters by name or id", () => {
+    render(<OrgTree snapshot={SNAPSHOT} displayNames={{ "issue-researcher": "议题研究员" }} />);
+    expect(screen.getByRole("searchbox", { name: "搜索岗位" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "全部展开" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "全部收起" })).toBeInTheDocument();
+    expect(screen.getByText("议题研究员").closest('[role="treeitem"]')?.querySelector(".ui-org-tree__count")).toBeNull();
+    expect(screen.getByText("repo-owner").closest('[role="treeitem"]')?.querySelector(".ui-org-tree__count")?.textContent).toBe("3");
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索岗位" }), { target: { value: "议题" } });
+    expect(screen.getByText("议题研究员")).toBeInTheDocument();
+    expect(screen.getByText("repo-owner")).toBeInTheDocument();
+    expect(screen.queryByText("release-engineer")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+  });
+
+  it("collapse-all hides children until expand-all restores them", () => {
+    render(<OrgTree snapshot={SNAPSHOT} />);
+    fireEvent.click(screen.getByRole("button", { name: "全部收起" }));
+    expect(screen.queryByText("issue-researcher")).not.toBeInTheDocument();
+    expect(screen.getByText("repo-owner")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "全部展开" }));
+    expect(screen.getByText("issue-researcher")).toBeInTheDocument();
   });
 });

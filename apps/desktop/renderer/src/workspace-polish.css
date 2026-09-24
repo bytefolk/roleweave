@@ -182,7 +182,7 @@
 .owb-memory-history p, .owb-memory-history summary { font-size: 12px; color: var(--ui-foreground-muted); }
 .owb-memory-history summary { cursor: pointer; }
 .owb-memory-history pre { font: inherit; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
-.owb-conversation-options { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; min-height: 30px; }
+.owb-conversation-options { display: flex; align-items: center; flex-wrap: nowrap; gap: 4px 8px; min-height: 32px; overflow-x: auto; }
 .owb-conversation-options .owb-model-picker { flex: 1 1 130px; min-width: 100px; max-width: 210px; font-size: 12px; }
 .owb-model-picker__pending { flex: 1; font-size: 12px; color: var(--ui-foreground-muted); }
 .owb-conversation-options .ant-btn { font-size: 11px; color: var(--ui-foreground-muted); padding-inline: 5px; }
@@ -537,3 +537,7 @@
   .owb-timeline__filter--range { flex: 1 1 100%; min-width: 0; }
   .owb-timeline__count { width: 100%; margin-left: 0; }
 }
+
+.owb-goals-health-split { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.owb-goals-health-split em { font-style: normal; margin-left: 6px; color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-goals-health-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }

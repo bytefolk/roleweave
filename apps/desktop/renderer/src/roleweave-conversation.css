@@ -16,7 +16,11 @@
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-panel__header {
-  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--ui-border);
 }
 
@@ -31,7 +35,22 @@
   white-space: nowrap;
 }
 
-.owb-turn-panel__header .owb-conversation-header-actions { flex-shrink: 0; }
+.owb-turn-panel__header .owb-conversation-header-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+}
+
+.owb-turn-panel__header .owb-conversation-header-actions .ant-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-panel__header h2, .owb-groups__list-header h2, .owb-groups__panel-title h3) {
   margin: 0;

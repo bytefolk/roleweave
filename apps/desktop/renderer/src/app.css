@@ -6857,15 +6857,13 @@ body,
  * compact; the employee result gets the visual weight and the thread remains
  * the only scrolling surface. */
 .owb-turn-panel {
-  background: color-mix(in srgb, var(--ui-surface) 94%, var(--ui-primary-soft));
+  background: var(--ui-surface);
 }
 
 .owb-turn-thread {
   position: relative;
   padding: 18px 18px 24px;
-  background:
-    radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--ui-primary-soft) 32%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--ui-surface-inset) 96%, var(--ui-primary-soft)), var(--ui-surface-inset));
+  background: var(--ui-surface);
 }
 
 .owb-turn-thread .owb-turn {
@@ -9227,6 +9225,19 @@ body,
 .owb-message-expand, .owb-message-actions button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; font-size: 11px; cursor: pointer; }
 .owb-message-expand:hover, .owb-message-actions button:hover { background: color-mix(in srgb, currentColor 9%, transparent); }
 .owb-message-actions { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; color: var(--ui-foreground-muted); }
+.owb-bubble__hover-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 4px; }
+.owb-bubble__hover-actions,
+.owb-bubble--operator .owb-message-actions {
+  opacity: 0;
+}
+.owb-bubble:is(:hover, :focus-within) .owb-bubble__hover-actions,
+.owb-bubble:is(:hover, :focus-within) .owb-message-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .owb-bubble__hover-actions,
+  .owb-bubble--operator .owb-message-actions { opacity: 1; }
+}
 .owb-message-actions span { font-size: 11px; }
 .owb-message-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; margin-top: 6px; font-size: 10px; }
 .owb-bubble--operator .owb-message-actions { color: inherit; }

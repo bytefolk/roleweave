@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- #460：审批队列和详情在规则风险 Tag 旁展示可选 Jev `riskOverlay`。`ROLEWEAVE_JEV_ENABLED` 默认关；关时与现网 Tag 字节一致。展示色始终跟 `capabilityContext`，overlay 更低时标明「建议未采纳」。`service` 经 `attachApprovalRiskOverlay` 接线；出站建议载荷只允许 `kind`。默认不调用外部服务。Refs #422。
+- #428：Goals 详情并排展示落盘规则健康与 Jev `healthOverlay`；列表点只跟 `goal.health`。`at_risk` 上的 `on_track` overlay 标明「建议未采纳」。`blocked` overlay 可跳到绑定岗位会话或审批中心，不自动改目标。上报升级 overlay 仍是后续独立 PR。
+
+- #422：可选 Jev（TypeSafe System One）适配器，默认关闭。`ROLEWEAVE_JEV_ENABLED=1` 且配置 `ROLEWEAVE_JEV_API_KEY` 后，目标分支健康可走 Choice（`on_track` / `at_risk` / `blocked` / `unknown`）作为 `healthOverlay`；持久化 `goal.health` 仍只由 `computeHealthFromTurns` 写入。Choice 请求只带 turn `status` / `errorCode`，不发送 input/output。非法或外部 option 不能把 failed/indeterminate 分支改成 on_track。失败或超时回退启发式。不改变审批策略与回合终态推导。
+
+### Changed
+
+- 组织目录树行改为「头像 + 岗位名」主信息，id / 引擎 / 运行状态作次行；树顶增加搜索与全部展开/收起；选中行圆角高亮加强。员工会话面板去掉线程渐变，复制/重试改为悬停浮现，头部与输入工具条收成一行。不改拖拽、招聘占位、审批卡片与重试语义。Refs #458。
+
 ### Fixed
 
 - #454：修复客户端审批模块状态一致性与重试缺陷。侧边栏角标仅统计未过期的待处理项；对话线程内审批卡片明确展示过期状态并禁用操作；批量裁决在失败或网络异常后清理请求锁以允许使用新理由重试；修复审批列表按本地日历日筛选跨时区偏差；刷新与裁决操作保证最新状态快照。
