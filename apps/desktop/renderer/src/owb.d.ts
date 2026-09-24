@@ -114,6 +114,7 @@ export interface OwbBridge {
     update(request: import("@roleweave/shared").ExperimentsUpdateRequest): Promise<OwbApiResponse<import("@roleweave/shared").ExperimentsResponse>>;
   };
   reportAdvice?(request: import("@roleweave/shared").ReportsAdviceRequest): Promise<OwbApiResponse<import("@roleweave/shared").ReportsAdviceResponse>>;
+  sendGateAdvice?(request: import("@roleweave/shared").SendGateAdviceRequest): Promise<OwbApiResponse<import("@roleweave/shared").SendGateAdviceResponse>>;
   listApprovals(request: { workspacePath: string; cursor?: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalList>>;
   decideApproval(request: import("@roleweave/shared").ApprovalDecisionRequest & { id: string; workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalView>>;
   decideApprovalsBatch(request: import("@roleweave/shared").ApprovalBatchDecisionRequest & { workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalBatchDecisionResponse>>;

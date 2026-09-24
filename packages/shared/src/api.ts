@@ -40,6 +40,8 @@ export const routes = {
   sessions: "/sessions",
   turns: "/turns",
   turnsCancel: "/turns/cancel",
+  /** Advisory-only composer projection. Never creates or mutates a turn. */
+  sendGateAdvice: "/turns/send-gate-advice",
   /** Additive manager live progress board (#480). */
   turnProgress: "/turns/progress",
   /** Additive S2 group-chat surface (#52, DS-34-001 rev-1 §1.2). */

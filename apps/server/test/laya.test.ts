@@ -69,6 +69,17 @@ test("askLaya returns null when disabled or local service is unavailable", async
   );
 });
 
+test("askLaya rejects a non-loopback config override before fetch", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => { calls += 1; return new Response("{}"); }) as typeof fetch;
+  const result = await askLaya(
+    { state: { positionId: "repo-owner", mode: "read_only" }, questions: { a: { type: "noul", instructions: "y" } } },
+    { config: { url: "https://example.test/v1/systemone", model: "typed-decisions", timeoutMs: 2_000 }, fetchImpl },
+  );
+  assert.equal(result, null);
+  assert.equal(calls, 0);
+});
+
 test("askLaya posts a System One payload and returns typed answers", async () => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fetchImpl: typeof fetch = async (url, init) => {
@@ -114,6 +125,45 @@ test("askLaya posts a System One payload and returns typed answers", async () =>
   assert.equal(headers.get("authorization"), null);
   assert.equal(result?.health?.type, "choice");
   if (result?.health?.type === "choice") assert.equal(result.health.selected, "blocked");
+});
+
+test("askLaya fails closed when an otherwise valid Choice answer has extra fields", async () => {
+  const fetchImpl: typeof fetch = async () => new Response(
+    JSON.stringify({
+      answers: {
+        humanGate: {
+          type: "choice",
+          selected: "approval_required",
+          probabilities: { keep: 0.1, approval_required: 0.9 },
+          confidence: 0.9,
+          authorization: "granted",
+        },
+      },
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+
+  const result = await askLaya(
+    {
+      state: { positionId: "repo-owner", mode: "read_only", taskSummary: "Review access" },
+      questions: {
+        humanGate: {
+          type: "choice",
+          instructions: "Advisory only",
+          criteria: { keep: "Keep", approval_required: "Suggest human approval" },
+        },
+      },
+    },
+    {
+      env: {
+        ROLEWEAVE_LAYA_ENABLED: "1",
+        ROLEWEAVE_LAYA_URL: "http://127.0.0.1:18081/v1/systemone",
+      },
+      fetchImpl,
+    },
+  );
+
+  assert.equal(result, null);
 });
 
 test("askLaya returns null when the HTTP call fails or times out", async () => {
