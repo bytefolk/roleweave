@@ -1,6 +1,8 @@
-import * as THREE from "three";
+import * as threeModule from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
+
+const THREE: any = threeModule;
 import type { StarMapBody, StarMapLayout } from "./star-map-layout";
 
 export interface StarMapSceneOptions {
@@ -50,9 +52,9 @@ export function mountStarMapScene(host: HTMLElement, options: StarMapSceneOption
   scene.add(bodyGroup);
   const ringGroup = new THREE.Group();
   scene.add(ringGroup);
-  const meshes = new Map<string, THREE.Mesh>();
+  const meshes = new Map<string, any>();
   const labelNodes = new Map<string, HTMLDivElement>();
-  const textures = new Map<string, THREE.Texture>();
+  const textures = new Map<string, any>();
   let pointer: { x: number; y: number; id: string | null } | null = null;
   let draggingId: string | null = null;
   let frame = 0;
@@ -128,10 +130,10 @@ export function mountStarMapScene(host: HTMLElement, options: StarMapSceneOption
     paint(next);
   }
 
-  function applyPhoto(mesh: THREE.Mesh, url: string): void {
+  function applyPhoto(mesh: any, url: string): void {
     const existing = textures.get(url);
-    const apply = (texture: THREE.Texture) => {
-      const material = mesh.material as THREE.MeshStandardMaterial;
+    const apply = (texture: any) => {
+      const material = mesh.material as any;
       material.map = texture;
       material.color.set(0xffffff);
       material.needsUpdate = true;
@@ -155,7 +157,7 @@ export function mountStarMapScene(host: HTMLElement, options: StarMapSceneOption
       if (label) {
         label.classList.toggle("is-dim", next.queryActive && !next.matches.has(id));
       }
-      const material = mesh.material as THREE.MeshStandardMaterial;
+      const material = mesh.material as any;
       const running = next.runningIds.has(id);
       material.emissiveIntensity = running ? 1.1 : (findKind(next.layout.bodies, id) === "star" ? 0.85 : 0.2);
     }
@@ -253,7 +255,7 @@ function findKind(bodies: StarMapBody[], id: string): StarMapBody["kind"] | unde
   return bodies.find((body) => body.id === id)?.kind;
 }
 
-function makeStarfield(): THREE.Points {
+function makeStarfield(): any {
   const count = 1800;
   const positions = new Float32Array(count * 3);
   for (let i = 0; i < count; i += 1) {
