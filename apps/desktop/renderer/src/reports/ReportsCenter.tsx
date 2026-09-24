@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Input, Select, Skeleton, Table, Tag } from "antd";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import type { AuditEntry, EvidenceEntry, EscalationEntry, ReportsResponse } from "@roleweave/shared";
@@ -7,6 +7,8 @@ import { BudgetDashboard } from "./BudgetDashboard";
 import { useReportAdvice, ReportAdviceControls, ReportAdviceChip, reportAdviceKey } from "./ReportAdvice";
 import type { ExperimentScope } from "../experiments/useWorkspaceExperiments";
 import { AuditTimeline, type AuditTimelineEvent } from "./AuditTimeline";
+import { OverlayReceiptPanel, recordSuggestionClick, syncEvidenceActionOutcome } from "../overlays/OverlayReceiptPanel.js";
+import { SOURCE_EXECUTION_ACTION } from "../overlays/overlay-receipt-store.js";
 
 type Tab = "budgets" | "escalations" | "audits" | "evidence" | "timeline";
 
@@ -86,7 +88,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
             onOpenTimeline={openTimeline}
           />
         ) : null}
-        {tab === "escalations" ? <>{workspacePath ? <ReportAdviceControls controller={advice} onOpenSettings={onOpenExperiments} /> : null}<Escalations entries={reports.streams.escalations} positionNames={positionNames} onOpenTimeline={openTimeline} advice={advice.items} /></> : null}
+        {tab === "escalations" ? <>{workspacePath ? <ReportAdviceControls controller={advice} onOpenSettings={onOpenExperiments} /> : null}<Escalations entries={reports.streams.escalations} evidence={reports.streams.evidence} positionNames={positionNames} onOpenTimeline={openTimeline} advice={advice.items} workspacePath={workspacePath} /></> : null}
         {tab === "audits" ? <Audits entries={reports.streams.audits} positionNames={positionNames} /> : null}
         {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} /> : null}
         {tab === "timeline" && timelinePosition ? <div className="owb-report-filter-note"><span>{positionNames?.[timelinePosition] ?? timelinePosition}</span><Button type="link" onClick={() => { setTimelinePosition(null); setTimelineRunId(null); }}>{t("rep.clearScope")}</Button></div> : null}
@@ -215,14 +217,46 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
 
 function Empty({ text }: { text: string }) { return <p className="owb-report-empty">{text}</p>; }
 
-function Escalations({ entries, positionNames, onOpenTimeline, advice }: { entries: EscalationEntry[]; positionNames?: Record<string, string>; onOpenTimeline: (id: string, turnId?: string) => void; advice: ReturnType<typeof useReportAdvice>["items"] }) {
+function Escalations({ entries, evidence, positionNames, onOpenTimeline, advice, workspacePath }: { entries: EscalationEntry[]; evidence: EvidenceEntry[]; positionNames?: Record<string, string>; onOpenTimeline: (id: string, turnId?: string) => void; advice: ReturnType<typeof useReportAdvice>["items"]; workspacePath?: string }) {
+  const t = useT();
+  if (entries.length === 0) return <Empty text={t("rep.noEscalations")} />;
+  return <ol>{entries.map((entry) => (
+    <EscalationRow
+      key={entry.turnId}
+      entry={entry}
+      evidence={evidence.find((item) => item.turnId === entry.turnId)}
+      overlay={advice.get(reportAdviceKey(entry))}
+      positionNames={positionNames}
+      onOpenTimeline={onOpenTimeline}
+      workspacePath={workspacePath}
+    />
+  ))}</ol>;
+}
+
+function EscalationRow({
+  entry,
+  evidence,
+  overlay,
+  positionNames,
+  onOpenTimeline,
+  workspacePath,
+}: {
+  entry: EscalationEntry;
+  evidence?: EvidenceEntry;
+  overlay?: ReturnType<typeof useReportAdvice>["items"] extends Map<string, infer V> ? V : never;
+  positionNames?: Record<string, string>;
+  onOpenTimeline: (id: string, turnId?: string) => void;
+  workspacePath?: string;
+}) {
   const t = useT();
   const localeTag = useLocaleTag();
-  if (entries.length === 0) return <Empty text={t("rep.noEscalations")} />;
-  return <ol>{entries.map((entry) => {
-    const summary = entry.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation");
-    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div><ReportAdviceChip advice={advice.get(reportAdviceKey(entry))} /><Button type="link" size="small" className="owb-report-trace" onClick={() => onOpenTimeline(entry.positionId, entry.turnId)}>{t("rep.traceRun")}</Button></div></li>;
-  })}</ol>;
+  const itemId = `escalation:${entry.turnId}`;
+  const summary = entry.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation");
+  useEffect(() => {
+    if (!overlay || !evidence) return;
+    syncEvidenceActionOutcome(workspacePath, itemId, SOURCE_EXECUTION_ACTION, evidence.status);
+  }, [overlay, evidence, evidence?.status, itemId, workspacePath]);
+  return <li className="owb-report-card is-escalation"><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div><ReportAdviceChip advice={overlay} />{overlay ? <OverlayReceiptPanel workspaceKey={workspacePath} itemId={itemId} enabled /> : null}<Button type="link" size="small" className="owb-report-trace" onClick={() => { if (overlay) recordSuggestionClick(workspacePath, itemId, "trace-run"); onOpenTimeline(entry.positionId, entry.turnId); }}>{t("rep.traceRun")}</Button></div></li>;
 }
 
 /**

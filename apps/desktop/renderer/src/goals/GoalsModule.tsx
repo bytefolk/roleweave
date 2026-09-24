@@ -15,6 +15,8 @@ import { isPendingTaskCollaboration, type AgentTask } from "@roleweave/shared/ta
 import { ProjectBoard } from "./ProjectBoard.js";
 import "./goals-project.css";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
+import { OverlayReceiptPanel, recordSuggestionClick } from "../overlays/OverlayReceiptPanel.js";
+import { registerPendingOverlayAction, type OverlayBranchIdentity } from "../overlays/overlay-outcome-runtime.js";
 
 interface GoalsModuleProps {
   workspaceOpen: boolean;
@@ -41,6 +43,15 @@ const HEALTH_DOT: Record<string, string> = {
   blocked: "owb-health--bad",
   unknown: "owb-health--unknown",
 };
+function overlayBranches(detail: GoalDetail): OverlayBranchIdentity[] {
+  const branches: OverlayBranchIdentity[] = [];
+  for (const branch of detail.goal.branches) {
+    if (!branch.positionId || !branch.sessionId) continue;
+    branches.push({ positionId: branch.positionId, sessionId: branch.sessionId });
+  }
+  return branches;
+}
+
 function errorMessage(body: unknown, fallback: string) {
   return body &&
     typeof body === "object" &&
@@ -591,9 +602,21 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                           <AntButton
                             data-testid="goals-health-open-turn"
                             onClick={() => {
+                              const itemId = `goal:${detail.goal.goalId}`;
                               const branch = detail.goal.branches.find(
                                 (item) => item.positionId,
                               );
+                              recordSuggestionClick(workspaceKey, itemId, "open-turn");
+                              const branches = overlayBranches(detail);
+                              if (workspaceKey && branches.length > 0) {
+                                registerPendingOverlayAction({
+                                  workspaceKey,
+                                  itemId,
+                                  actionId: "open-turn",
+                                  source: "turn",
+                                  branches,
+                                });
+                              }
                               if (branch?.positionId)
                                 onOpenBoundSession?.(
                                   branch.positionId,
@@ -607,7 +630,21 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                         {onOpenApprovals ? (
                           <AntButton
                             data-testid="goals-health-open-approvals"
-                            onClick={() => onOpenApprovals()}
+                            onClick={() => {
+                              const itemId = `goal:${detail.goal.goalId}`;
+                              recordSuggestionClick(workspaceKey, itemId, "open-approvals");
+                              const branches = overlayBranches(detail);
+                              if (workspaceKey && branches.length > 0) {
+                                registerPendingOverlayAction({
+                                  workspaceKey,
+                                  itemId,
+                                  actionId: "open-approvals",
+                                  source: "approval",
+                                  branches,
+                                });
+                              }
+                              onOpenApprovals();
+                            }}
                           >
                             {t("goals.health.openApprovals")}
                           </AntButton>
@@ -619,6 +656,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                           </p>
                         ) : null}
                       </div>
+                    ) : null}
+                    {detail.healthOverlay &&
+                    detail.healthOverlay !== detail.goal.health ? (
+                      <OverlayReceiptPanel
+                        workspaceKey={workspaceKey}
+                        itemId={`goal:${detail.goal.goalId}`}
+                        enabled
+                      />
                     ) : null}
                     {actionError && (
                       <p className="owb-goals-error" role="alert">

@@ -1,8 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GoalDetail, GoalSummary, AgentTask } from "@roleweave/shared";
 import { GoalsModule } from "../src/goals/GoalsModule";
 import { ProjectManagementModule } from "../src/projects/ProjectManagementModule";
+import { OverlayOutcomeRuntime, bindOverlayApprovalDecision, consumeOverlaySystemEvent, resetOverlayOutcomeRuntimeForTests } from "../src/overlays/overlay-outcome-runtime";
+import { resetOverlayReceiptStoreForTests } from "../src/overlays/overlay-receipt-store";
 import type { OwbBridge } from "../src/owb";
 
 const goalSummary: GoalSummary = {
@@ -289,6 +292,12 @@ describe("independent project management module", () => {
 });
 
 describe("Laya health overlay (#428)", () => {
+  afterEach(() => {
+    resetOverlayOutcomeRuntimeForTests();
+    resetOverlayReceiptStoreForTests();
+    window.localStorage?.clear?.();
+  });
+
   it("keeps the list dot on persisted health and shows overlay beside it in detail", async () => {
     const atRisk = { ...goalSummary, health: "at_risk" as const };
     const overlayDetail: GoalDetail = {
@@ -357,5 +366,116 @@ describe("Laya health overlay (#428)", () => {
     expect(onOpenBoundSession).toHaveBeenCalledWith("owner", "sess-1");
     expect(onOpenApprovals).toHaveBeenCalledTimes(1);
     expect(updateGoal).not.toHaveBeenCalled();
+    expect(screen.getByTestId("overlay-receipt-status")).toHaveTextContent("未解决");
+    expect(screen.getByTestId("overlay-receipts")).toHaveTextContent("已打开建议");
+    expect(screen.queryByText("已解决")).not.toBeInTheDocument();
+  });
+
+  it("keeps mixed split after leaving the detail and receiving terminal system events", async () => {
+    const blocked: GoalDetail = {
+      ...goalDetail,
+      goal: {
+        ...goalDetail.goal,
+        health: "at_risk",
+        branches: [
+          {
+            branchId: "b1",
+            title: "Work",
+            status: "in_progress",
+            positionId: "owner",
+            sessionId: "sess-1",
+            createdAt: goalDetail.goal.createdAt,
+            updatedAt: goalDetail.goal.updatedAt,
+          },
+        ],
+      },
+      healthOverlay: "blocked",
+    };
+    installBridge({
+      goal: vi.fn().mockResolvedValue({ status: 200, body: blocked }),
+    });
+    function Flow() {
+      const [page, setPage] = useState<"goals" | "away">("goals");
+      return (
+        <>
+          <OverlayOutcomeRuntime workspaceKey="ws-unmount" />
+          {page === "goals" ? (
+            <GoalsModule
+              workspaceOpen
+              workspaceKey="ws-unmount"
+              onOpenApprovals={() => setPage("away")}
+              onOpenBoundSession={() => setPage("away")}
+            />
+          ) : (
+            <button type="button" data-testid="return-item" onClick={() => setPage("goals")}>
+              return
+            </button>
+          )}
+        </>
+      );
+    }
+    render(<Flow />);
+    fireEvent.click(await screen.findByTestId("goals-health-open-turn"));
+    expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
+    await act(async () => {
+      consumeOverlaySystemEvent({
+        type: "turn.completed",
+        payload: {
+          workspacePath: "ws-unmount",
+          positionId: "owner",
+          sessionId: "sess-1",
+          turnId: "old-turn",
+        },
+      });
+      consumeOverlaySystemEvent({
+        type: "turn.started",
+        payload: {
+          workspacePath: "ws-unmount",
+          positionId: "owner",
+          sessionId: "sess-1",
+          turnId: "turn-new",
+        },
+      });
+      consumeOverlaySystemEvent({
+        type: "turn.completed",
+        payload: {
+          workspacePath: "ws-unmount",
+          positionId: "owner",
+          sessionId: "sess-1",
+          turnId: "turn-new",
+        },
+      });
+    });
+    fireEvent.click(screen.getByTestId("return-item"));
+    await screen.findByTestId("overlay-receipts");
+    fireEvent.click(screen.getByTestId("goals-health-open-approvals"));
+    expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
+    await act(async () => {
+      bindOverlayApprovalDecision("ws-unmount", "apr-1", {
+        positionId: "owner",
+        conversationId: "sess-1",
+      });
+      consumeOverlaySystemEvent({
+        type: "turn.approval.denied",
+        payload: { workspacePath: "ws-unmount", approvalId: "apr-other" },
+      });
+      consumeOverlaySystemEvent({
+        type: "turn.approval.denied",
+        payload: { workspacePath: "ws-unmount", approvalId: "apr-1" },
+      });
+    });
+    fireEvent.click(screen.getByTestId("return-item"));
+    const split = await screen.findByTestId("overlay-receipt-split");
+    expect(split.querySelector('[data-action="open-turn"]')).toHaveAttribute(
+      "data-outcome",
+      "action_succeeded",
+    );
+    expect(split.querySelector('[data-action="open-approvals"]')).toHaveAttribute(
+      "data-outcome",
+      "action_failed",
+    );
+    expect(screen.getByTestId("overlay-receipt-status")).toHaveTextContent("结果不一致");
+    expect(screen.queryByText("已解决")).not.toBeInTheDocument();
+    expect(screen.getByTestId("overlay-owner-resolve")).toBeEnabled();
   });
 });

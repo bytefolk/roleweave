@@ -85,6 +85,7 @@ import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
+import { OverlayOutcomeRuntime, bindOverlayApprovalDecision, consumeOverlaySystemEvent } from "./overlays/overlay-outcome-runtime";
 import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
@@ -1004,6 +1005,9 @@ function AppInner({
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const offEvent = window.owb.onEvent((event) => {
       const envelope = event as { type?: string; payload?: { workspacePath?: unknown } };
+      const owner = typeof envelope.payload?.workspacePath === "string" ? envelope.payload.workspacePath :
+        workspaceStreams.current.size <= 1 ? workspacePathRef.current : undefined;
+      if (owner !== undefined) consumeOverlaySystemEvent(event, owner);
       if ((envelope.type === "approvals.changed" || ["turn.completed", "turn.failed", "turn.indeterminate"].includes(envelope.type ?? "")) &&
           (typeof envelope.payload?.workspacePath !== "string" || envelope.payload.workspacePath === workspacePathRef.current)) {
         void approvalState.refresh();
@@ -1830,6 +1834,7 @@ function AppInner({
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
     <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && orgView === "workbench" ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`} aria-busy={startupStage !== "ready"}>
+      <OverlayOutcomeRuntime workspaceKey={workspaceInfo?.open === true ? workspaceInfo.path : undefined} />
       {startupStage !== "ready" ? (
         <div className="owb-startup" role="status" aria-label={t("startup.aria")}>
           <div className="owb-startup__mark" aria-hidden="true"><span /><span /><span /></div>
@@ -2148,10 +2153,64 @@ function AppInner({
             loading={approvalState.loading && !approvalState.ready}
             errorMessage={approvalState.error}
             onNavigateToOrg={() => setActiveModule("org")}
-            onApprove={(id, reason, scope) => { void approvalState.decide(id, "granted", reason, scope); }}
-            onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
-            onApproveBatch={(ids) => approvalState.decideBatch(ids)}
-            onDenyBatch={(ids) => approvalState.denyBatch(ids)}
+            onApprove={(id, reason, scope) => {
+              const record = approvalState.items.find((entry) => entry.id === id);
+              if (record?.source) {
+                bindOverlayApprovalDecision(
+                  workspaceInfo?.open === true ? workspaceInfo.path : undefined,
+                  record.approvalId,
+                  {
+                    positionId: record.source.positionId,
+                    conversationId: record.source.conversationId,
+                    turnId: record.source.turnId,
+                  },
+                );
+              }
+              void approvalState.decide(id, "granted", reason, scope);
+            }}
+            onDeny={(id, reason) => {
+              const record = approvalState.items.find((entry) => entry.id === id);
+              if (record?.source) {
+                bindOverlayApprovalDecision(
+                  workspaceInfo?.open === true ? workspaceInfo.path : undefined,
+                  record.approvalId,
+                  {
+                    positionId: record.source.positionId,
+                    conversationId: record.source.conversationId,
+                    turnId: record.source.turnId,
+                  },
+                );
+              }
+              void approvalState.decide(id, "denied", reason);
+            }}
+            onApproveBatch={(ids) => {
+              const workspaceKey = workspaceInfo?.open === true ? workspaceInfo.path : undefined;
+              for (const id of ids) {
+                const record = approvalState.items.find((entry) => entry.id === id);
+                if (record?.source) {
+                  bindOverlayApprovalDecision(workspaceKey, record.approvalId, {
+                    positionId: record.source.positionId,
+                    conversationId: record.source.conversationId,
+                    turnId: record.source.turnId,
+                  });
+                }
+              }
+              return approvalState.decideBatch(ids);
+            }}
+            onDenyBatch={(ids) => {
+              const workspaceKey = workspaceInfo?.open === true ? workspaceInfo.path : undefined;
+              for (const id of ids) {
+                const record = approvalState.items.find((entry) => entry.id === id);
+                if (record?.source) {
+                  bindOverlayApprovalDecision(workspaceKey, record.approvalId, {
+                    positionId: record.source.positionId,
+                    conversationId: record.source.conversationId,
+                    turnId: record.source.turnId,
+                  });
+                }
+              }
+              return approvalState.denyBatch(ids);
+            }}
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
           />
