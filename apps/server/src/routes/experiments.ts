@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { OrgApiError, errorCodes } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
-import { experiments, parseExperimentsRequest } from "../experiments/service.js";
+import { experiments, parseExperimentsRequest, parseSendGateAdviceRequest } from "../experiments/service.js";
 
 export async function handleExperimentsGet(ctx: ControlPlaneContext, res: ServerResponse, url: URL): Promise<void> {
   const workspace = ctx.workspace.requireOpen();
@@ -22,4 +22,10 @@ export async function handleReportsAdvice(ctx: ControlPlaneContext, req: Incomin
   const workspace = ctx.workspace.requireOpen();
   const request = parseExperimentsRequest(await readJsonBody<unknown>(req), false);
   sendJson(res, 200, await experiments(ctx).advise(workspace, request));
+}
+
+export async function handleSendGateAdvice(ctx: ControlPlaneContext, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const workspace = ctx.workspace.requireOpen();
+  const request = parseSendGateAdviceRequest(await readJsonBody<unknown>(req));
+  sendJson(res, 200, await experiments(ctx).adviseSendGate(workspace, request));
 }

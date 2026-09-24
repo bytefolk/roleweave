@@ -8,6 +8,8 @@ const response = (workspacePath = "/projects/a", enabled = false): ExperimentsRe
   enabled, availability: enabled ? "ready" : "disabled",
   provider: { name: "Laya · local", endpointHost: "127.0.0.1", endpointUrl: "http://127.0.0.1:18081/v1/systemone", configured: true },
   sending: ["status", "errorCode", "budgetRelated"],
+  sendGateSending: ["positionId", "mode"],
+  sendGateOptional: ["taskSummary"],
 });
 function install(initial = response()) {
   let state = initial;
@@ -38,8 +40,8 @@ describe("workspace experimental settings", () => {
     const modal = await screen.findByRole("dialog");
     expect(within(modal).getByText(endpoint, { exact: true })).toBeInTheDocument();
     expect(screen.getAllByText(endpoint, { exact: true })).toHaveLength(2);
-    expect(within(modal).getByText(/发送范围：执行状态、规范化错误码、是否与预算相关/)).toBeInTheDocument();
-    expect(within(modal).getByText(/不发送消息、任务或附件正文、员工姓名、项目路径/)).toBeInTheDocument();
+    expect(within(modal).getByText(/发送范围：执行状态、规范化错误码、是否与预算相关；发送前建议还会发送岗位 ID 与当前权限模式/)).toBeInTheDocument();
+    expect(within(modal).getByText(/不会读取输入框正文；任务摘要只在你逐次确认后发送/)).toBeInTheDocument();
     fireEvent.click(within(modal).getByRole("button", { name: "取消" }));
     expect(api.update).not.toHaveBeenCalled(); expect(api.reportAdvice).not.toHaveBeenCalled();
   });

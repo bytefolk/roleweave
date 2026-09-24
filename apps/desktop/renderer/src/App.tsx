@@ -2369,6 +2369,7 @@ function AppInner({
             qoderLogin={qoderLoginSurface}
             key={workspaceInfo?.path}
             workspaceKey={workspaceInfo?.path}
+            workspaceScope={groupWorkspaceScope}
             memory={conversationMemory.current}
             focused={conversationFocused}
             onToggleFocus={() => setConversationFocused(!conversationFocused)}
@@ -2396,6 +2397,7 @@ function AppInner({
             onRotateSession={rotateActiveSession}
             positions={positions}
             selectedPositionId={selectedId}
+            positionMode={actionPosition?.mode}
             engine={selectedId === null ? defaultTurnEngine : engineForPosition(selectedId)}
             engineLocked={selectedId !== null && lockedAgentPositions[selectedId] === true}
             engineAvailability={engineAvailability}

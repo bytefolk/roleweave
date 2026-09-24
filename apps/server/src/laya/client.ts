@@ -1,4 +1,4 @@
-import { layaRequestConfig } from "./config.js";
+import { isLoopbackEndpoint, layaRequestConfig } from "./config.js";
 
 export type LayaNoulQuestion = { type: "noul"; instructions: string };
 export type LayaChoiceQuestion = { type: "choice"; instructions: string; criteria: Record<string, string> };
@@ -21,10 +21,18 @@ export interface LayaRequest {
 }
 
 export type LayaAsk = (request: LayaRequest) => Promise<Record<string, LayaAnswer> | null>;
-export interface AskLayaDeps { env?: NodeJS.Dict<string>; fetchImpl?: typeof fetch }
+export interface AskLayaDeps {
+  env?: NodeJS.Dict<string>;
+  fetchImpl?: typeof fetch;
+  config?: { url: string; model: string; timeoutMs: number };
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(record).every(key => allowed.includes(key));
 }
 
 const probability = (value: unknown): value is number =>
@@ -33,11 +41,11 @@ const probability = (value: unknown): value is number =>
 function parseAnswer(value: unknown): LayaAnswer | null {
   const record = asRecord(value);
   if (!record) return null;
-  if (record.type === "noul" && probability(record.probability ?? record.noul)) {
+  if (record.type === "noul" && hasOnlyKeys(record, ["type", "probability", "noul"]) && probability(record.probability ?? record.noul)) {
     return { type: "noul", probability: (record.probability ?? record.noul) as number };
   }
   const selected = record.selected ?? record.choice;
-  if (record.type === "choice" && typeof selected === "string") {
+  if (record.type === "choice" && hasOnlyKeys(record, ["type", "selected", "choice", "probabilities", "confidence"]) && typeof selected === "string") {
     const probabilities = asRecord(record.probabilities) ?? {};
     const numeric: Record<string, number> = {};
     for (const [key, value] of Object.entries(probabilities)) if (probability(value)) numeric[key] = value;
@@ -45,7 +53,7 @@ function parseAnswer(value: unknown): LayaAnswer | null {
     if (!probability(confidence)) return null;
     return { type: "choice", selected, probabilities: numeric, confidence };
   }
-  if (record.type === "score" && typeof record.score === "number" && Number.isFinite(record.score) && probability(record.confidence)) {
+  if (record.type === "score" && hasOnlyKeys(record, ["type", "score", "confidence"]) && typeof record.score === "number" && Number.isFinite(record.score) && probability(record.confidence)) {
     return { type: "score", score: record.score, confidence: record.confidence };
   }
   return null;
@@ -53,7 +61,15 @@ function parseAnswer(value: unknown): LayaAnswer | null {
 
 /** Local typed System One call. It never sends authorization headers or reaches a non-loopback host. */
 export async function askLaya(request: LayaRequest, deps: AskLayaDeps = {}): Promise<Record<string, LayaAnswer> | null> {
-  const config = layaRequestConfig(deps.env ?? process.env);
+  if (deps.config && !isLoopbackEndpoint(deps.config.url)) return null;
+  const config = deps.config
+    ? layaRequestConfig({
+        ROLEWEAVE_LAYA_ENABLED: "1",
+        ROLEWEAVE_LAYA_URL: deps.config.url,
+        ROLEWEAVE_LAYA_MODEL: deps.config.model,
+        ROLEWEAVE_LAYA_TIMEOUT_MS: String(deps.config.timeoutMs),
+      })
+    : layaRequestConfig(deps.env ?? process.env);
   if (!config) return null;
   try {
     const response = await (deps.fetchImpl ?? fetch)(config.url, {

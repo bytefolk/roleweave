@@ -3,7 +3,7 @@ import { Button, Modal, Popover } from "antd";
 import { useConversationCopy } from "../locales/conversation";
 import { createConversationMemory, conversationKey, type ConversationMemory } from "./conversation-memory";
 import { Maximize2, Minimize2, History, MessagesSquare } from "lucide-react";
-import type { EmployeeModelConfig, WorkbenchSession } from "@roleweave/shared";
+import type { EmployeeModelConfig, PositionMode, WorkbenchSession } from "@roleweave/shared";
 import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
 import type { AvailabilityCheck, NoticeAction } from "../DiagnosticNotice";
@@ -12,6 +12,8 @@ import { EngineSelect, TURN_ENGINES, useEngineLabel } from "./engine-select";
 import { EngineBadge } from "./EngineBadge";
 import { TurnThread } from "./TurnThread";
 import { PositionAvatar } from "../PositionAvatar";
+import { useWorkspaceExperiments } from "../experiments/useWorkspaceExperiments";
+import { SendGateOverlay } from "./SendGateOverlay";
 import type {
   CreateTurnRequest,
   PendingAttachment,
@@ -45,6 +47,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 export interface TurnPanelProps {
   active?: boolean;
   workspaceKey?: string;
+  workspaceScope?: symbol;
   memory?: ConversationMemory;
   focused?: boolean;
   onToggleFocus?: () => void;
@@ -66,6 +69,8 @@ export interface TurnPanelProps {
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
   selectedPositionId: string | null;
+  /** Authoritative profile mode for the selected position. Missing means abstain. */
+  positionMode?: PositionMode;
   engine: TurnEngine;
   /** The initial runtime selection locks an employee to one runtime. */
   engineLocked?: boolean;
@@ -103,6 +108,7 @@ export interface TurnPanelProps {
 export function TurnPanel({
   active = true,
   workspaceKey = "",
+  workspaceScope,
   memory,
   focused = false,
   onToggleFocus,
@@ -123,6 +129,7 @@ export function TurnPanel({
   workspaceOpen,
   positions,
   selectedPositionId,
+  positionMode,
   engine,
   engineLocked = true,
   engineAvailability,
@@ -146,6 +153,10 @@ export function TurnPanel({
   const copy = useConversationCopy();
   const localMemory = useRef(createConversationMemory());
   const conversationMemory = memory ?? localMemory.current;
+  const experiment = useWorkspaceExperiments({
+    workspacePath: workspaceOpen && workspaceKey ? workspaceKey : undefined,
+    workspaceScope,
+  }).snapshot;
   const draftKey = conversationKey(workspaceKey, selectedPositionId, selectedSessionId);
   const [, renderDraft] = useState(0);
   const [sendingKeys, setSendingKeys] = useState<Record<string, boolean>>({});
@@ -394,6 +405,9 @@ export function TurnPanel({
       {sendErrors[draftKey] ? <p role="alert" className="owb-conversation-error">{sendErrors[draftKey]}</p> : null}
       {selectedPosition ? <TurnComposer
         sendShortcut={sendShortcut}
+        advice={experiment?.enabled === true && experiment.availability === "ready" && positionMode && window.owb?.sendGateAdvice
+          ? <SendGateOverlay experiment={experiment} positionId={selectedPosition.id} mode={positionMode} />
+          : undefined}
         options={active ? <ConversationOptions
           config={modelConfig} saving={modelSaving} disabled={runningTurn || busy || employeeBusy || sending || sessionBusy}
           loading={modelLoading} error={modelError} notice={modelNotice} onReload={onReloadModel} running={runningTurn || employeeBusy}

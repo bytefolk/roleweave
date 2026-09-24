@@ -2,13 +2,15 @@ import crypto from "node:crypto";
 import {
   OrgApiError, errorCodes, reportAdviceSuggestions,
   type ExperimentsResponse, type ExperimentsUpdateRequest, type ReportsAdviceRequest,
-  type ReportsAdviceResponse,
+  type ReportsAdviceResponse, type SendGateAdviceRequest, type SendGateAdviceResponse,
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
 import { readReports } from "../routes/reports.js";
 import { LAYA_ENDPOINT, LayaAdviceProvider, MAX_ADVICE_ITEMS, normalizeAdviceMetadata, type AdviceProvider } from "./provider.js";
 import { readExperiments, writeExperiments, type StoredExperiments } from "./store.js";
+import { askLaya } from "../laya/client.js";
+import { resolveSendGateChoice } from "../turns/send-gate-advice.js";
 
 const conflict = () => new OrgApiError(errorCodes.experiments_conflict, 409, "workspace or experimental settings changed; reload before trying again");
 const invalid = () => new OrgApiError(errorCodes.experiments_request_invalid, 400, "invalid experimental settings request");
@@ -37,6 +39,25 @@ export function parseExperimentsRequest(raw: unknown, update: boolean): Experime
     !Number.isSafeInteger(body.revision) || (body.revision as number) < 0 ||
     (update && typeof body.enabled !== "boolean")) throw invalid();
   return body as unknown as ExperimentsUpdateRequest;
+}
+
+export function parseSendGateAdviceRequest(raw: unknown): SendGateAdviceRequest {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalid();
+  const body = raw as Record<string, unknown>;
+  const allowed = ["workspacePath", "workspaceSession", "revision", "positionId", "taskSummary"];
+  if (Object.keys(body).some(key => !allowed.includes(key)) ||
+    typeof body.workspacePath !== "string" || body.workspacePath.length === 0 || body.workspacePath.length > 8_192 ||
+    typeof body.workspaceSession !== "string" || !/^[a-f0-9-]{36}$/.test(body.workspaceSession) ||
+    !Number.isSafeInteger(body.revision) || (body.revision as number) < 0 ||
+    typeof body.positionId !== "string") throw invalid();
+  if (body.taskSummary !== undefined) {
+    if (!body.taskSummary || typeof body.taskSummary !== "object" || Array.isArray(body.taskSummary)) throw invalid();
+    const summary = body.taskSummary as Record<string, unknown>;
+    if (Object.keys(summary).some(key => key !== "value" && key !== "confirmed") ||
+      typeof summary.value !== "string" || summary.value.trim().length === 0 || summary.value.length > 512 ||
+      summary.confirmed !== true) throw invalid();
+  }
+  return body as unknown as SendGateAdviceRequest;
 }
 
 export function experiments(ctx: ControlPlaneContext): ExperimentsService {
@@ -114,6 +135,8 @@ export class ExperimentsService {
       availability: !stored.valid || state.inhibited ? "storage_error" : !enabled ? "disabled" : configured ? "ready" : "not_configured",
       provider: { name: "Laya · local", endpointHost: "127.0.0.1", endpointUrl: this.ctx.config.layaUrl || LAYA_ENDPOINT, configured },
       sending: ["status", "errorCode", "budgetRelated"],
+      sendGateSending: ["positionId", "mode"],
+      sendGateOptional: ["taskSummary"],
     };
   }
 
@@ -190,6 +213,56 @@ export class ExperimentsService {
     });
     state.inFlight.set(key, { controller, result });
     return result;
+  }
+
+  async adviseSendGate(workspace: OpenWorkspace, request: SendGateAdviceRequest): Promise<SendGateAdviceResponse> {
+    const state = this.state(workspace);
+    type Prepared = {
+      state: WorkspaceExperiments;
+      generation: number;
+      base: SendGateAdviceResponse;
+      adviceState: { positionId: string; mode: "read_only" | "approval_required"; taskSummary: string };
+    };
+    const prepared = await this.serial<SendGateAdviceResponse | Prepared>(state, async () => {
+      this.assertCurrent(state, request);
+      const stored = await this.refresh(state);
+      if (stored.settings.revision !== request.revision) throw conflict();
+      const role = workspace.organization.roles.find(candidate => candidate.id === request.positionId);
+      if (!role) throw invalid();
+      const base: SendGateAdviceResponse = {
+        workspacePath: request.workspacePath,
+        workspaceSession: request.workspaceSession,
+        revision: request.revision,
+        status: "unavailable",
+        rule: { positionId: role.id, mode: role.mode },
+        suggestion: null,
+      };
+      if (!stored.valid || state.inhibited) return { ...base, reason: "settings_invalid" };
+      if (!stored.settings.enabled) return { ...base, status: "disabled", reason: "flag_off" };
+      if (!request.taskSummary) return { ...base, status: "abstained", reason: "task_summary_required" };
+      if (!this.ctx.config.layaEnabled) return { ...base, reason: "not_configured" };
+      return {
+        state,
+        generation: state.generation,
+        base,
+        adviceState: { positionId: role.id, mode: role.mode, taskSummary: request.taskSummary.value },
+      };
+    });
+    if ("status" in prepared) return prepared;
+    const choice = await resolveSendGateChoice(prepared.adviceState, requestBody => askLaya(requestBody, {
+      config: {
+        url: this.ctx.config.layaUrl,
+        model: this.ctx.config.layaModel,
+        timeoutMs: this.ctx.config.layaTimeoutMs,
+      },
+    }));
+    await this.serial(state, async () => {
+      await this.refresh(state);
+      this.assertGeneration(state, prepared.generation);
+    });
+    return choice === null
+      ? { ...prepared.base, status: "abstained", reason: "insufficient_information" }
+      : { ...prepared.base, status: "ready", suggestion: choice };
   }
 
   private assertGeneration(state: WorkspaceExperiments, generation: number): void {

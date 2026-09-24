@@ -144,6 +144,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/turns/envelope.js",
   "dist/src/turns/progress.js",
   "dist/src/turns/running.js",
+  "dist/src/turns/send-gate-advice.js",
   "dist/src/turns/store.js",
   "dist/src/turns/thread-context.js",
   "dist/src/windows-launcher.js",

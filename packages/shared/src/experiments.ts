@@ -15,6 +15,10 @@ export interface ExperimentsResponse {
     configured: boolean;
   };
   sending: ["status", "errorCode", "budgetRelated"];
+  /** Deterministic fields used by the send-gate preview. */
+  sendGateSending: ["positionId", "mode"];
+  /** Sent only after a separate, per-request user confirmation. */
+  sendGateOptional: ["taskSummary"];
 }
 
 export interface ReportsAdviceRequest {
@@ -49,4 +53,32 @@ export interface ReportsAdviceResponse extends ReportsAdviceRequest {
   considered: number;
   total: number;
   generatedAt: string | null;
+}
+
+export const sendGateAdviceChoices = ["keep", "approval_required"] as const;
+export type SendGateAdviceChoice = (typeof sendGateAdviceChoices)[number];
+
+export interface SendGateAdviceRequest extends ReportsAdviceRequest {
+  positionId: string;
+  taskSummary?: {
+    value: string;
+    confirmed: true;
+  };
+}
+
+export interface SendGateAdviceResponse extends ReportsAdviceRequest {
+  status: "ready" | "disabled" | "abstained" | "unavailable";
+  reason?:
+    | "flag_off"
+    | "task_summary_required"
+    | "not_configured"
+    | "insufficient_information"
+    | "timeout"
+    | "provider_error"
+    | "settings_invalid";
+  rule: {
+    positionId: string;
+    mode: import("./org-tree.js").PositionMode;
+  };
+  suggestion: SendGateAdviceChoice | null;
 }
