@@ -37,7 +37,11 @@ function detail(items: GoalWorkItem[] = [task]): GoalDetail {
     activity: [],
   };
 }
-function setup(value = detail(), overrides: Partial<OwbBridge> = {}) {
+function setup(
+  value = detail(),
+  overrides: Partial<OwbBridge> = {},
+  propsOverrides: Partial<React.ComponentProps<typeof ProjectBoard>> = {},
+) {
   const updateGoal = vi
     .fn()
     .mockResolvedValue({ status: 200, body: { goalId: "goal-one" } });
@@ -54,16 +58,20 @@ function setup(value = detail(), overrides: Partial<OwbBridge> = {}) {
     });
   window.owb = { updateGoal, createTurn, ...overrides } as unknown as OwbBridge;
   const onRefresh = vi.fn().mockResolvedValue(undefined);
+  const onOpenBoundSession = vi.fn();
   const props = {
     detail: value,
     positionNames: { engineer: "Engineer", designer: "Designer" },
     positionEngines: { engineer: "codex" as const },
     onRefresh,
+    onOpenBoundSession,
+    ...propsOverrides,
   };
   return {
     updateGoal,
     createTurn,
     onRefresh,
+    onOpenBoundSession,
     props,
     ...render(<ProjectBoard {...props} />),
   };
@@ -365,5 +373,311 @@ describe("ProjectBoard", () => {
       screen.getByRole("article", { name: "Ship board" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Invalid Date")).not.toBeInTheDocument();
+  });
+
+  it("deletes an existing task after confirmation and refreshes the board", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const updateGoal = vi
+      .fn()
+      .mockResolvedValue({ status: 200, body: { goalId: "goal-one" } });
+    const context = setup(
+      detail([task, { ...task, taskId: "task-two", title: "Second task" }]),
+      { updateGoal },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
+    const drawer = within(screen.getByRole("dialog"));
+    const deleteBtn = drawer.getByRole("button", { name: "删除任务" });
+    fireEvent.click(deleteBtn);
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("Ship board"));
+    expect(updateGoal).toHaveBeenCalledWith({
+      goalId: "goal-one",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+      workItems: [expect.objectContaining({ taskId: "task-two", title: "Second task" })],
+    });
+    await waitFor(() => expect(context.onRefresh).toHaveBeenCalledTimes(1));
+    confirmSpy.mockRestore();
+  });
+
+  it("cancels task deletion when confirm is rejected", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const updateGoal = vi.fn();
+    setup(detail([task]), { updateGoal });
+    fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
+    const drawer = within(screen.getByRole("dialog"));
+    fireEvent.click(drawer.getByRole("button", { name: "删除任务" }));
+    expect(updateGoal).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("allows jumping to the turn session when an execution exists", async () => {
+    const onOpenBoundSession = vi.fn();
+    const runningDetail = {
+      ...detail([task]),
+      taskExecutions: {
+        "task-one": {
+          turnId: "turn-abc",
+          positionId: "engineer",
+          status: "running" as const,
+        },
+      },
+    };
+    setup(runningDetail, {}, { onOpenBoundSession });
+    const viewBtn = screen.getByRole("button", { name: "查看任务执行：Ship board" });
+    expect(viewBtn).toBeInTheDocument();
+    fireEvent.click(viewBtn);
+    expect(onOpenBoundSession).toHaveBeenCalledWith("engineer", undefined, "turn-abc");
+  });
+
+  it("filters tasks by status and priority, and via interactive summary metrics", async () => {
+    setup(
+      detail([
+        { ...task, taskId: "t1", title: "Task 1", status: "todo", priority: "low" },
+        { ...task, taskId: "t2", title: "Task 2", status: "in_progress", priority: "high" },
+        { ...task, taskId: "t3", title: "Task 3", status: "blocked", priority: "high" },
+      ]),
+    );
+    // Filter by status dropdown
+    const statusFilter = screen.getByRole("combobox", { name: "筛选状态" });
+    fireEvent.change(statusFilter, { target: { value: "in_progress" } });
+    expect(screen.getByRole("article", { name: "Task 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Task 1" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Task 3" })).not.toBeInTheDocument();
+
+    // Filter by priority dropdown
+    fireEvent.change(statusFilter, { target: { value: "all" } });
+    const priorityFilter = screen.getByRole("combobox", { name: "筛选优先级" });
+    fireEvent.change(priorityFilter, { target: { value: "high" } });
+    expect(screen.getByRole("article", { name: "Task 2" })).toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Task 3" })).toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Task 1" })).not.toBeInTheDocument();
+
+    // Interactive summary metric toggle
+    fireEvent.change(priorityFilter, { target: { value: "all" } });
+    const inProgressMetric = screen.getByRole("button", { name: /进行中/ });
+    fireEvent.click(inProgressMetric);
+    expect(screen.getByRole("article", { name: "Task 2" })).toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Task 1" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Task 3" })).not.toBeInTheDocument();
+  });
+
+  it("triggers refresh on 409 conflict and allows syncing to latest version to retry save", async () => {
+    let currentDetail = detail();
+    const freshDetail = detail([{ ...task, title: "Ship board (updated elsewhere)" }]);
+    freshDetail.goal.updatedAt = "2026-09-23T00:00:00.000Z";
+
+    const updateGoal = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: 409,
+        body: { message: "Goal was modified by another user" },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { goalId: "goal-one" },
+      });
+
+    let rerenderFn: (ui: React.ReactElement) => void;
+    const onRefresh = vi.fn().mockImplementation(async () => {
+      currentDetail = freshDetail;
+      rerenderFn(<ProjectBoard {...context.props} detail={freshDetail} />);
+    });
+
+    const context = setup(currentDetail, { updateGoal }, { onRefresh });
+    rerenderFn = context.rerender;
+
+    fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
+    const drawer = within(screen.getByRole("dialog"));
+
+    // Modify the draft title
+    fireEvent.change(drawer.getByLabelText("任务标题"), {
+      target: { value: "Ship board (my draft edits)" },
+    });
+
+    // Attempt save which fails with 409
+    fireEvent.click(drawer.getByRole("button", { name: "保存任务" }));
+
+    // Verify error and conflict resolution bar appear, but uncommitted draft is preserved
+    expect(await drawer.findByText("Goal was modified by another user")).toBeInTheDocument();
+    expect(drawer.getByLabelText("任务标题")).toHaveValue("Ship board (my draft edits)");
+
+    const syncBtn = await drawer.findByRole("button", { name: "同步最新版本" });
+    fireEvent.click(syncBtn);
+
+    // Verify clicking sync triggers onRefresh
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+
+    // Conflict error should be cleared
+    expect(drawer.queryByText("Goal was modified by another user")).not.toBeInTheDocument();
+
+    // Now save again with synced version
+    fireEvent.click(drawer.getByRole("button", { name: "保存任务" }));
+
+    await waitFor(() =>
+      expect(updateGoal).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          expectedUpdatedAt: "2026-09-23T00:00:00.000Z",
+          workItems: [
+            expect.objectContaining({
+              taskId: "task-one",
+              title: "Ship board (my draft edits)",
+            }),
+          ],
+        }),
+      ),
+    );
+  });
+
+  it("safely groups malformed or invalid dates into unscheduled section", () => {
+    setup(
+      detail([
+        { ...task, taskId: "bad-date", title: "Corrupted date task", startDate: "not-a-date" },
+        { ...task, taskId: "valid-date", title: "Valid date task", startDate: "2026-09-22", dueDate: "2026-09-25" },
+      ]),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+
+    // Valid date task is in timeline
+    expect(screen.getByText("2026-09-22 → 2026-09-25")).toBeInTheDocument();
+
+    // Malformed date task is safely placed in unscheduled
+    const unscheduledSection = screen.getByRole("heading", { name: /未排期/ });
+    expect(unscheduledSection).toBeInTheDocument();
+    expect(within(unscheduledSection.parentElement!).getByRole("article", { name: "Corrupted date task" })).toBeInTheDocument();
+  });
+
+  it("displays limit notice and disables creation when task limit is reached", () => {
+    const sixtyFourTasks = Array.from({ length: 64 }, (_, i) => ({
+      ...task,
+      taskId: `t-${i}`,
+      title: `Task ${i}`,
+    }));
+    setup(detail(sixtyFourTasks));
+    const createBtn = screen.getByRole("button", { name: "新建任务" });
+    expect(createBtn).toBeDisabled();
+    expect(screen.getByText("项目已达到最大任务数上限（64个）")).toBeInTheDocument();
+  });
+
+  it("clamps schedule bar calculations for inverted dates, window-edge spans, and partially invalid dates", () => {
+    setup(
+      detail([
+        {
+          ...task,
+          taskId: "inverted-task",
+          title: "Inverted dates task",
+          startDate: "2026-09-28",
+          dueDate: "2026-09-22",
+        },
+        {
+          ...task,
+          taskId: "span-task",
+          title: "Span task across window",
+          startDate: "2025-01-01",
+          dueDate: "2027-01-01",
+        },
+        {
+          ...task,
+          taskId: "partial-date-task",
+          title: "Partially invalid date task",
+          startDate: "malformed-date",
+          dueDate: "2026-09-22",
+        },
+      ]),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+
+    // Inverted task bar is clamped chronologically without negative width
+    const invBar = screen.getByRole("button", { name: /^Inverted dates task: / });
+    expect(invBar).toBeInTheDocument();
+    const invLeft = parseFloat(invBar.style.left.match(/([\d.]+)%/)![1]);
+    const invWidth = parseFloat(invBar.style.width.match(/([\d.]+)%/)![1]);
+    expect(invLeft).toBeGreaterThanOrEqual(0);
+    expect(invWidth).toBeGreaterThan(0);
+
+    // Span task covering beyond the window boundaries is clamped to [0%, 100%]
+    const spanBar = screen.getByRole("button", { name: /^Span task across window: / });
+    expect(spanBar).toBeInTheDocument();
+    expect(spanBar.style.left).toBe("0%");
+    expect(spanBar.style.width).toBe("100%");
+
+    // Partially invalid date task uses the valid date safely without NaN
+    const partialBar = screen.getByRole("button", { name: /^Partially invalid date task: / });
+    expect(partialBar).toBeInTheDocument();
+    const partialLeft = parseFloat(partialBar.style.left.match(/([\d.]+)%/)![1]);
+    const partialWidth = parseFloat(partialBar.style.width.match(/([\d.]+)%/)![1]);
+    expect(Number.isFinite(partialLeft)).toBe(true);
+    expect(Number.isFinite(partialWidth)).toBe(true);
+    expect(partialLeft).toBeGreaterThanOrEqual(0);
+    expect(partialWidth).toBeGreaterThan(0);
+    expect(screen.getByText("截止：2026-09-22 · 开始未定")).toBeInTheDocument();
+  });
+
+  it("surfaces project.deleteTaskFail error message when deletion fails", async () => {
+    const updateGoal = vi.fn().mockResolvedValue({ status: 500, body: {} });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    setup(detail([task]), { updateGoal });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
+    const drawer = within(screen.getByRole("dialog"));
+    fireEvent.click(drawer.getByRole("button", { name: "删除任务" }));
+
+    expect(await drawer.findByText("删除任务失败，请重试。")).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it("handles 409 conflict during task deletion and allows syncing to retry deletion", async () => {
+    let currentDetail = detail([{ ...task, title: "Task to delete" }]);
+    const freshDetail = detail([{ ...task, title: "Task to delete" }]);
+    freshDetail.goal.updatedAt = "2026-09-24T00:00:00.000Z";
+
+    const updateGoal = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: 409,
+        body: { message: "Version conflict during delete" },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { goalId: "goal-one" },
+      });
+
+    let rerenderFn: (ui: React.ReactElement) => void;
+    const onRefresh = vi.fn().mockImplementation(async () => {
+      currentDetail = freshDetail;
+      rerenderFn(<ProjectBoard {...context.props} detail={freshDetail} />);
+    });
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const context = setup(currentDetail, { updateGoal }, { onRefresh });
+    rerenderFn = context.rerender;
+
+    fireEvent.click(screen.getByRole("button", { name: "Task to delete" }));
+    const drawer = within(screen.getByRole("dialog"));
+
+    // Attempt delete which encounters 409
+    fireEvent.click(drawer.getByRole("button", { name: "删除任务" }));
+
+    expect(await drawer.findByText("Version conflict during delete")).toBeInTheDocument();
+    const syncBtn = await drawer.findByRole("button", { name: "同步最新版本" });
+    expect(syncBtn).toBeInTheDocument();
+
+    // Click sync
+    fireEvent.click(syncBtn);
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+
+    // Retry delete with synced version
+    fireEvent.click(drawer.getByRole("button", { name: "删除任务" }));
+
+    await waitFor(() =>
+      expect(updateGoal).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          expectedUpdatedAt: "2026-09-24T00:00:00.000Z",
+          workItems: [],
+        }),
+      ),
+    );
+
+    confirmSpy.mockRestore();
   });
 });

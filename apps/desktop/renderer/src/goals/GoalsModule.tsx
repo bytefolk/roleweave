@@ -26,7 +26,7 @@ interface GoalsModuleProps {
   positionAvatarSources?: Record<string, string>;
   ownerPositionId?: string;
   onOpenApprovals?: () => void;
-  onOpenBoundSession?: (positionId: string, sessionId?: string) => void;
+  onOpenBoundSession?: (positionId: string, sessionId?: string, turnId?: string) => void;
 }
 const rememberedSelection = new Map<string, string>();
 const STATUS_BADGE: Record<string, string> = {
@@ -630,6 +630,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                       detail={detail}
                       positionNames={positionNames}
                       positionEngines={positionEngines}
+                      onOpenBoundSession={onOpenBoundSession}
                       onRefresh={async () => {
                         const goalId = selectedRef.current;
                         await Promise.all([loadGoals(), goalId ? loadDetail(goalId) : Promise.resolve()]);
