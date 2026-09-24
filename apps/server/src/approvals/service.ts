@@ -6,6 +6,7 @@ import { assertTurnWorkspace, executeTurn } from "../routes/turns.js";
 import { resolvePositionAgentEngine } from "../agent-binding.js";
 import { ApprovalStore, approvalIdentity } from "./store.js";
 import { buildApprovalContext, redactApprovalText } from "./context.js";
+import { attachApprovalAgingOverlay } from "./aging-overlay.js";
 import { attachApprovalRiskOverlay } from "./risk-overlay.js";
 import { canActForPolicy, policyProgress, resolveApprovalPolicy } from "./policy.js";
 
@@ -251,7 +252,10 @@ export class ApprovalService {
       : undefined;
     const projected = publicView(a);
     const context = projected.context
-      ? await attachApprovalRiskOverlay(projected.context, a.action)
+      ? await attachApprovalAgingOverlay(
+        await attachApprovalRiskOverlay(projected.context, a.action),
+        { createdAt: a.createdAt, decisionKind: a.status },
+      )
       : projected.context;
     return {
       ...projected,
