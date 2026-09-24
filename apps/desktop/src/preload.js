@@ -39,6 +39,8 @@ contextBridge.exposeInMainWorld("owb", {
   hire: (request) => ipcRenderer.invoke("owb:hire:create", request),
   generateAvatar: (request) => ipcRenderer.invoke("owb:avatar:generate", request),
   reports: () => ipcRenderer.invoke("owb:reports:get"),
+  turnProgress: () => ipcRenderer.invoke("owb:progress:list"),
+  turnProgressSnapshot: (turnId, positionId) => ipcRenderer.invoke("owb:progress:get", turnId, positionId),
   experiments: {
     get: (workspacePath) => ipcRenderer.invoke("owb:experiments:get", workspacePath),
     update: (request) => ipcRenderer.invoke("owb:experiments:update", request),

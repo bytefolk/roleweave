@@ -34,7 +34,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, Orbit, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
+import { Activity, Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, Orbit, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -93,6 +93,9 @@ import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarV
 /** #472: the 3D star map pulls three.js in; lazy-load so the default bundle
  *  never pays for WebGL until the operator opens the view. */
 const OrgStarMap = lazy(() => import("./org/OrgStarMap"));
+/** #480: keep Timeline/Drawer/Progress off the default App graph so org
+ *  workbench tests do not pay for the manager board on every render. */
+const ProgressBoard = lazy(() => import("./progress/ProgressBoard").then((module) => ({ default: module.ProgressBoard })));
 
 interface PositionCardState {
   loading: boolean;
@@ -147,7 +150,7 @@ function AppInner({
 }) {
   const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
-    "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings"
+    "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress"
   >("org");
   const [settingsInitialCategory, setSettingsInitialCategory] = useState<"experiments" | undefined>();
   const setActiveModule = useCallback((next: typeof activeModule) => {
@@ -1820,7 +1823,7 @@ function AppInner({
     } : {}),
   }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
 
-  const sidebarlessModule = activeModule === "projects" || activeModule === "reports" || activeModule === "approvals" || activeModule === "settings";
+  const sidebarlessModule = activeModule === "projects" || activeModule === "reports" || activeModule === "approvals" || activeModule === "settings" || activeModule === "progress";
 
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
@@ -1894,6 +1897,7 @@ function AppInner({
               onSelect: () => { setActiveModule("approvals"); void approvalState.refresh(); },
             },
             { id: "reports", label: t("rail.reports"), icon: <ChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setReportsFocusTurnId(null); setActiveModule("reports"); void loadReports(); } },
+            { id: "progress", label: t("rail.progress"), icon: <Activity aria-hidden="true" size={16} />, active: activeModule === "progress", onSelect: () => setActiveModule("progress") },
             // mem and position documents are two sources in one employee-memory
             // surface. Keep one entry here so the user does not have to choose
             // between two implementation-owned data planes.
@@ -2120,7 +2124,11 @@ function AppInner({
             title={t("misc.lastWorkspaceFallback", { path: fallbackNotice })}
           />
         ) : null}
-        {activeModule === "reports" ? (
+        {activeModule === "progress" ? (
+          <Suspense fallback={<div className="owb-progress" aria-hidden="true"><Skeleton /></div>}>
+            <ProgressBoard workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
+          </Suspense>
+        ) : activeModule === "reports" ? (
           <ReportsCenter
             key={workspaceInfo?.path}
             workspacePath={workspaceInfo?.open ? workspaceInfo.path : undefined}
@@ -2242,6 +2250,7 @@ function AppInner({
                   displayNames={positionNames}
                   avatarColors={positionColors}
                   avatarUrls={avatarUrls}
+                  displayEngines={positionEngines}
                   runningIds={runningPositionIds}
                   selectedId={selectedId}
                   onSelect={openConversation}
