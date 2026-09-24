@@ -80,7 +80,6 @@ import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
-import { ProgressBoard } from "./progress/ProgressBoard";
 import { ApprovalQueue, isActionablePending, type ApprovalQueueItem } from "./approvals";
 import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
@@ -94,6 +93,9 @@ import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarV
 /** #472: the 3D star map pulls three.js in; lazy-load so the default bundle
  *  never pays for WebGL until the operator opens the view. */
 const OrgStarMap = lazy(() => import("./org/OrgStarMap"));
+/** #480: keep Timeline/Drawer/Progress off the default App graph so org
+ *  workbench tests do not pay for the manager board on every render. */
+const ProgressBoard = lazy(() => import("./progress/ProgressBoard").then((module) => ({ default: module.ProgressBoard })));
 
 interface PositionCardState {
   loading: boolean;
@@ -2123,7 +2125,9 @@ function AppInner({
           />
         ) : null}
         {activeModule === "progress" ? (
-          <ProgressBoard workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
+          <Suspense fallback={<Skeleton active paragraph={{ rows: 6 }} />}>
+            <ProgressBoard workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
+          </Suspense>
         ) : activeModule === "reports" ? (
           <ReportsCenter
             key={workspaceInfo?.path}
