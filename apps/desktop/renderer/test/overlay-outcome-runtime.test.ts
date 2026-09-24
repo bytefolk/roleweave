@@ -158,12 +158,12 @@ describe("overlay outcome runtime", () => {
       itemId: "goal:two",
       actionId: "open-approvals",
       source: "approval",
-      branches: destB,
+      branches: destA,
     });
     expect(
       bindOverlayApprovalDecision("ws-a", "apr-1", {
-        positionId: "other",
-        conversationId: "sess-2",
+        positionId: "owner",
+        conversationId: "sess-1",
       })?.itemId,
     ).toBe("goal:one");
     consumeOverlaySystemEvent({
@@ -172,6 +172,39 @@ describe("overlay outcome runtime", () => {
     });
     expect(splitActionOutcomes(readOverlayReceipts("ws-a", "goal:one"))).toEqual([
       { actionId: "open-approvals", outcome: "action_failed" },
+    ]);
+    expect(readOverlayReceipts("ws-a", "goal:two").receipts).toEqual([]);
+  });
+
+  it("does not rebind a new pending when turn.started replays an occupied turnId", () => {
+    registerPendingOverlayAction({
+      workspaceKey: "ws-a",
+      itemId: "goal:one",
+      actionId: "open-turn",
+      source: "turn",
+      branches: destA,
+    });
+    consumeOverlaySystemEvent({
+      type: "turn.started",
+      payload: { workspacePath: "ws-a", positionId: "owner", sessionId: "sess-1", turnId: "turn-new" },
+    });
+    registerPendingOverlayAction({
+      workspaceKey: "ws-a",
+      itemId: "goal:two",
+      actionId: "open-turn",
+      source: "turn",
+      branches: destA,
+    });
+    consumeOverlaySystemEvent({
+      type: "turn.started",
+      payload: { workspacePath: "ws-a", positionId: "owner", sessionId: "sess-1", turnId: "turn-new" },
+    });
+    consumeOverlaySystemEvent({
+      type: "turn.completed",
+      payload: { workspacePath: "ws-a", positionId: "owner", sessionId: "sess-1", turnId: "turn-new" },
+    });
+    expect(splitActionOutcomes(readOverlayReceipts("ws-a", "goal:one"))).toEqual([
+      { actionId: "open-turn", outcome: "action_succeeded" },
     ]);
     expect(readOverlayReceipts("ws-a", "goal:two").receipts).toEqual([]);
   });
