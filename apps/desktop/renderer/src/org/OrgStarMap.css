@@ -9,7 +9,7 @@
   height: 100%;
   min-height: 420px;
   overflow: hidden;
-  background: #070b18;
+  background: #02040a;
   border: 1px solid var(--ui-border, #2a3050);
   border-radius: 12px;
 }
