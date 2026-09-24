@@ -165,6 +165,9 @@ test("workspace: initialize an existing source directory without overwriting its
     };
     assert.equal(owner.roles[0]?.memoryScope, "/", "project owner keeps whole-workspace memoryScope");
     await assert.rejects(fs.lstat(path.join(dir, "work", "source-tree-owner")), { code: "ENOENT" });
+    const ownerSkill = await fs.readFile(path.join(dir, "positions", "source-tree-owner", "SKILL.md"), "utf8");
+    assert.doesNotMatch(ownerSkill, /## Territory/);
+    assert.doesNotMatch(ownerSkill, /work\/source-tree-owner/);
 
     const conflict = await api(server.baseUrl, "/workspace/initialize", {
       method: "POST",

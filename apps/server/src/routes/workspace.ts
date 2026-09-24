@@ -191,6 +191,7 @@ async function writeProjectSkeleton(
     budget: PROJECT_OWNER_BUDGET,
     prompt: "作为项目负责人，先理解项目上下文，再把明确的工作拆给合适的数字员工；只读岗位资料并给出有依据的结论。",
     agentEngine: request.agentEngine ?? DEFAULT_AGENT_ENGINE,
+    includeWorkTerritory: false,
   });
   const employee = files.get("employee.json");
   if (employee === undefined) throw new Error("project owner skeleton must contain employee.json");

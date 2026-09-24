@@ -127,6 +127,9 @@ test("POST /hire: the bundled qoder-engine validates and applies a hire through 
     const declared = await readJson<OrganizationFile>(path.join(dir, "organization.v1alpha1.json"));
     assert.equal(declared.roles.find((role) => role.id === "docs-writer")?.memoryScope, "./work/docs-writer/");
     await fs.stat(path.join(dir, "work", "docs-writer"));
+    const hiredSkill = await fs.readFile(path.join(dir, "positions", "repo-owner", "docs-writer", "SKILL.md"), "utf8");
+    assert.match(hiredSkill, /## Territory/);
+    assert.match(hiredSkill, /work\/docs-writer\//);
     const packageDir = path.join(dir, "positions", "repo-owner", "docs-writer");
     const employee = await readJson<{ entrypoints: { mcp?: string }; policy: { mcpTools: Array<{ name: string; requestedMode: string }> }; assets: string[] }>(path.join(packageDir, "employee.json"));
     assert.deepEqual(employee.policy.mcpTools, [], "a hire without MCP grants carries no MCP tools into the runtime policy");
