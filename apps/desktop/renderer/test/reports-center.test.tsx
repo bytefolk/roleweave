@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { OwbI18nProvider } from "@roleweave/ui";
 import { ReportsCenter } from "../src/reports/ReportsCenter";
 import type { ReportsResponse } from "@roleweave/shared";
 
@@ -56,6 +57,22 @@ describe("consolidated reports", () => {
     expect(screen.getByText(/无上级 → Boss/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "收起变更明细" }));
     expect(screen.queryByText(/无上级 → Boss/)).toBeNull();
+  });
+
+  it("keeps audit chips and expanded move details localized in English", () => {
+    const withAudit: ReportsResponse = { ...report, streams: { ...report.streams, audits: [audit] } };
+    render(
+      <OwbI18nProvider locale="en">
+        <ReportsCenter reports={withAudit} loading={false} positionNames={{ alice: "Alice", boss: "Boss" }} />
+      </OwbI18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Org audits/ }));
+    expect(screen.getByText("Moved 1")).toBeInTheDocument();
+    expect(screen.queryByText(/Hired 0/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show change details" }));
+    expect(screen.getByText(/No parent → Boss/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hide change details" }));
+    expect(screen.queryByText(/No parent → Boss/)).toBeNull();
   });
   it("does not offer an empty expand panel when an audit has no substantive changes", () => {
     const emptyAudit = {
