@@ -2209,6 +2209,7 @@ function AppInner({
           <GoalsModule
             workspaceOpen={workspaceInfo?.open === true}
             workspaceKey={workspaceInfo?.path}
+            workspaceScope={groupWorkspaceScope}
             positionNames={positionNames}
             positionEngines={positionEngines}
             positionAvatars={positionAvatars}
