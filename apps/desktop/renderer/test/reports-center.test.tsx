@@ -102,4 +102,61 @@ describe("consolidated reports", () => {
     expect(screen.getByText("回合 missing-turn 暂无执行证据")).toBeInTheDocument();
     expect(screen.queryByText("1 条记录")).toBeNull();
   });
+
+  it("opens the exact conversation and turn from escalation and evidence rows", () => {
+    const onOpenTurn = vi.fn();
+    render(
+      <ReportsCenter
+        reports={report}
+        loading={false}
+        onOpenTurn={onOpenTurn}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "打开回合对话：failed-1" }),
+    );
+    expect(onOpenTurn).toHaveBeenLastCalledWith({
+      positionId: "alice",
+      conversationId: "session",
+      turnId: "failed-1",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "打开回合对话：running-1" }),
+    );
+    expect(onOpenTurn).toHaveBeenLastCalledWith({
+      positionId: "alice",
+      conversationId: "session",
+      turnId: "running-1",
+    });
+  });
+
+  it("shows an explicit unavailable state when an escalation has no conversation backlink", () => {
+    const missingEvidence: ReportsResponse = {
+      ...report,
+      streams: {
+        ...report.streams,
+        escalations: [
+          {
+            ...report.streams.escalations[0]!,
+            turnId: "missing-turn",
+          },
+        ],
+      },
+    };
+    render(
+      <ReportsCenter
+        reports={missingEvidence}
+        loading={false}
+        onOpenTurn={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("回合对话入口不可用")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "打开回合对话：missing-turn" }),
+    ).toBeNull();
+  });
 });
