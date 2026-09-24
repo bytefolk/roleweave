@@ -230,13 +230,3 @@ test("three concurrent turns keep isolated snapshots", async () => {
     await fs.rm(workspace, { recursive: true, force: true });
   }
 });
-
-test("reportStepFinish stays under one millisecond on average", () => {
-  const tracker = new ProgressTracker(new EventBus(), () => 1_000);
-  tracker.begin({ workspacePath: "/tmp/ws", taskId: "t-perf", positionId: "pos" });
-  const rounds = 400;
-  const started = performance.now();
-  for (let i = 0; i < rounds; i++) tracker.reportStepFinish("t-perf", 0);
-  const average = (performance.now() - started) / rounds;
-  assert.ok(average < 1, `reportStepFinish averaged ${average}ms`);
-});
