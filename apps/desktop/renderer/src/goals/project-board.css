@@ -63,6 +63,26 @@
 .owb-project-summary__metric[data-alert="overdue"] strong {
   color: var(--ui-danger);
 }
+.owb-project-summary__metric--interactive {
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+  font: inherit;
+  color: inherit;
+}
+.owb-project-summary__metric--interactive:hover {
+  background: var(--ui-surface-hover, rgba(127, 127, 127, 0.08));
+  border-color: var(--ui-border);
+}
+.owb-project-summary__metric--interactive[aria-pressed="true"] {
+  background: var(--ui-surface-active, rgba(127, 127, 127, 0.14));
+  border-color: var(--ui-primary);
+  box-shadow: 0 0 0 1px var(--ui-primary);
+}
 .owb-project-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -282,6 +302,29 @@
 }
 .owb-project-execution[data-status="completed"] > span {
   background: var(--ui-success);
+}
+.owb-project-execution-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.owb-project-view-turn-btn.ant-btn {
+  font-size: 10px;
+  padding: 0 4px;
+  height: 20px;
+  line-height: 20px;
+}
+.owb-project-limit-notice {
+  font-size: 12px;
+  color: var(--ui-warning);
+  padding: 4px 8px;
+}
+.owb-project-conflict-resolution {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
 }
 .owb-project-card__hint {
   margin: 0;
