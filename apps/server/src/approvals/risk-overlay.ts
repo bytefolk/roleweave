@@ -1,6 +1,6 @@
 import type { ApprovalContext, ApprovalRequestedEvent, ApprovalRiskLevel } from "@roleweave/shared";
-import { askJev, type JevAsk } from "../jev/client.js";
-import { jevEnabled } from "../jev/config.js";
+import { askLaya, type LayaAsk } from "../laya/client.js";
+import { layaEnabled } from "../laya/config.js";
 
 /** Deterministic rule — same mapping as capabilityContext. Overlay must never
  * replace this for Tag color or policy. */
@@ -20,10 +20,10 @@ export function presentApprovalRisk(rule: ApprovalRiskLevel, overlay?: ApprovalR
 export function assertKindOnlyAdvicePayload(payload: Record<string, unknown>): void {
   const extra = Object.keys(payload).filter((key) => key !== "kind");
   if (extra.length > 0) {
-    throw new Error(`jev approval-risk payload has forbidden keys: ${extra.sort().join(",")}`);
+    throw new Error(`laya approval-risk payload has forbidden keys: ${extra.sort().join(",")}`);
   }
   if (payload.kind !== "exec" && payload.kind !== "write" && payload.kind !== "network" && payload.kind !== "tool") {
-    throw new Error("jev approval-risk payload kind is invalid");
+    throw new Error("laya approval-risk payload kind is invalid");
   }
 }
 
@@ -34,7 +34,7 @@ export function mapAdviceChoiceToRisk(choice: string): ApprovalRiskLevel | null 
 
 export interface ResolveApprovalRiskOverlayDeps {
   env?: NodeJS.Dict<string>;
-  ask?: JevAsk;
+  ask?: LayaAsk;
 }
 
 /** Advisory overlay. Undefined when the flag is off, unconfigured, or invalid. */
@@ -43,10 +43,10 @@ export async function resolveApprovalRiskOverlay(
   deps: ResolveApprovalRiskOverlayDeps = {},
 ): Promise<ApprovalRiskLevel | undefined> {
   const env = deps.env ?? process.env;
-  if (!jevEnabled(env)) return undefined;
+  if (!layaEnabled(env)) return undefined;
   const payload: Record<string, unknown> = { kind };
   assertKindOnlyAdvicePayload(payload);
-  const ask = deps.ask ?? ((request) => askJev(request, { env }));
+  const ask = deps.ask ?? ((request) => askLaya(request, { env }));
   try {
     const answers = await ask({
       state: payload,

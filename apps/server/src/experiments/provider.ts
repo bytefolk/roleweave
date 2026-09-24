@@ -1,8 +1,7 @@
 import { reportAdviceSuggestions, type ReportAdviceSuggestion } from "@roleweave/shared";
 
-/** Fixed official origin: opting in never authorizes a configurable third-party proxy.
- * Contract verified against https://docs.typesafe.ai/api on 2026-09-22. */
-export const JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone";
+/** Local-only System One endpoint. Non-loopback destinations are rejected. */
+export const LAYA_ENDPOINT = "http://127.0.0.1:18081/v1/systemone";
 export const MAX_ADVICE_ITEMS = 20;
 export type AdviceErrorCode = "turn_budget_exceeded" | "position_budget_exceeded" |
   "engine_unavailable" | "turn_engine_unavailable" | "turn_timeout" | "turn_failed" | "turn_indeterminate" | "other";
@@ -24,7 +23,18 @@ const criteria: Record<ReportAdviceSuggestion, string> = {
 const probability = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 
-/** Only these typed fields cross the external boundary. No local IDs or free text. */
+export function isLoopbackLayaEndpoint(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" &&
+      (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]") &&
+      url.pathname === "/v1/systemone" && !url.username && !url.password && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
+/** Only these typed fields reach the local inference process. No IDs or free text. */
 export function normalizeAdviceMetadata(item: { status: "failed" | "indeterminate"; code: string; budgetRelated: boolean }): AdviceMetadata {
   const known: AdviceErrorCode[] = ["turn_budget_exceeded", "position_budget_exceeded", "engine_unavailable", "turn_engine_unavailable", "turn_timeout", "turn_failed", "turn_indeterminate"];
   return {
@@ -51,19 +61,23 @@ async function boundedJson(response: Response): Promise<unknown> {
   } finally { await reader.cancel().catch(() => undefined); }
 }
 
-export class JevAdviceProvider implements AdviceProvider {
-  constructor(private readonly apiKey: string, private readonly model = "jev-latest", private readonly fetcher: typeof fetch = fetch) {}
+export class LayaAdviceProvider implements AdviceProvider {
+  private readonly endpoint: string;
+  constructor(endpoint = LAYA_ENDPOINT, private readonly model = "typed-decisions", private readonly fetcher: typeof fetch = fetch) {
+    this.endpoint = endpoint.replace(/\/$/u, "");
+  }
 
   async evaluate(items: AdviceMetadata[], signal: AbortSignal): Promise<ReportAdviceSuggestion[]> {
+    if (!isLoopbackLayaEndpoint(this.endpoint)) throw new Error("Laya endpoint must be loopback-only");
     if (items.length === 0 || items.length > MAX_ADVICE_ITEMS) throw new Error("invalid provider batch");
     const questions = Object.fromEntries(items.map((_, index) => [`item_${index}`, {
       type: "choice",
       instructions: `Suggest a human's next investigation step for state[${index}] using only its failure metadata. Do not infer urgency, ownership, business impact, or task content. This is advisory and cannot authorize an action. Select insufficient_information when uncertain.`,
       criteria,
     }]));
-    const response = await this.fetcher(JEV_ENDPOINT, {
+    const response = await this.fetcher(this.endpoint, {
       method: "POST",
-      headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
+      headers: { "content-type": "application/json" },
       redirect: "error",
       signal,
       body: JSON.stringify({ model: this.model, state: items.map(item => ({
@@ -78,17 +92,17 @@ export class JevAdviceProvider implements AdviceProvider {
     if (!raw || !raw.answers || typeof raw.answers !== "object") throw new Error("invalid provider response");
     return items.map((_, index) => {
       const answer = raw.answers![`item_${index}`] as Record<string, unknown> | undefined;
-      if (!answer || answer.type !== "choice" || !reportAdviceSuggestions.includes(answer.choice as ReportAdviceSuggestion) ||
+      const choice = answer?.choice ?? answer?.selected;
+      if (!answer || answer.type !== "choice" || !reportAdviceSuggestions.includes(choice as ReportAdviceSuggestion) ||
         !probability(answer.confidence) || !answer.probabilities || typeof answer.probabilities !== "object") throw new Error("invalid provider answer");
       const probabilities = answer.probabilities as Record<string, unknown>;
       if (Object.keys(probabilities).length !== reportAdviceSuggestions.length ||
         reportAdviceSuggestions.some(key => !probability(probabilities[key])) ||
         Math.abs(reportAdviceSuggestions.reduce((sum, key) => sum + (probabilities[key] as number), 0) - 1) > 0.01) throw new Error("invalid provider probabilities");
-      const selectedProbability = probabilities[answer.choice as ReportAdviceSuggestion] as number;
+      const selectedProbability = probabilities[choice as ReportAdviceSuggestion] as number;
       if (reportAdviceSuggestions.some(key => (probabilities[key] as number) > selectedProbability + 0.000001)) throw new Error("inconsistent provider choice");
-      // Conservative preview guard, not a calibrated accuracy claim. The threshold
-      // must be evaluated against real examples before this preview graduates.
-      return answer.confidence < 0.6 ? "insufficient_information" : answer.choice as ReportAdviceSuggestion;
+      // Conservative preview guard, not a calibrated accuracy claim.
+      return answer.confidence < 0.6 ? "insufficient_information" : choice as ReportAdviceSuggestion;
     });
   }
 }

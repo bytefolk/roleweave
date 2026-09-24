@@ -562,10 +562,10 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                             {t(`goals.health.${detail.goal.health}`)}
                           </span>
                           <span
-                            data-testid="goals-health-jev"
+                            data-testid="goals-health-laya"
                             className={`owb-health-dot ${HEALTH_DOT[detail.healthOverlay]}`}
                           >
-                            {t("goals.health.jevSuggestion")}:{" "}
+                            {t("goals.health.layaSuggestion")}:{" "}
                             {t(`goals.health.${detail.healthOverlay}`)}
                             {detail.goal.health === "at_risk" &&
                             detail.healthOverlay === "on_track" ? (

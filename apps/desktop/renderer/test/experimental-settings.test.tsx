@@ -6,7 +6,7 @@ import { ExperimentalSettings } from "../src/settings/ExperimentalSettings";
 const response = (workspacePath = "/projects/a", enabled = false): ExperimentsResponse => ({
   schemaVersion: "experiments.v1", workspacePath, workspaceSession: "session-a", revision: 0,
   enabled, availability: enabled ? "ready" : "disabled",
-  provider: { name: "Jev / TypeSafe", endpointHost: "api.typesafe.ai", endpointUrl: "https://api.typesafe.ai/v1/systemone", configured: true },
+  provider: { name: "Laya · local", endpointHost: "127.0.0.1", endpointUrl: "http://127.0.0.1:18081/v1/systemone", configured: true },
   sending: ["status", "errorCode", "budgetRelated"],
 });
 function install(initial = response()) {
@@ -58,7 +58,7 @@ describe("workspace experimental settings", () => {
   it("shows missing credentials without requesting a renderer secret", async () => {
     install({ ...response(), provider: { ...response().provider, configured: false }, availability: "not_configured" });
     render(<ExperimentalSettings workspacePath="/projects/a" />);
-    await screen.findByText(/服务不可用：本机尚未配置 Jev 服务凭据/);
+    await screen.findByText(/服务不可用：本机 Laya 服务尚未运行/);
     expect(document.querySelector('input[type="password"]')).toBeNull();
   });
   it("keeps the last saved state when a write fails and offers a state refresh", async () => {

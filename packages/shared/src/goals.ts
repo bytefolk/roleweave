@@ -110,7 +110,7 @@ export interface GoalDetail {
   taskExecutions?: Record<string, GoalTaskExecution>;
   /** A failed turn-history read must never look like an empty execution history. */
   executionUnavailable?: boolean;
-  /** Advisory Jev Choice when enabled; never written to persisted goal.health. */
+  /** Advisory Laya Choice when enabled; never written to persisted goal.health. */
   healthOverlay?: GoalHealthStatus;
 }
 

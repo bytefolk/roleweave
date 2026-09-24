@@ -8,9 +8,9 @@ export interface ExperimentsResponse {
   enabled: boolean;
   availability: "disabled" | "not_configured" | "ready" | "storage_error";
   provider: {
-    name: "Jev / TypeSafe";
-    endpointHost: "api.typesafe.ai";
-    /** Complete destination used by the provider request, including its path. */
+    name: "Laya · local";
+    endpointHost: "127.0.0.1";
+    /** Complete loopback destination used by the local provider request. */
     endpointUrl: string;
     configured: boolean;
   };
@@ -38,7 +38,7 @@ export interface ReportAdviceItem {
   /** Binds a suggestion to the exact local failure snapshot. Never sent externally. */
   at: string;
   suggestion: ReportAdviceSuggestion;
-  source: "jev";
+  source: "laya";
 }
 
 export interface ReportsAdviceResponse extends ReportsAdviceRequest {
