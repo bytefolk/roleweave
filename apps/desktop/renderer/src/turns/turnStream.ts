@@ -1,4 +1,5 @@
-import { turnEngines, type GroupTimeline, type TurnRecord } from "@roleweave/shared";
+import type { GroupTimeline, TurnRecord } from "@roleweave/shared";
+import { TURN_ENGINES } from "./engine-contract";
 import type { TurnEngine } from "./types";
 
 /**
@@ -81,7 +82,7 @@ export interface TurnStreamEnvelope {
 const LIVE_RUNS_CAP = 32;
 const SETTLED_GROUP_RUNS_CAP = 64;
 const SETTLED_PERSONAL_TURNS_CAP = 64;
-const GROUP_ENGINES = new Set<TurnEngine>(turnEngines);
+const GROUP_ENGINES = new Set<TurnEngine>(TURN_ENGINES);
 
 function payloadRecord(payload: unknown): Record<string, unknown> | null {
   return payload !== null && typeof payload === "object" && !Array.isArray(payload)
