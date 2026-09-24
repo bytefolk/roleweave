@@ -14,7 +14,7 @@ export interface ExperimentsResponse {
     endpointUrl: string;
     configured: boolean;
   };
-  sending: ["status", "errorCode", "budgetRelated"];
+  sending: ReadonlyArray<"status" | "errorCode" | "budgetRelated" | "positionId" | "engine" | "ready">;
 }
 
 export interface ReportsAdviceRequest {
