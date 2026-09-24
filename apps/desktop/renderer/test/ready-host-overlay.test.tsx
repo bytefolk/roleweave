@@ -111,6 +111,14 @@ describe("ready-host overlay (#465)", () => {
     expect(api.readyHostChoice).not.toHaveBeenCalled();
   });
 
+  it("does not call the provider when experiments are off", async () => {
+    const api = install(experiment({ enabled: false, availability: "disabled" }));
+    render(panel());
+    await screen.findByText("Codex Writer");
+    expect(api.readyHostChoice).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status", { name: "可用的 Agent 主机" })).not.toBeInTheDocument();
+  });
+
   it("asks Choice with only positionId/engine/ready and shows the returned host", async () => {
     const api = install();
     render(panel());
@@ -144,6 +152,46 @@ describe("ready-host overlay (#465)", () => {
     await waitFor(() => expect(api.readyHostChoice).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "切换到 Qoder Owner" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "切换到 Claude Reviewer" })).not.toBeInTheDocument();
+  });
+
+  it("ignores a 200 Choice from another session or revision", async () => {
+    const api = install();
+    api.readyHostChoice.mockImplementation(async () => ({
+      status: 200,
+      body: {
+        workspacePath: "/ws",
+        workspaceSession: "session-other",
+        revision: 99,
+        status: "ready",
+        positionId: "qoder-owner",
+      },
+    }));
+    render(panel());
+    await waitFor(() => expect(api.readyHostChoice).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "切换到 Qoder Owner" })).not.toBeInTheDocument();
+  });
+
+  it("discards a Choice when the same candidate engine changes", async () => {
+    const api = install();
+    const pending = deferred<{ status: number; body: ReadyHostChoiceResponse }>();
+    api.readyHostChoice.mockImplementation(() => pending.promise);
+    const { rerender } = render(panel());
+    await waitFor(() => expect(api.readyHostChoice).toHaveBeenCalled());
+    api.readyHostChoice.mockImplementation(() => new Promise(() => {}));
+    rerender(panel({
+      readyHostFacts: [unready, { ...readyQoder, engine: "workbuddy" }, readyClaude],
+    }));
+    await act(async () => pending.resolve({
+      status: 200,
+      body: {
+        workspacePath: "/ws",
+        workspaceSession: "session-a",
+        revision: 1,
+        status: "ready",
+        positionId: "qoder-owner",
+      },
+    }));
+    expect(screen.queryByRole("button", { name: "切换到 Qoder Owner" })).not.toBeInTheDocument();
   });
 
   it("discards an in-flight Choice after workspace/session change", async () => {
