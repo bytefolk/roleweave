@@ -10,10 +10,18 @@ export function useReadyHostOverlay(
   const settings = useWorkspaceExperiments({ workspacePath });
   const overlayEnabled = settings.snapshot?.enabled === true && settings.snapshot.availability === "ready";
   const presented = presentReadyHostOverlay({ overlayEnabled, selected, positions: facts });
-  const signature = JSON.stringify(presented.candidates.map((item) => item.positionId));
+  const signature = JSON.stringify({
+    selected: selected ? { positionId: selected.positionId, engine: selected.engine, ready: selected.ready } : null,
+    candidates: presented.candidates.map((item) => ({
+      positionId: item.positionId,
+      engine: item.engine,
+      ready: item.ready,
+    })),
+    callJev: presented.callJev,
+  });
   const owner = useMemo(
     () => ({}),
-    [settings.owner, settings.snapshot?.workspaceSession, settings.snapshot?.revision, settings.snapshot?.enabled, signature, presented.callJev],
+    [settings.owner, settings.snapshot?.workspaceSession, settings.snapshot?.revision, settings.snapshot?.enabled, signature],
   );
   const activeOwner = useRef(owner);
   activeOwner.current = owner;
@@ -63,7 +71,13 @@ export function useReadyHostOverlay(
         void settings.refresh();
         return;
       }
-      const positionId = response.status === 200 ? response.body.positionId : null;
+      const body = response.status === 200 ? response.body : null;
+      const scoped = body
+        && body.workspacePath === snapshot.workspacePath
+        && body.workspaceSession === snapshot.workspaceSession
+        && body.revision === snapshot.revision
+        && body.status === "ready";
+      const positionId = scoped ? body.positionId : null;
       const allowed = presented.candidates.some((item) => item.positionId === positionId);
       setChoice({ owner, positionId: allowed ? positionId : null });
     }).catch(() => {
