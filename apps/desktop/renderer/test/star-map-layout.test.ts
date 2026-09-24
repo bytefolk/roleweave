@@ -365,4 +365,112 @@ describe("celestial layout (#472): deterministic orbital mapping of the reportin
     const filteredLinks = deriveKnowledgeLinks(mockGraph, withoutFrontend);
     expect(filteredLinks.length).toBe(0);
   });
+
+  it("deriveKnowledgeLinks correctly connects co-assignees on shared tasks and shared resources", () => {
+    const multiGraph: RelationshipGraphResponse = {
+      schemaVersion: "relationship-graph.v1",
+      workspaceId: "ws-2",
+      revision: "2",
+      generatedAt: "2026-09-24T00:00:00Z",
+      truncated: false,
+      limits: { nodes: 400, edges: 800 },
+      coverage: [],
+      nodes: [
+        {
+          id: "agent:dev-1",
+          kind: "agent",
+          label: "Dev 1",
+          state: "ready",
+          positionId: "pos-dev1",
+          evidence: { source: "org", locator: "p1", basis: "declared", observedAt: "now" },
+        },
+        {
+          id: "agent:dev-2",
+          kind: "agent",
+          label: "Dev 2",
+          state: "ready",
+          positionId: "pos-dev2",
+          evidence: { source: "org", locator: "p2", basis: "declared", observedAt: "now" },
+        },
+        {
+          id: "agent:qa",
+          kind: "agent",
+          label: "QA",
+          state: "ready",
+          positionId: "pos-qa",
+          evidence: { source: "org", locator: "p3", basis: "declared", observedAt: "now" },
+        },
+        {
+          id: "task:multi-pair",
+          kind: "task",
+          label: "Pair Programming Feature",
+          state: "ready",
+          evidence: { source: "tasks", locator: "t1", basis: "observed", observedAt: "now" },
+        },
+        {
+          id: "resource:doc-design",
+          kind: "resource",
+          label: "Design Specification Document",
+          state: "ready",
+          evidence: { source: "resources", locator: "r1", basis: "observed", observedAt: "now" },
+        },
+      ],
+      edges: [
+        // Task requested by QA, co-assigned to Dev 1 and Dev 2
+        {
+          id: "e-req",
+          source: "task:multi-pair",
+          target: "agent:qa",
+          kind: "requested_by",
+          evidence: { source: "tasks", locator: "e1", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+        {
+          id: "e-asg-1",
+          source: "task:multi-pair",
+          target: "agent:dev-1",
+          kind: "assigned_to",
+          evidence: { source: "tasks", locator: "e2", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+        {
+          id: "e-asg-2",
+          source: "task:multi-pair",
+          target: "agent:dev-2",
+          kind: "assigned_to",
+          evidence: { source: "tasks", locator: "e3", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+        // Both Dev 1 and Dev 2 share access to Design Specification Document
+        {
+          id: "e-res-1",
+          source: "resource:doc-design",
+          target: "agent:dev-1",
+          kind: "contains_resource",
+          evidence: { source: "resources", locator: "e4", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+        {
+          id: "e-res-2",
+          source: "resource:doc-design",
+          target: "agent:dev-2",
+          kind: "contains_resource",
+          evidence: { source: "resources", locator: "e5", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+      ],
+    };
+
+    const validPositions = new Set(["pos-dev1", "pos-dev2", "pos-qa"]);
+    const links = deriveKnowledgeLinks(multiGraph, validPositions);
+
+    // 1. QA <-> Dev 1 (Task Collaboration)
+    expect(links.some((l) => (l.source === "pos-qa" && l.target === "pos-dev1") || (l.source === "pos-dev1" && l.target === "pos-qa"))).toBe(true);
+
+    // 2. QA <-> Dev 2 (Task Collaboration)
+    expect(links.some((l) => (l.source === "pos-qa" && l.target === "pos-dev2") || (l.source === "pos-dev2" && l.target === "pos-qa"))).toBe(true);
+
+    // 3. Dev 1 <-> Dev 2 (Task Co-assignment Collaboration)
+    expect(links.some((l) => (l.source === "pos-dev1" && l.target === "pos-dev2") || (l.source === "pos-dev2" && l.target === "pos-dev1"))).toBe(true);
+  });
 });

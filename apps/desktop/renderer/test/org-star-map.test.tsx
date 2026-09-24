@@ -118,9 +118,9 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(within(card).getByText("文档负责人")).toBeInTheDocument();
     expect(within(card).getByText("公开文档与发布说明")).toBeInTheDocument();
     expect(within(card).getByText("只读")).toBeInTheDocument();
-    expect(within(card).getByText("汇报给 首席执行官")).toBeInTheDocument();
+    expect(within(card).getByText("首席执行官")).toBeInTheDocument();
     expect(within(card).getByText("0 个下属")).toBeInTheDocument();
-    expect(within(card).getByText("单任务预算: 声明期")).toBeInTheDocument();
+    expect(within(card).getByText("声明期")).toBeInTheDocument();
     fireEvent.click(within(card).getByRole("button", { name: "拉远" }));
     fireEvent.click(within(card).getByRole("button", { name: "关闭" }));
     expect(screen.queryByLabelText("员工概览")).not.toBeInTheDocument();
@@ -284,7 +284,7 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     // 验证新数字人出现在列表中并可查看卡片
     expect(screen.getByRole("button", { name: "后端工程师" })).toBeInTheDocument();
     const hiredCard = screen.getByLabelText("员工概览");
-    expect(within(hiredCard).getByText("汇报给 文档负责人")).toBeInTheDocument();
+    expect(within(hiredCard).getByText("文档负责人")).toBeInTheDocument();
 
     // 2. 调整汇报线（Move）：将 frontend 汇报线从 ceo 改为 docs-lead
     const movedSnapshot: OrgTreeSnapshot = {
@@ -321,7 +321,7 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
 
     // 验证前端工程师的汇报线变更为文档负责人
     const movedCard = screen.getByLabelText("员工概览");
-    expect(within(movedCard).getByText("汇报给 文档负责人")).toBeInTheDocument();
+    expect(within(movedCard).getByText("文档负责人")).toBeInTheDocument();
 
     // 3. 裁撤数字人（Dismiss）：删除 backend-dev
     const dismissedSnapshot: OrgTreeSnapshot = {
@@ -440,4 +440,25 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(within(card).getByText("知识协同链路")).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: /Task Collaboration/ })).toBeInTheDocument();
   });
+
+  it("员工卡片提供「进入对话」直达按钮，点击调用 onOpenConversation", () => {
+    const onSelect = vi.fn();
+    const onOpenConversation = vi.fn();
+    render(
+      <OrgStarMap
+        snapshot={snapshot}
+        selectedId="docs-lead"
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+        onSelect={onSelect}
+        onOpenConversation={onOpenConversation}
+      />,
+    );
+
+    const card = screen.getByLabelText("员工概览");
+    const chatBtn = within(card).getByRole("button", { name: "进入对话" });
+    expect(chatBtn).toBeInTheDocument();
+    fireEvent.click(chatBtn);
+    expect(onOpenConversation).toHaveBeenCalledWith("docs-lead");
+  });
 });
+

@@ -2269,7 +2269,8 @@ function AppInner({
                   selectedId={selectedId}
                   relationshipGraph={graph.data}
                   knowledgeLinks={starKnowledgeLinks}
-                  onSelect={openConversation}
+                  onSelect={selectPosition}
+                  onOpenConversation={openConversation}
                   onMove={(id, reportTo) => void movePosition(id, reportTo)}
                   onHireEntry={(parent) => setTreeHireParent(parent)}
                   onUndo={() => void undoLastAdjustment()}

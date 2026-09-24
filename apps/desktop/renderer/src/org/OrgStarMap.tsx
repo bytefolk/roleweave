@@ -49,6 +49,7 @@ export interface OrgStarMapProps {
   runningIds?: ReadonlySet<string>;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
+  onOpenConversation?: (id: string) => void;
   onMove?: (id: string, reportTo: string | null) => void;
   onHireEntry?: (parentId: string) => void;
   onUndo?: () => void;
@@ -59,6 +60,17 @@ export interface OrgStarMapProps {
   className?: string;
 }
 
+interface SharedGeometries {
+  sphereRoot: THREE.SphereGeometry;
+  sphereLead: THREE.SphereGeometry;
+  sphereMember: THREE.SphereGeometry;
+  ringRoot: THREE.RingGeometry;
+  ringLead: THREE.RingGeometry;
+  reticleRoot: THREE.RingGeometry;
+  reticleLead: THREE.RingGeometry;
+  reticleMember: THREE.RingGeometry;
+}
+
 interface BodyView {
   body: CelestialBody;
   group: THREE.Group;
@@ -66,6 +78,7 @@ interface BodyView {
   ringMesh: THREE.Mesh | null;
   reticleMesh: THREE.Mesh;
   label: HTMLDivElement;
+  labelObject: CSS2DObject;
   currentPos: THREE.Vector3;
   targetPos: THREE.Vector3;
 }
@@ -97,6 +110,7 @@ interface SceneState {
   treeLinesGroup: THREE.Group;
   crossLinksGroup: THREE.Group;
   nodesGroup: THREE.Group;
+  geometries: SharedGeometries;
   views: Map<string, BodyView>;
   links: LinkView[];
   crossLinks: CrossLinkView[];
@@ -159,6 +173,7 @@ export default function OrgStarMap({
   runningIds,
   selectedId,
   onSelect,
+  onOpenConversation,
   onMove,
   onHireEntry,
   onUndo,
@@ -192,6 +207,7 @@ export default function OrgStarMap({
 
   const latest = useRef({
     onSelect,
+    onOpenConversation,
     onMove,
     moveDisabled,
     selectedId,
@@ -208,6 +224,7 @@ export default function OrgStarMap({
   });
   latest.current = {
     onSelect,
+    onOpenConversation,
     onMove,
     moveDisabled,
     selectedId,
@@ -343,6 +360,17 @@ export default function OrgStarMap({
       host.appendChild(renderer.domElement);
       host.appendChild(labelRenderer.domElement);
 
+      const geometries: SharedGeometries = {
+        sphereRoot: new THREE.SphereGeometry(1.8, 24, 24),
+        sphereLead: new THREE.SphereGeometry(1.1, 20, 20),
+        sphereMember: new THREE.SphereGeometry(0.62, 16, 16),
+        ringRoot: new THREE.RingGeometry(2.35, 2.52, 48),
+        ringLead: new THREE.RingGeometry(1.45, 1.58, 36),
+        reticleRoot: new THREE.RingGeometry(2.7, 2.85, 32),
+        reticleLead: new THREE.RingGeometry(1.75, 1.88, 32),
+        reticleMember: new THREE.RingGeometry(1.05, 1.18, 24),
+      };
+
       state = {
         renderer,
         labelRenderer,
@@ -354,6 +382,7 @@ export default function OrgStarMap({
         treeLinesGroup,
         crossLinksGroup,
         nodesGroup,
+        geometries,
         views: new Map(),
         links: [],
         crossLinks: [],
@@ -759,12 +788,6 @@ export default function OrgStarMap({
     const isDark = theme === "dark";
     const currentLayoutMode = layoutMode;
 
-    const nodeGeometries = {
-      root: new THREE.SphereGeometry(1.8, 24, 24),
-      lead: new THREE.SphereGeometry(1.1, 20, 20),
-      member: new THREE.SphereGeometry(0.62, 16, 16),
-    };
-
     const nextBodyIds = new Set(layout.bodies.map((b) => b.id));
 
     // A. Remove dismissed/deleted nodes (clean DOM and GPU memory)
@@ -772,16 +795,52 @@ export default function OrgStarMap({
       if (!nextBodyIds.has(id)) {
         view.label.remove();
         state.nodesGroup.remove(view.group);
-        disposeObject3D(view.group);
+        view.group.traverse((child) => {
+          const mesh = child as THREE.Mesh;
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+            else mesh.material.dispose();
+          }
+        });
         state.views.delete(id);
       }
     }
+    if (latest.current.hoveredId && !nextBodyIds.has(latest.current.hoveredId)) {
+      setHoveredId(null);
+    }
+    if (state.drag && !nextBodyIds.has(state.drag.id)) {
+      state.drag = null;
+      state.dropCandidate = null;
+    }
 
-    // B. Reconcile remaining and new nodes
+    // B. Reconcile remaining and new nodes using shared geometries
     for (const body of layout.bodies) {
       const pos = currentLayoutMode === "celestial" ? body.position : body.networkPosition;
       const targetVec = new THREE.Vector3(...pos);
       const existing = state.views.get(body.id);
+
+      const targetGeo =
+        body.kind === "star"
+          ? state.geometries.sphereRoot
+          : body.kind === "planet"
+            ? state.geometries.sphereLead
+            : state.geometries.sphereMember;
+
+      const targetReticleGeo =
+        body.kind === "star"
+          ? state.geometries.reticleRoot
+          : body.kind === "planet"
+            ? state.geometries.reticleLead
+            : state.geometries.reticleMember;
+
+      const color =
+        body.kind === "star"
+          ? (isDark ? 0xffffff : 0x000000)
+          : body.kind === "planet"
+            ? (isDark ? 0xe4e4e7 : 0x1f2937)
+            : (isDark ? 0xa1a1aa : 0x6b7280);
+
+      const labelYOffset = body.kind === "star" ? 2.6 : body.kind === "planet" ? 1.8 : 1.1;
 
       if (existing) {
         // Node already exists: update data and smooth target position (no teleport)
@@ -792,30 +851,41 @@ export default function OrgStarMap({
         existing.label.className = `owb-star-label owb-star-label--${body.kind}`;
         existing.coreMesh.userData.positionId = body.id;
 
-        const targetGeo =
-          body.kind === "star"
-            ? nodeGeometries.root
-            : body.kind === "planet"
-              ? nodeGeometries.lead
-              : nodeGeometries.member;
         if (existing.coreMesh.geometry !== targetGeo) {
           existing.coreMesh.geometry = targetGeo;
         }
-
-        const color =
-          body.kind === "star"
-            ? (isDark ? 0xffffff : 0x000000)
-            : body.kind === "planet"
-              ? (isDark ? 0xe4e4e7 : 0x1f2937)
-              : (isDark ? 0xa1a1aa : 0x6b7280);
         (existing.coreMesh.material as THREE.MeshBasicMaterial).color.set(color);
 
-        if (existing.ringMesh) {
+        if (existing.reticleMesh.geometry !== targetReticleGeo) {
+          existing.reticleMesh.geometry = targetReticleGeo;
+        }
+
+        // Reconcile ringMesh for kind transitions (promote / demote)
+        if (body.kind === "star" || body.kind === "planet") {
+          const ringGeo = body.kind === "star" ? state.geometries.ringRoot : state.geometries.ringLead;
           const ringColor = isDark
             ? (body.kind === "star" ? 0x52525b : 0x3f3f46)
             : (body.kind === "star" ? 0xadb5bd : 0xd1d5db);
-          (existing.ringMesh.material as THREE.MeshBasicMaterial).color.set(ringColor);
+
+          if (!existing.ringMesh) {
+            const ringMat = new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide });
+            const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+            ringMesh.rotation.x = Math.PI / 2;
+            existing.group.add(ringMesh);
+            existing.ringMesh = ringMesh;
+          } else {
+            if (existing.ringMesh.geometry !== ringGeo) {
+              existing.ringMesh.geometry = ringGeo;
+            }
+            (existing.ringMesh.material as THREE.MeshBasicMaterial).color.set(ringColor);
+          }
+        } else if (existing.ringMesh) {
+          existing.group.remove(existing.ringMesh);
+          (existing.ringMesh.material as THREE.Material).dispose();
+          existing.ringMesh = null;
         }
+
+        existing.labelObject.position.set(0, labelYOffset, 0);
       } else {
         // Newly added node (e.g. hired digital employee): spawn from parent if available
         const group = new THREE.Group();
@@ -825,52 +895,22 @@ export default function OrgStarMap({
         }
         group.position.copy(initialPos);
 
-        const color =
-          body.kind === "star"
-            ? (isDark ? 0xffffff : 0x000000)
-            : body.kind === "planet"
-              ? (isDark ? 0xe4e4e7 : 0x1f2937)
-              : (isDark ? 0xa1a1aa : 0x6b7280);
-
         const material = new THREE.MeshBasicMaterial({ color });
-        const coreGeo =
-          body.kind === "star"
-            ? nodeGeometries.root
-            : body.kind === "planet"
-              ? nodeGeometries.lead
-              : nodeGeometries.member;
-
-        const coreMesh = new THREE.Mesh(coreGeo, material);
+        const coreMesh = new THREE.Mesh(targetGeo, material);
         coreMesh.userData = { positionId: body.id };
         group.add(coreMesh);
 
         let ringMesh: THREE.Mesh | null = null;
-        if (body.kind === "star") {
-          const ringGeo = new THREE.RingGeometry(2.35, 2.52, 48);
-          const ringMat = new THREE.MeshBasicMaterial({
-            color: isDark ? 0x52525b : 0xadb5bd,
-            side: THREE.DoubleSide,
-          });
-          ringMesh = new THREE.Mesh(ringGeo, ringMat);
-          ringMesh.rotation.x = Math.PI / 2;
-          group.add(ringMesh);
-        } else if (body.kind === "planet") {
-          const ringGeo = new THREE.RingGeometry(1.45, 1.58, 36);
-          const ringMat = new THREE.MeshBasicMaterial({
-            color: isDark ? 0x3f3f46 : 0xd1d5db,
-            side: THREE.DoubleSide,
-          });
+        if (body.kind === "star" || body.kind === "planet") {
+          const ringGeo = body.kind === "star" ? state.geometries.ringRoot : state.geometries.ringLead;
+          const ringColor = isDark
+            ? (body.kind === "star" ? 0x52525b : 0x3f3f46)
+            : (body.kind === "star" ? 0xadb5bd : 0xd1d5db);
+          const ringMat = new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide });
           ringMesh = new THREE.Mesh(ringGeo, ringMat);
           ringMesh.rotation.x = Math.PI / 2;
           group.add(ringMesh);
         }
-
-        const reticleGeo =
-          body.kind === "star"
-            ? new THREE.RingGeometry(2.7, 2.85, 32)
-            : body.kind === "planet"
-              ? new THREE.RingGeometry(1.75, 1.88, 32)
-              : new THREE.RingGeometry(1.05, 1.18, 24);
 
         const reticleMat = new THREE.MeshBasicMaterial({
           color: isDark ? 0xffffff : 0x111827,
@@ -878,7 +918,7 @@ export default function OrgStarMap({
           transparent: true,
           opacity: 0,
         });
-        const reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
+        const reticleMesh = new THREE.Mesh(targetReticleGeo, reticleMat);
         group.add(reticleMesh);
 
         const label = document.createElement("div");
@@ -898,7 +938,6 @@ export default function OrgStarMap({
 
         const labelObject = new CSS2DObject(label);
         labelObject.center.set(0.5, 1.0);
-        const labelYOffset = body.kind === "star" ? 2.6 : body.kind === "planet" ? 1.8 : 1.1;
         labelObject.position.set(0, labelYOffset, 0);
         group.add(labelObject);
 
@@ -911,6 +950,7 @@ export default function OrgStarMap({
           ringMesh,
           reticleMesh,
           label,
+          labelObject,
           currentPos: initialPos,
           targetPos: targetVec,
         });
@@ -938,6 +978,7 @@ export default function OrgStarMap({
         opacity: 0.75,
       });
       const line = new THREE.Line(geometry, material);
+      line.frustumCulled = false;
       state.treeLinesGroup.add(line);
       state.links.push({ source: body.parentId, target: body.id, line, material });
     }
@@ -965,6 +1006,7 @@ export default function OrgStarMap({
         opacity: 0.65,
       });
       const line = new THREE.Line(geometry, material);
+      line.frustumCulled = false;
       line.computeLineDistances();
       state.crossLinksGroup.add(line);
       state.crossLinks.push({
@@ -1335,11 +1377,20 @@ export default function OrgStarMap({
                       {parentBody ? nameOf(parentBody) : t("org.enterpriseRoot")}
                     </div>
                   </div>
+                  <div className="owb-star-map__card-meta-box">
+                    <div className="owb-star-map__card-meta-label">{t("star.cardBudget")}</div>
+                    <div className="owb-star-map__card-meta-val">
+                      {selectedBudget ?? t("star.declaration")}
+                    </div>
+                  </div>
+                  <div className="owb-star-map__card-meta-box">
+                    <div className="owb-star-map__card-meta-label">{t("star.directReports")}</div>
+                    <div className="owb-star-map__card-meta-val">
+                      {t("star.reports", { count: selectedBody.childCount })}
+                    </div>
+                  </div>
                 </div>
 
-                <p>{t("star.reportTo", { name: parentBody ? nameOf(parentBody) : t("org.enterpriseRoot") })}</p>
-                <p>{t("star.reports", { count: selectedBody.childCount })}</p>
-                <p>{`${t("star.budget")}: ${selectedBudget ?? t("star.declaration")}`}</p>
 
                 {directReports.length > 0 ? (
                   <div className="owb-star-map__card-section">
@@ -1387,9 +1438,19 @@ export default function OrgStarMap({
           </div>
 
           <footer>
+            {latest.current.onOpenConversation && !selectedBody.virtual ? (
+              <button
+                type="button"
+                className="owb-star-map__btn primary"
+                style={{ flex: 1 }}
+                onClick={() => latest.current.onOpenConversation?.(selectedBody.id)}
+              >
+                {t("star.openChat")}
+              </button>
+            ) : null}
             <button
               type="button"
-              className="owb-star-map__btn primary"
+              className="owb-star-map__btn"
               style={{ flex: 1 }}
               onClick={() => flyTo(selectedBody.id, true)}
             >

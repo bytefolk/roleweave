@@ -345,15 +345,27 @@ export function deriveKnowledgeLinks(
   };
 
   const agentIdToPositionId = new Map<string, string>();
+  const nodeKindMap = new Map<string, string>();
   for (const node of graph.nodes) {
+    nodeKindMap.set(node.id, node.kind);
     if (node.kind === "agent" && node.positionId) {
       agentIdToPositionId.set(node.id, node.positionId);
     }
   }
 
-  const taskAssignees = new Map<string, string>();
-  const taskRequesters = new Map<string, string>();
+  const taskAssignees = new Map<string, Set<string>>();
+  const taskRequesters = new Map<string, Set<string>>();
   const goalAssignees = new Map<string, Set<string>>();
+  const resourcePositions = new Map<string, Set<string>>();
+
+  const addToMapSet = (map: Map<string, Set<string>>, key: string, value: string): void => {
+    let set = map.get(key);
+    if (!set) {
+      set = new Set();
+      map.set(key, set);
+    }
+    set.add(value);
+  };
 
   for (const edge of graph.edges) {
     const targetPos = agentIdToPositionId.get(edge.target);
@@ -365,43 +377,95 @@ export function deriveKnowledgeLinks(
       continue;
     }
 
-    // Task edges: edge from task node to agent node
-    if (edge.kind === "assigned_to" && targetPos) {
-      taskAssignees.set(edge.source, targetPos);
-    } else if (edge.kind === "requested_by" && targetPos) {
-      taskRequesters.set(edge.source, targetPos);
-    }
+    const sourceKind = nodeKindMap.get(edge.source);
+    const targetKind = nodeKindMap.get(edge.target);
 
-    // Goal edges: edge from goal node to agent node
-    if (edge.kind === "assigned_to" && targetPos) {
-      let set = goalAssignees.get(edge.source);
-      if (!set) {
-        set = new Set();
-        goalAssignees.set(edge.source, set);
+    // Task edges
+    if (sourceKind === "task" || targetKind === "task") {
+      const taskId = sourceKind === "task" ? edge.source : edge.target;
+      const agentPos = sourceKind === "task" ? targetPos : sourcePos;
+      if (agentPos) {
+        if (edge.kind === "assigned_to") addToMapSet(taskAssignees, taskId, agentPos);
+        else if (edge.kind === "requested_by") addToMapSet(taskRequesters, taskId, agentPos);
       }
-      set.add(targetPos);
+      continue;
+    }
+
+    // Goal edges
+    if (sourceKind === "goal" || targetKind === "goal") {
+      const goalId = sourceKind === "goal" ? edge.source : edge.target;
+      const agentPos = sourceKind === "goal" ? targetPos : sourcePos;
+      if (agentPos && edge.kind === "assigned_to") {
+        addToMapSet(goalAssignees, goalId, agentPos);
+      }
+      continue;
+    }
+
+    // Resource sharing edges
+    if (sourceKind === "resource" || targetKind === "resource" || sourceKind === "source" || targetKind === "source") {
+      const resId = (sourceKind === "resource" || sourceKind === "source") ? edge.source : edge.target;
+      const agentPos = (sourceKind === "resource" || sourceKind === "source") ? targetPos : sourcePos;
+      if (agentPos && (edge.kind === "declares_source" || edge.kind === "contains_resource")) {
+        addToMapSet(resourcePositions, resId, agentPos);
+      }
+      continue;
     }
   }
 
-  // Cross-position tasks
+  // Cross-position tasks: requester <-> assignee and co-assignees
   const taskNodes = new Map(graph.nodes.filter((n) => n.kind === "task").map((n) => [n.id, n]));
-  for (const [taskId, assignee] of taskAssignees.entries()) {
-    const requester = taskRequesters.get(taskId);
-    if (requester && requester !== assignee) {
-      const task = taskNodes.get(taskId);
-      addLink(requester, assignee, "Task Collaboration", task?.label ? `Task: ${task.label}` : undefined);
+  for (const [taskId, assignees] of taskAssignees.entries()) {
+    const task = taskNodes.get(taskId);
+    const taskDesc = task?.label ? `Task: ${task.label}` : undefined;
+    const requesters = taskRequesters.get(taskId);
+
+    // Requester <-> Assignees
+    if (requesters) {
+      for (const req of requesters) {
+        for (const asg of assignees) {
+          if (req !== asg) {
+            addLink(req, asg, "Task Collaboration", taskDesc);
+          }
+        }
+      }
+    }
+
+    // Co-assignees working on the same task
+    if (assignees.size > 1) {
+      const arr = Array.from(assignees);
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          addLink(arr[i]!, arr[j]!, "Task Collaboration", taskDesc);
+        }
+      }
     }
   }
 
-  // Cross-position goals
+  // Cross-position goals: co-assignees
   const goalNodes = new Map(graph.nodes.filter((n) => n.kind === "goal").map((n) => [n.id, n]));
   for (const [goalId, assignees] of goalAssignees.entries()) {
     if (assignees.size > 1) {
       const goal = goalNodes.get(goalId);
+      const goalDesc = goal?.label ? `Goal: ${goal.label}` : undefined;
       const arr = Array.from(assignees);
       for (let i = 0; i < arr.length; i++) {
         for (let j = i + 1; j < arr.length; j++) {
-          addLink(arr[i]!, arr[j]!, "Goal Collaboration", goal?.label ? `Goal: ${goal.label}` : undefined);
+          addLink(arr[i]!, arr[j]!, "Goal Collaboration", goalDesc);
+        }
+      }
+    }
+  }
+
+  // Shared resources across positions
+  const resourceNodes = new Map(graph.nodes.filter((n) => n.kind === "resource" || n.kind === "source").map((n) => [n.id, n]));
+  for (const [resId, positions] of resourcePositions.entries()) {
+    if (positions.size > 1) {
+      const res = resourceNodes.get(resId);
+      const resDesc = res?.label ? `Shared: ${res.label}` : undefined;
+      const arr = Array.from(positions);
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          addLink(arr[i]!, arr[j]!, "Shared Resource", resDesc);
         }
       }
     }

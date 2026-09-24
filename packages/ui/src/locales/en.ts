@@ -574,6 +574,7 @@ export const enCatalog: Record<string, string> = {
   "star.modeApproval": "Approval required",
   "star.zoomIn": "Zoom in",
   "star.zoomOut": "Zoom out",
+  "star.openChat": "Open Conversation",
   "star.enterpriseHint": "Enterprise star: the root of the org",
   "star.resetCamera": "Reset Camera",
   "star.layoutCelestial": "Celestial Orbits",

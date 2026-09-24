@@ -577,6 +577,7 @@ export const zhCatalog: Record<string, string> = {
   "star.modeApproval": "需审批",
   "star.zoomIn": "拉近",
   "star.zoomOut": "拉远",
+  "star.openChat": "进入对话",
   "star.enterpriseHint": "企业恒星：组织根节点",
   "star.resetCamera": "视角复位",
   "star.layoutCelestial": "立体轨道星图",
