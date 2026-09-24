@@ -146,6 +146,7 @@ export function TurnPanel({
   onRotateSession,
   focusTurnId,
   positionEngines = {},
+  onSelectPosition,
 }: TurnPanelProps) {
   const t = useT();
   const experiments = useWorkspaceExperiments({ workspacePath: workspaceKey || undefined });
