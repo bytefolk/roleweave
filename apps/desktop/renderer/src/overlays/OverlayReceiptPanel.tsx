@@ -9,10 +9,12 @@ import {
   type OverlayItemReceipts,
 } from "./overlay-receipts.js";
 import {
+  OVERLAY_ACTION_OUTCOME,
   OVERLAY_RECEIPTS_CHANGED,
   appendOverlayReceipt,
   latestActionOutcome,
   readOverlayReceipts,
+  type OverlayActionOutcomeDetail,
 } from "./overlay-receipt-store.js";
 
 export function OverlayReceiptPanel({
@@ -34,8 +36,17 @@ export function OverlayReceiptPanel({
       const detail = (event as CustomEvent<{ itemId?: string }>).detail;
       if (detail?.itemId === itemId) setItem(readOverlayReceipts(workspaceKey, itemId));
     };
+    const onOutcome = (event: Event) => {
+      const detail = (event as CustomEvent<OverlayActionOutcomeDetail>).detail;
+      if (detail?.itemId !== itemId || !detail.actionId || typeof detail.ok !== "boolean") return;
+      recordActionOutcome(workspaceKey, itemId, detail.actionId, detail.ok);
+    };
     window.addEventListener(OVERLAY_RECEIPTS_CHANGED, onChange);
-    return () => window.removeEventListener(OVERLAY_RECEIPTS_CHANGED, onChange);
+    window.addEventListener(OVERLAY_ACTION_OUTCOME, onOutcome);
+    return () => {
+      window.removeEventListener(OVERLAY_RECEIPTS_CHANGED, onChange);
+      window.removeEventListener(OVERLAY_ACTION_OUTCOME, onOutcome);
+    };
   }, [workspaceKey, itemId]);
   useEffect(() => {
     if (!enabled) return;

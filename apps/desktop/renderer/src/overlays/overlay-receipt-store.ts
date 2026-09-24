@@ -6,6 +6,15 @@ import {
 } from "./overlay-receipts.js";
 
 export const OVERLAY_RECEIPTS_CHANGED = "roleweave-overlay-receipts";
+/** Typed processing-action outcome. Not the original turn/evidence receipt. */
+export const OVERLAY_ACTION_OUTCOME = "roleweave-overlay-action-outcome";
+export const SOURCE_EXECUTION_ACTION = "source-execution";
+
+export type OverlayActionOutcomeDetail = {
+  itemId: string;
+  actionId: string;
+  ok: boolean;
+};
 
 const memory = new Map<string, OverlayItemReceipts>();
 

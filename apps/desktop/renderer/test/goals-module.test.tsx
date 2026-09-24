@@ -361,4 +361,62 @@ describe("Laya health overlay (#428)", () => {
     expect(screen.getByTestId("overlay-receipts")).toHaveTextContent("已打开建议");
     expect(screen.queryByText("已解决")).not.toBeInTheDocument();
   });
+
+  it("splits two processing-action outcomes from typed events without auto-resolve", async () => {
+    const blocked: GoalDetail = {
+      ...goalDetail,
+      goal: {
+        ...goalDetail.goal,
+        health: "at_risk",
+        branches: [
+          {
+            branchId: "b1",
+            title: "Work",
+            status: "in_progress",
+            positionId: "owner",
+            sessionId: "sess-1",
+            createdAt: goalDetail.goal.createdAt,
+            updatedAt: goalDetail.goal.updatedAt,
+          },
+        ],
+      },
+      healthOverlay: "blocked",
+    };
+    installBridge({
+      goal: vi.fn().mockResolvedValue({ status: 200, body: blocked }),
+    });
+    render(
+      <GoalsModule
+        workspaceOpen
+        workspaceKey="ws-mixed"
+        onOpenApprovals={() => undefined}
+        onOpenBoundSession={() => undefined}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("goals-health-open-turn"));
+    fireEvent.click(screen.getByTestId("goals-health-open-approvals"));
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("roleweave-overlay-action-outcome", {
+          detail: { itemId: "goal:test-goal-001", actionId: "open-turn", ok: true },
+        }),
+      );
+      window.dispatchEvent(
+        new CustomEvent("roleweave-overlay-action-outcome", {
+          detail: { itemId: "goal:test-goal-001", actionId: "open-approvals", ok: false },
+        }),
+      );
+    });
+    const split = await screen.findByTestId("overlay-receipt-split");
+    expect(split.querySelector('[data-action="open-turn"]')).toHaveAttribute(
+      "data-outcome",
+      "action_succeeded",
+    );
+    expect(split.querySelector('[data-action="open-approvals"]')).toHaveAttribute(
+      "data-outcome",
+      "action_failed",
+    );
+    expect(screen.getByTestId("overlay-receipt-status")).toHaveTextContent("结果不一致");
+    expect(screen.getByTestId("overlay-owner-resolve")).toBeEnabled();
+  });
 });

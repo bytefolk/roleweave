@@ -115,14 +115,18 @@ describe("overlay processing receipts (#468)", () => {
     expect(isOverlayResolved(fromEvidence)).toBe(false);
   });
 
-  it("consumes existing evidence status without recording a click as success", () => {
-    const failed = syncEvidenceActionOutcome("ws-one", "esc-ev", "trace-run", "failed");
+  it("maps original-turn evidence separately from later processing actions", () => {
+    const failed = syncEvidenceActionOutcome("ws-one", "esc-ev", "source-execution", "failed");
     expect(failed.receipts.map((receipt) => receipt.kind)).toEqual(["action_failed"]);
+    expect(failed.receipts[0]?.actionId).toBe("source-execution");
     expect(isOverlayResolved(failed)).toBe(false);
-    const running = syncEvidenceActionOutcome("ws-one", "esc-ev", "trace-run", "running");
+    const running = syncEvidenceActionOutcome("ws-one", "esc-ev", "source-execution", "running");
     expect(running.receipts.map((receipt) => receipt.kind)).toEqual(["action_failed"]);
-    const completed = syncEvidenceActionOutcome("ws-two", "esc-ok", "trace-run", "completed");
-    expect(completed.receipts.map((receipt) => receipt.kind)).toEqual(["action_succeeded"]);
-    expect(isOverlayResolved(completed)).toBe(true);
+    const clicked = clickDoesNotResolve(failed, at, "trace-run");
+    expect(clicked.receipts.map((receipt) => receipt.actionId)).toEqual([
+      "source-execution",
+      "trace-run",
+    ]);
+    expect(isOverlayResolved(clicked)).toBe(false);
   });
 });

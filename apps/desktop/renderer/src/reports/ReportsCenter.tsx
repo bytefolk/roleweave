@@ -8,6 +8,7 @@ import { useReportAdvice, ReportAdviceControls, ReportAdviceChip, reportAdviceKe
 import type { ExperimentScope } from "../experiments/useWorkspaceExperiments";
 import { AuditTimeline, type AuditTimelineEvent } from "./AuditTimeline";
 import { OverlayReceiptPanel, recordSuggestionClick, syncEvidenceActionOutcome } from "../overlays/OverlayReceiptPanel.js";
+import { SOURCE_EXECUTION_ACTION } from "../overlays/overlay-receipt-store.js";
 
 type Tab = "budgets" | "escalations" | "audits" | "evidence" | "timeline";
 
@@ -253,7 +254,7 @@ function EscalationRow({
   const summary = entry.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation");
   useEffect(() => {
     if (!overlay || !evidence) return;
-    syncEvidenceActionOutcome(workspacePath, itemId, "trace-run", evidence.status);
+    syncEvidenceActionOutcome(workspacePath, itemId, SOURCE_EXECUTION_ACTION, evidence.status);
   }, [overlay, evidence, evidence?.status, itemId, workspacePath]);
   return <li className="owb-report-card is-escalation"><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div><ReportAdviceChip advice={overlay} />{overlay ? <OverlayReceiptPanel workspaceKey={workspacePath} itemId={itemId} enabled /> : null}<Button type="link" size="small" className="owb-report-trace" onClick={() => { if (overlay) recordSuggestionClick(workspacePath, itemId, "trace-run"); onOpenTimeline(entry.positionId, entry.turnId); }}>{t("rep.traceRun")}</Button></div></li>;
 }
