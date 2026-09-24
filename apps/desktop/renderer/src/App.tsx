@@ -2136,8 +2136,8 @@ function AppInner({
             onNavigateToOrg={() => setActiveModule("org")}
             onApprove={(id, reason, scope) => { void approvalState.decide(id, "granted", reason, scope); }}
             onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
-            onApproveBatch={(ids) => { void approvalState.decideBatch(ids); }}
-            onDenyBatch={(ids) => { void approvalState.denyBatch(ids); }}
+            onApproveBatch={(ids) => approvalState.decideBatch(ids)}
+            onDenyBatch={(ids) => approvalState.denyBatch(ids)}
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
           />

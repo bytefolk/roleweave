@@ -480,6 +480,8 @@ export function ApprovalQueue({
                         } else {
                           setBatchSelection(new Set());
                         }
+                      } catch {
+                        // Retain current selection on unexpected error so operator can retry
                       } finally {
                         setBatchOperating(false);
                       }

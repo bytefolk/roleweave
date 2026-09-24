@@ -483,6 +483,106 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(screen.queryByText(/已从 writer-1 · session-1 选择 2 项受限工具审批/)).toBeNull();
   });
 
+  it("retains failed checkboxes selected when onDenyBatch returns partial failure for retry", async () => {
+    const source = { kind: "session" as const, positionId: "writer-1", conversationId: "session-1", turnId: "turn-1", runId: "run-1", engine: "qoder" as const };
+    const itemA = makeItem({ approvalId: "batch-a", category: "tool", source, batchMaxItems: 3, canDecide: true });
+    const itemB = makeItem({ approvalId: "batch-b", category: "tool", source, batchMaxItems: 3, canDecide: true });
+    const itemC = makeItem({ approvalId: "batch-c", category: "tool", source, batchMaxItems: 3, canDecide: true });
+
+    let resolveDeny!: (result: { succeeded: string[]; failed: string[] }) => void;
+    const onDenyBatch = vi.fn().mockImplementation(
+      () => new Promise<{ succeeded: string[]; failed: string[] }>(resolve => { resolveDeny = resolve; }),
+    );
+
+    render(
+      <ApprovalQueue
+        items={[itemA, itemB, itemC]}
+        onApprove={noop}
+        onDeny={noop}
+        onApproveBatch={noop}
+        onDenyBatch={onDenyBatch}
+      />,
+    );
+
+    const selectors = screen.getAllByRole("checkbox", { name: "选择加入策略受控批量批准" });
+    fireEvent.click(selectors[0]!);
+    fireEvent.click(selectors[1]!);
+    fireEvent.click(selectors[2]!);
+
+    expect(selectors[0]).toBeChecked();
+    expect(selectors[1]).toBeChecked();
+    expect(selectors[2]).toBeChecked();
+
+    const denyBtn = screen.getByTestId("approval-batch-deny-button");
+    expect(denyBtn).not.toBeDisabled();
+
+    // Trigger Bulk Deny
+    fireEvent.click(denyBtn);
+    expect(onDenyBatch).toHaveBeenCalledWith(["batch-a", "batch-b", "batch-c"]);
+
+    // While operating, button is disabled
+    expect(denyBtn).toBeDisabled();
+
+    // Partial outcome: batch-a succeeded, batch-b and batch-c failed
+    await act(async () => {
+      resolveDeny({ succeeded: ["batch-a"], failed: ["batch-b", "batch-c"] });
+    });
+
+    // Succeeded item (batch-a) checkbox is cleared; failed items (batch-b, batch-c) remain checked
+    expect(selectors[0]).not.toBeChecked();
+    expect(selectors[1]).toBeChecked();
+    expect(selectors[2]).toBeChecked();
+
+    // Bulk deny button is re-enabled for the 2 remaining failed items
+    expect(denyBtn).not.toBeDisabled();
+
+    // Operator retries the remaining failed items
+    onDenyBatch.mockResolvedValueOnce({ succeeded: ["batch-b", "batch-c"], failed: [] });
+    await act(async () => {
+      fireEvent.click(denyBtn);
+    });
+
+    expect(onDenyBatch).toHaveBeenCalledTimes(2);
+    expect(onDenyBatch).toHaveBeenLastCalledWith(["batch-b", "batch-c"]);
+
+    // After retry succeeds, all checkboxes are cleared
+    expect(selectors[1]).not.toBeChecked();
+    expect(selectors[2]).not.toBeChecked();
+  });
+
+  it("retains single failed checkbox selected on partial failure so operator can view and retry", async () => {
+    const source = { kind: "session" as const, positionId: "writer-1", conversationId: "session-1", turnId: "turn-1", runId: "run-1", engine: "qoder" as const };
+    const itemA = makeItem({ approvalId: "batch-a", category: "tool", source, batchMaxItems: 3, canDecide: true });
+    const itemB = makeItem({ approvalId: "batch-b", category: "tool", source, batchMaxItems: 3, canDecide: true });
+
+    const onDenyBatch = vi.fn().mockResolvedValue({ succeeded: ["batch-a"], failed: ["batch-b"] });
+
+    render(
+      <ApprovalQueue
+        items={[itemA, itemB]}
+        onApprove={noop}
+        onDeny={noop}
+        onApproveBatch={noop}
+        onDenyBatch={onDenyBatch}
+      />,
+    );
+
+    const selectors = screen.getAllByRole("checkbox", { name: "选择加入策略受控批量批准" });
+    fireEvent.click(selectors[0]!);
+    fireEvent.click(selectors[1]!);
+
+    const denyBtn = screen.getByTestId("approval-batch-deny-button");
+    await act(async () => {
+      fireEvent.click(denyBtn);
+    });
+
+    expect(onDenyBatch).toHaveBeenCalledWith(["batch-a", "batch-b"]);
+    // Succeeded item is unselected, failed item remains selected
+    expect(selectors[0]).not.toBeChecked();
+    expect(selectors[1]).toBeChecked();
+    expect(screen.getByText(/已从 writer-1 · session-1 选择 1 项受限工具审批/)).toBeInTheDocument();
+  });
+
   it("filters items by local calendar date rather than raw UTC string slice", () => {
     const targetDate = new Date();
     const year = targetDate.getFullYear();

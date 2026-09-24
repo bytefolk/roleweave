@@ -268,7 +268,7 @@ describe("Approval Center Enhancements (#456)", () => {
   });
 
   describe("ApprovalQueue enhancements", () => {
-    it("pins select-all source boundary adversarially across turnId, runId, conversationId, positionId, and engine", () => {
+    it("pins select-all source boundary adversarially across turnId, runId, conversationId, positionId, and engine", async () => {
       const onDenyBatch = vi.fn().mockResolvedValue({ succeeded: ["appr-1", "appr-2"], failed: [] });
       const onApproveBatch = vi.fn();
 
@@ -325,8 +325,49 @@ describe("Approval Center Enhancements (#456)", () => {
       expect(denyBatchBtn).not.toBeDisabled();
 
       // Click Bulk Deny
-      fireEvent.click(denyBatchBtn);
+      await act(async () => {
+        fireEvent.click(denyBatchBtn);
+      });
       expect(onDenyBatch).toHaveBeenCalledWith(["appr-1", "appr-2"]);
+    });
+
+    it("retains failed checkboxes selected when onDenyBatch returns partial failure for retry", async () => {
+      const onDenyBatch = vi.fn().mockResolvedValue({ succeeded: ["appr-1"], failed: ["appr-2"] });
+      const baseSource = {
+        kind: "session" as const,
+        positionId: "engineer-1",
+        conversationId: "sess-1",
+        turnId: "turn-1",
+        runId: "run-1",
+        engine: "qoder" as const,
+      };
+
+      const item1 = makeItem({ approvalId: "appr-1", source: baseSource, batchMaxItems: 3 });
+      const item2 = makeItem({ approvalId: "appr-2", source: baseSource, batchMaxItems: 3 });
+
+      render(
+        <ApprovalQueue
+          items={[item1, item2]}
+          onApprove={() => {}}
+          onDeny={() => {}}
+          onApproveBatch={() => {}}
+          onDenyBatch={onDenyBatch}
+        />,
+      );
+
+      const checkbox1 = within(screen.getByTestId("approval-card-appr-1")).getByRole("checkbox");
+      const checkbox2 = within(screen.getByTestId("approval-card-appr-2")).getByRole("checkbox");
+      fireEvent.click(checkbox1);
+      fireEvent.click(checkbox2);
+
+      const denyBatchBtn = screen.getByTestId("approval-batch-deny-button");
+      await act(async () => {
+        fireEvent.click(denyBatchBtn);
+      });
+
+      expect(onDenyBatch).toHaveBeenCalledWith(["appr-1", "appr-2"]);
+      expect(checkbox1).not.toBeChecked();
+      expect(checkbox2).toBeChecked();
     });
 
     it("enforces batch-limit boundary when selecting all items in turn", () => {
