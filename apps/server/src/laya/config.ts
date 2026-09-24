@@ -34,6 +34,6 @@ export function layaRequestConfig(env: NodeJS.Dict<string> = process.env): {
   return {
     url: isLoopbackEndpoint(candidate) ? candidate : LAYA_ENDPOINT,
     model: layaModel(env),
-    timeoutMs: Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? Math.min(timeoutRaw, 10_000) : 2_000,
+    timeoutMs: Math.max(100, Math.min(5_000, Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : 2_000)),
   };
 }

@@ -323,7 +323,7 @@ test("WSL forwards document and memory connections through stdin without exposin
 });
 
 test("WSL forwards local Laya configuration over stdin without external credentials", () => {
-  const environment = { ROLEWEAVE_LAYA_URL: "http://127.0.0.1:18081/v1/systemone", ROLEWEAVE_LAYA_MODEL: "typed-decisions", ROLEWEAVE_LAYA_TIMEOUT_MS: "2000" };
+  const environment = { ROLEWEAVE_LAYA_ENABLED: "1", ROLEWEAVE_LAYA_URL: "http://127.0.0.1:18081/v1/systemone", ROLEWEAVE_LAYA_MODEL: "typed-decisions", ROLEWEAVE_LAYA_TIMEOUT_MS: "2000" };
   const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", env: environment });
   const config = parseConfiguration(spec.input);
   assert.deepEqual(config.environment, environment);

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { Goal, TurnRecord } from "@roleweave/shared";
-import { layaEnabled } from "../src/laya/config.js";
+import { layaEnabled, layaRequestConfig } from "../src/laya/config.js";
 import { askLaya } from "../src/laya/client.js";
 import { computeHealthFromTurns, GoalStore, resolveGoalHealth, resolveLayaHealthOverlay } from "../src/goals/store.js";
 
@@ -127,6 +127,11 @@ test("askLaya returns null when the HTTP call fails or times out", async () => {
     ),
     null,
   );
+});
+
+test("layaRequestConfig applies the documented timeout floor and ceiling", () => {
+  assert.equal(layaRequestConfig({ ROLEWEAVE_LAYA_ENABLED: "1", ROLEWEAVE_LAYA_TIMEOUT_MS: "1" })?.timeoutMs, 100);
+  assert.equal(layaRequestConfig({ ROLEWEAVE_LAYA_ENABLED: "1", ROLEWEAVE_LAYA_TIMEOUT_MS: "999999" })?.timeoutMs, 5_000);
 });
 
 test("resolveGoalHealth keeps the heuristic when Laya is off", async () => {
