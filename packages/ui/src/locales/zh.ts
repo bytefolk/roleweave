@@ -365,6 +365,10 @@ export const zhCatalog: Record<string, string> = {
   "turn.composePlaceholder": "先选择一个岗位…",
   "turn.composeTo": "向 @{name} 下达任务…",
   "turn.send": "发送任务",
+  "turn.inFlightHeading": "已在运行的回合",
+  "turn.inFlightJoin": "加入已有回合",
+  "turn.inFlightAbstain": "未确认任务摘要时只展示事实、不做匹配。",
+  "turn.inFlightSendAnyway": "仍然发送不会取消正在运行的回合。",
   "turn.addAttachment": "添加附件",
   "turn.attachmentTypeError": "仅支持 PNG/JPEG/WebP/PDF 格式",
   "turn.attachmentSizeError": "单个文件不超过 10 MiB",
@@ -1306,6 +1310,8 @@ export const zhCatalog: Record<string, string> = {
   "dlg.dismissDesc": "该岗位将移出组织树，完整目录保留在恢复区，可手动恢复。不会自动回滚。",
   "dlg.dismissDescWithReports": "该岗位及其 {count} 个下属岗位将移出组织树，完整目录保留在恢复区，可手动恢复。不会自动回滚。",
   "dlg.dismissConfirm": "确认裁撤并留痕",
+  "dlg.dismissFacts": "进行中：{running} 个回合、{goals} 个绑定目标、{approvals} 个待审批。",
+  "dlg.dismissHandoff": "起草移交给 {name}",
 
   // 窗口控制
   "win.close": "关闭窗口",

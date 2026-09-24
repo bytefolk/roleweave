@@ -4,16 +4,29 @@ import type { OrgBackupEntry } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
 import { ArchiveRestore, ChevronDown, Trash2 } from "lucide-react";
 
+import type { DismissHandoffCandidate, DismissHandoffFacts } from "./dismiss-handoff";
+import { presentDismissHandoff } from "./dismiss-handoff";
+
 export function DismissPositionDialog({
   positionName,
   descendantCount,
   busy,
   onDismiss,
+  overlayEnabled = false,
+  dismissingId = "",
+  facts,
+  candidates = [],
+  onSelectHandoff,
 }: {
   positionName: string;
   descendantCount: number;
   busy: boolean;
   onDismiss: () => Promise<boolean>;
+  overlayEnabled?: boolean;
+  dismissingId?: string;
+  facts?: DismissHandoffFacts;
+  candidates?: DismissHandoffCandidate[];
+  onSelectHandoff?: (positionId: string) => void;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -40,6 +53,32 @@ export function DismissPositionDialog({
           : t("dlg.dismissDesc")}
         onOpenChange={setOpen}
       >
+        {(() => {
+          const overlay = presentDismissHandoff({
+            flagOn: overlayEnabled,
+            dismissingId,
+            facts: facts ?? { runningTurns: 0, boundGoals: 0, pendingApprovals: 0 },
+            candidates,
+          });
+          if (!overlay.visible) return null;
+          return (
+            <div className="owb-dismiss-overlay" data-testid="dismiss-handoff-overlay">
+              <p>{t("dlg.dismissFacts", {
+                running: overlay.facts.runningTurns,
+                goals: overlay.facts.boundGoals,
+                approvals: overlay.facts.pendingApprovals,
+              })}</p>
+              {overlay.suggestion ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectHandoff?.(overlay.suggestion!.id)}
+                >
+                  {t("dlg.dismissHandoff", { name: overlay.suggestion.name })}
+                </button>
+              ) : null}
+            </div>
+          );
+        })()}
         <footer className="owb-modal__footer">
           <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>{t("dlg.cancel")}</Button>
           <Button variant="danger" disabled={busy} onClick={() => void onDismiss().then((ok) => ok && setOpen(false))}>{t("dlg.dismissConfirm")}</Button>
