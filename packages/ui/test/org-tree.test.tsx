@@ -143,7 +143,24 @@ describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
     expect(idle.querySelector(".ui-org-tree__led")!.className).not.toContain("is-running");
   });
 
-  it("renders the empty state when the tree has no positions", () => {
+
+  it("highlights query matches, dims ancestors, and scrolls the first match into view", () => {
+    const scroll = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scroll;
+    render(
+      <OrgTree
+        snapshot={SNAPSHOT}
+        displayNames={{ "issue-researcher": "议题研究员" }}
+      />,
+    );
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "议题" } });
+    const hit = screen.getByText("议题研究员").closest('[role="treeitem"]')!;
+    expect(hit).toHaveClass("is-query-hit");
+    expect(hit).not.toHaveClass("is-query-dim");
+    expect(scroll).toHaveBeenCalled();
+  });
+
+    it("renders the empty state when the tree has no positions", () => {
     render(<OrgTree snapshot={{ ...SNAPSHOT, tree: [], positionCount: 0, depth: 0 }} />);
     expect(screen.getByText("尚无岗位，点击招聘")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "招聘岗位" })).toBeDisabled();
