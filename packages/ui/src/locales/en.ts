@@ -374,6 +374,10 @@ export const enCatalog: Record<string, string> = {
   "turn.composePlaceholder": "Pick a position first…",
   "turn.composeTo": "Assign to @{name}…",
   "turn.send": "Send task",
+  "turn.inFlightHeading": "Turns already running",
+  "turn.inFlightJoin": "Join existing",
+  "turn.inFlightAbstain": "No match without a confirmed task summary.",
+  "turn.inFlightSendAnyway": "Send anyway keeps the running turns.",
   "turn.addAttachment": "Add attachment",
   "turn.attachmentTypeError": "Only PNG/JPEG/WebP/PDF files are supported",
   "turn.attachmentSizeError": "Each file must be under 10 MiB",
@@ -1315,6 +1319,8 @@ export const enCatalog: Record<string, string> = {
   "dlg.dismissDesc": "This position will leave the org tree. Its directory stays in the recovery tray for manual restore; nothing is rolled back automatically.",
   "dlg.dismissDescWithReports": "This position and {count} subordinate positions will leave the org tree. Their directory stays in the recovery tray for manual restore; nothing is rolled back automatically.",
   "dlg.dismissConfirm": "Confirm dismissal and keep the record",
+  "dlg.dismissFacts": "In flight: {running} turns, {goals} bound goals, {approvals} pending approvals.",
+  "dlg.dismissHandoff": "Draft handoff to {name}",
 
   // Window controls
   "win.close": "Close window",

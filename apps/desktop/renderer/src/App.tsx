@@ -85,6 +85,7 @@ import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
+import { useWorkspaceExperiments } from "./experiments/useWorkspaceExperiments";
 import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
@@ -285,6 +286,7 @@ function AppInner({
   const [startupStage, setStartupStage] = useState<"service" | "workspace" | "organization" | "ready">("service");
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const approvalState = useApprovals(workspaceInfo?.open ? workspaceInfo.path : undefined);
+  const collaborationExperiments = useWorkspaceExperiments({ workspacePath: workspaceInfo?.path });
   /** Org module view mode (#472 adds the 3D star map as a third surface). */
   const [orgView, setOrgView] = useState<"workbench" | "overview" | "star">("workbench");
   const [graphOpened, setGraphOpened] = useState(false);
@@ -2311,6 +2313,15 @@ function AppInner({
                       descendantCount={selectedNode ? countDescendants(selectedNode) : 0}
                       busy={orgBusy}
                       onDismiss={() => dismissPosition(actionPosition.id)}
+                      overlayEnabled={collaborationExperiments.snapshot?.enabled === true}
+                      dismissingId={actionPosition.id}
+                      facts={{
+                        runningTurns: runningPositionIds.has(actionPosition.id) ? 1 : 0,
+                        boundGoals: 0,
+                        pendingApprovals: approvalItems.filter((item) => item.positionId === actionPosition.id && isActionablePending(item, Date.now())).length,
+                      }}
+                      candidates={positions.map((position) => ({ id: position.id, name: position.name }))}
+                      onSelectHandoff={openConversation}
                     />
                   ) : undefined}
                 />
@@ -2356,7 +2367,21 @@ function AppInner({
                         {t("profile.edit")}
                       </button>
                       {actionPosition.id !== snapshot?.owner ? (
-                        <DismissPositionDialog positionName={actionPosition.name} descendantCount={selectedNode ? countDescendants(selectedNode) : 0} busy={orgBusy} onDismiss={() => dismissPosition(actionPosition.id)} />
+                        <DismissPositionDialog
+                          positionName={actionPosition.name}
+                          descendantCount={selectedNode ? countDescendants(selectedNode) : 0}
+                          busy={orgBusy}
+                          onDismiss={() => dismissPosition(actionPosition.id)}
+                          overlayEnabled={collaborationExperiments.snapshot?.enabled === true}
+                          dismissingId={actionPosition.id}
+                          facts={{
+                            runningTurns: runningPositionIds.has(actionPosition.id) ? 1 : 0,
+                            boundGoals: 0,
+                            pendingApprovals: approvalItems.filter((item) => item.positionId === actionPosition.id && isActionablePending(item, Date.now())).length,
+                          }}
+                          candidates={positions.map((position) => ({ id: position.id, name: position.name }))}
+                          onSelectHandoff={openConversation}
+                        />
                       ) : null}
                     </>
                   ) : undefined}
