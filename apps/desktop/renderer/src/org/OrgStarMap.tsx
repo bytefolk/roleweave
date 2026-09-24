@@ -74,7 +74,7 @@ interface BodyView {
   mesh: THREE.Mesh;
   halo: THREE.Sprite;
   haloMaterial: THREE.SpriteMaterial;
-  material: THREE.MeshStandardMaterial | THREE.MeshBasicMaterial;
+  material: THREE.MeshStandardMaterial;
   medallion: THREE.Sprite | null;
   label: HTMLDivElement;
   baseColor: THREE.Color;
@@ -110,6 +110,11 @@ interface SceneState {
 const DEFAULT_CAM: readonly [number, number, number] = [0, 26, 64];
 const DRAG_THRESHOLD = 4;
 const RUNNING_COLOR = "#722ed1";
+/** Halo scale is body.size × these. Kept small so names stay readable. */
+const STAR_HALO = 5.2;
+const PLANET_HALO = 2.8;
+const SELECTED_HALO = 3.6;
+const RUNNING_HALO = 3.4;
 
 /** Circular portrait medallion texture: rim glow + clipped photo + ring, so
  *  employee avatars read as planets fused into the space scene (#472 R2). */
@@ -173,11 +178,11 @@ function makeGlowBeam(from: THREE.Vector3, to: THREE.Vector3, hex: number): THRE
   const direction = to.clone().sub(from);
   const length = Math.max(0.01, direction.length());
   const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.045, 0.045, length, 10, 1, true),
+    new THREE.CylinderGeometry(0.012, 0.012, length, 8, 1, true),
     new THREE.MeshBasicMaterial({
       color: hex,
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.2,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -203,18 +208,18 @@ function paintSkyCanvas(): HTMLCanvasElement {
   ctx.rotate(-0.38);
   const milky = ctx.createLinearGradient(0, -36, 0, 36);
   milky.addColorStop(0, "rgba(70,120,255,0)");
-  milky.addColorStop(0.35, "rgba(90,150,255,0.16)");
-  milky.addColorStop(0.5, "rgba(200,220,255,0.32)");
-  milky.addColorStop(0.65, "rgba(255,90,160,0.12)");
+  milky.addColorStop(0.35, "rgba(90,150,255,0.07)");
+  milky.addColorStop(0.5, "rgba(200,220,255,0.12)");
+  milky.addColorStop(0.65, "rgba(255,90,160,0.05)");
   milky.addColorStop(1, "rgba(70,120,255,0)");
   ctx.fillStyle = milky;
   ctx.fillRect(-width, -40, width * 2, 80);
   ctx.restore();
   for (const [color, x, y, r, a] of [
-    ["70, 90, 255", 220, 180, 220, 0.22],
-    ["0, 180, 255", 760, 300, 260, 0.18],
-    ["255, 40, 120", 520, 90, 180, 0.1],
-    ["120, 40, 255", 880, 120, 160, 0.12],
+    ["70, 90, 255", 220, 180, 220, 0.08],
+    ["0, 180, 255", 760, 300, 260, 0.06],
+    ["255, 40, 120", 520, 90, 180, 0.04],
+    ["120, 40, 255", 880, 120, 160, 0.05],
   ] as const) {
     const g = ctx.createRadialGradient(x, y, 8, x, y, r);
     g.addColorStop(0, `rgba(${color},${a})`);
@@ -284,7 +289,7 @@ function makeStarLayer(
       sizeAttenuation: true,
       vertexColors: true,
       transparent: true,
-      opacity: 1,
+      opacity: 0.72,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       alphaTest: 0.02,
@@ -299,9 +304,9 @@ function glowTexture(): THREE.CanvasTexture {
   const ctx = canvas.getContext("2d");
   if (ctx) {
     const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gradient.addColorStop(0, "rgba(255,255,255,1)");
-    gradient.addColorStop(0.18, "rgba(255,255,255,0.85)");
-    gradient.addColorStop(0.45, "rgba(255,255,255,0.28)");
+    gradient.addColorStop(0, "rgba(255,255,255,0.9)");
+    gradient.addColorStop(0.14, "rgba(255,255,255,0.42)");
+    gradient.addColorStop(0.38, "rgba(255,255,255,0.1)");
     gradient.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, 128, 128);
@@ -317,7 +322,7 @@ function colorFor(id: string, avatarColors?: Record<string, string>): THREE.Colo
     const parsed = new THREE.Color(declared);
     if (!Number.isNaN(parsed.r) || !Number.isNaN(parsed.g) || !Number.isNaN(parsed.b)) return parsed;
   }
-  return new THREE.Color(`hsl(${hueForId(id)}, 82%, 58%)`);
+  return new THREE.Color(`hsl(${hueForId(id)}, 56%, 54%)`);
 }
 
 export default function OrgStarMap({
@@ -399,7 +404,7 @@ export default function OrgStarMap({
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setSize(host.clientWidth || 640, host.clientHeight || 420);
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.15;
+      renderer.toneMappingExposure = 0.92;
       const labelRenderer = new CSS2DRenderer();
       labelRenderer.setSize(host.clientWidth || 640, host.clientHeight || 420);
       labelRenderer.domElement.style.position = "absolute";
@@ -425,14 +430,14 @@ export default function OrgStarMap({
 
       const sky = new THREE.Group();
       sky.add(makeSkyDome());
-      const farStars = makeStarLayer(3200, 420, 820, 1.6, glow);
-      const midStars = makeStarLayer(1800, 160, 380, 2.4, glow);
-      const nearStars = makeStarLayer(420, 70, 150, 4.2, glow);
+      const farStars = makeStarLayer(3200, 420, 820, 1.2, glow);
+      const midStars = makeStarLayer(1800, 160, 380, 1.6, glow);
+      const nearStars = makeStarLayer(420, 70, 150, 2.0, glow);
       farStars.userData.spin = 0.00012;
       midStars.userData.spin = 0.00028;
       nearStars.userData.spin = 0.0005;
       sky.add(farStars, midStars, nearStars);
-      for (let i = 0; i < 28; i += 1) {
+      for (let i = 0; i < 12; i += 1) {
         const radius = 95 + Math.random() * 70;
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
@@ -441,12 +446,12 @@ export default function OrgStarMap({
             map: glow,
             color: new THREE.Color(["#ffffff", "#9db4ff", "#ffd9a0"][i % 3]),
             transparent: true,
-            opacity: 0.55,
+            opacity: 0.32,
             depthWrite: false,
             blending: THREE.AdditiveBlending,
           }),
         );
-        sprite.scale.setScalar(6 + Math.random() * 10);
+        sprite.scale.setScalar(2.5 + Math.random() * 2);
         sprite.position.set(
           radius * Math.sin(phi) * Math.cos(theta),
           radius * Math.cos(phi),
@@ -455,9 +460,9 @@ export default function OrgStarMap({
         sky.add(sprite);
       }
       for (const [color, scale, pos, opacity] of [
-        ["#3a1cff", 520, [-280, 160, -520], 0.34],
-        ["#0090ff", 460, [310, -170, -540], 0.28],
-        ["#ff2a7a", 360, [50, 240, -420], 0.16],
+        ["#3a1cff", 220, [-280, 160, -520], 0.1],
+        ["#0090ff", 200, [310, -170, -540], 0.08],
+        ["#ff2a7a", 160, [50, 240, -420], 0.05],
       ] as const) {
         const sprite = new THREE.Sprite(
           new THREE.SpriteMaterial({
@@ -475,10 +480,10 @@ export default function OrgStarMap({
       }
       scene.add(sky);
 
-      scene.add(new THREE.AmbientLight(0x1a2a55, 0.22));
-      const sunLight = new THREE.PointLight(0xfff1c2, 2800, 0, 2);
+      scene.add(new THREE.AmbientLight(0x6a7ab0, 1.35));
+      const sunLight = new THREE.PointLight(0xffe2b8, 12, 80, 2);
       scene.add(sunLight);
-      const rim = new THREE.DirectionalLight(0x7ecbff, 0.55);
+      const rim = new THREE.DirectionalLight(0xcfe4ff, 2.0);
       rim.position.set(60, 90, 40);
       scene.add(rim);
 
@@ -488,9 +493,9 @@ export default function OrgStarMap({
       composer.addPass(new RenderPass(scene, camera));
       const bloom = new UnrealBloomPass(
         new THREE.Vector2(host.clientWidth || 640, host.clientHeight || 420),
-        reducedMotion ? 0.35 : 1.12,
-        0.62,
-        0.2,
+        reducedMotion ? 0.1 : 0.22,
+        0.35,
+        0.78,
       );
       composer.addPass(bloom);
       host.appendChild(renderer.domElement);
@@ -617,9 +622,9 @@ export default function OrgStarMap({
         for (const view of state.views.values()) {
           const running = latest.current.runningIds?.has(view.body.id) === true;
           if (running && !latest.current.reducedMotion) {
-            const pulse = 1 + Math.sin(elapsed * 4.2) * 0.16;
-            view.halo.scale.setScalar(view.body.size * 8.4 * pulse);
-            view.haloMaterial.opacity = 0.78 + Math.sin(elapsed * 4.2) * 0.18;
+            const pulse = 1 + Math.sin(elapsed * 3.2) * 0.08;
+            view.halo.scale.setScalar(view.body.size * RUNNING_HALO * pulse);
+            view.haloMaterial.opacity = 0.38 + Math.sin(elapsed * 3.2) * 0.08;
           }
         }
         state.controls.update();
@@ -708,10 +713,9 @@ export default function OrgStarMap({
       const ring = new THREE.LineLoop(
         new THREE.BufferGeometry().setFromPoints(points),
         new THREE.LineBasicMaterial({
-          color: 0x66d8ff,
+          color: 0x5a7a9a,
           transparent: true,
-          opacity: 0.55,
-          blending: THREE.AdditiveBlending,
+          opacity: 0.28,
           depthWrite: false,
         }),
       );
@@ -726,15 +730,19 @@ export default function OrgStarMap({
         const parent = byId.get(body.parentId)!;
         const from = new THREE.Vector3(...parent.position);
         const to = new THREE.Vector3(...body.position);
-        state.world.add(makeGlowBeam(from, to, body.kind === "planet" ? 0xd7f6ff : 0x7cf0ff));
+        state.world.add(makeGlowBeam(from, to, body.kind === "planet" ? 0x7aa8c8 : 0x5a8aaa));
       }
     }
 
     for (const body of layout.bodies) {
-      const baseColor = body.kind === "star" ? new THREE.Color("#ff4d3a") : colorFor(body.id, avatarColors);
+      const baseColor = body.kind === "star" ? new THREE.Color("#ff8a52") : colorFor(body.id, avatarColors);
       const geometry = new THREE.SphereGeometry(body.size, body.kind === "star" ? 64 : 48, body.kind === "star" ? 64 : 48);
-      const material = new THREE.MeshBasicMaterial({
-        color: baseColor.clone().multiplyScalar(body.kind === "star" ? 1.8 : 1.35),
+      const material = new THREE.MeshStandardMaterial({
+        color: baseColor,
+        emissive: body.kind === "star" ? new THREE.Color("#ff6a3c") : baseColor.clone().multiplyScalar(0.14),
+        emissiveIntensity: body.kind === "star" ? 0.7 : 0.18,
+        roughness: body.kind === "star" ? 0.38 : 0.52,
+        metalness: 0.12,
         transparent: true,
         opacity: 1,
       });
@@ -745,12 +753,12 @@ export default function OrgStarMap({
         map: glow,
         color: baseColor.clone(),
         transparent: true,
-        opacity: body.kind === "star" ? 1 : 0.72,
+        opacity: body.kind === "star" ? 0.45 : 0.28,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
       const halo = new THREE.Sprite(haloMaterial);
-      halo.scale.setScalar(body.size * (body.kind === "star" ? 16 : 7.2));
+      halo.scale.setScalar(body.size * (body.kind === "star" ? STAR_HALO : PLANET_HALO));
       mesh.add(halo);
       if (body.kind === "star") {
         const flare = new THREE.Sprite(
@@ -758,18 +766,15 @@ export default function OrgStarMap({
             map: glow,
             color: new THREE.Color("#ffd27a"),
             transparent: true,
-            opacity: 0.7,
+            opacity: 0.18,
             depthWrite: false,
             blending: THREE.AdditiveBlending,
           }),
         );
-        flare.scale.setScalar(body.size * 22);
+        flare.scale.setScalar(body.size * 7);
         mesh.add(flare);
-        const core = new THREE.PointLight(0xff6a3c, 90, 80, 2);
+        const core = new THREE.PointLight(0xffc08a, 8, 60, 2);
         mesh.add(core);
-      } else {
-        const lamp = new THREE.PointLight(baseColor, body.kind === "planet" ? 18 : 8, body.size * 18, 2);
-        mesh.add(lamp);
       }
 
       // Portrait medallion: the employee's own avatar fused into the body;
@@ -834,9 +839,9 @@ export default function OrgStarMap({
       view.material.transparent = transparent;
       view.material.opacity = dimmed ? 0.16 : view.baseOpacity;
       if (!isRunning) {
-        view.haloMaterial.color.copy(isSelected ? view.baseColor.clone().lerp(new THREE.Color("#ffffff"), 0.35) : view.baseColor);
-        view.haloMaterial.opacity = view.body.kind === "star" ? 1 : isSelected ? 0.95 : dimmed ? 0.08 : 0.72;
-        view.halo.scale.setScalar(view.body.size * (view.body.kind === "star" ? 16 : isSelected ? 9.5 : 7.2));
+        view.haloMaterial.color.copy(isSelected ? view.baseColor.clone().lerp(new THREE.Color("#ffffff"), 0.22) : view.baseColor);
+        view.haloMaterial.opacity = view.body.kind === "star" ? 0.45 : isSelected ? 0.42 : dimmed ? 0.06 : 0.28;
+        view.halo.scale.setScalar(view.body.size * (view.body.kind === "star" ? STAR_HALO : isSelected ? SELECTED_HALO : PLANET_HALO));
       } else {
         view.haloMaterial.color.set(RUNNING_COLOR);
       }

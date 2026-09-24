@@ -7,7 +7,7 @@
 
 ### Added
 
-- #472：组织模块新增可选 3D 星图（恒星/行星/卫星、Bloom 霓虹连线、3D 星空穹顶与视差星层）。标签为 DOM 文字保持清晰。搜索定位、拖拽改汇报线、招聘/撤销复用现通道。无 WebGL 退化为列表。Refs #472。
+- #472：组织模块新增可选 3D 星图（恒星/行星/卫星、克制 Bloom、3D 星空穹顶与视差星层）。标签用不透明底板保持可读，避免光晕干扰日常工作。搜索定位、拖拽改汇报线、招聘/撤销复用现通道。无 WebGL 退化为列表。Refs #472。
 
 - #460：审批队列和详情在规则风险 Tag 旁展示可选 Jev `riskOverlay`。`ROLEWEAVE_JEV_ENABLED` 默认关；关时与现网 Tag 字节一致。展示色始终跟 `capabilityContext`，overlay 更低时标明「建议未采纳」。`service` 经 `attachApprovalRiskOverlay` 接线；出站建议载荷只允许 `kind`。默认不调用外部服务。Refs #422。
 - #428：Goals 详情并排展示落盘规则健康与 Jev `healthOverlay`；列表点只跟 `goal.health`。`at_risk` 上的 `on_track` overlay 标明「建议未采纳」。`blocked` overlay 可跳到绑定岗位会话或审批中心，不自动改目标。上报升级 overlay 仍是后续独立 PR。
