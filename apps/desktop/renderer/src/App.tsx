@@ -2369,6 +2369,7 @@ function AppInner({
             qoderLogin={qoderLoginSurface}
             key={workspaceInfo?.path}
             workspaceKey={workspaceInfo?.path}
+            workspaceScope={groupWorkspaceScope}
             memory={conversationMemory.current}
             focused={conversationFocused}
             onToggleFocus={() => setConversationFocused(!conversationFocused)}

@@ -36,6 +36,7 @@ export const routes = {
   reports: "/reports",
   experiments: "/experiments",
   reportsAdvice: "/reports/advice",
+  budgetRemainingAdvice: "/turns/budget-remaining-advice",
   approvals: "/approvals",
   sessions: "/sessions",
   turns: "/turns",

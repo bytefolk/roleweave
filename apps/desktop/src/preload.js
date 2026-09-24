@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld("owb", {
     update: (request) => ipcRenderer.invoke("owb:experiments:update", request),
   },
   reportAdvice: (request) => ipcRenderer.invoke("owb:reports:advice", request),
+  budgetRemainingAdvice: (request) => ipcRenderer.invoke("owb:turns:budget-advice", request),
   listApprovals: (request) => ipcRenderer.invoke("owb:approvals:list", request),
   decideApproval: (request) => ipcRenderer.invoke("owb:approvals:decide", request),
   decideApprovalsBatch: (request) => ipcRenderer.invoke("owb:approvals:batch-decide", request),

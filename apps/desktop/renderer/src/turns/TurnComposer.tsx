@@ -8,6 +8,7 @@ import type { PendingAttachment } from "./types";
 import { PendingAttachmentCard } from "./AttachmentCard";
 
 export interface TurnComposerProps {
+  advisory?: ReactNode;
   options?: ReactNode;
   sendShortcut?: "enter" | "mod-enter";
   draftDisabled?: boolean;
@@ -40,6 +41,7 @@ function isAcceptedFile(file: File): boolean {
 }
 
 export function TurnComposer({
+  advisory,
   options,
   sendShortcut = "enter",
   draftDisabled,
@@ -175,6 +177,7 @@ export function TurnComposer({
           />
         )}
       </div>
+      {advisory}
       {options}
       {running || disabledReason ? (
         <DiagnosticNotice className="owb-turn-composer__hint"
