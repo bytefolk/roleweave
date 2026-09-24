@@ -1,43 +1,58 @@
-import { jevRequestConfig } from "./config.js";
+import { layaRequestConfig } from "./config.js";
 
-export type JevNoulQuestion = { type: "noul"; instructions: string };
-export type JevChoiceQuestion = { type: "choice"; instructions: string; criteria: Record<string, string> };
-export type JevScoreQuestion = { type: "score"; instructions: string; criteria: string[] };
-export type JevQuestion = JevNoulQuestion | JevChoiceQuestion | JevScoreQuestion;
+export type LayaNoulQuestion = { type: "noul"; instructions: string };
+export type LayaChoiceQuestion = { type: "choice"; instructions: string; criteria: Record<string, string> };
+export type LayaScoreQuestion = { type: "score"; instructions: string; criteria: string[] };
+export type LayaQuestion = LayaNoulQuestion | LayaChoiceQuestion | LayaScoreQuestion;
 
-export type JevNoulAnswer = { type: "noul"; probability: number };
-export type JevChoiceAnswer = {
+export type LayaNoulAnswer = { type: "noul"; probability: number };
+export type LayaChoiceAnswer = {
   type: "choice";
   selected: string;
   probabilities: Record<string, number>;
   confidence: number;
 };
-export type JevScoreAnswer = { type: "score"; score: number; confidence: number };
-export type JevAnswer = JevNoulAnswer | JevChoiceAnswer | JevScoreAnswer;
+export type LayaScoreAnswer = { type: "score"; score: number; confidence: number };
+export type LayaAnswer = LayaNoulAnswer | LayaChoiceAnswer | LayaScoreAnswer;
 
-export interface JevRequest {
+export interface LayaRequest {
   state: unknown;
-  questions: Record<string, JevQuestion>;
+  questions: Record<string, LayaQuestion>;
 }
 
-export type JevAsk = (request: JevRequest) => Promise<Record<string, JevAnswer> | null>;
+export type LayaAsk = (request: LayaRequest) => Promise<Record<string, LayaAnswer> | null>;
 
-export interface AskJevDeps {
+export interface AskLayaDeps {
   env?: NodeJS.Dict<string>;
   fetchImpl?: typeof fetch;
 }
+
+/** @deprecated Type aliases for the Laya swap. */
+export type JevNoulQuestion = LayaNoulQuestion;
+export type JevChoiceQuestion = LayaChoiceQuestion;
+export type JevScoreQuestion = LayaScoreQuestion;
+export type JevQuestion = LayaQuestion;
+export type JevNoulAnswer = LayaNoulAnswer;
+export type JevChoiceAnswer = LayaChoiceAnswer;
+export type JevScoreAnswer = LayaScoreAnswer;
+export type JevAnswer = LayaAnswer;
+export type JevRequest = LayaRequest;
+export type JevAsk = LayaAsk;
+export type AskJevDeps = AskLayaDeps;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-function parseAnswer(value: unknown): JevAnswer | null {
+function parseAnswer(value: unknown): LayaAnswer | null {
   const record = asRecord(value);
   if (!record) return null;
-  if (record.type === "noul" && typeof record.probability === "number") {
-    return { type: "noul", probability: record.probability };
+  const noul = typeof record.noul === "number" ? record.noul : typeof record.probability === "number" ? record.probability : null;
+  if (record.type === "noul" && noul !== null) {
+    return { type: "noul", probability: noul };
   }
-  if (record.type === "choice" && typeof record.selected === "string") {
+  const selected = typeof record.choice === "string" ? record.choice : typeof record.selected === "string" ? record.selected : null;
+  if (record.type === "choice" && selected) {
     const probabilities = asRecord(record.probabilities) ?? {};
     const numeric: Record<string, number> = {};
     for (const [key, probability] of Object.entries(probabilities)) {
@@ -45,7 +60,7 @@ function parseAnswer(value: unknown): JevAnswer | null {
     }
     return {
       type: "choice",
-      selected: record.selected,
+      selected,
       probabilities: numeric,
       confidence: typeof record.confidence === "number" ? record.confidence : 0,
     };
@@ -56,18 +71,17 @@ function parseAnswer(value: unknown): JevAnswer | null {
   return null;
 }
 
-/** Typed System One call. Returns null when disabled, unconfigured, or the network/parse fails. */
-export async function askJev(request: JevRequest, deps: AskJevDeps = {}): Promise<Record<string, JevAnswer> | null> {
-  const config = jevRequestConfig(deps.env ?? process.env);
+/** Typed System One call against local Laya. Null when disabled or the call fails. */
+export async function askLaya(request: LayaRequest, deps: AskLayaDeps = {}): Promise<Record<string, LayaAnswer> | null> {
+  const config = layaRequestConfig(deps.env ?? process.env);
   if (!config) return null;
   const fetchImpl = deps.fetchImpl ?? fetch;
   try {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`;
     const response = await fetchImpl(config.url, {
       method: "POST",
-      headers: {
-        authorization: `Bearer ${config.apiKey}`,
-        "content-type": "application/json",
-      },
+      headers,
       body: JSON.stringify({
         model: config.model,
         state: request.state,
@@ -80,7 +94,7 @@ export async function askJev(request: JevRequest, deps: AskJevDeps = {}): Promis
     const body = asRecord(await response.json().catch(() => null));
     const rawAnswers = asRecord(body?.answers);
     if (!rawAnswers) return null;
-    const answers: Record<string, JevAnswer> = {};
+    const answers: Record<string, LayaAnswer> = {};
     for (const [key, value] of Object.entries(rawAnswers)) {
       const parsed = parseAnswer(value);
       if (parsed) answers[key] = parsed;
@@ -90,3 +104,6 @@ export async function askJev(request: JevRequest, deps: AskJevDeps = {}): Promis
     return null;
   }
 }
+
+/** @deprecated Use askLaya. */
+export const askJev = askLaya;

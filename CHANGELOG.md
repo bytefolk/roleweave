@@ -11,6 +11,8 @@
 
 ### Changed
 
+- 运行时 System One 决策模型由 Jev/TypeSafe 平替为本机 Laya。协议仍是 `state` + typed `questions` / `answers`；默认关；超时或非法答案仍 abstain；overlay 不落盘、不改权威规则。固定目的地址 `http://127.0.0.1:8000/v1/systemone`，禁止重定向，不再外呼 `api.typesafe.ai`。`ROLEWEAVE_LAYA_*` 为主，`ROLEWEAVE_JEV_*` 仍作兼容别名。
+
 - 组织目录树行改为「头像 + 岗位名」主信息，id / 引擎 / 运行状态作次行；树顶增加搜索与全部展开/收起；选中行圆角高亮加强。员工会话面板去掉线程渐变，复制/重试改为悬停浮现，头部与输入工具条收成一行。不改拖拽、招聘占位、审批卡片与重试语义。Refs #458。
 
 ### Fixed

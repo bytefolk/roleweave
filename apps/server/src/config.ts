@@ -38,7 +38,7 @@ export interface ServerConfig {
    * TODO(#35 R3): remove once the upstream API surface stabilises.
    */
   docPlaneMock: boolean;
-  /** Optional Jev preview credentials. Never included in renderer/IPC configuration. */
+  /** Optional Laya preview credentials. Never included in renderer/IPC configuration. */
   jevEnabled: boolean;
   jevApiKey?: string;
   jevModel?: string;
@@ -123,13 +123,14 @@ export function resolveServerConfig(
         : undefined,
     docPlaneMock: truthy(env.ORG_WORKBENCH_DOC_MOCK),
     jevEnabled: (() => {
-      const value = env.ROLEWEAVE_JEV_ENABLED?.trim().toLowerCase();
+      const raw = env.ROLEWEAVE_LAYA_ENABLED ?? env.ROLEWEAVE_JEV_ENABLED;
+      const value = raw?.trim().toLowerCase();
       return value === "1" || value === "true" || value === "yes";
     })(),
-    jevApiKey: env.ROLEWEAVE_JEV_API_KEY?.trim() || undefined,
-    jevModel: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(env.ROLEWEAVE_JEV_MODEL ?? "")
-      ? env.ROLEWEAVE_JEV_MODEL : "jev-latest",
-    jevTimeoutMs: Math.max(100, Math.min(5_000, Number(env.ROLEWEAVE_JEV_TIMEOUT_MS) || 2_000)),
+    jevApiKey: (env.ROLEWEAVE_LAYA_API_KEY ?? env.ROLEWEAVE_JEV_API_KEY)?.trim() || undefined,
+    jevModel: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test((env.ROLEWEAVE_LAYA_MODEL ?? env.ROLEWEAVE_JEV_MODEL) ?? "")
+      ? (env.ROLEWEAVE_LAYA_MODEL ?? env.ROLEWEAVE_JEV_MODEL) : "laya",
+    jevTimeoutMs: Math.max(100, Math.min(5_000, Number(env.ROLEWEAVE_LAYA_TIMEOUT_MS ?? env.ROLEWEAVE_JEV_TIMEOUT_MS) || 2_000)),
   };
 }
 

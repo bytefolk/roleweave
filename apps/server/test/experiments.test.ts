@@ -5,7 +5,7 @@ import test from "node:test";
 import type { ExperimentsResponse, ReportsAdviceRequest, ReportsAdviceResponse, TurnRecord } from "@roleweave/shared";
 import { ExperimentsService } from "../src/experiments/service.js";
 import { EXPERIMENTS_FILE } from "../src/experiments/store.js";
-import { JEV_ENDPOINT, JevAdviceProvider, type AdviceMetadata, type AdviceProvider } from "../src/experiments/provider.js";
+import { LAYA_ADVICE_ENDPOINT, LayaAdviceProvider, type AdviceMetadata, type AdviceProvider } from "../src/experiments/provider.js";
 import { resolveServerConfig } from "../src/config.js";
 import { api, assertPosixMode, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
 
@@ -85,7 +85,7 @@ test("experiments: default off, reads and enabling never call provider; persiste
       await open(restarted, f.dir);
       const loaded = await settings(restarted, f.dir);
       assert.equal(loaded.enabled, true);
-      assert.equal(loaded.availability, "not_configured");
+      assert.equal(loaded.availability, "ready");
       assert.notEqual(loaded.workspaceSession, reopened.workspaceSession);
     } finally { await restarted.close(); }
   } finally { await f.close(); await fs.rm(other, { recursive: true, force: true }); }
@@ -116,17 +116,18 @@ test("experiments: concurrent toggles are revision-checked and serialized", asyn
   } finally { await f.close(); }
 });
 
-test("experiments: missing credentials remain visible, no external call or secret in API", async () => {
+test("experiments: local Laya is configured without a cloud key and API never exposes secrets", async () => {
   const provider = fakeProvider();
   const f = await fixture(provider, false);
   try {
     const enabled = (await update(f.server, await settings(f.server, f.dir), true)).body as ExperimentsResponse;
-    assert.equal(enabled.availability, "not_configured");
-    assert.equal(enabled.provider.configured, false);
+    assert.equal(enabled.availability, "ready");
+    assert.equal(enabled.provider.configured, true);
+    assert.equal(enabled.provider.name, "Laya");
+    assert.equal(enabled.provider.endpointHost, "127.0.0.1");
     assert.equal((await advise(f.server, enabled)).status, 200);
-    assert.equal(((await advise(f.server, enabled)).body as ReportsAdviceResponse).reason, "not_configured");
-    assert.equal(provider.calls.length, 0);
     assert.deepEqual(Object.keys(enabled.provider).sort(), ["configured", "endpointHost", "endpointUrl", "name"]);
+    assert.equal(JSON.stringify(enabled).includes("secret-key-must-not-escape"), false);
   } finally { await f.close(); }
 });
 
@@ -137,11 +138,11 @@ test("experiments: disclosed full endpoint matches the provider's actual POST de
     return new Response(JSON.stringify({ answers: { item_0: { type: "choice", choice: "inspect_run", confidence: 0.9,
       probabilities: { inspect_run: 0.9, check_connection: 0.1, inspect_budget: 0, insufficient_information: 0 } } } }));
   }) as typeof fetch;
-  const f = await fixture(new JevAdviceProvider("test-key", "jev-latest", fetcher));
+  const f = await fixture(new LayaAdviceProvider("test-key", "laya", fetcher));
   try {
     const initial = await settings(f.server, f.dir);
-    assert.equal(initial.provider.endpointUrl, "https://api.typesafe.ai/v1/systemone");
-    assert.equal(initial.provider.endpointUrl, JEV_ENDPOINT);
+    assert.equal(initial.provider.endpointUrl, "http://127.0.0.1:8000/v1/systemone");
+    assert.equal(initial.provider.endpointUrl, LAYA_ADVICE_ENDPOINT);
     const enabled = (await update(f.server, initial, true)).body as ExperimentsResponse;
     assert.equal(enabled.provider.endpointUrl, initial.provider.endpointUrl);
     assert.equal(requests.length, 0, "settings disclosure and consent must not send a provider request");
@@ -363,20 +364,20 @@ test("experiments: corruption repair and revision rollback cannot revive a stale
   } finally { await f.close(); }
 });
 
-test("jev provider: official typed HTTP protocol, fixed destination and no redirect or free-text response", async () => {
+test("laya provider: official typed HTTP protocol, fixed destination and no redirect or free-text response", async () => {
   let request: RequestInit | undefined;
   const fetcher = (async (url, init) => {
-    assert.equal(url, JEV_ENDPOINT);
+    assert.equal(url, LAYA_ADVICE_ENDPOINT);
     request = init;
     return new Response(JSON.stringify({ answers: { item_0: { type: "choice", choice: "inspect_run", confidence: 0.9,
       probabilities: { inspect_run: 0.9, check_connection: 0.1, inspect_budget: 0, insufficient_information: 0 }, explanation: "must not return raw text" } } }));
   }) as typeof fetch;
-  const provider = new JevAdviceProvider("server-key", "jev-latest", fetcher);
+  const provider = new LayaAdviceProvider("server-key", "laya", fetcher);
   assert.deepEqual(await provider.evaluate([{ status: "failed", errorCode: "other", budgetRelated: false }], new AbortController().signal), ["inspect_run"]);
   assert.equal(request?.redirect, "error");
   const body = JSON.parse(request?.body as string) as { state: unknown; questions: unknown; model: string };
   assert.deepEqual(body.state, [{ status: "failed", errorCode: "other", budgetRelated: false }]);
-  assert.equal(body.model, "jev-latest");
+  assert.equal(body.model, "laya");
   assert.ok(body.questions);
 });
 
@@ -384,7 +385,7 @@ test("jev provider: malformed, unknown, oversized and failed responses are rejec
   const item: AdviceMetadata[] = [{ status: "failed", errorCode: "other", budgetRelated: false }];
   const valid = { answers: { item_0: { type: "choice", choice: "inspect_run", confidence: 0.2,
     probabilities: { inspect_run: 0.4, check_connection: 0.2, inspect_budget: 0.2, insufficient_information: 0.2 } } } };
-  const evaluate = (response: Response) => new JevAdviceProvider("key", undefined, (async () => response) as typeof fetch).evaluate(item, new AbortController().signal);
+  const evaluate = (response: Response) => new LayaAdviceProvider("key", undefined, (async () => response) as typeof fetch).evaluate(item, new AbortController().signal);
   assert.deepEqual(await evaluate(new Response(JSON.stringify(valid))), ["insufficient_information"]);
   await assert.rejects(evaluate(new Response(JSON.stringify({ answers: { item_0: { ...valid.answers.item_0, choice: "execute_command" } } }))));
   await assert.rejects(evaluate(new Response(JSON.stringify({ answers: { item_0: { ...valid.answers.item_0, confidence: 2 } } }))));
@@ -393,12 +394,13 @@ test("jev provider: malformed, unknown, oversized and failed responses are rejec
   await assert.rejects(evaluate(new Response("private provider error", { status: 401 })));
 });
 
-test("jev config: server-only ROLEWEAVE environment and bounded timeout", () => {
-  const config = resolveServerConfig({ ROLEWEAVE_JEV_API_KEY: " key ", ROLEWEAVE_JEV_TIMEOUT_MS: "999999", ROLEWEAVE_JEV_MODEL: "bad model" }, []);
+test("laya config: server-only ROLEWEAVE environment and bounded timeout", () => {
+  const config = resolveServerConfig({ ROLEWEAVE_LAYA_API_KEY: " key ", ROLEWEAVE_LAYA_TIMEOUT_MS: "999999", ROLEWEAVE_LAYA_MODEL: "bad model" }, []);
   assert.equal(config.jevApiKey, "key");
   assert.equal(config.jevTimeoutMs, 5_000);
-  assert.equal(config.jevModel, "jev-latest");
+  assert.equal(config.jevModel, "laya");
   assert.equal(resolveServerConfig({}, []).jevApiKey, undefined);
   assert.equal(resolveServerConfig({}, []).jevEnabled, false);
+  assert.equal(resolveServerConfig({ ROLEWEAVE_LAYA_ENABLED: "1" }, []).jevEnabled, true);
   assert.equal(resolveServerConfig({ ROLEWEAVE_JEV_ENABLED: "1" }, []).jevEnabled, true);
 });

@@ -322,12 +322,12 @@ test("WSL forwards document and memory connections through stdin without exposin
   for (const [key, value] of Object.entries(environment)) assert.equal(runtime[key], value);
 });
 
-test("WSL forwards Jev preview configuration over stdin without a renderer or argv secret", () => {
-  const environment = { ROLEWEAVE_JEV_API_KEY: "fixture-jev-key", ROLEWEAVE_JEV_MODEL: "jev-latest", ROLEWEAVE_JEV_TIMEOUT_MS: "2000" };
+test("WSL forwards Laya preview configuration over stdin without a renderer or argv secret", () => {
+  const environment = { ROLEWEAVE_LAYA_API_KEY: "fixture-laya-key", ROLEWEAVE_LAYA_MODEL: "laya", ROLEWEAVE_LAYA_TIMEOUT_MS: "2000" };
   const spec = wslLaunchSpec({ serverEntry: "/app/server/dist/src/index.js", env: environment });
   const config = parseConfiguration(spec.input);
   assert.deepEqual(config.environment, environment);
-  assert.doesNotMatch(spec.args.join(" "), /fixture-jev-key/);
+  assert.doesNotMatch(spec.args.join(" "), /fixture-laya-key/);
   const runtime = serverEnvironment(config, { HOME: "/home/user", PATH: "/usr/bin" }, "/usr/bin/node");
   for (const [key, value] of Object.entries(environment)) assert.equal(runtime[key], value);
 });
