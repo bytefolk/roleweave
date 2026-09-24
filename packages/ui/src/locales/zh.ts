@@ -1389,7 +1389,6 @@ export const zhCatalog: Record<string, string> = {
   "settings.unavailableLinux": "此构建没有 Linux 发布通道，请从源码树安装与更新。",
   "settings.unavailableOther": "此平台不提供应用内更新。",
   "rail.goals": "目标",
-  "rail.progress": "进度",
   "progress.moduleAria": "任务实时进度",
   "progress.title": "任务进度",
   "progress.lede": "管理者视角：每位员工当前回合的步骤、百分比与耗时。变化经现有 SSE 推送。",

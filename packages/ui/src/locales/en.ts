@@ -1386,7 +1386,6 @@ export const enCatalog: Record<string, string> = {
   "settings.unavailableLinux": "This build has no Linux release channel. Install and update it from the source tree.",
   "settings.unavailableOther": "In-app update is not available on this platform.",
   "rail.goals": "Goals",
-  "rail.progress": "Progress",
   "progress.moduleAria": "Live task progress",
   "progress.title": "Task progress",
   "progress.lede": "Manager view: step, percent, and duration for each employee's current turn. Updates ride the existing SSE stream.",
