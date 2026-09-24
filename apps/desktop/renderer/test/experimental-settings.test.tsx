@@ -38,7 +38,7 @@ describe("workspace experimental settings", () => {
     const modal = await screen.findByRole("dialog");
     expect(within(modal).getByText(endpoint, { exact: true })).toBeInTheDocument();
     expect(screen.getAllByText(endpoint, { exact: true })).toHaveLength(2);
-    expect(within(modal).getByText(/发送范围：执行状态、规范化错误码、是否与预算相关/)).toBeInTheDocument();
+    expect(within(modal).getByText(/发送范围：执行状态、规范化错误码、是否与预算相关；主机选择另含岗位 ID、引擎、是否就绪/)).toBeInTheDocument();
     expect(within(modal).getByText(/不发送消息、任务或附件正文、员工姓名、项目路径/)).toBeInTheDocument();
     fireEvent.click(within(modal).getByRole("button", { name: "取消" }));
     expect(api.update).not.toHaveBeenCalled(); expect(api.reportAdvice).not.toHaveBeenCalled();

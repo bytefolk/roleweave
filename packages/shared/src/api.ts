@@ -36,6 +36,7 @@ export const routes = {
   reports: "/reports",
   experiments: "/experiments",
   reportsAdvice: "/reports/advice",
+  readyHostChoice: "/ready-host/choice",
   approvals: "/approvals",
   sessions: "/sessions",
   turns: "/turns",

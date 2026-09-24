@@ -103,6 +103,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/org/permission-artifacts.js",
   "dist/src/org/permissions.js",
   "dist/src/org/profile-edit.js",
+  "dist/src/org/ready-host-overlay.js",
   "dist/src/org/restore.js",
   "dist/src/org/undo.js",
   "dist/src/per-key-lock.js",

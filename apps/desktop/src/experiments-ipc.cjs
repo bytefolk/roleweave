@@ -22,4 +22,22 @@ async function reportsAdvice(request, apiRequest) {
   return apiRequest("/reports/advice", { method: "POST", body: request });
 }
 
-module.exports = { experimentsGet, experimentsUpdate, reportsAdvice };
+const READY_HOST_ENGINES = new Set(["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini"]);
+const MAX_READY_HOST_CANDIDATES = 16;
+
+function factValid(value) {
+  return object(value) && typeof value.positionId === "string" && value.positionId.length > 0 && value.positionId.length <= 128
+    && READY_HOST_ENGINES.has(value.engine)
+    && typeof value.ready === "boolean"
+    && Object.keys(value).every(key => ["positionId", "engine", "ready"].includes(key));
+}
+
+async function readyHostChoice(request, apiRequest) {
+  const ids = Array.isArray(request?.candidates) ? request.candidates.map(item => item && item.positionId) : [];
+  if (!scopeValid(request) || !Array.isArray(request.candidates) || request.candidates.length > MAX_READY_HOST_CANDIDATES
+      || request.candidates.some(item => !factValid(item)) || new Set(ids).size !== ids.length
+      || Object.keys(request).some(key => !["workspacePath", "workspaceSession", "revision", "candidates"].includes(key))) return invalid();
+  return apiRequest("/ready-host/choice", { method: "POST", body: request });
+}
+
+module.exports = { experimentsGet, experimentsUpdate, reportsAdvice, readyHostChoice };

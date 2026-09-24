@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ReadyHostHint } from "../org/ReadyHostHint";
+import { useReadyHostOverlay } from "../org/useReadyHostChoice";
 import { Button, Modal, Popover } from "antd";
 import { useConversationCopy } from "../locales/conversation";
 import { createConversationMemory, conversationKey, type ConversationMemory } from "./conversation-memory";
@@ -98,6 +100,8 @@ export interface TurnPanelProps {
   onRotateSession?: (sessionId: string) => void | Promise<void>;
   /** Deep linking anchor to focus and scroll to a specific turn. */
   focusTurnId?: string | null;
+  /** Per-position host facts resolved by App via engineForPosition (#465). Omit to disable overlay. */
+  readyHostFacts?: import("../org/ready-host-overlay").ReadyHostFact[];
 }
 
 export function TurnPanel({
@@ -140,6 +144,8 @@ export function TurnPanel({
   decidedApprovalIds,
   onRotateSession,
   focusTurnId,
+  readyHostFacts = [],
+  onSelectPosition,
 }: TurnPanelProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
@@ -172,6 +178,8 @@ export function TurnPanel({
   }
   useEffect(() => { setHistoryOpen(false); setEditRequest(null); }, [draftKey, active]);
   const selectedPosition = positions.find((position) => position.id === selectedPositionId) ?? null;
+  const selectedReadyHost = readyHostFacts.find((fact) => fact.positionId === selectedPositionId) ?? null;
+  const readyHostOverlay = useReadyHostOverlay(workspaceKey || undefined, selectedReadyHost, readyHostFacts);
   const runningTurn = selectedPositionId !== null && turns.some(
     (turn) => turn.positionId === selectedPositionId && turn.status === "running",
   );
@@ -374,6 +382,11 @@ export function TurnPanel({
             icon={focused ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />} onClick={onToggleFocus}>{focused ? copy.exitFocus : null}</Button> : null}
         </div>
       </header>
+      <ReadyHostHint
+        overlay={readyHostOverlay}
+        names={Object.fromEntries(positions.map((position) => [position.id, position.name]))}
+        onSelectPosition={onSelectPosition}
+      />
 
       <TurnThread
         turns={turns}
