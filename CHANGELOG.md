@@ -7,6 +7,8 @@
 
 ### Added
 
+- #467：Goals 详情新增项目级 opt-in 的“交付预检”。用户为每条验收标准显式选择带版本 `DocRef` 的文档材料；预检只核对引用结构、断链、版本冲突和 mtime，不读取正文、不调用 Laya、不写 `goal.status` / `goal.health`，也不会产生整体通过结论。Refs #422。
+
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
 
 - #480：管理者实时任务进度看板。工作台自报 thread-context / spawn / streaming / persist / terminal 五步，经现有 `GET /events` 广播 `turn.progress`，快照落在 `.roleweave/conversations/<positionId>/progress/<turnId>.json`。列表合并内存与落盘，刷新或控制面重启后仍可回看。不新开 WebSocket，不改 spawn/finish 契约。Refs #480。
