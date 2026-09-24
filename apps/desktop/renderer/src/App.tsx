@@ -2250,6 +2250,7 @@ function AppInner({
                   displayNames={positionNames}
                   avatarColors={positionColors}
                   avatarUrls={avatarUrls}
+                  displayEngines={positionEngines}
                   runningIds={runningPositionIds}
                   selectedId={selectedId}
                   onSelect={openConversation}

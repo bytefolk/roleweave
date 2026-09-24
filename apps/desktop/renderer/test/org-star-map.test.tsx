@@ -67,27 +67,62 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(onSelect).toHaveBeenCalledWith("frontend");
   });
 
-  it("dock 快捷操作：新增下属依赖选中、撤销与裁撤槽位直通调用方", () => {
+  it("人员卡提供进入对话与新增下属", () => {
+    const onSelect = vi.fn();
     const onHireEntry = vi.fn();
-    const onUndo = vi.fn();
-    const { rerender } = render(
-      <OrgStarMap snapshot={snapshot} onHireEntry={onHireEntry} onUndo={onUndo} dismissSlot={<button type="button">裁撤槽位</button>} />,
+    render(
+      <OrgStarMap
+        snapshot={snapshot}
+        selectedId="frontend"
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+        displayEngines={{ frontend: "qoder" }}
+        runningIds={new Set(["frontend"])}
+        onSelect={onSelect}
+        onHireEntry={onHireEntry}
+        dismissSlot={<button type="button">裁撤槽位</button>}
+      />,
     );
-    const hire = screen.getByRole("button", { name: "新增下属" });
-    expect(hire).toBeDisabled();
-    expect(screen.getByRole("button", { name: "裁撤槽位" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
-    expect(onUndo).toHaveBeenCalledTimes(1);
-    rerender(
-      <OrgStarMap snapshot={snapshot} selectedId="frontend" onHireEntry={onHireEntry} onUndo={onUndo} />,
-    );
+    const card = screen.getByLabelText("员工概览");
+    expect(within(card).getByText(/执行中/)).toBeInTheDocument();
+    expect(within(card).getByText(/qoder/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "进入对话" }));
+    expect(onSelect).toHaveBeenCalledWith("frontend");
     fireEvent.click(screen.getByRole("button", { name: "新增下属" }));
     expect(onHireEntry).toHaveBeenCalledWith("frontend");
+    expect(screen.getByRole("button", { name: "裁撤槽位" })).toBeInTheDocument();
   });
 
-  it("重置视角在无 WebGL 时也不崩", () => {
-    render(<OrgStarMap snapshot={snapshot} />);
+  it("帮助入口收纳操作说明，主界面只留搜索与自转状态", () => {
+    const onUndo = vi.fn();
+    render(<OrgStarMap snapshot={snapshot} onUndo={onUndo} />);
+    expect(screen.queryByText(/左键拖动旋转视角/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "撤销" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "操作说明" }));
+    expect(screen.getByText(/OrbitControls 默认手势/)).toBeInTheDocument();
     expect(() => fireEvent.click(screen.getByRole("button", { name: "重置视角" }))).not.toThrow();
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    expect(onUndo).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "自转已停" })).toBeInTheDocument();
+  });
+
+  it("搜索支持 Esc、方向键与无结果状态", () => {
+    const onSelect = vi.fn();
+    render(
+      <OrgStarMap
+        snapshot={snapshot}
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+        onSelect={onSelect}
+      />,
+    );
+    const input = screen.getByLabelText("定位员工：姓名或岗位 id");
+    fireEvent.change(input, { target: { value: "zzz-no-match" } });
+    expect(screen.getByText("没有匹配的员工")).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByText("没有匹配的员工")).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "doc" } });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("docs-lead");
   });
 
   it("合成企业恒星只是布景：不进清单也不进搜索候选", () => {
@@ -104,7 +139,21 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(screen.queryByRole("option")).not.toBeInTheDocument();
   });
 
-  it("选中后聚焦卡给出概括信息，拉远与关闭可用", () => {
+  it("关闭人员卡不影响自转状态", () => {
+    render(
+      <OrgStarMap
+        snapshot={snapshot}
+        selectedId="frontend"
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "自转已停" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(screen.queryByLabelText("员工概览")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "自转已停" })).toBeInTheDocument();
+  });
+
+  it("选中后聚焦卡给出概括信息，关闭只关卡片", () => {
     render(
       <OrgStarMap
         snapshot={snapshot}
@@ -121,7 +170,7 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(within(card).getByText("汇报给 首席执行官")).toBeInTheDocument();
     expect(within(card).getByText("0 个下属")).toBeInTheDocument();
     expect(within(card).getByText("单任务预算: 声明期")).toBeInTheDocument();
-    fireEvent.click(within(card).getByRole("button", { name: "拉远" }));
+    expect(within(card).getByText("空闲")).toBeInTheDocument();
     fireEvent.click(within(card).getByRole("button", { name: "关闭" }));
     expect(screen.queryByLabelText("员工概览")).not.toBeInTheDocument();
   });
