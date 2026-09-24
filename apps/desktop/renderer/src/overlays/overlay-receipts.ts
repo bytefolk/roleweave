@@ -29,7 +29,9 @@ export function emptyOverlayReceipts(itemId: string): OverlayItemReceipts {
 function outcomeOf(item: OverlayItemReceipts, actionId: string): OverlayReceiptKind | undefined {
   const related = item.receipts.filter((receipt) => receipt.actionId === actionId);
   for (let index = related.length - 1; index >= 0; index -= 1) {
-    const kind = related[index].kind;
+    const receipt = related[index];
+    if (receipt === undefined) continue;
+    const kind = receipt.kind;
     if (kind === "action_succeeded" || kind === "action_failed") return kind;
   }
   return undefined;
