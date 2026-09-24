@@ -1,6 +1,5 @@
-/* 3D org star map (#472): dark space panel with an overlay dock. The panel
-   keeps its own matte surface tokens so the starfield never inherits the
-   light theme's paper background — space is dark in both themes. */
+/* 3D org map (#472): dark studio stage. Floor/grid/lights live in WebGL;
+   chrome stays matte so both themes keep a readable work surface. */
 
 .owb-star-map {
   position: relative;
@@ -9,7 +8,7 @@
   height: 100%;
   min-height: 420px;
   overflow: hidden;
-  background: #02040a;
+  background: #12151c;
   border: 1px solid var(--ui-border, #2a3050);
   border-radius: 12px;
 }
@@ -19,8 +18,8 @@
   gap: 8px;
   align-items: baseline;
   padding: 8px 12px;
-  background: #0b1020;
-  border-bottom: 1px solid #20263f;
+  background: #161a24;
+  border-bottom: 1px solid #262c3c;
   color: #e8ecff;
   font-size: 12px;
 }
@@ -50,8 +49,8 @@
   gap: 8px;
   width: 236px;
   padding: 10px;
-  background: rgba(10, 14, 28, 0.88);
-  border: 1px solid #262c4a;
+  background: rgba(16, 20, 28, 0.94);
+  border: 1px solid #2a3144;
   border-radius: 10px;
 }
 
@@ -155,21 +154,38 @@
   color: #ffb4a8;
 }
 
-/* CSS2DRenderer labels: DOM text stays crisp at any zoom (#472 clarity). */
 .owb-star-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   pointer-events: auto;
   cursor: pointer;
   font-family: var(--ui-font-family, "Inter", "PingFang SC", "Microsoft YaHei", sans-serif);
   font-size: 11px;
   font-weight: 500;
   line-height: 1.3;
-  color: #e8ecff;
-  text-shadow: 0 0 4px #02040a, 0 1px 8px #02040a, 0 2px 12px #02040a;
+  color: #eef1ff;
+  text-shadow: 0 1px 2px #02040a;
   white-space: nowrap;
   user-select: none;
-  padding: 2px 6px;
-  border-radius: 5px;
-  background: rgba(2, 4, 10, 0.42);
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  background: rgba(12, 16, 24, 0.9);
+  border: 1px solid rgba(180, 190, 230, 0.22);
+}
+
+.owb-star-label__avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #1b2140;
+}
+
+.owb-star-label--moon .owb-star-label__avatar {
+  width: 14px;
+  height: 14px;
 }
 
 .owb-star-label--star {
@@ -189,7 +205,8 @@
 }
 
 .owb-star-label.is-selected {
-  background: rgba(94, 106, 210, 0.42);
+  background: rgba(36, 44, 92, 0.94);
+  border-color: rgba(160, 176, 255, 0.55);
   color: #fff;
 }
 
@@ -249,7 +266,6 @@
   flex: 1;
 }
 
-/* Focus card: summarized employee record shown after a click zoom-in. */
 .owb-star-map__card {
   position: absolute;
   top: 46px;
@@ -260,8 +276,8 @@
   gap: 6px;
   width: 224px;
   padding: 10px;
-  background: rgba(10, 14, 28, 0.9);
-  border: 1px solid #262c4a;
+  background: rgba(16, 20, 28, 0.94);
+  border: 1px solid #2a3144;
   border-radius: 10px;
   color: #e8ecff;
   font-size: 12px;
@@ -272,6 +288,22 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+}
+
+.owb-star-map__card-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.owb-star-map__card-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #1b2140;
 }
 
 .owb-star-map__card header strong {
