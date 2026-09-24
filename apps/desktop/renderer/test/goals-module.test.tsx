@@ -357,5 +357,8 @@ describe("Laya health overlay (#428)", () => {
     expect(onOpenBoundSession).toHaveBeenCalledWith("owner", "sess-1");
     expect(onOpenApprovals).toHaveBeenCalledTimes(1);
     expect(updateGoal).not.toHaveBeenCalled();
+    expect(screen.getByTestId("overlay-receipt-status")).toHaveTextContent("未解决");
+    expect(screen.getByTestId("overlay-receipts")).toHaveTextContent("已打开建议");
+    expect(screen.queryByText("已解决")).not.toBeInTheDocument();
   });
 });

@@ -15,6 +15,7 @@ import { isPendingTaskCollaboration, type AgentTask } from "@roleweave/shared/ta
 import { ProjectBoard } from "./ProjectBoard.js";
 import "./goals-project.css";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
+import { OverlayReceiptPanel, recordSuggestionClick } from "../overlays/OverlayReceiptPanel.js";
 
 interface GoalsModuleProps {
   workspaceOpen: boolean;
@@ -591,6 +592,11 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                           <AntButton
                             data-testid="goals-health-open-turn"
                             onClick={() => {
+                              recordSuggestionClick(
+                                workspaceKey,
+                                `goal:${detail.goal.goalId}`,
+                                "open-turn",
+                              );
                               const branch = detail.goal.branches.find(
                                 (item) => item.positionId,
                               );
@@ -607,7 +613,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                         {onOpenApprovals ? (
                           <AntButton
                             data-testid="goals-health-open-approvals"
-                            onClick={() => onOpenApprovals()}
+                            onClick={() => {
+                              recordSuggestionClick(
+                                workspaceKey,
+                                `goal:${detail.goal.goalId}`,
+                                "open-approvals",
+                              );
+                              onOpenApprovals();
+                            }}
                           >
                             {t("goals.health.openApprovals")}
                           </AntButton>
@@ -619,6 +632,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                           </p>
                         ) : null}
                       </div>
+                    ) : null}
+                    {detail.healthOverlay &&
+                    detail.healthOverlay !== detail.goal.health ? (
+                      <OverlayReceiptPanel
+                        workspaceKey={workspaceKey}
+                        itemId={`goal:${detail.goal.goalId}`}
+                        enabled
+                      />
                     ) : null}
                     {actionError && (
                       <p className="owb-goals-error" role="alert">
