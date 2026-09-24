@@ -6,6 +6,7 @@ import { useT } from "@roleweave/ui";
 import { DiagnosticNotice, type AvailabilityCheck, type NoticeAction } from "../DiagnosticNotice";
 import type { PendingAttachment } from "./types";
 import { PendingAttachmentCard } from "./AttachmentCard";
+import { InFlightDuplicateHint, type InFlightFact, type InFlightMatching } from "./InFlightDuplicateHint";
 
 export interface TurnComposerProps {
   options?: ReactNode;
@@ -31,6 +32,11 @@ export interface TurnComposerProps {
   attachments?: PendingAttachment[];
   onAddAttachments?: (files: FileList) => void;
   onRemoveAttachment?: (id: string) => void;
+  inFlightVisible?: boolean;
+  inFlightFacts?: InFlightFact[];
+  inFlightMatching?: InFlightMatching;
+  inFlightNames?: Record<string, string>;
+  onJoinExistingTurn?: (positionId: string) => void;
 }
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "application/pdf"];
@@ -62,6 +68,11 @@ export function TurnComposer({
   attachments = [],
   onAddAttachments,
   onRemoveAttachment,
+  inFlightVisible = false,
+  inFlightFacts = [],
+  inFlightMatching = "abstain",
+  inFlightNames,
+  onJoinExistingTurn,
 }: TurnComposerProps) {
   const t = useT();
   const copy = useConversationCopy();
@@ -102,6 +113,13 @@ export function TurnComposer({
 
   return (
     <form className="owb-turn-composer" onSubmit={submit}>
+      <InFlightDuplicateHint
+        visible={inFlightVisible}
+        facts={inFlightFacts}
+        matching={inFlightMatching}
+        names={inFlightNames}
+        onJoinExisting={onJoinExistingTurn}
+      />
       <label className="owb-sr-only" htmlFor="owb-turn-input">{t("turn.compose")}</label>
       <div className="owb-turn-composer__surface">
         {attachments.length > 0 ? (

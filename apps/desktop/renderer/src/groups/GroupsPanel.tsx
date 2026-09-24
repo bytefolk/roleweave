@@ -12,6 +12,9 @@ import { adaptTurnRecord } from "../turns/adapter";
 import type { LiveRunState } from "../turns/turnStream";
 import { Markdown } from "../markdown/Markdown";
 import type { PositionMentionOption, TurnEngine, TurnEngineAvailability } from "../turns/types";
+import { InFlightDuplicateHint } from "../turns/InFlightDuplicateHint";
+import { presentInFlightOverlay } from "../turns/in-flight-present";
+import { useWorkspaceExperiments } from "../experiments/useWorkspaceExperiments";
 
 /** Expandable output block for group bubbles. Uses native <details>/<summary>
  *  for the toggle, with React-controlled conditional rendering so only one copy
@@ -80,6 +83,9 @@ export interface GroupsPanelProps {
   ) => void;
   /** Persisted timeline reconciliation clears missed/late SSE live markers. */
   onReconcileTimeline: (timeline: GroupTimeline) => void;
+  inFlightPositionIds?: string[];
+  workspacePath?: string;
+  onJoinExistingTurn?: (positionId: string) => void;
 }
 
 const GROUP_RECONCILE_INTERVAL_MS = 1_000;
@@ -139,8 +145,12 @@ export function GroupsPanel({
   liveRuns,
   onSpawnRuns,
   onReconcileTimeline,
+  inFlightPositionIds = [],
+  workspacePath,
+  onJoinExistingTurn,
 }: GroupsPanelProps) {
   const t = useT();
+  const experiments = useWorkspaceExperiments({ workspacePath });
   const locale = useOwbLocale();
   const engineLabel = useEngineLabel();
   const displayPositionName = (id: string): string => positionNames[id] ?? t("org.unknownPosition");
@@ -856,6 +866,21 @@ export function GroupsPanel({
                 void send();
               }}
             >
+              <InFlightDuplicateHint
+                visible={presentInFlightOverlay({
+                  flagOn: experiments.snapshot?.enabled === true,
+                  hasConfirmedTaskSummary: input.trim().length > 0,
+                  facts: inFlightPositionIds.map((positionId) => ({ positionId, status: "running" as const })),
+                  choice: input.trim().length > 0 && inFlightPositionIds.length > 0 ? "join_existing" : "abstain",
+                }).visible}
+                facts={inFlightPositionIds.map((positionId) => ({ positionId, status: "running" as const }))}
+                matching={input.trim().length > 0 && inFlightPositionIds.length > 0 ? "join_existing" : "abstain"}
+                names={positionNames}
+                onJoinExisting={(positionId) => {
+                  setMentions(new Set([positionId]));
+                  onJoinExistingTurn?.(positionId);
+                }}
+              />
               <div className="owb-groups__mention-picker" aria-label={t("grp.mentionAria")}>
                 <span className="owb-groups__mention-label">
                   <UsersRound aria-hidden="true" size={13} />

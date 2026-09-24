@@ -8,6 +8,8 @@ import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
 import type { AvailabilityCheck, NoticeAction } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
+import { presentInFlightOverlay } from "./in-flight-present";
+import { useWorkspaceExperiments } from "../experiments/useWorkspaceExperiments";
 import { EngineSelect, TURN_ENGINES, useEngineLabel } from "./engine-select";
 import { EngineBadge } from "./EngineBadge";
 import { TurnThread } from "./TurnThread";
@@ -98,6 +100,9 @@ export interface TurnPanelProps {
   onRotateSession?: (sessionId: string) => void | Promise<void>;
   /** Deep linking anchor to focus and scroll to a specific turn. */
   focusTurnId?: string | null;
+  /** In-flight overlay facts (#463). Flag-off callers omit this. */
+  inFlightPositionIds?: string[];
+  onJoinExistingTurn?: (positionId: string) => void;
 }
 
 export function TurnPanel({
@@ -140,8 +145,11 @@ export function TurnPanel({
   decidedApprovalIds,
   onRotateSession,
   focusTurnId,
+  inFlightPositionIds = [],
+  onJoinExistingTurn,
 }: TurnPanelProps) {
   const t = useT();
+  const experiments = useWorkspaceExperiments({ workspacePath: workspaceKey || undefined });
   const engineLabel = useEngineLabel();
   const copy = useConversationCopy();
   const localMemory = useRef(createConversationMemory());
@@ -226,6 +234,12 @@ export function TurnPanel({
     return null;
   }, [runningTurn, busy, employeeBusy, engine, engineAvailability, engineLabel, modelConfig, modelSaving, positions.length, selectedPosition, selectedSession, sending, sessionBusy, sessionMode, t, workspaceOpen]);
   const disabledReason = disabledState?.reason ?? null;
+  const inFlightOverlay = useMemo(() => presentInFlightOverlay({
+    flagOn: experiments.snapshot?.enabled === true,
+    hasConfirmedTaskSummary: input.trim().length > 0,
+    facts: inFlightPositionIds.map((positionId) => ({ positionId, status: "running" as const })),
+    choice: input.trim().length > 0 && inFlightPositionIds.length > 0 ? "join_existing" : "abstain",
+  }), [experiments.snapshot?.enabled, inFlightPositionIds, input]);
 
   const handleAddAttachments = async (files: FileList): Promise<void> => {
     if (!selectedSessionId) return;
@@ -419,6 +433,11 @@ export function TurnPanel({
         attachments={sessionMode ? pendingAttachments : []}
         onAddAttachments={sessionMode ? (files) => void handleAddAttachments(files) : undefined}
         onRemoveAttachment={sessionMode ? handleRemoveAttachment : undefined}
+        inFlightVisible={inFlightOverlay.visible}
+        inFlightFacts={inFlightOverlay.facts}
+        inFlightMatching={inFlightOverlay.matching}
+        inFlightNames={Object.fromEntries(positions.map((position) => [position.id, position.name]))}
+        onJoinExistingTurn={onJoinExistingTurn ?? onSelectPosition}
       /> : null}
       <Modal open={editRequest?.key === draftKey} title={copy.replaceTitle} okText={copy.replace} cancelText={copy.keep}
         onCancel={() => setEditRequest(null)} onOk={() => {

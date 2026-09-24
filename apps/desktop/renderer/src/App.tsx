@@ -2171,6 +2171,9 @@ function AppInner({
             liveRuns={turnStream.runs}
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
+            inFlightPositionIds={[...runningPositionIds]}
+            workspacePath={workspaceInfo?.path}
+            onJoinExistingTurn={openConversation}
           />
         ) : activeModule === "projects" ? (
           <ProjectManagementModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} positionNames={positionNames} positionEngines={positionEngines} />
@@ -2364,6 +2367,8 @@ function AppInner({
             decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
             focusTurnId={sessionFocusTurnId}
+            inFlightPositionIds={[...runningPositionIds]}
+            onJoinExistingTurn={openConversation}
           />}
         /></>}
       </div>

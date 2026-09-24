@@ -114,6 +114,17 @@ export class RunningTurnRegistry {
     return turn?.kind === "turn" && turn.turnId === turnId;
   }
 
+  /** Codes-only in-flight rows for send-time overlay. Abort hooks stay private. */
+  listInFlight(workspace: string): Array<{ positionId: string; status: "running" }> {
+    const prefix = `${path.resolve(workspace)}\0`;
+    const rows: Array<{ positionId: string; status: "running" }> = [];
+    for (const [key, turn] of this.turns) {
+      if (!key.startsWith(prefix) || turn.kind !== "turn") continue;
+      rows.push({ positionId: key.slice(prefix.length), status: "running" });
+    }
+    return rows;
+  }
+
   private key(workspace: string, positionId: string): string {
     return `${path.resolve(workspace)}\0${positionId}`;
   }
