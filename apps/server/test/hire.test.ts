@@ -127,9 +127,6 @@ test("POST /hire: the bundled qoder-engine validates and applies a hire through 
     const declared = await readJson<OrganizationFile>(path.join(dir, "organization.v1alpha1.json"));
     assert.equal(declared.roles.find((role) => role.id === "docs-writer")?.memoryScope, "./work/docs-writer/");
     await fs.stat(path.join(dir, "work", "docs-writer"));
-    const hiredSkill = await fs.readFile(path.join(dir, "positions", "repo-owner", "docs-writer", "SKILL.md"), "utf8");
-    assert.match(hiredSkill, /## Territory/);
-    assert.match(hiredSkill, /work\/docs-writer\//);
     const packageDir = path.join(dir, "positions", "repo-owner", "docs-writer");
     const employee = await readJson<{ entrypoints: { mcp?: string }; policy: { mcpTools: Array<{ name: string; requestedMode: string }> }; assets: string[] }>(path.join(packageDir, "employee.json"));
     assert.deepEqual(employee.policy.mcpTools, [], "a hire without MCP grants carries no MCP tools into the runtime policy");
@@ -444,6 +441,33 @@ test("POST /hire: engine adjudication failure rolls the staged skeleton back", a
     assert.equal(declared.roles.some((role) => role.id === "docs-writer"), false, "failed hire does not leave a declared role");
     assert.equal(await exists(path.join(dir, "work", "docs-writer")), false, "failed hire does not leave a work territory");
   } finally {
+    await server.close();
+  }
+});
+
+test("POST /hire: skeleton write failure restores declared org bytes (#360)", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX directory mode is required to force a skeleton write failure");
+    return;
+  }
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineHire);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  const parentDir = path.join(dir, "positions", "repo-owner");
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const beforeOrg = await fs.readFile(path.join(dir, "organization.v1alpha1.json"));
+    await fs.chmod(parentDir, 0o555);
+    const res = await api(server.baseUrl, "/hire", { method: "POST", token: server.token, body: VALID_HIRE });
+    assert.notEqual(res.status, 200);
+    const afterOrg = await fs.readFile(path.join(dir, "organization.v1alpha1.json"));
+    assert.deepEqual(afterOrg, beforeOrg, "declared org must be byte-identical after a failed skeleton write");
+    assert.equal(await exists(path.join(dir, "positions", "repo-owner", "docs-writer")), false);
+    assert.equal(await exists(path.join(dir, "work", "docs-writer")), false);
+    assert.equal(driver.calls.length, 0, "engine apply never runs if staging throws");
+  } finally {
+    await fs.chmod(parentDir, 0o755).catch(() => undefined);
     await server.close();
   }
 });

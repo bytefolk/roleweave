@@ -532,6 +532,7 @@ test("buildPositionSkeletonFiles: SKILL.md territory section does not enter empl
     description: "Keeps documentation current.",
     mode: "read_only",
     budget: { perTask: { tokens: 1000 }, perDay: { tokens: 2000 } },
+    workTerritory: true,
   });
   const skill = files.get("SKILL.md")!;
   assert.match(skill, /your exclusive work directory is work\/docs-writer\//);
@@ -541,6 +542,20 @@ test("buildPositionSkeletonFiles: SKILL.md territory section does not enter empl
   const employeeBytes = files.get("employee.json")!;
   assert.equal(employeeBytes.includes("work/docs-writer"), false);
   assert.equal(employeeBytes.includes("Territory"), false);
+});
+
+test("buildPositionSkeletonFiles: owner skeleton does not name a missing work territory (#360)", () => {
+  const files = buildPositionSkeletonFiles({
+    id: "source-tree-owner",
+    name: "项目负责人",
+    description: "负责整体目标。",
+    mode: "read_only",
+    budget: { perTask: { tokens: 1000 }, perDay: { tokens: 2000 } },
+  });
+  const skill = files.get("SKILL.md")!;
+  assert.equal(skill.includes("Territory"), false);
+  assert.equal(skill.includes("work/source-tree-owner"), false);
+  assert.equal(skill.includes("your exclusive work directory"), false);
 });
 
 /**

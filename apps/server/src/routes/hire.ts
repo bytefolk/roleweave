@@ -45,6 +45,7 @@ import {
   buildPositionSkeletonFiles,
   ensurePositionWorkTerritory,
   ensureWorkLayout,
+  rollbackWorkLayout,
   scanProposalTree,
   withOrgMutationLock,
   workTerritoryRelative,
@@ -284,6 +285,23 @@ async function declareHiredRole(input: {
   await fs.writeFile(input.declaredPath, `${JSON.stringify(declared, null, 2)}\n`, "utf8");
 }
 
+async function rollbackHireStaging(input: {
+  declaredPath: string;
+  previousDeclared: string;
+  destination: string;
+  workspaceDir: string;
+  positionId: string;
+  createdTerritory: boolean;
+  createdLayout: { createdDir: boolean; createdReadme: boolean };
+}): Promise<void> {
+  await fs.writeFile(input.declaredPath, input.previousDeclared, "utf8");
+  await fs.rm(input.destination, { recursive: true, force: true });
+  if (input.createdTerritory) {
+    await fs.rm(path.join(input.workspaceDir, WORK_DIR, input.positionId), { recursive: true, force: true });
+  }
+  await rollbackWorkLayout(input.workspaceDir, input.createdLayout);
+}
+
 async function hireUnlocked(
   ctx: ControlPlaneContext,
   request: ReturnType<typeof assertHireRequest>,
@@ -336,6 +354,7 @@ async function hireUnlocked(
     prompt: request.prompt,
     memorySources: request.memorySources,
     agentEngine: request.agentEngine,
+    workTerritory: true,
   });
   const employeeBytes = files.get("employee.json");
   if (employeeBytes === undefined) throw new Error("skeleton builder must emit employee.json");
@@ -379,33 +398,46 @@ async function hireUnlocked(
   await assertDestinationAvailable(destination);
   const declaredPath = path.join(ws.dir, ORGANIZATION_FILE);
   const previousDeclared = await fs.readFile(declaredPath, "utf8");
-  await ensureWorkLayout(ws.dir);
-  const createdTerritory = await ensurePositionWorkTerritory(ws.dir, request.positionId);
-  await declareHiredRole({
-    declaredPath,
-    previousDeclared,
-    request,
-    destination,
-    packageDigest,
-    reportTo: request.reportTo ?? ws.organization.owner,
-  });
-  await writeSkeletonFiles(destination, files);
+  let createdLayout = { createdDir: false, createdReadme: false };
+  let createdTerritory = false;
+  let applied = false;
+  try {
+    createdLayout = await ensureWorkLayout(ws.dir);
+    createdTerritory = await ensurePositionWorkTerritory(ws.dir, request.positionId);
+    await declareHiredRole({
+      declaredPath,
+      previousDeclared,
+      request,
+      destination,
+      packageDigest,
+      reportTo: request.reportTo ?? ws.organization.owner,
+    });
+    await writeSkeletonFiles(destination, files);
 
-  emitHireProgress(ctx, request.positionId, "apply");
-  const engineResult = await ctx.driver.apply(ws.dir);
-  if (engineResult.status !== "applied") {
-    await fs.writeFile(declaredPath, previousDeclared, "utf8");
-    await fs.rm(destination, { recursive: true, force: true });
-    if (createdTerritory) {
-      await fs.rm(path.join(ws.dir, WORK_DIR, request.positionId), { recursive: true, force: true });
+    emitHireProgress(ctx, request.positionId, "apply");
+    const engineResult = await ctx.driver.apply(ws.dir);
+    if (engineResult.status !== "applied") {
+      if (engineResult.status === "engine_unavailable") {
+        return { status: 503, body: { status: "failed", code: errorCodes.engine_unavailable, message: engineResult.message, retryable: true } };
+      }
+      if (engineResult.status === "engine_capability_missing") {
+        return { status: 503, body: { status: "failed", code: errorCodes.engine_capability_missing, message: engineResult.message, retryable: false } };
+      }
+      return { status: 422, body: { status: "failed", code: engineResult.code, message: engineResult.message, retryable: engineResult.retryable } };
     }
-    if (engineResult.status === "engine_unavailable") {
-      return { status: 503, body: { status: "failed", code: errorCodes.engine_unavailable, message: engineResult.message, retryable: true } };
+    applied = true;
+  } finally {
+    if (!applied) {
+      await rollbackHireStaging({
+        declaredPath,
+        previousDeclared,
+        destination,
+        workspaceDir: ws.dir,
+        positionId: request.positionId,
+        createdTerritory,
+        createdLayout,
+      });
     }
-    if (engineResult.status === "engine_capability_missing") {
-      return { status: 503, body: { status: "failed", code: errorCodes.engine_capability_missing, message: engineResult.message, retryable: false } };
-    }
-    return { status: 422, body: { status: "failed", code: engineResult.code, message: engineResult.message, retryable: engineResult.retryable } };
   }
 
   const version = await ctx.workspace.reloadAppliedOrganization();

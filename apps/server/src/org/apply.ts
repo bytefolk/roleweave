@@ -608,11 +608,10 @@ export interface SkeletonPosition {
   /** Workbench-local execution binding; deliberately not an employee asset. */
   agentEngine?: TurnEngine;
   /**
-   * Hire-only (#360 AC-002). The project owner keeps whole-workspace
-   * `memoryScope: "/"` and has no `work/<id>/` directory, so the Territory
-   * SKILL section must not name a missing path.
+   * Hire-only. Owner initialize/create keeps whole-workspace `memoryScope: "/"`
+   * and must not claim `work/<id>/` that is never created.
    */
-  includeWorkTerritory?: boolean;
+  workTerritory?: boolean;
 }
 
 /**
@@ -681,7 +680,7 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     },
   };
   const prompt = role.prompt?.trim() || `围绕“${role.description}”完成岗位职责，先说明依据，再给出可执行结论。`;
-  const territory = role.includeWorkTerritory === false ? "" : `\n${workTerritorySkillSection(role.id)}`;
+  const territory = role.workTerritory ? `\n${workTerritorySkillSection(role.id)}` : "";
   const skill = `---\nname: ${JSON.stringify(role.id)}\ndescription: ${JSON.stringify(role.description)}\n---\n\n# ${role.name}\n\n${role.description}\n\n## 工作提示词\n\n${prompt}\n\n## 已启用 Skill\n\n${skillSection}\n\n## 已绑定 MCP\n\n${mcpSection}\n\n以上能力只代表岗位包中的绑定关系；实际调用仍必须满足 permissions.json 中对应的 skill:// / mcp:// 规则。\n\n## 记忆来源\n\n${memorySources.map((source) => `- ${source.kind}: ${source.locator}`).join("\\n")}\n${territory}`;
   const agentBinding = {
     schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
