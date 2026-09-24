@@ -237,6 +237,18 @@ export async function executeTurn(
   assertTurnWorkspace(ctx, workspace);
   const turnId = approvalExecution?.turnId ?? (group !== undefined ? group.turnId : crypto.randomUUID());
   const reservation = approvalExecution?.reservation ?? ctx.runningTurns.reserve(workspace.dir, body.positionId, turnId);
+  const tracker = ctx.progressTracker;
+  const taskTitle = body.input.trim().slice(0, 80) || undefined;
+  tracker.begin({
+    workspacePath: workspace.dir,
+    taskId: turnId,
+    positionId: body.positionId,
+    ...(taskTitle !== undefined ? { taskTitle } : {}),
+    ...(body.retryOf !== undefined ? { retryOf: body.retryOf } : {}),
+  });
+  const persistProgress = () => {
+    void tracker.persist(workspace.dir, body.positionId, turnId);
+  };
   try {
     let retryHistory: TurnRecord[] | undefined;
     if (body.retryOf !== undefined) {
@@ -380,6 +392,8 @@ export async function executeTurn(
       redacted: historyRedacted,
       ...(supplementalContext !== undefined ? { supplementalContext } : {}),
     });
+    tracker.reportStepFinish(turnId, 0);
+    tracker.reportStepStart(turnId, 1);
     const envelope = createTurnEnvelope({
       workspaceRef: workspace.dir,
       positionId: body.positionId,
@@ -416,6 +430,8 @@ export async function executeTurn(
     const running = session === undefined
       ? await ctx.turnStore.begin(beginInput)
       : await ctx.turnStore.beginSession({ ...beginInput, sessionId: session.sessionId });
+    tracker.reportStepFinish(turnId, 1);
+    tracker.reportStepStart(turnId, 2);
 
     let result;
     const forwarder = new DeltaForwarder({
@@ -439,17 +455,27 @@ export async function executeTurn(
         setAbort: (abort) => reservation.setAbort(abort),
       });
     } catch (error) {
+      const code = approvalExecution && error instanceof OrgApiError ? error.code : "turn_driver_failure";
+      tracker.reportStepFail(turnId, 2, code);
       result = {
         status: "indeterminate" as const,
         events: [],
         diagnostic: "",
-        code: approvalExecution && error instanceof OrgApiError ? error.code : "turn_driver_failure",
+        code,
       };
     } finally {
       // A driver may settle without an engine terminal. Retire its timers
       // and callbacks before durable completion and reservation release.
       forwarder.close();
     }
+    const terminalEvent = result.events[result.events.length - 1];
+    const streamingFailed = result.status === "indeterminate" || terminalEvent?.type === "run.failed";
+    if (streamingFailed) {
+      tracker.reportStepFail(turnId, 2, result.status === "indeterminate" ? result.code : terminalEvent?.type === "run.failed" ? terminalEvent.error.code : "turn_failed");
+    } else {
+      tracker.reportStepFinish(turnId, 2);
+    }
+    tracker.reportStepStart(turnId, 3);
 
     const updatedAt = new Date().toISOString();
     let record: TurnRecord;
@@ -509,6 +535,8 @@ export async function executeTurn(
     }
     if (session === undefined) await ctx.turnStore.finish(workspace.dir, record);
     else await ctx.turnStore.finishSession(workspace.dir, session.sessionId, record);
+    tracker.reportStepFinish(turnId, 3);
+    tracker.reportStepStart(turnId, 4);
     if (session !== undefined && record.status === "completed") {
       // The durable turn is authoritative. Export persistence/adapter failure is
       // intentionally isolated and will be retried by workspace-open recovery.
@@ -532,9 +560,20 @@ export async function executeTurn(
         ctx.bus.publish(eventType(terminal), groupTag(terminal, attribution));
       }
     }
+    if (record.status === "failed" || record.status === "indeterminate") {
+      tracker.reportStepFail(turnId, 4, record.error?.code ?? record.status);
+    } else {
+      tracker.reportStepFinish(turnId, 4);
+    }
+    persistProgress();
     if (res) sendJson(res, 200, record);
     return record;
+  } catch (error) {
+    tracker.failCurrent(turnId, error instanceof OrgApiError ? error.code : "turn_failed");
+    persistProgress();
+    throw error;
   } finally {
+    persistProgress();
     reservation.release();
   }
 }

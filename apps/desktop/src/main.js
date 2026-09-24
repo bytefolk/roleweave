@@ -444,6 +444,11 @@ ipcMain.handle("owb:hire:create", async (_event, request) => {
 });
 
 ipcMain.handle("owb:reports:get", async () => apiRequest("/reports"));
+ipcMain.handle("owb:progress:list", async () => apiRequest("/turns/progress"));
+ipcMain.handle("owb:progress:get", async (_event, turnId, positionId) => {
+  const query = typeof positionId === "string" && positionId ? `?positionId=${encodeURIComponent(positionId)}` : "";
+  return apiRequest(`/turns/progress/${encodeURIComponent(String(turnId))}${query}`);
+});
 const { experimentsGet, experimentsUpdate, reportsAdvice } = require("./experiments-ipc.cjs");
 ipcMain.handle("owb:experiments:get", async (event, workspacePath) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
