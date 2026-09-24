@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useWorkspaceExperiments } from "../experiments/useWorkspaceExperiments";
+import { presentReadyHostOverlay } from "../org/ready-host-overlay";
+import { ReadyHostHint } from "../org/ReadyHostHint";
 import { Button, Modal, Popover } from "antd";
 import { useConversationCopy } from "../locales/conversation";
 import { createConversationMemory, conversationKey, type ConversationMemory } from "./conversation-memory";
@@ -98,6 +101,8 @@ export interface TurnPanelProps {
   onRotateSession?: (sessionId: string) => void | Promise<void>;
   /** Deep linking anchor to focus and scroll to a specific turn. */
   focusTurnId?: string | null;
+  /** Bound engines for ready-host overlay facts (#465). Flag-off callers omit this. */
+  positionEngines?: Record<string, TurnEngine>;
 }
 
 export function TurnPanel({
@@ -140,8 +145,10 @@ export function TurnPanel({
   decidedApprovalIds,
   onRotateSession,
   focusTurnId,
+  positionEngines = {},
 }: TurnPanelProps) {
   const t = useT();
+  const experiments = useWorkspaceExperiments({ workspacePath: workspaceKey || undefined });
   const engineLabel = useEngineLabel();
   const copy = useConversationCopy();
   const localMemory = useRef(createConversationMemory());
@@ -172,6 +179,24 @@ export function TurnPanel({
   }
   useEffect(() => { setHistoryOpen(false); setEditRequest(null); }, [draftKey, active]);
   const selectedPosition = positions.find((position) => position.id === selectedPositionId) ?? null;
+  const readyHostOverlay = useMemo(() => {
+    const facts = positions.map((position) => {
+      const host = positionEngines[position.id] ?? engine;
+      return {
+        positionId: position.id,
+        engine: host,
+        ready: engineAvailability[host]?.ready === true,
+      };
+    });
+    const selected = selectedPositionId
+      ? facts.find((fact) => fact.positionId === selectedPositionId) ?? null
+      : null;
+    return presentReadyHostOverlay({
+      overlayEnabled: experiments.snapshot?.enabled === true,
+      selected,
+      positions: facts,
+    });
+  }, [engine, engineAvailability, experiments.snapshot?.enabled, positionEngines, positions, selectedPositionId]);
   const runningTurn = selectedPositionId !== null && turns.some(
     (turn) => turn.positionId === selectedPositionId && turn.status === "running",
   );
@@ -374,6 +399,11 @@ export function TurnPanel({
             icon={focused ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />} onClick={onToggleFocus}>{focused ? copy.exitFocus : null}</Button> : null}
         </div>
       </header>
+      <ReadyHostHint
+        overlay={readyHostOverlay}
+        names={Object.fromEntries(positions.map((position) => [position.id, position.name]))}
+        onSelectPosition={onSelectPosition}
+      />
 
       <TurnThread
         turns={turns}
