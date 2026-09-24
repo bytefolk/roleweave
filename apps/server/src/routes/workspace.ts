@@ -25,7 +25,12 @@ import type {
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
-import { buildPositionSkeletonFiles, writeSkeletonFiles } from "../org/apply.js";
+import {
+  buildPositionSkeletonFiles,
+  ensureWorkLayout,
+  rollbackWorkLayout,
+  writeSkeletonFiles,
+} from "../org/apply.js";
 
 const MAX_PROJECT_ID_LENGTH = 48;
 const MAX_BUSINESS_BYTES = 128;
@@ -199,6 +204,7 @@ async function writeProjectSkeleton(
     `# ${request.business}\n\n这是项目级上下文目录。将经过确认的项目资料放在这里，再按岗位权限接入。\n`,
     "utf8",
   );
+  await ensureWorkLayout(target);
 
   const role: OrgRole = {
     id: owner,
@@ -321,6 +327,22 @@ export async function handleWorkspaceInitialize(
     agentEngine: request.agentEngine,
   };
   let applied = false;
+  const workDir = path.join(target, "work");
+  const workReadme = path.join(workDir, "README.md");
+  let workDirExisted = false;
+  let workReadmeExisted = false;
+  try {
+    await fs.lstat(workDir);
+    workDirExisted = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  try {
+    await fs.lstat(workReadme);
+    workReadmeExisted = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
   try {
     const { owner } = await writeProjectSkeleton(target, createRequest);
     const engineResult = await ctx.driver.apply(target);
@@ -359,6 +381,10 @@ export async function handleWorkspaceInitialize(
       await fs.rm(path.join(target, "positions"), { recursive: true, force: true });
       await fs.rm(path.join(target, "context"), { recursive: true, force: true });
       await fs.rm(path.join(target, ".digital-employee"), { recursive: true, force: true });
+      await rollbackWorkLayout(target, {
+        createdDir: !workDirExisted,
+        createdReadme: !workReadmeExisted,
+      });
     }
   }
 }

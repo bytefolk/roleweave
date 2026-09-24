@@ -40,7 +40,79 @@ import type { OrgUndoEntry } from "./undo.js";
 
 export const RUNTIME_DIR = ".digital-employee";
 export const POSITIONS_DIR = "positions";
+export const WORK_DIR = "work";
 export const MAX_POSITION_DEPTH = 8;
+
+/** Per-position work territory relative to the workspace root. Trailing slash matches engine path vocabulary. */
+export function workTerritoryRelative(positionId: string): string {
+  return `./${WORK_DIR}/${positionId}/`;
+}
+
+export const WORK_LAYOUT_README = `# Work territories
+
+Each position writes only under \`work/<positionId>/\`.
+\`positions/\` is a digest-sealed definition plane: no position may write it.
+\`repos/\` changes only in an assigned repo on a git branch.
+Do not touch other positions' \`work/\` directories.
+
+Constraint model:
+
+- Enforced at hire: the new role's \`memoryScope\` is \`./work/<positionId>/\`, and default \`toolAllow\` is read tools only (\`Read\`, \`Grep\`, \`Glob\`). Write tools (Edit/Write) are added only on explicit operator action. Bash is never in the default allowlist.
+- Convention / host-level: agent hosts still spawn with cwd at the workspace root. Without a shell, the territory cannot be bypassed via shell commands. Host \`--permission-mode dont_ask\` and \`--tools\` stay tool-level.
+- Engine Context Scope derivation that honors \`memoryScope\` is the companion digital-employee change. Until that lands, the field is honest in the org document and on the wire.
+
+Initialize and create are additive. Existing workspaces without \`work/\` remain valid.
+`;
+
+export function workTerritorySkillSection(positionId: string): string {
+  return [
+    "## Territory",
+    "",
+    `your exclusive work directory is work/${positionId}/; never write positions/; repos/ changes only in an assigned repo on a git branch; do not touch other positions' work/.`,
+    "",
+  ].join("\n");
+}
+
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await fs.lstat(target);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** Additive: create \`work/\` and the layout README when missing. Never overwrite an existing README. */
+export async function ensureWorkLayout(workspaceDir: string): Promise<{ createdDir: boolean; createdReadme: boolean }> {
+  const dir = path.join(workspaceDir, WORK_DIR);
+  const readme = path.join(dir, "README.md");
+  const createdDir = !(await pathExists(dir));
+  await fs.mkdir(dir, { recursive: true, mode: 0o755 });
+  const createdReadme = !(await pathExists(readme));
+  if (createdReadme) {
+    await fs.writeFile(readme, WORK_LAYOUT_README, "utf8");
+  }
+  return { createdDir, createdReadme };
+}
+
+export async function rollbackWorkLayout(
+  workspaceDir: string,
+  created: { createdDir: boolean; createdReadme: boolean },
+): Promise<void> {
+  const dir = path.join(workspaceDir, WORK_DIR);
+  const readme = path.join(dir, "README.md");
+  if (created.createdReadme) await fs.rm(readme, { force: true });
+  if (created.createdDir) await fs.rm(dir, { recursive: true, force: true });
+}
+
+/** Returns true when this call created the directory. */
+export async function ensurePositionWorkTerritory(workspaceDir: string, positionId: string): Promise<boolean> {
+  const dir = path.join(workspaceDir, WORK_DIR, positionId);
+  if (await pathExists(dir)) return false;
+  await fs.mkdir(dir, { recursive: true, mode: 0o755 });
+  return true;
+}
 
 export const stagingConflictCodes = {
   positionExists: "org_apply_position_exists",
@@ -535,6 +607,11 @@ export interface SkeletonPosition {
   memorySources?: HireMemorySource[];
   /** Workbench-local execution binding; deliberately not an employee asset. */
   agentEngine?: TurnEngine;
+  /**
+   * Hire-only. Owner initialize/create keeps whole-workspace `memoryScope: "/"`
+   * and must not claim `work/<id>/` that is never created.
+   */
+  workTerritory?: boolean;
 }
 
 /**
@@ -603,7 +680,8 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     },
   };
   const prompt = role.prompt?.trim() || `围绕“${role.description}”完成岗位职责，先说明依据，再给出可执行结论。`;
-  const skill = `---\nname: ${JSON.stringify(role.id)}\ndescription: ${JSON.stringify(role.description)}\n---\n\n# ${role.name}\n\n${role.description}\n\n## 工作提示词\n\n${prompt}\n\n## 已启用 Skill\n\n${skillSection}\n\n## 已绑定 MCP\n\n${mcpSection}\n\n以上能力只代表岗位包中的绑定关系；实际调用仍必须满足 permissions.json 中对应的 skill:// / mcp:// 规则。\n\n## 记忆来源\n\n${memorySources.map((source) => `- ${source.kind}: ${source.locator}`).join("\\n")}\n`;
+  const territory = role.workTerritory ? `\n${workTerritorySkillSection(role.id)}` : "";
+  const skill = `---\nname: ${JSON.stringify(role.id)}\ndescription: ${JSON.stringify(role.description)}\n---\n\n# ${role.name}\n\n${role.description}\n\n## 工作提示词\n\n${prompt}\n\n## 已启用 Skill\n\n${skillSection}\n\n## 已绑定 MCP\n\n${mcpSection}\n\n以上能力只代表岗位包中的绑定关系；实际调用仍必须满足 permissions.json 中对应的 skill:// / mcp:// 规则。\n\n## 记忆来源\n\n${memorySources.map((source) => `- ${source.kind}: ${source.locator}`).join("\\n")}\n${territory}`;
   const agentBinding = {
     schemaVersion: AGENT_BINDING_SCHEMA_VERSION,
     engine: role.agentEngine ?? DEFAULT_AGENT_ENGINE,

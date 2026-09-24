@@ -29,6 +29,8 @@ import type {
   HirePermissions,
   HireRequestEnvelope,
   HireSuccess,
+  OrganizationFile,
+  OrgRole,
   PositionBudget,
   TurnEngine,
 } from "@roleweave/shared";
@@ -38,12 +40,18 @@ import { readJsonBody, sendJson } from "../http.js";
 import { computeEnvelopeDigest } from "../turns/envelope.js";
 import {
   POSITIONS_DIR,
+  WORK_DIR,
   assertDestinationAvailable,
   buildPositionSkeletonFiles,
+  ensurePositionWorkTerritory,
+  ensureWorkLayout,
+  rollbackWorkLayout,
   scanProposalTree,
   withOrgMutationLock,
+  workTerritoryRelative,
   writeSkeletonFiles,
 } from "../org/apply.js";
+import { ORGANIZATION_FILE } from "../workspace-state.js";
 import { validatePermissions } from "../org/permissions.js";
 import { parentKey } from "../org/layout.js";
 
@@ -239,6 +247,61 @@ function emitHireProgress(ctx: ControlPlaneContext, positionId: string, phase: H
   ctx.bus.publish("hire.progress", { positionId, phase });
 }
 
+async function declareHiredRole(input: {
+  declaredPath: string;
+  previousDeclared: string;
+  request: ValidatedHireRequest;
+  destination: string;
+  packageDigest: string;
+  reportTo: string;
+}): Promise<void> {
+  const declared = JSON.parse(input.previousDeclared) as OrganizationFile;
+  if (!Array.isArray(declared.roles)) {
+    throw invalid("organization.v1alpha1.json roles must be an array");
+  }
+  if (declared.roles.some((role) => role.id === input.request.positionId)) {
+    return;
+  }
+  const role: OrgRole = {
+    id: input.request.positionId,
+    name: input.request.name,
+    description: input.request.description,
+    reportTo: input.reportTo,
+    package: {
+      name: input.request.positionId,
+      version: "0.1.0",
+      digest: input.packageDigest,
+      localReference: input.destination,
+    },
+    mode: input.request.mode,
+    memoryScope: workTerritoryRelative(input.request.positionId),
+    toolAllow: [...input.request.permissions.tools],
+    toolDeny: [],
+    budget: input.request.budget,
+    metadata: {},
+  };
+  declared.roles.push(role);
+  declared.updatedAt = new Date().toISOString();
+  await fs.writeFile(input.declaredPath, `${JSON.stringify(declared, null, 2)}\n`, "utf8");
+}
+
+async function rollbackHireStaging(input: {
+  declaredPath: string;
+  previousDeclared: string;
+  destination: string;
+  workspaceDir: string;
+  positionId: string;
+  createdTerritory: boolean;
+  createdLayout: { createdDir: boolean; createdReadme: boolean };
+}): Promise<void> {
+  await fs.writeFile(input.declaredPath, input.previousDeclared, "utf8");
+  await fs.rm(input.destination, { recursive: true, force: true });
+  if (input.createdTerritory) {
+    await fs.rm(path.join(input.workspaceDir, WORK_DIR, input.positionId), { recursive: true, force: true });
+  }
+  await rollbackWorkLayout(input.workspaceDir, input.createdLayout);
+}
+
 async function hireUnlocked(
   ctx: ControlPlaneContext,
   request: ReturnType<typeof assertHireRequest>,
@@ -291,6 +354,7 @@ async function hireUnlocked(
     prompt: request.prompt,
     memorySources: request.memorySources,
     agentEngine: request.agentEngine,
+    workTerritory: true,
   });
   const employeeBytes = files.get("employee.json");
   if (employeeBytes === undefined) throw new Error("skeleton builder must emit employee.json");
@@ -332,19 +396,48 @@ async function hireUnlocked(
   const parent = proposal.find((position) => position.id === targetParentId);
   const destination = path.join(parent?.directory ?? path.join(ws.dir, POSITIONS_DIR), request.positionId);
   await assertDestinationAvailable(destination);
-  await writeSkeletonFiles(destination, files);
+  const declaredPath = path.join(ws.dir, ORGANIZATION_FILE);
+  const previousDeclared = await fs.readFile(declaredPath, "utf8");
+  let createdLayout = { createdDir: false, createdReadme: false };
+  let createdTerritory = false;
+  let applied = false;
+  try {
+    createdLayout = await ensureWorkLayout(ws.dir);
+    createdTerritory = await ensurePositionWorkTerritory(ws.dir, request.positionId);
+    await declareHiredRole({
+      declaredPath,
+      previousDeclared,
+      request,
+      destination,
+      packageDigest,
+      reportTo: request.reportTo ?? ws.organization.owner,
+    });
+    await writeSkeletonFiles(destination, files);
 
-  emitHireProgress(ctx, request.positionId, "apply");
-  const engineResult = await ctx.driver.apply(ws.dir);
-  if (engineResult.status !== "applied") {
-    await fs.rm(destination, { recursive: true, force: true });
-    if (engineResult.status === "engine_unavailable") {
-      return { status: 503, body: { status: "failed", code: errorCodes.engine_unavailable, message: engineResult.message, retryable: true } };
+    emitHireProgress(ctx, request.positionId, "apply");
+    const engineResult = await ctx.driver.apply(ws.dir);
+    if (engineResult.status !== "applied") {
+      if (engineResult.status === "engine_unavailable") {
+        return { status: 503, body: { status: "failed", code: errorCodes.engine_unavailable, message: engineResult.message, retryable: true } };
+      }
+      if (engineResult.status === "engine_capability_missing") {
+        return { status: 503, body: { status: "failed", code: errorCodes.engine_capability_missing, message: engineResult.message, retryable: false } };
+      }
+      return { status: 422, body: { status: "failed", code: engineResult.code, message: engineResult.message, retryable: engineResult.retryable } };
     }
-    if (engineResult.status === "engine_capability_missing") {
-      return { status: 503, body: { status: "failed", code: errorCodes.engine_capability_missing, message: engineResult.message, retryable: false } };
+    applied = true;
+  } finally {
+    if (!applied) {
+      await rollbackHireStaging({
+        declaredPath,
+        previousDeclared,
+        destination,
+        workspaceDir: ws.dir,
+        positionId: request.positionId,
+        createdTerritory,
+        createdLayout,
+      });
     }
-    return { status: 422, body: { status: "failed", code: engineResult.code, message: engineResult.message, retryable: engineResult.retryable } };
   }
 
   const version = await ctx.workspace.reloadAppliedOrganization();
