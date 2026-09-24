@@ -78,6 +78,30 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       billing: apiKey ? "provider" : "subscription",
       status: "configured",
     };
+  } else if (engine === "openai-compatible") {
+    // A user-configured OpenAI-compatible endpoint (e.g. TokenRhythm, OpenRouter,
+    // or any provider that speaks the /v1/chat/completions protocol). The
+    // operator supplies OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL in the
+    // server environment; this engine forwards them verbatim and exposes a free
+    // model text field so arbitrary model ids from the provider's catalog work.
+    source = "default";
+    followLocalDefault = true;
+    allowCustomModel = true;
+    customModelFormat = "strict";
+    selectedDefault = isModelId(env.OPENAI_MODEL) ? env.OPENAI_MODEL : undefined;
+    const hasKey = typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.trim().length > 0;
+    const baseUrl = typeof env.OPENAI_BASE_URL === "string" ? env.OPENAI_BASE_URL : undefined;
+    const hasUrl = baseUrl !== undefined && baseUrl.trim().length > 0;
+    let endpointHost: string | undefined;
+    if (hasUrl) { try { endpointHost = new URL(baseUrl).hostname; } catch { /* invalid url stays absent */ } }
+    connection = {
+      source: hasKey || hasUrl ? "environment" : "official",
+      kind: "gateway",
+      billing: "provider",
+      status: hasKey && hasUrl ? "configured" : "invalid",
+      ...(endpointHost ? { endpointHost } : {}),
+      ...(hasKey && hasUrl ? {} : { message: "Set OPENAI_API_KEY and OPENAI_BASE_URL to use this agent" }),
+    };
   } else {
     source = "default";
     try {

@@ -631,6 +631,7 @@ describe("TurnThread #234 — preserve conversation viewport on employee switch"
 it.each([
   ["qoder", "Qoder"], ["claude-code", "Claude Code"], ["claude-local", "Claude Code"],
   ["codex", "Codex"], ["codex-local", "Codex"], ["workbuddy", "WorkBuddy"],
+  ["openai-compatible", "OpenAI Compatible"],
 ] as const)("never renders %s diagnostics without weakening send guards", async (engine, label) => {
   const createTurn = vi.fn();
   const reason = "Check PATH or CONFIG_ENV before starting the runtime";

@@ -508,6 +508,7 @@ export function hostHealth({
   const qoderNextStep = bundledQoderNextStep(qoderLocal, engineAvailable);
   const claudeConfigured = Boolean(env.ANTHROPIC_API_KEY?.trim() || (bundledElectronEngine && env.ANTHROPIC_AUTH_TOKEN?.trim()));
   const claudeLocalConfigured = claudeLocal.installed && claudeLocal.supported;
+  const openaiConfigured = Boolean(env.OPENAI_API_KEY?.trim()) && Boolean(env.OPENAI_BASE_URL?.trim());
   // Both Codex Hosts require the desktop-owned bundled adapter: the external
   // digital-employee CLI only probes Codex and has no executable model port.
   // Neither Codex Host has a supported-version window to gate on. The two
@@ -679,6 +680,36 @@ export function hostHealth({
                 ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
                 : {}),
     },
+    "openai-compatible": (() => {
+      // A user-supplied OpenAI-compatible gateway needs no local CLI login:
+      // the engine forwards OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL
+      // verbatim to whatever downstream adapter understands the provider trio.
+      // Both the bundled qoder-engine and the pinned digital-employee CLI can
+      // carry the trio, so readiness only requires a usable service credential
+      // plus a legal model id.
+      const keyConfigured = typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.trim().length > 0;
+      const baseUrlConfigured = typeof env.OPENAI_BASE_URL === "string" && env.OPENAI_BASE_URL.trim().length > 0;
+      const model = validatedCodexModel(env.OPENAI_MODEL);
+      const modelUsable = model !== null;
+      const configured = keyConfigured && baseUrlConfigured && modelUsable;
+      let nextStep: string | undefined;
+      if (!keyConfigured) {
+        nextStep = "设置 OPENAI_API_KEY（以及 OPENAI_BASE_URL 指向 OpenAI 兼容端点）后重启工作台";
+      } else if (!baseUrlConfigured) {
+        nextStep = "设置 OPENAI_BASE_URL 指向 OpenAI 兼容端点后重启工作台";
+      } else if (!modelUsable) {
+        nextStep = "OPENAI_MODEL 不是合法的模型标识（首字符为字母或数字，其余限 A-Z a-z 0-9 . _ : / -，长度 ≤ 256）；请更正或清空后重启工作台";
+      } else if (!engineAvailable) {
+        nextStep = "先安装或配置支持 turn run 的 digital-employee CLI";
+      }
+      return {
+        configured,
+        ready: engineAvailable && configured,
+        modelPinnable: true,
+        ...(typeof model === "string" ? { model } : {}),
+        ...(nextStep ? { nextStep } : {}),
+      };
+    })(),
   };
 }
 
