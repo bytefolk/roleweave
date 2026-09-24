@@ -40,8 +40,9 @@ export function layaRequestConfig(env: NodeJS.Dict<string> = process.env): {
   const timeoutRaw = Number(envPick(env, "ROLEWEAVE_LAYA_TIMEOUT_MS", "ROLEWEAVE_JEV_TIMEOUT_MS"));
   const modelRaw = envPick(env, "ROLEWEAVE_LAYA_MODEL", "ROLEWEAVE_JEV_MODEL")?.trim() ?? "";
   const model = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(modelRaw) ? modelRaw : "laya";
+  const urlRaw = envPick(env, "ROLEWEAVE_LAYA_URL", "ROLEWEAVE_JEV_URL")?.trim() || LAYA_ENDPOINT;
   return {
-    url: LAYA_ENDPOINT,
+    url: urlRaw.replace(/\/$/, ""),
     apiKey: envPick(env, "ROLEWEAVE_LAYA_API_KEY", "ROLEWEAVE_JEV_API_KEY")?.trim() ?? "",
     model,
     timeoutMs: Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? Math.min(timeoutRaw, 10_000) : 1_500,
