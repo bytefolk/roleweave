@@ -680,7 +680,7 @@ export default function OrgStarMap({
       }
       state.requestRender();
     },
-    [layout, layoutMode, showOrbits, theme],
+    [layout],
   );
 
   useEffect(() => {
@@ -1053,9 +1053,8 @@ export default function OrgStarMap({
       });
     }
 
-    rebuildOrbits(currentLayoutMode, showOrbits, theme);
     applyVisualState();
-  }, [layout, theme, webglFailed, nameOf, effectiveKnowledgeLinks, rebuildOrbits, applyVisualState, showOrbits, layoutMode]);
+  }, [layout, theme, webglFailed, nameOf, effectiveKnowledgeLinks, applyVisualState, layoutMode]);
 
   useEffect(() => {
     applyVisualState();
