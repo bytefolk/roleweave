@@ -2271,7 +2271,7 @@ function AppInner({
                       facts={{
                         runningTurns: runningPositionIds.has(actionPosition.id) ? 1 : 0,
                         boundGoals: 0,
-                        pendingApprovals: approvalState.items.filter((item) => item.source?.positionId === actionPosition.id && isActionablePending(item)).length,
+                        pendingApprovals: approvalState.items.filter((item) => item.source?.positionId === actionPosition.id && isActionablePending(item, Date.now())).length,
                       }}
                       candidates={positions.map((position) => ({ id: position.id, name: position.name }))}
                       onSelectHandoff={openConversation}
@@ -2330,7 +2330,7 @@ function AppInner({
                           facts={{
                             runningTurns: runningPositionIds.has(actionPosition.id) ? 1 : 0,
                             boundGoals: 0,
-                            pendingApprovals: approvalState.items.filter((item) => item.source?.positionId === actionPosition.id && isActionablePending(item)).length,
+                            pendingApprovals: approvalState.items.filter((item) => item.source?.positionId === actionPosition.id && isActionablePending(item, Date.now())).length,
                           }}
                           candidates={positions.map((position) => ({ id: position.id, name: position.name }))}
                           onSelectHandoff={openConversation}
