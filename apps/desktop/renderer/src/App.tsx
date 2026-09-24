@@ -2159,7 +2159,11 @@ function AppInner({
                 bindOverlayApprovalDecision(
                   workspaceInfo?.open === true ? workspaceInfo.path : undefined,
                   record.approvalId,
-                  { positionId: record.source.positionId, conversationId: record.source.conversationId },
+                  {
+                    positionId: record.source.positionId,
+                    conversationId: record.source.conversationId,
+                    turnId: record.source.turnId,
+                  },
                 );
               }
               void approvalState.decide(id, "granted", reason, scope);
@@ -2170,7 +2174,11 @@ function AppInner({
                 bindOverlayApprovalDecision(
                   workspaceInfo?.open === true ? workspaceInfo.path : undefined,
                   record.approvalId,
-                  { positionId: record.source.positionId, conversationId: record.source.conversationId },
+                  {
+                    positionId: record.source.positionId,
+                    conversationId: record.source.conversationId,
+                    turnId: record.source.turnId,
+                  },
                 );
               }
               void approvalState.decide(id, "denied", reason);
@@ -2183,6 +2191,7 @@ function AppInner({
                   bindOverlayApprovalDecision(workspaceKey, record.approvalId, {
                     positionId: record.source.positionId,
                     conversationId: record.source.conversationId,
+                    turnId: record.source.turnId,
                   });
                 }
               }
@@ -2196,6 +2205,7 @@ function AppInner({
                   bindOverlayApprovalDecision(workspaceKey, record.approvalId, {
                     positionId: record.source.positionId,
                     conversationId: record.source.conversationId,
+                    turnId: record.source.turnId,
                   });
                 }
               }

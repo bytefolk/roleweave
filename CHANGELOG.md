@@ -7,7 +7,7 @@
 
 ### Added
 
-- #468：Goals / Reports overlay 处理回执（viewed / suggestion_applied / action_succeeded / action_failed / owner_resolved）。按钮点击不等于 resolved；成败混合分条展示且整项不自动解决。处理动作结果并入 App 现有 SSE handler（不另开 `onEvent` 订阅）。pending 保存 goal branch 的 position/session；审批绑定必须与 `ApprovalView.source` 唯一匹配，零匹配或多匹配 fail-closed；同 destination 的旧 unbound 会被新 origin supersede。回执只存在本地 workspace，不写 `goal.health`，不发给 Jev。无 overlay 时原界面不变。Refs #422 #428。
+- #468：Goals / Reports overlay 处理回执（viewed / suggestion_applied / action_succeeded / action_failed / owner_resolved）。按钮点击不等于 resolved；成败混合分条展示且整项不自动解决。处理动作结果并入 App 现有 SSE handler（不另开 `onEvent` 订阅）。pending 保存该 goal 全部 branch identity；同一 workspace/source 只保留一个 active origin；审批必须与 `ApprovalView.source` 唯一匹配，同一 approvalId/turnId 只对应一个 origin，失败重试不扇出。回执只存在本地 workspace，不写 `goal.health`，不发给 Jev。无 overlay 时原界面不变。Refs #422 #428。
 
 
 

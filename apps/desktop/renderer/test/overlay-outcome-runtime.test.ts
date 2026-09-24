@@ -17,6 +17,9 @@ afterEach(() => {
   window.localStorage?.clear?.();
 });
 
+const destA = [{ positionId: "owner", sessionId: "sess-1" }];
+const destB = [{ positionId: "other", sessionId: "sess-2" }];
+
 describe("overlay outcome runtime", () => {
   it("does not consume an unbound or stale turn terminal", () => {
     registerPendingOverlayAction({
@@ -24,16 +27,11 @@ describe("overlay outcome runtime", () => {
       itemId: "goal:one",
       actionId: "open-turn",
       source: "turn",
-      positionId: "owner",
-      sessionId: "sess-1",
+      branches: destA,
     });
     consumeOverlaySystemEvent({
       type: "turn.completed",
       payload: { workspacePath: "ws-a", positionId: "owner", sessionId: "sess-1", turnId: "old-turn" },
-    });
-    consumeOverlaySystemEvent({
-      type: "turn.completed",
-      payload: { workspacePath: "ws-a", positionId: "owner", sessionId: "sess-1" },
     });
     expect(readOverlayReceipts("ws-a", "goal:one").receipts).toEqual([]);
   });
@@ -44,8 +42,7 @@ describe("overlay outcome runtime", () => {
       itemId: "goal:one",
       actionId: "open-turn",
       source: "turn",
-      positionId: "owner",
-      sessionId: "sess-1",
+      branches: destA,
     });
     consumeOverlaySystemEvent({
       type: "turn.started",
@@ -71,16 +68,7 @@ describe("overlay outcome runtime", () => {
       itemId: "goal:one",
       actionId: "open-approvals",
       source: "approval",
-      positionId: "owner",
-      sessionId: "sess-1",
-    });
-    registerPendingOverlayAction({
-      workspaceKey: "ws-a",
-      itemId: "goal:two",
-      actionId: "open-approvals",
-      source: "approval",
-      positionId: "other",
-      sessionId: "sess-2",
+      branches: destA,
     });
     expect(
       bindOverlayApprovalDecision("ws-a", "apr-1", {
@@ -95,17 +83,52 @@ describe("overlay outcome runtime", () => {
     expect(splitActionOutcomes(readOverlayReceipts("ws-a", "goal:one"))).toEqual([
       { actionId: "open-approvals", outcome: "action_failed" },
     ]);
-    expect(readOverlayReceipts("ws-a", "goal:two").receipts).toEqual([]);
   });
 
-  it("does not bind when the approval source matches zero or many branches", () => {
+  it("does not bind a leftover origin after a later goal becomes the active origin", () => {
     registerPendingOverlayAction({
       workspaceKey: "ws-a",
       itemId: "goal:one",
       actionId: "open-approvals",
       source: "approval",
-      positionId: "owner",
-      sessionId: "sess-1",
+      branches: destA,
+    });
+    registerPendingOverlayAction({
+      workspaceKey: "ws-a",
+      itemId: "goal:two",
+      actionId: "open-approvals",
+      source: "approval",
+      branches: destB,
+    });
+    expect(
+      bindOverlayApprovalDecision("ws-a", "apr-stale", {
+        positionId: "owner",
+        conversationId: "sess-1",
+      }),
+    ).toBeUndefined();
+    expect(
+      bindOverlayApprovalDecision("ws-a", "apr-b", {
+        positionId: "other",
+        conversationId: "sess-2",
+      })?.itemId,
+    ).toBe("goal:two");
+    consumeOverlaySystemEvent({
+      type: "turn.approval.granted",
+      payload: { workspacePath: "ws-a", approvalId: "apr-b" },
+    });
+    expect(readOverlayReceipts("ws-a", "goal:one").receipts).toEqual([]);
+    expect(splitActionOutcomes(readOverlayReceipts("ws-a", "goal:two"))).toEqual([
+      { actionId: "open-approvals", outcome: "action_succeeded" },
+    ]);
+  });
+
+  it("does not bind when the approval source matches no branch", () => {
+    registerPendingOverlayAction({
+      workspaceKey: "ws-a",
+      itemId: "goal:one",
+      actionId: "open-approvals",
+      source: "approval",
+      branches: destA,
     });
     expect(
       bindOverlayApprovalDecision("ws-a", "apr-none", {
@@ -116,67 +139,78 @@ describe("overlay outcome runtime", () => {
     expect(readOverlayReceipts("ws-a", "goal:one").receipts).toEqual([]);
   });
 
-  it("supersedes an old unbound origin sharing the same destination", () => {
+  it("keeps a failed approval retry on one origin instead of fanning out", () => {
+    registerPendingOverlayAction({
+      workspaceKey: "ws-a",
+      itemId: "goal:one",
+      actionId: "open-approvals",
+      source: "approval",
+      branches: destA,
+    });
+    expect(
+      bindOverlayApprovalDecision("ws-a", "apr-1", {
+        positionId: "owner",
+        conversationId: "sess-1",
+      })?.itemId,
+    ).toBe("goal:one");
+    registerPendingOverlayAction({
+      workspaceKey: "ws-a",
+      itemId: "goal:two",
+      actionId: "open-approvals",
+      source: "approval",
+      branches: destB,
+    });
+    expect(
+      bindOverlayApprovalDecision("ws-a", "apr-1", {
+        positionId: "other",
+        conversationId: "sess-2",
+      })?.itemId,
+    ).toBe("goal:one");
+    consumeOverlaySystemEvent({
+      type: "turn.approval.denied",
+      payload: { workspacePath: "ws-a", approvalId: "apr-1" },
+    });
+    expect(splitActionOutcomes(readOverlayReceipts("ws-a", "goal:one"))).toEqual([
+      { actionId: "open-approvals", outcome: "action_failed" },
+    ]);
+    expect(readOverlayReceipts("ws-a", "goal:two").receipts).toEqual([]);
+  });
+
+  it("does not let a superseded turn pending bind the next unrelated turn", () => {
     registerPendingOverlayAction({
       workspaceKey: "ws-a",
       itemId: "goal:one",
       actionId: "open-turn",
       source: "turn",
-      positionId: "owner",
-      sessionId: "sess-1",
+      branches: destA,
     });
     registerPendingOverlayAction({
       workspaceKey: "ws-a",
       itemId: "goal:two",
       actionId: "open-turn",
       source: "turn",
-      positionId: "owner",
-      sessionId: "sess-1",
+      branches: destB,
     });
     consumeOverlaySystemEvent({
       type: "turn.started",
-      payload: { workspacePath: "ws-a", positionId: "owner", sessionId: "sess-1", turnId: "turn-new" },
+      payload: { workspacePath: "ws-a", positionId: "owner", sessionId: "sess-1", turnId: "turn-old-origin" },
     });
     consumeOverlaySystemEvent({
       type: "turn.completed",
-      payload: { workspacePath: "ws-a", positionId: "owner", sessionId: "sess-1", turnId: "turn-new" },
+      payload: { workspacePath: "ws-a", positionId: "owner", sessionId: "sess-1", turnId: "turn-old-origin" },
+    });
+    expect(readOverlayReceipts("ws-a", "goal:one").receipts).toEqual([]);
+    consumeOverlaySystemEvent({
+      type: "turn.started",
+      payload: { workspacePath: "ws-a", positionId: "other", sessionId: "sess-2", turnId: "turn-new" },
+    });
+    consumeOverlaySystemEvent({
+      type: "turn.completed",
+      payload: { workspacePath: "ws-a", positionId: "other", sessionId: "sess-2", turnId: "turn-new" },
     });
     expect(readOverlayReceipts("ws-a", "goal:one").receipts).toEqual([]);
     expect(splitActionOutcomes(readOverlayReceipts("ws-a", "goal:two"))).toEqual([
       { actionId: "open-turn", outcome: "action_succeeded" },
-    ]);
-  });
-
-  it("does not let a superseded pending bind on a later action", () => {
-    registerPendingOverlayAction({
-      workspaceKey: "ws-a",
-      itemId: "goal:one",
-      actionId: "open-approvals",
-      source: "approval",
-      positionId: "owner",
-      sessionId: "sess-1",
-    });
-    registerPendingOverlayAction({
-      workspaceKey: "ws-a",
-      itemId: "goal:two",
-      actionId: "open-approvals",
-      source: "approval",
-      positionId: "owner",
-      sessionId: "sess-1",
-    });
-    expect(
-      bindOverlayApprovalDecision("ws-a", "apr-later", {
-        positionId: "owner",
-        conversationId: "sess-1",
-      })?.itemId,
-    ).toBe("goal:two");
-    consumeOverlaySystemEvent({
-      type: "turn.approval.granted",
-      payload: { workspacePath: "ws-a", approvalId: "apr-later" },
-    });
-    expect(readOverlayReceipts("ws-a", "goal:one").receipts).toEqual([]);
-    expect(splitActionOutcomes(readOverlayReceipts("ws-a", "goal:two"))).toEqual([
-      { actionId: "open-approvals", outcome: "action_succeeded" },
     ]);
   });
 
@@ -186,16 +220,14 @@ describe("overlay outcome runtime", () => {
       itemId: "goal:one",
       actionId: "open-turn",
       source: "turn",
-      positionId: "owner",
-      sessionId: "sess-1",
+      branches: destA,
     });
     registerPendingOverlayAction({
       workspaceKey: "ws-a",
       itemId: "goal:one",
       actionId: "open-approvals",
       source: "approval",
-      positionId: "owner",
-      sessionId: "sess-1",
+      branches: destA,
     });
     consumeOverlaySystemEvent({
       type: "turn.started",

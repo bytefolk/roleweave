@@ -7,14 +7,18 @@ import {
 
 export type OverlayPendingSource = "turn" | "approval";
 
+export type OverlayBranchIdentity = {
+  positionId: string;
+  sessionId: string;
+};
+
 /** Clicked processing action waiting for a real system terminal event. */
 export type OverlayPendingAction = {
   workspaceKey: string;
   itemId: string;
   actionId: string;
   source: OverlayPendingSource;
-  positionId: string;
-  sessionId: string;
+  branches: OverlayBranchIdentity[];
   /** Bound from the first future matching turn.started. */
   turnId?: string;
   /** Bound from the approval the operator actually decided. */
@@ -24,6 +28,7 @@ export type OverlayPendingAction = {
 export type OverlayApprovalSource = {
   positionId: string;
   conversationId: string;
+  turnId?: string;
 };
 
 const pending = new Map<string, OverlayPendingAction>();
@@ -36,26 +41,37 @@ function isUnbound(action: OverlayPendingAction): boolean {
   return action.source === "turn" ? !action.turnId : !action.approvalId;
 }
 
-function sameDestination(left: OverlayPendingAction, right: Pick<OverlayPendingAction, "workspaceKey" | "source" | "positionId" | "sessionId">): boolean {
-  return (
-    left.workspaceKey === right.workspaceKey &&
-    left.source === right.source &&
-    left.positionId === right.positionId &&
-    left.sessionId === right.sessionId
+function validBranches(branches: OverlayBranchIdentity[] | undefined): OverlayBranchIdentity[] {
+  if (!branches || branches.length === 0) return [];
+  const next: OverlayBranchIdentity[] = [];
+  for (const branch of branches) {
+    if (!branch.positionId || !branch.sessionId) continue;
+    next.push({ positionId: branch.positionId, sessionId: branch.sessionId });
+  }
+  return next;
+}
+
+function branchMatches(action: OverlayPendingAction, identity: OverlayBranchIdentity): boolean {
+  return action.branches.some(
+    (branch) => branch.positionId === identity.positionId && branch.sessionId === identity.sessionId,
   );
 }
 
 export function registerPendingOverlayAction(action: OverlayPendingAction): void {
-  if (!action.workspaceKey || !action.itemId || !action.actionId || !action.positionId || !action.sessionId) return;
+  if (!action.workspaceKey || !action.itemId || !action.actionId) return;
+  const branches = validBranches(action.branches);
+  if (branches.length === 0) return;
   const next: OverlayPendingAction = {
     ...action,
+    branches,
     turnId: action.source === "turn" ? undefined : action.turnId,
     approvalId: action.source === "approval" ? undefined : action.approvalId,
   };
   const nextKey = overlayPendingKey(next.workspaceKey, next.itemId, next.actionId);
   for (const [key, existing] of [...pending.entries()]) {
     if (key === nextKey) continue;
-    if (!isUnbound(existing) || !sameDestination(existing, next)) continue;
+    if (existing.workspaceKey !== next.workspaceKey || existing.source !== next.source) continue;
+    if (!isUnbound(existing)) continue;
     pending.delete(key);
   }
   pending.set(nextKey, next);
@@ -73,28 +89,37 @@ function writePending(action: OverlayPendingAction): void {
   pending.set(overlayPendingKey(action.workspaceKey, action.itemId, action.actionId), action);
 }
 
-/** Fail-closed: bind only when exactly one unbound pending shares this destination. */
+/** Fail-closed: bind only when exactly one unbound pending matches this branch. */
 function uniqueUnbound(
   workspaceKey: string,
   source: OverlayPendingSource,
-  identity: { positionId: string; sessionId: string },
+  identity: OverlayBranchIdentity,
 ): OverlayPendingAction | undefined {
   const matches = [...pending.values()].filter(
     (action) =>
+      action.workspaceKey === workspaceKey &&
+      action.source === source &&
       isUnbound(action) &&
-      sameDestination(action, {
-        workspaceKey,
-        source,
-        positionId: identity.positionId,
-        sessionId: identity.sessionId,
-      }),
+      branchMatches(action, identity),
   );
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+function existingBound(
+  workspaceKey: string,
+  source: OverlayPendingSource,
+  idField: "turnId" | "approvalId",
+  id: string,
+): OverlayPendingAction | undefined {
+  return [...pending.values()].find(
+    (action) => action.workspaceKey === workspaceKey && action.source === source && action[idField] === id,
+  );
+}
+
 /**
  * Bind an operator decision to the single pending open-approvals whose
- * stored branch identity uniquely matches ApprovalView.source.
+ * stored branch identities uniquely match ApprovalView.source.
+ * The same approvalId stays on one origin; retries do not fan out.
  */
 export function bindOverlayApprovalDecision(
   workspaceKey: string | undefined,
@@ -102,6 +127,8 @@ export function bindOverlayApprovalDecision(
   source: OverlayApprovalSource,
 ): OverlayPendingAction | undefined {
   if (!workspaceKey || !approvalId || !source.positionId || !source.conversationId) return undefined;
+  const already = existingBound(workspaceKey, "approval", "approvalId", approvalId);
+  if (already) return already;
   const match = uniqueUnbound(workspaceKey, "approval", {
     positionId: source.positionId,
     sessionId: source.conversationId,
@@ -119,6 +146,7 @@ function bindTurnStarted(event: {
   sessionId?: string;
 }): void {
   if (!event.turnId || !event.positionId || !event.sessionId) return;
+  if (existingBound(event.workspaceKey, "turn", "turnId", event.turnId)) return;
   const match = uniqueUnbound(event.workspaceKey, "turn", {
     positionId: event.positionId,
     sessionId: event.sessionId,
@@ -134,13 +162,10 @@ function settleExact(
   id: string,
   ok: boolean,
 ): void {
-  for (const [key, action] of [...pending.entries()]) {
-    if (action.workspaceKey !== workspaceKey) continue;
-    if (action.source !== source) continue;
-    if (action[idField] !== id) continue;
-    persistOverlayActionOutcome(action.workspaceKey, action.itemId, action.actionId, ok);
-    pending.delete(key);
-  }
+  const action = existingBound(workspaceKey, source, idField, id);
+  if (!action) return;
+  persistOverlayActionOutcome(action.workspaceKey, action.itemId, action.actionId, ok);
+  pending.delete(overlayPendingKey(action.workspaceKey, action.itemId, action.actionId));
 }
 
 /**
