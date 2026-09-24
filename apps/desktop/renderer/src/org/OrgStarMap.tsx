@@ -116,7 +116,10 @@ interface SceneState {
   crossLinks: CrossLinkView[];
   raycaster: THREE.Raycaster;
   clock: THREE.Clock;
-  frame: number;
+  /** Pending requestAnimationFrame id. Null means the scene is idle. */
+  frame: number | null;
+  /** Invalidate the scene after an input or data update. */
+  requestRender: () => void;
   fly: {
     fromTarget: THREE.Vector3;
     toTarget: THREE.Vector3;
@@ -388,7 +391,8 @@ export default function OrgStarMap({
         crossLinks: [],
         raycaster: new THREE.Raycaster(),
         clock: new THREE.Clock(),
-        frame: 0,
+        frame: null,
+        requestRender: () => {},
         fly: null,
         drag: null,
         pointerStart: null,
@@ -508,9 +512,9 @@ export default function OrgStarMap({
       renderer.domElement.addEventListener("pointerup", onPointerUp);
       renderer.domElement.addEventListener("pointercancel", onPointerUp);
 
-      const animate = (): void => {
+      const renderFrame = (): void => {
         if (state.disposed) return;
-        state.frame = requestAnimationFrame(animate);
+        state.frame = null;
         const elapsed = state.clock.getElapsedTime();
 
         // Smooth camera fly
@@ -564,11 +568,34 @@ export default function OrgStarMap({
           updateLinePositions();
         }
 
-        state.controls.update();
+        const controlsChanged = state.controls.update();
         state.renderer.render(state.scene, state.camera);
         state.labelRenderer.render(state.scene, state.camera);
+
+        // Keep frames flowing only while there is actual visual work. The
+        // former perpetual RAF loop repainted the full WebGL and CSS2D scene
+        // at 60 FPS even when the map was completely idle.
+        let hasRunningPulse = false;
+        if (!latest.current.reducedMotion) {
+          for (const view of state.views.values()) {
+            if (latest.current.runningIds?.has(view.body.id)) {
+              hasRunningPulse = true;
+              break;
+            }
+          }
+        }
+        if (moved || state.fly || controlsChanged || latest.current.autoRotate || hasRunningPulse) {
+          state.requestRender();
+        }
       };
-      animate();
+
+      state.requestRender = (): void => {
+        if (state.disposed || state.frame !== null) return;
+        state.frame = requestAnimationFrame(renderFrame);
+      };
+      const onControlsChange = (): void => state.requestRender();
+      controls.addEventListener("change", onControlsChange);
+      state.requestRender();
 
       const observer = new ResizeObserver(() => {
         const w = host.clientWidth;
@@ -578,14 +605,16 @@ export default function OrgStarMap({
         labelRenderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
+        state.requestRender();
       });
       observer.observe(host);
       setWebglFailed(false);
 
       return () => {
         state.disposed = true;
-        cancelAnimationFrame(state.frame);
+        if (state.frame !== null) cancelAnimationFrame(state.frame);
         observer.disconnect();
+        controls.removeEventListener("change", onControlsChange);
         renderer.domElement.removeEventListener("pointerdown", onPointerDown);
         renderer.domElement.removeEventListener("pointermove", onPointerMove);
         renderer.domElement.removeEventListener("pointerup", onPointerUp);
@@ -622,7 +651,10 @@ export default function OrgStarMap({
         disposeObject3D(child);
       }
 
-      if (mode !== "celestial" || !visible) return;
+      if (mode !== "celestial" || !visible) {
+        state.requestRender();
+        return;
+      }
 
       const ringColor = curTheme === "dark" ? 0x22222a : 0xd1d5db;
       const subRingColor = curTheme === "dark" ? 0x181820 : 0xe5e7eb;
@@ -646,6 +678,7 @@ export default function OrgStarMap({
         loop.position.set(...orbit.center);
         state.orbitsGroup.add(loop);
       }
+      state.requestRender();
     },
     [layout, layoutMode, showOrbits, theme],
   );
@@ -778,6 +811,7 @@ export default function OrgStarMap({
         cl.material.opacity = 0.1;
       }
     });
+    state.requestRender();
   }, []);
 
   /* ------------------------------------------------------- data → scene */
@@ -1054,6 +1088,7 @@ export default function OrgStarMap({
     if (latest.current.reducedMotion) {
       state.controls.target.copy(toTarget);
       state.camera.position.copy(toTarget.clone().add(new THREE.Vector3(...DEFAULT_CAM).setLength(close ? 18 : 46)));
+      state.requestRender();
       return;
     }
 
@@ -1069,6 +1104,7 @@ export default function OrgStarMap({
       start: performance.now(),
       duration: 650,
     };
+    state.requestRender();
   }, []);
 
   const flyHome = useCallback((): void => {
@@ -1077,6 +1113,7 @@ export default function OrgStarMap({
     if (latest.current.reducedMotion) {
       state.controls.target.set(0, 0, 0);
       state.camera.position.set(...DEFAULT_CAM);
+      state.requestRender();
       return;
     }
     state.fly = {
@@ -1087,6 +1124,7 @@ export default function OrgStarMap({
       start: performance.now(),
       duration: 750,
     };
+    state.requestRender();
   }, []);
 
   const resetView = useCallback((): void => {
@@ -1120,6 +1158,7 @@ export default function OrgStarMap({
       );
       state.grid.position.y = -16;
       state.scene.add(state.grid);
+      state.requestRender();
     }
   }, [theme]);
 
@@ -1128,6 +1167,7 @@ export default function OrgStarMap({
       const next = !prev;
       if (stateRef.current) {
         stateRef.current.controls.autoRotate = next;
+        stateRef.current.requestRender();
       }
       return next;
     });
