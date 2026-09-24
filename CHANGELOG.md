@@ -7,7 +7,7 @@
 
 ### Added
 
-- #465：选中员工 Agent 主机未就绪时，可选 overlay 列出其他 ready 主机。0 或 1 个 ready candidate 不调用 Jev；点击建议只切换岗位（selectPosition），不改 agentLocked 或 engine binding。未就绪选中态样式不随 overlay 改变。https://github.com/bytefolk/roleweave/issues/422
+- #465：选中员工 Agent 主机未就绪时，可选 overlay 列出其他 ready 主机。0 或 1 个 ready candidate 不调用 provider；2+ 经 control-plane 受限 Choice，只发送 `{positionId, engine, ready}`，返回必须属于候选，timeout/invalid/off 安全降级。点击建议只切换岗位（selectPosition），不改 agentLocked 或 engine binding。https://github.com/bytefolk/roleweave/issues/422
 
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
 
