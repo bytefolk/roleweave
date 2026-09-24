@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createBootToken } from "./auth.js";
 import { splitCommand } from "./engine/probe.js";
+import { isLoopbackEndpoint, LAYA_ENDPOINT, layaEnabled, layaModel } from "./laya/config.js";
 
 export interface ServerConfig {
   /** Loopback only, always. The control plane never binds another interface. */
@@ -38,11 +39,11 @@ export interface ServerConfig {
    * TODO(#35 R3): remove once the upstream API surface stabilises.
    */
   docPlaneMock: boolean;
-  /** Optional Jev preview credentials. Never included in renderer/IPC configuration. */
-  jevEnabled: boolean;
-  jevApiKey?: string;
-  jevModel?: string;
-  jevTimeoutMs?: number;
+  /** Local Laya inference. The endpoint is always loopback and uses no API key. */
+  layaEnabled: boolean;
+  layaUrl: string;
+  layaModel: string;
+  layaTimeoutMs: number;
 }
 
 function normalizeUrl(raw: string | undefined): string | undefined {
@@ -122,14 +123,13 @@ export function resolveServerConfig(
         ? env.ORG_WORKBENCH_DOC_TOKEN
         : undefined,
     docPlaneMock: truthy(env.ORG_WORKBENCH_DOC_MOCK),
-    jevEnabled: (() => {
-      const value = env.ROLEWEAVE_JEV_ENABLED?.trim().toLowerCase();
-      return value === "1" || value === "true" || value === "yes";
+    layaEnabled: layaEnabled(env),
+    layaUrl: (() => {
+      const candidate = (env.ROLEWEAVE_LAYA_URL?.trim() || LAYA_ENDPOINT).replace(/\/$/u, "");
+      return isLoopbackEndpoint(candidate) ? candidate : LAYA_ENDPOINT;
     })(),
-    jevApiKey: env.ROLEWEAVE_JEV_API_KEY?.trim() || undefined,
-    jevModel: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(env.ROLEWEAVE_JEV_MODEL ?? "")
-      ? env.ROLEWEAVE_JEV_MODEL : "jev-latest",
-    jevTimeoutMs: Math.max(100, Math.min(5_000, Number(env.ROLEWEAVE_JEV_TIMEOUT_MS) || 2_000)),
+    layaModel: layaModel(env),
+    layaTimeoutMs: Math.max(100, Math.min(5_000, Number(env.ROLEWEAVE_LAYA_TIMEOUT_MS) || 2_000)),
   };
 }
 

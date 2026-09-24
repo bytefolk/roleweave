@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ApprovalContext } from "@roleweave/shared";
-import { jevEnabled } from "../src/jev/config.js";
+import { layaEnabled } from "../src/laya/config.js";
 import {
   assertKindOnlyAdvicePayload,
   attachApprovalRiskOverlay,
@@ -41,17 +41,17 @@ test("kind-only payload rejects description/target/input/output", () => {
   assert.throws(() => assertKindOnlyAdvicePayload({ kind: "exec", output: "secret" }));
 });
 
-test("unknown Jev choice does not become a risk overlay", () => {
+test("unknown Laya choice does not become a risk overlay", () => {
   assert.equal(mapAdviceChoiceToRisk("low"), null);
   assert.equal(mapAdviceChoiceToRisk("high"), "high");
 });
 
-test("ROLEWEAVE_JEV_ENABLED is off unless explicitly truthy", () => {
-  assert.equal(jevEnabled({}), false);
-  assert.equal(jevEnabled({ ROLEWEAVE_JEV_ENABLED: "" }), false);
-  assert.equal(jevEnabled({ ROLEWEAVE_JEV_ENABLED: "0" }), false);
-  assert.equal(jevEnabled({ ROLEWEAVE_JEV_ENABLED: "false" }), false);
-  assert.equal(jevEnabled({ ROLEWEAVE_JEV_ENABLED: "1" }), true);
+test("ROLEWEAVE_LAYA_ENABLED remains explicit opt-in", () => {
+  assert.equal(layaEnabled({}), false);
+  assert.equal(layaEnabled({ ROLEWEAVE_LAYA_ENABLED: "" }), false);
+  assert.equal(layaEnabled({ ROLEWEAVE_LAYA_ENABLED: "0" }), false);
+  assert.equal(layaEnabled({ ROLEWEAVE_LAYA_ENABLED: "false" }), false);
+  assert.equal(layaEnabled({ ROLEWEAVE_LAYA_ENABLED: "1" }), true);
 });
 
 test("flag off: no overlay and ask is not invoked", async () => {
@@ -68,10 +68,10 @@ test("flag off: no overlay and ask is not invoked", async () => {
   assert.equal((result as ApprovalContext & { riskOverlay?: string }).riskOverlay, undefined);
 });
 
-test("outbound Jev state is kind-only and overlay stays non-authoritative", async () => {
+test("outbound Laya state is kind-only and overlay stays non-authoritative", async () => {
   const states: unknown[] = [];
   const overlay = await resolveApprovalRiskOverlay("exec", {
-    env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
+    env: { ROLEWEAVE_LAYA_ENABLED: "1" },
     ask: async (request) => {
       states.push(request.state);
       assertKindOnlyAdvicePayload(request.state as Record<string, unknown>);
@@ -81,7 +81,7 @@ test("outbound Jev state is kind-only and overlay stays non-authoritative", asyn
   assert.deepEqual(states, [{ kind: "exec" }]);
   assert.equal(overlay, "medium");
   const attached = await attachApprovalRiskOverlay(baseContext, { kind: "exec" }, {
-    env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
+    env: { ROLEWEAVE_LAYA_ENABLED: "1" },
     ask: async () => ({ risk: { type: "choice", selected: "medium", probabilities: { medium: 1 }, confidence: 1 } }),
   });
   assert.equal(attached.risk, "high");
@@ -91,14 +91,14 @@ test("outbound Jev state is kind-only and overlay stays non-authoritative", asyn
 test("invalid or failed advice produces no overlay", async () => {
   assert.equal(
     await resolveApprovalRiskOverlay("exec", {
-      env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
+      env: { ROLEWEAVE_LAYA_ENABLED: "1" },
       ask: async () => ({ risk: { type: "choice", selected: "low", probabilities: {}, confidence: 1 } }),
     }),
     undefined,
   );
   assert.equal(
     await resolveApprovalRiskOverlay("exec", {
-      env: { ROLEWEAVE_JEV_ENABLED: "1", ROLEWEAVE_JEV_API_KEY: "k" },
+      env: { ROLEWEAVE_LAYA_ENABLED: "1" },
       ask: async () => {
         throw new Error("timeout");
       },

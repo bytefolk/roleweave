@@ -288,7 +288,7 @@ describe("independent project management module", () => {
   });
 });
 
-describe("Jev health overlay (#428)", () => {
+describe("Laya health overlay (#428)", () => {
   it("keeps the list dot on persisted health and shows overlay beside it in detail", async () => {
     const atRisk = { ...goalSummary, health: "at_risk" as const };
     const overlayDetail: GoalDetail = {
@@ -306,11 +306,11 @@ describe("Jev health overlay (#428)", () => {
     expect(row.querySelector(".owb-health--ok")).toBeNull();
     await screen.findByTestId("goals-health-overlay");
     expect(screen.getByTestId("goals-health-rule")).toHaveClass("owb-health--warn");
-    expect(screen.getByTestId("goals-health-jev")).toHaveClass("owb-health--ok");
+    expect(screen.getByTestId("goals-health-laya")).toHaveClass("owb-health--ok");
     expect(screen.getByTestId("goals-health-not-adopted")).toHaveTextContent("建议未采纳");
   });
 
-  it("does not render a Jev row when overlay is absent", async () => {
+  it("does not render a Laya row when overlay is absent", async () => {
     installBridge();
     render(<GoalsModule workspaceOpen />);
     await screen.findByText(goalDetail.goal.description);

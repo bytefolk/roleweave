@@ -23,7 +23,7 @@ export interface ApprovalContext {
     | { status: "unavailable"; reason: "engine_preview_not_supplied" }
     | ({ status: "available" } & ApprovalChangePreview);
   scope: { allowed: Array<"once" | "run"> };
-  /** Projection-only Jev suggestion. Never authoritative for Tag color or policy.digest. */
+  /** Projection-only Laya suggestion. Never authoritative for Tag color or policy.digest. */
   riskOverlay?: ApprovalRiskLevel;
 }
 
