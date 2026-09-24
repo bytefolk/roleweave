@@ -2242,11 +2242,13 @@ it("wires approval module bulk deny so failed items remain selected in the queue
   });
 
   await waitFor(() => {
-    const freshCard1 = screen.queryByTestId("approval-card-appr-1");
-    if (freshCard1) {
-      expect(within(freshCard1).getByRole("checkbox")).not.toBeChecked();
-    }
+    const freshCard1 = screen.getByTestId("approval-card-appr-1");
+    expect(within(freshCard1).getByRole("checkbox")).not.toBeChecked();
     const freshCard2 = screen.getByTestId("approval-card-appr-2");
     expect(within(freshCard2).getByRole("checkbox")).toBeChecked();
   });
+
+  // Open card-2 to inspect error Alert in drawer
+  fireEvent.click(screen.getByTestId("approval-card-appr-2"));
+  expect(await screen.findByText("Internal server error")).toBeInTheDocument();
 });

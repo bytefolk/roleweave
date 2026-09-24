@@ -255,7 +255,7 @@ export function ApprovalQueue({
     );
   }, [visible, batchSource, now]);
   const selectBatchItem = (item: ApprovalQueueItem, checked: boolean) => {
-    if (!canBatchItem(item)) return;
+    if (batchOperating || !canBatchItem(item)) return;
     setBatchSelection(current => {
       const next = new Set(current);
       if (!checked) { next.delete(item.approvalId); return next; }
@@ -510,7 +510,7 @@ export function ApprovalQueue({
                   item={item}
                   now={now}
                   batchSelected={batchSelection.has(item.approvalId)}
-                  batchDisabled={!canBatchItem(item) || (batchSelectedItems.length > 0 && batchSource !== undefined && (!item.source || item.source.kind !== batchSource.kind || item.source.positionId !== batchSource.positionId || item.source.conversationId !== batchSource.conversationId || item.source.turnId !== batchSource.turnId || item.source.runId !== batchSource.runId || item.source.engine !== batchSource.engine))}
+                  batchDisabled={!canBatchItem(item) || batchOperating || (batchSelectedItems.length > 0 && batchSource !== undefined && (!item.source || item.source.kind !== batchSource.kind || item.source.positionId !== batchSource.positionId || item.source.conversationId !== batchSource.conversationId || item.source.turnId !== batchSource.turnId || item.source.runId !== batchSource.runId || item.source.engine !== batchSource.engine))}
                   onBatchChange={(checked) => selectBatchItem(item, checked)}
                   onOpen={() => setSelectedId(item.approvalId)}
                 />
