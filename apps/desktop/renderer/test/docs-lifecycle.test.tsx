@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DocsPanel } from "../src/docs/DocsPanel";
 import type { DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
@@ -120,5 +120,65 @@ describe("DocsPanel knowledge lifecycle (#347)", () => {
     await screen.findByRole("heading", { name: "Knowledge" });
     fireEvent.click(screen.getByRole("button", { name: /恢\s?复/ }));
     await waitFor(() => expect(restoreDoc).toHaveBeenCalledWith("repo-owner", "knowledge/README.md"));
+  });
+
+  it("discards a late live read after switching to the archived view", async () => {
+    let finish!: (doc: DocsFileResponse) => void;
+    const readDoc = vi
+      .fn()
+      .mockReturnValueOnce(new Promise<DocsFileResponse>((resolve) => {
+        finish = resolve;
+      }))
+      .mockResolvedValue({ ...KNOWLEDGE, content: "# Archived copy\n" });
+    const listDocs = vi.fn().mockResolvedValue(LIST);
+    render(
+      <DocsPanel
+        knowledgeFirst
+        positionId="repo-owner"
+        listDocs={listDocs}
+        readDoc={readDoc}
+        restoreDoc={vi.fn()}
+      />,
+    );
+    await screen.findByRole("button", { name: "knowledge/README.md" });
+    fireEvent.click(screen.getByText("已归档"));
+    await waitFor(() => expect(listDocs).toHaveBeenLastCalledWith("repo-owner", { archived: true }));
+    await act(async () => finish(KNOWLEDGE));
+    expect(screen.queryByRole("heading", { name: "Knowledge" })).toBeNull();
+  });
+
+  it("does not apply a late write onto another position", async () => {
+    let finish!: (doc: DocsFileResponse) => void;
+    const writeDoc = vi.fn().mockReturnValue(
+      new Promise<DocsFileResponse>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const listDocs = vi.fn().mockResolvedValue(LIST);
+    const readDoc = vi.fn().mockResolvedValue(KNOWLEDGE);
+    const view = render(
+      <DocsPanel
+        knowledgeFirst
+        positionId="alice"
+        listDocs={listDocs}
+        readDoc={readDoc}
+        writeDoc={writeDoc}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "knowledge/README.md" }));
+    await screen.findByRole("heading", { name: "Knowledge" });
+    fireEvent.click(screen.getByRole("button", { name: /编\s?辑/ }));
+    fireEvent.click(screen.getByRole("button", { name: /保\s?存/ }));
+    view.rerender(
+      <DocsPanel
+        knowledgeFirst
+        positionId="bob"
+        listDocs={listDocs}
+        readDoc={readDoc}
+        writeDoc={writeDoc}
+      />,
+    );
+    await act(async () => finish({ ...KNOWLEDGE, content: "# Alice private\n" }));
+    expect(screen.queryByText("Alice private")).toBeNull();
   });
 });

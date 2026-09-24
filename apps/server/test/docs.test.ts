@@ -572,3 +572,175 @@ test("knowledge lifecycle refuses missing files, extra keys, and archive collisi
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test("review: write refuses a nested knowledge ancestor symlink (#347)", { skip: process.platform === "win32" }, async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  const positionDir = path.join(dir, "positions", "repo-owner");
+  const outside = path.join(dir, "outside-victim.md");
+  try {
+    await fs.writeFile(outside, "secret\n");
+    await fs.mkdir(path.join(positionDir, "knowledge", "escape-link"));
+    await fs.rm(path.join(positionDir, "knowledge", "escape-link"), { recursive: true });
+    await fs.symlink(path.dirname(outside), path.join(positionDir, "knowledge", "escape"));
+
+    await openWorkspace(server.baseUrl, server.token, dir);
+    const written = await api(server.baseUrl, routes.docsWrite, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/escape/outside-victim.md", content: "pwned\n" },
+    });
+    assert.equal(written.status, 403);
+    assert.equal((written.body as { code: string }).code, "docs_forbidden");
+    assert.equal(await fs.readFile(outside, "utf8"), "secret\n");
+
+    const renamed = await api(server.baseUrl, routes.docsRename, {
+      method: "POST",
+      token: server.token,
+      body: {
+        positionId: "repo-owner",
+        from: "knowledge/README.md",
+        to: "knowledge/escape/stolen.md",
+      },
+    });
+    assert.equal(renamed.status, 403);
+    assert.equal((renamed.body as { code: string }).code, "docs_forbidden");
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("review: archive refuses a symlinked archive root (#347)", { skip: process.platform === "win32" }, async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  const positionDir = path.join(dir, "positions", "repo-owner");
+  const outsideDir = path.join(dir, "outside-archive");
+  try {
+    await fs.mkdir(outsideDir);
+    await fs.symlink(outsideDir, path.join(positionDir, ".owb-docs-archive"));
+    const original = await fs.readFile(path.join(positionDir, "knowledge", "README.md"), "utf8");
+
+    await openWorkspace(server.baseUrl, server.token, dir);
+    const archived = await api(server.baseUrl, routes.docsArchive, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/README.md" },
+    });
+    assert.equal(archived.status, 403);
+    assert.equal((archived.body as { code: string }).code, "docs_forbidden");
+    assert.equal(await fs.readFile(path.join(positionDir, "knowledge", "README.md"), "utf8"), original);
+    const leaked = await fs.readdir(outsideDir);
+    assert.deepEqual(leaked, []);
+
+    const restore = await api(server.baseUrl, routes.docsRestore, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/README.md" },
+    });
+    assert.equal(restore.status, 403);
+
+    const listed = await api(server.baseUrl, `${routes.docsList}?position=repo-owner&archived=1`, {
+      token: server.token,
+    });
+    assert.equal(listed.status, 403);
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("review: invalid archived query fails closed (#347)", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, dir);
+    const banana = await api(server.baseUrl, `${routes.docsList}?position=repo-owner&archived=banana`, {
+      token: server.token,
+    });
+    assert.equal(banana.status, 400);
+    assert.equal((banana.body as { code: string }).code, "docs_request_invalid");
+
+    const duplicated = await api(
+      server.baseUrl,
+      `${routes.docsList}?position=repo-owner&archived=1&archived=1`,
+      { token: server.token },
+    );
+    assert.equal(duplicated.status, 400);
+
+    const bananaRead = await api(
+      server.baseUrl,
+      `${routes.docsRead}?position=repo-owner&path=knowledge%2FREADME.md&archived=banana`,
+      { token: server.token },
+    );
+    assert.equal(bananaRead.status, 400);
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("archived knowledge leaves bindings and doc-ref resolution (#347)", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, dir);
+    const before = await api(server.baseUrl, "/positions/repo-owner", { token: server.token });
+    assert.equal(before.status, 200);
+    const beforeCount = (before.body as { position: { contextSources: Array<{ readOnly?: boolean; itemCount?: number }> } })
+      .position.contextSources[0]?.itemCount ?? 0;
+    assert.equal(
+      (before.body as { position: { contextSources: Array<{ readOnly?: boolean }> } }).position.contextSources[0]
+        ?.readOnly,
+      false,
+    );
+
+    const archived = await api(server.baseUrl, routes.docsArchive, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/README.md" },
+    });
+    assert.equal(archived.status, 200);
+
+    const resolved = await api(server.baseUrl, routes.docsResolve, {
+      method: "POST",
+      token: server.token,
+      body: { ref: { uri: formatDocRefUri("repo-owner", "knowledge/README.md") } },
+    });
+    assert.equal(resolved.status, 404);
+    assert.equal((resolved.body as { code: string }).code, "docs_missing");
+
+    const after = await api(server.baseUrl, "/positions/repo-owner", { token: server.token });
+    const afterCount = (after.body as { position: { contextSources: Array<{ itemCount?: number }> } }).position
+      .contextSources[0]?.itemCount ?? 0;
+    assert.equal(afterCount, beforeCount - 1);
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("knowledge move refuses to replace an existing destination (#347)", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  const positionDir = path.join(dir, "positions", "repo-owner");
+  try {
+    await openWorkspace(server.baseUrl, server.token, dir);
+    await api(server.baseUrl, routes.docsCreate, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/keep.md", content: "keep\n" },
+    });
+    const renamed = await api(server.baseUrl, routes.docsRename, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", from: "knowledge/README.md", to: "knowledge/keep.md" },
+    });
+    assert.equal(renamed.status, 409);
+    assert.equal(await fs.readFile(path.join(positionDir, "knowledge", "keep.md"), "utf8"), "keep\n");
+    assert.ok((await fs.readFile(path.join(positionDir, "knowledge", "README.md"), "utf8")).length > 0);
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

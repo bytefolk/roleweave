@@ -61,6 +61,7 @@ const {
   validateAssetsReadRequest,
 } = require("./assets-ipc.cjs");
 const {
+  authorizeDocsIpcSender,
   validateDocsCreateRequest,
   validateDocsDeleteRequest,
   validateDocsListRequest,
@@ -569,31 +570,41 @@ ipcMain.handle("owb:docs:resolve", async (_event, request) => {
   return apiRequest("/docs/resolve", { method: "POST", body: validated.request });
 });
 
-ipcMain.handle("owb:position:docs:write", async (_event, request) => {
+ipcMain.handle("owb:position:docs:write", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsWriteRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/write", { method: "POST", body: validated.request });
 });
 
-ipcMain.handle("owb:position:docs:rename", async (_event, request) => {
+ipcMain.handle("owb:position:docs:rename", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsRenameRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/rename", { method: "POST", body: validated.request });
 });
 
-ipcMain.handle("owb:position:docs:archive", async (_event, request) => {
+ipcMain.handle("owb:position:docs:archive", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsPathRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/archive", { method: "POST", body: validated.request });
 });
 
-ipcMain.handle("owb:position:docs:restore", async (_event, request) => {
+ipcMain.handle("owb:position:docs:restore", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsPathRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/restore", { method: "POST", body: validated.request });
 });
 
-ipcMain.handle("owb:position:docs:delete", async (_event, request) => {
+ipcMain.handle("owb:position:docs:delete", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsDeleteRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/delete", { method: "POST", body: validated.request });

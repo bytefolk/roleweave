@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  authorizeDocsIpcSender,
   validateDocsCreateRequest,
   validateDocsDeleteRequest,
   validateDocsListRequest,
@@ -133,4 +134,29 @@ test("docs write/rename/archive/restore/delete IPC bound exactKeys (#347)", () =
     assert.equal(validateDocsPathRequest(bad).ok, false);
     assert.equal(validateDocsDeleteRequest(bad).ok, false);
   }
+});
+
+test("docs list/read IPC reject unknown archived options (#347)", () => {
+  const banana = validateDocsListRequest("repo-owner", { archived: "banana" });
+  assert.equal(banana.ok, false);
+  assert.equal(banana.response.status, 400);
+
+  const extra = validateDocsReadRequest("repo-owner", "knowledge/README.md", { archived: true, extra: 1 });
+  assert.equal(extra.ok, false);
+
+  const live = validateDocsListRequest("repo-owner", { archived: false });
+  assert.equal(live.ok, true);
+  assert.equal(live.pathname, "/docs/list?position=repo-owner");
+});
+
+test("destructive docs IPC refuses an untrusted sender (#347)", () => {
+  const allowed = "file:///app/apps/desktop/dist/renderer/index.html";
+  const trustedFrame = { url: allowed };
+  const window = { webContents: { mainFrame: trustedFrame } };
+  assert.equal(authorizeDocsIpcSender({ senderFrame: trustedFrame }, window, allowed).ok, true);
+
+  const untrusted = authorizeDocsIpcSender({ senderFrame: { url: allowed } }, window, allowed);
+  assert.equal(untrusted.ok, false);
+  assert.equal(untrusted.response.status, 403);
+  assert.equal(untrusted.response.body.message, "Untrusted sender");
 });

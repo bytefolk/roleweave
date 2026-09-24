@@ -111,10 +111,11 @@ export function DocsPanel({
     setEditing(false);
     setRenameOpen(false);
     setDeleteOpen(false);
+    setSaving(false);
     return () => {
       readVersion.current += 1;
     };
-  }, [positionId]);
+  }, [positionId, archivedView]);
 
   useEffect(() => {
     if (positionId === null) {
@@ -187,30 +188,29 @@ export function DocsPanel({
     }
   }, [positionId, requestedPath, reloadToken, openFile]);
 
-  useEffect(() => {
-    setSelected(null);
-    setDoc(null);
-    setReadError(null);
-    setEditing(false);
-  }, [archivedView]);
-
   const refreshList = () => setListRetry((value) => value + 1);
 
   const mutableSelected = selected !== null && isKnowledgeFile(selected);
 
   const saveEdit = async () => {
     if (positionId === null || selected === null || !writeDoc) return;
+    const epoch = readVersion.current;
+    const actingPosition = positionId;
+    const actingArchived = archivedView;
+    const actingPath = selected;
     setSaving(true);
     try {
-      const updated = await writeDoc(positionId, selected, draft);
+      const updated = await writeDoc(actingPosition, actingPath, draft);
+      if (epoch !== readVersion.current || actingPosition !== positionId || actingArchived !== archivedView) return;
       setDoc(updated);
       setEditing(false);
       message.success(t("docs.saved"));
       refreshList();
     } catch (error) {
+      if (epoch !== readVersion.current) return;
       message.error(error instanceof Error ? error.message : t("docs.editFail"));
     } finally {
-      setSaving(false);
+      if (epoch === readVersion.current) setSaving(false);
     }
   };
 
@@ -223,69 +223,93 @@ export function DocsPanel({
     }
     const parent = selected.includes("/") ? selected.slice(0, selected.lastIndexOf("/") + 1) : "knowledge/";
     const nextPath = trimmed.includes("/") ? trimmed : `${parent}${trimmed}`;
+    const epoch = readVersion.current;
+    const actingPosition = positionId;
+    const actingArchived = archivedView;
     setSaving(true);
     try {
-      const renamed = await renameDoc(positionId, selected, nextPath);
+      const renamed = await renameDoc(actingPosition, selected, nextPath);
+      if (epoch !== readVersion.current || actingPosition !== positionId || actingArchived !== archivedView) return;
       setRenameOpen(false);
       message.success(t("docs.renamed", { path: renamed.to }));
       setSelected(renamed.to);
+      setSaving(false);
       refreshList();
       openFile(renamed.to);
     } catch (error) {
+      if (epoch !== readVersion.current) return;
       message.error(error instanceof Error ? error.message : t("docs.renameFail"));
     } finally {
-      setSaving(false);
+      if (epoch === readVersion.current) setSaving(false);
     }
   };
 
   const submitArchive = async () => {
     if (positionId === null || selected === null || !archiveDoc) return;
+    const epoch = readVersion.current;
+    const actingPosition = positionId;
+    const actingArchived = archivedView;
+    const actingPath = selected;
     setSaving(true);
     try {
-      await archiveDoc(positionId, selected);
-      message.success(t("docs.archivedOk", { path: selected }));
+      await archiveDoc(actingPosition, actingPath);
+      if (epoch !== readVersion.current || actingPosition !== positionId || actingArchived !== archivedView) return;
+      message.success(t("docs.archivedOk", { path: actingPath }));
       setSelected(null);
       setDoc(null);
       refreshList();
     } catch (error) {
+      if (epoch !== readVersion.current) return;
       message.error(error instanceof Error ? error.message : t("docs.archiveFail"));
     } finally {
-      setSaving(false);
+      if (epoch === readVersion.current) setSaving(false);
     }
   };
 
   const submitRestore = async () => {
     if (positionId === null || selected === null || !restoreDoc) return;
+    const epoch = readVersion.current;
+    const actingPosition = positionId;
+    const actingArchived = archivedView;
+    const actingPath = selected;
     setSaving(true);
     try {
-      await restoreDoc(positionId, selected);
-      message.success(t("docs.restored", { path: selected }));
+      await restoreDoc(actingPosition, actingPath);
+      if (epoch !== readVersion.current || actingPosition !== positionId || actingArchived !== archivedView) return;
+      message.success(t("docs.restored", { path: actingPath }));
       setFileScope("knowledge");
       setSelected(null);
       setDoc(null);
       refreshList();
     } catch (error) {
+      if (epoch !== readVersion.current) return;
       message.error(error instanceof Error ? error.message : t("docs.restoreFail"));
     } finally {
-      setSaving(false);
+      if (epoch === readVersion.current) setSaving(false);
     }
   };
 
   const submitDelete = async () => {
     if (positionId === null || selected === null || !deleteDoc) return;
+    const epoch = readVersion.current;
+    const actingPosition = positionId;
+    const actingArchived = archivedView;
+    const actingPath = selected;
     setSaving(true);
     try {
-      if (archivedView) await deleteDoc(positionId, selected, { archived: true });
-      else await deleteDoc(positionId, selected);
-      message.success(t("docs.deleted", { path: selected }));
+      if (actingArchived) await deleteDoc(actingPosition, actingPath, { archived: true });
+      else await deleteDoc(actingPosition, actingPath);
+      if (epoch !== readVersion.current || actingPosition !== positionId || actingArchived !== archivedView) return;
+      message.success(t("docs.deleted", { path: actingPath }));
       setDeleteOpen(false);
       setSelected(null);
       setDoc(null);
       refreshList();
     } catch (error) {
+      if (epoch !== readVersion.current) return;
       message.error(error instanceof Error ? error.message : t("docs.deleteFail"));
     } finally {
-      setSaving(false);
+      if (epoch === readVersion.current) setSaving(false);
     }
   };
 

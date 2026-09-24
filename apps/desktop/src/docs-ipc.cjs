@@ -12,17 +12,29 @@ function invalidResponse(message) {
   };
 }
 
-function archivedQuery(options) {
-  return isPlainObject(options) && options.archived === true ? "&archived=1" : "";
+function parseDocsViewOptions(options) {
+  if (options === undefined || options === null) return { ok: true, archived: false };
+  if (!isPlainObject(options)) return invalidResponse("options must be an object");
+  const keys = Object.keys(options).sort();
+  if (keys.length === 0) return { ok: true, archived: false };
+  if (keys.join(",") !== "archived") {
+    return invalidResponse("options must carry only {archived?}");
+  }
+  if (options.archived !== true && options.archived !== false) {
+    return invalidResponse("archived must be a boolean");
+  }
+  return { ok: true, archived: options.archived === true };
 }
 
 function validateDocsListRequest(positionId, options) {
   if (typeof positionId !== "string" || positionId.length === 0) {
     return invalidResponse("positionId required");
   }
+  const parsed = parseDocsViewOptions(options);
+  if (!parsed.ok) return parsed;
   return {
     ok: true,
-    pathname: `/docs/list?position=${encodeURIComponent(positionId)}${archivedQuery(options)}`,
+    pathname: `/docs/list?position=${encodeURIComponent(positionId)}${parsed.archived ? "&archived=1" : ""}`,
   };
 }
 
@@ -33,10 +45,20 @@ function validateDocsReadRequest(positionId, filePath, options) {
   if (typeof filePath !== "string" || filePath.length === 0) {
     return invalidResponse("filePath required");
   }
+  const parsed = parseDocsViewOptions(options);
+  if (!parsed.ok) return parsed;
   return {
     ok: true,
-    pathname: `/docs/read?position=${encodeURIComponent(positionId)}&path=${encodeURIComponent(filePath)}${archivedQuery(options)}`,
+    pathname: `/docs/read?position=${encodeURIComponent(positionId)}&path=${encodeURIComponent(filePath)}${parsed.archived ? "&archived=1" : ""}`,
   };
+}
+
+function authorizeDocsIpcSender(event, expectedWindow, allowedUrl) {
+  const { isTrustedWindowSender } = require("./window-ipc.cjs");
+  if (!isTrustedWindowSender(event, expectedWindow, allowedUrl)) {
+    return { ok: false, response: { status: 403, body: { message: "Untrusted sender" } } };
+  }
+  return { ok: true };
 }
 
 function isPlainObject(value) {
@@ -154,4 +176,5 @@ module.exports = {
   validateDocsRenameRequest,
   validateDocsPathRequest,
   validateDocsDeleteRequest,
+  authorizeDocsIpcSender,
 };
