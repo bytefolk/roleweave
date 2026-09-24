@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Alert, Badge, Button as AntButton, ConfigProvider, message } from "antd";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
@@ -34,7 +34,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
+import { Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, Orbit, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -89,6 +89,10 @@ import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
 import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
+
+/** #472: the 3D star map pulls three.js in; lazy-load so the default bundle
+ *  never pays for WebGL until the operator opens the view. */
+const OrgStarMap = lazy(() => import("./org/OrgStarMap"));
 
 interface PositionCardState {
   loading: boolean;
@@ -278,15 +282,17 @@ function AppInner({
   const [startupStage, setStartupStage] = useState<"service" | "workspace" | "organization" | "ready">("service");
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const approvalState = useApprovals(workspaceInfo?.open ? workspaceInfo.path : undefined);
-  const [orgOverview, setOrgOverview] = useState(false);
+  /** Org module view mode (#472 adds the 3D star map as a third surface). */
+  const [orgView, setOrgView] = useState<"workbench" | "overview" | "star">("workbench");
   const [graphOpened, setGraphOpened] = useState(false);
-  const graph = useRelationshipGraph(workspaceInfo?.open ? workspaceInfo.path : undefined, activeModule === "org" && orgOverview);
+  const [starOpened, setStarOpened] = useState(false);
+  const graph = useRelationshipGraph(workspaceInfo?.open ? workspaceInfo.path : undefined, activeModule === "org" && orgView === "overview");
   useEffect(() => { setGraphOpened(false); setResourceRequest(null); }, [workspaceInfo?.path]);
   const [conversationFocused, setConversationFocused] = useWorkspaceFocus(workspaceInfo?.path ?? "");
   const sendShortcut = useSendShortcut();
   const conversationMemory = useRef(createConversationMemory());
   const workbenchButtonRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => setOrgOverview(false), [activeModule, workspaceInfo?.path, workspaceInfo?.open]);
+  useEffect(() => setOrgView("workbench"), [activeModule, workspaceInfo?.path, workspaceInfo?.open]);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
   const [managementTarget, setManagementTarget] = useState<string | null | undefined>(undefined);
   const [treeLoading, setTreeLoading] = useState(true);
@@ -1060,7 +1066,7 @@ function AppInner({
 
   /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
   const openConversation = useCallback((positionId: string) => {
-    setOrgOverview(false);
+    setOrgView("workbench");
     if (selectedIdRef.current === positionId) {
       void ensureActiveSession(positionId);
       return;
@@ -1353,7 +1359,7 @@ function AppInner({
     const workspacePath = workspacePathRef.current;
     if (!workspacePath) return;
     const key = JSON.stringify([workspacePath, source.positionId]);
-    setOrgOverview(false);
+    setOrgView("workbench");
     selectionVersion.current += 1;
     historyRequest.current += 1;
     selectedIdRef.current = source.positionId;
@@ -1820,7 +1826,7 @@ function AppInner({
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
-    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && !orgOverview ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`} aria-busy={startupStage !== "ready"}>
+    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && orgView === "workbench" ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`} aria-busy={startupStage !== "ready"}>
       {startupStage !== "ready" ? (
         <div className="owb-startup" role="status" aria-label={t("startup.aria")}>
           <div className="owb-startup__mark" aria-hidden="true"><span /><span /><span /></div>
@@ -2202,15 +2208,17 @@ function AppInner({
           </section>
         ) : <>
           <nav className="owb-org-views" aria-label={t("tree.views")}>
-            <AntButton ref={workbenchButtonRef} size="small" type={orgOverview ? "default" : "primary"}
-              aria-pressed={!orgOverview} onClick={() => setOrgOverview(false)}>{t("tree.workbench")}</AntButton>
-            <AntButton size="small" type={orgOverview ? "primary" : "default"} icon={<Network size={14} aria-hidden="true" />}
-              aria-pressed={orgOverview} onClick={() => { setGraphOpened(true); setOrgOverview(true); }}>{t("tree.overview")}</AntButton>
+            <AntButton ref={workbenchButtonRef} size="small" type={orgView === "workbench" ? "primary" : "default"}
+              aria-pressed={orgView === "workbench"} onClick={() => setOrgView("workbench")}>{t("tree.workbench")}</AntButton>
+            <AntButton size="small" type={orgView === "overview" ? "primary" : "default"} icon={<Network size={14} aria-hidden="true" />}
+              aria-pressed={orgView === "overview"} onClick={() => { setGraphOpened(true); setOrgView("overview"); }}>{t("tree.overview")}</AntButton>
+            <AntButton size="small" type={orgView === "star" ? "primary" : "default"} icon={<Orbit size={14} aria-hidden="true" />}
+              aria-pressed={orgView === "star"} onClick={() => { setStarOpened(true); setOrgView("star"); }}>{t("star.nav")}</AntButton>
           </nav>
-          {graphOpened ? <div hidden={!orgOverview} style={orgOverview ? { display: "contents" } : undefined}>
+          {graphOpened ? <div hidden={orgView !== "overview"} style={orgView === "overview" ? { display: "contents" } : undefined}>
             <RelationshipGraph
               workspaceKey={workspaceInfo.path ?? ""}
-              visible={orgOverview}
+              visible={orgView === "overview"}
               data={graph.data}
               loading={graph.loading}
               error={graph.error}
@@ -2224,8 +2232,37 @@ function AppInner({
               }}
             />
           </div> : null}
+          {starOpened ? (
+            <div hidden={orgView !== "star"} style={orgView === "star" ? { display: "contents" } : undefined}>
+              <Suspense fallback={<div className="owb-star-map__loading"><Skeleton /></div>}>
+                <OrgStarMap
+                  snapshot={snapshot}
+                  loading={treeLoading}
+                  enterpriseName={workspaceInfo?.business}
+                  displayNames={positionNames}
+                  avatarColors={positionColors}
+                  avatarUrls={avatarUrls}
+                  runningIds={runningPositionIds}
+                  selectedId={selectedId}
+                  onSelect={openConversation}
+                  onMove={(id, reportTo) => void movePosition(id, reportTo)}
+                  onHireEntry={(parent) => setTreeHireParent(parent)}
+                  onUndo={() => void undoLastAdjustment()}
+                  moveDisabled={orgBusy}
+                  dismissSlot={actionPosition && actionPosition.id !== snapshot?.owner ? (
+                    <DismissPositionDialog
+                      positionName={actionPosition.name}
+                      descendantCount={selectedNode ? countDescendants(selectedNode) : 0}
+                      busy={orgBusy}
+                      onDismiss={() => dismissPosition(actionPosition.id)}
+                    />
+                  ) : undefined}
+                />
+              </Suspense>
+            </div>
+          ) : null}
           <OrgWorkspaceSplit
-          hidden={orgOverview}
+          hidden={orgView !== "workbench"}
           focused={conversationFocused}
           ariaLabel={t("tree.splitPane")}
           resetTitle={t("tree.splitPaneReset")}
@@ -2292,7 +2329,7 @@ function AppInner({
             modelError={selectedId ? modelStates[selectedId]?.error : undefined}
             modelNotice={selectedId ? modelStates[selectedId]?.notice : undefined}
             onReloadModel={() => { if (selectedId) void loadPosition(selectedId); }}
-            active={!orgOverview}
+            active={orgView === "workbench"}
             avatarUrls={avatarUrls}
             workspaceOpen={workspaceInfo?.open === true}
             modelConfig={selectedId ? positionModels[selectedId] : undefined}

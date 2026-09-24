@@ -88,6 +88,10 @@ export interface OrgTreeNodeProps {
    * "body" = reparent target highlight. undefined = no indicator. Pseudo-
    * elements render the indicator absolutely (#263: no flex-flow siblings). */
   dropZone?: "before" | "after" | "body";
+  /** Active tree search: this row is a query hit (highlight). */
+  queryHit?: boolean;
+  /** Active tree search: this row is an ancestor kept for context (dim). */
+  queryDim?: boolean;
   /** Invalid drop target (self/descendant of dragged node): greyed, no-drop. */
   dropDenied: boolean;
   onDragStart: (event: DragEvent<HTMLDivElement>) => void;
@@ -123,6 +127,8 @@ export const OrgTreeNode = memo(function OrgTreeNode({
   draggable,
   dropZone,
   dropDenied,
+  queryHit = false,
+  queryDim = false,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -154,6 +160,8 @@ export const OrgTreeNode = memo(function OrgTreeNode({
         draggable && "is-draggable",
         dropZone === "body" && "is-drop-target",
         dropDenied && "is-drop-denied",
+        queryHit && "is-query-hit",
+        queryDim && "is-query-dim",
       )}
       style={{ "--d": depth } as CSSProperties}
       onClick={(event) => {
@@ -470,6 +478,18 @@ export function OrgTree({
 
   const focusedIndex = flatNodes.findIndex((entry) => entry.id === focusedId);
 
+  const firstMatchId = useMemo(() => {
+    if (!normalizedQuery) return null;
+    const hit = flatNodes.find((entry) => nodeMatchesQuery(entry.node, normalizedQuery, displayNames));
+    return hit?.id ?? null;
+  }, [normalizedQuery, flatNodes, displayNames]);
+
+  useEffect(() => {
+    if (!firstMatchId) return;
+    const element = containerRef.current?.querySelector(`[data-org-node-id="${firstMatchId}"]`);
+    if (element instanceof HTMLElement) element.scrollIntoView({ block: "nearest" });
+  }, [firstMatchId]);
+
   const focusNode = useCallback((id: string) => {
     setFocusedId(id);
     const element = containerRef.current?.querySelector(`[data-org-node-id="${id}"]`);
@@ -645,6 +665,8 @@ export function OrgTree({
           avatarColor={avatarColors?.[node.id]}
           avatarUrl={avatarUrls?.[node.id]}
           running={runningIds?.has(node.id) === true}
+          queryHit={Boolean(normalizedQuery) && nodeMatchesQuery(node, normalizedQuery, displayNames)}
+          queryDim={Boolean(normalizedQuery) && !nodeMatchesQuery(node, normalizedQuery, displayNames)}
           onSelect={() => onSelect?.(node.id)}
           onToggle={() => toggleNode(node.id)}
           onFocus={() => setFocusedId(node.id)}
