@@ -630,6 +630,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                       detail={detail}
                       positionNames={positionNames}
                       positionEngines={positionEngines}
+                      onOpenBoundSession={onOpenBoundSession}
                       onRefresh={async () => {
                         const goalId = selectedRef.current;
                         await Promise.all([loadGoals(), goalId ? loadDetail(goalId) : Promise.resolve()]);

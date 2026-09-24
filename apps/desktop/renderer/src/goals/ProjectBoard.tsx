@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Drawer, Input } from "antd";
+import { Button, Drawer, Input, Modal } from "antd";
 import {
   CalendarDays,
   ChevronLeft,
@@ -14,6 +14,7 @@ import { useOwbLocale, useT } from "@roleweave/ui";
 import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { TurnEngine } from "@roleweave/shared";
 import { useEngineLabel } from "../turns/engine-select";
+import { WINDOW_DAYS, dayNumber, scheduleBar } from "./project-schedule.js";
 import "./project-board.css";
 
 export interface ProjectBoardProps {
@@ -21,12 +22,12 @@ export interface ProjectBoardProps {
   positionNames: Record<string, string>;
   positionEngines?: Record<string, TurnEngine>;
   onRefresh: () => void | Promise<void>;
+  onOpenBoundSession?: (positionId: string, sessionId?: string) => void;
 }
 
 const STATUSES = ["todo", "in_progress", "blocked", "review", "done"] as const;
 const PRIORITIES = ["low", "normal", "high"] as const;
 const DAY = 86_400_000;
-const WINDOW_DAYS = 28;
 const MAX_ITEMS = 64;
 type TaskExecution = NonNullable<GoalDetail["taskExecutions"]>[string];
 type Editor = { item: GoalWorkItem; isNew: boolean; version: string };
@@ -34,9 +35,6 @@ type Editor = { item: GoalWorkItem; isNew: boolean; version: string };
 function localToday() {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-function dayNumber(value: string) {
-  return Date.parse(`${value}T00:00:00Z`) / DAY;
 }
 function dateValue(day: number) {
   return new Date(day * DAY).toISOString().slice(0, 10);
@@ -74,6 +72,7 @@ export function ProjectBoard({
   positionNames,
   positionEngines = {},
   onRefresh,
+  onOpenBoundSession,
 }: ProjectBoardProps) {
   const t = useT();
   const locale = useOwbLocale();
@@ -82,8 +81,11 @@ export function ProjectBoard({
   const [view, setView] = useState<"board" | "schedule">("board");
   const [query, setQuery] = useState("");
   const [owner, setOwner] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const [editor, setEditor] = useState<Editor | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
   const [launching, setLaunching] = useState<Record<string, boolean>>({});
   const [accepted, setAccepted] = useState<Record<string, TaskExecution>>({});
@@ -122,7 +124,9 @@ export function ProjectBoard({
       (owner === "all" ||
         (owner === "unassigned"
           ? !item.assigneePositionId
-          : owner === `position:${item.assigneePositionId ?? ""}`))
+          : owner === `position:${item.assigneePositionId ?? ""}`)) &&
+      (statusFilter === "all" || item.status === statusFilter) &&
+      (priorityFilter === "all" || item.priority === priorityFilter)
     );
   });
   const ownerIds = Array.from(
@@ -168,6 +172,7 @@ export function ProjectBoard({
     saving.current = true;
     setBusy(true);
     setError(null);
+    setConflict(false);
     try {
       const result = await window.owb.updateGoal({
         goalId: detail.goal.goalId,
@@ -175,6 +180,11 @@ export function ProjectBoard({
         expectedUpdatedAt: version,
       });
       if (!alive.current) return;
+      if (result.status === 409) {
+        setConflict(true);
+        await refresh();
+        throw new Error(t("project.conflict"));
+      }
       if (result.status !== 200)
         throw new Error(responseError(result.body, t("project.saveError")));
       if (closeEditor) setEditor(null);
@@ -191,6 +201,7 @@ export function ProjectBoard({
   };
   const edit = (item?: GoalWorkItem) => {
     setError(null);
+    setConflict(false);
     setEditor({
       item: item
         ? { ...item }
@@ -243,6 +254,47 @@ export function ProjectBoard({
       editor.version,
       true,
     );
+  };
+  const editorWorkItems = (draft: GoalWorkItem, isNew: boolean) => {
+    const item: GoalWorkItem = {
+      taskId: draft.taskId,
+      title: draft.title.trim(),
+      status: draft.status,
+      priority: draft.priority,
+      ...(draft.description?.trim()
+        ? { description: draft.description.trim() }
+        : {}),
+      ...(draft.assigneePositionId
+        ? { assigneePositionId: draft.assigneePositionId }
+        : {}),
+      ...(draft.startDate ? { startDate: draft.startDate } : {}),
+      ...(draft.dueDate ? { dueDate: draft.dueDate } : {}),
+    };
+    return isNew
+      ? [...items, item]
+      : items.map((existing) => (existing.taskId === item.taskId ? item : existing));
+  };
+  const syncAndRetry = () => {
+    if (!editor || !validEditor) return;
+    const version = detail.goal.updatedAt;
+    setEditor((current) => (current ? { ...current, version } : current));
+    setConflict(false);
+    void save(editorWorkItems(editor.item, editor.isNew), version, true);
+  };
+  const removeTask = (item: GoalWorkItem) => {
+    Modal.confirm({
+      title: t("project.delete"),
+      content: t("project.deleteConfirm", { title: item.title }),
+      okText: t("project.delete"),
+      cancelText: t("dlg.cancel"),
+      okButtonProps: { danger: true },
+      onOk: () =>
+        save(
+          items.filter((existing) => existing.taskId !== item.taskId),
+          editor?.version ?? detail.goal.updatedAt,
+          true,
+        ),
+    });
   };
   const launch = async (item: GoalWorkItem) => {
     const positionId = item.assigneePositionId;
@@ -297,6 +349,22 @@ export function ProjectBoard({
 
   const execution = (item: GoalWorkItem) => {
     const run = executionOf(item);
+    const label = runLabel(item);
+    if (run && onOpenBoundSession) {
+      return (
+        <button
+          type="button"
+          className="owb-project-execution owb-project-execution--link"
+          data-status={run.status}
+          title={run.turnId}
+          aria-label={t("project.openExecutionNamed", { title: item.title })}
+          onClick={() => onOpenBoundSession(run.positionId)}
+        >
+          <span aria-hidden="true" />
+          {label}
+        </button>
+      );
+    }
     return (
       <span
         className="owb-project-execution"
@@ -304,7 +372,7 @@ export function ProjectBoard({
         title={run?.turnId}
       >
         <span aria-hidden="true" />
-        {runLabel(item)}
+        {label}
       </span>
     );
   };
@@ -504,6 +572,32 @@ export function ProjectBoard({
             </option>
           ))}
         </select>
+        <select
+          className="owb-project-select"
+          aria-label={t("project.filterStatus")}
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+        >
+          <option value="all">{t("project.allStatuses")}</option>
+          {STATUSES.map((status) => (
+            <option key={status} value={status}>
+              {t(`project.status.${status}`)}
+            </option>
+          ))}
+        </select>
+        <select
+          className="owb-project-select"
+          aria-label={t("project.filterPriority")}
+          value={priorityFilter}
+          onChange={(event) => setPriorityFilter(event.target.value)}
+        >
+          <option value="all">{t("project.allPriorities")}</option>
+          {PRIORITIES.map((priority) => (
+            <option key={priority} value={priority}>
+              {t(`project.priority.${priority}`)}
+            </option>
+          ))}
+        </select>
         <Button
           type="primary"
           icon={<Plus size={14} aria-hidden="true" />}
@@ -513,6 +607,11 @@ export function ProjectBoard({
           {t("project.create")}
         </Button>
       </div>
+      {items.length >= MAX_ITEMS && (
+        <p className="owb-project-notice" role="status">
+          {t("project.capacityReached")}
+        </p>
+      )}
       {!editor && error && (
         <p className="owb-project-error" role="alert">
           {error}
@@ -540,6 +639,8 @@ export function ProjectBoard({
             onClick={() => {
               setQuery("");
               setOwner("all");
+              setStatusFilter("all");
+              setPriorityFilter("all");
             }}
           >
             {t("reading.clearFilters")}
@@ -612,12 +713,8 @@ export function ProjectBoard({
                 </div>
               </div>
               {scheduled.map((item) => {
-                const start = dayNumber(item.startDate ?? item.dueDate!);
-                const end = dayNumber(item.dueDate ?? item.startDate!);
-                const left = Math.max(0, start - windowStart);
-                const right = Math.min(WINDOW_DAYS, end - windowStart + 1);
-                const inWindow =
-                  start < windowStart + WINDOW_DAYS && end >= windowStart;
+                const bar = scheduleBar(item.startDate, item.dueDate, windowStart);
+                const { left, widthDays, inWindow } = bar;
                 const label =
                   item.startDate && item.dueDate
                     ? `${item.startDate} → ${item.dueDate}`
@@ -667,7 +764,7 @@ export function ProjectBoard({
                           data-point={!item.startDate || !item.dueDate}
                           style={{
                             left: `${(left / WINDOW_DAYS) * 100}%`,
-                            width: `${(Math.max(1, right - left) / WINDOW_DAYS) * 100}%`,
+                            width: `${(widthDays / WINDOW_DAYS) * 100}%`,
                           }}
                           aria-label={`${item.title}: ${label}`}
                           title={`${item.title}: ${label}`}
@@ -707,29 +804,52 @@ export function ProjectBoard({
           if (!busy) {
             setEditor(null);
             setError(null);
+            setConflict(false);
           }
         }}
         size="min(520px, calc(100vw - 24px))"
         destroyOnHidden
         footer={
           <div className="owb-project-form__footer">
+            {editor && !editor.isNew ? (
+              <Button
+                danger
+                disabled={busy}
+                aria-label={t("project.deleteNamed", { title: editor.item.title })}
+                onClick={() => removeTask(editor.item)}
+              >
+                {t("project.delete")}
+              </Button>
+            ) : null}
             <Button
               disabled={busy}
               onClick={() => {
                 setEditor(null);
                 setError(null);
+                setConflict(false);
               }}
             >
               {t("dlg.cancel")}
             </Button>
-            <Button
-              type="primary"
-              loading={busy}
-              disabled={!validEditor}
-              onClick={submit}
-            >
-              {t("project.save")}
-            </Button>
+            {conflict ? (
+              <Button
+                type="primary"
+                loading={busy}
+                disabled={!validEditor}
+                onClick={syncAndRetry}
+              >
+                {t("project.conflictSyncRetry")}
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                loading={busy}
+                disabled={!validEditor}
+                onClick={submit}
+              >
+                {t("project.save")}
+              </Button>
+            )}
           </div>
         }
       >
@@ -849,16 +969,26 @@ export function ProjectBoard({
                   {t("project.invalidDates")}
                 </p>
               )}
+            {(editor.item.startDate && !validDate(editor.item.startDate)) ||
+            (editor.item.dueDate && !validDate(editor.item.dueDate)) ? (
+              <p className="owb-project-error" role="alert">
+                {t("project.invalidDateValue")}
+              </p>
+            ) : null}
             {error && (
               <p className="owb-project-error" role="alert">
                 {error}
               </p>
             )}
-            {editor.version !== detail.goal.updatedAt && (
+            {conflict ? (
+              <p className="owb-project-notice" role="status">
+                {t("project.conflict")}
+              </p>
+            ) : editor.version !== detail.goal.updatedAt ? (
               <p className="owb-project-notice">
                 {t("project.changedWhileEditing")}
               </p>
-            )}
+            ) : null}
           </>
         )}
       </Drawer>

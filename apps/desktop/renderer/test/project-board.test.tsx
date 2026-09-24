@@ -129,10 +129,11 @@ describe("ProjectBoard", () => {
   it("retains failed edits and sends the opening version after a background refresh", async () => {
     const updateGoal = vi
       .fn()
-      .mockResolvedValue({
+      .mockResolvedValueOnce({
         status: 409,
         body: { message: "Version conflict" },
-      });
+      })
+      .mockResolvedValue({ status: 200, body: { goalId: "goal-one" } });
     const context = setup(detail(), { updateGoal });
     fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
     const drawer = within(screen.getByRole("dialog"));
@@ -141,16 +142,25 @@ describe("ProjectBoard", () => {
     });
     const fresh = detail([{ ...task, title: "Someone else edited" }]);
     fresh.goal.updatedAt = "2026-09-22T00:00:00.000Z";
-    context.rerender(<ProjectBoard {...context.props} detail={fresh} />);
     fireEvent.click(drawer.getByRole("button", { name: "保存任务" }));
-    await screen.findByText("Version conflict");
+    await screen.findByText(/项目已被他人更新/);
     expect(drawer.getByLabelText("任务标题")).toHaveValue("Keep my draft");
     expect(updateGoal).toHaveBeenCalledWith(
       expect.objectContaining({
         expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
       }),
     );
-    expect(context.onRefresh).not.toHaveBeenCalled();
+    await waitFor(() => expect(context.onRefresh).toHaveBeenCalled());
+    context.rerender(<ProjectBoard {...context.props} detail={fresh} />);
+    fireEvent.click(drawer.getByRole("button", { name: "同步最新并重试" }));
+    await waitFor(() =>
+      expect(updateGoal).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          expectedUpdatedAt: "2026-09-22T00:00:00.000Z",
+          workItems: [expect.objectContaining({ title: "Keep my draft" })],
+        }),
+      ),
+    );
   });
 
   it("keeps manual status on a rejected transition", async () => {
@@ -365,5 +375,88 @@ describe("ProjectBoard", () => {
       screen.getByRole("article", { name: "Ship board" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Invalid Date")).not.toBeInTheDocument();
+  });
+
+  it("deletes a task from the edit drawer after confirmation", async () => {
+    const context = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除任务：Ship board" }));
+    await screen.findByText("确定删除「Ship board」？看板里无法撤销。");
+    const confirmButtons = screen.getAllByRole("button", { name: "删除任务" });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+    await waitFor(() =>
+      expect(context.updateGoal).toHaveBeenCalledWith({
+        goalId: "goal-one",
+        expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+        workItems: [],
+      }),
+    );
+  });
+
+  it("jumps from an execution tag to the bound session", async () => {
+    const onOpenBoundSession = vi.fn();
+    const running = {
+      ...detail(),
+      taskExecutions: {
+        "task-one": {
+          turnId: "turn-one",
+          positionId: "engineer",
+          status: "running" as const,
+        },
+      },
+    };
+    render(
+      <ProjectBoard
+        detail={running}
+        positionNames={{ engineer: "Engineer" }}
+        positionEngines={{ engineer: "codex" }}
+        onRefresh={vi.fn()}
+        onOpenBoundSession={onOpenBoundSession}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "打开 Agent 执行：Ship board" }));
+    expect(onOpenBoundSession).toHaveBeenCalledWith("engineer");
+  });
+
+  it("filters tasks by status and priority", () => {
+    setup(
+      detail([
+        task,
+        {
+          ...task,
+          taskId: "two",
+          title: "Blocked design",
+          status: "blocked",
+          priority: "low",
+          assigneePositionId: "designer",
+        },
+      ]),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "筛选状态" }), {
+      target: { value: "blocked" },
+    });
+    expect(screen.queryByRole("article", { name: "Ship board" })).not.toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Blocked design" })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "筛选状态" }), {
+      target: { value: "all" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "筛选优先级" }), {
+      target: { value: "high" },
+    });
+    expect(screen.getByRole("article", { name: "Ship board" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("article", { name: "Blocked design" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("explains the 64-task cap instead of failing silently", () => {
+    const items = Array.from({ length: 64 }, (_, index) => ({
+      ...task,
+      taskId: `task-${index}`,
+      title: `Task ${index}`,
+    }));
+    setup(detail(items));
+    expect(screen.getByRole("button", { name: "新建任务" })).toBeDisabled();
+    expect(screen.getByText("该项目已有 64 条任务。请先删除一条再新建。")).toBeInTheDocument();
   });
 });

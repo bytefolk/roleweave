@@ -63,6 +63,20 @@
 .owb-project-summary__metric[data-alert="overdue"] strong {
   color: var(--ui-danger);
 }
+.owb-project-execution--link {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: inherit;
+}
+.owb-project-execution--link:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 2px;
+}
 .owb-project-toolbar {
   display: flex;
   flex-wrap: wrap;

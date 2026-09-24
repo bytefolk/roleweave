@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- #490：项目管理看板可删除任务（确认后经 `updateGoal` 落盘）、执行状态可跳到绑定会话、`App.tsx` 给项目管理补齐与目标模块相同的会话/审批/头像 props。编辑中 409 可同步最新版本并保留草稿再保存。支持按状态和优先级筛选。非法日期与 64 条上限有明确提示。排期条对反向日期做 clamp，宽度不为负。Refs #490。
+
 ### Added
 
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
