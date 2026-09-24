@@ -166,6 +166,12 @@ export function ProjectBoard({
   const refresh = async () => {
     try {
       await onRefresh();
+      if (typeof window.owb.goal === "function") {
+        const res = await window.owb.goal(detail.goal.goalId);
+        if (res.status === 200 && res.body?.goal && alive.current) {
+          detailRef.current = res.body;
+        }
+      }
     } catch {
       if (alive.current) setError(t("project.refreshError"));
     }
@@ -175,8 +181,8 @@ export function ProjectBoard({
     version: string,
     closeEditor = false,
     fallbackError?: string,
-  ) => {
-    if (saving.current) return;
+  ): Promise<boolean> => {
+    if (saving.current) return false;
     saving.current = true;
     setBusy(true);
     setError(null);
@@ -186,7 +192,7 @@ export function ProjectBoard({
         workItems: next,
         expectedUpdatedAt: version,
       });
-      if (!alive.current) return;
+      if (!alive.current) return false;
       if (result.status !== 200) {
         if (result.status === 409) {
           setConflict(true);
@@ -198,6 +204,7 @@ export function ProjectBoard({
       setConflict(false);
       if (closeEditor) setEditor(null);
       await refresh();
+      return true;
     } catch (cause) {
       if (alive.current)
         setError(
@@ -205,6 +212,7 @@ export function ProjectBoard({
             ? cause.message
             : (fallbackError ?? t("project.saveError")),
         );
+      return false;
     } finally {
       saving.current = false;
       if (alive.current) setBusy(false);
@@ -277,13 +285,15 @@ export function ProjectBoard({
     )
       return;
     const remaining = items.filter((existing) => existing.taskId !== item.taskId);
-    setAccepted((previous) => {
-      if (!own(previous, item.taskId)) return previous;
-      const next = { ...previous };
-      delete next[item.taskId];
-      return next;
-    });
-    await save(remaining, editor.version, true, t("project.deleteTaskFail"));
+    const ok = await save(remaining, editor.version, true, t("project.deleteTaskFail"));
+    if (ok) {
+      setAccepted((previous) => {
+        if (!own(previous, item.taskId)) return previous;
+        const next = { ...previous };
+        delete next[item.taskId];
+        return next;
+      });
+    }
   };
 
   const launch = async (item: GoalWorkItem) => {
@@ -474,14 +484,17 @@ export function ProjectBoard({
       day: "numeric",
       timeZone: "UTC",
     }).format(new Date(day * DAY));
+  const getValidDate = (date?: string) =>
+    date && validDate(date) ? date : undefined;
   const isScheduled = (item: GoalWorkItem) =>
-    (!!item.startDate && validDate(item.startDate)) ||
-    (!!item.dueDate && validDate(item.dueDate));
+    !!(getValidDate(item.startDate) || getValidDate(item.dueDate));
   const scheduled = filtered
     .filter(isScheduled)
-    .sort((a, b) =>
-      (a.startDate ?? a.dueDate!).localeCompare(b.startDate ?? b.dueDate!),
-    );
+    .sort((a, b) => {
+      const aDate = getValidDate(a.startDate) ?? getValidDate(a.dueDate)!;
+      const bDate = getValidDate(b.startDate) ?? getValidDate(b.dueDate)!;
+      return aDate.localeCompare(bDate);
+    });
   const unscheduled = filtered.filter((item) => !isScheduled(item));
 
   return (
@@ -721,8 +734,10 @@ export function ProjectBoard({
                 </div>
               </div>
               {scheduled.map((item) => {
-                const sRaw = dayNumber(item.startDate ?? item.dueDate!);
-                const eRaw = dayNumber(item.dueDate ?? item.startDate!);
+                const validStart = getValidDate(item.startDate);
+                const validDue = getValidDate(item.dueDate);
+                const sRaw = dayNumber(validStart ?? validDue!);
+                const eRaw = dayNumber(validDue ?? validStart!);
                 const start = Math.min(sRaw, eRaw);
                 const end = Math.max(sRaw, eRaw);
                 const left = Math.max(0, start - windowStart);
@@ -730,11 +745,11 @@ export function ProjectBoard({
                 const inWindow =
                   start < windowStart + WINDOW_DAYS && end >= windowStart;
                 const label =
-                  item.startDate && item.dueDate
-                    ? `${item.startDate} → ${item.dueDate}`
-                    : item.startDate
-                      ? t("project.startOnly", { date: item.startDate })
-                      : t("project.dueOnly", { date: item.dueDate! });
+                  validStart && validDue
+                    ? `${validStart} → ${validDue}`
+                    : validStart
+                      ? t("project.startOnly", { date: validStart })
+                      : t("project.dueOnly", { date: validDue! });
                 return (
                   <div
                     className="owb-project-timeline__row"
@@ -775,7 +790,7 @@ export function ProjectBoard({
                           type="button"
                           className="owb-project-timeline__bar"
                           data-status={item.status}
-                          data-point={!item.startDate || !item.dueDate}
+                          data-point={!validStart || !validDue}
                           style={{
                             left: `${(left / WINDOW_DAYS) * 100}%`,
                             width: `${(Math.max(1, right - left) / WINDOW_DAYS) * 100}%`,

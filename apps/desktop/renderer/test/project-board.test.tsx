@@ -558,7 +558,7 @@ describe("ProjectBoard", () => {
     expect(screen.getByText("项目已达到最大任务数上限（64个）")).toBeInTheDocument();
   });
 
-  it("clamps schedule bar calculations for inverted dates without negative width", () => {
+  it("clamps schedule bar calculations for inverted dates, window-edge spans, and partially invalid dates", () => {
     setup(
       detail([
         {
@@ -568,24 +568,49 @@ describe("ProjectBoard", () => {
           startDate: "2026-09-28",
           dueDate: "2026-09-22",
         },
+        {
+          ...task,
+          taskId: "span-task",
+          title: "Span task across window",
+          startDate: "2025-01-01",
+          dueDate: "2027-01-01",
+        },
+        {
+          ...task,
+          taskId: "partial-date-task",
+          title: "Partially invalid date task",
+          startDate: "malformed-date",
+          dueDate: "2026-09-22",
+        },
       ]),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "排期" }));
 
-    const bar = screen.getByRole("button", { name: /^Inverted dates task: / });
-    expect(bar).toBeInTheDocument();
+    // Inverted task bar is clamped chronologically without negative width
+    const invBar = screen.getByRole("button", { name: /^Inverted dates task: / });
+    expect(invBar).toBeInTheDocument();
+    const invLeft = parseFloat(invBar.style.left.match(/([\d.]+)%/)![1]);
+    const invWidth = parseFloat(invBar.style.width.match(/([\d.]+)%/)![1]);
+    expect(invLeft).toBeGreaterThanOrEqual(0);
+    expect(invWidth).toBeGreaterThan(0);
 
-    const leftMatch = bar.style.left.match(/([\d.]+)%/);
-    const widthMatch = bar.style.width.match(/([\d.]+)%/);
-    expect(leftMatch).toBeTruthy();
-    expect(widthMatch).toBeTruthy();
+    // Span task covering beyond the window boundaries is clamped to [0%, 100%]
+    const spanBar = screen.getByRole("button", { name: /^Span task across window: / });
+    expect(spanBar).toBeInTheDocument();
+    expect(spanBar.style.left).toBe("0%");
+    expect(spanBar.style.width).toBe("100%");
 
-    const left = parseFloat(leftMatch![1]);
-    const width = parseFloat(widthMatch![1]);
-
-    expect(left).toBeGreaterThanOrEqual(0);
-    expect(width).toBeGreaterThan(0);
+    // Partially invalid date task uses the valid date safely without NaN
+    const partialBar = screen.getByRole("button", { name: /^Partially invalid date task: / });
+    expect(partialBar).toBeInTheDocument();
+    const partialLeft = parseFloat(partialBar.style.left.match(/([\d.]+)%/)![1]);
+    const partialWidth = parseFloat(partialBar.style.width.match(/([\d.]+)%/)![1]);
+    expect(Number.isFinite(partialLeft)).toBe(true);
+    expect(Number.isFinite(partialWidth)).toBe(true);
+    expect(partialLeft).toBeGreaterThanOrEqual(0);
+    expect(partialWidth).toBeGreaterThan(0);
+    expect(screen.getByText("截止：2026-09-22 · 开始未定")).toBeInTheDocument();
   });
 
   it("surfaces project.deleteTaskFail error message when deletion fails", async () => {
@@ -598,6 +623,61 @@ describe("ProjectBoard", () => {
     fireEvent.click(drawer.getByRole("button", { name: "删除任务" }));
 
     expect(await drawer.findByText("删除任务失败，请重试。")).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it("handles 409 conflict during task deletion and allows syncing to retry deletion", async () => {
+    let currentDetail = detail([{ ...task, title: "Task to delete" }]);
+    const freshDetail = detail([{ ...task, title: "Task to delete" }]);
+    freshDetail.goal.updatedAt = "2026-09-24T00:00:00.000Z";
+
+    const updateGoal = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: 409,
+        body: { message: "Version conflict during delete" },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { goalId: "goal-one" },
+      });
+
+    let rerenderFn: (ui: React.ReactElement) => void;
+    const onRefresh = vi.fn().mockImplementation(async () => {
+      currentDetail = freshDetail;
+      rerenderFn(<ProjectBoard {...context.props} detail={freshDetail} />);
+    });
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const context = setup(currentDetail, { updateGoal }, { onRefresh });
+    rerenderFn = context.rerender;
+
+    fireEvent.click(screen.getByRole("button", { name: "Task to delete" }));
+    const drawer = within(screen.getByRole("dialog"));
+
+    // Attempt delete which encounters 409
+    fireEvent.click(drawer.getByRole("button", { name: "删除任务" }));
+
+    expect(await drawer.findByText("Version conflict during delete")).toBeInTheDocument();
+    const syncBtn = await drawer.findByRole("button", { name: "同步最新版本" });
+    expect(syncBtn).toBeInTheDocument();
+
+    // Click sync
+    fireEvent.click(syncBtn);
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+
+    // Retry delete with synced version
+    fireEvent.click(drawer.getByRole("button", { name: "删除任务" }));
+
+    await waitFor(() =>
+      expect(updateGoal).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          expectedUpdatedAt: "2026-09-24T00:00:00.000Z",
+          workItems: [],
+        }),
+      ),
+    );
+
     confirmSpy.mockRestore();
   });
 });
