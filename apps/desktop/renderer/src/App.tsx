@@ -90,7 +90,6 @@ import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
 import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
 
-import { deriveKnowledgeLinks } from "./org/star-map-layout";
 
 /** #472: the 3D star map pulls three.js in; lazy-load so the default bundle
  *  never pays for WebGL until the operator opens the view. */
@@ -310,11 +309,6 @@ function AppInner({
   const [positionColors, setPositionColors] = useState<Record<string, string>>({});
   const [positionTitles, setPositionTitles] = useState<Record<string, string>>({});
   const [positionModes, setPositionModes] = useState<Record<string, "read_only" | "approval_required">>({});
-  const validPositionIds = useMemo(() => new Set(Object.keys(positionNames)), [positionNames]);
-  const starKnowledgeLinks = useMemo(
-    () => deriveKnowledgeLinks(graph.data, validPositionIds),
-    [graph.data, validPositionIds],
-  );
   /** Avatar is a presentation preference scoped to this local project. It
    * never mutates the employee package or its upstream digest. */
   const [positionAvatars, setPositionAvatars] = useState<Record<string, AvatarValue>>({});
@@ -2268,7 +2262,6 @@ function AppInner({
                   runningIds={runningPositionIds}
                   selectedId={selectedId}
                   relationshipGraph={graph.data}
-                  knowledgeLinks={starKnowledgeLinks}
                   onSelect={selectPosition}
                   onOpenConversation={openConversation}
                   onMove={(id, reportTo) => void movePosition(id, reportTo)}

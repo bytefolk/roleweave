@@ -438,7 +438,7 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(screen.getByText("协同跨链:")).toBeInTheDocument();
     const card = screen.getByLabelText("员工概览");
     expect(within(card).getByText("知识协同链路")).toBeInTheDocument();
-    expect(within(card).getByRole("button", { name: /Task Collaboration/ })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: /任务协同/ })).toBeInTheDocument();
   });
 
   it("员工卡片提供「进入对话」直达按钮，点击调用 onOpenConversation", () => {
@@ -461,4 +461,3 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(onOpenConversation).toHaveBeenCalledWith("docs-lead");
   });
 });
-

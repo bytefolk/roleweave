@@ -21,6 +21,14 @@ export type CelestialKind = "star" | "planet" | "moon";
 export interface OrgKnowledgeLink {
   source: string;
   target: string;
+  /**
+   * Stable semantic relation emitted by the graph projection. Presentation
+   * code translates this value; the layout module must not own UI copy.
+   */
+  relation?: "task" | "goal" | "resource" | "relationship";
+  /** Optional label of the task, goal, resource, or relationship kind. */
+  subject?: string;
+  /** Optional caller-supplied presentation copy for manually supplied links. */
   label?: string;
   desc?: string;
 }
@@ -335,13 +343,18 @@ export function deriveKnowledgeLinks(
   const links: OrgKnowledgeLink[] = [];
   const linkKeys = new Set<string>();
 
-  const addLink = (source: string, target: string, label?: string, desc?: string): void => {
+  const addLink = (
+    source: string,
+    target: string,
+    relation?: OrgKnowledgeLink["relation"],
+    subject?: string,
+  ): void => {
     if (!source || !target || source === target) return;
     if (validPositionIds && (!validPositionIds.has(source) || !validPositionIds.has(target))) return;
     const key = source < target ? `${source}->${target}` : `${target}->${source}`;
     if (linkKeys.has(key)) return;
     linkKeys.add(key);
-    links.push({ source, target, label, desc });
+    links.push({ source, target, relation, subject });
   };
 
   const agentIdToPositionId = new Map<string, string>();
@@ -373,7 +386,7 @@ export function deriveKnowledgeLinks(
 
     // Direct non-reporting edge between positions
     if (sourcePos && targetPos && edge.kind !== "reports_to") {
-      addLink(sourcePos, targetPos, edge.kind, `Collaboration: ${edge.kind}`);
+      addLink(sourcePos, targetPos, "relationship", edge.kind);
       continue;
     }
 
@@ -416,7 +429,7 @@ export function deriveKnowledgeLinks(
   const taskNodes = new Map(graph.nodes.filter((n) => n.kind === "task").map((n) => [n.id, n]));
   for (const [taskId, assignees] of taskAssignees.entries()) {
     const task = taskNodes.get(taskId);
-    const taskDesc = task?.label ? `Task: ${task.label}` : undefined;
+    const taskLabel = task?.label;
     const requesters = taskRequesters.get(taskId);
 
     // Requester <-> Assignees
@@ -424,7 +437,7 @@ export function deriveKnowledgeLinks(
       for (const req of requesters) {
         for (const asg of assignees) {
           if (req !== asg) {
-            addLink(req, asg, "Task Collaboration", taskDesc);
+            addLink(req, asg, "task", taskLabel);
           }
         }
       }
@@ -435,7 +448,7 @@ export function deriveKnowledgeLinks(
       const arr = Array.from(assignees);
       for (let i = 0; i < arr.length; i++) {
         for (let j = i + 1; j < arr.length; j++) {
-          addLink(arr[i]!, arr[j]!, "Task Collaboration", taskDesc);
+          addLink(arr[i]!, arr[j]!, "task", taskLabel);
         }
       }
     }
@@ -446,11 +459,11 @@ export function deriveKnowledgeLinks(
   for (const [goalId, assignees] of goalAssignees.entries()) {
     if (assignees.size > 1) {
       const goal = goalNodes.get(goalId);
-      const goalDesc = goal?.label ? `Goal: ${goal.label}` : undefined;
+      const goalLabel = goal?.label;
       const arr = Array.from(assignees);
       for (let i = 0; i < arr.length; i++) {
         for (let j = i + 1; j < arr.length; j++) {
-          addLink(arr[i]!, arr[j]!, "Goal Collaboration", goalDesc);
+          addLink(arr[i]!, arr[j]!, "goal", goalLabel);
         }
       }
     }
@@ -461,11 +474,11 @@ export function deriveKnowledgeLinks(
   for (const [resId, positions] of resourcePositions.entries()) {
     if (positions.size > 1) {
       const res = resourceNodes.get(resId);
-      const resDesc = res?.label ? `Shared: ${res.label}` : undefined;
+      const resourceLabel = res?.label;
       const arr = Array.from(positions);
       for (let i = 0; i < arr.length; i++) {
         for (let j = i + 1; j < arr.length; j++) {
-          addLink(arr[i]!, arr[j]!, "Shared Resource", resDesc);
+          addLink(arr[i]!, arr[j]!, "resource", resourceLabel);
         }
       }
     }

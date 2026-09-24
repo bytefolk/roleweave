@@ -1160,6 +1160,24 @@ export default function OrgStarMap({
     );
   }, [effectiveKnowledgeLinks, selectedBody]);
 
+  const knowledgeLinkCopy = useCallback(
+    (link: OrgKnowledgeLink): { label: string | undefined; desc: string | undefined } => {
+      if (!link.relation) return { label: link.label, desc: link.desc };
+      const relationKeys = {
+        task: ["star.knowledgeTask", "star.knowledgeTaskSubject"],
+        goal: ["star.knowledgeGoal", "star.knowledgeGoalSubject"],
+        resource: ["star.knowledgeResource", "star.knowledgeResourceSubject"],
+        relationship: ["star.knowledgeRelationship", "star.knowledgeRelationshipSubject"],
+      } as const;
+      const [labelKey, descKey] = relationKeys[link.relation];
+      return {
+        label: t(labelKey),
+        desc: link.subject ? t(descKey, { name: link.subject }) : undefined,
+      };
+    },
+    [t],
+  );
+
   return (
     <section
       className={`owb-star-map owb-star-map--${theme}${className ? ` ${className}` : ""}`}
@@ -1417,14 +1435,15 @@ export default function OrgStarMap({
                         const otherBody = layout.bodies.find((b) => b.id === otherId);
                         const otherName = otherBody ? nameOf(otherBody) : (displayNames?.[otherId] ?? otherId);
                         const isSource = cl.source === selectedBody.id;
+                        const copy = knowledgeLinkCopy(cl);
                         return (
                           <li key={`${cl.source}-${cl.target}-${i}`}>
                             <button
                               type="button"
                               onClick={() => locate(otherId)}
-                              title={cl.desc || cl.label}
+                              title={copy.desc || copy.label}
                             >
-                              <span>{cl.label ? `${cl.label} · ${otherName}` : otherName}</span>
+                              <span>{copy.label ? `${copy.label} · ${otherName}` : otherName}</span>
                               <span className="owb-star-map__card-link-rel">{isSource ? "→" : "←"}</span>
                             </button>
                           </li>

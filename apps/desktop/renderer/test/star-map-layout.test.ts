@@ -351,14 +351,18 @@ describe("celestial layout (#472): deterministic orbital mapping of the reportin
     // 1. Task collaboration link between ceo and frontend
     const taskLink = links.find((l) => (l.source === "ceo" && l.target === "frontend") || (l.source === "frontend" && l.target === "ceo"));
     expect(taskLink).toBeDefined();
-    expect(taskLink?.label).toBe("Task Collaboration");
-    expect(taskLink?.desc).toContain("重构星图 3D 渲染管线");
+    expect(taskLink?.relation).toBe("task");
+    expect(taskLink?.subject).toBe("重构星图 3D 渲染管线");
+    expect(taskLink?.label).toBeUndefined();
+    expect(taskLink?.desc).toBeUndefined();
 
     // 2. Goal collaboration link between platform-lead and frontend
     const goalLink = links.find((l) => (l.source === "platform-lead" && l.target === "frontend") || (l.source === "frontend" && l.target === "platform-lead"));
     expect(goalLink).toBeDefined();
-    expect(goalLink?.label).toBe("Goal Collaboration");
-    expect(goalLink?.desc).toContain("2026 Q3 体验升级战役");
+    expect(goalLink?.relation).toBe("goal");
+    expect(goalLink?.subject).toBe("2026 Q3 体验升级战役");
+    expect(goalLink?.label).toBeUndefined();
+    expect(goalLink?.desc).toBeUndefined();
 
     // If an employee is dismissed (e.g. frontend dismissed), validPositions filters out the links
     const withoutFrontend = new Set(["ceo", "platform-lead"]);
