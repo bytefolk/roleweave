@@ -3,10 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   ASSET_RECORD_SCHEMA_VERSION,
+  DOCS_ARCHIVE_SCHEMA_VERSION,
   DOCS_CREATE_SCHEMA_VERSION,
+  DOCS_DELETE_SCHEMA_VERSION,
   DOCS_FILE_LIST_SCHEMA_VERSION,
   DOCS_FILE_SCHEMA_VERSION,
+  DOCS_RENAME_SCHEMA_VERSION,
   DOCS_RESOLVE_SCHEMA_VERSION,
+  DOCS_RESTORE_SCHEMA_VERSION,
   MAX_DOC_CREATE_BYTES,
   formatDocRefUri,
   parseDocRef,
@@ -16,11 +20,15 @@ import {
 } from "@roleweave/shared";
 import type {
   AssetRecord,
+  DocsArchiveResponse,
   DocsCreateResponse,
+  DocsDeleteResponse,
   DocsFileEntry,
   DocsFileListResponse,
   DocsFileResponse,
+  DocsRenameResponse,
   DocsResolveResponse,
+  DocsRestoreResponse,
 } from "@roleweave/shared";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { appendAssetIndex, writeAssetRecord } from "../assets/store.js";
@@ -94,14 +102,48 @@ async function walkFiles(dir: string, base: string, entries: DocsFileEntry[]): P
   }
 }
 
+const ARCHIVE_DIR = ".owb-docs-archive";
+
+function assertMutableKnowledgePath(rawPath: string): string {
+  const posixPath = assertCreatePath(rawPath);
+  if (posixPath === "SKILL.md" || !posixPath.startsWith("knowledge/")) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, "bound package files stay read-only");
+  }
+  return posixPath;
+}
+
+function archiveRoot(positionDir: string): string {
+  return path.join(positionDir, ARCHIVE_DIR);
+}
+
+/** Resolve a knowledge path inside the hidden archive dir; refuse escapes. */
+function resolveArchivePath(positionDir: string, posixPath: string): string {
+  const root = archiveRoot(positionDir);
+  const resolved = path.resolve(root, posixPath);
+  const relative = path.relative(root, resolved);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, `path escapes the archive directory: ${posixPath}`);
+  }
+  if (relative.split(path.sep).some((segment) => segment.startsWith("."))) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, `hidden path segments are not routable: ${posixPath}`);
+  }
+  return resolved;
+}
+
 export async function handleDocsList(ctx: ControlPlaneContext, res: ServerResponse, url: URL): Promise<void> {
   const positionId = url.searchParams.get("position") ?? "";
+  const archived = url.searchParams.get("archived") === "1";
   const positionDir = requirePositionDir(ctx, positionId);
   const files: DocsFileEntry[] = [];
+  const root = archived ? path.join(positionDir, ARCHIVE_DIR) : positionDir;
   try {
-    await walkFiles(positionDir, positionDir, files);
+    await walkFiles(root, root, files);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      if (archived) {
+        sendJson(res, 200, { schemaVersion: DOCS_FILE_LIST_SCHEMA_VERSION, positionId, files: [] });
+        return;
+      }
       throw new OrgApiError(errorCodes.docs_missing, 404, `position directory missing: ${positionId}`);
     }
     throw error;
@@ -118,8 +160,10 @@ export async function handleDocsList(ctx: ControlPlaneContext, res: ServerRespon
 export async function handleDocsRead(ctx: ControlPlaneContext, res: ServerResponse, url: URL): Promise<void> {
   const positionId = url.searchParams.get("position") ?? "";
   const rawPath = url.searchParams.get("path") ?? "";
+  const archived = url.searchParams.get("archived") === "1";
   const positionDir = requirePositionDir(ctx, positionId);
-  const resolved = resolveDocPath(positionDir, rawPath);
+  const posixPath = archived ? assertMutableKnowledgePath(rawPath) : rawPath;
+  const resolved = archived ? resolveArchivePath(positionDir, posixPath) : resolveDocPath(positionDir, posixPath);
 
   let stat;
   try {
@@ -150,7 +194,9 @@ export async function handleDocsRead(ctx: ControlPlaneContext, res: ServerRespon
   const body: DocsFileResponse = {
     schemaVersion: DOCS_FILE_SCHEMA_VERSION,
     positionId,
-    path: path.relative(positionDir, resolved).split(path.sep).join("/"),
+    path: archived
+      ? posixPath
+      : path.relative(positionDir, resolved).split(path.sep).join("/"),
     content,
     version: modifiedAt,
     size: stat.size,
@@ -387,6 +433,212 @@ export async function handleDocsResolve(
       size: stat.size,
       modifiedAt: new Date(stat.mtimeMs).toISOString(),
     },
+  };
+  sendJson(res, 200, body);
+}
+
+function parsePositionPathBody(raw: unknown, keys: string): { positionId: string; path: string; archived?: boolean } {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw invalidRequest("body must be an object");
+  }
+  const record = raw as Record<string, unknown>;
+  const actual = Object.keys(record).sort().join(",");
+  if (actual !== keys) {
+    throw invalidRequest(`body must carry exactly {${keys.split(",").join(", ")}}`);
+  }
+  if (typeof record.positionId !== "string" || typeof record.path !== "string") {
+    throw invalidRequest("positionId and path must be strings");
+  }
+  const parsed: { positionId: string; path: string; archived?: boolean } = {
+    positionId: record.positionId,
+    path: record.path,
+  };
+  if (record.archived !== undefined) {
+    if (typeof record.archived !== "boolean") {
+      throw invalidRequest("archived must be a boolean");
+    }
+    parsed.archived = record.archived;
+  }
+  return parsed;
+}
+
+async function requireExistingFile(resolved: string, rawPath: string): Promise<void> {
+  let stat;
+  try {
+    stat = await fs.lstat(resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new OrgApiError(errorCodes.docs_missing, 404, `document not found: ${rawPath}`);
+    }
+    throw error;
+  }
+  if (stat.isSymbolicLink()) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, `symlinks are not mutable: ${rawPath}`);
+  }
+  if (!stat.isFile()) {
+    throw new OrgApiError(errorCodes.docs_missing, 404, `not a document file: ${rawPath}`);
+  }
+}
+
+async function refuseExistingFile(resolved: string, rawPath: string): Promise<void> {
+  try {
+    await fs.lstat(resolved);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  throw new OrgApiError(errorCodes.docs_exists, 409, `document already exists: ${rawPath}`);
+}
+
+export async function handleDocsWrite(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { positionId, path: rawPath, content } = parseCreateRequest(await readJsonBody<unknown>(req));
+  const posixPath = assertMutableKnowledgePath(rawPath);
+  if (Buffer.byteLength(content, "utf8") > MAX_DOC_CREATE_BYTES) {
+    throw invalidRequest(`content exceeds ${MAX_DOC_CREATE_BYTES} bytes`);
+  }
+  const positionDir = requirePositionDir(ctx, positionId);
+  const target = resolveDocPath(positionDir, posixPath);
+  await requireExistingFile(target, posixPath);
+  await fs.writeFile(target, content, { encoding: "utf8", mode: 0o600 });
+  await fs.chmod(target, 0o600);
+  const stat = await fs.lstat(target);
+  const modifiedAt = new Date(stat.mtimeMs).toISOString();
+  const body: DocsFileResponse = {
+    schemaVersion: DOCS_FILE_SCHEMA_VERSION,
+    positionId,
+    path: posixPath,
+    content,
+    version: modifiedAt,
+    size: stat.size,
+    modifiedAt,
+  };
+  sendJson(res, 200, body);
+}
+
+export async function handleDocsRename(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const raw = await readJsonBody<unknown>(req);
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw invalidRequest("body must be an object");
+  }
+  const record = raw as Record<string, unknown>;
+  if (Object.keys(record).sort().join(",") !== "from,positionId,to") {
+    throw invalidRequest("body must carry exactly {positionId, from, to}");
+  }
+  if (
+    typeof record.positionId !== "string" ||
+    typeof record.from !== "string" ||
+    typeof record.to !== "string"
+  ) {
+    throw invalidRequest("positionId, from and to must be strings");
+  }
+  const fromPath = assertMutableKnowledgePath(record.from);
+  const toPath = assertMutableKnowledgePath(record.to);
+  const positionDir = requirePositionDir(ctx, record.positionId);
+  const fromResolved = resolveDocPath(positionDir, fromPath);
+  const toResolved = resolveDocPath(positionDir, toPath);
+  await requireExistingFile(fromResolved, fromPath);
+  await refuseExistingFile(toResolved, toPath);
+  await ensureDocParentDirs(positionDir, toResolved);
+  await fs.rename(fromResolved, toResolved);
+  const body: DocsRenameResponse = {
+    schemaVersion: DOCS_RENAME_SCHEMA_VERSION,
+    positionId: record.positionId,
+    from: fromPath,
+    to: toPath,
+  };
+  sendJson(res, 200, body);
+}
+
+export async function handleDocsArchive(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { positionId, path: rawPath } = parsePositionPathBody(
+    await readJsonBody<unknown>(req),
+    "path,positionId",
+  );
+  const posixPath = assertMutableKnowledgePath(rawPath);
+  const positionDir = requirePositionDir(ctx, positionId);
+  const source = resolveDocPath(positionDir, posixPath);
+  const dest = resolveArchivePath(positionDir, posixPath);
+  await requireExistingFile(source, posixPath);
+  await refuseExistingFile(dest, posixPath);
+  await fs.mkdir(archiveRoot(positionDir), { recursive: true, mode: 0o700 });
+  await ensureDocParentDirs(archiveRoot(positionDir), dest);
+  await fs.rename(source, dest);
+  const body: DocsArchiveResponse = {
+    schemaVersion: DOCS_ARCHIVE_SCHEMA_VERSION,
+    positionId,
+    path: posixPath,
+  };
+  sendJson(res, 200, body);
+}
+
+export async function handleDocsRestore(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { positionId, path: rawPath } = parsePositionPathBody(
+    await readJsonBody<unknown>(req),
+    "path,positionId",
+  );
+  const posixPath = assertMutableKnowledgePath(rawPath);
+  const positionDir = requirePositionDir(ctx, positionId);
+  const source = resolveArchivePath(positionDir, posixPath);
+  const dest = resolveDocPath(positionDir, posixPath);
+  await requireExistingFile(source, posixPath);
+  await refuseExistingFile(dest, posixPath);
+  await ensureDocParentDirs(positionDir, dest);
+  await fs.rename(source, dest);
+  const body: DocsRestoreResponse = {
+    schemaVersion: DOCS_RESTORE_SCHEMA_VERSION,
+    positionId,
+    path: posixPath,
+  };
+  sendJson(res, 200, body);
+}
+
+export async function handleDocsDelete(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const raw = await readJsonBody<unknown>(req);
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw invalidRequest("body must be an object");
+  }
+  const record = raw as Record<string, unknown>;
+  const keys = Object.keys(record).sort().join(",");
+  if (keys !== "path,positionId" && keys !== "archived,path,positionId") {
+    throw invalidRequest("body must carry exactly {positionId, path} or {positionId, path, archived}");
+  }
+  if (typeof record.positionId !== "string" || typeof record.path !== "string") {
+    throw invalidRequest("positionId and path must be strings");
+  }
+  if (record.archived !== undefined && typeof record.archived !== "boolean") {
+    throw invalidRequest("archived must be a boolean");
+  }
+  const posixPath = assertMutableKnowledgePath(record.path);
+  const positionDir = requirePositionDir(ctx, record.positionId);
+  const target = record.archived
+    ? resolveArchivePath(positionDir, posixPath)
+    : resolveDocPath(positionDir, posixPath);
+  await requireExistingFile(target, posixPath);
+  await fs.unlink(target);
+  const body: DocsDeleteResponse = {
+    schemaVersion: DOCS_DELETE_SCHEMA_VERSION,
+    positionId: record.positionId,
+    path: posixPath,
   };
   sendJson(res, 200, body);
 }

@@ -4,16 +4,29 @@ import path from "node:path";
 import test from "node:test";
 import {
   ASSET_RECORD_SCHEMA_VERSION,
+  DOCS_ARCHIVE_SCHEMA_VERSION,
   DOCS_CREATE_SCHEMA_VERSION,
+  DOCS_DELETE_SCHEMA_VERSION,
   DOCS_FILE_LIST_SCHEMA_VERSION,
   DOCS_FILE_SCHEMA_VERSION,
+  DOCS_RENAME_SCHEMA_VERSION,
   DOCS_RESOLVE_SCHEMA_VERSION,
+  DOCS_RESTORE_SCHEMA_VERSION,
   formatDocRefUri,
   parseAssetRecord,
   parseDocRef,
   routes,
 } from "@roleweave/shared";
-import type { DocsCreateResponse, DocsFileListResponse, DocsFileResponse, DocsResolveResponse } from "@roleweave/shared";
+import type {
+  DocsArchiveResponse,
+  DocsCreateResponse,
+  DocsDeleteResponse,
+  DocsFileListResponse,
+  DocsFileResponse,
+  DocsRenameResponse,
+  DocsResolveResponse,
+  DocsRestoreResponse,
+} from "@roleweave/shared";
 import { api, assertPosixMode, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 async function openWorkspace(baseUrl: string, token: string, dir: string): Promise<void> {
@@ -385,5 +398,177 @@ test("parseDocRef is three-state-safe against the frozen doc-ref.v1alpha1 shape 
     const result = parseDocRef(bad);
     assert.equal(result.ok, false, `must reject ${JSON.stringify(bad)}`);
     if (!result.ok) assert.equal(result.code, "doc_ref_invalid");
+  }
+});
+
+test("knowledge write/rename/archive/restore/delete stay inside knowledge/ and refuse SKILL.md (#347)", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  const positionDir = path.join(dir, "positions", "repo-owner");
+  try {
+    await openWorkspace(server.baseUrl, server.token, dir);
+
+    const written = await api(server.baseUrl, routes.docsWrite, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/README.md", content: "# Edited knowledge\n" },
+    });
+    assert.equal(written.status, 200);
+    const writtenBody = written.body as DocsFileResponse;
+    assert.equal(writtenBody.schemaVersion, DOCS_FILE_SCHEMA_VERSION);
+    assert.equal(writtenBody.path, "knowledge/README.md");
+    assert.equal(writtenBody.content, "# Edited knowledge\n");
+    assert.equal(await fs.readFile(path.join(positionDir, "knowledge", "README.md"), "utf8"), "# Edited knowledge\n");
+
+    const skillWrite = await api(server.baseUrl, routes.docsWrite, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "SKILL.md", content: "should stay bound\n" },
+    });
+    assert.equal(skillWrite.status, 403);
+    assert.equal((skillWrite.body as { code: string }).code, "docs_forbidden");
+    assert.notEqual(await fs.readFile(path.join(positionDir, "SKILL.md"), "utf8"), "should stay bound\n");
+
+    const renamed = await api(server.baseUrl, routes.docsRename, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", from: "knowledge/README.md", to: "knowledge/handbook.md" },
+    });
+    assert.equal(renamed.status, 200);
+    const renamedBody = renamed.body as DocsRenameResponse;
+    assert.equal(renamedBody.schemaVersion, DOCS_RENAME_SCHEMA_VERSION);
+    assert.equal(renamedBody.to, "knowledge/handbook.md");
+    assert.equal(await fs.readFile(path.join(positionDir, "knowledge", "handbook.md"), "utf8"), "# Edited knowledge\n");
+
+    const renameToSkill = await api(server.baseUrl, routes.docsRename, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", from: "knowledge/handbook.md", to: "SKILL.md" },
+    });
+    assert.equal(renameToSkill.status, 403);
+    assert.equal((renameToSkill.body as { code: string }).code, "docs_forbidden");
+
+    const archived = await api(server.baseUrl, routes.docsArchive, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/handbook.md" },
+    });
+    assert.equal(archived.status, 200);
+    assert.equal((archived.body as DocsArchiveResponse).schemaVersion, DOCS_ARCHIVE_SCHEMA_VERSION);
+    await fs.access(path.join(positionDir, "knowledge", "handbook.md")).then(
+      () => {
+        throw new Error("archived knowledge file must leave the live tree");
+      },
+      () => undefined,
+    );
+
+    const liveList = await api(server.baseUrl, `${routes.docsList}?position=repo-owner`, { token: server.token });
+    const livePaths = (liveList.body as DocsFileListResponse).files.map((entry) => entry.path);
+    assert.ok(!livePaths.includes("knowledge/handbook.md"), "archived file must not appear in the live list");
+    assert.ok(livePaths.includes("SKILL.md"));
+
+    const archiveList = await api(server.baseUrl, `${routes.docsList}?position=repo-owner&archived=1`, {
+      token: server.token,
+    });
+    assert.equal(archiveList.status, 200);
+    const archivedPaths = (archiveList.body as DocsFileListResponse).files.map((entry) => entry.path);
+    assert.deepEqual(archivedPaths, ["knowledge/handbook.md"]);
+
+    const archiveRead = await api(
+      server.baseUrl,
+      `${routes.docsRead}?position=repo-owner&path=knowledge%2Fhandbook.md&archived=1`,
+      { token: server.token },
+    );
+    assert.equal(archiveRead.status, 200);
+    assert.equal((archiveRead.body as DocsFileResponse).content, "# Edited knowledge\n");
+
+    const restored = await api(server.baseUrl, routes.docsRestore, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/handbook.md" },
+    });
+    assert.equal(restored.status, 200);
+    assert.equal((restored.body as DocsRestoreResponse).schemaVersion, DOCS_RESTORE_SCHEMA_VERSION);
+    assert.equal(await fs.readFile(path.join(positionDir, "knowledge", "handbook.md"), "utf8"), "# Edited knowledge\n");
+
+    const deleted = await api(server.baseUrl, routes.docsDelete, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/handbook.md" },
+    });
+    assert.equal(deleted.status, 200);
+    assert.equal((deleted.body as DocsDeleteResponse).schemaVersion, DOCS_DELETE_SCHEMA_VERSION);
+    await fs.access(path.join(positionDir, "knowledge", "handbook.md")).then(
+      () => {
+        throw new Error("deleted knowledge file must be gone");
+      },
+      () => undefined,
+    );
+
+    const skillDelete = await api(server.baseUrl, routes.docsDelete, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "SKILL.md" },
+    });
+    assert.equal(skillDelete.status, 403);
+    assert.equal((skillDelete.body as { code: string }).code, "docs_forbidden");
+    await fs.access(path.join(positionDir, "SKILL.md"));
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("knowledge lifecycle refuses missing files, extra keys, and archive collisions (#347)", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, dir);
+
+    const missingWrite = await api(server.baseUrl, routes.docsWrite, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/missing.md", content: "x" },
+    });
+    assert.equal(missingWrite.status, 404);
+    assert.equal((missingWrite.body as { code: string }).code, "docs_missing");
+
+    const extra = await api(server.baseUrl, routes.docsArchive, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/README.md", evil: true },
+    });
+    assert.equal(extra.status, 400);
+    assert.equal((extra.body as { code: string }).code, "docs_request_invalid");
+
+    const first = await api(server.baseUrl, routes.docsArchive, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/README.md" },
+    });
+    assert.equal(first.status, 200);
+
+    await api(server.baseUrl, routes.docsCreate, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/README.md", content: "again\n" },
+    });
+    const collision = await api(server.baseUrl, routes.docsArchive, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/README.md" },
+    });
+    assert.equal(collision.status, 409);
+    assert.equal((collision.body as { code: string }).code, "docs_exists");
+
+    const archivedDelete = await api(server.baseUrl, routes.docsDelete, {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner", path: "knowledge/README.md", archived: true },
+    });
+    assert.equal(archivedDelete.status, 200);
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
   }
 });

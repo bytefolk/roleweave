@@ -12,6 +12,7 @@ import {
   Empty,
   Input,
   List,
+  Modal,
   Segmented,
   Spin,
   message,
@@ -37,17 +38,31 @@ export interface DocsPanelProps {
   knowledgeFirst?: boolean;
   toolbar?: ReactNode;
   positionId: string | null;
-  listDocs(positionId: string): Promise<DocsFileListResponse>;
-  readDoc(positionId: string, path: string): Promise<DocsFileResponse>;
+  listDocs(positionId: string, options?: { archived?: boolean }): Promise<DocsFileListResponse>;
+  readDoc(positionId: string, path: string, options?: { archived?: boolean }): Promise<DocsFileResponse>;
+  writeDoc?(positionId: string, path: string, content: string): Promise<DocsFileResponse>;
+  renameDoc?(positionId: string, from: string, to: string): Promise<{ to: string }>;
+  archiveDoc?(positionId: string, path: string): Promise<void>;
+  restoreDoc?(positionId: string, path: string): Promise<void>;
+  deleteDoc?(positionId: string, path: string, options?: { archived?: boolean }): Promise<void>;
   /** Bumped by the creator to force a re-list after a successful create. */
   reloadToken?: number;
   requestedPath?: string | null;
+}
+
+function isKnowledgeFile(path: string): boolean {
+  return path.startsWith("knowledge/");
 }
 
 export function DocsPanel({
   positionId,
   listDocs,
   readDoc,
+  writeDoc,
+  renameDoc,
+  archiveDoc,
+  restoreDoc,
+  deleteDoc,
   reloadToken = 0,
   knowledgeFirst = false,
   toolbar,
@@ -63,6 +78,14 @@ export function DocsPanel({
   const [readError, setReadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [fileScope, setFileScope] = useState("knowledge");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const lifecycleEnabled = Boolean(writeDoc || renameDoc || archiveDoc || restoreDoc || deleteDoc);
+  const archivedView = fileScope === "archived";
   const readVersion = useRef(0);
   const [listRetry, setListRetry] = useState(0);
   const requestedSelection = useRef<string | null>(null);
@@ -85,6 +108,9 @@ export function DocsPanel({
     setSelected(null);
     setDoc(null);
     setReadError(null);
+    setEditing(false);
+    setRenameOpen(false);
+    setDeleteOpen(false);
     return () => {
       readVersion.current += 1;
     };
@@ -99,7 +125,8 @@ export function DocsPanel({
     let cancelled = false;
     setListing(true);
     setListError(null);
-    listDocs(positionId)
+    const listed = archivedView ? listDocs(positionId, { archived: true }) : listDocs(positionId);
+    listed
       .then((response) => {
         if (!cancelled) setFiles(response.files);
       })
@@ -113,7 +140,7 @@ export function DocsPanel({
     return () => {
       cancelled = true;
     };
-  }, [positionId, listDocs, reloadToken, listRetry]);
+  }, [positionId, listDocs, reloadToken, listRetry, archivedView]);
 
   const openFile = useCallback(
     (path: string) => {
@@ -121,9 +148,13 @@ export function DocsPanel({
       setSelected(path);
       setDoc(null);
       setReadError(null);
+      setEditing(false);
       setReading(true);
       const version = ++readVersion.current;
-      readDoc(positionId, path)
+      const loaded = archivedView
+        ? readDoc(positionId, path, { archived: true })
+        : readDoc(positionId, path);
+      loaded
         .then((response) => {
           if (version === readVersion.current) setDoc(response);
         })
@@ -137,7 +168,7 @@ export function DocsPanel({
           if (version === readVersion.current) setReading(false);
         });
     },
-    [positionId, readDoc],
+    [positionId, readDoc, archivedView],
   );
 
   useLayoutEffect(() => {
@@ -155,6 +186,108 @@ export function DocsPanel({
       openFile(requestedPath);
     }
   }, [positionId, requestedPath, reloadToken, openFile]);
+
+  useEffect(() => {
+    setSelected(null);
+    setDoc(null);
+    setReadError(null);
+    setEditing(false);
+  }, [archivedView]);
+
+  const refreshList = () => setListRetry((value) => value + 1);
+
+  const mutableSelected = selected !== null && isKnowledgeFile(selected);
+
+  const saveEdit = async () => {
+    if (positionId === null || selected === null || !writeDoc) return;
+    setSaving(true);
+    try {
+      const updated = await writeDoc(positionId, selected, draft);
+      setDoc(updated);
+      setEditing(false);
+      message.success(t("docs.saved"));
+      refreshList();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("docs.editFail"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitRename = async () => {
+    if (positionId === null || selected === null || !renameDoc) return;
+    const trimmed = renameValue.trim();
+    if (trimmed === "") {
+      message.error(t("docs.nameRequired"));
+      return;
+    }
+    const parent = selected.includes("/") ? selected.slice(0, selected.lastIndexOf("/") + 1) : "knowledge/";
+    const nextPath = trimmed.includes("/") ? trimmed : `${parent}${trimmed}`;
+    setSaving(true);
+    try {
+      const renamed = await renameDoc(positionId, selected, nextPath);
+      setRenameOpen(false);
+      message.success(t("docs.renamed", { path: renamed.to }));
+      setSelected(renamed.to);
+      refreshList();
+      openFile(renamed.to);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("docs.renameFail"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitArchive = async () => {
+    if (positionId === null || selected === null || !archiveDoc) return;
+    setSaving(true);
+    try {
+      await archiveDoc(positionId, selected);
+      message.success(t("docs.archivedOk", { path: selected }));
+      setSelected(null);
+      setDoc(null);
+      refreshList();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("docs.archiveFail"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitRestore = async () => {
+    if (positionId === null || selected === null || !restoreDoc) return;
+    setSaving(true);
+    try {
+      await restoreDoc(positionId, selected);
+      message.success(t("docs.restored", { path: selected }));
+      setFileScope("knowledge");
+      setSelected(null);
+      setDoc(null);
+      refreshList();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("docs.restoreFail"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitDelete = async () => {
+    if (positionId === null || selected === null || !deleteDoc) return;
+    setSaving(true);
+    try {
+      if (archivedView) await deleteDoc(positionId, selected, { archived: true });
+      else await deleteDoc(positionId, selected);
+      message.success(t("docs.deleted", { path: selected }));
+      setDeleteOpen(false);
+      setSelected(null);
+      setDoc(null);
+      refreshList();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("docs.deleteFail"));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const copyRef = async (entry: DocsFileEntry) => {
     if (positionId === null) return;
@@ -237,7 +370,7 @@ export function DocsPanel({
                 {toolbar ?? <h2>{t("docs.listTitle")}</h2>}
               </header>
               <div className="owb-docs-filter">
-                {knowledgeFirst ? (
+                {knowledgeFirst || lifecycleEnabled ? (
                   <Segmented
                     aria-label={t("memory.fileScope")}
                     value={fileScope}
@@ -245,6 +378,9 @@ export function DocsPanel({
                     options={[
                       { value: "knowledge", label: t("memory.knowledge") },
                       { value: "all", label: t("memory.allFiles") },
+                      ...(lifecycleEnabled
+                        ? [{ value: "archived", label: t("docs.archived") }]
+                        : []),
                     ]}
                   />
                 ) : null}
@@ -384,7 +520,26 @@ export function DocsPanel({
                   }
                 />
               ) : null}
-              {doc !== null ? (
+              {doc !== null && editing ? (
+                <div className="owb-docs-panel__editor">
+                  <Input.TextArea
+                    aria-label={t("docs.editorAria")}
+                    value={draft}
+                    rows={18}
+                    disabled={saving}
+                    onChange={(event) => setDraft(event.target.value)}
+                  />
+                  <div className="owb-docs-panel__editor-actions">
+                    <Button onClick={() => setEditing(false)} disabled={saving}>
+                      {t("dlg.cancel")}
+                    </Button>
+                    <Button type="primary" loading={saving} onClick={() => void saveEdit()}>
+                      {t("docs.save")}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              {doc !== null && !editing ? (
                 <DocViewer
                   source={doc.content}
                   version={doc.version}
@@ -392,19 +547,55 @@ export function DocsPanel({
                   title={doc.path}
                   path={doc.path}
                   actions={
-                    <Button
-                      icon={<Copy size={14} />}
-                      onClick={() =>
-                        void copyRef({
-                          path: doc.path,
-                          modifiedAt: doc.version,
-                          size: doc.size,
-                          kind: "file",
-                        })
-                      }
-                    >
-                      {t("docs.copyRef")}
-                    </Button>
+                    <>
+                      {mutableSelected && !archivedView && writeDoc ? (
+                        <Button
+                          onClick={() => {
+                            setDraft(doc.content);
+                            setEditing(true);
+                          }}
+                        >
+                          {t("docs.edit")}
+                        </Button>
+                      ) : null}
+                      {mutableSelected && !archivedView && renameDoc ? (
+                        <Button
+                          onClick={() => {
+                            setRenameValue(selected.slice(selected.lastIndexOf("/") + 1));
+                            setRenameOpen(true);
+                          }}
+                        >
+                          {t("docs.rename")}
+                        </Button>
+                      ) : null}
+                      {mutableSelected && !archivedView && archiveDoc ? (
+                        <Button onClick={() => void submitArchive()}>{t("docs.archive")}</Button>
+                      ) : null}
+                      {mutableSelected && archivedView && restoreDoc ? (
+                        <Button onClick={() => void submitRestore()}>{t("docs.restore")}</Button>
+                      ) : null}
+                      {mutableSelected && deleteDoc ? (
+                        <Button danger onClick={() => setDeleteOpen(true)}>
+                          {t("docs.delete")}
+                        </Button>
+                      ) : null}
+                      {selected !== null && !isKnowledgeFile(selected) ? (
+                        <span className="owb-docs-panel__bound">{t("docs.boundReadOnly")}</span>
+                      ) : null}
+                      <Button
+                        icon={<Copy size={14} />}
+                        onClick={() =>
+                          void copyRef({
+                            path: doc.path,
+                            modifiedAt: doc.version,
+                            size: doc.size,
+                            kind: "file",
+                          })
+                        }
+                      >
+                        {t("docs.copyRef")}
+                      </Button>
+                    </>
                   }
                 />
               ) : null}
@@ -418,6 +609,39 @@ export function DocsPanel({
           </div>
         </>
       )}
+      <Modal
+        title={t("docs.rename")}
+        open={renameOpen}
+        confirmLoading={saving}
+        okText={t("docs.rename")}
+        cancelText={t("dlg.cancel")}
+        onOk={() => void submitRename()}
+        onCancel={() => {
+          if (!saving) setRenameOpen(false);
+        }}
+      >
+        <Input
+          aria-label={t("docs.renameAria")}
+          value={renameValue}
+          disabled={saving}
+          onChange={(event) => setRenameValue(event.target.value)}
+          onPressEnter={() => void submitRename()}
+        />
+      </Modal>
+      <Modal
+        title={t("docs.delete")}
+        open={deleteOpen}
+        confirmLoading={saving}
+        okText={t("docs.deleteConfirmOk")}
+        okButtonProps={{ danger: true }}
+        cancelText={t("dlg.cancel")}
+        onOk={() => void submitDelete()}
+        onCancel={() => {
+          if (!saving) setDeleteOpen(false);
+        }}
+      >
+        <p>{t("docs.deleteConfirm", { path: selected ?? "" })}</p>
+      </Modal>
     </section>
   );
 }

@@ -12,14 +12,21 @@ function invalidResponse(message) {
   };
 }
 
-function validateDocsListRequest(positionId) {
+function archivedQuery(options) {
+  return isPlainObject(options) && options.archived === true ? "&archived=1" : "";
+}
+
+function validateDocsListRequest(positionId, options) {
   if (typeof positionId !== "string" || positionId.length === 0) {
     return invalidResponse("positionId required");
   }
-  return { ok: true, pathname: `/docs/list?position=${encodeURIComponent(positionId)}` };
+  return {
+    ok: true,
+    pathname: `/docs/list?position=${encodeURIComponent(positionId)}${archivedQuery(options)}`,
+  };
 }
 
-function validateDocsReadRequest(positionId, filePath) {
+function validateDocsReadRequest(positionId, filePath, options) {
   if (typeof positionId !== "string" || positionId.length === 0) {
     return invalidResponse("positionId required");
   }
@@ -28,7 +35,7 @@ function validateDocsReadRequest(positionId, filePath) {
   }
   return {
     ok: true,
-    pathname: `/docs/read?position=${encodeURIComponent(positionId)}&path=${encodeURIComponent(filePath)}`,
+    pathname: `/docs/read?position=${encodeURIComponent(positionId)}&path=${encodeURIComponent(filePath)}${archivedQuery(options)}`,
   };
 }
 
@@ -73,9 +80,78 @@ function validateDocsResolveRequest(request) {
   return { ok: true, request: { ref } };
 }
 
+function validateDocsWriteRequest(request) {
+  return validateDocsCreateRequest(request);
+}
+
+function validateDocsRenameRequest(request) {
+  if (!isPlainObject(request)) return invalidResponse("request must be an object");
+  const keys = Object.keys(request).sort().join(",");
+  if (keys !== "from,positionId,to") {
+    return invalidResponse("request must carry exactly {positionId, from, to}");
+  }
+  if (
+    typeof request.positionId !== "string" ||
+    request.positionId.length === 0 ||
+    typeof request.from !== "string" ||
+    request.from.length === 0 ||
+    typeof request.to !== "string" ||
+    request.to.length === 0
+  ) {
+    return invalidResponse("positionId, from and to must be strings");
+  }
+  return {
+    ok: true,
+    request: { positionId: request.positionId, from: request.from, to: request.to },
+  };
+}
+
+function validateDocsPathRequest(request) {
+  if (!isPlainObject(request)) return invalidResponse("request must be an object");
+  const keys = Object.keys(request).sort().join(",");
+  if (keys !== "path,positionId") {
+    return invalidResponse("request must carry exactly {positionId, path}");
+  }
+  if (
+    typeof request.positionId !== "string" ||
+    request.positionId.length === 0 ||
+    typeof request.path !== "string" ||
+    request.path.length === 0
+  ) {
+    return invalidResponse("positionId and path must be strings");
+  }
+  return { ok: true, request: { positionId: request.positionId, path: request.path } };
+}
+
+function validateDocsDeleteRequest(request) {
+  if (!isPlainObject(request)) return invalidResponse("request must be an object");
+  const keys = Object.keys(request).sort().join(",");
+  if (keys !== "path,positionId" && keys !== "archived,path,positionId") {
+    return invalidResponse("request must carry exactly {positionId, path} or {positionId, path, archived}");
+  }
+  if (
+    typeof request.positionId !== "string" ||
+    request.positionId.length === 0 ||
+    typeof request.path !== "string" ||
+    request.path.length === 0
+  ) {
+    return invalidResponse("positionId and path must be strings");
+  }
+  if (request.archived !== undefined && typeof request.archived !== "boolean") {
+    return invalidResponse("archived must be a boolean");
+  }
+  const parsed = { positionId: request.positionId, path: request.path };
+  if (request.archived === true) parsed.archived = true;
+  return { ok: true, request: parsed };
+}
+
 module.exports = {
   validateDocsListRequest,
   validateDocsReadRequest,
   validateDocsCreateRequest,
   validateDocsResolveRequest,
+  validateDocsWriteRequest,
+  validateDocsRenameRequest,
+  validateDocsPathRequest,
+  validateDocsDeleteRequest,
 };

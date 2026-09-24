@@ -62,9 +62,13 @@ const {
 } = require("./assets-ipc.cjs");
 const {
   validateDocsCreateRequest,
+  validateDocsDeleteRequest,
   validateDocsListRequest,
+  validateDocsPathRequest,
   validateDocsReadRequest,
+  validateDocsRenameRequest,
   validateDocsResolveRequest,
+  validateDocsWriteRequest,
 } = require("./docs-ipc.cjs");
 const {
   validateDriveListRequest,
@@ -540,14 +544,14 @@ ipcMain.handle("owb:position:profile", async (event, request) => {
 });
 
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.
-ipcMain.handle("owb:position:docs:list", async (_event, positionId) => {
-  const validated = validateDocsListRequest(positionId);
+ipcMain.handle("owb:position:docs:list", async (_event, positionId, options) => {
+  const validated = validateDocsListRequest(positionId, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
 
-ipcMain.handle("owb:position:docs:read", async (_event, positionId, filePath) => {
-  const validated = validateDocsReadRequest(positionId, filePath);
+ipcMain.handle("owb:position:docs:read", async (_event, positionId, filePath, options) => {
+  const validated = validateDocsReadRequest(positionId, filePath, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
@@ -563,6 +567,36 @@ ipcMain.handle("owb:docs:resolve", async (_event, request) => {
   const validated = validateDocsResolveRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/resolve", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:write", async (_event, request) => {
+  const validated = validateDocsWriteRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/write", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:rename", async (_event, request) => {
+  const validated = validateDocsRenameRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/rename", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:archive", async (_event, request) => {
+  const validated = validateDocsPathRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/archive", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:restore", async (_event, request) => {
+  const validated = validateDocsPathRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/restore", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:delete", async (_event, request) => {
+  const validated = validateDocsDeleteRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/delete", { method: "POST", body: validated.request });
 });
 
 // External doc-plane bridge (#35 R2 MVP): read-only proxy in front of
