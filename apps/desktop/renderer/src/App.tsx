@@ -2173,20 +2173,43 @@ function AppInner({
             onReconcileTimeline={reconcileGroup}
           />
         ) : activeModule === "projects" ? (
-          <ProjectManagementModule workspaceOpen={workspaceInfo?.open === true} workspaceKey={workspaceInfo?.path} positionNames={positionNames} positionEngines={positionEngines} />
+          <ProjectManagementModule
+            workspaceOpen={workspaceInfo?.open === true}
+            workspaceKey={workspaceInfo?.path}
+            positionNames={positionNames}
+            positionEngines={positionEngines}
+            positionAvatars={positionAvatars}
+            positionAvatarSources={avatarUrls}
+            ownerPositionId={snapshot?.owner}
+            onOpenApprovals={() => setActiveModule("approvals")}
+            onOpenBoundSession={(positionId, sessionId, turnId) => {
+              selectPosition(positionId);
+              if (sessionId) {
+                selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+              }
+              if (turnId) {
+                setSessionFocusTurnId(turnId);
+              }
+              setActiveModule("org");
+            }}
+          />
         ) : activeModule === "goals" ? (
           <GoalsModule
             workspaceOpen={workspaceInfo?.open === true}
             workspaceKey={workspaceInfo?.path}
             positionNames={positionNames}
+            positionEngines={positionEngines}
             positionAvatars={positionAvatars}
             positionAvatarSources={avatarUrls}
             ownerPositionId={snapshot?.owner}
             onOpenApprovals={() => setActiveModule("approvals")}
-            onOpenBoundSession={(positionId, sessionId) => {
+            onOpenBoundSession={(positionId, sessionId, turnId) => {
               selectPosition(positionId);
               if (sessionId) {
                 selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+              }
+              if (turnId) {
+                setSessionFocusTurnId(turnId);
               }
               setActiveModule("org");
             }}

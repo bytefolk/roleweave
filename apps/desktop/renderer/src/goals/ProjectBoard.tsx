@@ -21,6 +21,7 @@ export interface ProjectBoardProps {
   positionNames: Record<string, string>;
   positionEngines?: Record<string, TurnEngine>;
   onRefresh: () => void | Promise<void>;
+  onOpenBoundSession?: (positionId: string, sessionId?: string, turnId?: string) => void;
 }
 
 const STATUSES = ["todo", "in_progress", "blocked", "review", "done"] as const;
@@ -74,6 +75,7 @@ export function ProjectBoard({
   positionNames,
   positionEngines = {},
   onRefresh,
+  onOpenBoundSession,
 }: ProjectBoardProps) {
   const t = useT();
   const locale = useOwbLocale();
@@ -82,6 +84,8 @@ export function ProjectBoard({
   const [view, setView] = useState<"board" | "schedule">("board");
   const [query, setQuery] = useState("");
   const [owner, setOwner] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const [editor, setEditor] = useState<Editor | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -117,13 +121,17 @@ export function ProjectBoard({
     const match = `${item.title} ${item.description ?? ""}`
       .toLocaleLowerCase()
       .includes(query.trim().toLocaleLowerCase());
-    return (
-      match &&
-      (owner === "all" ||
-        (owner === "unassigned"
-          ? !item.assigneePositionId
-          : owner === `position:${item.assigneePositionId ?? ""}`))
-    );
+    const matchesOwner =
+      owner === "all" ||
+      (owner === "unassigned"
+        ? !item.assigneePositionId
+        : owner === `position:${item.assigneePositionId ?? ""}`);
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "overdue" ? overdue(item) : item.status === statusFilter);
+    const matchesPriority =
+      priorityFilter === "all" || item.priority === priorityFilter;
+    return match && matchesOwner && matchesStatus && matchesPriority;
   });
   const ownerIds = Array.from(
     new Set([
@@ -244,6 +252,20 @@ export function ProjectBoard({
       true,
     );
   };
+
+  const deleteTask = async () => {
+    if (!editor || editor.isNew || busy) return;
+    const item = editor.item;
+    if (
+      !window.confirm(
+        t("project.deleteTaskConfirm", { title: item.title }),
+      )
+    )
+      return;
+    const remaining = items.filter((existing) => existing.taskId !== item.taskId);
+    await save(remaining, detail.goal.updatedAt, true);
+  };
+
   const launch = async (item: GoalWorkItem) => {
     const positionId = item.assigneePositionId;
     const engine = positionId ? own(positionEngines, positionId) : undefined;
@@ -298,14 +320,28 @@ export function ProjectBoard({
   const execution = (item: GoalWorkItem) => {
     const run = executionOf(item);
     return (
-      <span
-        className="owb-project-execution"
-        data-status={run?.status ?? "none"}
-        title={run?.turnId}
-      >
-        <span aria-hidden="true" />
-        {runLabel(item)}
-      </span>
+      <div className="owb-project-execution-wrap">
+        <span
+          className="owb-project-execution"
+          data-status={run?.status ?? "none"}
+          title={run?.turnId}
+        >
+          <span aria-hidden="true" />
+          {runLabel(item)}
+        </span>
+        {run?.turnId && onOpenBoundSession ? (
+          <Button
+            size="small"
+            type="link"
+            className="owb-project-view-turn-btn"
+            onClick={() => onOpenBoundSession(run.positionId, undefined, run.turnId)}
+            title={t("project.viewTurn")}
+            aria-label={t("project.viewTurnNamed", { title: item.title })}
+          >
+            {t("project.viewTurn")}
+          </Button>
+        ) : null}
+      </div>
     );
   };
   const card = (item: GoalWorkItem) => {
@@ -441,22 +477,39 @@ export function ProjectBoard({
           />
           <span>{t("project.manualProgress")}</span>
         </div>
-        <div className="owb-project-summary__metric">
+        <button
+          type="button"
+          className="owb-project-summary__metric owb-project-summary__metric--interactive"
+          aria-pressed={statusFilter === "in_progress"}
+          onClick={() => setStatusFilter((curr) => curr === "in_progress" ? "all" : "in_progress")}
+        >
           <strong>
             {items.filter((item) => item.status === "in_progress").length}
           </strong>
           <span>{t("project.status.in_progress")}</span>
-        </div>
-        <div className="owb-project-summary__metric" data-alert="blocked">
+        </button>
+        <button
+          type="button"
+          className="owb-project-summary__metric owb-project-summary__metric--interactive"
+          data-alert="blocked"
+          aria-pressed={statusFilter === "blocked"}
+          onClick={() => setStatusFilter((curr) => curr === "blocked" ? "all" : "blocked")}
+        >
           <strong>
             {items.filter((item) => item.status === "blocked").length}
           </strong>
           <span>{t("project.status.blocked")}</span>
-        </div>
-        <div className="owb-project-summary__metric" data-alert="overdue">
+        </button>
+        <button
+          type="button"
+          className="owb-project-summary__metric owb-project-summary__metric--interactive"
+          data-alert="overdue"
+          aria-pressed={statusFilter === "overdue"}
+          onClick={() => setStatusFilter((curr) => curr === "overdue" ? "all" : "overdue")}
+        >
           <strong>{items.filter(overdue).length}</strong>
           <span>{t("project.overdue")}</span>
-        </div>
+        </button>
       </div>
       <div className="owb-project-toolbar">
         <div
@@ -504,14 +557,47 @@ export function ProjectBoard({
             </option>
           ))}
         </select>
+        <select
+          className="owb-project-select owb-project-status-filter"
+          aria-label={t("project.filterStatus")}
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+        >
+          <option value="all">{t("project.allStatuses")}</option>
+          {STATUSES.map((status) => (
+            <option value={status} key={status}>
+              {t(`project.status.${status}`)}
+            </option>
+          ))}
+          <option value="overdue">{t("project.overdue")}</option>
+        </select>
+        <select
+          className="owb-project-select owb-project-priority-filter"
+          aria-label={t("project.filterPriority")}
+          value={priorityFilter}
+          onChange={(event) => setPriorityFilter(event.target.value)}
+        >
+          <option value="all">{t("project.allPriorities")}</option>
+          {PRIORITIES.map((priority) => (
+            <option value={priority} key={priority}>
+              {t(`project.priority.${priority}`)}
+            </option>
+          ))}
+        </select>
         <Button
           type="primary"
           icon={<Plus size={14} aria-hidden="true" />}
           disabled={busy || items.length >= MAX_ITEMS}
+          title={items.length >= MAX_ITEMS ? t("project.maxItemsReached") : undefined}
           onClick={() => edit()}
         >
           {t("project.create")}
         </Button>
+        {items.length >= MAX_ITEMS && (
+          <span className="owb-project-limit-notice" role="status">
+            {t("project.maxItemsReached")}
+          </span>
+        )}
       </div>
       {!editor && error && (
         <p className="owb-project-error" role="alert">
@@ -540,6 +626,8 @@ export function ProjectBoard({
             onClick={() => {
               setQuery("");
               setOwner("all");
+              setStatusFilter("all");
+              setPriorityFilter("all");
             }}
           >
             {t("reading.clearFilters")}
@@ -612,8 +700,10 @@ export function ProjectBoard({
                 </div>
               </div>
               {scheduled.map((item) => {
-                const start = dayNumber(item.startDate ?? item.dueDate!);
-                const end = dayNumber(item.dueDate ?? item.startDate!);
+                const sRaw = dayNumber(item.startDate ?? item.dueDate!);
+                const eRaw = dayNumber(item.dueDate ?? item.startDate!);
+                const start = Math.min(sRaw, eRaw);
+                const end = Math.max(sRaw, eRaw);
                 const left = Math.max(0, start - windowStart);
                 const right = Math.min(WINDOW_DAYS, end - windowStart + 1);
                 const inWindow =
@@ -713,6 +803,17 @@ export function ProjectBoard({
         destroyOnHidden
         footer={
           <div className="owb-project-form__footer">
+            {!editor?.isNew && (
+              <Button
+                danger
+                disabled={busy}
+                onClick={() => void deleteTask()}
+                aria-label={t("project.deleteTask")}
+                style={{ marginRight: "auto" }}
+              >
+                {t("project.deleteTask")}
+              </Button>
+            )}
             <Button
               disabled={busy}
               onClick={() => {
@@ -802,7 +903,7 @@ export function ProjectBoard({
                     onChange={(event) =>
                       patch({
                         priority: event.target
-                          .value as GoalWorkItem["priority"],
+                            .value as GoalWorkItem["priority"],
                       })
                     }
                   >
@@ -842,6 +943,12 @@ export function ProjectBoard({
               </div>
               <p className="owb-project-caption">{t("project.dateHint")}</p>
             </fieldset>
+            {((editor.item.startDate && !validDate(editor.item.startDate)) ||
+              (editor.item.dueDate && !validDate(editor.item.dueDate))) && (
+              <p className="owb-project-error" role="alert">
+                {t("project.invalidDateFormat")}
+              </p>
+            )}
             {editor.item.startDate &&
               editor.item.dueDate &&
               editor.item.startDate > editor.item.dueDate && (
@@ -855,9 +962,20 @@ export function ProjectBoard({
               </p>
             )}
             {editor.version !== detail.goal.updatedAt && (
-              <p className="owb-project-notice">
-                {t("project.changedWhileEditing")}
-              </p>
+              <div className="owb-project-conflict-resolution">
+                <p className="owb-project-notice">
+                  {t("project.changedWhileEditing")}
+                </p>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setEditor((current) => current ? { ...current, version: detail.goal.updatedAt } : null);
+                    setError(null);
+                  }}
+                >
+                  {t("project.syncVersion")}
+                </Button>
+              </div>
             )}
           </>
         )}
