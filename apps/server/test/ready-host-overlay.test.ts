@@ -16,6 +16,23 @@ test("sanitizeReadyHostFacts keeps only positionId/engine/ready", () => {
   ]);
 });
 
+test("sanitizeReadyHostFacts rejects duplicates, unknown engines, and oversized batches", () => {
+  assert.deepEqual(
+    sanitizeReadyHostFacts([
+      { positionId: "a", engine: "qoder", ready: true },
+      { positionId: "a", engine: "codex", ready: true },
+    ]),
+    [],
+  );
+  assert.deepEqual(sanitizeReadyHostFacts([{ positionId: "a", engine: "not-an-engine", ready: true }]), []);
+  assert.deepEqual(
+    sanitizeReadyHostFacts(
+      Array.from({ length: 17 }, (_, index) => ({ positionId: `p${index}`, engine: "qoder", ready: true })),
+    ),
+    [],
+  );
+});
+
 test("0 or 1 ready candidate never calls the provider", async () => {
   let calls = 0;
   const ask = async () => {
