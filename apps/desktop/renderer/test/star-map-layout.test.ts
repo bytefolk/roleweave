@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { OrgTreeSnapshot } from "@roleweave/shared";
+import type { OrgTreeSnapshot, RelationshipGraphResponse } from "@roleweave/shared";
 import {
   buildCelestialLayout,
+  deriveKnowledgeLinks,
   isInvalidStarDrop,
   matchStarQuery,
   VIRTUAL_STAR_ID,
@@ -140,5 +141,228 @@ describe("celestial layout (#472): deterministic orbital mapping of the reportin
     const distToParent = Math.hypot(moon![0] - lead1![0], moon![1] - lead1![1], moon![2] - lead1![2]);
     expect(distToParent).toBeGreaterThan(0);
     expect(distToParent).toBeLessThan(15);
+  });
+
+  it("dynamically adapts when digital employees are hired, dismissed, or reparented", () => {
+    // 1. Initial layout
+    const initial = buildCelestialLayout(snapshot);
+    expect(initial.bodies.length).toBe(4);
+
+    // 2. Hire a new digital employee (qa-engineer under platform-lead)
+    const hiredSnapshot: OrgTreeSnapshot = {
+      ...snapshot,
+      positionCount: 5,
+      tree: [
+        {
+          id: "ceo",
+          reportTo: null,
+          budget: { perTask: { tokens: 40000 }, perDay: {} },
+          children: [
+            {
+              id: "platform-lead",
+              reportTo: "ceo",
+              budget: { perTask: {}, perDay: {} },
+              children: [
+                { id: "frontend", reportTo: "platform-lead", budget: { perTask: {}, perDay: {} }, children: [] },
+                { id: "qa-engineer", reportTo: "platform-lead", budget: { perTask: {}, perDay: {} }, children: [] },
+              ],
+            },
+            { id: "design-lead", reportTo: "ceo", budget: { perTask: {}, perDay: {} }, children: [] },
+          ],
+        },
+      ],
+    };
+    const afterHire = buildCelestialLayout(hiredSnapshot);
+    expect(afterHire.bodies.length).toBe(5);
+    const qaBody = afterHire.bodies.find((b) => b.id === "qa-engineer");
+    expect(qaBody).toBeDefined();
+    expect(qaBody?.parentId).toBe("platform-lead");
+    expect(qaBody?.kind).toBe("moon");
+
+    // 3. Move/reparent: move frontend from platform-lead to design-lead
+    const movedSnapshot: OrgTreeSnapshot = {
+      ...hiredSnapshot,
+      tree: [
+        {
+          id: "ceo",
+          reportTo: null,
+          budget: { perTask: { tokens: 40000 }, perDay: {} },
+          children: [
+            {
+              id: "platform-lead",
+              reportTo: "ceo",
+              budget: { perTask: {}, perDay: {} },
+              children: [
+                { id: "qa-engineer", reportTo: "platform-lead", budget: { perTask: {}, perDay: {} }, children: [] },
+              ],
+            },
+            {
+              id: "design-lead",
+              reportTo: "ceo",
+              budget: { perTask: {}, perDay: {} },
+              children: [
+                { id: "frontend", reportTo: "design-lead", budget: { perTask: {}, perDay: {} }, children: [] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const afterMove = buildCelestialLayout(movedSnapshot);
+    const movedFrontend = afterMove.bodies.find((b) => b.id === "frontend");
+    expect(movedFrontend?.parentId).toBe("design-lead");
+    expect(afterMove.orbits.map((o) => o.centerId).sort()).toEqual(["ceo", "design-lead", "platform-lead"]);
+
+    // 4. Dismiss: remove qa-engineer
+    const dismissedSnapshot: OrgTreeSnapshot = {
+      ...movedSnapshot,
+      positionCount: 4,
+      tree: [
+        {
+          id: "ceo",
+          reportTo: null,
+          budget: { perTask: { tokens: 40000 }, perDay: {} },
+          children: [
+            {
+              id: "platform-lead",
+              reportTo: "ceo",
+              budget: { perTask: {}, perDay: {} },
+              children: [],
+            },
+            {
+              id: "design-lead",
+              reportTo: "ceo",
+              budget: { perTask: {}, perDay: {} },
+              children: [
+                { id: "frontend", reportTo: "design-lead", budget: { perTask: {}, perDay: {} }, children: [] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const afterDismiss = buildCelestialLayout(dismissedSnapshot);
+    expect(afterDismiss.bodies.length).toBe(4);
+    expect(afterDismiss.bodies.some((b) => b.id === "qa-engineer")).toBe(false);
+    // platform-lead has 0 children now, so only ceo and design-lead have orbit rings
+    expect(afterDismiss.orbits.map((o) => o.centerId).sort()).toEqual(["ceo", "design-lead"]);
+  });
+
+  it("deriveKnowledgeLinks extracts cross-position collaborations dynamically", () => {
+    const mockGraph: RelationshipGraphResponse = {
+      schemaVersion: "relationship-graph.v1",
+      workspaceId: "ws-1",
+      revision: "1",
+      generatedAt: "2026-09-24T00:00:00Z",
+      truncated: false,
+      limits: { nodes: 400, edges: 800 },
+      coverage: [],
+      nodes: [
+        {
+          id: "agent:hash-ceo",
+          kind: "agent",
+          label: "CEO",
+          state: "ready",
+          positionId: "ceo",
+          evidence: { source: "org", locator: "pos:ceo", basis: "declared", observedAt: "now" },
+        },
+        {
+          id: "agent:hash-plat",
+          kind: "agent",
+          label: "平台负责人",
+          state: "ready",
+          positionId: "platform-lead",
+          evidence: { source: "org", locator: "pos:platform-lead", basis: "declared", observedAt: "now" },
+        },
+        {
+          id: "agent:hash-front",
+          kind: "agent",
+          label: "前端工程师",
+          state: "ready",
+          positionId: "frontend",
+          evidence: { source: "org", locator: "pos:frontend", basis: "declared", observedAt: "now" },
+        },
+        {
+          id: "task:task-1",
+          kind: "task",
+          label: "重构星图 3D 渲染管线",
+          state: "ready",
+          evidence: { source: "tasks", locator: "task:task-1", basis: "observed", observedAt: "now" },
+        },
+        {
+          id: "goal:goal-1",
+          kind: "goal",
+          label: "2026 Q3 体验升级战役",
+          state: "ready",
+          evidence: { source: "goals", locator: "goal:goal-1", basis: "observed", observedAt: "now" },
+        },
+      ],
+      edges: [
+        // Reporting edge (should not be included in knowledge links)
+        {
+          id: "e-report",
+          source: "agent:hash-plat",
+          target: "agent:hash-ceo",
+          kind: "reports_to",
+          evidence: { source: "org", locator: "r", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+        // Task: requested by ceo, assigned to frontend
+        {
+          id: "e-task-req",
+          source: "task:task-1",
+          target: "agent:hash-ceo",
+          kind: "requested_by",
+          evidence: { source: "tasks", locator: "t", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+        {
+          id: "e-task-asg",
+          source: "task:task-1",
+          target: "agent:hash-front",
+          kind: "assigned_to",
+          evidence: { source: "tasks", locator: "t", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+        // Goal: assigned to platform-lead and frontend
+        {
+          id: "e-goal-p",
+          source: "goal:goal-1",
+          target: "agent:hash-plat",
+          kind: "assigned_to",
+          evidence: { source: "goals", locator: "g", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+        {
+          id: "e-goal-f",
+          source: "goal:goal-1",
+          target: "agent:hash-front",
+          kind: "assigned_to",
+          evidence: { source: "goals", locator: "g", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+      ],
+    };
+
+    const validPositions = new Set(["ceo", "platform-lead", "frontend"]);
+    const links = deriveKnowledgeLinks(mockGraph, validPositions);
+    expect(links.length).toBe(2);
+
+    // 1. Task collaboration link between ceo and frontend
+    const taskLink = links.find((l) => (l.source === "ceo" && l.target === "frontend") || (l.source === "frontend" && l.target === "ceo"));
+    expect(taskLink).toBeDefined();
+    expect(taskLink?.label).toBe("任务协同");
+    expect(taskLink?.desc).toContain("重构星图 3D 渲染管线");
+
+    // 2. Goal collaboration link between platform-lead and frontend
+    const goalLink = links.find((l) => (l.source === "platform-lead" && l.target === "frontend") || (l.source === "frontend" && l.target === "platform-lead"));
+    expect(goalLink).toBeDefined();
+    expect(goalLink?.label).toBe("目标协同");
+    expect(goalLink?.desc).toContain("2026 Q3 体验升级战役");
+
+    // If an employee is dismissed (e.g. frontend dismissed), validPositions filters out the links
+    const withoutFrontend = new Set(["ceo", "platform-lead"]);
+    const filteredLinks = deriveKnowledgeLinks(mockGraph, withoutFrontend);
+    expect(filteredLinks.length).toBe(0);
   });
 });

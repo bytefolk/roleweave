@@ -90,6 +90,8 @@ import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
 import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
 
+import { deriveKnowledgeLinks } from "./org/star-map-layout";
+
 /** #472: the 3D star map pulls three.js in; lazy-load so the default bundle
  *  never pays for WebGL until the operator opens the view. */
 const OrgStarMap = lazy(() => import("./org/OrgStarMap"));
@@ -286,7 +288,7 @@ function AppInner({
   const [orgView, setOrgView] = useState<"workbench" | "overview" | "star">("workbench");
   const [graphOpened, setGraphOpened] = useState(false);
   const [starOpened, setStarOpened] = useState(false);
-  const graph = useRelationshipGraph(workspaceInfo?.open ? workspaceInfo.path : undefined, activeModule === "org" && orgView === "overview");
+  const graph = useRelationshipGraph(workspaceInfo?.open ? workspaceInfo.path : undefined, activeModule === "org" && (orgView === "overview" || orgView === "star"));
   useEffect(() => { setGraphOpened(false); setResourceRequest(null); }, [workspaceInfo?.path]);
   const [conversationFocused, setConversationFocused] = useWorkspaceFocus(workspaceInfo?.path ?? "");
   const sendShortcut = useSendShortcut();
@@ -306,6 +308,13 @@ function AppInner({
   const [positionNames, setPositionNames] = useState<Record<string, string>>({});
   const positionNamesRef = useRef<Record<string, string>>({});
   const [positionColors, setPositionColors] = useState<Record<string, string>>({});
+  const [positionTitles, setPositionTitles] = useState<Record<string, string>>({});
+  const [positionModes, setPositionModes] = useState<Record<string, "read_only" | "approval_required">>({});
+  const validPositionIds = useMemo(() => new Set(Object.keys(positionNames)), [positionNames]);
+  const starKnowledgeLinks = useMemo(
+    () => deriveKnowledgeLinks(graph.data, validPositionIds),
+    [graph.data, validPositionIds],
+  );
   /** Avatar is a presentation preference scoped to this local project. It
    * never mutates the employee package or its upstream digest. */
   const [positionAvatars, setPositionAvatars] = useState<Record<string, AvatarValue>>({});
@@ -618,7 +627,13 @@ function AppInner({
         // mutations (especially deletion/hire) still reconcile all metadata.
         if (!reusePositionMetadata) {
           const bindingWritesAtRead = { ...positionBindingWrites.current };
-          const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, { name: string; color?: string; agentEngine?: TurnEngine }]> => {
+          const cardEntries = await Promise.all(positionIds.map(async (id): Promise<[string, {
+            name: string;
+            title?: string;
+            mode?: "read_only" | "approval_required";
+            color?: string;
+            agentEngine?: TurnEngine;
+          }]> => {
             const response = await window.owb.position(id);
             const body = response.body as { position?: PositionCardData; agentEngine?: unknown };
             const position = response.status === 200 && body.position
@@ -628,16 +643,18 @@ function AppInner({
             const agentEngine = isTurnEngine(body.agentEngine) ? body.agentEngine : undefined;
             return [id, {
               name: position?.name ?? t("org.unknownPosition"),
+              ...(typeof position?.description === "string" && position.description.length > 0 ? { title: position.description } : {}),
+              ...(position?.mode ? { mode: position.mode } : {}),
               ...(typeof color === "string" && color.length > 0 ? { color } : {}),
               ...(agentEngine === undefined ? {} : { agentEngine }),
-              // The org chart only needs a human name and optional color. Mode,
-              // budget and permissions belong to the selected position record.
             }];
           }));
           if (!isCurrentRefresh()) return;
           const names = Object.fromEntries(cardEntries.map(([id, entry]) => [id, entry.name]));
           positionNamesRef.current = names;
           setPositionNames(names);
+          setPositionTitles(Object.fromEntries(cardEntries.filter(([, entry]) => "title" in entry).map(([id, entry]) => [id, entry.title!])));
+          setPositionModes(Object.fromEntries(cardEntries.filter(([, entry]) => "mode" in entry).map(([id, entry]) => [id, entry.mode!])));
           const avatars = assignDefaultAvatars(positionIds, ws.path ? {
             ...readAvatarPreferences(window.localStorage, ws.path),
             ...workspaceAvatars.current.get(ws.path),
@@ -668,6 +685,8 @@ function AppInner({
         positionNamesRef.current = {};
         setPositionNames({});
         setPositionColors({});
+        setPositionTitles({});
+        setPositionModes({});
         setPositionEngines({});
         setLockedAgentPositions({});
         await backupLoad;
@@ -677,6 +696,8 @@ function AppInner({
       positionNamesRef.current = {};
       setPositionNames({});
       setPositionColors({});
+      setPositionTitles({});
+      setPositionModes({});
       setPositionEngines({});
       setLockedAgentPositions({});
       setSelectedId(null);
@@ -2240,10 +2261,14 @@ function AppInner({
                   loading={treeLoading}
                   enterpriseName={workspaceInfo?.business}
                   displayNames={positionNames}
+                  displayTitles={positionTitles}
+                  displayModes={positionModes}
                   avatarColors={positionColors}
                   avatarUrls={avatarUrls}
                   runningIds={runningPositionIds}
                   selectedId={selectedId}
+                  relationshipGraph={graph.data}
+                  knowledgeLinks={starKnowledgeLinks}
                   onSelect={openConversation}
                   onMove={(id, reportTo) => void movePosition(id, reportTo)}
                   onHireEntry={(parent) => setTreeHireParent(parent)}

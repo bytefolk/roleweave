@@ -21,23 +21,20 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { useT } from "@roleweave/ui";
-import type { OrgTreeSnapshot } from "@roleweave/shared";
+import type { OrgTreeSnapshot, RelationshipGraphResponse } from "@roleweave/shared";
 import {
   buildCelestialLayout,
+  deriveKnowledgeLinks,
   isInvalidStarDrop,
   matchStarQuery,
   VIRTUAL_STAR_ID,
   type CelestialBody,
   type CelestialLayout,
+  type OrgKnowledgeLink,
 } from "./star-map-layout";
 import "./OrgStarMap.css";
 
-export interface OrgKnowledgeLink {
-  source: string;
-  target: string;
-  label?: string;
-  desc?: string;
-}
+export type { OrgKnowledgeLink };
 
 export interface OrgStarMapProps {
   snapshot: OrgTreeSnapshot | null;
@@ -58,6 +55,7 @@ export interface OrgStarMapProps {
   moveDisabled?: boolean;
   dismissSlot?: ReactNode;
   knowledgeLinks?: OrgKnowledgeLink[];
+  relationshipGraph?: RelationshipGraphResponse | null;
   className?: string;
 }
 
@@ -122,6 +120,21 @@ interface SceneState {
 const DEFAULT_CAM: readonly [number, number, number] = [0, 36, 68];
 const DRAG_THRESHOLD = 4;
 
+function disposeObject3D(obj: THREE.Object3D): void {
+  obj.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.geometry) {
+      mesh.geometry.dispose();
+    }
+    const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(mat)) {
+      mat.forEach((m) => m.dispose());
+    } else if (mat) {
+      mat.dispose();
+    }
+  });
+}
+
 function budgetLabelText(budget: CelestialBody["budget"]): string | null {
   const perTask = budget?.perTask;
   if (!perTask) return null;
@@ -152,6 +165,7 @@ export default function OrgStarMap({
   moveDisabled = false,
   dismissSlot,
   knowledgeLinks,
+  relationshipGraph,
   className,
 }: OrgStarMapProps) {
   const t = useT();
@@ -222,6 +236,35 @@ export default function OrgStarMap({
   const layout = useMemo(() => buildCelestialLayout(snapshot), [snapshot]);
   layoutRef.current = layout;
   const isEmpty = snapshot === null || snapshot.tree.length === 0;
+
+  const activePositionIds = useMemo(
+    () => new Set(layout.bodies.filter((b) => !b.virtual).map((b) => b.id)),
+    [layout.bodies],
+  );
+
+  const effectiveKnowledgeLinks = useMemo(() => {
+    const directLinks = (knowledgeLinks ?? []).filter(
+      (link) =>
+        link.source !== link.target &&
+        activePositionIds.has(link.source) &&
+        activePositionIds.has(link.target),
+    );
+    const derived = deriveKnowledgeLinks(relationshipGraph, activePositionIds);
+    const combined: OrgKnowledgeLink[] = [...directLinks];
+    const seen = new Set(
+      directLinks.map((l) =>
+        l.source < l.target ? `${l.source}->${l.target}` : `${l.target}->${l.source}`,
+      ),
+    );
+    for (const d of derived) {
+      const key = d.source < d.target ? `${d.source}->${d.target}` : `${d.target}->${d.source}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        combined.push(d);
+      }
+    }
+    return combined;
+  }, [knowledgeLinks, relationshipGraph, activePositionIds]);
 
   const nameOf = useCallback(
     (body: CelestialBody): string => {
@@ -465,9 +508,14 @@ export default function OrgStarMap({
 
           // Active running turn pulse
           const isRunning = latest.current.runningIds?.has(view.body.id) === true;
+          const isSelected = view.body.id === latest.current.selectedId;
+          const isHovered = view.body.id === latest.current.hoveredId;
+          const baseScale = isSelected ? 1.25 : isHovered ? 1.15 : 1.0;
           if (isRunning && !latest.current.reducedMotion) {
             const pulse = 1 + Math.sin(elapsed * 4.2) * 0.12;
-            view.coreMesh.scale.setScalar(pulse);
+            view.coreMesh.scale.setScalar(baseScale * pulse);
+          } else if (Math.abs(view.coreMesh.scale.x - baseScale) > 0.001) {
+            view.coreMesh.scale.setScalar(baseScale);
           }
 
           // Dynamic Level of Detail (LOD)
@@ -540,8 +588,9 @@ export default function OrgStarMap({
       if (!state) return;
 
       while (state.orbitsGroup.children.length > 0) {
-        const child = state.orbitsGroup.children[0];
-        state.orbitsGroup.remove(child!);
+        const child = state.orbitsGroup.children[0]!;
+        state.orbitsGroup.remove(child);
+        disposeObject3D(child);
       }
 
       if (mode !== "celestial" || !visible) return;
@@ -602,183 +651,6 @@ export default function OrgStarMap({
       cl.line.computeLineDistances();
     }
   }, []);
-
-  /* ------------------------------------------------------- data → scene */
-  useEffect(() => {
-    const state = stateRef.current;
-    if (!state || webglFailed) return;
-
-    // Clear previous
-    for (const view of state.views.values()) view.label.remove();
-    state.nodesGroup.clear();
-    state.treeLinesGroup.clear();
-    state.crossLinksGroup.clear();
-    state.views.clear();
-    state.links = [];
-    state.crossLinks = [];
-
-    const isDark = theme === "dark";
-
-    // 1. Build Nodes
-    const nodeGeometries = {
-      root: new THREE.SphereGeometry(1.8, 24, 24),
-      lead: new THREE.SphereGeometry(1.1, 20, 20),
-      member: new THREE.SphereGeometry(0.62, 16, 16),
-    };
-
-    for (const body of layout.bodies) {
-      const group = new THREE.Group();
-      const pos = layoutMode === "celestial" ? body.position : body.networkPosition;
-      group.position.set(...pos);
-
-      // Core Solid Sphere
-      const color =
-        body.kind === "star"
-          ? (isDark ? 0xffffff : 0x000000)
-          : body.kind === "planet"
-            ? (isDark ? 0xe4e4e7 : 0x1f2937)
-            : (isDark ? 0xa1a1aa : 0x6b7280);
-
-      const material = new THREE.MeshBasicMaterial({ color });
-      const coreGeo =
-        body.kind === "star"
-          ? nodeGeometries.root
-          : body.kind === "planet"
-            ? nodeGeometries.lead
-            : nodeGeometries.member;
-
-      const coreMesh = new THREE.Mesh(coreGeo, material);
-      coreMesh.userData = { positionId: body.id };
-      group.add(coreMesh);
-
-      // Outer Geometric Precision Ring for Root and Leads
-      let ringMesh: THREE.Mesh | null = null;
-      if (body.kind === "star") {
-        const ringGeo = new THREE.RingGeometry(2.35, 2.52, 48);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: isDark ? 0x52525b : 0xadb5bd,
-          side: THREE.DoubleSide,
-        });
-        ringMesh = new THREE.Mesh(ringGeo, ringMat);
-        ringMesh.rotation.x = Math.PI / 2;
-        group.add(ringMesh);
-      } else if (body.kind === "planet") {
-        const ringGeo = new THREE.RingGeometry(1.45, 1.58, 36);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: isDark ? 0x3f3f46 : 0xd1d5db,
-          side: THREE.DoubleSide,
-        });
-        ringMesh = new THREE.Mesh(ringGeo, ringMat);
-        ringMesh.rotation.x = Math.PI / 2;
-        group.add(ringMesh);
-      }
-
-      // Selection Wire Reticle (fits snugly right around node and ring)
-      const reticleGeo =
-        body.kind === "star"
-          ? new THREE.RingGeometry(2.7, 2.85, 32)
-          : body.kind === "planet"
-            ? new THREE.RingGeometry(1.75, 1.88, 32)
-            : new THREE.RingGeometry(1.05, 1.18, 24);
-
-      const reticleMat = new THREE.MeshBasicMaterial({
-        color: isDark ? 0xffffff : 0x111827,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0,
-      });
-      const reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
-      group.add(reticleMesh);
-
-      // CSS2D DOM Label
-      const label = document.createElement("div");
-      label.className = `owb-star-label owb-star-label--${body.kind}`;
-      label.textContent = nameOf(body);
-      label.dataset.id = body.id;
-      label.title = body.virtual ? nameOf(body) : `${nameOf(body)} · ${body.id}`;
-      label.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (body.virtual) return;
-        setCardDismissed(false);
-        flyTo(body.id, true);
-        latest.current.onSelect?.(body.id);
-      });
-      label.addEventListener("mouseenter", () => setHoveredId(body.id));
-      label.addEventListener("mouseleave", () => setHoveredId(null));
-
-      const labelObject = new CSS2DObject(label);
-      labelObject.center.set(0.5, 1.0);
-      const labelYOffset = body.kind === "star" ? 2.6 : body.kind === "planet" ? 1.8 : 1.1;
-      labelObject.position.set(0, labelYOffset, 0);
-      group.add(labelObject);
-
-      state.nodesGroup.add(group);
-
-      const targetPos = new THREE.Vector3(...pos);
-      state.views.set(body.id, {
-        body,
-        group,
-        coreMesh,
-        ringMesh,
-        reticleMesh,
-        label,
-        currentPos: targetPos.clone(),
-        targetPos,
-      });
-    }
-
-    // 2. Build Hierarchy Lines
-    const defaultColor = isDark ? 0x2e2e38 : 0xd1d5db;
-    for (const body of layout.bodies) {
-      if (!body.parentId || !state.views.has(body.parentId)) continue;
-      const parentPos = state.views.get(body.parentId)!.currentPos;
-      const childPos = state.views.get(body.id)!.currentPos;
-
-      const geometry = new THREE.BufferGeometry().setFromPoints([parentPos, childPos]);
-      const material = new THREE.LineBasicMaterial({
-        color: defaultColor,
-        transparent: true,
-        opacity: 0.75,
-      });
-      const line = new THREE.Line(geometry, material);
-      state.treeLinesGroup.add(line);
-      state.links.push({ source: body.parentId, target: body.id, line, material });
-    }
-
-    // 3. Build Knowledge Cross Links (if any)
-    const crossColor = isDark ? 0x383844 : 0x9ca3af;
-    if (knowledgeLinks && knowledgeLinks.length > 0) {
-      for (const cl of knowledgeLinks) {
-        if (!state.views.has(cl.source) || !state.views.has(cl.target)) continue;
-        const srcPos = state.views.get(cl.source)!.currentPos;
-        const tgtPos = state.views.get(cl.target)!.currentPos;
-
-        const geometry = new THREE.BufferGeometry().setFromPoints([srcPos, tgtPos]);
-        const material = new THREE.LineDashedMaterial({
-          color: crossColor,
-          dashSize: 0.8,
-          gapSize: 0.6,
-          transparent: true,
-          opacity: 0.65,
-        });
-        const line = new THREE.Line(geometry, material);
-        line.computeLineDistances();
-        state.crossLinksGroup.add(line);
-        state.crossLinks.push({
-          source: cl.source,
-          target: cl.target,
-          label: cl.label,
-          desc: cl.desc,
-          line,
-          material,
-        });
-      }
-    }
-
-    rebuildOrbits(layoutMode, showOrbits, theme);
-    applyVisualState();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, theme, webglFailed, nameOf, knowledgeLinks, rebuildOrbits]);
 
   /* ------------------------------------------- apply visual state */
   const applyVisualState = useCallback((): void => {
@@ -879,9 +751,239 @@ export default function OrgStarMap({
     });
   }, []);
 
+  /* ------------------------------------------------------- data → scene */
+  useEffect(() => {
+    const state = stateRef.current;
+    if (!state || webglFailed) return;
+
+    const isDark = theme === "dark";
+    const currentLayoutMode = layoutMode;
+
+    const nodeGeometries = {
+      root: new THREE.SphereGeometry(1.8, 24, 24),
+      lead: new THREE.SphereGeometry(1.1, 20, 20),
+      member: new THREE.SphereGeometry(0.62, 16, 16),
+    };
+
+    const nextBodyIds = new Set(layout.bodies.map((b) => b.id));
+
+    // A. Remove dismissed/deleted nodes (clean DOM and GPU memory)
+    for (const [id, view] of state.views.entries()) {
+      if (!nextBodyIds.has(id)) {
+        view.label.remove();
+        state.nodesGroup.remove(view.group);
+        disposeObject3D(view.group);
+        state.views.delete(id);
+      }
+    }
+
+    // B. Reconcile remaining and new nodes
+    for (const body of layout.bodies) {
+      const pos = currentLayoutMode === "celestial" ? body.position : body.networkPosition;
+      const targetVec = new THREE.Vector3(...pos);
+      const existing = state.views.get(body.id);
+
+      if (existing) {
+        // Node already exists: update data and smooth target position (no teleport)
+        existing.body = body;
+        existing.targetPos.copy(targetVec);
+        existing.label.textContent = nameOf(body);
+        existing.label.title = body.virtual ? nameOf(body) : `${nameOf(body)} · ${body.id}`;
+        existing.label.className = `owb-star-label owb-star-label--${body.kind}`;
+        existing.coreMesh.userData.positionId = body.id;
+
+        const targetGeo =
+          body.kind === "star"
+            ? nodeGeometries.root
+            : body.kind === "planet"
+              ? nodeGeometries.lead
+              : nodeGeometries.member;
+        if (existing.coreMesh.geometry !== targetGeo) {
+          existing.coreMesh.geometry = targetGeo;
+        }
+
+        const color =
+          body.kind === "star"
+            ? (isDark ? 0xffffff : 0x000000)
+            : body.kind === "planet"
+              ? (isDark ? 0xe4e4e7 : 0x1f2937)
+              : (isDark ? 0xa1a1aa : 0x6b7280);
+        (existing.coreMesh.material as THREE.MeshBasicMaterial).color.set(color);
+
+        if (existing.ringMesh) {
+          const ringColor = isDark
+            ? (body.kind === "star" ? 0x52525b : 0x3f3f46)
+            : (body.kind === "star" ? 0xadb5bd : 0xd1d5db);
+          (existing.ringMesh.material as THREE.MeshBasicMaterial).color.set(ringColor);
+        }
+      } else {
+        // Newly added node (e.g. hired digital employee): spawn from parent if available
+        const group = new THREE.Group();
+        let initialPos = targetVec.clone();
+        if (body.parentId && state.views.has(body.parentId)) {
+          initialPos = state.views.get(body.parentId)!.currentPos.clone();
+        }
+        group.position.copy(initialPos);
+
+        const color =
+          body.kind === "star"
+            ? (isDark ? 0xffffff : 0x000000)
+            : body.kind === "planet"
+              ? (isDark ? 0xe4e4e7 : 0x1f2937)
+              : (isDark ? 0xa1a1aa : 0x6b7280);
+
+        const material = new THREE.MeshBasicMaterial({ color });
+        const coreGeo =
+          body.kind === "star"
+            ? nodeGeometries.root
+            : body.kind === "planet"
+              ? nodeGeometries.lead
+              : nodeGeometries.member;
+
+        const coreMesh = new THREE.Mesh(coreGeo, material);
+        coreMesh.userData = { positionId: body.id };
+        group.add(coreMesh);
+
+        let ringMesh: THREE.Mesh | null = null;
+        if (body.kind === "star") {
+          const ringGeo = new THREE.RingGeometry(2.35, 2.52, 48);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: isDark ? 0x52525b : 0xadb5bd,
+            side: THREE.DoubleSide,
+          });
+          ringMesh = new THREE.Mesh(ringGeo, ringMat);
+          ringMesh.rotation.x = Math.PI / 2;
+          group.add(ringMesh);
+        } else if (body.kind === "planet") {
+          const ringGeo = new THREE.RingGeometry(1.45, 1.58, 36);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: isDark ? 0x3f3f46 : 0xd1d5db,
+            side: THREE.DoubleSide,
+          });
+          ringMesh = new THREE.Mesh(ringGeo, ringMat);
+          ringMesh.rotation.x = Math.PI / 2;
+          group.add(ringMesh);
+        }
+
+        const reticleGeo =
+          body.kind === "star"
+            ? new THREE.RingGeometry(2.7, 2.85, 32)
+            : body.kind === "planet"
+              ? new THREE.RingGeometry(1.75, 1.88, 32)
+              : new THREE.RingGeometry(1.05, 1.18, 24);
+
+        const reticleMat = new THREE.MeshBasicMaterial({
+          color: isDark ? 0xffffff : 0x111827,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0,
+        });
+        const reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
+        group.add(reticleMesh);
+
+        const label = document.createElement("div");
+        label.className = `owb-star-label owb-star-label--${body.kind}`;
+        label.textContent = nameOf(body);
+        label.dataset.id = body.id;
+        label.title = body.virtual ? nameOf(body) : `${nameOf(body)} · ${body.id}`;
+        label.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (body.virtual) return;
+          setCardDismissed(false);
+          flyTo(body.id, true);
+          latest.current.onSelect?.(body.id);
+        });
+        label.addEventListener("mouseenter", () => setHoveredId(body.id));
+        label.addEventListener("mouseleave", () => setHoveredId(null));
+
+        const labelObject = new CSS2DObject(label);
+        labelObject.center.set(0.5, 1.0);
+        const labelYOffset = body.kind === "star" ? 2.6 : body.kind === "planet" ? 1.8 : 1.1;
+        labelObject.position.set(0, labelYOffset, 0);
+        group.add(labelObject);
+
+        state.nodesGroup.add(group);
+
+        state.views.set(body.id, {
+          body,
+          group,
+          coreMesh,
+          ringMesh,
+          reticleMesh,
+          label,
+          currentPos: initialPos,
+          targetPos: targetVec,
+        });
+      }
+    }
+
+    // C. Rebuild Hierarchy Lines (cleanly dispose previous line geometries & materials)
+    while (state.treeLinesGroup.children.length > 0) {
+      const child = state.treeLinesGroup.children[0]!;
+      state.treeLinesGroup.remove(child);
+      disposeObject3D(child);
+    }
+    state.links = [];
+
+    const defaultColor = isDark ? 0x2e2e38 : 0xd1d5db;
+    for (const body of layout.bodies) {
+      if (!body.parentId || !state.views.has(body.parentId) || !state.views.has(body.id)) continue;
+      const parentPos = state.views.get(body.parentId)!.currentPos;
+      const childPos = state.views.get(body.id)!.currentPos;
+
+      const geometry = new THREE.BufferGeometry().setFromPoints([parentPos, childPos]);
+      const material = new THREE.LineBasicMaterial({
+        color: defaultColor,
+        transparent: true,
+        opacity: 0.75,
+      });
+      const line = new THREE.Line(geometry, material);
+      state.treeLinesGroup.add(line);
+      state.links.push({ source: body.parentId, target: body.id, line, material });
+    }
+
+    // D. Rebuild Knowledge Cross Links (cleanly dispose previous cross line geometries & materials)
+    while (state.crossLinksGroup.children.length > 0) {
+      const child = state.crossLinksGroup.children[0]!;
+      state.crossLinksGroup.remove(child);
+      disposeObject3D(child);
+    }
+    state.crossLinks = [];
+
+    const crossColor = isDark ? 0x383844 : 0x9ca3af;
+    for (const cl of effectiveKnowledgeLinks) {
+      if (!state.views.has(cl.source) || !state.views.has(cl.target)) continue;
+      const srcPos = state.views.get(cl.source)!.currentPos;
+      const tgtPos = state.views.get(cl.target)!.currentPos;
+
+      const geometry = new THREE.BufferGeometry().setFromPoints([srcPos, tgtPos]);
+      const material = new THREE.LineDashedMaterial({
+        color: crossColor,
+        dashSize: 0.8,
+        gapSize: 0.6,
+        transparent: true,
+        opacity: 0.65,
+      });
+      const line = new THREE.Line(geometry, material);
+      line.computeLineDistances();
+      state.crossLinksGroup.add(line);
+      state.crossLinks.push({
+        source: cl.source,
+        target: cl.target,
+        label: cl.label,
+        desc: cl.desc,
+        line,
+        material,
+      });
+    }
+
+    rebuildOrbits(currentLayoutMode, showOrbits, theme);
+    applyVisualState();
+  }, [layout, theme, webglFailed, nameOf, effectiveKnowledgeLinks, rebuildOrbits, applyVisualState, showOrbits, layoutMode]);
+
   useEffect(() => {
     applyVisualState();
-  }, [selectedId, hoveredId, query, applyVisualState, theme, showCrossLinks]);
+  }, [selectedId, hoveredId, query, runningIds, applyVisualState, theme, showCrossLinks]);
 
   /* ------------------------------------------------- layout switching */
   const switchLayoutMode = useCallback(
@@ -1010,9 +1112,11 @@ export default function OrgStarMap({
   }, [layout.bodies, selectedBody]);
 
   const relevantCrossLinks = useMemo(() => {
-    if (!selectedBody || !knowledgeLinks) return [];
-    return knowledgeLinks.filter((c) => c.source === selectedBody.id || c.target === selectedBody.id);
-  }, [knowledgeLinks, selectedBody]);
+    if (!selectedBody) return [];
+    return effectiveKnowledgeLinks.filter(
+      (c) => c.source === selectedBody.id || c.target === selectedBody.id,
+    );
+  }, [effectiveKnowledgeLinks, selectedBody]);
 
   return (
     <section
@@ -1353,12 +1457,12 @@ export default function OrgStarMap({
               {layout.bodies.filter((b) => !b.virtual && b.parentId !== null).length}
             </span>
           </div>
-          {knowledgeLinks && knowledgeLinks.length > 0 ? (
+          {effectiveKnowledgeLinks.length > 0 ? (
             <>
               <div className="owb-star-map__metric-sep" />
               <div className="owb-star-map__metric-item">
                 <span>{t("star.metricsCrossLinks")}:</span>
-                <span className="owb-star-map__metric-val">{knowledgeLinks.length}</span>
+                <span className="owb-star-map__metric-val">{effectiveKnowledgeLinks.length}</span>
               </div>
             </>
           ) : null}

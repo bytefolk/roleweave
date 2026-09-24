@@ -14,9 +14,16 @@
  * not coplanar-overlap. Framework-free on purpose: unit tests cover the math
  * without a DOM or a WebGL context.
  */
-import type { OrgTreeNodeV1, OrgTreeSnapshot } from "@roleweave/shared";
+import type { OrgTreeNodeV1, OrgTreeSnapshot, RelationshipGraphResponse } from "@roleweave/shared";
 
 export type CelestialKind = "star" | "planet" | "moon";
+
+export interface OrgKnowledgeLink {
+  source: string;
+  target: string;
+  label?: string;
+  desc?: string;
+}
 
 export interface CelestialBody {
   id: string;
@@ -306,4 +313,99 @@ export function matchStarQuery(entries: StarSearchEntry[], query: string): strin
     .filter((entry): entry is { id: string; name: string; score: number } => entry !== null);
   scored.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name));
   return scored.map((entry) => entry.id);
+}
+
+/**
+ * Dynamically extract cross-position collaboration and knowledge links from
+ * the workspace ontology/relationship graph.
+ *
+ * Discovers secondary relations from:
+ * 1. Task assignments: task requester <-> assignee (different positions)
+ * 2. Goal collaboration: multiple positions collaborating on the same goal branches
+ * 3. Direct non-reporting links
+ *
+ * Filters out invalid or dismissed positions against validPositionIds so no
+ * dangling edges appear in the 3D sky.
+ */
+export function deriveKnowledgeLinks(
+  graph: RelationshipGraphResponse | null | undefined,
+  validPositionIds?: ReadonlySet<string>,
+): OrgKnowledgeLink[] {
+  if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) return [];
+  const links: OrgKnowledgeLink[] = [];
+  const linkKeys = new Set<string>();
+
+  const addLink = (source: string, target: string, label?: string, desc?: string): void => {
+    if (!source || !target || source === target) return;
+    if (validPositionIds && (!validPositionIds.has(source) || !validPositionIds.has(target))) return;
+    const key = source < target ? `${source}->${target}` : `${target}->${source}`;
+    if (linkKeys.has(key)) return;
+    linkKeys.add(key);
+    links.push({ source, target, label, desc });
+  };
+
+  const agentIdToPositionId = new Map<string, string>();
+  for (const node of graph.nodes) {
+    if (node.kind === "agent" && node.positionId) {
+      agentIdToPositionId.set(node.id, node.positionId);
+    }
+  }
+
+  const taskAssignees = new Map<string, string>();
+  const taskRequesters = new Map<string, string>();
+  const goalAssignees = new Map<string, Set<string>>();
+
+  for (const edge of graph.edges) {
+    const targetPos = agentIdToPositionId.get(edge.target);
+    const sourcePos = agentIdToPositionId.get(edge.source);
+
+    // Direct non-reporting edge between positions
+    if (sourcePos && targetPos && edge.kind !== "reports_to") {
+      addLink(sourcePos, targetPos, edge.kind, `协同关系: ${edge.kind}`);
+      continue;
+    }
+
+    // Task edges: edge from task node to agent node
+    if (edge.kind === "assigned_to" && targetPos) {
+      taskAssignees.set(edge.source, targetPos);
+    } else if (edge.kind === "requested_by" && targetPos) {
+      taskRequesters.set(edge.source, targetPos);
+    }
+
+    // Goal edges: edge from goal node to agent node
+    if (edge.kind === "assigned_to" && targetPos) {
+      let set = goalAssignees.get(edge.source);
+      if (!set) {
+        set = new Set();
+        goalAssignees.set(edge.source, set);
+      }
+      set.add(targetPos);
+    }
+  }
+
+  // Cross-position tasks
+  const taskNodes = new Map(graph.nodes.filter((n) => n.kind === "task").map((n) => [n.id, n]));
+  for (const [taskId, assignee] of taskAssignees.entries()) {
+    const requester = taskRequesters.get(taskId);
+    if (requester && requester !== assignee) {
+      const task = taskNodes.get(taskId);
+      addLink(requester, assignee, "任务协同", task?.label ? `协同任务: ${task.label}` : undefined);
+    }
+  }
+
+  // Cross-position goals
+  const goalNodes = new Map(graph.nodes.filter((n) => n.kind === "goal").map((n) => [n.id, n]));
+  for (const [goalId, assignees] of goalAssignees.entries()) {
+    if (assignees.size > 1) {
+      const goal = goalNodes.get(goalId);
+      const arr = Array.from(assignees);
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          addLink(arr[i]!, arr[j]!, "目标协同", goal?.label ? `共同目标: ${goal.label}` : undefined);
+        }
+      }
+    }
+  }
+
+  return links;
 }

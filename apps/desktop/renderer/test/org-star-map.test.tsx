@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import OrgStarMap from "../src/org/OrgStarMap";
-import type { OrgTreeSnapshot } from "@roleweave/shared";
+import type { OrgTreeSnapshot, RelationshipGraphResponse } from "@roleweave/shared";
 
 const snapshot: OrgTreeSnapshot = {
   schemaVersion: "org-tree.v1",
@@ -217,5 +217,227 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(linkBtn).toBeInTheDocument();
     fireEvent.click(linkBtn);
     expect(onSelect).toHaveBeenCalledWith("frontend");
+  });
+
+  it("动态数字人组织架构：新增（Hire）、裁撤（Dismiss）、调整汇报线（Move）均能实时响应", () => {
+    const onSelect = vi.fn();
+    const onMove = vi.fn();
+    const displayNames: Record<string, string> = {
+      ceo: "首席执行官",
+      "docs-lead": "文档负责人",
+      frontend: "前端工程师",
+      "backend-dev": "后端工程师",
+    };
+
+    // 初始 3 人架构
+    const { rerender } = render(
+      <OrgStarMap
+        snapshot={snapshot}
+        displayNames={displayNames}
+        selectedId="frontend"
+        onSelect={onSelect}
+        onMove={onMove}
+      />,
+    );
+
+    // 初始状态包含 3 个岗位
+    expect(screen.getByRole("button", { name: "首席执行官" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "文档负责人" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "前端工程师" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "后端工程师" })).not.toBeInTheDocument();
+
+    // 1. 新增数字人（Hire）：在文档负责人下新增「后端工程师」
+    const hiredSnapshot: OrgTreeSnapshot = {
+      ...snapshot,
+      positionCount: 4,
+      depth: 3,
+      tree: [
+        {
+          id: "ceo",
+          reportTo: null,
+          budget: { perTask: { tokens: 40000 }, perDay: {} },
+          children: [
+            {
+              id: "docs-lead",
+              reportTo: "ceo",
+              budget: { perTask: {}, perDay: {} },
+              children: [
+                { id: "backend-dev", reportTo: "docs-lead", budget: { perTask: {}, perDay: {} }, children: [] },
+              ],
+            },
+            { id: "frontend", reportTo: "ceo", budget: { perTask: {}, perDay: {} }, children: [] },
+          ],
+        },
+      ],
+    };
+
+    rerender(
+      <OrgStarMap
+        snapshot={hiredSnapshot}
+        displayNames={displayNames}
+        selectedId="backend-dev"
+        onSelect={onSelect}
+        onMove={onMove}
+      />,
+    );
+
+    // 验证新数字人出现在列表中并可查看卡片
+    expect(screen.getByRole("button", { name: "后端工程师" })).toBeInTheDocument();
+    const hiredCard = screen.getByLabelText("员工概览");
+    expect(within(hiredCard).getByText("汇报给 文档负责人")).toBeInTheDocument();
+
+    // 2. 调整汇报线（Move）：将 frontend 汇报线从 ceo 改为 docs-lead
+    const movedSnapshot: OrgTreeSnapshot = {
+      ...hiredSnapshot,
+      tree: [
+        {
+          id: "ceo",
+          reportTo: null,
+          budget: { perTask: { tokens: 40000 }, perDay: {} },
+          children: [
+            {
+              id: "docs-lead",
+              reportTo: "ceo",
+              budget: { perTask: {}, perDay: {} },
+              children: [
+                { id: "backend-dev", reportTo: "docs-lead", budget: { perTask: {}, perDay: {} }, children: [] },
+                { id: "frontend", reportTo: "docs-lead", budget: { perTask: {}, perDay: {} }, children: [] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    rerender(
+      <OrgStarMap
+        snapshot={movedSnapshot}
+        displayNames={displayNames}
+        selectedId="frontend"
+        onSelect={onSelect}
+        onMove={onMove}
+      />,
+    );
+
+    // 验证前端工程师的汇报线变更为文档负责人
+    const movedCard = screen.getByLabelText("员工概览");
+    expect(within(movedCard).getByText("汇报给 文档负责人")).toBeInTheDocument();
+
+    // 3. 裁撤数字人（Dismiss）：删除 backend-dev
+    const dismissedSnapshot: OrgTreeSnapshot = {
+      ...movedSnapshot,
+      positionCount: 3,
+      tree: [
+        {
+          id: "ceo",
+          reportTo: null,
+          budget: { perTask: { tokens: 40000 }, perDay: {} },
+          children: [
+            {
+              id: "docs-lead",
+              reportTo: "ceo",
+              budget: { perTask: {}, perDay: {} },
+              children: [
+                { id: "frontend", reportTo: "docs-lead", budget: { perTask: {}, perDay: {} }, children: [] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    rerender(
+      <OrgStarMap
+        snapshot={dismissedSnapshot}
+        displayNames={displayNames}
+        selectedId="backend-dev" // 已被裁撤的数字人 ID
+        onSelect={onSelect}
+        onMove={onMove}
+      />,
+    );
+
+    // 验证已裁撤的后端工程师不复存在，且概览卡片干净关闭，无残留
+    expect(screen.queryByRole("button", { name: "后端工程师" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("员工概览")).not.toBeInTheDocument();
+  });
+
+  it("relationshipGraph 动态计算知识跨链与协同关系，自动过滤已裁撤岗位", () => {
+    const onSelect = vi.fn();
+    const mockGraph: RelationshipGraphResponse = {
+      schemaVersion: "relationship-graph.v1",
+      workspaceId: "test-ws",
+      revision: "rev-1",
+      generatedAt: "2026-09-24T00:00:00Z",
+      truncated: false,
+      limits: { nodes: 400, edges: 800 },
+      coverage: [],
+      nodes: [
+        {
+          id: "agent:1",
+          kind: "agent",
+          label: "CEO",
+          state: "ready",
+          positionId: "ceo",
+          evidence: { source: "org", locator: "pos:ceo", basis: "declared", observedAt: "now" },
+        },
+        {
+          id: "agent:2",
+          kind: "agent",
+          label: "文档负责人",
+          state: "ready",
+          positionId: "docs-lead",
+          evidence: { source: "org", locator: "pos:docs-lead", basis: "declared", observedAt: "now" },
+        },
+        {
+          id: "agent:3",
+          kind: "agent",
+          label: "前端工程师",
+          state: "ready",
+          positionId: "frontend",
+          evidence: { source: "org", locator: "pos:frontend", basis: "declared", observedAt: "now" },
+        },
+        {
+          id: "task:release-docs",
+          kind: "task",
+          label: "发布文档与UI对齐",
+          state: "ready",
+          evidence: { source: "tasks", locator: "task:release-docs", basis: "observed", observedAt: "now" },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "task:release-docs",
+          target: "agent:2",
+          kind: "requested_by",
+          evidence: { source: "tasks", locator: "t", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+        {
+          id: "e2",
+          source: "task:release-docs",
+          target: "agent:3",
+          kind: "assigned_to",
+          evidence: { source: "tasks", locator: "t", basis: "declared", observedAt: "now" },
+          permission: "not_applicable",
+        },
+      ],
+    };
+
+    render(
+      <OrgStarMap
+        snapshot={snapshot}
+        selectedId="docs-lead"
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+        relationshipGraph={mockGraph}
+        onSelect={onSelect}
+      />,
+    );
+
+    // 动态发现 docs-lead 和 frontend 之间的任务协同跨链
+    expect(screen.getByText("协同跨链:")).toBeInTheDocument();
+    const card = screen.getByLabelText("员工概览");
+    expect(within(card).getByText("知识协同链路")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: /任务协同/ })).toBeInTheDocument();
   });
 });
