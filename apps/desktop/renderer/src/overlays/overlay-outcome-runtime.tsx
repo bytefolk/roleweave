@@ -13,12 +13,17 @@ export type OverlayPendingAction = {
   itemId: string;
   actionId: string;
   source: OverlayPendingSource;
-  positionId?: string;
-  sessionId?: string;
+  positionId: string;
+  sessionId: string;
   /** Bound from the first future matching turn.started. */
   turnId?: string;
   /** Bound from the approval the operator actually decided. */
   approvalId?: string;
+};
+
+export type OverlayApprovalSource = {
+  positionId: string;
+  conversationId: string;
 };
 
 const pending = new Map<string, OverlayPendingAction>();
@@ -27,13 +32,33 @@ export function overlayPendingKey(workspaceKey: string, itemId: string, actionId
   return `${workspaceKey}\0${itemId}\0${actionId}`;
 }
 
+function isUnbound(action: OverlayPendingAction): boolean {
+  return action.source === "turn" ? !action.turnId : !action.approvalId;
+}
+
+function sameDestination(left: OverlayPendingAction, right: Pick<OverlayPendingAction, "workspaceKey" | "source" | "positionId" | "sessionId">): boolean {
+  return (
+    left.workspaceKey === right.workspaceKey &&
+    left.source === right.source &&
+    left.positionId === right.positionId &&
+    left.sessionId === right.sessionId
+  );
+}
+
 export function registerPendingOverlayAction(action: OverlayPendingAction): void {
-  if (!action.workspaceKey || !action.itemId || !action.actionId) return;
-  pending.set(overlayPendingKey(action.workspaceKey, action.itemId, action.actionId), {
+  if (!action.workspaceKey || !action.itemId || !action.actionId || !action.positionId || !action.sessionId) return;
+  const next: OverlayPendingAction = {
     ...action,
     turnId: action.source === "turn" ? undefined : action.turnId,
     approvalId: action.source === "approval" ? undefined : action.approvalId,
-  });
+  };
+  const nextKey = overlayPendingKey(next.workspaceKey, next.itemId, next.actionId);
+  for (const [key, existing] of [...pending.entries()]) {
+    if (key === nextKey) continue;
+    if (!isUnbound(existing) || !sameDestination(existing, next)) continue;
+    pending.delete(key);
+  }
+  pending.set(nextKey, next);
 }
 
 export function resetOverlayOutcomeRuntimeForTests(): void {
@@ -48,32 +73,39 @@ function writePending(action: OverlayPendingAction): void {
   pending.set(overlayPendingKey(action.workspaceKey, action.itemId, action.actionId), action);
 }
 
-function mostRecentUnbound(
+/** Fail-closed: bind only when exactly one unbound pending shares this destination. */
+function uniqueUnbound(
   workspaceKey: string,
   source: OverlayPendingSource,
-  matches: (action: OverlayPendingAction) => boolean,
+  identity: { positionId: string; sessionId: string },
 ): OverlayPendingAction | undefined {
-  const items = [...pending.values()].reverse();
-  return items.find(
+  const matches = [...pending.values()].filter(
     (action) =>
-      action.workspaceKey === workspaceKey &&
-      action.source === source &&
-      (source === "turn" ? !action.turnId : !action.approvalId) &&
-      matches(action),
+      isUnbound(action) &&
+      sameDestination(action, {
+        workspaceKey,
+        source,
+        positionId: identity.positionId,
+        sessionId: identity.sessionId,
+      }),
   );
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 /**
- * Bind the most recently clicked unbound open-approvals pending in this
- * workspace to the approval the operator actually decided. Workspace-level
- * approval SSE without this id does not settle any Goal.
+ * Bind an operator decision to the single pending open-approvals whose
+ * stored branch identity uniquely matches ApprovalView.source.
  */
 export function bindOverlayApprovalDecision(
   workspaceKey: string | undefined,
   approvalId: string,
+  source: OverlayApprovalSource,
 ): OverlayPendingAction | undefined {
-  if (!workspaceKey || !approvalId) return undefined;
-  const match = mostRecentUnbound(workspaceKey, "approval", () => true);
+  if (!workspaceKey || !approvalId || !source.positionId || !source.conversationId) return undefined;
+  const match = uniqueUnbound(workspaceKey, "approval", {
+    positionId: source.positionId,
+    sessionId: source.conversationId,
+  });
   if (!match) return undefined;
   const bound = { ...match, approvalId };
   writePending(bound);
@@ -86,11 +118,10 @@ function bindTurnStarted(event: {
   positionId?: string;
   sessionId?: string;
 }): void {
-  if (!event.turnId || !event.positionId) return;
-  const match = mostRecentUnbound(event.workspaceKey, "turn", (action) => {
-    if (!action.positionId || action.positionId !== event.positionId) return false;
-    if (action.sessionId && action.sessionId !== event.sessionId) return false;
-    return true;
+  if (!event.turnId || !event.positionId || !event.sessionId) return;
+  const match = uniqueUnbound(event.workspaceKey, "turn", {
+    positionId: event.positionId,
+    sessionId: event.sessionId,
   });
   if (!match) return;
   writePending({ ...match, turnId: event.turnId });

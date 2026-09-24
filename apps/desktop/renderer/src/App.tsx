@@ -2155,25 +2155,36 @@ function AppInner({
             onNavigateToOrg={() => setActiveModule("org")}
             onApprove={(id, reason, scope) => {
               const record = approvalState.items.find((entry) => entry.id === id);
-              bindOverlayApprovalDecision(
-                workspaceInfo?.open === true ? workspaceInfo.path : undefined,
-                record?.approvalId ?? id,
-              );
+              if (record?.source) {
+                bindOverlayApprovalDecision(
+                  workspaceInfo?.open === true ? workspaceInfo.path : undefined,
+                  record.approvalId,
+                  { positionId: record.source.positionId, conversationId: record.source.conversationId },
+                );
+              }
               void approvalState.decide(id, "granted", reason, scope);
             }}
             onDeny={(id, reason) => {
               const record = approvalState.items.find((entry) => entry.id === id);
-              bindOverlayApprovalDecision(
-                workspaceInfo?.open === true ? workspaceInfo.path : undefined,
-                record?.approvalId ?? id,
-              );
+              if (record?.source) {
+                bindOverlayApprovalDecision(
+                  workspaceInfo?.open === true ? workspaceInfo.path : undefined,
+                  record.approvalId,
+                  { positionId: record.source.positionId, conversationId: record.source.conversationId },
+                );
+              }
               void approvalState.decide(id, "denied", reason);
             }}
             onApproveBatch={(ids) => {
               const workspaceKey = workspaceInfo?.open === true ? workspaceInfo.path : undefined;
               for (const id of ids) {
                 const record = approvalState.items.find((entry) => entry.id === id);
-                bindOverlayApprovalDecision(workspaceKey, record?.approvalId ?? id);
+                if (record?.source) {
+                  bindOverlayApprovalDecision(workspaceKey, record.approvalId, {
+                    positionId: record.source.positionId,
+                    conversationId: record.source.conversationId,
+                  });
+                }
               }
               return approvalState.decideBatch(ids);
             }}
@@ -2181,7 +2192,12 @@ function AppInner({
               const workspaceKey = workspaceInfo?.open === true ? workspaceInfo.path : undefined;
               for (const id of ids) {
                 const record = approvalState.items.find((entry) => entry.id === id);
-                bindOverlayApprovalDecision(workspaceKey, record?.approvalId ?? id);
+                if (record?.source) {
+                  bindOverlayApprovalDecision(workspaceKey, record.approvalId, {
+                    positionId: record.source.positionId,
+                    conversationId: record.source.conversationId,
+                  });
+                }
               }
               return approvalState.denyBatch(ids);
             }}

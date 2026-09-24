@@ -598,7 +598,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                                 (item) => item.positionId,
                               );
                               recordSuggestionClick(workspaceKey, itemId, "open-turn");
-                              if (workspaceKey && branch?.positionId) {
+                              if (workspaceKey && branch?.positionId && branch.sessionId) {
                                 registerPendingOverlayAction({
                                   workspaceKey,
                                   itemId,
@@ -623,13 +623,18 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                             data-testid="goals-health-open-approvals"
                             onClick={() => {
                               const itemId = `goal:${detail.goal.goalId}`;
+                              const branch = detail.goal.branches.find(
+                                (item) => item.positionId && item.sessionId,
+                              );
                               recordSuggestionClick(workspaceKey, itemId, "open-approvals");
-                              if (workspaceKey) {
+                              if (workspaceKey && branch?.positionId && branch.sessionId) {
                                 registerPendingOverlayAction({
                                   workspaceKey,
                                   itemId,
                                   actionId: "open-approvals",
                                   source: "approval",
+                                  positionId: branch.positionId,
+                                  sessionId: branch.sessionId,
                                 });
                               }
                               onOpenApprovals();

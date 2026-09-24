@@ -451,7 +451,10 @@ describe("Laya health overlay (#428)", () => {
     fireEvent.click(screen.getByTestId("goals-health-open-approvals"));
     expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
     await act(async () => {
-      bindOverlayApprovalDecision("ws-unmount", "apr-1");
+      bindOverlayApprovalDecision("ws-unmount", "apr-1", {
+        positionId: "owner",
+        conversationId: "sess-1",
+      });
       consumeOverlaySystemEvent({
         type: "turn.approval.denied",
         payload: { workspacePath: "ws-unmount", approvalId: "apr-other" },
