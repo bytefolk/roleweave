@@ -460,22 +460,90 @@ describe("ProjectBoard", () => {
     expect(screen.queryByRole("article", { name: "Task 3" })).not.toBeInTheDocument();
   });
 
-  it("allows syncing to latest version when a conflict occurs", async () => {
-    const updateGoal = vi.fn().mockResolvedValue({ status: 200, body: { goalId: "goal-one" } });
-    const context = setup(detail(), { updateGoal });
+  it("triggers refresh on 409 conflict and allows syncing to latest version to retry save", async () => {
+    let currentDetail = detail();
+    const freshDetail = detail([{ ...task, title: "Ship board (updated elsewhere)" }]);
+    freshDetail.goal.updatedAt = "2026-09-23T00:00:00.000Z";
+
+    const updateGoal = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: 409,
+        body: { message: "Goal was modified by another user" },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        body: { goalId: "goal-one" },
+      });
+
+    let rerenderFn: (ui: React.ReactElement) => void;
+    const onRefresh = vi.fn().mockImplementation(async () => {
+      currentDetail = freshDetail;
+      rerenderFn(<ProjectBoard {...context.props} detail={freshDetail} />);
+    });
+
+    const context = setup(currentDetail, { updateGoal }, { onRefresh });
+    rerenderFn = context.rerender;
+
     fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
     const drawer = within(screen.getByRole("dialog"));
-    const fresh = detail([{ ...task, title: "Updated by other" }]);
-    fresh.goal.updatedAt = "2026-09-23T00:00:00.000Z";
-    context.rerender(<ProjectBoard {...context.props} detail={fresh} />);
+
+    // Modify the draft title
+    fireEvent.change(drawer.getByLabelText("任务标题"), {
+      target: { value: "Ship board (my draft edits)" },
+    });
+
+    // Attempt save which fails with 409
+    fireEvent.click(drawer.getByRole("button", { name: "保存任务" }));
+
+    // Verify error and conflict resolution bar appear, but uncommitted draft is preserved
+    expect(await drawer.findByText("Goal was modified by another user")).toBeInTheDocument();
+    expect(drawer.getByLabelText("任务标题")).toHaveValue("Ship board (my draft edits)");
+
     const syncBtn = await drawer.findByRole("button", { name: "同步最新版本" });
     fireEvent.click(syncBtn);
+
+    // Verify clicking sync triggers onRefresh
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+
+    // Conflict error should be cleared
+    expect(drawer.queryByText("Goal was modified by another user")).not.toBeInTheDocument();
+
+    // Now save again with synced version
     fireEvent.click(drawer.getByRole("button", { name: "保存任务" }));
-    expect(updateGoal).toHaveBeenCalledWith(
-      expect.objectContaining({
-        expectedUpdatedAt: "2026-09-23T00:00:00.000Z",
-      }),
+
+    await waitFor(() =>
+      expect(updateGoal).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          expectedUpdatedAt: "2026-09-23T00:00:00.000Z",
+          workItems: [
+            expect.objectContaining({
+              taskId: "task-one",
+              title: "Ship board (my draft edits)",
+            }),
+          ],
+        }),
+      ),
     );
+  });
+
+  it("safely groups malformed or invalid dates into unscheduled section", () => {
+    setup(
+      detail([
+        { ...task, taskId: "bad-date", title: "Corrupted date task", startDate: "not-a-date" },
+        { ...task, taskId: "valid-date", title: "Valid date task", startDate: "2026-09-22", dueDate: "2026-09-25" },
+      ]),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+
+    // Valid date task is in timeline
+    expect(screen.getByText("2026-09-22 → 2026-09-25")).toBeInTheDocument();
+
+    // Malformed date task is safely placed in unscheduled
+    const unscheduledSection = screen.getByRole("heading", { name: /未排期/ });
+    expect(unscheduledSection).toBeInTheDocument();
+    expect(within(unscheduledSection.parentElement!).getByRole("article", { name: "Corrupted date task" })).toBeInTheDocument();
   });
 
   it("displays limit notice and disables creation when task limit is reached", () => {

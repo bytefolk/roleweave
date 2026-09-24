@@ -2183,9 +2183,21 @@ function AppInner({
             ownerPositionId={snapshot?.owner}
             onOpenApprovals={() => setActiveModule("approvals")}
             onOpenBoundSession={(positionId, sessionId, turnId) => {
-              selectPosition(positionId);
-              if (sessionId) {
-                selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+              setOrgView("workbench");
+              if (selectedIdRef.current === positionId) {
+                if (sessionId) {
+                  const key = JSON.stringify([workspacePathRef.current, positionId]);
+                  selectedSessions.current[key] = sessionId;
+                  setSelectedSessionId(sessionId);
+                  selectedSessionIdRef.current = sessionId;
+                } else {
+                  void ensureActiveSession(positionId);
+                }
+              } else {
+                selectPosition(positionId);
+                if (sessionId) {
+                  selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+                }
               }
               if (turnId) {
                 setSessionFocusTurnId(turnId);
@@ -2204,9 +2216,21 @@ function AppInner({
             ownerPositionId={snapshot?.owner}
             onOpenApprovals={() => setActiveModule("approvals")}
             onOpenBoundSession={(positionId, sessionId, turnId) => {
-              selectPosition(positionId);
-              if (sessionId) {
-                selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+              setOrgView("workbench");
+              if (selectedIdRef.current === positionId) {
+                if (sessionId) {
+                  const key = JSON.stringify([workspacePathRef.current, positionId]);
+                  selectedSessions.current[key] = sessionId;
+                  setSelectedSessionId(sessionId);
+                  selectedSessionIdRef.current = sessionId;
+                } else {
+                  void ensureActiveSession(positionId);
+                }
+              } else {
+                selectPosition(positionId);
+                if (sessionId) {
+                  selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+                }
               }
               if (turnId) {
                 setSessionFocusTurnId(turnId);

@@ -88,6 +88,7 @@ export function ProjectBoard({
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [editor, setEditor] = useState<Editor | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
   const [launching, setLaunching] = useState<Record<string, boolean>>({});
   const [accepted, setAccepted] = useState<Record<string, TaskExecution>>({});
@@ -95,6 +96,8 @@ export function ProjectBoard({
   const alive = useRef(true);
   const saving = useRef(false);
   const launchLocks = useRef(new Set<string>());
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -183,8 +186,13 @@ export function ProjectBoard({
         expectedUpdatedAt: version,
       });
       if (!alive.current) return;
-      if (result.status !== 200)
+      if (result.status !== 200) {
+        if (result.status === 409) {
+          setConflict(true);
+        }
         throw new Error(responseError(result.body, t("project.saveError")));
+      }
+      setConflict(false);
       if (closeEditor) setEditor(null);
       await refresh();
     } catch (cause) {
@@ -199,6 +207,7 @@ export function ProjectBoard({
   };
   const edit = (item?: GoalWorkItem) => {
     setError(null);
+    setConflict(false);
     setEditor({
       item: item
         ? { ...item }
@@ -263,7 +272,13 @@ export function ProjectBoard({
     )
       return;
     const remaining = items.filter((existing) => existing.taskId !== item.taskId);
-    await save(remaining, detail.goal.updatedAt, true);
+    setAccepted((previous) => {
+      if (!own(previous, item.taskId)) return previous;
+      const next = { ...previous };
+      delete next[item.taskId];
+      return next;
+    });
+    await save(remaining, editor.version, true);
   };
 
   const launch = async (item: GoalWorkItem) => {
@@ -454,14 +469,15 @@ export function ProjectBoard({
       day: "numeric",
       timeZone: "UTC",
     }).format(new Date(day * DAY));
+  const isScheduled = (item: GoalWorkItem) =>
+    (!!item.startDate && validDate(item.startDate)) ||
+    (!!item.dueDate && validDate(item.dueDate));
   const scheduled = filtered
-    .filter((item) => item.startDate || item.dueDate)
+    .filter(isScheduled)
     .sort((a, b) =>
       (a.startDate ?? a.dueDate!).localeCompare(b.startDate ?? b.dueDate!),
     );
-  const unscheduled = filtered.filter(
-    (item) => !item.startDate && !item.dueDate,
-  );
+  const unscheduled = filtered.filter((item) => !isScheduled(item));
 
   return (
     <section className="owb-project-board" aria-label={t("project.title")}>
@@ -961,15 +977,19 @@ export function ProjectBoard({
                 {error}
               </p>
             )}
-            {editor.version !== detail.goal.updatedAt && (
+            {(conflict || editor.version !== detail.goal.updatedAt) && (
               <div className="owb-project-conflict-resolution">
                 <p className="owb-project-notice">
                   {t("project.changedWhileEditing")}
                 </p>
                 <Button
                   size="small"
-                  onClick={() => {
-                    setEditor((current) => current ? { ...current, version: detail.goal.updatedAt } : null);
+                  onClick={async () => {
+                    await refresh();
+                    setEditor((current) =>
+                      current ? { ...current, version: detailRef.current.goal.updatedAt } : null,
+                    );
+                    setConflict(false);
                     setError(null);
                   }}
                 >
