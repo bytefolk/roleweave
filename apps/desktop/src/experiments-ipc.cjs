@@ -22,4 +22,17 @@ async function reportsAdvice(request, apiRequest) {
   return apiRequest("/reports/advice", { method: "POST", body: request });
 }
 
-module.exports = { experimentsGet, experimentsUpdate, reportsAdvice };
+function factValid(value) {
+  return object(value) && typeof value.positionId === "string" && value.positionId.length > 0 && value.positionId.length <= 128
+    && typeof value.engine === "string" && value.engine.length > 0 && value.engine.length <= 32
+    && typeof value.ready === "boolean"
+    && Object.keys(value).every(key => ["positionId", "engine", "ready"].includes(key));
+}
+
+async function readyHostChoice(request, apiRequest) {
+  if (!scopeValid(request) || !Array.isArray(request.candidates) || request.candidates.some(item => !factValid(item))
+      || Object.keys(request).some(key => !["workspacePath", "workspaceSession", "revision", "candidates"].includes(key))) return invalid();
+  return apiRequest("/ready-host/choice", { method: "POST", body: request });
+}
+
+module.exports = { experimentsGet, experimentsUpdate, reportsAdvice, readyHostChoice };
