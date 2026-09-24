@@ -114,6 +114,7 @@ interface SceneState {
     duration: number;
   } | null;
   drag: { id: string; x: number; y: number; moved: boolean } | null;
+  pointerStart: { x: number; y: number } | null;
   dropCandidate: string | null;
   disposed: boolean;
 }
@@ -139,7 +140,7 @@ export default function OrgStarMap({
   enterpriseName,
   displayNames,
   avatarColors: _avatarColors,
-  avatarUrls,
+  avatarUrls: _avatarUrls,
   displayTitles,
   displayModes,
   runningIds,
@@ -279,8 +280,8 @@ export default function OrgStarMap({
       const grid = new THREE.GridHelper(
         120,
         24,
-        theme === "dark" ? 0x1c1c24 : 0xe5e7eb,
-        theme === "dark" ? 0x14141a : 0xd1d5db,
+        theme === "dark" ? 0x1c1c24 : 0xd1d5db,
+        theme === "dark" ? 0x14141a : 0xe5e7eb,
       );
       grid.position.y = -16;
       scene.add(grid);
@@ -318,12 +319,20 @@ export default function OrgStarMap({
         frame: 0,
         fly: null,
         drag: null,
+        pointerStart: null,
         dropCandidate: null,
         disposed: false,
       };
       stateRef.current = state;
 
       const pick = (clientX: number, clientY: number): string | null => {
+        if (typeof document !== "undefined" && typeof document.elementFromPoint === "function") {
+          const elem = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>(".owb-star-label");
+          if (elem && elem.dataset.id && elem.dataset.id !== VIRTUAL_STAR_ID) {
+            return elem.dataset.id;
+          }
+        }
+
         const rect = renderer.domElement.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return null;
         const pointer = new THREE.Vector2(
@@ -331,7 +340,10 @@ export default function OrgStarMap({
           -((clientY - rect.top) / rect.height) * 2 + 1,
         );
         state.raycaster.setFromCamera(pointer, camera);
-        const meshes = [...state.views.values()].map((v) => v.coreMesh);
+        const meshes: THREE.Object3D[] = [];
+        for (const v of state.views.values()) {
+          meshes.push(v.coreMesh);
+        }
         const hit = state.raycaster.intersectObjects(meshes, false)[0];
         if (!hit) return null;
         const id = hit.object.userData.positionId;
@@ -346,6 +358,7 @@ export default function OrgStarMap({
 
       const onPointerDown = (event: PointerEvent): void => {
         if (event.button !== 0) return;
+        state.pointerStart = { x: event.clientX, y: event.clientY };
         const id = pick(event.clientX, event.clientY);
         if (!id || id === VIRTUAL_STAR_ID) return;
         state.drag = { id, x: event.clientX, y: event.clientY, moved: false };
@@ -377,16 +390,24 @@ export default function OrgStarMap({
 
       const onPointerUp = (event: PointerEvent): void => {
         const drag = state.drag;
+        const start = state.pointerStart;
         state.drag = null;
+        state.pointerStart = null;
         state.controls.enabled = true;
         renderer.domElement.releasePointerCapture?.(event.pointerId);
+
+        const movedDist = start ? Math.hypot(event.clientX - start.x, event.clientY - start.y) : 0;
+
         if (!drag) {
-          const id = pick(event.clientX, event.clientY);
-          if (!id) {
-            latest.current.onSelect?.("");
+          if (movedDist <= DRAG_THRESHOLD) {
+            const id = pick(event.clientX, event.clientY);
+            if (!id) {
+              latest.current.onSelect?.("");
+            }
           }
           return;
         }
+
         const current = latest.current;
         if (!drag.moved) {
           if (drag.id !== VIRTUAL_STAR_ID) {
@@ -398,6 +419,7 @@ export default function OrgStarMap({
           state.dropCandidate = null;
           return;
         }
+
         const target = state.dropCandidate;
         clearDropMarks();
         state.dropCandidate = null;
@@ -430,6 +452,8 @@ export default function OrgStarMap({
 
         // Billboarding & Smooth Node Position Interpolation
         let moved = false;
+        const camDist = state.camera.position.distanceTo(state.controls.target);
+
         for (const view of state.views.values()) {
           view.reticleMesh.quaternion.copy(state.camera.quaternion);
 
@@ -444,6 +468,18 @@ export default function OrgStarMap({
           if (isRunning && !latest.current.reducedMotion) {
             const pulse = 1 + Math.sin(elapsed * 4.2) * 0.12;
             view.coreMesh.scale.setScalar(pulse);
+          }
+
+          // Dynamic Level of Detail (LOD)
+          const isFocus =
+            view.body.id === latest.current.selectedId || view.body.id === latest.current.hoveredId;
+          const isFar = camDist > 85 && view.body.kind === "moon";
+          if (isFar && !isFocus && !view.label.classList.contains("is-selected")) {
+            view.label.style.opacity = "0";
+            view.label.style.pointerEvents = "none";
+          } else if (!view.label.classList.contains("is-dimmed")) {
+            view.label.style.opacity = "";
+            view.label.style.pointerEvents = "auto";
           }
         }
 
@@ -498,40 +534,47 @@ export default function OrgStarMap({
   }, [loading, isEmpty, webglFailed]);
 
   /* ------------------------------------------------- rebuild orbits */
-  const rebuildOrbits = useCallback((): void => {
-    const state = stateRef.current;
-    if (!state) return;
+  const rebuildOrbits = useCallback(
+    (mode: "celestial" | "network" = layoutMode, visible = showOrbits, curTheme = theme): void => {
+      const state = stateRef.current;
+      if (!state) return;
 
-    while (state.orbitsGroup.children.length > 0) {
-      const child = state.orbitsGroup.children[0];
-      state.orbitsGroup.remove(child!);
-    }
+      while (state.orbitsGroup.children.length > 0) {
+        const child = state.orbitsGroup.children[0];
+        state.orbitsGroup.remove(child!);
+      }
 
-    if (latest.current.layoutMode !== "celestial" || !latest.current.showOrbits) return;
+      if (mode !== "celestial" || !visible) return;
 
-    const ringColor = latest.current.theme === "dark" ? 0x22222a : 0xd1d5db;
-    const subRingColor = latest.current.theme === "dark" ? 0x181820 : 0xe5e7eb;
+      const ringColor = curTheme === "dark" ? 0x22222a : 0xd1d5db;
+      const subRingColor = curTheme === "dark" ? 0x181820 : 0xe5e7eb;
 
-    // Major Base Orbit around root
-    const baseCurve = new THREE.EllipseCurve(0, 0, 26, 26, 0, Math.PI * 2, false, 0);
-    const basePoints = baseCurve.getPoints(96).map((p) => new THREE.Vector3(p.x, 0, p.y));
-    const baseGeo = new THREE.BufferGeometry().setFromPoints(basePoints);
-    const baseMat = new THREE.LineBasicMaterial({ color: ringColor, transparent: true, opacity: 0.85 });
-    const baseLoop = new THREE.LineLoop(baseGeo, baseMat);
-    state.orbitsGroup.add(baseLoop);
+      // Major Base Orbit around root
+      const baseCurve = new THREE.EllipseCurve(0, 0, 26, 26, 0, Math.PI * 2, false, 0);
+      const basePoints = baseCurve.getPoints(96).map((p) => new THREE.Vector3(p.x, 0, p.y));
+      const baseGeo = new THREE.BufferGeometry().setFromPoints(basePoints);
+      const baseMat = new THREE.LineBasicMaterial({ color: ringColor, transparent: true, opacity: 0.85 });
+      const baseLoop = new THREE.LineLoop(baseGeo, baseMat);
+      state.orbitsGroup.add(baseLoop);
 
-    // Sub-orbits for parents with children
-    for (const orbit of layout.orbits) {
-      const curve = new THREE.EllipseCurve(0, 0, orbit.radius, orbit.radius, 0, Math.PI * 2, false, 0);
-      const points = curve.getPoints(64).map((p) => new THREE.Vector3(p.x, 0, p.y));
-      const geo = new THREE.BufferGeometry().setFromPoints(points);
-      const mat = new THREE.LineBasicMaterial({ color: subRingColor, transparent: true, opacity: 0.65 });
-      const loop = new THREE.LineLoop(geo, mat);
-      loop.rotation.x = orbit.tilt;
-      loop.position.set(...orbit.center);
-      state.orbitsGroup.add(loop);
-    }
-  }, [layout]);
+      // Sub-orbits for parents with children
+      for (const orbit of layout.orbits) {
+        const curve = new THREE.EllipseCurve(0, 0, orbit.radius, orbit.radius, 0, Math.PI * 2, false, 0);
+        const points = curve.getPoints(64).map((p) => new THREE.Vector3(p.x, 0, p.y));
+        const geo = new THREE.BufferGeometry().setFromPoints(points);
+        const mat = new THREE.LineBasicMaterial({ color: subRingColor, transparent: true, opacity: 0.65 });
+        const loop = new THREE.LineLoop(geo, mat);
+        loop.rotation.x = orbit.tilt;
+        loop.position.set(...orbit.center);
+        state.orbitsGroup.add(loop);
+      }
+    },
+    [layout, layoutMode, showOrbits, theme],
+  );
+
+  useEffect(() => {
+    rebuildOrbits(layoutMode, showOrbits, theme);
+  }, [layoutMode, showOrbits, theme, rebuildOrbits]);
 
   /* ------------------------------------------- update line positions */
   const updateLinePositions = useCallback((): void => {
@@ -611,7 +654,7 @@ export default function OrgStarMap({
       // Outer Geometric Precision Ring for Root and Leads
       let ringMesh: THREE.Mesh | null = null;
       if (body.kind === "star") {
-        const ringGeo = new THREE.RingGeometry(2.4, 2.58, 48);
+        const ringGeo = new THREE.RingGeometry(2.35, 2.52, 48);
         const ringMat = new THREE.MeshBasicMaterial({
           color: isDark ? 0x52525b : 0xadb5bd,
           side: THREE.DoubleSide,
@@ -620,7 +663,7 @@ export default function OrgStarMap({
         ringMesh.rotation.x = Math.PI / 2;
         group.add(ringMesh);
       } else if (body.kind === "planet") {
-        const ringGeo = new THREE.RingGeometry(1.5, 1.62, 36);
+        const ringGeo = new THREE.RingGeometry(1.45, 1.58, 36);
         const ringMat = new THREE.MeshBasicMaterial({
           color: isDark ? 0x3f3f46 : 0xd1d5db,
           side: THREE.DoubleSide,
@@ -630,8 +673,14 @@ export default function OrgStarMap({
         group.add(ringMesh);
       }
 
-      // Selection Wire Reticle
-      const reticleGeo = new THREE.RingGeometry(body.size * 1.5, body.size * 1.65, 32);
+      // Selection Wire Reticle (fits snugly right around node and ring)
+      const reticleGeo =
+        body.kind === "star"
+          ? new THREE.RingGeometry(2.7, 2.85, 32)
+          : body.kind === "planet"
+            ? new THREE.RingGeometry(1.75, 1.88, 32)
+            : new THREE.RingGeometry(1.05, 1.18, 24);
+
       const reticleMat = new THREE.MeshBasicMaterial({
         color: isDark ? 0xffffff : 0x111827,
         side: THREE.DoubleSide,
@@ -645,6 +694,7 @@ export default function OrgStarMap({
       const label = document.createElement("div");
       label.className = `owb-star-label owb-star-label--${body.kind}`;
       label.textContent = nameOf(body);
+      label.dataset.id = body.id;
       label.title = body.virtual ? nameOf(body) : `${nameOf(body)} · ${body.id}`;
       label.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -657,7 +707,9 @@ export default function OrgStarMap({
       label.addEventListener("mouseleave", () => setHoveredId(null));
 
       const labelObject = new CSS2DObject(label);
-      labelObject.position.set(0, body.size + 1.2, 0);
+      labelObject.center.set(0.5, 1.0);
+      const labelYOffset = body.kind === "star" ? 2.6 : body.kind === "planet" ? 1.8 : 1.1;
+      labelObject.position.set(0, labelYOffset, 0);
       group.add(labelObject);
 
       state.nodesGroup.add(group);
@@ -723,7 +775,7 @@ export default function OrgStarMap({
       }
     }
 
-    rebuildOrbits();
+    rebuildOrbits(layoutMode, showOrbits, theme);
     applyVisualState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, theme, webglFailed, nameOf, knowledgeLinks, rebuildOrbits]);
@@ -843,9 +895,9 @@ export default function OrgStarMap({
         const p = mode === "celestial" ? view.body.position : view.body.networkPosition;
         view.targetPos.set(...p);
       }
-      rebuildOrbits();
+      rebuildOrbits(mode, showOrbits, theme);
     },
-    [layoutMode, rebuildOrbits],
+    [layoutMode, rebuildOrbits, showOrbits, theme],
   );
 
   /* ------------------------------------------------- camera glide */
@@ -900,6 +952,7 @@ export default function OrgStarMap({
   const locate = useCallback(
     (id: string): void => {
       setCardDismissed(false);
+      setQuery("");
       latest.current.onSelect?.(id);
       flyTo(id, true);
     },
@@ -912,7 +965,17 @@ export default function OrgStarMap({
     const state = stateRef.current;
     if (state) {
       state.renderer.setClearColor(nextTheme === "dark" ? 0x09090b : 0xf8f9fa, 1.0);
-      state.grid.material.color.set(nextTheme === "dark" ? 0x1c1c24 : 0xe5e7eb);
+      state.scene.remove(state.grid);
+      state.grid.geometry.dispose();
+      (state.grid.material as THREE.Material).dispose();
+      state.grid = new THREE.GridHelper(
+        120,
+        24,
+        nextTheme === "dark" ? 0x1c1c24 : 0xd1d5db,
+        nextTheme === "dark" ? 0x14141a : 0xe5e7eb,
+      );
+      state.grid.position.y = -16;
+      state.scene.add(state.grid);
     }
   }, [theme]);
 
@@ -946,6 +1009,11 @@ export default function OrgStarMap({
     return layout.bodies.filter((b) => b.parentId === selectedBody.id);
   }, [layout.bodies, selectedBody]);
 
+  const relevantCrossLinks = useMemo(() => {
+    if (!selectedBody || !knowledgeLinks) return [];
+    return knowledgeLinks.filter((c) => c.source === selectedBody.id || c.target === selectedBody.id);
+  }, [knowledgeLinks, selectedBody]);
+
   return (
     <section
       className={`owb-star-map owb-star-map--${theme}${className ? ` ${className}` : ""}`}
@@ -972,19 +1040,19 @@ export default function OrgStarMap({
               type="button"
               className={`owb-star-map__toggle-btn${layoutMode === "celestial" ? " is-active" : ""}`}
               onClick={() => switchLayoutMode("celestial")}
-              title="切换为立体轨道星图"
+              title={t("star.layoutCelestialTitle")}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="9" />
                 <path d="M3.6 9h16.8M3.6 15h16.8" />
               </svg>
-              {t("star.layoutCelestial") || "立体轨道星图"}
+              {t("star.layoutCelestial")}
             </button>
             <button
               type="button"
               className={`owb-star-map__toggle-btn${layoutMode === "network" ? " is-active" : ""}`}
               onClick={() => switchLayoutMode("network")}
-              title="切换为3D拓扑星网"
+              title={t("star.layoutNetworkTitle")}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="6" cy="6" r="3" />
@@ -992,7 +1060,7 @@ export default function OrgStarMap({
                 <circle cx="12" cy="18" r="3" />
                 <path d="M8 8l8 8M16 8l-8 8" />
               </svg>
-              {t("star.layoutNetwork") || "3D 拓扑星网"}
+              {t("star.layoutNetwork")}
             </button>
           </div>
 
@@ -1002,25 +1070,25 @@ export default function OrgStarMap({
               type="button"
               className={`owb-star-map__toggle-btn${showOrbits ? " is-active" : ""}`}
               onClick={toggleOrbitLines}
-              title="显示/隐藏天体轨道参考线"
+              title={t("star.toggleOrbitsTitle")}
             >
-              {t("star.toggleOrbits") || "轨道参考线"}
+              {t("star.toggleOrbits")}
             </button>
             <button
               type="button"
               className={`owb-star-map__toggle-btn${showCrossLinks ? " is-active" : ""}`}
               onClick={toggleCrossLinksVisibility}
-              title="显示/隐藏跨项目协同链"
+              title={t("star.toggleCrossLinksTitle")}
             >
-              {t("star.toggleCrossLinks") || "知识协同链"}
+              {t("star.toggleCrossLinks")}
             </button>
             <button
               type="button"
               className={`owb-star-map__toggle-btn${autoRotate ? " is-active" : ""}`}
               onClick={toggleAutoRotation}
-              title="开启/停止视口缓动自转"
+              title={t("star.toggleAutoRotateTitle")}
             >
-              {t("star.toggleAutoRotate") || "自转巡航"}
+              {t("star.toggleAutoRotate")}
             </button>
           </div>
 
@@ -1029,19 +1097,19 @@ export default function OrgStarMap({
             type="button"
             className="owb-star-map__icon-btn"
             onClick={toggleTheme}
-            title={theme === "dark" ? "切换为素雅白纸模式" : "切换为极简黑夜模式"}
+            title={theme === "dark" ? t("star.themePaperTitle") : t("star.themeDarkTitle")}
           >
             <span>{theme === "dark" ? "◐" : "◑"}</span>
-            <span>{theme === "dark" ? t("star.themePaper") || "素雅白纸" : t("star.themeDark") || "极简黑夜"}</span>
+            <span>{theme === "dark" ? t("star.themePaper") : t("star.themeDark")}</span>
           </button>
 
           {/* Reset View */}
-          <button type="button" className="owb-star-map__icon-btn" onClick={resetView} title={t("star.resetCamera") || "视角复位"}>
+          <button type="button" className="owb-star-map__icon-btn" onClick={resetView} title={t("star.resetCamera")}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
             </svg>
-            {t("star.resetCamera") || "视角复位"}
+            {t("star.resetCamera")}
           </button>
         </div>
       </header>
@@ -1119,10 +1187,10 @@ export default function OrgStarMap({
             <div className="owb-star-map__card-title-wrap">
               <span className="owb-star-map__card-role-badge">
                 {selectedBody.kind === "star"
-                  ? t("star.layerRoot") || "ORG ROOT"
+                  ? t("star.layerRoot")
                   : selectedBody.kind === "planet"
-                    ? t("star.layerLead") || "PROJECT LEAD"
-                    : t("star.layerMember") || "SPECIALIST"}
+                    ? t("star.layerLead")
+                    : t("star.layerMember")}
               </span>
               <strong>{nameOf(selectedBody)}</strong>
               {!selectedBody.virtual ? <div className="owb-star-map__card-id">{selectedBody.id}</div> : null}
@@ -1146,23 +1214,34 @@ export default function OrgStarMap({
                 {displayTitles?.[selectedBody.id] ? (
                   <p className="owb-star-map__card-desc">{displayTitles[selectedBody.id]}</p>
                 ) : null}
-                {displayModes?.[selectedBody.id] ? (
-                  <p>
-                    <span className="owb-star-map__tag">
+
+                {/* 2x2 Structured Meta Grid matching minimalist design */}
+                <div className="owb-star-map__card-meta-grid">
+                  <div className="owb-star-map__card-meta-box">
+                    <div className="owb-star-map__card-meta-label">{t("star.cardMode")}</div>
+                    <div className="owb-star-map__card-meta-val">
                       {displayModes?.[selectedBody.id] === "approval_required"
                         ? t("star.modeApproval")
                         : t("star.modeReadOnly")}
-                    </span>
-                  </p>
-                ) : null}
+                    </div>
+                  </div>
+                  <div className="owb-star-map__card-meta-box">
+                    <div className="owb-star-map__card-meta-label">{t("star.cardParent")}</div>
+                    <div className="owb-star-map__card-meta-val">
+                      {parentBody ? nameOf(parentBody) : t("org.enterpriseRoot")}
+                    </div>
+                  </div>
+                </div>
+
                 <p>{t("star.reportTo", { name: parentBody ? nameOf(parentBody) : t("org.enterpriseRoot") })}</p>
                 <p>{t("star.reports", { count: selectedBody.childCount })}</p>
                 <p>{`${t("star.budget")}: ${selectedBudget ?? t("star.declaration")}`}</p>
+
                 {directReports.length > 0 ? (
                   <div className="owb-star-map__card-section">
-                    <div className="owb-star-map__card-section-label">直接下属</div>
+                    <div className="owb-star-map__card-section-label">{t("star.directReports")}</div>
                     <ul className="owb-star-map__card-links-list">
-                      {directReports.slice(0, 5).map((sub) => (
+                      {directReports.map((sub) => (
                         <li key={sub.id}>
                           <button type="button" onClick={() => locate(sub.id)}>
                             <span>{nameOf(sub)}</span>
@@ -1170,6 +1249,32 @@ export default function OrgStarMap({
                           </button>
                         </li>
                       ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {relevantCrossLinks.length > 0 ? (
+                  <div className="owb-star-map__card-section">
+                    <div className="owb-star-map__card-section-label">{t("star.knowledgeLinks")}</div>
+                    <ul className="owb-star-map__card-links-list">
+                      {relevantCrossLinks.map((cl, i) => {
+                        const otherId = cl.source === selectedBody.id ? cl.target : cl.source;
+                        const otherBody = layout.bodies.find((b) => b.id === otherId);
+                        const otherName = otherBody ? nameOf(otherBody) : (displayNames?.[otherId] ?? otherId);
+                        const isSource = cl.source === selectedBody.id;
+                        return (
+                          <li key={`${cl.source}-${cl.target}-${i}`}>
+                            <button
+                              type="button"
+                              onClick={() => locate(otherId)}
+                              title={cl.desc || cl.label}
+                            >
+                              <span>{cl.label ? `${cl.label} · ${otherName}` : otherName}</span>
+                              <span className="owb-star-map__card-link-rel">{isSource ? "→" : "←"}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 ) : null}
@@ -1233,44 +1338,53 @@ export default function OrgStarMap({
       <footer className="owb-star-map__bottom">
         <div className="owb-star-map__metrics">
           <div className="owb-star-map__metric-item">
-            <span>{t("star.metricsNodes") || "组织节点"}:</span>
+            <span>{t("star.metricsNodes")}:</span>
             <span className="owb-star-map__metric-val">{layout.bodies.filter((b) => !b.virtual).length}</span>
           </div>
           <div className="owb-star-map__metric-sep" />
           <div className="owb-star-map__metric-item">
-            <span>{t("star.metricsDepth") || "层级深度"}:</span>
+            <span>{t("star.metricsDepth")}:</span>
             <span className="owb-star-map__metric-val">{layout.maxDepth}</span>
           </div>
           <div className="owb-star-map__metric-sep" />
           <div className="owb-star-map__metric-item">
-            <span>{t("star.metricsLinks") || "层级汇报"}:</span>
+            <span>{t("star.metricsLinks")}:</span>
             <span className="owb-star-map__metric-val">
               {layout.bodies.filter((b) => !b.virtual && b.parentId !== null).length}
             </span>
           </div>
+          {knowledgeLinks && knowledgeLinks.length > 0 ? (
+            <>
+              <div className="owb-star-map__metric-sep" />
+              <div className="owb-star-map__metric-item">
+                <span>{t("star.metricsCrossLinks")}:</span>
+                <span className="owb-star-map__metric-val">{knowledgeLinks.length}</span>
+              </div>
+            </>
+          ) : null}
         </div>
 
         <div className="owb-star-map__legend">
           <div className="owb-star-map__legend-item">
             <span className="owb-star-map__legend-dot root" />
-            <span>{t("star.layerRoot") || "组织决策根"}</span>
+            <span>{t("star.layerRoot")}</span>
           </div>
           <div className="owb-star-map__legend-item">
             <span className="owb-star-map__legend-dot lead" />
-            <span>{t("star.layerLead") || "项目负责人"}</span>
+            <span>{t("star.layerLead")}</span>
           </div>
           <div className="owb-star-map__legend-item">
             <span className="owb-star-map__legend-dot member" />
-            <span>{t("star.layerMember") || "专职职能岗"}</span>
+            <span>{t("star.layerMember")}</span>
           </div>
           <div className="owb-star-map__legend-item">
             <span className="owb-star-map__legend-line solid" />
-            <span>{t("star.legendHierarchy") || "管理汇报"}</span>
+            <span>{t("star.legendHierarchy")}</span>
           </div>
           {showCrossLinks ? (
             <div className="owb-star-map__legend-item">
               <span className="owb-star-map__legend-line dashed" />
-              <span>{t("star.legendCross") || "知识依赖"}</span>
+              <span>{t("star.legendCross")}</span>
             </div>
           ) : null}
         </div>

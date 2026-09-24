@@ -192,4 +192,30 @@ describe("3D 组织星图（#472）：无 WebGL 环境退化为清单 + 操作 d
     expect(screen.getByText("管理汇报")).toBeInTheDocument();
     expect(screen.getByText("知识依赖")).toBeInTheDocument();
   });
+
+  it("知识协同跨链在底部统计与选中卡片中正确呈现并可跳转", () => {
+    const onSelect = vi.fn();
+    render(
+      <OrgStarMap
+        snapshot={snapshot}
+        selectedId="docs-lead"
+        displayNames={{ ceo: "首席执行官", "docs-lead": "文档负责人", frontend: "前端工程师" }}
+        knowledgeLinks={[
+          { source: "docs-lead", target: "frontend", label: "接口规范", desc: "文档对齐前端组件规范" },
+        ]}
+        onSelect={onSelect}
+      />,
+    );
+
+    // 底部统计包含跨链
+    expect(screen.getByText("协同跨链:")).toBeInTheDocument();
+
+    // 选中卡片中展示知识协同链
+    const card = screen.getByLabelText("员工概览");
+    expect(within(card).getByText("知识协同链路")).toBeInTheDocument();
+    const linkBtn = within(card).getByRole("button", { name: /接口规范/ });
+    expect(linkBtn).toBeInTheDocument();
+    fireEvent.click(linkBtn);
+    expect(onSelect).toHaveBeenCalledWith("frontend");
+  });
 });
