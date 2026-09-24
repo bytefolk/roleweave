@@ -63,3 +63,16 @@ export function appendOverlayReceipt(
   }
   return next;
 }
+
+export function latestActionOutcome(
+  item: OverlayItemReceipts,
+  actionId: string,
+): OverlayReceipt["kind"] | undefined {
+  for (let index = item.receipts.length - 1; index >= 0; index -= 1) {
+    const receipt = item.receipts[index];
+    if (receipt?.actionId === actionId && (receipt.kind === "action_succeeded" || receipt.kind === "action_failed")) {
+      return receipt.kind;
+    }
+  }
+  return undefined;
+}

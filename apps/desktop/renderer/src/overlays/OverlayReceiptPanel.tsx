@@ -4,12 +4,14 @@ import { useT } from "@roleweave/ui";
 import {
   hasMixedActionOutcomes,
   isOverlayResolved,
+  outcomeFromEvidenceStatus,
   splitActionOutcomes,
   type OverlayItemReceipts,
 } from "./overlay-receipts.js";
 import {
   OVERLAY_RECEIPTS_CHANGED,
   appendOverlayReceipt,
+  latestActionOutcome,
   readOverlayReceipts,
 } from "./overlay-receipt-store.js";
 
@@ -37,13 +39,17 @@ export function OverlayReceiptPanel({
   }, [workspaceKey, itemId]);
   useEffect(() => {
     if (!enabled) return;
-    setItem((current) => {
-      if (current.receipts.some((receipt) => receipt.kind === "viewed")) return current;
-      return appendOverlayReceipt(workspaceKey, itemId, {
+    const current = readOverlayReceipts(workspaceKey, itemId);
+    if (current.receipts.some((receipt) => receipt.kind === "viewed")) {
+      setItem(current);
+      return;
+    }
+    setItem(
+      appendOverlayReceipt(workspaceKey, itemId, {
         kind: "viewed",
         at: new Date().toISOString(),
-      });
-    });
+      }),
+    );
   }, [enabled, itemId, workspaceKey]);
   if (!enabled) return null;
   const mixed = hasMixedActionOutcomes(item);
@@ -73,7 +79,7 @@ export function OverlayReceiptPanel({
       <Button
         size="small"
         data-testid="overlay-owner-resolve"
-        disabled={resolved || mixed}
+        disabled={resolved}
         onClick={() =>
           setItem(
             appendOverlayReceipt(workspaceKey, itemId, {
@@ -107,9 +113,23 @@ export function recordActionOutcome(
   actionId: string,
   ok: boolean,
 ): OverlayItemReceipts {
+  const current = readOverlayReceipts(workspaceKey, itemId);
+  const expected = ok ? "action_succeeded" : "action_failed";
+  if (latestActionOutcome(current, actionId) === expected) return current;
   return appendOverlayReceipt(workspaceKey, itemId, {
-    kind: ok ? "action_succeeded" : "action_failed",
+    kind: expected,
     at: new Date().toISOString(),
     actionId,
   });
+}
+
+export function syncEvidenceActionOutcome(
+  workspaceKey: string | undefined,
+  itemId: string,
+  actionId: string,
+  status: "running" | "completed" | "failed" | "indeterminate",
+): OverlayItemReceipts {
+  const ok = outcomeFromEvidenceStatus(status);
+  if (ok === undefined) return readOverlayReceipts(workspaceKey, itemId);
+  return recordActionOutcome(workspaceKey, itemId, actionId, ok);
 }

@@ -73,37 +73,33 @@ export function hasUnanimousSuccess(item: OverlayItemReceipts): boolean {
 }
 
 export function isOverlayResolved(item: OverlayItemReceipts): boolean {
-  if (hasMixedActionOutcomes(item)) return false;
   if (item.receipts.some((receipt) => receipt.kind === "owner_resolved")) return true;
+  if (hasMixedActionOutcomes(item)) return false;
   return hasUnanimousSuccess(item);
 }
 
 /**
  * Record a receipt. Button clicks must use suggestion_applied — that kind
- * never marks the item resolved. Mixed outcomes stay unresolved.
+ * never marks the item resolved. Mixed outcomes do not auto-resolve; an
+ * explicit owner_resolved receipt still may.
  */
 export function recordOverlayReceipt(
   item: OverlayItemReceipts,
   receipt: OverlayReceipt,
 ): OverlayItemReceipts {
   if (receipt.itemId !== item.itemId) return item;
-  if (receipt.kind === "owner_resolved" && hasMixedActionOutcomes(item)) {
-    return item;
-  }
-  const next: OverlayItemReceipts = {
+  return {
     itemId: item.itemId,
     receipts: [...item.receipts, receipt],
   };
-  if (receipt.kind === "suggestion_applied" && isOverlayResolved(next) && !hasUnanimousSuccess(next)) {
-    return item;
-  }
-  if (hasMixedActionOutcomes(next) && next.receipts.some((entry) => entry.kind === "owner_resolved")) {
-    return {
-      itemId: next.itemId,
-      receipts: next.receipts.filter((entry) => entry.kind !== "owner_resolved"),
-    };
-  }
-  return next;
+}
+
+export function outcomeFromEvidenceStatus(
+  status: "running" | "completed" | "failed" | "indeterminate",
+): boolean | undefined {
+  if (status === "completed") return true;
+  if (status === "failed" || status === "indeterminate") return false;
+  return undefined;
 }
 
 export function clickDoesNotResolve(

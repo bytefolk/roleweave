@@ -4,9 +4,11 @@ import {
   emptyOverlayReceipts,
   hasMixedActionOutcomes,
   isOverlayResolved,
+  outcomeFromEvidenceStatus,
   recordOverlayReceipt,
   splitActionOutcomes,
 } from "../src/overlays/overlay-receipts";
+import { syncEvidenceActionOutcome } from "../src/overlays/OverlayReceiptPanel";
 
 const at = "2026-09-24T17:00:00.000Z";
 
@@ -58,13 +60,15 @@ describe("overlay processing receipts (#468)", () => {
       { actionId: "trace-a", outcome: "action_succeeded" },
       { actionId: "trace-b", outcome: "action_failed" },
     ]);
-    const denied = recordOverlayReceipt(item, {
+    const confirmed = recordOverlayReceipt(item, {
       kind: "owner_resolved",
       at,
       itemId: "esc-one",
     });
-    expect(denied.receipts.some((receipt) => receipt.kind === "owner_resolved")).toBe(false);
-    expect(isOverlayResolved(denied)).toBe(false);
+    expect(confirmed.receipts.some((receipt) => receipt.kind === "action_failed")).toBe(true);
+    expect(confirmed.receipts.some((receipt) => receipt.kind === "owner_resolved")).toBe(true);
+    expect(hasMixedActionOutcomes(confirmed)).toBe(true);
+    expect(isOverlayResolved(confirmed)).toBe(true);
   });
 
   it("can resolve from existing success events or an explicit owner confirm", () => {
@@ -90,5 +94,35 @@ describe("overlay processing receipts (#468)", () => {
       itemId: "goal-three",
     });
     expect(isOverlayResolved(pending)).toBe(true);
+  });
+
+  it("maps persisted evidence status to action outcomes without treating a click as success", () => {
+    expect(outcomeFromEvidenceStatus("running")).toBeUndefined();
+    expect(outcomeFromEvidenceStatus("completed")).toBe(true);
+    expect(outcomeFromEvidenceStatus("failed")).toBe(false);
+    const clicked = clickDoesNotResolve(emptyOverlayReceipts("esc-two"), at, "trace-run");
+    expect(isOverlayResolved(clicked)).toBe(false);
+    const fromEvidence = recordOverlayReceipt(clicked, {
+      kind: "action_failed",
+      at,
+      itemId: "esc-two",
+      actionId: "trace-run",
+    });
+    expect(fromEvidence.receipts.map((receipt) => receipt.kind)).toEqual([
+      "suggestion_applied",
+      "action_failed",
+    ]);
+    expect(isOverlayResolved(fromEvidence)).toBe(false);
+  });
+
+  it("consumes existing evidence status without recording a click as success", () => {
+    const failed = syncEvidenceActionOutcome("ws-one", "esc-ev", "trace-run", "failed");
+    expect(failed.receipts.map((receipt) => receipt.kind)).toEqual(["action_failed"]);
+    expect(isOverlayResolved(failed)).toBe(false);
+    const running = syncEvidenceActionOutcome("ws-one", "esc-ev", "trace-run", "running");
+    expect(running.receipts.map((receipt) => receipt.kind)).toEqual(["action_failed"]);
+    const completed = syncEvidenceActionOutcome("ws-two", "esc-ok", "trace-run", "completed");
+    expect(completed.receipts.map((receipt) => receipt.kind)).toEqual(["action_succeeded"]);
+    expect(isOverlayResolved(completed)).toBe(true);
   });
 });
