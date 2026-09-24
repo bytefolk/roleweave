@@ -723,10 +723,105 @@ function turnRun(workspaceDir, positionId) {
         return turnRunWorkbuddy(workspaceDir, positionId, input);
       case "gemini":
         return turnRunGemini(workspaceDir, positionId, input);
+      case "openai-compatible":
+        return turnRunOpenAICompatible(workspaceDir, positionId, input);
       default:
         return turnRunQoder(workspaceDir, positionId, input);
     }
   });
+}
+
+async function turnRunOpenAICompatible(workspaceDir, positionId, input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+  let terminalEmitted = false;
+  const finish = (event) => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
+    process.stdout.write(`${JSON.stringify(event)}\n`, () => process.exit(0));
+  };
+  const fail = (code, retryable = false) => finish({
+    type: "run.failed", runId, timestamp: now(),
+    error: { code, message: `OpenAI-compatible request failed (${code}); check OPENAI_API_KEY, OPENAI_BASE_URL and the selected model.`, retryable, terminalReason: "engine_internal_error" },
+  });
+
+  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
+  const apiKey = process.env.OPENAI_API_KEY;
+  const model = process.env.ROLEWEAVE_TURN_MODEL ?? process.env.OPENAI_MODEL;
+  if (!apiKey?.trim()) { fail("openai.api_key_missing"); return; }
+  if (!model?.trim()) { fail("openai.model_missing"); return; }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120_000);
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: input }],
+        stream: true,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      const code = `openai.http_${response.status}`;
+      emit({ type: "model.delta", runId, timestamp: now(), text: `Provider returned ${response.status}: ${body.slice(0, 200)}` });
+      fail(code); return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let output = "";
+    let done = false;
+    while (!done) {
+      const { value, done: readerDone } = await reader.read();
+      done = readerDone;
+      if (value) buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const data = trimmed.slice(5).trim();
+        if (data === "[DONE]") { done = true; break; }
+        if (!data) continue;
+        try {
+          const chunk = JSON.parse(data);
+          const delta = chunk.choices?.[0]?.delta?.content;
+          if (typeof delta === "string" && delta.length > 0) {
+            output += delta;
+            emit({ type: "model.delta", runId, timestamp: now(), text: delta });
+          }
+          const usage = chunk.usage;
+          if (usage && typeof usage === "object") {
+            const inputTokens = usage.prompt_tokens ?? usage.promptTokens;
+            const outputTokens = usage.completion_tokens ?? usage.completionTokens;
+            const totalTokens = usage.total_tokens ?? usage.totalTokens;
+            if ([inputTokens, outputTokens, totalTokens].some((v) => Number.isSafeInteger(v) && v >= 0)) {
+              emit({ type: "usage", runId, timestamp: now(),
+                ...(Number.isSafeInteger(inputTokens) && inputTokens >= 0 ? { inputTokens } : {}),
+                ...(Number.isSafeInteger(outputTokens) && outputTokens >= 0 ? { outputTokens } : {}),
+                ...(Number.isSafeInteger(totalTokens) && totalTokens >= 0 ? { totalTokens } : {}),
+              });
+            }
+          }
+        } catch {
+          // ignore malformed SSE lines
+        }
+      }
+    }
+    finish({ type: "run.completed", runId, timestamp: now(), output, terminalReason: "goal_met" });
+  } catch (error) {
+    if (error?.name === "AbortError") fail("openai.timeout", true);
+    else fail("openai.request_failed", true);
+  }
 }
 
 async function turnRunGemini(workspaceDir, positionId, input) {

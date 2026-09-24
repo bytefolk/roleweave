@@ -16,6 +16,7 @@ export const TURN_ENGINES: readonly TurnEngine[] = [
   "codex-local",
   "workbuddy",
   "gemini",
+  "openai-compatible",
 ];
 
 const ENGINE_LABEL: Record<TurnEngine, string> = {
@@ -26,6 +27,7 @@ const ENGINE_LABEL: Record<TurnEngine, string> = {
   "codex-local": "Codex",
   workbuddy: "WorkBuddy",
   gemini: "Gemini",
+  "openai-compatible": "OpenAI Compatible",
 };
 
 /** Engine brand names are product names. Local sign-in is a transport detail,
