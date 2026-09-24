@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { parseDocRef, type AssetRecord, type DocRef } from "@roleweave/shared";
+import { parseDocRef, type AssetRecord, type DocRef } from "@roleweave/shared/docs";
 import { useT } from "@roleweave/ui";
 import { useWorkspaceExperiments } from "../experiments/useWorkspaceExperiments";
 import {
