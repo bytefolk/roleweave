@@ -194,4 +194,48 @@ describe("authoritative approval state", () => {
     expect(decideApproval).toHaveBeenCalledTimes(1);
     expect(decideApproval.mock.calls[0]![0].id).toBe(row.id);
   });
+  it("handles serialized bulk deny with partial failure and subsequent retry", async () => {
+    const row2: ApprovalView = { ...row, id: "b".repeat(64), approvalId: "engine-id-2", version: 1 };
+    let currentStore = [row, row2];
+    const listApprovals = vi.fn(async () => page(currentStore));
+    const decideApproval = vi.fn()
+      // First attempt: row succeeds, row2 fails with 500
+      .mockImplementationOnce(async () => {
+        const updated = { ...row, status: "denied" as const, canDecide: false };
+        currentStore = [updated, row2];
+        return { status: 200, body: updated };
+      })
+      .mockResolvedValueOnce({ status: 500, body: { message: "Database busy" } })
+      // Retry attempt: row2 succeeds
+      .mockImplementationOnce(async () => {
+        const updated2 = { ...row2, status: "denied" as const, canDecide: false };
+        currentStore = [currentStore[0]!, updated2];
+        return { status: 200, body: updated2 };
+      });
+
+    bridge({ listApprovals, decideApproval });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    let outcome1!: { succeeded: string[]; failed: string[] };
+    await act(async () => {
+      outcome1 = await result.current.denyBatch([row.id, row2.id], "policy violation");
+    });
+
+    expect(outcome1.succeeded).toEqual([row.id]);
+    expect(outcome1.failed).toEqual([row2.id]);
+    expect(result.current.errors[row2.id]).toBe("Database busy");
+    expect(result.current.items.find(i => i.id === row.id)?.status).toBe("denied");
+
+    // Operator retries the failed item
+    let outcome2!: { succeeded: string[]; failed: string[] };
+    await act(async () => {
+      outcome2 = await result.current.denyBatch([row2.id], "updated reason");
+    });
+
+    expect(outcome2.succeeded).toEqual([row2.id]);
+    expect(outcome2.failed).toEqual([]);
+    expect(result.current.items.find(i => i.id === row2.id)?.status).toBe("denied");
+    expect(decideApproval).toHaveBeenCalledTimes(3);
+  });
 });

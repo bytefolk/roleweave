@@ -4,7 +4,7 @@ import { pickSelectOption, visibleSelectOptions } from "./select-helper";
 import { App } from "../src/App";
 import { HireDrawer } from "../src/org/HireDrawer";
 import type { OwbBridge } from "../src/owb";
-import type { ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession, WorkspaceInfoResponse } from "@roleweave/shared";
+import type { ApprovalView, ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession, WorkspaceInfoResponse } from "@roleweave/shared";
 
 const activeSession: WorkbenchSession = {
   schemaVersion: "workbench-session.v1",
@@ -2177,4 +2177,78 @@ it("opens project management independently from Goals through the module rail", 
   fireEvent.click(screen.getByRole("button", { name: "目标", exact: true }));
   expect(await screen.findByRole("heading", { name: "目标", level: 1 })).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "项目管理", level: 1 })).not.toBeInTheDocument();
+});
+
+it("wires approval module bulk deny so failed items remain selected in the queue", async () => {
+  const source = { kind: "session" as const, positionId: "repo-owner", conversationId: "session-1", turnId: "turn-1", runId: "run-1", engine: "qoder" as const };
+  const item1: ApprovalView = {
+    schemaVersion: "workbench-approval.v1",
+    id: "appr-1",
+    version: 1,
+    approvalId: "eng-1",
+    source,
+    action: { kind: "tool", description: "Use tool A" },
+    status: "pending",
+    canDecide: true,
+    execution: { phase: "not_started" },
+    batch: { maxItems: 3 },
+    requestedAt: "2026-09-24T00:00:00Z",
+    createdAt: "2026-09-24T00:00:00Z",
+    updatedAt: "2026-09-24T00:00:00Z",
+  };
+  const item2: ApprovalView = {
+    ...item1,
+    id: "appr-2",
+    approvalId: "eng-2",
+    action: { kind: "tool", description: "Use tool B" },
+  };
+
+  const listApprovals = vi.fn().mockResolvedValue({
+    status: 200,
+    body: { items: [item1, item2], workspaceToken: "tok", nextCursor: null, pendingCount: 2, revision: "1", syncState: "ready" },
+  });
+  const decideApproval = vi.fn()
+    .mockResolvedValueOnce({ status: 200, body: { ...item1, status: "denied", canDecide: false } })
+    .mockResolvedValueOnce({ status: 500, body: { message: "Internal server error" } });
+
+  openedBridge({
+    listApprovals,
+    decideApproval,
+  });
+
+  render(<App />);
+
+  // Navigate to Approvals module via rail
+  const approvalsTab = await screen.findByRole("button", { name: "审批", exact: true });
+  fireEvent.click(approvalsTab);
+
+  expect(await screen.findByRole("heading", { name: "审批中心", level: 1 })).toBeInTheDocument();
+
+  // Select both items
+  const card1 = await screen.findByTestId("approval-card-appr-1");
+  const card2 = await screen.findByTestId("approval-card-appr-2");
+  const cb1 = within(card1).getByRole("checkbox");
+  const cb2 = within(card2).getByRole("checkbox");
+
+  fireEvent.click(cb1);
+  fireEvent.click(cb2);
+  expect(cb1).toBeChecked();
+  expect(cb2).toBeChecked();
+
+  // Trigger Bulk Deny
+  const denyBatchBtn = screen.getByTestId("approval-batch-deny-button");
+  await act(async () => {
+    fireEvent.click(denyBatchBtn);
+  });
+
+  await waitFor(() => {
+    const freshCard1 = screen.getByTestId("approval-card-appr-1");
+    expect(within(freshCard1).getByRole("checkbox")).not.toBeChecked();
+    const freshCard2 = screen.getByTestId("approval-card-appr-2");
+    expect(within(freshCard2).getByRole("checkbox")).toBeChecked();
+  });
+
+  // Open card-2 to inspect error Alert in drawer
+  fireEvent.click(screen.getByTestId("approval-card-appr-2"));
+  expect(await screen.findByText("Internal server error")).toBeInTheDocument();
 });

@@ -33,6 +33,8 @@ function approvalRequest(record: ApiTurnRecord): TurnApprovalRequest | undefined
         description: event.action.description,
         ...(event.action.target !== undefined ? { target: event.action.target } : {}),
         ...(event.action.scope !== undefined ? { scopeAllowed: event.action.scope.allowed } : {}),
+        ...(event.action.preview !== undefined ? { preview: event.action.preview } : {}),
+        ...(event.reason !== undefined ? { requestReason: event.reason } : {}),
         ...(event.expiresAt !== undefined ? { expiresAt: event.expiresAt } : {}),
       };
     }

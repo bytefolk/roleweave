@@ -96,6 +96,8 @@ export interface TurnPanelProps {
    * and continue on its successor. Optional; callers without it simply get a
    * conversation without the restart control. */
   onRotateSession?: (sessionId: string) => void | Promise<void>;
+  /** Deep linking anchor to focus and scroll to a specific turn. */
+  focusTurnId?: string | null;
 }
 
 export function TurnPanel({
@@ -137,6 +139,7 @@ export function TurnPanel({
   onVerdictTurn,
   decidedApprovalIds,
   onRotateSession,
+  focusTurnId,
 }: TurnPanelProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
@@ -385,6 +388,7 @@ export function TurnPanel({
         onVerdict={onVerdictTurn === undefined ? undefined : (turn, decision, reason) => void onVerdictTurn(turn, decision, reason)}
         decidedApprovalIds={decidedApprovalIds}
         scrollKey={draftKey}
+        focusTurnId={focusTurnId}
       />
 
       {sendErrors[draftKey] ? <p role="alert" className="owb-conversation-error">{sendErrors[draftKey]}</p> : null}

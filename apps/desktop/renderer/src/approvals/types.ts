@@ -72,7 +72,8 @@ export interface ApprovalQueueCallbacks {
   onApprove: (approvalId: string, reason?: string, scope?: "once" | "run") => void;
   /** denied MUST allow an empty reason (contract permits absent reason). */
   onDeny: (approvalId: string, reason?: string) => void;
-  onApproveBatch?: (approvalIds: string[]) => void;
+  onApproveBatch?: (approvalIds: string[]) => Promise<unknown> | void;
+  onDenyBatch?: (approvalIds: string[]) => Promise<{ succeeded: string[]; failed: string[] } | unknown> | void;
   /** Open the persisted source conversation when the source is addressable. */
   onOpenSource?: (item: ApprovalQueueItem) => void;
   /** Open the reports surface; it may still be empty when no receipt exists. */
