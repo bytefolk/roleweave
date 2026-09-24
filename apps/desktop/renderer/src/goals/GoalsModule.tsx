@@ -16,6 +16,7 @@ import { ProjectBoard } from "./ProjectBoard.js";
 import "./goals-project.css";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
 import { OverlayReceiptPanel, recordSuggestionClick } from "../overlays/OverlayReceiptPanel.js";
+import { registerPendingOverlayAction } from "../overlays/overlay-outcome-runtime.js";
 
 interface GoalsModuleProps {
   workspaceOpen: boolean;
@@ -592,14 +593,21 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                           <AntButton
                             data-testid="goals-health-open-turn"
                             onClick={() => {
-                              recordSuggestionClick(
-                                workspaceKey,
-                                `goal:${detail.goal.goalId}`,
-                                "open-turn",
-                              );
+                              const itemId = `goal:${detail.goal.goalId}`;
                               const branch = detail.goal.branches.find(
                                 (item) => item.positionId,
                               );
+                              recordSuggestionClick(workspaceKey, itemId, "open-turn");
+                              if (workspaceKey && branch?.positionId) {
+                                registerPendingOverlayAction({
+                                  workspaceKey,
+                                  itemId,
+                                  actionId: "open-turn",
+                                  source: "turn",
+                                  positionId: branch.positionId,
+                                  sessionId: branch.sessionId,
+                                });
+                              }
                               if (branch?.positionId)
                                 onOpenBoundSession?.(
                                   branch.positionId,
@@ -614,11 +622,16 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                           <AntButton
                             data-testid="goals-health-open-approvals"
                             onClick={() => {
-                              recordSuggestionClick(
-                                workspaceKey,
-                                `goal:${detail.goal.goalId}`,
-                                "open-approvals",
-                              );
+                              const itemId = `goal:${detail.goal.goalId}`;
+                              recordSuggestionClick(workspaceKey, itemId, "open-approvals");
+                              if (workspaceKey) {
+                                registerPendingOverlayAction({
+                                  workspaceKey,
+                                  itemId,
+                                  actionId: "open-approvals",
+                                  source: "approval",
+                                });
+                              }
                               onOpenApprovals();
                             }}
                           >

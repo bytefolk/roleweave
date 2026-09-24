@@ -1,8 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GoalDetail, GoalSummary, AgentTask } from "@roleweave/shared";
 import { GoalsModule } from "../src/goals/GoalsModule";
 import { ProjectManagementModule } from "../src/projects/ProjectManagementModule";
+import { OverlayOutcomeRuntime, resetOverlayOutcomeRuntimeForTests } from "../src/overlays/overlay-outcome-runtime";
+import { resetOverlayReceiptStoreForTests } from "../src/overlays/overlay-receipt-store";
 import type { OwbBridge } from "../src/owb";
 
 const goalSummary: GoalSummary = {
@@ -289,6 +292,12 @@ describe("independent project management module", () => {
 });
 
 describe("Laya health overlay (#428)", () => {
+  afterEach(() => {
+    resetOverlayOutcomeRuntimeForTests();
+    resetOverlayReceiptStoreForTests();
+    window.localStorage?.clear?.();
+  });
+
   it("keeps the list dot on persisted health and shows overlay beside it in detail", async () => {
     const atRisk = { ...goalSummary, health: "at_risk" as const };
     const overlayDetail: GoalDetail = {
@@ -362,7 +371,8 @@ describe("Laya health overlay (#428)", () => {
     expect(screen.queryByText("已解决")).not.toBeInTheDocument();
   });
 
-  it("splits two processing-action outcomes from typed events without auto-resolve", async () => {
+  it("keeps mixed split after leaving the detail and receiving terminal system events", async () => {
+    const listeners = new Set<(event: unknown) => void>();
     const blocked: GoalDetail = {
       ...goalDetail,
       goal: {
@@ -384,29 +394,55 @@ describe("Laya health overlay (#428)", () => {
     };
     installBridge({
       goal: vi.fn().mockResolvedValue({ status: 200, body: blocked }),
+      onEvent: vi.fn((listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      }),
     });
-    render(
-      <GoalsModule
-        workspaceOpen
-        workspaceKey="ws-mixed"
-        onOpenApprovals={() => undefined}
-        onOpenBoundSession={() => undefined}
-      />,
-    );
+    function Flow() {
+      const [page, setPage] = useState<"goals" | "away">("goals");
+      return (
+        <>
+          <OverlayOutcomeRuntime workspaceKey="ws-unmount" />
+          {page === "goals" ? (
+            <GoalsModule
+              workspaceOpen
+              workspaceKey="ws-unmount"
+              onOpenApprovals={() => setPage("away")}
+              onOpenBoundSession={() => setPage("away")}
+            />
+          ) : (
+            <button type="button" data-testid="return-item" onClick={() => setPage("goals")}>
+              return
+            </button>
+          )}
+        </>
+      );
+    }
+    render(<Flow />);
     fireEvent.click(await screen.findByTestId("goals-health-open-turn"));
-    fireEvent.click(screen.getByTestId("goals-health-open-approvals"));
+    expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
     await act(async () => {
-      window.dispatchEvent(
-        new CustomEvent("roleweave-overlay-action-outcome", {
-          detail: { itemId: "goal:test-goal-001", actionId: "open-turn", ok: true },
-        }),
-      );
-      window.dispatchEvent(
-        new CustomEvent("roleweave-overlay-action-outcome", {
-          detail: { itemId: "goal:test-goal-001", actionId: "open-approvals", ok: false },
-        }),
-      );
+      const event = {
+        type: "turn.completed",
+        payload: { workspacePath: "ws-unmount", positionId: "owner", sessionId: "sess-1" },
+      };
+      listeners.forEach((listener) => listener(event));
     });
+    fireEvent.click(screen.getByTestId("return-item"));
+    await screen.findByTestId("overlay-receipts");
+    fireEvent.click(screen.getByTestId("goals-health-open-approvals"));
+    expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
+    await act(async () => {
+      const event = {
+        type: "turn.approval.denied",
+        payload: { workspacePath: "ws-unmount" },
+      };
+      listeners.forEach((listener) => listener(event));
+    });
+    fireEvent.click(screen.getByTestId("return-item"));
     const split = await screen.findByTestId("overlay-receipt-split");
     expect(split.querySelector('[data-action="open-turn"]')).toHaveAttribute(
       "data-outcome",
@@ -417,6 +453,7 @@ describe("Laya health overlay (#428)", () => {
       "action_failed",
     );
     expect(screen.getByTestId("overlay-receipt-status")).toHaveTextContent("结果不一致");
+    expect(screen.queryByText("已解决")).not.toBeInTheDocument();
     expect(screen.getByTestId("overlay-owner-resolve")).toBeEnabled();
   });
 });

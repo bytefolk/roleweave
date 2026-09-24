@@ -85,6 +85,7 @@ import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
+import { OverlayOutcomeRuntime } from "./overlays/overlay-outcome-runtime";
 import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
@@ -1830,6 +1831,7 @@ function AppInner({
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
     <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && orgView === "workbench" ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`} aria-busy={startupStage !== "ready"}>
+      <OverlayOutcomeRuntime workspaceKey={workspaceInfo?.open === true ? workspaceInfo.path : undefined} />
       {startupStage !== "ready" ? (
         <div className="owb-startup" role="status" aria-label={t("startup.aria")}>
           <div className="owb-startup__mark" aria-hidden="true"><span /><span /><span /></div>

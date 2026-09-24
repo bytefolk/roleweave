@@ -11,6 +11,7 @@ export const OVERLAY_ACTION_OUTCOME = "roleweave-overlay-action-outcome";
 export const SOURCE_EXECUTION_ACTION = "source-execution";
 
 export type OverlayActionOutcomeDetail = {
+  workspaceKey?: string;
   itemId: string;
   actionId: string;
   ok: boolean;
@@ -84,4 +85,25 @@ export function latestActionOutcome(
     }
   }
   return undefined;
+}
+
+/** Persist a processing-action terminal result. Safe to call without a mounted panel. */
+export function persistOverlayActionOutcome(
+  workspaceKey: string | undefined,
+  itemId: string,
+  actionId: string,
+  ok: boolean,
+): OverlayItemReceipts {
+  const current = readOverlayReceipts(workspaceKey, itemId);
+  const expected = ok ? "action_succeeded" : "action_failed";
+  if (latestActionOutcome(current, actionId) === expected) return current;
+  return appendOverlayReceipt(workspaceKey, itemId, {
+    kind: expected,
+    at: new Date().toISOString(),
+    actionId,
+  });
+}
+
+export function resetOverlayReceiptStoreForTests(): void {
+  memory.clear();
 }
