@@ -12,6 +12,7 @@ import type {
   TurnRunResult,
 } from "@roleweave/shared";
 import { EventBus } from "../src/bus.js";
+import { ProgressTracker } from "../src/turns/progress.js";
 import type { ControlPlaneContext } from "../src/context.js";
 import { createControlPlane } from "../src/server.js";
 import { approvals } from "../src/approvals/service.js";
@@ -108,6 +109,7 @@ export async function startTestServer(
   contextExporter: ContextExportService = new ContextExportService(new UnavailableTestContextAdapter()),
 ): Promise<TestServer> {
   const orgDriver = driver ?? new FakeDriver();
+  const bus = new EventBus();
   const ctx: ControlPlaneContext = {
     config: {
       host: "127.0.0.1",
@@ -128,11 +130,12 @@ export async function startTestServer(
       layaTimeoutMs: 2_000,
     },
     workspace: new WorkspaceState(),
-    bus: new EventBus(),
+    bus,
     driver: orgDriver,
     turnDriver,
     hireDriver: orgDriver,
     turnStore: new TurnStore(),
+    progressTracker: new ProgressTracker(bus),
     runningTurns: new RunningTurnRegistry(),
     sessionStore: new SessionStore(),
     groupStore: new GroupStore(),

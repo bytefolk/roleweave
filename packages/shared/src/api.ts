@@ -40,6 +40,8 @@ export const routes = {
   sessions: "/sessions",
   turns: "/turns",
   turnsCancel: "/turns/cancel",
+  /** Additive manager live progress board (#480). */
+  turnProgress: "/turns/progress",
   /** Additive S2 group-chat surface (#52, DS-34-001 rev-1 §1.2). */
   groups: "/groups",
   /** Additive read-only document file routing (#35 S2, DS-35-001 rev-1 §5). */
@@ -91,6 +93,8 @@ export const sseEventTypes = [
   "turn.completed",
   "turn.failed",
   "turn.indeterminate",
+  // Additive manager step-progress board (#480). Payload is TaskProgressEvent.
+  "turn.progress",
   // Additive approval-gate mirror of the engine.v1 #187 events (#25 Slice B).
   "turn.approval.requested",
   "turn.approval.granted",
