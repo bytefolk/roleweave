@@ -2399,6 +2399,8 @@ function AppInner({
             engine={selectedId === null ? defaultTurnEngine : engineForPosition(selectedId)}
             engineLocked={selectedId !== null && lockedAgentPositions[selectedId] === true}
             engineAvailability={engineAvailability}
+            positionEngines={positionEngines}
+            onSelectPosition={openConversation}
             turns={displayTurns}
             busy={turnBusy}
             employeeBusy={selectedId !== null && runningPositionIds.has(selectedId)}
