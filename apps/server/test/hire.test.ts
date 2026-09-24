@@ -118,6 +118,15 @@ test("POST /hire: the bundled qoder-engine validates and applies a hire through 
     assert.ok(appliedRole, "gate two publishes the staged employee");
     assert.equal(appliedRole.name, VALID_HIRE.name, "hiring preserves the requested display name rather than showing the package id");
     assert.deepEqual(appliedRole.toolAllow, ["Read", "Grep", "Glob"], "package permissions flow into the org model");
+    assert.equal(
+      appliedRole.toolAllow.some((tool) => /^(Write|Edit|Bash)$/i.test(tool)),
+      false,
+      "default hire allowlist has no write tools and no Bash",
+    );
+    assert.equal(appliedRole.memoryScope, "./work/docs-writer/");
+    const declared = await readJson<OrganizationFile>(path.join(dir, "organization.v1alpha1.json"));
+    assert.equal(declared.roles.find((role) => role.id === "docs-writer")?.memoryScope, "./work/docs-writer/");
+    await fs.stat(path.join(dir, "work", "docs-writer"));
     const packageDir = path.join(dir, "positions", "repo-owner", "docs-writer");
     const employee = await readJson<{ entrypoints: { mcp?: string }; policy: { mcpTools: Array<{ name: string; requestedMode: string }> }; assets: string[] }>(path.join(packageDir, "employee.json"));
     assert.deepEqual(employee.policy.mcpTools, [], "a hire without MCP grants carries no MCP tools into the runtime policy");
@@ -133,6 +142,7 @@ test("POST /hire: the bundled qoder-engine validates and applies a hire through 
     assert.deepEqual(await readJson<{ servers: Array<{ id: string; tools: string[] }> }>(path.join(packageDir, "mcp.json")), { schemaVersion: "workbench-mcp.v1", defaultEffect: "deny", servers: [] });
     assert.match(await fs.readFile(path.join(packageDir, "SKILL.md"), "utf8"), /先阅读已批准资料/);
     assert.match(await fs.readFile(path.join(packageDir, "SKILL.md"), "utf8"), /Issue 调研/);
+    assert.match(await fs.readFile(path.join(packageDir, "SKILL.md"), "utf8"), /your exclusive work directory is work\/docs-writer\//);
     const positionResponse = await api(server.baseUrl, "/positions/docs-writer", { token: server.token });
     assert.equal(positionResponse.status, 200);
     assert.deepEqual((positionResponse.body as { position: { capabilities: unknown } }).position.capabilities, {
@@ -201,6 +211,8 @@ async function emulateEngineHire(dir: string): Promise<void> {
   if ((await exists(staged)) && !model.roles.some((role) => role.id === "docs-writer")) {
     const employee = await readJson<{ description?: string; policy?: { mode?: string } }>(path.join(staged, "employee.json"));
     const budget = await readJson<OrganizationFile["roles"][number]["budget"]>(path.join(staged, "budget.json"));
+    const declared = await readJson<OrganizationFile>(path.join(dir, "organization.v1alpha1.json"));
+    const declaredRole = declared.roles.find((role) => role.id === "docs-writer");
     model.roles.push({
       id: "docs-writer",
       name: "Docs Writer",
@@ -208,8 +220,8 @@ async function emulateEngineHire(dir: string): Promise<void> {
       reportTo: "repo-owner",
       package: { name: "docs-writer", version: "0.1.0", digest: "sha256:fixture", localReference: staged },
       mode: employee.policy?.mode === "read_only" ? "read_only" : "approval_required",
-      memoryScope: "/",
-      toolAllow: [],
+      memoryScope: declaredRole?.memoryScope ?? "/",
+      toolAllow: declaredRole?.toolAllow ?? [],
       toolDeny: [],
       budget,
       metadata: {},
@@ -246,6 +258,11 @@ test("POST /hire: seals a hire-request.v1alpha1 envelope, validates before any e
     const body = res.body as Extract<HireResult, { status: "hired" }>;
     assert.equal(body.positionId, "docs-writer");
     assert.ok((await readApplied(dir)).roles.some((role) => role.id === "docs-writer"));
+    assert.equal(
+      (await readApplied(dir)).roles.find((role) => role.id === "docs-writer")?.memoryScope,
+      "./work/docs-writer/",
+    );
+    await fs.stat(path.join(dir, "work", "docs-writer"));
     assert.equal(driver.hireCalls.length, 1, "static validation runs exactly once");
     assert.deepEqual(driver.calls, [dir], "engine adjudicates through the org apply seam");
 
@@ -420,6 +437,9 @@ test("POST /hire: engine adjudication failure rolls the staged skeleton back", a
     assert.equal((res.body as { code: string }).code, "workspace_org_budget_not_allocated");
     assert.equal(await exists(path.join(dir, "positions", "repo-owner", "docs-writer")), false, "no half-hired position survives");
     assert.equal((await readApplied(dir)).roles.some((role) => role.id === "docs-writer"), false);
+    const declared = await readJson<OrganizationFile>(path.join(dir, "organization.v1alpha1.json"));
+    assert.equal(declared.roles.some((role) => role.id === "docs-writer"), false, "failed hire does not leave a declared role");
+    assert.equal(await exists(path.join(dir, "work", "docs-writer")), false, "failed hire does not leave a work territory");
   } finally {
     await server.close();
   }

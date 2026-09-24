@@ -155,7 +155,16 @@ test("workspace: initialize an existing source directory without overwriting its
       "positions/source-tree-owner/SKILL.md",
       "positions/source-tree-owner/budget.json",
       "context/README.md",
+      "work/README.md",
     ]) await fs.stat(path.join(dir, file));
+    const workReadme = await fs.readFile(path.join(dir, "work", "README.md"), "utf8");
+    assert.match(workReadme, /work\/<positionId>\//);
+    assert.match(workReadme, /positions\//);
+    const owner = JSON.parse(await fs.readFile(path.join(dir, "organization.v1alpha1.json"), "utf8")) as {
+      roles: Array<{ id: string; memoryScope: string }>;
+    };
+    assert.equal(owner.roles[0]?.memoryScope, "/", "project owner keeps whole-workspace memoryScope");
+    await assert.rejects(fs.lstat(path.join(dir, "work", "source-tree-owner")), { code: "ENOENT" });
 
     const conflict = await api(server.baseUrl, "/workspace/initialize", {
       method: "POST",
@@ -169,6 +178,32 @@ test("workspace: initialize an existing source directory without overwriting its
     });
     assert.equal(conflict.status, 422);
     assert.match((conflict.body as { message: string }).message, /already contains RoleWeave/);
+  } finally {
+    await server.close();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("workspace: failed initialize leaves a pre-existing work/ directory untouched", async () => {
+  const server = await startTestServer(new FakeDriver({
+    status: "failed",
+    code: "workspace_org_invalid",
+    message: "invalid organization",
+    retryable: false,
+  }));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-source-tree-work-"));
+  const existing = path.join(dir, "work", "already-here.txt");
+  try {
+    await fs.mkdir(path.join(dir, "work"), { recursive: true });
+    await fs.writeFile(existing, "keep-me\n", "utf8");
+    const failed = await api(server.baseUrl, "/workspace/initialize", {
+      method: "POST",
+      token: server.token,
+      body: { path: dir, projectId: "source-tree", business: "源代码项目", description: "" },
+    });
+    assert.equal(failed.status, 422);
+    assert.equal(await fs.readFile(existing, "utf8"), "keep-me\n");
+    await assert.rejects(fs.lstat(path.join(dir, "work", "README.md")), { code: "ENOENT" });
   } finally {
     await server.close();
     await fs.rm(dir, { recursive: true, force: true });
@@ -193,7 +228,7 @@ test("workspace: failed in-place initialization rolls back generated metadata on
     });
     assert.equal(failed.status, 422);
     assert.equal(await fs.readFile(sourceFile, "utf8"), "# Existing source\n");
-    for (const file of ["workspace.json", "organization.v1alpha1.json", "positions", "context", ".digital-employee"]) {
+    for (const file of ["workspace.json", "organization.v1alpha1.json", "positions", "context", ".digital-employee", "work"]) {
       await assert.rejects(fs.lstat(path.join(dir, file)), { code: "ENOENT" });
     }
   } finally {
@@ -234,6 +269,7 @@ test("workspace: create a blank project with a generated owner and never overwri
       "positions/content-ops-owner/SKILL.md",
       "positions/content-ops-owner/budget.json",
       "context/README.md",
+      "work/README.md",
     ]) {
       await fs.stat(path.join(project, file));
     }

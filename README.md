@@ -75,11 +75,15 @@ Choose an Agent when creating a project or hiring an employee. Each employee kee
 
 A **workspace** is a local project folder. A **role** is an AI employee's position, with its own instructions and budget. A **session** groups local conversation turns for that role.
 
-Opening a directory does not infer a workspace from arbitrary files. A valid workspace has `workspace.json`, `organization.v1alpha1.json`, and `positions/`, and its organization must contain at least one employee. For an existing source tree without those markers, use the explicit initialize action in the project dialog. Initialization is additive: it preserves the source files and creates a read-only project owner so the directory is immediately usable.
+Opening a directory does not infer a workspace from arbitrary files. A valid workspace has `workspace.json`, `organization.v1alpha1.json`, and `positions/`, and its organization must contain at least one employee. For an existing source tree without those markers, use the explicit initialize action in the project dialog. Initialization is additive: it preserves the source files and creates a read-only project owner so the directory is immediately usable. New initialize/create also scaffolds a top-level `work/` directory; existing workspaces without it stay valid.
+
+The file tree is the org chart. `positions/` is the digest-sealed definition plane: no position may write it. Employee work products go under `work/<positionId>/`. Hire creates that directory, records `memoryScope: ./work/<positionId>/` on the new role, and defaults `toolAllow` to read tools only (`Read`, `Grep`, `Glob`) — write tools are added only by explicit operator action, and Bash is never in the default allowlist. Hosts still spawn with cwd at the workspace root; without a shell, the territory cannot be bypassed via shell commands. Host `--permission-mode dont_ask` and `--tools` stay tool-level. Engine Context Scope derivation that honors `memoryScope` is the companion digital-employee change.
 
 The included example uses this layout:
 
 ```text
+work/
+└── README.md
 positions/
 └── repo-owner/
     ├── SKILL.md
