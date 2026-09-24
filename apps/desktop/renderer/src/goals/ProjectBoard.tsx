@@ -174,6 +174,7 @@ export function ProjectBoard({
     next: GoalWorkItem[],
     version: string,
     closeEditor = false,
+    fallbackError?: string,
   ) => {
     if (saving.current) return;
     saving.current = true;
@@ -190,7 +191,9 @@ export function ProjectBoard({
         if (result.status === 409) {
           setConflict(true);
         }
-        throw new Error(responseError(result.body, t("project.saveError")));
+        throw new Error(
+          responseError(result.body, fallbackError ?? t("project.saveError")),
+        );
       }
       setConflict(false);
       if (closeEditor) setEditor(null);
@@ -198,7 +201,9 @@ export function ProjectBoard({
     } catch (cause) {
       if (alive.current)
         setError(
-          cause instanceof Error ? cause.message : t("project.saveError"),
+          cause instanceof Error
+            ? cause.message
+            : (fallbackError ?? t("project.saveError")),
         );
     } finally {
       saving.current = false;
@@ -278,7 +283,7 @@ export function ProjectBoard({
       delete next[item.taskId];
       return next;
     });
-    await save(remaining, editor.version, true);
+    await save(remaining, editor.version, true, t("project.deleteTaskFail"));
   };
 
   const launch = async (item: GoalWorkItem) => {

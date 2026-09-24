@@ -557,4 +557,47 @@ describe("ProjectBoard", () => {
     expect(createBtn).toBeDisabled();
     expect(screen.getByText("项目已达到最大任务数上限（64个）")).toBeInTheDocument();
   });
+
+  it("clamps schedule bar calculations for inverted dates without negative width", () => {
+    setup(
+      detail([
+        {
+          ...task,
+          taskId: "inverted-task",
+          title: "Inverted dates task",
+          startDate: "2026-09-28",
+          dueDate: "2026-09-22",
+        },
+      ]),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+
+    const bar = screen.getByRole("button", { name: /^Inverted dates task: / });
+    expect(bar).toBeInTheDocument();
+
+    const leftMatch = bar.style.left.match(/([\d.]+)%/);
+    const widthMatch = bar.style.width.match(/([\d.]+)%/);
+    expect(leftMatch).toBeTruthy();
+    expect(widthMatch).toBeTruthy();
+
+    const left = parseFloat(leftMatch![1]);
+    const width = parseFloat(widthMatch![1]);
+
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(width).toBeGreaterThan(0);
+  });
+
+  it("surfaces project.deleteTaskFail error message when deletion fails", async () => {
+    const updateGoal = vi.fn().mockResolvedValue({ status: 500, body: {} });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    setup(detail([task]), { updateGoal });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
+    const drawer = within(screen.getByRole("dialog"));
+    fireEvent.click(drawer.getByRole("button", { name: "删除任务" }));
+
+    expect(await drawer.findByText("删除任务失败，请重试。")).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
 });
