@@ -140,7 +140,7 @@ export function mountStarMapScene(host: HTMLElement, options: StarMapSceneOption
       apply(existing);
       return;
     }
-    new THREE.TextureLoader().load(url, (texture) => {
+    new THREE.TextureLoader().load(url, (texture: { colorSpace: unknown }) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       textures.set(url, texture);
       apply(texture);
