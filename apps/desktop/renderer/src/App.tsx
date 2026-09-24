@@ -85,7 +85,7 @@ import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
-import { OverlayOutcomeRuntime } from "./overlays/overlay-outcome-runtime";
+import { OverlayOutcomeRuntime, bindOverlayApprovalDecision } from "./overlays/overlay-outcome-runtime";
 import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
@@ -2150,10 +2150,38 @@ function AppInner({
             loading={approvalState.loading && !approvalState.ready}
             errorMessage={approvalState.error}
             onNavigateToOrg={() => setActiveModule("org")}
-            onApprove={(id, reason, scope) => { void approvalState.decide(id, "granted", reason, scope); }}
-            onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
-            onApproveBatch={(ids) => approvalState.decideBatch(ids)}
-            onDenyBatch={(ids) => approvalState.denyBatch(ids)}
+            onApprove={(id, reason, scope) => {
+              const record = approvalState.items.find((entry) => entry.id === id);
+              bindOverlayApprovalDecision(
+                workspaceInfo?.open === true ? workspaceInfo.path : undefined,
+                record?.approvalId ?? id,
+              );
+              void approvalState.decide(id, "granted", reason, scope);
+            }}
+            onDeny={(id, reason) => {
+              const record = approvalState.items.find((entry) => entry.id === id);
+              bindOverlayApprovalDecision(
+                workspaceInfo?.open === true ? workspaceInfo.path : undefined,
+                record?.approvalId ?? id,
+              );
+              void approvalState.decide(id, "denied", reason);
+            }}
+            onApproveBatch={(ids) => {
+              const workspaceKey = workspaceInfo?.open === true ? workspaceInfo.path : undefined;
+              for (const id of ids) {
+                const record = approvalState.items.find((entry) => entry.id === id);
+                bindOverlayApprovalDecision(workspaceKey, record?.approvalId ?? id);
+              }
+              return approvalState.decideBatch(ids);
+            }}
+            onDenyBatch={(ids) => {
+              const workspaceKey = workspaceInfo?.open === true ? workspaceInfo.path : undefined;
+              for (const id of ids) {
+                const record = approvalState.items.find((entry) => entry.id === id);
+                bindOverlayApprovalDecision(workspaceKey, record?.approvalId ?? id);
+              }
+              return approvalState.denyBatch(ids);
+            }}
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
           />

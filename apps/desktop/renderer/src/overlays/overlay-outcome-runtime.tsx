@@ -15,7 +15,10 @@ export type OverlayPendingAction = {
   source: OverlayPendingSource;
   positionId?: string;
   sessionId?: string;
+  /** Bound from the first future matching turn.started. */
   turnId?: string;
+  /** Bound from the approval the operator actually decided. */
+  approvalId?: string;
 };
 
 const pending = new Map<string, OverlayPendingAction>();
@@ -26,7 +29,11 @@ export function overlayPendingKey(workspaceKey: string, itemId: string, actionId
 
 export function registerPendingOverlayAction(action: OverlayPendingAction): void {
   if (!action.workspaceKey || !action.itemId || !action.actionId) return;
-  pending.set(overlayPendingKey(action.workspaceKey, action.itemId, action.actionId), action);
+  pending.set(overlayPendingKey(action.workspaceKey, action.itemId, action.actionId), {
+    ...action,
+    turnId: action.source === "turn" ? undefined : action.turnId,
+    approvalId: action.source === "approval" ? undefined : action.approvalId,
+  });
 }
 
 export function resetOverlayOutcomeRuntimeForTests(): void {
@@ -37,20 +44,77 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function matchesCorrelation(
-  action: OverlayPendingAction,
-  event: { positionId?: string; sessionId?: string; turnId?: string },
-): boolean {
-  if (action.sessionId && action.sessionId !== event.sessionId) return false;
-  if (action.positionId && action.positionId !== event.positionId) return false;
-  if (action.turnId && action.turnId !== event.turnId) return false;
-  return true;
+function writePending(action: OverlayPendingAction): void {
+  pending.set(overlayPendingKey(action.workspaceKey, action.itemId, action.actionId), action);
+}
+
+function mostRecentUnbound(
+  workspaceKey: string,
+  source: OverlayPendingSource,
+  matches: (action: OverlayPendingAction) => boolean,
+): OverlayPendingAction | undefined {
+  const items = [...pending.values()].reverse();
+  return items.find(
+    (action) =>
+      action.workspaceKey === workspaceKey &&
+      action.source === source &&
+      (source === "turn" ? !action.turnId : !action.approvalId) &&
+      matches(action),
+  );
+}
+
+/**
+ * Bind the most recently clicked unbound open-approvals pending in this
+ * workspace to the approval the operator actually decided. Workspace-level
+ * approval SSE without this id does not settle any Goal.
+ */
+export function bindOverlayApprovalDecision(
+  workspaceKey: string | undefined,
+  approvalId: string,
+): OverlayPendingAction | undefined {
+  if (!workspaceKey || !approvalId) return undefined;
+  const match = mostRecentUnbound(workspaceKey, "approval", () => true);
+  if (!match) return undefined;
+  const bound = { ...match, approvalId };
+  writePending(bound);
+  return bound;
+}
+
+function bindTurnStarted(event: {
+  workspaceKey: string;
+  turnId?: string;
+  positionId?: string;
+  sessionId?: string;
+}): void {
+  if (!event.turnId || !event.positionId) return;
+  const match = mostRecentUnbound(event.workspaceKey, "turn", (action) => {
+    if (!action.positionId || action.positionId !== event.positionId) return false;
+    if (action.sessionId && action.sessionId !== event.sessionId) return false;
+    return true;
+  });
+  if (!match) return;
+  writePending({ ...match, turnId: event.turnId });
+}
+
+function settleExact(
+  workspaceKey: string,
+  source: OverlayPendingSource,
+  idField: "turnId" | "approvalId",
+  id: string,
+  ok: boolean,
+): void {
+  for (const [key, action] of [...pending.entries()]) {
+    if (action.workspaceKey !== workspaceKey) continue;
+    if (action.source !== source) continue;
+    if (action[idField] !== id) continue;
+    persistOverlayActionOutcome(action.workspaceKey, action.itemId, action.actionId, ok);
+    pending.delete(key);
+  }
 }
 
 /**
  * Map an existing control-plane SSE envelope onto pending overlay actions.
- * Association is workspaceKey + itemId + actionId, held in the pending registry
- * from the click — not inferred from the overlay detail panel.
+ * Unbound pending actions are not settled by old or workspace-wide terminals.
  */
 export function consumeOverlaySystemEvent(raw: unknown, fallbackWorkspaceKey?: string): void {
   if (!raw || typeof raw !== "object") return;
@@ -63,37 +127,23 @@ export function consumeOverlaySystemEvent(raw: unknown, fallbackWorkspaceKey?: s
       : {};
   const workspaceKey = asString(payload.workspacePath) ?? fallbackWorkspaceKey;
   if (!workspaceKey) return;
+  const turnId = asString(payload.turnId);
+  const approvalId = asString(payload.approvalId);
+  const positionId = asString(payload.positionId);
+  const sessionId = asString(payload.sessionId);
 
-  let source: OverlayPendingSource | undefined;
-  let ok: boolean | undefined;
-  if (type === "turn.completed") {
-    source = "turn";
-    ok = true;
-  } else if (type === "turn.failed" || type === "turn.indeterminate") {
-    source = "turn";
-    ok = false;
-  } else if (type === "turn.approval.granted") {
-    source = "approval";
-    ok = true;
-  } else if (type === "turn.approval.denied") {
-    source = "approval";
-    ok = false;
-  } else {
+  if (type === "turn.started") {
+    bindTurnStarted({ workspaceKey, turnId, positionId, sessionId });
     return;
   }
-
-  const eventCorr = {
-    positionId: asString(payload.positionId),
-    sessionId: asString(payload.sessionId),
-    turnId: asString(payload.turnId),
-  };
-
-  for (const [key, action] of [...pending.entries()]) {
-    if (action.workspaceKey !== workspaceKey) continue;
-    if (action.source !== source) continue;
-    if (!matchesCorrelation(action, eventCorr)) continue;
-    persistOverlayActionOutcome(action.workspaceKey, action.itemId, action.actionId, ok);
-    pending.delete(key);
+  if (type === "turn.completed" || type === "turn.failed" || type === "turn.indeterminate") {
+    if (!turnId) return;
+    settleExact(workspaceKey, "turn", "turnId", turnId, type === "turn.completed");
+    return;
+  }
+  if (type === "turn.approval.granted" || type === "turn.approval.denied") {
+    if (!approvalId) return;
+    settleExact(workspaceKey, "approval", "approvalId", approvalId, type === "turn.approval.granted");
   }
 }
 

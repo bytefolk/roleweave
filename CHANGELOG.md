@@ -7,7 +7,7 @@
 
 ### Added
 
-- #468：Goals / Reports overlay 处理回执（viewed / suggestion_applied / action_succeeded / action_failed / owner_resolved）。按钮点击不等于 resolved；成败混合分条展示且整项不自动解决。处理动作结果由 App 级运行时订阅既有 `turn.completed` / `turn.failed` / `turn.indeterminate` 与 `turn.approval.granted` / `turn.approval.denied`，按 workspaceKey+itemId+actionId 持久化，详情卸载后仍能写回执。回执只存在本地 workspace，不写 `goal.health`，不发给 Jev。无 overlay 时原界面不变。Refs #422 #428。
+- #468：Goals / Reports overlay 处理回执（viewed / suggestion_applied / action_succeeded / action_failed / owner_resolved）。按钮点击不等于 resolved；成败混合分条展示且整项不自动解决。处理动作结果由 App 级运行时订阅既有系统事件：`open-turn` 先等未来 `turn.started` 绑定 `turnId`，只接受同一 `turnId` 的终态；`open-approvals` 必须绑到操作者实际处理的 `approvalId`，同 workspace 一条裁决不会结算其他 Goal。回执只存在本地 workspace，不写 `goal.health`，不发给 Jev。无 overlay 时原界面不变。Refs #422 #428。
 
 
 

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GoalDetail, GoalSummary, AgentTask } from "@roleweave/shared";
 import { GoalsModule } from "../src/goals/GoalsModule";
 import { ProjectManagementModule } from "../src/projects/ProjectManagementModule";
-import { OverlayOutcomeRuntime, resetOverlayOutcomeRuntimeForTests } from "../src/overlays/overlay-outcome-runtime";
+import { OverlayOutcomeRuntime, bindOverlayApprovalDecision, resetOverlayOutcomeRuntimeForTests } from "../src/overlays/overlay-outcome-runtime";
 import { resetOverlayReceiptStoreForTests } from "../src/overlays/overlay-receipt-store";
 import type { OwbBridge } from "../src/owb";
 
@@ -425,22 +425,58 @@ describe("Laya health overlay (#428)", () => {
     fireEvent.click(await screen.findByTestId("goals-health-open-turn"));
     expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
     await act(async () => {
-      const event = {
-        type: "turn.completed",
-        payload: { workspacePath: "ws-unmount", positionId: "owner", sessionId: "sess-1" },
-      };
-      listeners.forEach((listener) => listener(event));
+      listeners.forEach((listener) =>
+        listener({
+          type: "turn.completed",
+          payload: {
+            workspacePath: "ws-unmount",
+            positionId: "owner",
+            sessionId: "sess-1",
+            turnId: "old-turn",
+          },
+        }),
+      );
+      listeners.forEach((listener) =>
+        listener({
+          type: "turn.started",
+          payload: {
+            workspacePath: "ws-unmount",
+            positionId: "owner",
+            sessionId: "sess-1",
+            turnId: "turn-new",
+          },
+        }),
+      );
+      listeners.forEach((listener) =>
+        listener({
+          type: "turn.completed",
+          payload: {
+            workspacePath: "ws-unmount",
+            positionId: "owner",
+            sessionId: "sess-1",
+            turnId: "turn-new",
+          },
+        }),
+      );
     });
     fireEvent.click(screen.getByTestId("return-item"));
     await screen.findByTestId("overlay-receipts");
     fireEvent.click(screen.getByTestId("goals-health-open-approvals"));
     expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
     await act(async () => {
-      const event = {
-        type: "turn.approval.denied",
-        payload: { workspacePath: "ws-unmount" },
-      };
-      listeners.forEach((listener) => listener(event));
+      bindOverlayApprovalDecision("ws-unmount", "apr-1");
+      listeners.forEach((listener) =>
+        listener({
+          type: "turn.approval.denied",
+          payload: { workspacePath: "ws-unmount", approvalId: "apr-other" },
+        }),
+      );
+      listeners.forEach((listener) =>
+        listener({
+          type: "turn.approval.denied",
+          payload: { workspacePath: "ws-unmount", approvalId: "apr-1" },
+        }),
+      );
     });
     fireEvent.click(screen.getByTestId("return-item"));
     const split = await screen.findByTestId("overlay-receipt-split");
