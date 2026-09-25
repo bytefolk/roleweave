@@ -70,6 +70,79 @@ export function validatedCodexModel(value) {
 }
 
 /**
+ * Validate the complete configuration used by the bundled
+ * `openai-compatible` engine. Unlike Codex, that engine has no provider
+ * default and no local-login fallback: key, endpoint and model must all be
+ * explicit before any network request is made.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @param {string | undefined} [selectedModel]
+ * @returns {{ ready: boolean, code?: string, apiKey?: string, baseUrl?: string, model?: string }}
+ */
+export function openAICompatibleConfiguration(
+  env,
+  selectedModel = env.ROLEWEAVE_TURN_MODEL ?? env.OPENAI_MODEL,
+) {
+  const apiKey = env.OPENAI_API_KEY;
+  if (apiKey === undefined || apiKey.length === 0) {
+    return { ready: false, code: "openai.api_key_missing" };
+  }
+  if (
+    apiKey.length < 5 ||
+    apiKey.length > 8192 ||
+    apiKey !== apiKey.trim() ||
+    /[\s\u0000-\u001f\u007f]/u.test(apiKey)
+  ) {
+    return { ready: false, code: "openai.api_key_invalid" };
+  }
+
+  const rawBaseUrl = env.OPENAI_BASE_URL;
+  if (rawBaseUrl === undefined || rawBaseUrl.length === 0) {
+    return { ready: false, code: "openai.base_url_missing" };
+  }
+  if (
+    rawBaseUrl.length > 2048 ||
+    rawBaseUrl !== rawBaseUrl.trim() ||
+    /[\u0000-\u001f\u007f]/u.test(rawBaseUrl)
+  ) {
+    return { ready: false, code: "openai.base_url_invalid" };
+  }
+  let parsed;
+  try {
+    parsed = new URL(rawBaseUrl);
+  } catch {
+    return { ready: false, code: "openai.base_url_invalid" };
+  }
+  const loopback =
+    parsed.hostname === "localhost" ||
+    parsed.hostname.endsWith(".localhost") ||
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "[::1]";
+  if (
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    (parsed.protocol === "http:" && !loopback) ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    return { ready: false, code: "openai.base_url_invalid" };
+  }
+  const port = parsed.port.length > 0 ? `:${parsed.port}` : "";
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  const baseUrl = `${parsed.protocol}//${parsed.hostname}${port}${pathname}`;
+  if (/["\\]/.test(baseUrl)) {
+    return { ready: false, code: "openai.base_url_invalid" };
+  }
+
+  const model = validatedCodexModel(selectedModel);
+  if (model === undefined) return { ready: false, code: "openai.model_missing" };
+  if (model === null) return { ready: false, code: "openai.model_invalid" };
+  return { ready: true, apiKey, baseUrl, model };
+}
+
+/**
  * Resolve the Codex executable without invoking a shell or inspecting account
  * state. Resolution order mirrors the Qoder and Claude contracts:
  *

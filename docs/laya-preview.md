@@ -16,7 +16,7 @@ RoleWeave 的决策模型是开源 Laya，经本地 `POST /v1/systemone` 调用�
 
 ## 本地数据范围
 
-只向本机 Laya 进程传入执行状态、规范化错误码、是否与预算相关三个元数据字段，以及固定 Choice 问题。未知错误码归入 `other`。关联 ID、员工姓名、汇报链、项目路径、消息、任务、文档和附件正文不会进入推理请求。
+报告建议只向本机 Laya 进程传入执行状态、规范化错误码、是否与预算相关三个元数据字段，以及固定 Choice 问题。发送前预算建议只传入 `{ remainingPerTask, remainingPerDay, positionId }`；客户端不能上传额度、使用量、剩余额度或草稿。上游预算按 `(positionId, taskId, dayKey)` 记账，而当前 RoleWeave 记录没有权威的 `taskId` 和 `dayKey`，因此单任务与单日剩余均保持未知并在调用 Laya 前弃权；不复用上一任务用量，也不从累计使用量或本地日界线猜测。未知错误码归入 `other`。关联 ID、员工姓名、汇报链、项目路径、消息、任务、文档和附件正文不会进入推理请求。
 
 Laya 输出只能选择本地定义的调查步骤。低置信度显示“信息不足”；当前 `0.6` 阈值是保守保护线，不是业务准确率承诺。规则事实仍然权威，Laya overlay 不能降低风险、清除失败或替代产品验收。
 
@@ -46,11 +46,12 @@ LAYA_HOST=127.0.0.1 LAYA_PORT=18081 LAYA_MODELS=typed-decisions LAYA_PRELOAD=1 \
 
 ## 控制面 API
 
-三个端点继续使用既有 boot-token 鉴权：
+四个端点继续使用既有 boot-token 鉴权：
 
 - `GET /experiments?workspacePath=…`：读取项目开关、本地服务状态和回环地址。
 - `PATCH /experiments`：按 revision 保存项目开关。
 - `POST /reports/advice`：服务端读取真实报告并调用本地 Laya；客户端不能上传任意判断正文。
+- `POST /turns/budget-remaining-advice`：服务端按绑定的工作区、设置 revision 与岗位读取权威报告，只在单任务和单日剩余都已知时请求固定的 `shrink | switch_employee | send_anyway` Choice；点击建议不会创建 turn 或修改 hire 预算。
 
 项目状态仍存于 `.roleweave/experiments.v1.json`。文件缺失默认项目开关关闭；损坏、回滚或不安全路径会 fail closed。
 

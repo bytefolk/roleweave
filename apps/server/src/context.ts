@@ -11,6 +11,7 @@ import type { GoalStore } from "./goals/store.js";
 import type { TaskBoardStore } from "./tasks/store.js";
 import type { ContextExportService } from "./context-export/exporter.js";
 import type { ExperimentsService } from "./experiments/service.js";
+import type { RelayStopCoordinator } from "./groups/relay-stop.js";
 
 export interface ControlPlaneContext {
   config: ServerConfig;
@@ -32,6 +33,8 @@ export interface ControlPlaneContext {
   sessionStore: SessionStore;
   /** #52 S2 workspace-local group conversations (roster + conversationRef local mapping). */
   groupStore: GroupStore;
+  /** Ephemeral owner-confirmation gates for live relay STOP suggestions. */
+  relayStop: RelayStopCoordinator;
   /** #222 workspace-local user-owned goal persistence. */
   goalStore: GoalStore;
   /** Per-Agent durable project queue and collaboration requests. */

@@ -20,8 +20,34 @@
 .owb-rgraph__toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px; border-bottom: 1px solid var(--ui-border); }
 .owb-rgraph__toolbar > div { display: flex; align-items: center; gap: 4px; }
 .owb-rgraph__toolbar button[aria-pressed="true"] { border-color: var(--ui-primary); color: var(--ui-primary); }
+.owb-rgraph__renderer { display: inline-flex; align-items: center; gap: 4px; }
 .owb-rgraph__canvas-wrap { position: relative; }
-.owb-rgraph__canvas { height: clamp(340px, 48vh, 560px); width: 100%; background: var(--ui-surface); color: var(--ui-foreground); background-image: radial-gradient(var(--ui-border) 1px, transparent 1px); background-size: 22px 22px; }
+.owb-rgraph__spatial, .owb-rgraph__spatial-stage { height: clamp(340px, 48vh, 560px); width: 100%; }
+.owb-rgraph__spatial { position: relative; overflow: hidden; color: #f4f4f6; background: #09090b; }
+.owb-rgraph__spatial--galaxy { background: radial-gradient(circle at 50% 36%, #273449 0, #12151c 62%); }
+.owb-rgraph__spatial--minimal.owb-rgraph__spatial--light { color: #18181b; background: #f8f9fa; }
+.owb-rgraph__spatial-stage { position: absolute; inset: 0; }
+.owb-rgraph__spatial-stage canvas, .owb-rgraph__spatial-labels { position: absolute; inset: 0; }
+.owb-rgraph__spatial-labels { pointer-events: none; }
+.owb-rgraph__spatial-label { pointer-events: auto; border: 1px solid #ffffff30; border-radius: 3px; padding: 3px 6px; background: #09090bd9; box-shadow: 0 3px 12px #0006; color: #f4f4f6; cursor: pointer; font: inherit; font-size: 10px; letter-spacing: .02em; white-space: nowrap; }
+.owb-rgraph__spatial-label--galaxy { border-radius: 7px; background: #111722e6; }
+.owb-rgraph__spatial-label.is-selected { border-color: currentColor; box-shadow: 0 0 0 2px #ffffff35, 0 3px 12px #0007; }
+.owb-rgraph__spatial-controls { position: absolute; z-index: 3; top: 10px; left: 10px; right: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; pointer-events: none; }
+.owb-rgraph__spatial-controls > *, .owb-rgraph__spatial-controls > div > * { pointer-events: auto; }
+.owb-rgraph__spatial-controls > div { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #ffffff20; border-radius: 7px; background: #09090bcc; backdrop-filter: blur(10px); }
+.owb-rgraph__spatial-controls button { border: 1px solid transparent; border-radius: 5px; padding: 5px 8px; background: #09090bcc; color: inherit; cursor: pointer; font: inherit; font-size: 10px; }
+.owb-rgraph__spatial-controls button[aria-pressed="true"] { border-color: #ffffff5c; background: #ffffff18; }
+.owb-rgraph__spatial--light .owb-rgraph__spatial-controls > div, .owb-rgraph__spatial--light .owb-rgraph__spatial-controls button { border-color: #18181b26; background: #f8f9fad9; }
+.owb-rgraph__spatial-objects { position: absolute; z-index: 3; right: 10px; bottom: 10px; left: 10px; display: flex; gap: 5px; max-height: 94px; overflow: auto; margin: 0; padding: 7px; list-style: none; border: 1px solid #ffffff20; border-radius: 8px; background: #09090bcc; backdrop-filter: blur(10px); }
+.owb-rgraph__spatial-objects li { flex: none; }
+.owb-rgraph__spatial-objects button { display: grid; grid-template-columns: auto; gap: 1px; min-width: 92px; max-width: 160px; border: 1px solid #ffffff24; border-radius: 6px; padding: 5px 7px; text-align: left; background: #ffffff0b; color: inherit; cursor: pointer; font: inherit; }
+.owb-rgraph__spatial-objects button span { color: #a1a1aa; font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+.owb-rgraph__spatial-objects button strong { overflow: hidden; font-size: 10px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
+.owb-rgraph__spatial-objects button[aria-pressed="true"] { border-color: #f4f4f6; background: #ffffff1c; }
+.owb-rgraph__spatial--light .owb-rgraph__spatial-objects { border-color: #18181b20; background: #f8f9fadd; }
+.owb-rgraph__spatial--light .owb-rgraph__spatial-objects button { border-color: #18181b24; background: #18181b08; }
+.owb-rgraph__spatial-fallback { position: absolute; z-index: 2; inset: 0; display: grid; place-items: center; margin: 0; padding: 80px 20px 120px; text-align: center; color: inherit; background: radial-gradient(circle at 50% 40%, #27272a 0, #09090b 65%); font-size: 12px; }
+.owb-rgraph__spatial--light .owb-rgraph__spatial-fallback { background: radial-gradient(circle at 50% 40%, #ffffff 0, #e4e4e7 70%); }
 .owb-rgraph__canvas-message { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .owb-rgraph__canvas-message button { pointer-events: auto; }
 .owb-rgraph__spinner-space { width: 130px; height: 90px; }
@@ -68,7 +94,7 @@
   .owb-rgraph__workspace { grid-template-columns: 128px minmax(0, 1fr); }
   .owb-rgraph__filters { padding: 10px 7px; }
   .owb-rgraph__count { display: none; }
-  .owb-rgraph__canvas { height: 360px; }
+  .owb-rgraph__spatial, .owb-rgraph__spatial-stage { height: 360px; }
   .owb-rgraph__toolbar > div { flex-wrap: wrap; }
   .owb-rgraph__caption span:last-child { display: none; }
   .owb-rgraph__list button { flex-wrap: wrap; }

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Checkbox, Empty, Input, Spin, Tag } from "antd";
-import { ArrowUpRight, Focus, Network, RefreshCw, RotateCcw, Search, X, ZoomIn, ZoomOut } from "lucide-react";
-import type { Graph, GraphData, Point } from "@antv/g6";
+import { ArrowUpRight, Network, RefreshCw, Search, X } from "lucide-react";
 import { relationshipNodeKinds, type RelationshipEdge, type RelationshipGraphResponse, type RelationshipKind, type RelationshipNode, type RelationshipNodeKind } from "@roleweave/shared/relationship-graph";
 import { useT, type OwbT } from "@roleweave/ui";
+import { RelationshipSpatialScene, type RelationshipSpatialLayout, type RelationshipSpatialTheme } from "./RelationshipSpatialScene";
 import "./RelationshipGraph.css";
 
 export interface RelationshipGraphProps {
@@ -21,15 +21,17 @@ const relationKinds: RelationshipKind[] = ["contains", "reports_to", "bound_to",
 const VISIBLE_LIMIT = 120;
 type Selection = { type: "node" | "edge"; id: string } | null;
 type Neighborhood = { id: string; hops: 1 | 2 } | null;
-type Coordinates = { x: number; y: number };
+type RendererMode = "minimal" | "galaxy";
 interface RememberedView {
   query: string;
   kinds: RelationshipNodeKind[];
   relations: RelationshipKind[];
   selection: Selection;
   neighborhood: Neighborhood;
-  positions: Map<string, Coordinates>;
-  viewport?: { zoom: number; position: Point };
+  renderer: RendererMode;
+  spatialLayout: RelationshipSpatialLayout;
+  spatialTheme: RelationshipSpatialTheme;
+  showKnowledgeRelationships: boolean;
 }
 const rememberedViews = new Map<string, RememberedView>();
 function remember(key: string, state: RememberedView) {
@@ -74,20 +76,7 @@ export function projectRelationships(data: RelationshipGraphResponse | null, opt
   return { nodes: visible, edges: edges.filter(edge => visibleIds.has(edge.source) && visibleIds.has(edge.target)), total: candidates.length, bounded: visible.length < candidates.length };
 }
 
-const columns: Record<RelationshipNodeKind, number> = { workspace: 0, host: 0, agent: 1, goal: 1, task: 2, source: 2, resource: 3, capability: 3, policy: 3 };
-const nodeColors: Record<RelationshipNodeKind, string> = { workspace: "#64748b", host: "#64748b", agent: "#3b82f6", source: "#0d9488", resource: "#a16207", capability: "#7c3aed", policy: "#be185d", goal: "#15803d", task: "#c2410c" };
-
-function allocatePositions(nodes: RelationshipNode[], positions: Map<string, Coordinates>) {
-  const occupied = new Set([...positions.values()].map(position => `${position.x}:${position.y}`));
-  for (const node of nodes) {
-    if (positions.has(node.id)) continue;
-    const x = 130 + columns[node.kind] * 260;
-    let y = 70;
-    while (occupied.has(`${x}:${y}`)) y += 112;
-    positions.set(node.id, { x, y });
-    occupied.add(`${x}:${y}`);
-  }
-}
+const nodeColors: Record<RelationshipNodeKind, string> = { workspace: "#ffffff", host: "#d4d4d8", agent: "#e4e4e7", source: "#c4c4cc", resource: "#a1a1aa", capability: "#d4d4d8", policy: "#b8b8c0", goal: "#c4c4cc", task: "#a1a1aa" };
 
 function evidenceDetails(evidence: RelationshipNode["evidence"], t: OwbT) {
   return <dl className="owb-rgraph__facts">
@@ -110,47 +99,21 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
   const [relations, setRelations] = useState<RelationshipKind[]>(initial.current?.relations ?? [...relationKinds]);
   const [selection, setSelection] = useState<Selection>(initial.current?.selection ?? null);
   const [neighborhood, setNeighborhood] = useState<Neighborhood>(initial.current?.neighborhood ?? null);
+  const [renderer, setRenderer] = useState<RendererMode>(initial.current?.renderer ?? "minimal");
+  const [spatialLayout, setSpatialLayout] = useState<RelationshipSpatialLayout>(initial.current?.spatialLayout ?? "topology");
+  const [spatialTheme, setSpatialTheme] = useState<RelationshipSpatialTheme>(initial.current?.spatialTheme ?? "dark");
+  const [showKnowledgeRelationships, setShowKnowledgeRelationships] = useState(initial.current?.showKnowledgeRelationships ?? true);
   const [listMode, setListMode] = useState<"nodes" | "edges">("nodes");
-  const [canvasError, setCanvasError] = useState(false);
-  const [ready, setReady] = useState(0);
-  const [layoutRevision, setLayoutRevision] = useState(0);
-  const [themeRevision, setThemeRevision] = useState(0);
-  const canvas = useRef<HTMLDivElement>(null);
   const results = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<Graph | null>(null);
-  const queue = useRef(Promise.resolve());
-  const rendered = useRef(false);
-  const fitted = useRef(false);
-  const positions = useRef(new Map(initial.current?.positions));
-  const skipPositionRead = useRef(false);
-  const viewport = useRef(initial.current?.viewport);
-  const latest = useRef({ data, selection, visible, onOpenAgent, onOpenResource });
-  latest.current = { data, selection, visible, onOpenAgent, onOpenResource };
+  const latest = useRef({ data, onOpenAgent, onOpenResource });
+  latest.current = { data, onOpenAgent, onOpenResource };
   const view = useMemo(() => projectRelationships(data, { query, kinds, relations, neighborhood }), [data, query, kinds, relations, neighborhood]);
-  const viewRef = useRef(view);
-  viewRef.current = view;
   const nodesById = useMemo(() => new Map(data?.nodes.map(node => [node.id, node])), [data]);
   const selectedNode = selection?.type === "node" ? nodesById.get(selection.id) : undefined;
   const selectedEdge = selection?.type === "edge" ? data?.edges.find(edge => edge.id === selection.id) : undefined;
   const selectedVisible = !selection || (selection.type === "node" ? view.nodes : view.edges).some(item => item.id === selection.id);
-  const stateForCache = useRef<RememberedView>({ query, kinds, relations, selection, neighborhood, positions: positions.current });
-  stateForCache.current = { query, kinds, relations, selection, neighborhood, positions: positions.current, viewport: viewport.current };
-
-  const enqueue = useCallback((operation: (graph: Graph) => Promise<unknown> | void) => {
-    const graph = graphRef.current;
-    if (!graph) return;
-    queue.current = queue.current.then(async () => {
-      if (graphRef.current === graph) await operation(graph);
-    }).catch(() => { if (graphRef.current === graph) setCanvasError(true); });
-  }, []);
-
-  const rememberPositions = useCallback((graph: Graph) => {
-    for (const node of graph.getNodeData()) {
-      const x = node.style?.x;
-      const y = node.style?.y;
-      if (typeof x === "number" && typeof y === "number") positions.current.set(node.id, { x, y });
-    }
-  }, []);
+  const stateForCache = useRef<RememberedView>({ query, kinds, relations, selection, neighborhood, renderer, spatialLayout, spatialTheme, showKnowledgeRelationships });
+  stateForCache.current = { query, kinds, relations, selection, neighborhood, renderer, spatialLayout, spatialTheme, showKnowledgeRelationships };
 
   const openNode = useCallback((id: string) => {
     const current = latest.current;
@@ -159,109 +122,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
     if (node?.kind === "resource" && node.positionId && node.resourcePath) current.onOpenResource(node.positionId, node.resourcePath);
   }, []);
 
-  useEffect(() => {
-    let alive = true;
-    let owned: Graph | null = null;
-    let observer: ResizeObserver | undefined;
-    void import("@antv/g6").then(({ Graph: GraphConstructor }) => {
-      const host = canvas.current;
-      if (!alive || !host) return;
-      owned = new GraphConstructor({
-        container: host, width: host.clientWidth || 680, height: host.clientHeight || 470,
-        animation: false, zoomRange: [0.12, 2.5], padding: 35,
-        node: { type: "rect", style: { size: [184, 58], radius: 10, labelPlacement: "center", labelFontSize: 14, labelWordWrap: true, labelMaxWidth: 164, labelMaxLines: 2, lineWidth: 1.5 }, state: { selected: { lineWidth: 3, shadowBlur: 8, shadowColor: "#3b82f666" } } },
-        edge: { type: "cubic-horizontal", style: { endArrow: true, lineWidth: 1.2, stroke: "#8a94a5", labelFontSize: 10, labelBackground: true, labelPadding: [2, 4], labelAutoRotate: false }, state: { selected: { lineWidth: 3, stroke: "#3b82f6" } } },
-        behaviors: ["drag-canvas", "zoom-canvas", { type: "drag-element", animation: false, dropEffect: "none", onFinish: () => { if (owned && alive) rememberPositions(owned); } }],
-      });
-      graphRef.current = owned;
-      const eventId = (event: unknown) => {
-        const target = (event as { target?: { id?: unknown } }).target;
-        return typeof target?.id === "string" ? target.id : undefined;
-      };
-      owned.on("node:click", (event) => { const id = eventId(event); if (id && alive) setSelection({ type: "node", id }); });
-      owned.on("edge:click", (event) => { const id = eventId(event); if (id && alive) setSelection({ type: "edge", id }); });
-      owned.on("node:dblclick", (event) => { const id = eventId(event); if (id && alive) openNode(id); });
-      if (typeof ResizeObserver !== "undefined") {
-        observer = new ResizeObserver(() => {
-          const width = host.clientWidth;
-          const height = host.clientHeight;
-          if (alive && latest.current.visible && width > 0 && height > 0) enqueue(graph => {
-            if (latest.current.visible) graph.resize(width, height);
-          });
-        });
-        observer.observe(host);
-      }
-      setReady(value => value + 1);
-    }).catch(() => { if (alive) setCanvasError(true); });
-    return () => {
-      alive = false;
-      observer?.disconnect();
-      if (owned && rendered.current) {
-        rememberPositions(owned);
-        viewport.current = { zoom: owned.getZoom(), position: owned.getPosition() };
-      }
-      remember(scope, { ...stateForCache.current, positions: new Map(positions.current), viewport: viewport.current });
-      graphRef.current = null;
-      // G6 draw/render are async. Destroy only after queued work settles.
-      const retiring = owned;
-      void queue.current.finally(() => retiring?.destroy());
-    };
-  }, [enqueue, openNode, rememberPositions, scope]);
-
-  useEffect(() => {
-    const observer = new MutationObserver(records => {
-      const hasOverride = (node: globalThis.Node) => node instanceof Element && node.id === "roleweave-theme-overrides";
-      if (records.some(record => record.target === document.documentElement || hasOverride(record.target) || [...record.addedNodes, ...record.removedNodes].some(hasOverride))) setThemeRevision(value => value + 1);
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-ui-theme", "style"] });
-    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
-  }, []);
-
-  const applySelection = useCallback(async (graph: Graph) => {
-    const selected = latest.current.selection;
-    await graph.setElementState(Object.fromEntries([...viewRef.current.nodes, ...viewRef.current.edges].map(item => [item.id, selected?.id === item.id ? ["selected"] : []])), false);
-  }, []);
-
-  useEffect(() => {
-    if (!ready) return;
-    enqueue(async graph => {
-      if (rendered.current && !skipPositionRead.current) rememberPositions(graph);
-      skipPositionRead.current = false;
-      allocatePositions(view.nodes, positions.current);
-      const theme = canvas.current ? getComputedStyle(canvas.current) : null;
-      const graphData: GraphData = {
-        nodes: view.nodes.map(node => ({ id: node.id, data: { kind: node.kind }, style: { ...positions.current.get(node.id), fill: theme?.backgroundColor, labelFill: theme?.color, stroke: nodeColors[node.kind], labelText: `${t(`graph.kind.${node.kind}`)} · ${node.label}` } })),
-        edges: view.edges.map(edge => ({ id: edge.id, source: edge.source, target: edge.target, style: { labelFill: theme?.color, labelBackgroundFill: theme?.backgroundColor, labelText: t(`graph.relation.${edge.kind}`), lineDash: edge.evidence.basis === "declared" ? [6, 4] : [] } })),
-      };
-      graph.setData(graphData);
-      if (rendered.current) await graph.draw(); else { await graph.render(); rendered.current = true; }
-      if (graphRef.current !== graph) return;
-      await applySelection(graph);
-      if (!fitted.current && view.nodes.length && latest.current.visible) {
-        if (viewport.current) { await graph.zoomTo(viewport.current.zoom, false); await graph.translateTo(viewport.current.position, false); }
-        else await graph.fitView({}, false);
-        fitted.current = true;
-      }
-      setCanvasError(false);
-    });
-  }, [data, view, t, ready, layoutRevision, themeRevision, enqueue, rememberPositions, applySelection]);
-
-  useEffect(() => { if (ready) enqueue(applySelection); }, [selection, ready, enqueue, applySelection]);
-  useEffect(() => {
-    const host = canvas.current;
-    const width = host?.clientWidth ?? 0;
-    const height = host?.clientHeight ?? 0;
-    if (ready && visible && width > 0 && height > 0) enqueue(async graph => {
-      if (!latest.current.visible) return;
-      graph.resize(width, height);
-      if (!fitted.current && viewRef.current.nodes.length) {
-        if (viewport.current) { await graph.zoomTo(viewport.current.zoom, false); await graph.translateTo(viewport.current.position, false); }
-        else await graph.fitView({}, false);
-        fitted.current = true;
-      }
-    });
-  }, [visible, ready, enqueue]);
+  useEffect(() => () => remember(scope, stateForCache.current), [scope]);
 
   const clearFilters = () => { setQuery(""); setKinds([...relationshipNodeKinds]); setRelations([...relationKinds]); setNeighborhood(null); };
   const exploreNeighborhood = (hops: 1 | 2) => {
@@ -288,16 +149,28 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
       </aside>
       <div className="owb-rgraph__main">
         <div className="owb-rgraph__toolbar" role="toolbar" aria-label={t("graph.canvas")}>
-          <div><Button title={t("graph.zoomOut")} aria-label={t("graph.zoomOut")} icon={<ZoomOut size={15} />} onClick={() => enqueue(graph => graph.zoomBy(0.8, false))} /><Button title={t("graph.zoomIn")} aria-label={t("graph.zoomIn")} icon={<ZoomIn size={15} />} onClick={() => enqueue(graph => graph.zoomBy(1.25, false))} /><Button title={t("graph.fit")} aria-label={t("graph.fit")} icon={<Focus size={15} />} onClick={() => enqueue(graph => graph.fitView({}, false))} /><Button title={t("graph.reset")} aria-label={t("graph.reset")} icon={<RotateCcw size={14} />} onClick={() => { positions.current.clear(); skipPositionRead.current = true; viewport.current = undefined; fitted.current = false; setLayoutRevision(value => value + 1); }} /></div>
+          <div className="owb-rgraph__renderer" role="group" aria-label={t("graph.renderer")}><Button size="small" aria-pressed={renderer === "minimal"} onClick={() => setRenderer("minimal")}>{t("graph.rendererMinimal")}</Button><Button size="small" aria-pressed={renderer === "galaxy"} onClick={() => setRenderer("galaxy")}>{t("graph.rendererGalaxy")}</Button></div>
           <div><Button size="small" disabled={!selectedNode} aria-pressed={neighborhood?.hops === 1} onClick={() => exploreNeighborhood(1)}>{t("graph.oneHop")}</Button><Button size="small" disabled={!selectedNode} aria-pressed={neighborhood?.hops === 2} onClick={() => exploreNeighborhood(2)}>{t("graph.twoHop")}</Button><Button size="small" onClick={() => setNeighborhood(null)}>{t("graph.overview")}</Button></div>
         </div>
         <div className="owb-rgraph__canvas-wrap">
-          <div ref={canvas} className="owb-rgraph__canvas" role="img" aria-label={t("graph.canvas")} />
+          <RelationshipSpatialScene
+            nodes={view.nodes}
+            edges={view.edges}
+            mode={renderer}
+            layout={spatialLayout}
+            theme={spatialTheme}
+            showKnowledgeRelationships={showKnowledgeRelationships}
+            selectedId={selection?.type === "node" ? selection.id : undefined}
+            visible={visible}
+            onLayoutChange={setSpatialLayout}
+            onThemeChange={setSpatialTheme}
+            onShowKnowledgeRelationshipsChange={setShowKnowledgeRelationships}
+            onSelect={id => setSelection({ type: "node", id })}
+          />
           {!data || !view.nodes.length ? <div className="owb-rgraph__canvas-message">{loading ? <Spin tip={t("graph.loading")}><div className="owb-rgraph__spinner-space" /></Spin> : <Empty description={data?.nodes.length ? t("graph.filteredEmpty") : data ? t("graph.empty") : t("graph.noData")} image={Empty.PRESENTED_IMAGE_SIMPLE}>{data?.nodes.length ? <Button onClick={clearFilters}>{t("graph.clearFilters")}</Button> : null}</Empty>}</div> : null}
           {loading && data ? <span className="owb-rgraph__refreshing" role="status">{t("graph.refreshing")}</span> : null}
         </div>
-        <div className="owb-rgraph__caption"><span>{t("graph.legend")}</span><span>{t("graph.gesture")}</span></div>
-        {canvasError ? <Alert type="warning" showIcon title={t("graph.canvasFailure")} /> : null}
+        <div className="owb-rgraph__caption"><span>{t("graph.legend")}</span><span>{t("graph.spatialGesture")}</span></div>
         <div ref={results} tabIndex={-1} className="owb-rgraph__results" aria-label={t("graph.list")}>
           <div className="owb-rgraph__result-head"><div role="tablist" aria-label={t("graph.list")}><button type="button" role="tab" aria-selected={listMode === "nodes"} onClick={() => setListMode("nodes")}>{t("graph.objects")} <span>{view.nodes.length}</span></button><button type="button" role="tab" aria-selected={listMode === "edges"} onClick={() => setListMode("edges")}>{t("graph.edges")} <span>{view.edges.length}</span></button></div><small>{t("graph.counts", { nodes: view.nodes.length, edges: view.edges.length })}</small></div>
           {view.bounded ? <p className="owb-rgraph__bounded" role="status">{t("graph.bounded", { visible: view.nodes.length, total: view.total })}</p> : null}

@@ -56,6 +56,10 @@
     "./attachments": {
       "types": "./dist/attachments.d.ts",
       "import": "./dist/attachments.js"
+    },
+    "./experiments": {
+      "types": "./dist/experiments.d.ts",
+      "import": "./dist/experiments.js"
     }
   },
   "files": [

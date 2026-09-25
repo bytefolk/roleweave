@@ -187,6 +187,14 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
   const turnDriver = new FakeTurnDriver();
   const server = await startTestServer(undefined, turnDriver);
   const workspace = await copyExampleWorkspace();
+  const savedOpenAI = {
+    key: process.env.OPENAI_API_KEY,
+    url: process.env.OPENAI_BASE_URL,
+    model: process.env.OPENAI_MODEL,
+  };
+  process.env.OPENAI_API_KEY = "fixture-provider-key";
+  process.env.OPENAI_BASE_URL = "https://relay.example.com/v1";
+  process.env.OPENAI_MODEL = "provider/model-1";
   try {
     await openWorkspace(server.baseUrl, server.token, workspace);
 
@@ -234,6 +242,11 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
     }
     assert.equal(turnDriver.calls.length, turnEngines.length);
   } finally {
+    for (const [key, value] of Object.entries(savedOpenAI)) {
+      const environmentKey = { key: "OPENAI_API_KEY", url: "OPENAI_BASE_URL", model: "OPENAI_MODEL" }[key]!;
+      if (value === undefined) delete process.env[environmentKey];
+      else process.env[environmentKey] = value;
+    }
     await server.close();
   }
 });

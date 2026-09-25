@@ -88,6 +88,7 @@ const {
   validateConversationRef,
   validateGroupAddMemberRequest,
   validateGroupCreateRequest,
+  validateGroupRelayStopDecision,
   validateGroupTurnRequest,
 } = require("./group-ipc.cjs");
 const {
@@ -449,7 +450,7 @@ ipcMain.handle("owb:progress:get", async (_event, turnId, positionId) => {
   const query = typeof positionId === "string" && positionId ? `?positionId=${encodeURIComponent(positionId)}` : "";
   return apiRequest(`/turns/progress/${encodeURIComponent(String(turnId))}${query}`);
 });
-const { experimentsGet, experimentsUpdate, reportsAdvice } = require("./experiments-ipc.cjs");
+const { budgetRemainingAdvice, experimentsGet, experimentsUpdate, reportsAdvice } = require("./experiments-ipc.cjs");
 ipcMain.handle("owb:experiments:get", async (event, workspacePath) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
   return experimentsGet(workspacePath, apiRequest);
@@ -461,6 +462,10 @@ ipcMain.handle("owb:experiments:update", async (event, request) => {
 ipcMain.handle("owb:reports:advice", async (event, request) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
   return reportsAdvice(request, apiRequest);
+});
+ipcMain.handle("owb:turns:budget-advice", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  return budgetRemainingAdvice(request, apiRequest);
 });
 const { approvalList, approvalDecision, approvalBatchDecision, approvalAudit } = require("./approvals-center-ipc.cjs");
 ipcMain.handle("owb:approvals:list", async (event, request) => {
@@ -730,6 +735,12 @@ ipcMain.handle("owb:group:turn:create", async (_event, request) => {
   const validated = validateGroupTurnRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest(groupPath(validated.conversationRef, "/turns"), { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:group:relay-stop", async (_event, request) => {
+  const validated = validateGroupRelayStopDecision(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest(groupPath(validated.conversationRef, "/relay-stop"), { method: "POST", body: validated.request });
 });
 
 ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {

@@ -114,6 +114,7 @@ export interface OwbBridge {
     update(request: import("@roleweave/shared").ExperimentsUpdateRequest): Promise<OwbApiResponse<import("@roleweave/shared").ExperimentsResponse>>;
   };
   reportAdvice?(request: import("@roleweave/shared").ReportsAdviceRequest): Promise<OwbApiResponse<import("@roleweave/shared").ReportsAdviceResponse>>;
+  budgetRemainingAdvice?(request: import("@roleweave/shared").BudgetRemainingAdviceRequest): Promise<OwbApiResponse<import("@roleweave/shared").BudgetRemainingAdviceResponse>>;
   listApprovals(request: { workspacePath: string; cursor?: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalList>>;
   decideApproval(request: import("@roleweave/shared").ApprovalDecisionRequest & { id: string; workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalView>>;
   decideApprovalsBatch(request: import("@roleweave/shared").ApprovalBatchDecisionRequest & { workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalBatchDecisionResponse>>;
@@ -160,6 +161,11 @@ export interface OwbBridge {
     messageId: string;
     spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>;
   }>>;
+  decideGroupRelayStop(request: {
+    conversationRef: string;
+    messageId: string;
+    decision: "stop" | "continue";
+  }): Promise<OwbApiResponse<{ messageId: string; decision: "stop" | "continue" }>>;
   groupTimeline(conversationRef: string): Promise<OwbApiResponse<GroupTimeline>>;
   createGoal(request: { title: string; description: string; acceptanceCriteria?: string[] }): Promise<OwbApiResponse<GoalsCreateResponse>>;
   goals(): Promise<OwbApiResponse<{ goals: GoalSummary[] }>>;
@@ -200,7 +206,8 @@ export interface OwbBridge {
   windowToggleMaximize(): Promise<{ ok: boolean }>;
   windowClose(): Promise<{ ok: boolean }>;
   onEvent(callback: (event: unknown) => void): () => void;
-  onSseStatus(callback: (state: "connecting" | "connected") => void): () => void;
+  /** Optional: older shells and test fixtures may omit SSE status. */
+  onSseStatus?(callback: (state: "connecting" | "connected") => void): () => void;
   onUpdateState(callback: (state: UpdateEvent) => void): () => void;
   onFallbackNotice(callback: (failedPath: string) => void): () => void;
 }
