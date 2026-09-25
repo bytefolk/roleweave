@@ -122,8 +122,10 @@ export function DocsModule({
   }, [positionId, workspaceOpen, resourceRequest]);
 
   const listDocs = useCallback(
-    async (id: string): Promise<DocsFileListResponse> => {
-      const res = await window.owb.positionDocs(id);
+    async (id: string, options?: { archived?: boolean }): Promise<DocsFileListResponse> => {
+      const res = options
+        ? await window.owb.positionDocs(id, options)
+        : await window.owb.positionDocs(id);
       if (res.status >= 400 || !res.body) {
         throw new Error(apiErrorMessage(res.body, t("docs.listFail")));
       }
@@ -133,12 +135,76 @@ export function DocsModule({
   );
 
   const readDoc = useCallback(
-    async (id: string, path: string): Promise<DocsFileResponse> => {
-      const res = await window.owb.positionDocFile(id, path);
+    async (id: string, path: string, options?: { archived?: boolean }): Promise<DocsFileResponse> => {
+      const res = options
+        ? await window.owb.positionDocFile(id, path, options)
+        : await window.owb.positionDocFile(id, path);
       if (res.status >= 400 || !res.body) {
         throw new Error(apiErrorMessage(res.body, t("docs.readFail")));
       }
       return res.body;
+    },
+    [t],
+  );
+
+  const writeDoc = useCallback(
+    async (id: string, path: string, content: string): Promise<DocsFileResponse> => {
+      const write = window.owb.writePositionDoc;
+      if (!write) throw new Error(t("docs.editFail"));
+      const res = await write({ positionId: id, path, content });
+      if (res.status >= 400 || !res.body) {
+        throw new Error(apiErrorMessage(res.body, t("docs.editFail")));
+      }
+      return res.body;
+    },
+    [t],
+  );
+
+  const renameDoc = useCallback(
+    async (id: string, from: string, to: string): Promise<{ to: string }> => {
+      const rename = window.owb.renamePositionDoc;
+      if (!rename) throw new Error(t("docs.renameFail"));
+      const res = await rename({ positionId: id, from, to });
+      if (res.status >= 400 || !res.body) {
+        throw new Error(apiErrorMessage(res.body, t("docs.renameFail")));
+      }
+      return res.body;
+    },
+    [t],
+  );
+
+  const archiveDoc = useCallback(
+    async (id: string, path: string): Promise<void> => {
+      const archive = window.owb.archivePositionDoc;
+      if (!archive) throw new Error(t("docs.archiveFail"));
+      const res = await archive({ positionId: id, path });
+      if (res.status >= 400) {
+        throw new Error(apiErrorMessage(res.body, t("docs.archiveFail")));
+      }
+    },
+    [t],
+  );
+
+  const restoreDoc = useCallback(
+    async (id: string, path: string): Promise<void> => {
+      const restore = window.owb.restorePositionDoc;
+      if (!restore) throw new Error(t("docs.restoreFail"));
+      const res = await restore({ positionId: id, path });
+      if (res.status >= 400) {
+        throw new Error(apiErrorMessage(res.body, t("docs.restoreFail")));
+      }
+    },
+    [t],
+  );
+
+  const deleteDoc = useCallback(
+    async (id: string, path: string, options?: { archived?: boolean }): Promise<void> => {
+      const remove = window.owb.deletePositionDoc;
+      if (!remove) throw new Error(t("docs.deleteFail"));
+      const res = await remove({ positionId: id, path, ...(options?.archived ? { archived: true } : {}) });
+      if (res.status >= 400) {
+        throw new Error(apiErrorMessage(res.body, t("docs.deleteFail")));
+      }
     },
     [t],
   );
@@ -288,6 +354,11 @@ export function DocsModule({
         positionId={positionId}
         listDocs={listDocs}
         readDoc={readDoc}
+        writeDoc={writeDoc}
+        renameDoc={renameDoc}
+        archiveDoc={archiveDoc}
+        restoreDoc={restoreDoc}
+        deleteDoc={deleteDoc}
         reloadToken={reloadToken}
         requestedPath={
           requestedPath?.positionId === positionId ? requestedPath.path : null

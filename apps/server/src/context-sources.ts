@@ -39,7 +39,7 @@ export async function buildContextSources(
       locator: `positions/${positionRelativePath(workspaceDir, positionDir)}/SKILL.md + knowledge/**`,
       binding: "bound",
       state: !documentsReadable ? "error" : documentCount > 0 ? "ready" : "empty",
-      readOnly: true,
+      readOnly: false,
       itemCount: documentCount,
     },
     {

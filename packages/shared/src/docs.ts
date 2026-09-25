@@ -146,6 +146,58 @@ export interface DocsResolveResponse {
   };
 }
 
+/** Knowledge-file lifecycle (#347): mutate knowledge/* only; SKILL.md stays bound read-only. */
+export const DOCS_RENAME_SCHEMA_VERSION = "docs-rename.v1" as const;
+export const DOCS_ARCHIVE_SCHEMA_VERSION = "docs-archive.v1" as const;
+export const DOCS_RESTORE_SCHEMA_VERSION = "docs-restore.v1" as const;
+export const DOCS_DELETE_SCHEMA_VERSION = "docs-delete.v1" as const;
+
+export interface DocsWriteRequest {
+  positionId: string;
+  path: string;
+  content: string;
+}
+
+export interface DocsRenameRequest {
+  positionId: string;
+  from: string;
+  to: string;
+}
+
+export interface DocsPathRequest {
+  positionId: string;
+  path: string;
+}
+
+export interface DocsDeleteRequest extends DocsPathRequest {
+  archived?: boolean;
+}
+
+export interface DocsRenameResponse {
+  schemaVersion: typeof DOCS_RENAME_SCHEMA_VERSION;
+  positionId: string;
+  from: string;
+  to: string;
+}
+
+export interface DocsArchiveResponse {
+  schemaVersion: typeof DOCS_ARCHIVE_SCHEMA_VERSION;
+  positionId: string;
+  path: string;
+}
+
+export interface DocsRestoreResponse {
+  schemaVersion: typeof DOCS_RESTORE_SCHEMA_VERSION;
+  positionId: string;
+  path: string;
+}
+
+export interface DocsDeleteResponse {
+  schemaVersion: typeof DOCS_DELETE_SCHEMA_VERSION;
+  positionId: string;
+  path: string;
+}
+
 export type DocRefParseResult =
   | { ok: true; ref: DocRef }
   | { ok: false; code: "doc_ref_invalid"; message: string };

@@ -51,6 +51,11 @@ export const routes = {
   /** Additive create/resolve surface (#35 S4, DS-35-001 rev-1 §3/§5). */
   docsCreate: "/docs/create",
   docsResolve: "/docs/resolve",
+  docsWrite: "/docs/write",
+  docsRename: "/docs/rename",
+  docsArchive: "/docs/archive",
+  docsRestore: "/docs/restore",
+  docsDelete: "/docs/delete",
   /**
    * Additive external doc-plane bridge (#35 R2 MVP): list + detail proxied to
    * an external `bytefolk/doc` server pinned by `ORG_WORKBENCH_DOC_URL`. This

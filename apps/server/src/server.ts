@@ -6,7 +6,17 @@ import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
 import { handleAssetsCreate, handleAssetsList, handleAssetsRead } from "./routes/assets.js";
 import { handleDocPlaneDetail, handleDocPlaneList } from "./routes/doc-plane.js";
-import { handleDocsCreate, handleDocsList, handleDocsRead, handleDocsResolve } from "./routes/docs.js";
+import {
+  handleDocsArchive,
+  handleDocsCreate,
+  handleDocsDelete,
+  handleDocsList,
+  handleDocsRead,
+  handleDocsRename,
+  handleDocsResolve,
+  handleDocsRestore,
+  handleDocsWrite,
+} from "./routes/docs.js";
 import { handleDriveDetail, handleDriveList, handleDriveUpload } from "./routes/drive.js";
 import { handleEvents } from "./routes/events.js";
 import {
@@ -311,6 +321,26 @@ async function dispatch(
     }
     if (pathname === routes.docsResolve && method === "POST") {
       await handleDocsResolve(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docsWrite && method === "POST") {
+      await handleDocsWrite(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docsRename && method === "POST") {
+      await handleDocsRename(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docsArchive && method === "POST") {
+      await handleDocsArchive(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docsRestore && method === "POST") {
+      await handleDocsRestore(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docsDelete && method === "POST") {
+      await handleDocsDelete(ctx, req, res);
       return;
     }
     if (pathname === routes.docPlaneList && method === "GET") {
