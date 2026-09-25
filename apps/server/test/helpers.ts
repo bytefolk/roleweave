@@ -21,6 +21,7 @@ import { TurnStore } from "../src/turns/store.js";
 import { RunningTurnRegistry } from "../src/turns/running.js";
 import { SessionStore } from "../src/sessions/store.js";
 import { GroupStore } from "../src/groups/store.js";
+import { RelayStopCoordinator } from "../src/groups/relay-stop.js";
 import { GoalStore } from "../src/goals/store.js";
 import { TaskBoardStore } from "../src/tasks/store.js";
 import { ContextExportService, type ContextAdapterClient } from "../src/context-export/exporter.js";
@@ -139,6 +140,7 @@ export async function startTestServer(
     runningTurns: new RunningTurnRegistry(),
     sessionStore: new SessionStore(),
     groupStore: new GroupStore(),
+    relayStop: new RelayStopCoordinator(),
     goalStore: new GoalStore(),
     taskBoardStore: new TaskBoardStore(),
     contextExporter,
