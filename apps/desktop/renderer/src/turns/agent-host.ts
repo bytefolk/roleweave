@@ -6,7 +6,7 @@ import type { TurnEngine, TurnEngineAvailability } from "./types";
  * official sign-in or a gateway, and the variants have different credential
  * and process-isolation requirements.
  */
-export const AGENT_HOSTS = ["qoder", "claude-code", "codex", "workbuddy", "gemini"] as const;
+export const AGENT_HOSTS = ["qoder", "claude-code", "codex", "workbuddy", "gemini", "openai-compatible"] as const;
 
 export type AgentHost = (typeof AGENT_HOSTS)[number];
 
@@ -16,6 +16,7 @@ export const AGENT_HOST_LABEL: Record<AgentHost, string> = {
   codex: "Codex",
   workbuddy: "WorkBuddy",
   gemini: "Gemini",
+  "openai-compatible": "OpenAI Compatible",
 };
 
 const RUNTIME_CANDIDATES: Record<AgentHost, readonly TurnEngine[]> = {
@@ -26,6 +27,7 @@ const RUNTIME_CANDIDATES: Record<AgentHost, readonly TurnEngine[]> = {
   codex: ["codex-local", "codex"],
   workbuddy: ["workbuddy"],
   gemini: ["gemini"],
+  "openai-compatible": ["openai-compatible"],
 };
 
 export function isAgentHost(value: unknown): value is AgentHost {
@@ -37,6 +39,7 @@ export function agentHostForEngine(engine: TurnEngine): AgentHost {
   if (engine === "codex" || engine === "codex-local") return "codex";
   if (engine === "workbuddy") return "workbuddy";
   if (engine === "gemini") return "gemini";
+  if (engine === "openai-compatible") return "openai-compatible";
   return "qoder";
 }
 

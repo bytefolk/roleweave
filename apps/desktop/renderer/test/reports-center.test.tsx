@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { OwbI18nProvider } from "@roleweave/ui";
 import { ReportsCenter } from "../src/reports/ReportsCenter";
 import type { ReportsResponse } from "@roleweave/shared";
 
@@ -64,6 +65,22 @@ describe("consolidated reports", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起变更明细" }));
     expect(screen.queryByText(/无上级 → Boss/)).toBeNull();
   });
+  it("keeps audit chips and expanded move details localized in English", () => {
+    const withAudit: ReportsResponse = { ...report, streams: { ...report.streams, audits: [audit] } };
+    render(
+      <OwbI18nProvider locale="en">
+        <ReportsCenter reports={withAudit} loading={false} positionNames={{ alice: "Alice", boss: "Boss" }} />
+      </OwbI18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Org audits/ }));
+    expect(screen.getByText("Moved 1")).toBeInTheDocument();
+    expect(screen.queryByText(/Hired 0/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show change details" }));
+    expect(screen.getByText(/No parent → Boss/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hide change details" }));
+    expect(screen.queryByText(/No parent → Boss/)).toBeNull();
+  });
+
   it("falls back to the turn ID when an escalation has no evidence run ID", () => {
     const [failed, ...remaining] = report.streams.evidence;
     const { runId: _runId, ...failedWithoutRunId } = failed!;
@@ -101,5 +118,62 @@ describe("consolidated reports", () => {
     rerender(<ReportsCenter reports={report} loading={false} focusTurnId="missing-turn" />);
     expect(screen.getByText("回合 missing-turn 暂无执行证据")).toBeInTheDocument();
     expect(screen.queryByText("1 条记录")).toBeNull();
+  });
+
+  it("opens the exact conversation and turn from escalation and evidence rows", () => {
+    const onOpenTurn = vi.fn();
+    render(
+      <ReportsCenter
+        reports={report}
+        loading={false}
+        onOpenTurn={onOpenTurn}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "打开回合对话：failed-1" }),
+    );
+    expect(onOpenTurn).toHaveBeenLastCalledWith({
+      positionId: "alice",
+      conversationId: "session",
+      turnId: "failed-1",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "打开回合对话：running-1" }),
+    );
+    expect(onOpenTurn).toHaveBeenLastCalledWith({
+      positionId: "alice",
+      conversationId: "session",
+      turnId: "running-1",
+    });
+  });
+
+  it("shows an explicit unavailable state when an escalation has no conversation backlink", () => {
+    const missingEvidence: ReportsResponse = {
+      ...report,
+      streams: {
+        ...report.streams,
+        escalations: [
+          {
+            ...report.streams.escalations[0]!,
+            turnId: "missing-turn",
+          },
+        ],
+      },
+    };
+    render(
+      <ReportsCenter
+        reports={missingEvidence}
+        loading={false}
+        onOpenTurn={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("回合对话入口不可用")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "打开回合对话：missing-turn" }),
+    ).toBeNull();
   });
 });

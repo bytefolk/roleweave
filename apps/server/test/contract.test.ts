@@ -51,6 +51,7 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
       // like every other /positions/:id/* route.
       { path: `${routes.positions}/repo-owner/profile`, method: "PATCH" },
       { path: routes.reports, method: "GET" },
+      { path: routes.budgetRemainingAdvice, method: "POST" },
       { path: `${routes.turns}?positionId=repo-owner`, method: "GET" },
       { path: routes.turns, method: "POST" },
       { path: routes.groups, method: "GET" },
