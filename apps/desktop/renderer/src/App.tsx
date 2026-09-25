@@ -1042,7 +1042,7 @@ function AppInner({
         for (const path of workspaceStreams.current.keys()) updateWorkspaceStream(path, resetStreamSeq);
       } else void approvalState.refresh();
     };
-    const offSse = window.owb.onSseStatus(applySseStatus);
+    const offSse = window.owb.onSseStatus?.(applySseStatus);
     void window.owb.sseStatus().then(applySseStatus).catch(() => setStartupError(t("misc.serviceFailed")));
     const offFallback = window.owb.onFallbackNotice((failedPath) => {
       setFallbackNotice(failedPath);
@@ -1050,7 +1050,7 @@ function AppInner({
     return () => {
       if (refreshTimer !== null) clearTimeout(refreshTimer);
       offEvent();
-      offSse();
+      offSse?.();
       offFallback();
     };
   }, [approvalState.refresh, loadReports, loadTurnHistory, orgRefreshes, refresh, refreshOrg, updateWorkspaceStream]);
