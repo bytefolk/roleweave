@@ -3,6 +3,7 @@ import codexIcon from "../assets/codex.png";
 import qoderIcon from "../assets/qoder.png";
 import geminiIcon from "../assets/gemini.svg";
 import workbuddyIcon from "../assets/workbuddy.svg";
+import openaiCompatibleIcon from "../assets/openai-compatible.svg";
 import type { TurnEngine } from "./types";
 
 const ENGINE_ICON_SRC: Record<TurnEngine, string> = {
@@ -13,6 +14,7 @@ const ENGINE_ICON_SRC: Record<TurnEngine, string> = {
   "codex-local": codexIcon,
   workbuddy: workbuddyIcon,
   gemini: geminiIcon,
+  "openai-compatible": openaiCompatibleIcon,
 };
 
 /** Per-agent-host brand mark (#57): Qoder app mark / Claude starburst.
