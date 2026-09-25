@@ -15,14 +15,14 @@
 
 - #472：组织模块新增可选 3D 星图（恒星/行星/卫星、Bloom 霓虹连线、3D 星空穹顶与视差星层）。标签为 DOM 文字保持清晰。搜索定位、拖拽改汇报线、招聘/撤销复用现通道。无 WebGL 退化为列表。Refs #472。
 
-- #460：审批队列和详情在规则风险 Tag 旁展示可选 Jev `riskOverlay`。`ROLEWEAVE_JEV_ENABLED` 默认关；关时与现网 Tag 字节一致。展示色始终跟 `capabilityContext`，overlay 更低时标明「建议未采纳」。`service` 经 `attachApprovalRiskOverlay` 接线；出站建议载荷只允许 `kind`。默认不调用外部服务。Refs #422。
-- #428：Goals 详情并排展示落盘规则健康与 Jev `healthOverlay`；列表点只跟 `goal.health`。`at_risk` 上的 `on_track` overlay 标明「建议未采纳」。`blocked` overlay 可跳到绑定岗位会话或审批中心，不自动改目标。上报升级 overlay 仍是后续独立 PR。
+- #460：审批队列和详情在规则风险 Tag 旁展示可选 Laya `riskOverlay`。`ROLEWEAVE_LAYA_ENABLED` 默认关；关时与现网 Tag 字节一致。展示色始终跟 `capabilityContext`，overlay 更低时标明「建议未采纳」。`service` 经 `attachApprovalRiskOverlay` 接线；出站建议载荷只允许 `kind`。默认不调用外部服务。Refs #422。
+- #428：Goals 详情并排展示落盘规则健康与 Laya `healthOverlay`；列表点只跟 `goal.health`。`at_risk` 上的 `on_track` overlay 标明「建议未采纳」。`blocked` overlay 可跳到绑定岗位会话或审批中心，不自动改目标。上报升级 overlay 仍是后续独立 PR。
 
-- #422：可选 Jev（TypeSafe System One）适配器，默认关闭。`ROLEWEAVE_JEV_ENABLED=1` 且配置 `ROLEWEAVE_JEV_API_KEY` 后，目标分支健康可走 Choice（`on_track` / `at_risk` / `blocked` / `unknown`）作为 `healthOverlay`；持久化 `goal.health` 仍只由 `computeHealthFromTurns` 写入。Choice 请求只带 turn `status` / `errorCode`，不发送 input/output。非法或外部 option 不能把 failed/indeterminate 分支改成 on_track。失败或超时回退启发式。不改变审批策略与回合终态推导。
+- #422：可选本地 Laya（System One）适配器，默认关闭。`ROLEWEAVE_LAYA_ENABLED=1` 后，目标分支健康可走 Choice（`on_track` / `at_risk` / `blocked` / `unknown`）作为 `healthOverlay`；持久化 `goal.health` 仍只由 `computeHealthFromTurns` 写入。Choice 请求只带 turn `status` / `errorCode`，不发送 input/output。非法或外部 option 不能把 failed/indeterminate 分支改成 on_track。失败或超时回退启发式。不改变审批策略与回合终态推导。
 
 ### Changed
 
-- 智能协作建议、Goals 健康 overlay 与审批风险 overlay 从外部 Jev 切换为 Apache-2.0 Laya 本地推理。Provider 仅接受 loopback `POST /v1/systemone` 地址，不发送 API Key 或 Authorization header，并保留项目 opt-in、规则权威、低置信度弃权及有界失败语义。运行时改用 `ROLEWEAVE_LAYA_*` 配置。
+- 智能协作建议、Goals 健康 overlay 与审批风险 overlay 使用 Apache-2.0 Laya 本地推理。Provider 仅接受 loopback `POST /v1/systemone` 地址，不发送 API Key 或 Authorization header，并保留项目 opt-in、规则权威、低置信度弃权及有界失败语义。运行时只用 `ROLEWEAVE_LAYA_*`；不再读取 `ROLEWEAVE_JEV_*`。
 
 - 组织目录树行改为「头像 + 岗位名」主信息，id / 引擎 / 运行状态作次行；树顶增加搜索与全部展开/收起；选中行圆角高亮加强。员工会话面板去掉线程渐变，复制/重试改为悬停浮现，头部与输入工具条收成一行。不改拖拽、招聘占位、审批卡片与重试语义。Refs #458。
 
@@ -53,9 +53,9 @@
 
 - #450：组织概览新增基于 AntV G6 的关系图谱，整合 Agent、数据源、本地资源、能力、策略、目标与任务；支持搜索筛选、邻域展开、证据详情和精确打开资源。配置声明、实际发现与权限未知分别展示，未连接的外部数据源明确标注覆盖缺口。
 
-- #422：新增 Jev 产品评审提案（`docs/design/jev-collaboration-product-v1.md`），定义待我处理、发送前协作建议、交付预检的分期范围、数据边界和验收矩阵。仅文档，不启用服务、不改变运行时；模型质量与产品收益仍待试点验证。
+- #422：新增 Laya 产品评审提案（`docs/design/jev-collaboration-product-v1.md`），定义待我处理、发送前协作建议、交付预检的分期范围、数据边界和验收矩阵。仅文档，不启用服务、不改变运行时；模型质量与产品收益仍待试点验证。
 
-- #447：设置新增按项目保存、默认关闭的“智能协作建议 · 预览”。开启前展示 Jev 服务方、含路径的完整请求地址与数据范围；上报中心只在主动点击时为最近最多 20 条失败升级记录生成参考建议。原有记录、顺序和追溯入口保留，关闭会取消待处理建议，服务不可用时仍可正常查看报告。
+- #447：设置新增按项目保存、默认关闭的“智能协作建议 · 预览”。开启前展示本地 Laya 服务方、含路径的完整请求地址与数据范围；上报中心只在主动点击时为最近最多 20 条失败升级记录生成参考建议。原有记录、顺序和追溯入口保留，关闭会取消待处理建议，服务不可用时仍可正常查看报告。
 
 - #394：上报中心拍成单层五路切换（用量 / 执行 / 失败升级 / 组织审计 / 时间线）；KPI 卡对应当前视图；审计行可展开具体岗位与调岗从→到；失败升级行可追溯到该员工时间线；列表时间用相对值。
 
