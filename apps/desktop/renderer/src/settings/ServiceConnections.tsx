@@ -34,12 +34,14 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
   const tokenRef = useRef(token);
   tokenRef.current = token;
   const busyRef = useRef(false);
+  const dirtyRef = useRef(false);
   const savedApiUrl = connection.apiUrl ?? "";
   const savedWebUrl = connection.webUrl ?? "";
   const savedWorkspaceId = connection.workspaceId ?? "";
   const savedTokenConfigured = connection.tokenConfigured;
 
   useEffect(() => {
+    if (dirtyRef.current) return; // an unsaved draft wins over a background refresh
     setApiUrl(savedApiUrl);
     setWebUrl(savedWebUrl);
     setWorkspaceId(savedWorkspaceId);
@@ -64,6 +66,7 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
       });
     } catch { setNotice({ type: "error", key: "services.failed" }); return; }
     if (response.status !== 200) { setNotice({ type: "error", key: serviceErrorKey(response.body) }); return; }
+    dirtyRef.current = false;
     setToken(""); setProbe(null); onChange(response.body);
     setNotice({ type: "success", key: "services.saved" });
     window.dispatchEvent(new Event(SERVICES_CHANGED));
@@ -81,6 +84,7 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
   async function disconnect() {
     const response = await window.owb.services.disconnect(kind);
     if (response.status !== 200) { setNotice({ type: "error", key: serviceErrorKey(response.body) }); return; }
+    dirtyRef.current = false;
     setProbe(null); onChange(response.body);
     setNotice({ type: "success", key: "services.disconnected" });
     window.dispatchEvent(new Event(SERVICES_CHANGED));
@@ -104,27 +108,27 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
         <span>{t("services.apiUrl")}</span>
         <Input id={`service-${kind}-api`} value={apiUrl} required disabled={!!busy}
           placeholder={kind === "doc" ? "http://localhost:3100" : "http://localhost:8080"}
-          onChange={(event) => setApiUrl(event.target.value)} autoComplete="off" spellCheck={false} />
+          onChange={(event) => { dirtyRef.current = true; setApiUrl(event.target.value); }} autoComplete="off" spellCheck={false} />
       </label>
       <label htmlFor={`service-${kind}-web`}>
         <span>{t("services.webUrl")}</span>
         <Input id={`service-${kind}-web`} value={webUrl} disabled={!!busy} placeholder={t("services.webPlaceholder")}
-          onChange={(event) => setWebUrl(event.target.value)} autoComplete="off" spellCheck={false} />
+          onChange={(event) => { dirtyRef.current = true; setWebUrl(event.target.value); }} autoComplete="off" spellCheck={false} />
       </label>
       <label htmlFor={`service-${kind}-token`}>
         <span>{t("services.token")}</span>
         <Input.Password id={`service-${kind}-token`} value={token} disabled={!!busy || clearToken}
           placeholder={t(connection.tokenConfigured ? "services.tokenSaved" : "services.tokenPlaceholder")}
-          onChange={(event) => setToken(event.target.value)} autoComplete="new-password" />
+          onChange={(event) => { dirtyRef.current = true; setToken(event.target.value); }} autoComplete="new-password" />
       </label>
       {kind === "mem" ? <label htmlFor="service-mem-workspace">
         <span>{t("services.workspace")}</span>
         <Input id="service-mem-workspace" value={workspaceId} disabled={!!busy} placeholder={t("services.workspacePlaceholder")}
-          onChange={(event) => setWorkspaceId(event.target.value)} autoComplete="off" spellCheck={false} />
+          onChange={(event) => { dirtyRef.current = true; setWorkspaceId(event.target.value); }} autoComplete="off" spellCheck={false} />
       </label> : null}
     </div>
     {connection.tokenConfigured ? <Checkbox checked={clearToken} disabled={!!busy}
-      onChange={(event) => { setClearToken(event.target.checked); setToken(""); }}>{t("services.clearToken")}</Checkbox> : null}
+      onChange={(event) => { dirtyRef.current = true; setClearToken(event.target.checked); setToken(""); }}>{t("services.clearToken")}</Checkbox> : null}
     <p className="owb-settings-module__hint">{t("services.addressHint")}</p>
     </> : null}
     <div className="owb-settings-module__actions">
