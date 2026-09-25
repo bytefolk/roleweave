@@ -1990,6 +1990,35 @@
   color: var(--ui-danger);
 }
 
+.owb-groups__relay-stop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 14px 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ui-warning) 45%, var(--ui-border));
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, var(--ui-warning) 8%, var(--ui-surface-raised));
+}
+
+.owb-groups__relay-stop strong {
+  color: var(--ui-foreground);
+  font-size: 12px;
+}
+
+.owb-groups__relay-stop p {
+  margin: 2px 0 0;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+}
+
+.owb-groups__relay-stop-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
 /* 操作员气泡改为 primary-soft 底后，@mention 高亮回到强调色本身。 */
 .owb-groups__timeline .owb-bubble--operator .owb-mention {
   background: color-mix(in srgb, var(--ui-primary) 16%, transparent);

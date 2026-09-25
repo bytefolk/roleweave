@@ -88,6 +88,7 @@ const {
   validateConversationRef,
   validateGroupAddMemberRequest,
   validateGroupCreateRequest,
+  validateGroupRelayStopDecision,
   validateGroupTurnRequest,
 } = require("./group-ipc.cjs");
 const {
@@ -734,6 +735,12 @@ ipcMain.handle("owb:group:turn:create", async (_event, request) => {
   const validated = validateGroupTurnRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest(groupPath(validated.conversationRef, "/turns"), { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:group:relay-stop", async (_event, request) => {
+  const validated = validateGroupRelayStopDecision(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest(groupPath(validated.conversationRef, "/relay-stop"), { method: "POST", body: validated.request });
 });
 
 ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {

@@ -1372,6 +1372,49 @@ describe("App runtime bridge", () => {
     expect(screen.getByTestId("timeline-budget-tag-turn-1")).toBeInTheDocument();
     expect(screen.queryByText("turn-1")).not.toBeInTheDocument();
   });
+
+  it("opens the exact employee session and focuses the turn from a report row", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const reports: ReportsResponse = {
+      schemaVersion: "reports.v1",
+      streams: {
+        escalations: [{ schemaVersion: "turn-escalation.v1", positionId: "repo-owner", turnId: "turn-1", at: "2026-08-24T06:00:00Z", status: "failed", code: "turn_failed", reportingChain: ["repo-owner"], budgetRelated: false }],
+        audits: [],
+        evidence: [{ schemaVersion: "turn-evidence.v1", positionId: "repo-owner", turnId: "turn-1", conversationId: "conversation-1", engine: "qoder", status: "failed", createdAt: "2026-08-24T05:59:00Z", updatedAt: "2026-08-24T06:00:00Z", envelopeDigest: "sha256:evidence", usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 }, errorCode: "turn_failed" }],
+      },
+      budgets: [],
+      page: { cursor: null, hasMore: false },
+    };
+    const reportSession = { ...activeSession, sessionId: "conversation-1" };
+    const sessionTurnHistory = vi.fn().mockResolvedValue({
+      status: 200,
+      body: history([apiTurn({ turnId: "turn-1", status: "failed", output: undefined })]),
+    });
+    openedBridge({
+      reports: vi.fn().mockResolvedValue({ status: 200, body: reports }),
+      sessions: vi.fn().mockResolvedValue({
+        status: 200,
+        body: { schemaVersion: "workbench-session-list.v1", positionId: "repo-owner", activeSessionId: reportSession.sessionId, sessions: [reportSession] },
+      }),
+      sessionTurnHistory,
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "上报" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "打开回合对话：turn-1" }),
+    );
+
+    expect(await screen.findByRole("region", { name: "岗位对话" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(sessionTurnHistory).toHaveBeenCalledWith("conversation-1"),
+    );
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+  });
 });
 
 describe("App employee-memory module wiring", () => {

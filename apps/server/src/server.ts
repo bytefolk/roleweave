@@ -17,6 +17,7 @@ import {
   handleGroupList,
   handleGroupTimeline,
   handleGroupTurnPost,
+  handleGroupRelayStopDecision,
 } from "./routes/groups.js";
 import {
   handleGoalCreate,
@@ -68,6 +69,7 @@ export function createControlPlane(ctx: ControlPlaneContext): http.Server {
   server.headersTimeout = 10000;
   server.on("close", () => { void approvals(ctx).close().catch(() => undefined); });
   server.on("close", () => { ctx.experimentsService?.close(); });
+  server.on("close", () => { ctx.relayStop.continueAll("disconnect"); });
   return server;
 }
 
@@ -226,7 +228,7 @@ async function dispatch(
       await handleGroupList(ctx, res);
       return;
     }
-    const groupMatch = pathname.match(/^\/groups\/([^/]+)(?:\/(members|turns))?$/);
+    const groupMatch = pathname.match(/^\/groups\/([^/]+)(?:\/(members|turns|relay-stop))?$/);
     if (groupMatch) {
       let conversationRef: string;
       try {
@@ -253,6 +255,10 @@ async function dispatch(
       }
       if (operation === "turns" && method === "GET") {
         await handleGroupTimeline(ctx, res, conversationRef);
+        return;
+      }
+      if (operation === "relay-stop" && method === "POST") {
+        await handleGroupRelayStopDecision(ctx, req, res, conversationRef);
         return;
       }
       sendJson(

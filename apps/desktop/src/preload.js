@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld("owb", {
   dismissGroup: (conversationRef) => ipcRenderer.invoke("owb:group:dismiss", conversationRef),
   addGroupMember: (request) => ipcRenderer.invoke("owb:group:member:add", request),
   createGroupTurn: (request) => ipcRenderer.invoke("owb:group:turn:create", request),
+  decideGroupRelayStop: (request) => ipcRenderer.invoke("owb:group:relay-stop", request),
   groupTimeline: (conversationRef) => ipcRenderer.invoke("owb:group:timeline", conversationRef),
   createGoal: (request) => ipcRenderer.invoke("owb:goal:create", request),
   goals: () => ipcRenderer.invoke("owb:goal:list"),

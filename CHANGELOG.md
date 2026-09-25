@@ -7,6 +7,8 @@
 
 ### Added
 
+- #469：可选 Laya 接力停止建议。仅在 `ROLEWEAVE_LAYA_ENABLED` 开启、已完成步骤得到正向建议且仍有未执行步骤时暂停；桌面端由 owner 显式选择“停止剩余步骤”或“继续接力”。30 秒超时、SSE 断连、无效或失败建议均继续原 mention order；Laya 只接收 `status`、`errorCode`、`hasOutput`，不接收输入、输出或 handoff 文本。已接受的消息与 spawn 清单保持不可变。Refs #422。
+
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
 
 - #480：管理者实时任务进度看板。工作台自报 thread-context / spawn / streaming / persist / terminal 五步，经现有 `GET /events` 广播 `turn.progress`，快照落在 `.roleweave/conversations/<positionId>/progress/<turnId>.json`。列表合并内存与落盘，刷新或控制面重启后仍可回看。不新开 WebSocket，不改 spawn/finish 契约。Refs #480。

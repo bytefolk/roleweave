@@ -269,6 +269,16 @@ async function readBoundedJson(
   }
 }
 
+async function ensurePrivateRecordMode(file: string): Promise<void> {
+  const stat = await fs.lstat(file);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw sessionError("local session record path changed while enforcing private mode");
+  }
+  if (process.platform === "win32" || (stat.mode & 0o777) !== 0o600) {
+    await fs.chmod(file, 0o600);
+  }
+}
+
 function atomicTemporaryTarget(name: string): string | null {
   if (!name.startsWith(".") || !name.endsWith(".tmp")) return null;
   const stem = name.slice(1, -4);
@@ -595,7 +605,7 @@ export class SessionStore {
       try {
         const { value: raw } = await readBoundedJson(file, MAX_WORKSPACE_RECORD_BYTES);
         if (!isWorkspaceRecord(raw)) throw sessionError("workspace session identity is invalid");
-        await fs.chmod(file, 0o600);
+        await ensurePrivateRecordMode(file);
         return raw;
       } catch (error) {
         if (error instanceof OrgApiError) throw error;
@@ -627,7 +637,7 @@ export class SessionStore {
       if (!isPositionState(raw, positionId, workspaceInstanceId)) {
         throw sessionError("position session state is invalid or belongs to another workspace");
       }
-      await fs.chmod(file, 0o600);
+      await ensurePrivateRecordMode(file);
       return raw;
     } catch (error) {
       if (error instanceof OrgApiError) throw error;
