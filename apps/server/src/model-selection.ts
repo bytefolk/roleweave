@@ -5,6 +5,7 @@ import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption,
 import { decodeStableUtf8, readStableBoundedFile } from "./stable-read.js";
 import { LocalProviderConfigError, resolveClaudeProviderConfig, resolveQoderProviderConfig } from "./local-provider-config.js";
 import { qoderModelCatalog } from "./qoder-model-catalog.js";
+import { openAICompatibleConfiguration } from "./codex-binary.js";
 
 const MAX_MODEL_CACHE_BYTES = 4 * 1024 * 1024;
 
@@ -77,6 +78,30 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       kind: "official",
       billing: apiKey ? "provider" : "subscription",
       status: "configured",
+    };
+  } else if (engine === "openai-compatible") {
+    // A user-configured OpenAI-compatible endpoint (e.g. TokenRhythm, OpenRouter,
+    // or any provider that speaks the /v1/chat/completions protocol). The
+    // operator supplies OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL in the
+    // server environment; this engine forwards them verbatim and exposes a free
+    // model text field so arbitrary model ids from the provider's catalog work.
+    source = "default";
+    followLocalDefault = true;
+    allowCustomModel = true;
+    customModelFormat = "strict";
+    const configuration = openAICompatibleConfiguration(env);
+    selectedDefault = configuration.ready ? configuration.model : undefined;
+    let endpointHost: string | undefined;
+    if (configuration.ready && configuration.baseUrl) endpointHost = new URL(configuration.baseUrl).hostname;
+    const hasProviderInput = [env.OPENAI_API_KEY, env.OPENAI_BASE_URL, env.OPENAI_MODEL]
+      .some((value) => typeof value === "string" && value.length > 0);
+    connection = {
+      source: hasProviderInput ? "environment" : "official",
+      kind: "gateway",
+      billing: "provider",
+      status: configuration.ready ? "configured" : "invalid",
+      ...(endpointHost ? { endpointHost } : {}),
+      ...(configuration.ready ? {} : { message: "Set a valid OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL to use this agent" }),
     };
   } else {
     source = "default";

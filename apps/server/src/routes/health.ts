@@ -6,7 +6,7 @@ import { probeEngine } from "../engine/probe.js";
 import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
-import { resolveCodexExecutable, validatedCodexModel } from "../codex-binary.js";
+import { openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../codex-binary.js";
 import { resolveGeminiClient, validatedGeminiModel } from "../gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../workbuddy-binary.js";
 import { probeWorkbuddyExecutable, workbuddyConfiguration, workbuddyVersionProfile } from "../workbuddy-runtime.js";
@@ -508,6 +508,7 @@ export function hostHealth({
   const qoderNextStep = bundledQoderNextStep(qoderLocal, engineAvailable);
   const claudeConfigured = Boolean(env.ANTHROPIC_API_KEY?.trim() || (bundledElectronEngine && env.ANTHROPIC_AUTH_TOKEN?.trim()));
   const claudeLocalConfigured = claudeLocal.installed && claudeLocal.supported;
+  const openaiConfigured = Boolean(env.OPENAI_API_KEY?.trim()) && Boolean(env.OPENAI_BASE_URL?.trim());
   // Both Codex Hosts require the desktop-owned bundled adapter: the external
   // digital-employee CLI only probes Codex and has no executable model port.
   // Neither Codex Host has a supported-version window to gate on. The two
@@ -679,6 +680,37 @@ export function hostHealth({
                 ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
                 : {}),
     },
+    "openai-compatible": (() => {
+      // A user-supplied OpenAI-compatible gateway needs no local CLI login:
+      // the engine forwards OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL
+      // directly. The external digital-employee CLI has no equivalent port,
+      // so a provider trio alone must never make that path look runnable.
+      const configuration = openAICompatibleConfiguration(env);
+      const configured = configuration.ready;
+      let nextStep: string | undefined;
+      if (!configuration.ready) {
+        if (configuration.code === "openai.api_key_missing") {
+          nextStep = "设置 OPENAI_API_KEY 后重启工作台";
+        } else if (configuration.code === "openai.base_url_missing") {
+          nextStep = "设置 OPENAI_BASE_URL 指向 OpenAI 兼容端点后重启工作台";
+        } else if (configuration.code === "openai.model_missing") {
+          nextStep = "设置 OPENAI_MODEL 为端点提供的模型标识后重启工作台";
+        } else {
+          nextStep = "更正 OpenAI Compatible 配置：密钥、HTTPS（或回环 HTTP）端点和模型标识必须完整且合法";
+        }
+      } else if (!bundledElectronEngine) {
+        nextStep = "OpenAI Compatible 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行该回合";
+      } else if (!engineAvailable) {
+        nextStep = "先修复 bundled qoder-engine 的本地启动配置";
+      }
+      return {
+        configured,
+        ready: bundledElectronEngine && engineAvailable && configured,
+        modelPinnable: true,
+        ...(configuration.ready && configuration.model ? { model: configuration.model } : {}),
+        ...(nextStep ? { nextStep } : {}),
+      };
+    })(),
   };
 }
 

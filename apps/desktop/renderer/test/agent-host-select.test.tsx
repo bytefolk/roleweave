@@ -16,9 +16,10 @@ const availability: Record<TurnEngine, TurnEngineAvailability> = {
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
   gemini: { configured: true, ready: true },
+  "openai-compatible": { configured: true, ready: true },
 };
 
-const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini"];
+const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini", "openai-compatible"];
 
 function Picker({ initial }: { initial: TurnEngine }) {
   const [engine, setEngine] = useState<TurnEngine>(initial);
@@ -59,6 +60,7 @@ describe("Agent Host picker (#94)", () => {
       "Codex",
       "WorkBuddy",
       "Gemini",
+      "OpenAI Compatible",
     ]);
   });
 

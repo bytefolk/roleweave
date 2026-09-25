@@ -98,6 +98,37 @@ omitted provider `tools` field from an empty array. It does not download a CLI,
 read real credentials, or qualify a real provider account. See
 [issue #275 evidence and remaining acceptance](evidence/issue-275/README.md).
 
+## OpenAI Compatible
+
+Select **OpenAI Compatible** in project creation or employee hiring. Its
+durable engine id is `openai-compatible`; an existing employee keeps that
+binding when the app reopens.
+
+This host targets any gateway that speaks the OpenAI Chat Completions
+protocol (`POST {baseUrl}/chat/completions` with Bearer auth), for example
+TokenRhythm, OpenRouter, or a self-hosted proxy. It does not require a local
+CLI login — the control plane and the bundled engine make the API call
+directly, so readiness depends on the provider triad rather than a binary.
+
+Set all three variables in the control-plane process environment, then
+restart RoleWeave:
+
+- `OPENAI_API_KEY` — the service credential (Bearer token).
+- `OPENAI_BASE_URL` — the provider root, e.g. `https://tokenrhythm.studio/v1`.
+  The engine appends `/chat/completions`. There is no default: the URL must use
+  HTTPS, or loopback HTTP, and cannot contain credentials, a query, or fragment.
+- `OPENAI_MODEL` — a model id the provider's catalog serves, e.g.
+  `deepseek-v4-flash`.
+
+The model menu accepts any strict model id (first character alphanumeric,
+then `A-Z a-z 0-9 . _ : / -`, length ≤ 256) and a per-position selection can
+be pinned via `ROLEWEAVE_TURN_MODEL`. Unknown selectors are labelled
+unconfirmed until a real provider turn validates them. Credentials are never
+CLI arguments or UI fields; they cross the process boundary via environment
+only. Health readiness is gated on a non-empty key and base URL plus a legal
+model id; provider entitlement, quota and billing are still proven only by a
+successful real-provider turn.
+
 ## Gemini and Antigravity
 
 The `gemini` Host accepts either Google Gemini CLI (`gemini`) or Google

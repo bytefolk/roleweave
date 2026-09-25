@@ -4,7 +4,7 @@ import { EngineIcon } from "../src/turns/engine-icon";
 import type { TurnEngine } from "../src/turns";
 
 describe("EngineIcon (#57)", () => {
-  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini"];
+  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini", "openai-compatible"];
 
   it.each(engines)("renders a normalized brand mark for %s", (engine) => {
     const { container } = render(<EngineIcon engine={engine} />);
@@ -36,5 +36,9 @@ describe("EngineIcon (#57)", () => {
     expect(src("workbuddy")).not.toBe(src("codex"));
     expect(src("gemini")).toContain("%234285f4");
     expect(src("gemini")).not.toBe(src("workbuddy"));
+    // openai-compatible carries its own generic API mark.
+    expect(src("openai-compatible")).toContain("data:image/svg+xml");
+    expect(src("openai-compatible")).not.toBe(src("gemini"));
+    expect(src("openai-compatible")).not.toBe(src("workbuddy"));
   });
 });

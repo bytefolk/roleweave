@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   EMPTY_TURN_STREAM,
   applyTurnEvent,
@@ -22,6 +24,15 @@ function delta(seq: number, runId: string, text: string) {
 }
 
 describe("turn stream reducer", () => {
+  it("keeps the renderer stream reducer free of shared runtime imports", () => {
+    const source = readFileSync(
+      join(process.cwd(), "apps/desktop/renderer/src/turns/turnStream.ts"),
+      "utf8",
+    );
+
+    expect(source).not.toMatch(/import\s+\{[^}]*\}\s+from\s+["']@roleweave\/shared["']/s);
+  });
+
   it("rejects colliding sessionless runs from another employee or engine", () => {
     let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
     state = applyTurnEvent(state, { seq: 1, type: "turn.started", payload: { runId: "collision", positionId: "repo-owner", engine: "qoder" } });

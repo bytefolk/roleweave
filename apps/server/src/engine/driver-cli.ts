@@ -427,6 +427,13 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, mod
     for (const key of ["DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND", "ProgramFiles", "PROGRAMFILES", "LOCALAPPDATA", "PATHEXT", "SystemRoot", "WINDIR"]) {
       if (source[key] !== undefined) environment[key] = source[key];
     }
+  } else if (engine === "openai-compatible") {
+    // User-provided OpenAI-compatible gateway. The control plane forwards the
+    // same provider trio that Codex uses; downstream we can reuse any
+    // OpenAI-compatible digital-employee adapter. No local CLI login is required.
+    if (source.OPENAI_API_KEY !== undefined) environment.OPENAI_API_KEY = source.OPENAI_API_KEY;
+    if (source.OPENAI_BASE_URL !== undefined) environment.OPENAI_BASE_URL = source.OPENAI_BASE_URL;
+    if (source.OPENAI_MODEL !== undefined) environment.OPENAI_MODEL = source.OPENAI_MODEL;
   } else if (engine === "gemini") {
     if (source.GEMINI_API_KEY !== undefined) environment.GEMINI_API_KEY = source.GEMINI_API_KEY;
     if (source.GEMINI_MODEL !== undefined) environment.GEMINI_MODEL = source.GEMINI_MODEL;

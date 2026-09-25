@@ -455,6 +455,46 @@ test("codex-local turn env forwards login state and drops relay credentials at t
   }
 });
 
+test("Gemini turn env forwards only its API key and model", async () => {
+  const saved = {
+    apiKey: process.env.GEMINI_API_KEY,
+    model: process.env.GEMINI_MODEL,
+    openai: process.env.OPENAI_API_KEY,
+  };
+  process.env.GEMINI_API_KEY = "gemini-fixture-key";
+  process.env.GEMINI_MODEL = "gemini-3-flash";
+  process.env.OPENAI_API_KEY = "unrelated-openai-key";
+  try {
+    const command = await fixtureCli(`
+      for await (const chunk of process.stdin) {}
+      if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== "gemini") process.exit(8);
+      if (process.env.GEMINI_API_KEY !== "gemini-fixture-key") process.exit(7);
+      if (process.env.GEMINI_MODEL !== "gemini-3-flash") process.exit(6);
+      if (process.env.OPENAI_API_KEY !== undefined) process.exit(5);
+      const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+      console.log(JSON.stringify({ ...base, type: "run.started" }));
+      console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+    `);
+    const result = await new DigitalEmployeeCliDriver(command).turnRun({
+      workspace: "/workspace",
+      positionId: "repo-owner",
+      engine: "gemini",
+      envelope: ENVELOPE,
+    });
+    assert.equal(result.status, "trusted", result.diagnostic);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      const environmentKey = {
+        apiKey: "GEMINI_API_KEY",
+        model: "GEMINI_MODEL",
+        openai: "OPENAI_API_KEY",
+      }[key]!;
+      if (value === undefined) delete process.env[environmentKey];
+      else process.env[environmentKey] = value;
+    }
+  }
+});
+
 test("claude-code turn env forwards ANTHROPIC_BASE_URL when set (#81)", async () => {
   const saved = {
     baseUrl: process.env.ANTHROPIC_BASE_URL,
