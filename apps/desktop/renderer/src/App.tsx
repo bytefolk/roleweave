@@ -1356,9 +1356,7 @@ function AppInner({
     [approvalState.items, approvalState.decide, approvalState.refresh, t],
   );
 
-  const openApprovalSource = useCallback((item: ApprovalQueueItem) => {
-    const source = item.source;
-    if (!source || source.kind !== "session") return;
+  const openTurnSource = useCallback((source: { positionId: string; conversationId: string; turnId?: string }) => {
     const workspacePath = workspacePathRef.current;
     if (!workspacePath) return;
     const key = JSON.stringify([workspacePath, source.positionId]);
@@ -1373,9 +1371,19 @@ function AppInner({
     setSessions([]);
     setTurns([]);
     setActiveModule("org");
-    setSessionFocusTurnId(source.turnId ?? item.executionTurnId ?? null);
+    setSessionFocusTurnId(source.turnId ?? null);
     void loadSessions(source.positionId, source.conversationId, false);
   }, [loadSessions, setActiveModule]);
+
+  const openApprovalSource = useCallback((item: ApprovalQueueItem) => {
+    const source = item.source;
+    if (!source || source.kind !== "session") return;
+    openTurnSource({
+      positionId: source.positionId,
+      conversationId: source.conversationId,
+      turnId: source.turnId ?? item.executionTurnId,
+    });
+  }, [openTurnSource]);
 
   const openApprovalEvidence = useCallback((item: ApprovalQueueItem) => {
     setReportsFocusTurnId(item.executionTurnId ?? item.source?.turnId ?? null);
@@ -2148,6 +2156,7 @@ function AppInner({
             positionNames={positionNames}
             positionColors={positionColors}
             focusTurnId={reportsFocusTurnId ?? undefined}
+            onOpenTurn={openTurnSource}
           />
         ) : activeModule === "approvals" ? (
           <ApprovalQueue

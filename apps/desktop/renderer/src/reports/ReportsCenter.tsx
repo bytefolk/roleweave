@@ -18,10 +18,11 @@ export interface ReportsCenterProps extends ExperimentScope {
   positionNames?: Record<string, string>;
   positionColors?: Record<string, string>;
   onOpenTimeline?: (positionId: string) => void;
+  onOpenTurn?: (source: { positionId: string; conversationId: string; turnId: string }) => void;
   focusTurnId?: string;
 }
 
-export function ReportsCenter({ reports, loading, positionNames, positionColors, focusTurnId, onOpenTimeline, onRefresh, workspacePath, workspaceScope, onOpenExperiments }: ReportsCenterProps) {
+export function ReportsCenter({ reports, loading, positionNames, positionColors, focusTurnId, onOpenTimeline, onOpenTurn, onRefresh, workspacePath, workspaceScope, onOpenExperiments }: ReportsCenterProps) {
   const t = useT();
   const advice = useReportAdvice({ workspacePath, workspaceScope }, reports?.streams.escalations ?? []);
   const timelineEvents = useMemo<AuditTimelineEvent[]>(
@@ -41,6 +42,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
   const exceptions = new Set([...reports.streams.escalations.map((item) => item.turnId), ...reports.streams.evidence.filter((item) => item.status === "failed" || item.status === "indeterminate").map((item) => item.turnId)]).size;
   const completed = reports.streams.evidence.filter((item) => item.status === "completed").length;
   const hasObservedUsage = reports.budgets.some((budget) => budget.latestTurn !== null);
+  const evidenceByTurn = new Map(reports.streams.evidence.map((entry) => [entry.turnId, entry]));
   const filteredTimeline = timelineEvents.filter((event) =>
     (timelinePosition === null || event.positionId === timelinePosition) &&
     (timelineRunId === null || event.runId === timelineRunId),
@@ -86,9 +88,9 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
             onOpenTimeline={openTimeline}
           />
         ) : null}
-        {tab === "escalations" ? <>{workspacePath ? <ReportAdviceControls controller={advice} onOpenSettings={onOpenExperiments} /> : null}<Escalations entries={reports.streams.escalations} positionNames={positionNames} onOpenTimeline={openTimeline} advice={advice.items} /></> : null}
+        {tab === "escalations" ? <>{workspacePath ? <ReportAdviceControls controller={advice} onOpenSettings={onOpenExperiments} /> : null}<Escalations entries={reports.streams.escalations} evidenceByTurn={evidenceByTurn} positionNames={positionNames} onOpenTimeline={openTimeline} onOpenTurn={onOpenTurn} advice={advice.items} /></> : null}
         {tab === "audits" ? <Audits entries={reports.streams.audits} positionNames={positionNames} /> : null}
-        {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} /> : null}
+        {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} onOpenTurn={onOpenTurn} /> : null}
         {tab === "timeline" && timelinePosition ? <div className="owb-report-filter-note"><span>{positionNames?.[timelinePosition] ?? timelinePosition}</span><Button type="link" onClick={() => { setTimelinePosition(null); setTimelineRunId(null); }}>{t("rep.clearScope")}</Button></div> : null}
         {tab === "timeline" ? (
           <AuditTimeline
@@ -215,13 +217,16 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
 
 function Empty({ text }: { text: string }) { return <p className="owb-report-empty">{text}</p>; }
 
-function Escalations({ entries, positionNames, onOpenTimeline, advice }: { entries: EscalationEntry[]; positionNames?: Record<string, string>; onOpenTimeline: (id: string, turnId?: string) => void; advice: ReturnType<typeof useReportAdvice>["items"] }) {
+function Escalations({ entries, evidenceByTurn, positionNames, onOpenTimeline, onOpenTurn, advice }: { entries: EscalationEntry[]; evidenceByTurn: Map<string, EvidenceEntry>; positionNames?: Record<string, string>; onOpenTimeline: (id: string, turnId?: string) => void; onOpenTurn?: ReportsCenterProps["onOpenTurn"]; advice: ReturnType<typeof useReportAdvice>["items"] }) {
   const t = useT();
   const localeTag = useLocaleTag();
   if (entries.length === 0) return <Empty text={t("rep.noEscalations")} />;
   return <ol>{entries.map((entry) => {
     const summary = entry.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation");
-    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div><ReportAdviceChip advice={advice.get(reportAdviceKey(entry))} /><Button type="link" size="small" className="owb-report-trace" onClick={() => onOpenTimeline(entry.positionId, entry.turnId)}>{t("rep.traceRun")}</Button></div></li>;
+    const evidence = evidenceByTurn.get(entry.turnId);
+    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div><ReportAdviceChip advice={advice.get(reportAdviceKey(entry))} />
+      {onOpenTurn ? evidence ? <Button type="link" size="small" aria-label={t("rep.openTurnNamed", { turnId: entry.turnId })} onClick={() => onOpenTurn({ positionId: evidence.positionId, conversationId: evidence.conversationId, turnId: evidence.turnId })}>{t("rep.openTurn")}</Button> : <span className="owb-muted">{t("rep.turnUnavailable")}</span> : null}
+      <Button type="link" size="small" className="owb-report-trace" onClick={() => onOpenTimeline(entry.positionId, entry.turnId)}>{t("rep.traceRun")}</Button></div></li>;
   })}</ol>;
 }
 
@@ -292,7 +297,7 @@ function AuditRow({ entry, positionNames, localeTag }: { entry: AuditEntry; posi
   );
 }
 
-function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline }: { entries: EvidenceEntry[]; positionNames?: Record<string, string>; focusTurnId?: string; onOpenTimeline: (id: string, turnId?: string) => void }) {
+function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline, onOpenTurn }: { entries: EvidenceEntry[]; positionNames?: Record<string, string>; focusTurnId?: string; onOpenTimeline: (id: string, turnId?: string) => void; onOpenTurn?: ReportsCenterProps["onOpenTurn"] }) {
   const t = useT();
   const localeTag = useLocaleTag();
   const [query, setQuery] = useState("");
@@ -314,7 +319,7 @@ function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline }: { ent
     { title: t("rep.executionStatus"), key: "status", render: (_, entry) => <Tag color={entry.status === "failed" ? "error" : entry.status === "completed" ? "success" : "default"}>{evidenceStatusLabel(entry.status, t)}</Tag> },
     { title: t("rep.recordedTokenTotal"), key: "usage", align: "right", render: (_, entry) => entry.usage.totalTokens.toLocaleString() },
     { title: t("rep.updatedAt"), key: "at", render: (_, entry) => <time title={formatTime(entry.updatedAt, localeTag)}>{formatRelativeTime(entry.updatedAt, localeTag, t)}</time> },
-    { title: "", key: "action", render: (_, entry) => <Button type="link" size="small" onClick={() => onOpenTimeline(entry.positionId, entry.turnId)}>{t("rep.openTimeline")}</Button> },
+    { title: "", key: "action", render: (_, entry) => <>{onOpenTurn ? <Button type="link" size="small" aria-label={t("rep.openTurnNamed", { turnId: entry.turnId })} onClick={() => onOpenTurn({ positionId: entry.positionId, conversationId: entry.conversationId, turnId: entry.turnId })}>{t("rep.openTurn")}</Button> : null}<Button type="link" size="small" onClick={() => onOpenTimeline(entry.positionId, entry.turnId)}>{t("rep.openTimeline")}</Button></> },
   ]} /></>}
   </div>;
 }
