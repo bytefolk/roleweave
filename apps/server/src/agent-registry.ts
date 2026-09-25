@@ -124,6 +124,10 @@ const HOST_DEFINITIONS: Readonly<Record<AgentHostId, HostDefinition>> = {
     label: "Gemini",
     capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],
   },
+  "openai-compatible": {
+    label: "OpenAI Compatible",
+    capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],
+  },
 };
 
 /** Derived from HOST_DEFINITIONS so adding an AgentHostId is a compile error

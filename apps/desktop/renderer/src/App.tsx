@@ -1705,6 +1705,14 @@ function AppInner({
       modelPinnable: health?.hosts?.gemini?.modelPinnable,
       model: health?.hosts?.gemini?.model,
     },
+    "openai-compatible": {
+      configured: health?.hosts?.["openai-compatible"]?.configured === true,
+      ready: health?.hosts?.["openai-compatible"]?.ready === true,
+      reason: health?.hosts?.["openai-compatible"]?.nextStep ?? t("misc.engineUnavailable"),
+      modelPinnable: health?.hosts?.["openai-compatible"]?.modelPinnable,
+      model: health?.hosts?.["openai-compatible"]?.model,
+      connection: health?.hosts?.["openai-compatible"]?.connection,
+    },
   }), [health, t]);
 
   /** Login repair surface for the composer notice: offered only while the

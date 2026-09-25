@@ -2,36 +2,16 @@ import { Select as AntSelect } from "antd";
 import { useCallback } from "react";
 import { useT } from "@roleweave/ui";
 import { resolveAgentEngine, visibleAgentHosts } from "./agent-host";
+import { engineLabel, isTurnEngine } from "./engine-contract";
 import { EngineIcon } from "./engine-icon";
 import type { TurnEngine, TurnEngineAvailability } from "./types";
 
-/** The hosts supported by the desktop control plane, in the stable order used
- * everywhere a host picker is shown. Keeping this here prevents the task
- * surface, groups, and hiring flow from slowly acquiring different choices. */
-export const TURN_ENGINES: readonly TurnEngine[] = [
-  "qoder",
-  "claude-code",
-  "claude-local",
-  "codex",
-  "codex-local",
-  "workbuddy",
-  "gemini",
-];
-
-const ENGINE_LABEL: Record<TurnEngine, string> = {
-  qoder: "Qoder",
-  "claude-code": "Claude Code",
-  "claude-local": "Claude Code",
-  codex: "Codex",
-  "codex-local": "Codex",
-  workbuddy: "WorkBuddy",
-  gemini: "Gemini",
-};
+export { TURN_ENGINES } from "./engine-contract";
 
 /** Engine brand names are product names. Local sign-in is a transport detail,
  * not a second agent choice an operator needs to reason about. */
 export function useEngineLabel(): (engine: TurnEngine) => string {
-  return useCallback((engine: TurnEngine) => ENGINE_LABEL[engine], []);
+  return useCallback(engineLabel, []);
 }
 
 function engineSelectOptions(
@@ -51,10 +31,6 @@ function engineSelectOptions(
     ),
     };
   });
-}
-
-function isTurnEngine(value: unknown): value is TurnEngine {
-  return typeof value === "string" && value in ENGINE_LABEL;
 }
 
 /** The control only names the product; health and credential transport are
