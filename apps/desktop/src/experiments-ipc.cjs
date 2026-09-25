@@ -22,4 +22,11 @@ async function reportsAdvice(request, apiRequest) {
   return apiRequest("/reports/advice", { method: "POST", body: request });
 }
 
-module.exports = { experimentsGet, experimentsUpdate, reportsAdvice };
+async function budgetRemainingAdvice(request, apiRequest) {
+  if (!scopeValid(request) || typeof request.positionId !== "string" ||
+      request.positionId.length > 64 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(request.positionId) ||
+      Object.keys(request).some(key => !["workspacePath", "workspaceSession", "revision", "positionId"].includes(key))) return invalid();
+  return apiRequest("/turns/budget-remaining-advice", { method: "POST", body: request });
+}
+
+module.exports = { budgetRemainingAdvice, experimentsGet, experimentsUpdate, reportsAdvice };

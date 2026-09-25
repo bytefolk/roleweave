@@ -33,7 +33,12 @@ import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
 import { handlePositionAgentEngine, handlePositionGet, handlePositionModel, handlePositionProfilePatch } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
-import { handleExperimentsGet, handleExperimentsUpdate, handleReportsAdvice } from "./routes/experiments.js";
+import {
+  handleBudgetRemainingAdvice,
+  handleExperimentsGet,
+  handleExperimentsUpdate,
+  handleReportsAdvice,
+} from "./routes/experiments.js";
 import { handleApprovals } from "./routes/approvals.js";
 import { approvals } from "./approvals/service.js";
 import {
@@ -165,6 +170,10 @@ async function dispatch(
     }
     if (pathname === routes.reportsAdvice && method === "POST") {
       await handleReportsAdvice(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.budgetRemainingAdvice && method === "POST") {
+      await handleBudgetRemainingAdvice(ctx, req, res);
       return;
     }
     if (pathname === routes.sessions && method === "POST") {

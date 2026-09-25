@@ -8,6 +8,8 @@ import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
 import type { AvailabilityCheck, NoticeAction } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
+import { BudgetRemainingOverlay } from "./BudgetRemainingOverlay";
+import { useWorkspaceExperiments } from "../experiments/useWorkspaceExperiments";
 import { EngineSelect, TURN_ENGINES, useEngineLabel } from "./engine-select";
 import { EngineBadge } from "./EngineBadge";
 import { TurnThread } from "./TurnThread";
@@ -45,6 +47,8 @@ function bytesToBase64(bytes: Uint8Array): string {
 export interface TurnPanelProps {
   active?: boolean;
   workspaceKey?: string;
+  /** Changes for every workspace transition, including A -> B -> A. */
+  workspaceScope?: symbol;
   memory?: ConversationMemory;
   focused?: boolean;
   onToggleFocus?: () => void;
@@ -103,6 +107,7 @@ export interface TurnPanelProps {
 export function TurnPanel({
   active = true,
   workspaceKey = "",
+  workspaceScope,
   memory,
   focused = false,
   onToggleFocus,
@@ -144,6 +149,10 @@ export function TurnPanel({
   const t = useT();
   const engineLabel = useEngineLabel();
   const copy = useConversationCopy();
+  const budgetExperiment = useWorkspaceExperiments({
+    workspacePath: workspaceKey || undefined,
+    workspaceScope,
+  }).snapshot;
   const localMemory = useRef(createConversationMemory());
   const conversationMemory = memory ?? localMemory.current;
   const draftKey = conversationKey(workspaceKey, selectedPositionId, selectedSessionId);
@@ -393,6 +402,9 @@ export function TurnPanel({
 
       {sendErrors[draftKey] ? <p role="alert" className="owb-conversation-error">{sendErrors[draftKey]}</p> : null}
       {selectedPosition ? <TurnComposer
+        advisory={budgetExperiment?.enabled
+          ? <BudgetRemainingOverlay experiment={budgetExperiment} positionId={selectedPosition.id} />
+          : undefined}
         sendShortcut={sendShortcut}
         options={active ? <ConversationOptions
           config={modelConfig} saving={modelSaving} disabled={runningTurn || busy || employeeBusy || sending || sessionBusy}
