@@ -2,7 +2,7 @@ import { configurationText, configurationGroups } from '../locales/configuration
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Input, Modal, Select, Spin } from 'antd';
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
-import { useT } from '@roleweave/ui';
+import { useT, useOwbLocale } from '@roleweave/ui';
 import type { ApplicationConfiguration, ConfigurationSnapshot, ConfigurationIssue, ConfigurationChange, ConfigurationSave } from '../configuration-types';
 import { applyConfiguration, registerSettingsLeave, CONFIGURATION_APPLIED } from '../configuration-preferences';
 import { CREDENTIAL_FIELDS, type CredentialKey } from './credential-settings';
@@ -11,7 +11,8 @@ import './configuration-settings.css';
 import { ExperimentalSettings } from './ExperimentalSettings';
 import type { ExperimentScope } from '../experiments/useWorkspaceExperiments';
 const groups = configurationGroups;
-type Category = typeof groups[number][0];
+export type ConfigurationCategory = typeof groups[number][0];
+type Category = ConfigurationCategory;
 const hostKeys={Qoder:'qoder',Claude:'claude',Codex:'codex',Gemini:'gemini'} as const;
 const refFields:Partial<Record<CredentialKey,string>>={QODER_PERSONAL_ACCESS_TOKEN:'personalAccessTokenRef',ANTHROPIC_API_KEY:'apiKeyRef',ANTHROPIC_AUTH_TOKEN:'authTokenRef',OPENAI_API_KEY:'apiKeyRef',GEMINI_API_KEY:'apiKeyRef'};
 function differences(a:unknown,b:unknown,prefix=''):ConfigurationChange[]{
@@ -24,9 +25,10 @@ function differences(a:unknown,b:unknown,prefix=''):ConfigurationChange[]{
  });
 }
 const display=(value:unknown)=>value===null?'—':typeof value==='object'?JSON.stringify(value):String(value);
-export function ConfigurationSettings({updates, initialCategory, ...scope}:{updates:ReactNode; initialCategory?: "experiments"} & ExperimentScope) {
- const t=useT();const[snapshot,setSnapshot]=useState<ConfigurationSnapshot|null>(null),[text,setText]=useState('');
+export function ConfigurationSettings({updates, initialCategory, ...scope}:{updates:ReactNode; initialCategory?: ConfigurationCategory} & ExperimentScope) {
+ const t=useT();const activeLocale=useOwbLocale();const[snapshot,setSnapshot]=useState<ConfigurationSnapshot|null>(null),[text,setText]=useState('');
  const[category,setCategory]=useState<Category>(initialCategory ?? 'general'),[view,setView]=useState<'form'|'file'>('form');
+ useEffect(()=>{setCategory(initialCategory ?? 'general');},[initialCategory]);
  const[issues,setIssues]=useState<ConfigurationIssue[]>([]),[validatedText,setValidatedText]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  const[error,setError]=useState<string|null>(null),[notice,setNotice]=useState<string|null>(null),[conflict,setConflict]=useState<ConfigurationSnapshot|null>(null);
  const[preview,setPreview]=useState(false),[leaveOpen,setLeaveOpen]=useState(false),[secretVersion,setSecretVersion]=useState(0);
@@ -36,9 +38,9 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
  const parsed=useMemo(()=>{const errors:ParseError[]=[];const value=parse(text,errors,{allowTrailingComma:true}) as ApplicationConfiguration|undefined;return{value,errors};},[text]);
  const object=(value:unknown)=>value!==null&&typeof value==='object'&&!Array.isArray(value);
  const strings=(value:unknown)=>object(value)&&Object.values(value as Record<string,unknown>).every(v=>typeof v==='string');
- const formShape=parsed.errors.length===0&&object(parsed.value?.appearance)&&['system','light','dark'].includes(parsed.value?.appearance?.mode??'')&&['mint','default'].includes(parsed.value?.appearance?.profile??'')&&['en','zh-CN'].includes(parsed.value?.appearance?.locale??'')&&object(parsed.value?.chat)&&['enter','mod-enter'].includes(parsed.value?.chat?.sendShortcut??'')&&typeof parsed.value?.chat?.rememberLayout==='boolean'&&strings(parsed.value?.hosts?.qoder)&&strings(parsed.value?.hosts?.claude)&&strings(parsed.value?.hosts?.codex)&&(parsed.value?.hosts?.gemini===undefined||strings(parsed.value.hosts.gemini))&&object(parsed.value?.services)&&Object.values(parsed.value?.services??{}).every(v=>v===null||strings(v))&&strings(parsed.value?.runtime);
+ const formShape=parsed.errors.length===0&&object(parsed.value?.appearance)&&['system','light','dark'].includes(parsed.value?.appearance?.mode??'')&&['mint','default'].includes(parsed.value?.appearance?.profile??'')&&['en','zh-CN'].includes(parsed.value?.appearance?.locale??'')&&object(parsed.value?.chat)&&['enter','mod-enter'].includes(parsed.value?.chat?.sendShortcut??'')&&typeof parsed.value?.chat?.rememberLayout==='boolean'&&object(parsed.value?.hosts)&&(['qoder','claude','codex','gemini'] as const).every(h=>parsed.value?.hosts?.[h]===undefined||strings(parsed.value?.hosts?.[h]))&&object(parsed.value?.services)&&Object.values(parsed.value?.services??{}).every(v=>v===null||strings(v))&&strings(parsed.value?.runtime);
  const config=formShape?parsed.value:snapshot?.config;
- const english=(config??snapshot?.config)?.appearance.locale==='en';const copy=(en:string)=>configurationText(english,en);
+ const english=((config??snapshot?.config)?.appearance.locale??activeLocale)==='en';const copy=(en:string)=>configurationText(english,en);
  const hasSecretChanges=useMemo(()=>secretVersion>=0&&([...secretInputs.current.values()].some(input=>!!input.value)||clearKeys.size>0),[secretVersion,clearKeys]);
  const dirty=!!snapshot&&(text!==snapshot.text||hasSecretChanges);
  const dirtyRef=useRef(dirty);dirtyRef.current=dirty;
@@ -66,13 +68,45 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
   return()=>{window.removeEventListener(CONFIGURATION_APPLIED,refresh);window.removeEventListener('owb:services-changed',refresh);};
  },[reload]);
  function field(path:(string|number)[],value:unknown){setText(current=>applyEdits(current,modify(current,path,value,{formattingOptions:{insertSpaces:true,tabSize:2}})));setNotice(null);setIssues([]);}
- function secretChanged(key:string,path:string[],reference:string){const input=secretInputs.current.get(key);if(input?.value){field(path,reference);setClearKeys(current=>{const next=new Set(current);next.delete(key);return next;});}setSecretVersion(v=>v+1);}
- function clearSecret(key:string,path:string[],reference?:string){
-  setClearKeys(current=>{const next=new Set(current);if(next.has(key)){next.delete(key);if(reference)field(path,reference);}else{next.add(key);field(path,undefined);}return next;});setSecretVersion(v=>v+1);
+ function secretChanged(key:string,path:(string|number)[],reference:string,originalRef?:string){
+  const input=secretInputs.current.get(key);
+  if(input?.value){
+   field(path,reference);
+   setClearKeys(current=>{const next=new Set(current);next.delete(key);return next;});
+  }else{
+   field(path,originalRef);
+  }
+  setSecretVersion(v=>v+1);
+ }
+ function clearSecret(key:string,path:(string|number)[],reference?:string){
+  setClearKeys(current=>{
+   const next=new Set(current);
+   if(next.has(key)){
+    next.delete(key);
+    if(reference)field(path,reference);
+   }else{
+    next.add(key);
+    const input=secretInputs.current.get(key);
+    if(input)input.value='';
+    field(path,undefined);
+   }
+   return next;
+  });
+  setSecretVersion(v=>v+1);
  }
  function request():ConfigurationSave{
   const hostChanges:ConfigurationSave['hostChanges']={},serviceChanges:ConfigurationSave['serviceChanges']={};
-  for(const[key,input]of secretInputs.current){const value=clearKeys.has(key)?null:input.value;if(value==='')continue;if(key.startsWith('service:'))serviceChanges[key.slice(8) as 'doc'|'mem']=value;else hostChanges[key as CredentialKey]=value;}
+  for(const[key,input]of secretInputs.current){
+   if(clearKeys.has(key))continue;
+   const value=input.value;
+   if(value==='')continue;
+   if(key.startsWith('service:'))serviceChanges[key.slice(8) as 'doc'|'mem']=value;
+   else hostChanges[key as CredentialKey]=value;
+  }
+  for(const key of clearKeys){
+   if(key.startsWith('service:'))serviceChanges[key.slice(8) as 'doc'|'mem']=null;
+   else hostChanges[key as CredentialKey]=null;
+  }
   return{text,revision:snapshot!.revision,hostChanges,serviceChanges};
  }
  async function save(revision?:string):Promise<boolean>{
@@ -110,7 +144,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
      <fieldset disabled={busy||formBlocked}><legend>{copy("Appearance and input")}</legend>
       <label className="owb-config-field"><span>{copy("Language")}</span><Select aria-label={copy("Language")} value={config.appearance.locale} options={[{value:'zh-CN',label:copy('Simplified Chinese')},{value:'en',label:'English'}]} onChange={v=>field(['appearance','locale'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-field"><span>{copy("Theme")}</span><Select aria-label={copy("Theme")} value={config.appearance.mode} options={[{value:'system',label:copy("System")},{value:'light',label:copy("Light")},{value:'dark',label:copy("Dark")}]} onChange={v=>field(['appearance','mode'],v)} disabled={busy||formBlocked}/></label>
-      <label className="owb-config-field"><span>{copy("Color profile")}</span><Select aria-label={copy("Color profile")} value={config.appearance.profile} options={[{value:'mint',label:'Mint'},{value:'default',label:'Ant Blue'}]} onChange={v=>field(['appearance','profile'],v)} disabled={busy||formBlocked}/></label>
+      <label className="owb-config-field"><span>{copy("Color profile")}</span><Select aria-label={copy("Color profile")} value={config.appearance.profile} options={[{value:'mint',label:copy('Mint')},{value:'default',label:copy('Ant Blue')}]} onChange={v=>field(['appearance','profile'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-field"><span>{copy("Send shortcut")}</span><Select aria-label={copy("Send shortcut")} value={config.chat.sendShortcut} options={[{value:'enter',label:'Enter'},{value:'mod-enter',label:'⌘ / Ctrl + Enter'}]} onChange={v=>field(['chat','sendShortcut'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-checkbox"><input type="checkbox" checked={config.chat.rememberLayout} onChange={e=>field(['chat','rememberLayout'],e.target.checked)}/>{copy("Remember workspace conversation layout")}</label>
       <p className="owb-settings-module__hint">{copy("Appearance applies after save. Quick preferences use the same configuration. Composing text with an IME never sends a message.")}</p>
@@ -128,8 +162,8 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
       <summary><strong>{host}</strong><span>{source==='environment'?copy("Environment override"):configured?copy("Saved locally"):copy("Host default login")}</span><span className="owb-config-edit">{copy("Edit")}</span></summary>
       <fieldset disabled={busy||formBlocked}><legend className="owb-config-sr">{host}</legend>
        {source==='environment'?<p className="owb-settings-module__hint">{copy("The launch environment supplies this whole Host connection; saved credentials and endpoints are not mixed with it.")}</p>:null}
-       {CREDENTIAL_FIELDS.filter(f=>f.host===host).map(f=>{const row=snapshot.credentials.find(v=>v.key===f.key),url=f.key.endsWith('_BASE_URL');if(url)return <div key={f.key}>{input(`${host} ${t(f.label)}`,['hosts',id,'baseUrl'],hostConfig.baseUrl,'https://api.example.com')}</div>;const path=['hosts',id,refFields[f.key]!];return <div key={f.key} className="owb-config-secret"><label htmlFor={`config-${f.key}`}>{t(f.label)}</label><span className="owb-settings-module__hint">{row?.configured?copy('Configured · ••••{last4}').replace('{last4}',row.last4??''):copy("No saved credential")}</span><input id={`config-${f.key}`} ref={node=>{if(node)secretInputs.current.set(f.key,node);else secretInputs.current.delete(f.key);}} className="ant-input" type="password" autoComplete="new-password" spellCheck={false} maxLength={8192} disabled={busy||!snapshot.storageAvailable||formBlocked||clearKeys.has(f.key)} placeholder={copy("Leave blank to retain")} onInput={()=>secretChanged(f.key,path,`secret:host/${f.key}`)}/>
-        {row?.configured?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(f.key)} onChange={()=>clearSecret(f.key,path,(snapshot.config.hosts[id] as Record<string,string|undefined>)[refFields[f.key]!])}/>{copy("Explicitly clear this credential")}</label>:null}</div>;})}
+        {CREDENTIAL_FIELDS.filter(f=>f.host===host).map(f=>{const row=snapshot.credentials.find(v=>v.key===f.key),url=f.key.endsWith('_BASE_URL');if(url)return <div key={f.key}>{input(`${host} ${t(f.label)}`,['hosts',id,'baseUrl'],hostConfig.baseUrl,'https://api.example.com')}</div>;const path=['hosts',id,refFields[f.key]!],originalRef=(snapshot.config.hosts[id] as Record<string,string|undefined>)?.[refFields[f.key]!];return <div key={f.key} className="owb-config-secret"><label htmlFor={`config-${f.key}`}>{t(f.label)}</label><span className="owb-settings-module__hint">{row?.configured?copy('Configured · ••••{last4}').replace('{last4}',row.last4??''):copy("No saved credential")}</span><input id={`config-${f.key}`} ref={node=>{if(node)secretInputs.current.set(f.key,node);else secretInputs.current.delete(f.key);}} className="ant-input" type="password" autoComplete="new-password" spellCheck={false} maxLength={8192} disabled={busy||!snapshot.storageAvailable||formBlocked||clearKeys.has(f.key)} placeholder={copy("Leave blank to retain")} onInput={()=>secretChanged(f.key,path,`secret:host/${f.key}`,originalRef)}/>
+        {row?.configured?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(f.key)} onChange={()=>clearSecret(f.key,path,(snapshot.config.hosts[id] as Record<string,string|undefined>)?.[refFields[f.key]!] ?? `secret:host/${f.key}`)}/>{copy("Explicitly clear this credential")}</label>:null}</div>;})}
        <p className="owb-settings-module__hint">{copy("Blank retains the saved value. Inputs clear only after a successful save. Saved locally does not verify remote authentication.")}</p>
        <Button type="primary" disabled={busy||!dirty||formInvalid} loading={busy} onClick={()=>void save()}>{copy("Save configuration")}</Button>
       </fieldset>
@@ -137,12 +171,12 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
     </section>
     <section id="settings-panel-services" role="tabpanel" aria-labelledby="settings-tab-services" hidden={category!=='services'}>
      <fieldset disabled={busy||formBlocked}><legend>{copy("Docs and memory configuration")}</legend>
-      {(['doc','mem'] as const).map(kind=>{const entry=config.services[kind],name=kind==='doc'?'Doc':'Mem',key=`service:${kind}`;return <section key={kind} className="owb-config-service"><h3>{name}</h3><p className="owb-settings-module__hint">{snapshot.sources[`services.${kind}`]==='environment-after-restart'?copy('Launch defaults apply after restart; the current connection is retained'):snapshot.sources[`services.${kind}`]==='configuration'?copy("Saved connection settings"):copy("Launch environment defaults; enter an address to save an override")}</p>
+      {(['doc','mem'] as const).map(kind=>{const entry=config.services[kind],name=kind==='doc'?'Doc':'Mem',key=`service:${kind}`,originalTokenRef=snapshot.config.services[kind]?.tokenRef;return <section key={kind} className="owb-config-service"><h3>{name}</h3><p className="owb-settings-module__hint">{snapshot.sources[`services.${kind}`]==='environment-after-restart'?copy('Launch defaults apply after restart; the current connection is retained'):snapshot.sources[`services.${kind}`]==='configuration'?copy("Saved connection settings"):copy("Launch environment defaults; enter an address to save an override")}</p>
        <label className="owb-config-field"><span>{name} API URL</span><Input value={entry?.apiUrl??''} onChange={e=>{if(e.target.value)field(['services',kind],{...(entry??{}),apiUrl:e.target.value});else field(['services',kind],null);}} placeholder={kind==='doc'?'http://localhost:3100':'http://localhost:8080'} spellCheck={false}/></label>
        {entry?<>{input(`${name} Web URL`,['services',kind,'webUrl'],entry.webUrl)}{kind==='mem'?input('Mem workspace UUID',['services','mem','workspaceId'],entry.workspaceId):null}</>:null}
-        <div className="owb-config-secret"><label htmlFor={`config-${kind}-token`}>{name} Token</label><span className="owb-settings-module__hint">{entry?.tokenRef?copy("Encrypted credential reference"):copy("No credential reference")}</span><input id={`config-${kind}-token`} ref={node=>{if(node)secretInputs.current.set(key,node);else secretInputs.current.delete(key);}} className="ant-input" type="password" autoComplete="new-password" maxLength={8192} disabled={busy||!snapshot.storageAvailable||clearKeys.has(key)||!entry||formBlocked} placeholder={copy("Leave blank to retain")} onInput={()=>secretChanged(key,['services',kind,'tokenRef'],`secret:service/${kind}`)}/>
-         {snapshot.config.services[kind]?.tokenRef?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(key)} onChange={()=>clearSecret(key,['services',kind,'tokenRef'],snapshot.config.services[kind]?.tokenRef)}/>{copy("Explicitly clear token")}</label>:null}</div>
-       {entry?<Button onClick={()=>field(['services',kind],null)}>{copy('Disconnect {name} on save').replace('{name}',name)}</Button>:<Button onClick={()=>field(['services',kind],undefined)}>{copy("Restore launch defaults after restart")}</Button>}
+        <div className="owb-config-secret"><label htmlFor={`config-${kind}-token`}>{name} Token</label><span className="owb-settings-module__hint">{entry?.tokenRef?copy("Encrypted credential reference"):copy("No credential reference")}</span><input id={`config-${kind}-token`} ref={node=>{if(node)secretInputs.current.set(key,node);else secretInputs.current.delete(key);}} className="ant-input" type="password" autoComplete="new-password" maxLength={8192} disabled={busy||!snapshot.storageAvailable||clearKeys.has(key)||!entry||formBlocked} placeholder={copy("Leave blank to retain")} onInput={()=>secretChanged(key,['services',kind,'tokenRef'],`secret:service/${kind}`,originalTokenRef)}/>
+         {snapshot.config.services[kind]?.tokenRef?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(key)} onChange={()=>clearSecret(key,['services',kind,'tokenRef'],snapshot.config.services[kind]?.tokenRef ?? `secret:service/${kind}`)}/>{copy("Explicitly clear token")}</label>:null}</div>
+       {entry?<Button onClick={()=>{field(['services',kind],null);const input=secretInputs.current.get(key);if(input)input.value='';setClearKeys(c=>{const n=new Set(c);n.delete(key);return n;});setSecretVersion(v=>v+1);}}>{copy('Disconnect {name} on save').replace('{name}',name)}</Button>:<Button onClick={()=>{field(['services',kind],undefined);const input=secretInputs.current.get(key);if(input)input.value='';setClearKeys(c=>{const n=new Set(c);n.delete(key);return n;});setSecretVersion(v=>v+1);}}>{copy("Restore launch defaults after restart")}</Button>}
       </section>;})}
       <p className="owb-settings-module__hint">{copy("Service forms and the file view share this draft. Save before checking connectivity. Changing an API URL requires updating or clearing its token.")}</p>
      </fieldset>
@@ -162,7 +196,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
   {snapshot&&category!=='experiments'?<footer className="owb-config-savebar"><span role="status">{notice==='services-restart'?copy('Saved · Launch default connections apply after restart; current connections are retained'):notice==='restart'?copy("Saved · Runtime / Host changes require restart"):notice==='services-pending'?copy("Saved. Live services are unavailable; check or retry the connection."):notice==='saved'?copy("Configuration saved"):notice==='valid'?copy("Configuration valid"):dirty?copy("Unsaved changes"):snapshot.servicesRestartRequired?copy('Saved · Launch default connections apply after restart; current connections are retained'):snapshot.pendingRestart?copy("Saved · Runtime / Host changes require restart"):copy("Configuration is up to date")}</span><Button disabled={busy||!dirty||formInvalid||validatedText!==text} onClick={()=>setPreview(true)}>{copy("Preview changes")}</Button><Button type="primary" disabled={busy||!dirty} loading={busy} onClick={()=>void save()}>{copy("Save configuration")}</Button></footer>:null}
   <Modal open={preview} title={copy("Preview changes")} onCancel={()=>setPreview(false)} footer={<Button onClick={()=>setPreview(false)}>{copy("Back to editing")}</Button>} width={720}>
    {changes.map(row=><div className="owb-config-diff" key={row.field}><code>{row.field}</code><span>{display(row.before)} → {display(row.after)}</span></div>)}
-   {[...secretInputs.current].map(([key,input])=><div key={key} className="owb-config-diff"><code>{key}</code><span>{clearKeys.has(key)?copy("Clear"):input.value?copy("Update"):copy("Retain")}</span></div>)}
+   {[...new Set([...secretInputs.current.keys(),...clearKeys])].map(key=>{const input=secretInputs.current.get(key);return <div key={key} className="owb-config-diff"><code>{key}</code><span>{clearKeys.has(key)?copy("Clear"):input?.value?copy("Update"):copy("Retain")}</span></div>;})}
    {!changes.length&&!hasSecretChanges?<p>{copy("Only comments or formatting changed.")}</p>:null}
   </Modal>
   <Modal open={!!conflict} title={copy("Configuration changed on disk")} onCancel={()=>setConflict(null)} footer={<><Button onClick={()=>{if(conflict){accept(conflict);resetSecrets();}}}>{copy("Reload disk and discard draft")}</Button><Button danger loading={busy} onClick={()=>void save(conflict?.revision)}>{copy("Overwrite this version")}</Button><Button onClick={()=>setConflict(null)}>{copy("Keep editing")}</Button></>} width={720}>

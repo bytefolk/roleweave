@@ -88,7 +88,9 @@ const zh: Record<string, string> = {
   "Updates": "更新与诊断",
   "Advanced": "高级配置",
   "Experiments": "实验功能",
-  "Could not save preferences. Try again.": "偏好未保存，请重试。"
+  "Could not save preferences. Try again.": "偏好未保存，请重试。",
+  "Mint": "薄荷绿",
+  "Ant Blue": "经典蓝"
 };
 export function configurationText(english: boolean | undefined, text: string): string { return english ? text : zh[text] ?? text; }
 export const configurationGroups = [["general", "General"], ["agents", "Agent connections"], ["services", "Docs and memory"], ["updates", "Updates"], ["experiments", "Experiments"], ["advanced", "Advanced"]] as const;
