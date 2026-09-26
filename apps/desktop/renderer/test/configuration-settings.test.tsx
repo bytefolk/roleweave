@@ -78,6 +78,42 @@ describe('shared settings draft',()=>{
   rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
   await screen.findByText('请先打开一个项目，再设置实验功能。');
   expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','true');
+  rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory={undefined}/>);
+  await screen.findByRole('combobox',{name:'发送快捷键'});
+  expect(screen.getByRole('tab',{name:'常规'})).toHaveAttribute('aria-selected','true');
+  expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','false');
+  rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="agents"/>);
+  expect(screen.getByRole('tab',{name:'Agent 连接'})).toHaveAttribute('aria-selected','true');
+ });
+ it('preserves manual tab selection when initialCategory does not change across re-renders',async()=>{
+  install();
+  const {rerender}=render(<ConfigurationSettings updates={<p>Updater fixture</p>}/>);
+  await screen.findByRole('combobox',{name:'发送快捷键'});
+  fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));
+  expect(screen.getByRole('tab',{name:'文档与记忆'})).toHaveAttribute('aria-selected','true');
+  rerender(<ConfigurationSettings updates={<p>Updater fixture updated</p>}/>);
+  expect(screen.getByRole('tab',{name:'文档与记忆'})).toHaveAttribute('aria-selected','true');
+ });
+ it('removes uncommitted credential reference when secret input is erased back to empty',async()=>{
+  install();
+  await show();
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  const password=document.getElementById('config-GEMINI_API_KEY') as HTMLInputElement;
+  fireEvent.input(password,{target:{value:'temp-key'}});
+  let editor=await fileView();
+  expect((editor as HTMLTextAreaElement).value).toContain('secret:host/GEMINI_API_KEY');
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  fireEvent.input(password,{target:{value:''}});
+  editor=await fileView();
+  expect((editor as HTMLTextAreaElement).value).not.toContain('secret:host/GEMINI_API_KEY');
+  expect(password.value).toBe('');
+ });
+ it('allows form view editing when non-essential host entries are omitted in JSONC',async()=>{
+  const noQoder=snapshot({...initial(),hosts:{claude:{},codex:{}} as never});
+  install(noQoder);
+  await show();
+  expect(screen.getByRole('combobox',{name:'发送快捷键'})).toBeEnabled();
+  expect(screen.getByRole('checkbox',{name:'记住工作区对话布局'})).toBeEnabled();
  });
  it('safely restores credential reference when clearing is unchecked even without prior config text reference',async()=>{
   const emptyHostConfig=snapshot({...initial(),hosts:{qoder:{},claude:{},codex:{}}});

@@ -15,7 +15,7 @@ import { Download, ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type { UpdateEvent, UpdateStatus } from "@roleweave/shared";
 import { ServiceConnections } from "./ServiceConnections";
-import { ConfigurationSettings } from "./ConfigurationSettings";
+import { ConfigurationSettings, type ConfigurationCategory } from "./ConfigurationSettings";
 import { HostCredentials } from "./HostCredentials";
 import { ExperimentalSettings } from "./ExperimentalSettings";
 import type { ExperimentScope } from "../experiments/useWorkspaceExperiments";
@@ -26,7 +26,7 @@ import {
   type UpdateMessage,
 } from "./update-copy";
 
-export function SettingsModule(props: ExperimentScope & { initialCategory?: "experiments" }) {
+export function SettingsModule(props: ExperimentScope & { initialCategory?: ConfigurationCategory }) {
   return window.owb.configuration ? <ConfigurationSettings {...props} updates={<LegacySettingsModule onlyUpdates />} /> : <><LegacySettingsModule /><ExperimentalSettings {...props} /></>;
 }
 
