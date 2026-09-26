@@ -137,7 +137,7 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
     {notice ? <Alert showIcon type={notice.type} title={t(notice.key)} /> : null}
     {probe ? <Alert showIcon type={probe.state === "ready" ? "success" : "warning"}
       title={t(`services.probe.${probe.state}`)}
-      description={t("services.probeDetail", { version: probe.version ?? t("services.versionUnreported"), time: new Date(probe.checkedAt).toLocaleString() })} /> : null}
+      description={t("services.probeDetail", { version: probe.version ?? t("services.versionUnreported"), time: !probe.checkedAt || Number.isNaN(new Date(probe.checkedAt).getTime()) ? (probe.checkedAt || "—") : new Date(probe.checkedAt).toLocaleString() })} /> : null}
     <div className="owb-service-connection__release">
       <p className="owb-settings-module__hint">{t(kind === "doc" ? "services.docUpdates" : "services.memUpdates")}</p>
       <div className="owb-settings-module__actions">

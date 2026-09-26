@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'jsonc-parser';
+import { OwbI18nProvider } from '@roleweave/ui';
 import { ConfigurationSettings } from '../src/settings/ConfigurationSettings';
 import { requestSettingsLeave } from '../src/configuration-preferences';
 import type { ApplicationConfiguration, ConfigurationSnapshot } from '../src/configuration-types';
@@ -69,5 +70,53 @@ describe('shared settings draft',()=>{
   fireEvent.change(editor,{target:{value:valid}});fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));expect(token.value).toBe('dummy-uncommitted-token');
   fireEvent.click(footerSave());await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1));expect((api.save.mock.calls[0]![0] as unknown as {serviceChanges:{doc:string}}).serviceChanges.doc).toBe('dummy-uncommitted-token');
  });
-
+ it('updates category reactively when initialCategory changes after mount',async()=>{
+  install();
+  const {rerender}=render(<ConfigurationSettings updates={<p>Updater fixture</p>}/>);
+  await screen.findByRole('combobox',{name:'发送快捷键'});
+  expect(screen.getByRole('tab',{name:'常规'})).toHaveAttribute('aria-selected','true');
+  rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
+  await screen.findByText('请先打开一个项目，再设置实验功能。');
+  expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','true');
+ });
+ it('safely restores credential reference when clearing is unchecked even without prior config text reference',async()=>{
+  const emptyHostConfig=snapshot({...initial(),hosts:{qoder:{},claude:{},codex:{}}});
+  emptyHostConfig.credentials=[{key:'OPENAI_API_KEY',configured:true,last4:'9999'}];
+  install(emptyHostConfig);
+  await show();
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  const clearCheckbox=await screen.findByRole('checkbox',{name:'明确清除此凭据'});
+  expect(clearCheckbox).not.toBeChecked();
+  fireEvent.click(clearCheckbox);
+  expect(clearCheckbox).toBeChecked();
+  let editor=await fileView();
+  expect((editor as HTMLTextAreaElement).value).not.toContain('secret:host/OPENAI_API_KEY');
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  fireEvent.click(clearCheckbox);
+  expect(clearCheckbox).not.toBeChecked();
+  editor=await fileView();
+  expect((editor as HTMLTextAreaElement).value).toContain('secret:host/OPENAI_API_KEY');
+ });
+ it('localizes color profile option labels according to active locale',async()=>{
+  install();
+  await show();
+  expect(screen.getByRole('combobox',{name:'色彩偏好'})).toBeInTheDocument();
+  expect(screen.getByText('薄荷绿')).toBeInTheDocument();
+  fireEvent.mouseDown(screen.getByRole('combobox',{name:'色彩偏好'}));
+  expect(await screen.findByText('经典蓝')).toBeInTheDocument();
+ });
+ it('respects ambient application locale during initial load before configuration is ready',async()=>{
+  const api=install();
+  let resolveGet!:(val:ConfigurationSnapshot)=>void;
+  api.get.mockReturnValueOnce(new Promise(resolve=>{resolveGet=resolve;}));
+  render(
+   <OwbI18nProvider locale="en">
+    <ConfigurationSettings updates={<p>Updater fixture</p>}/>
+   </OwbI18nProvider>
+  );
+  expect(await screen.findByText('Loading settings…')).toBeInTheDocument();
+  expect(screen.queryByText('读取设置…')).not.toBeInTheDocument();
+  act(()=>{resolveGet(snapshot());});
+  await screen.findByRole('tab',{name:'General'});
+ });
 });

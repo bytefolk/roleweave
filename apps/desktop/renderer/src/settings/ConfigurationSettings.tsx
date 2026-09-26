@@ -2,7 +2,7 @@ import { configurationText, configurationGroups } from '../locales/configuration
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Input, Modal, Select, Spin } from 'antd';
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
-import { useT } from '@roleweave/ui';
+import { useT, useOwbLocale } from '@roleweave/ui';
 import type { ApplicationConfiguration, ConfigurationSnapshot, ConfigurationIssue, ConfigurationChange, ConfigurationSave } from '../configuration-types';
 import { applyConfiguration, registerSettingsLeave, CONFIGURATION_APPLIED } from '../configuration-preferences';
 import { CREDENTIAL_FIELDS, type CredentialKey } from './credential-settings';
@@ -25,8 +25,9 @@ function differences(a:unknown,b:unknown,prefix=''):ConfigurationChange[]{
 }
 const display=(value:unknown)=>value===null?'—':typeof value==='object'?JSON.stringify(value):String(value);
 export function ConfigurationSettings({updates, initialCategory, ...scope}:{updates:ReactNode; initialCategory?: "experiments"} & ExperimentScope) {
- const t=useT();const[snapshot,setSnapshot]=useState<ConfigurationSnapshot|null>(null),[text,setText]=useState('');
+ const t=useT();const activeLocale=useOwbLocale();const[snapshot,setSnapshot]=useState<ConfigurationSnapshot|null>(null),[text,setText]=useState('');
  const[category,setCategory]=useState<Category>(initialCategory ?? 'general'),[view,setView]=useState<'form'|'file'>('form');
+ useEffect(()=>{if(initialCategory)setCategory(initialCategory);},[initialCategory]);
  const[issues,setIssues]=useState<ConfigurationIssue[]>([]),[validatedText,setValidatedText]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  const[error,setError]=useState<string|null>(null),[notice,setNotice]=useState<string|null>(null),[conflict,setConflict]=useState<ConfigurationSnapshot|null>(null);
  const[preview,setPreview]=useState(false),[leaveOpen,setLeaveOpen]=useState(false),[secretVersion,setSecretVersion]=useState(0);
@@ -38,7 +39,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
  const strings=(value:unknown)=>object(value)&&Object.values(value as Record<string,unknown>).every(v=>typeof v==='string');
  const formShape=parsed.errors.length===0&&object(parsed.value?.appearance)&&['system','light','dark'].includes(parsed.value?.appearance?.mode??'')&&['mint','default'].includes(parsed.value?.appearance?.profile??'')&&['en','zh-CN'].includes(parsed.value?.appearance?.locale??'')&&object(parsed.value?.chat)&&['enter','mod-enter'].includes(parsed.value?.chat?.sendShortcut??'')&&typeof parsed.value?.chat?.rememberLayout==='boolean'&&strings(parsed.value?.hosts?.qoder)&&strings(parsed.value?.hosts?.claude)&&strings(parsed.value?.hosts?.codex)&&(parsed.value?.hosts?.gemini===undefined||strings(parsed.value.hosts.gemini))&&object(parsed.value?.services)&&Object.values(parsed.value?.services??{}).every(v=>v===null||strings(v))&&strings(parsed.value?.runtime);
  const config=formShape?parsed.value:snapshot?.config;
- const english=(config??snapshot?.config)?.appearance.locale==='en';const copy=(en:string)=>configurationText(english,en);
+ const english=((config??snapshot?.config)?.appearance.locale??activeLocale)==='en';const copy=(en:string)=>configurationText(english,en);
  const hasSecretChanges=useMemo(()=>secretVersion>=0&&([...secretInputs.current.values()].some(input=>!!input.value)||clearKeys.size>0),[secretVersion,clearKeys]);
  const dirty=!!snapshot&&(text!==snapshot.text||hasSecretChanges);
  const dirtyRef=useRef(dirty);dirtyRef.current=dirty;
@@ -110,7 +111,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
      <fieldset disabled={busy||formBlocked}><legend>{copy("Appearance and input")}</legend>
       <label className="owb-config-field"><span>{copy("Language")}</span><Select aria-label={copy("Language")} value={config.appearance.locale} options={[{value:'zh-CN',label:copy('Simplified Chinese')},{value:'en',label:'English'}]} onChange={v=>field(['appearance','locale'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-field"><span>{copy("Theme")}</span><Select aria-label={copy("Theme")} value={config.appearance.mode} options={[{value:'system',label:copy("System")},{value:'light',label:copy("Light")},{value:'dark',label:copy("Dark")}]} onChange={v=>field(['appearance','mode'],v)} disabled={busy||formBlocked}/></label>
-      <label className="owb-config-field"><span>{copy("Color profile")}</span><Select aria-label={copy("Color profile")} value={config.appearance.profile} options={[{value:'mint',label:'Mint'},{value:'default',label:'Ant Blue'}]} onChange={v=>field(['appearance','profile'],v)} disabled={busy||formBlocked}/></label>
+      <label className="owb-config-field"><span>{copy("Color profile")}</span><Select aria-label={copy("Color profile")} value={config.appearance.profile} options={[{value:'mint',label:copy('Mint')},{value:'default',label:copy('Ant Blue')}]} onChange={v=>field(['appearance','profile'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-field"><span>{copy("Send shortcut")}</span><Select aria-label={copy("Send shortcut")} value={config.chat.sendShortcut} options={[{value:'enter',label:'Enter'},{value:'mod-enter',label:'⌘ / Ctrl + Enter'}]} onChange={v=>field(['chat','sendShortcut'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-checkbox"><input type="checkbox" checked={config.chat.rememberLayout} onChange={e=>field(['chat','rememberLayout'],e.target.checked)}/>{copy("Remember workspace conversation layout")}</label>
       <p className="owb-settings-module__hint">{copy("Appearance applies after save. Quick preferences use the same configuration. Composing text with an IME never sends a message.")}</p>
@@ -129,7 +130,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
       <fieldset disabled={busy||formBlocked}><legend className="owb-config-sr">{host}</legend>
        {source==='environment'?<p className="owb-settings-module__hint">{copy("The launch environment supplies this whole Host connection; saved credentials and endpoints are not mixed with it.")}</p>:null}
        {CREDENTIAL_FIELDS.filter(f=>f.host===host).map(f=>{const row=snapshot.credentials.find(v=>v.key===f.key),url=f.key.endsWith('_BASE_URL');if(url)return <div key={f.key}>{input(`${host} ${t(f.label)}`,['hosts',id,'baseUrl'],hostConfig.baseUrl,'https://api.example.com')}</div>;const path=['hosts',id,refFields[f.key]!];return <div key={f.key} className="owb-config-secret"><label htmlFor={`config-${f.key}`}>{t(f.label)}</label><span className="owb-settings-module__hint">{row?.configured?copy('Configured · ••••{last4}').replace('{last4}',row.last4??''):copy("No saved credential")}</span><input id={`config-${f.key}`} ref={node=>{if(node)secretInputs.current.set(f.key,node);else secretInputs.current.delete(f.key);}} className="ant-input" type="password" autoComplete="new-password" spellCheck={false} maxLength={8192} disabled={busy||!snapshot.storageAvailable||formBlocked||clearKeys.has(f.key)} placeholder={copy("Leave blank to retain")} onInput={()=>secretChanged(f.key,path,`secret:host/${f.key}`)}/>
-        {row?.configured?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(f.key)} onChange={()=>clearSecret(f.key,path,(snapshot.config.hosts[id] as Record<string,string|undefined>)[refFields[f.key]!])}/>{copy("Explicitly clear this credential")}</label>:null}</div>;})}
+        {row?.configured?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(f.key)} onChange={()=>clearSecret(f.key,path,(snapshot.config.hosts[id] as Record<string,string|undefined>)?.[refFields[f.key]!] ?? `secret:host/${f.key}`)}/>{copy("Explicitly clear this credential")}</label>:null}</div>;})}
        <p className="owb-settings-module__hint">{copy("Blank retains the saved value. Inputs clear only after a successful save. Saved locally does not verify remote authentication.")}</p>
        <Button type="primary" disabled={busy||!dirty||formInvalid} loading={busy} onClick={()=>void save()}>{copy("Save configuration")}</Button>
       </fieldset>
@@ -141,7 +142,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
        <label className="owb-config-field"><span>{name} API URL</span><Input value={entry?.apiUrl??''} onChange={e=>{if(e.target.value)field(['services',kind],{...(entry??{}),apiUrl:e.target.value});else field(['services',kind],null);}} placeholder={kind==='doc'?'http://localhost:3100':'http://localhost:8080'} spellCheck={false}/></label>
        {entry?<>{input(`${name} Web URL`,['services',kind,'webUrl'],entry.webUrl)}{kind==='mem'?input('Mem workspace UUID',['services','mem','workspaceId'],entry.workspaceId):null}</>:null}
         <div className="owb-config-secret"><label htmlFor={`config-${kind}-token`}>{name} Token</label><span className="owb-settings-module__hint">{entry?.tokenRef?copy("Encrypted credential reference"):copy("No credential reference")}</span><input id={`config-${kind}-token`} ref={node=>{if(node)secretInputs.current.set(key,node);else secretInputs.current.delete(key);}} className="ant-input" type="password" autoComplete="new-password" maxLength={8192} disabled={busy||!snapshot.storageAvailable||clearKeys.has(key)||!entry||formBlocked} placeholder={copy("Leave blank to retain")} onInput={()=>secretChanged(key,['services',kind,'tokenRef'],`secret:service/${kind}`)}/>
-         {snapshot.config.services[kind]?.tokenRef?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(key)} onChange={()=>clearSecret(key,['services',kind,'tokenRef'],snapshot.config.services[kind]?.tokenRef)}/>{copy("Explicitly clear token")}</label>:null}</div>
+         {snapshot.config.services[kind]?.tokenRef?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(key)} onChange={()=>clearSecret(key,['services',kind,'tokenRef'],snapshot.config.services[kind]?.tokenRef ?? `secret:service/${kind}`)}/>{copy("Explicitly clear token")}</label>:null}</div>
        {entry?<Button onClick={()=>field(['services',kind],null)}>{copy('Disconnect {name} on save').replace('{name}',name)}</Button>:<Button onClick={()=>field(['services',kind],undefined)}>{copy("Restore launch defaults after restart")}</Button>}
       </section>;})}
       <p className="owb-settings-module__hint">{copy("Service forms and the file view share this draft. Save before checking connectivity. Changing an API URL requires updating or clearing its token.")}</p>

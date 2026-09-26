@@ -168,7 +168,7 @@ function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }
             type="info"
             showIcon
             className="owb-settings-module__notice"
-            message={t("settings.stateUnavailable")}
+            title={t("settings.stateUnavailable")}
             description={t(unavailableMessage(status?.platform ?? "other").key)}
           />
         ) : null}
@@ -178,7 +178,7 @@ function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }
             type="warning"
             showIcon
             className="owb-settings-module__notice"
-            message={t("settings.unsignedTitle")}
+            title={t("settings.unsignedTitle")}
             description={t("settings.unsignedBody")}
           />
         ) : null}
