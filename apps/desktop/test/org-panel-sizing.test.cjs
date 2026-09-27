@@ -392,27 +392,32 @@ test("the organization overview owns a bounded canvas (#284)", () => {
     "1",
     "the conversation row must win if a stale browser layout briefly overlaps rows",
   );
+  assert.equal(
+    valueAt(rules, ".owb-rgraph__spatial-stage", "z-index", VIEWPORTS.desktop),
+    "0",
+    "the canvas stage must own a stacking context so CSS2DRenderer label z-indices cannot escape over the canvas chrome or the inspector overlay (#517)",
+  );
 
   for (const viewport of [VIEWPORTS.stackedAt980, VIEWPORTS.stackedNarrow]) {
     assert.equal(
-      valueAt(rules, ".owb-main > .owb-org-chart--overview", "width", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "width", viewport),
       "100%",
       `${viewport.width}px: the overview must fit the content area rather than the tree max-content width`,
     );
     assert.equal(
-      valueAt(rules, ".owb-main > .owb-org-chart--overview", "min-width", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "min-width", viewport),
       "0",
-      `${viewport.width}px: the flex chart item must give up its automatic min-content width`,
+      `${viewport.width}px: the flex overview item must give up its automatic min-content width`,
     );
     assert.equal(
-      valueAt(rules, ".owb-main > .owb-org-chart--overview", "min-height", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "min-height", viewport),
       "0",
       `${viewport.width}px: the overview must shrink inside a short window`,
     );
     assert.equal(
-      valueAt(rules, ".owb-org-chart--overview .owb-org-chart__body", "min-height", viewport),
-      "0",
-      `${viewport.width}px: the canvas must fit its bounded overview frame`,
+      valueAt(rules, ".owb-main > .owb-rgraph", "overflow-y", viewport),
+      "auto",
+      `${viewport.width}px: the overview section owns the page scroll so .owb-main's overflow:hidden cannot clip it (#517)`,
     );
   }
 });
