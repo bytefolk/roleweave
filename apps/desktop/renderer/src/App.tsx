@@ -83,7 +83,7 @@ import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, isActionablePending, type ApprovalQueueItem } from "./approvals";
 import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
-import { SettingsModule } from "./settings/SettingsModule";
+import { SettingsModule, type ConfigurationCategory } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
 import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
@@ -152,7 +152,7 @@ function AppInner({
   const [activeModule, setActiveModuleRaw] = useState<
     "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress"
   >("org");
-  const [settingsInitialCategory, setSettingsInitialCategory] = useState<"experiments" | undefined>();
+  const [settingsInitialCategory, setSettingsInitialCategory] = useState<ConfigurationCategory | undefined>();
   const setActiveModule = useCallback((next: typeof activeModule) => {
     if (next === "settings") setActiveModuleRaw(next);
     else requestSettingsLeave(() => setActiveModuleRaw(next));

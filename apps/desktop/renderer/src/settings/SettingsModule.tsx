@@ -16,6 +16,7 @@ import { useT } from "@roleweave/ui";
 import type { UpdateEvent, UpdateStatus } from "@roleweave/shared";
 import { ServiceConnections } from "./ServiceConnections";
 import { ConfigurationSettings, type ConfigurationCategory } from "./ConfigurationSettings";
+export { type ConfigurationCategory } from "./ConfigurationSettings";
 import { HostCredentials } from "./HostCredentials";
 import { ExperimentalSettings } from "./ExperimentalSettings";
 import type { ExperimentScope } from "../experiments/useWorkspaceExperiments";

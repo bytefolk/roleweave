@@ -155,4 +155,16 @@ describe('shared settings draft',()=>{
   act(()=>{resolveGet(snapshot());});
   await screen.findByRole('tab',{name:'General'});
  });
+ it('sends hostChanges with null when credential is explicitly cleared and saved',async()=>{
+  const credConfig=snapshot();
+  credConfig.credentials=[{key:'OPENAI_API_KEY',configured:true,last4:'1234'}];
+  const api=install(credConfig);
+  await show();
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  const clearCheckbox=await screen.findByRole('checkbox',{name:'明确清除此凭据'});
+  fireEvent.click(clearCheckbox);
+  fireEvent.click(footerSave());
+  await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1));
+  expect((api.save.mock.calls[0]![0] as unknown as {hostChanges:Record<string,unknown>}).hostChanges.OPENAI_API_KEY).toBeNull();
+ });
 });

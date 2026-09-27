@@ -79,17 +79,18 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
   setSecretVersion(v=>v+1);
  }
  function clearSecret(key:string,path:(string|number)[],reference?:string){
+  const willUnclear=clearKeys.has(key);
+  if(willUnclear){
+   if(reference)field(path,reference);
+  }else{
+   const secretInput=secretInputs.current.get(key);
+   if(secretInput)secretInput.value='';
+   field(path,undefined);
+  }
   setClearKeys(current=>{
    const next=new Set(current);
-   if(next.has(key)){
-    next.delete(key);
-    if(reference)field(path,reference);
-   }else{
-    next.add(key);
-    const input=secretInputs.current.get(key);
-    if(input)input.value='';
-    field(path,undefined);
-   }
+   if(willUnclear)next.delete(key);
+   else next.add(key);
    return next;
   });
   setSecretVersion(v=>v+1);
@@ -176,7 +177,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
        {entry?<>{input(`${name} Web URL`,['services',kind,'webUrl'],entry.webUrl)}{kind==='mem'?input('Mem workspace UUID',['services','mem','workspaceId'],entry.workspaceId):null}</>:null}
         <div className="owb-config-secret"><label htmlFor={`config-${kind}-token`}>{name} Token</label><span className="owb-settings-module__hint">{entry?.tokenRef?copy("Encrypted credential reference"):copy("No credential reference")}</span><input id={`config-${kind}-token`} ref={node=>{if(node)secretInputs.current.set(key,node);else secretInputs.current.delete(key);}} className="ant-input" type="password" autoComplete="new-password" maxLength={8192} disabled={busy||!snapshot.storageAvailable||clearKeys.has(key)||!entry||formBlocked} placeholder={copy("Leave blank to retain")} onInput={()=>secretChanged(key,['services',kind,'tokenRef'],`secret:service/${kind}`,originalTokenRef)}/>
          {snapshot.config.services[kind]?.tokenRef?<label className="owb-config-checkbox"><input type="checkbox" checked={clearKeys.has(key)} onChange={()=>clearSecret(key,['services',kind,'tokenRef'],snapshot.config.services[kind]?.tokenRef ?? `secret:service/${kind}`)}/>{copy("Explicitly clear token")}</label>:null}</div>
-       {entry?<Button onClick={()=>{field(['services',kind],null);const input=secretInputs.current.get(key);if(input)input.value='';setClearKeys(c=>{const n=new Set(c);n.delete(key);return n;});setSecretVersion(v=>v+1);}}>{copy('Disconnect {name} on save').replace('{name}',name)}</Button>:<Button onClick={()=>{field(['services',kind],undefined);const input=secretInputs.current.get(key);if(input)input.value='';setClearKeys(c=>{const n=new Set(c);n.delete(key);return n;});setSecretVersion(v=>v+1);}}>{copy("Restore launch defaults after restart")}</Button>}
+       {entry?<Button onClick={()=>{field(['services',kind],null);const secretInput=secretInputs.current.get(key);if(secretInput)secretInput.value='';setClearKeys(c=>{const n=new Set(c);n.delete(key);return n;});setSecretVersion(v=>v+1);}}>{copy('Disconnect {name} on save').replace('{name}',name)}</Button>:<Button onClick={()=>{field(['services',kind],undefined);const secretInput=secretInputs.current.get(key);if(secretInput)secretInput.value='';setClearKeys(c=>{const n=new Set(c);n.delete(key);return n;});setSecretVersion(v=>v+1);}}>{copy("Restore launch defaults after restart")}</Button>}
       </section>;})}
       <p className="owb-settings-module__hint">{copy("Service forms and the file view share this draft. Save before checking connectivity. Changing an API URL requires updating or clearing its token.")}</p>
      </fieldset>
@@ -196,7 +197,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
   {snapshot&&category!=='experiments'?<footer className="owb-config-savebar"><span role="status">{notice==='services-restart'?copy('Saved · Launch default connections apply after restart; current connections are retained'):notice==='restart'?copy("Saved · Runtime / Host changes require restart"):notice==='services-pending'?copy("Saved. Live services are unavailable; check or retry the connection."):notice==='saved'?copy("Configuration saved"):notice==='valid'?copy("Configuration valid"):dirty?copy("Unsaved changes"):snapshot.servicesRestartRequired?copy('Saved · Launch default connections apply after restart; current connections are retained'):snapshot.pendingRestart?copy("Saved · Runtime / Host changes require restart"):copy("Configuration is up to date")}</span><Button disabled={busy||!dirty||formInvalid||validatedText!==text} onClick={()=>setPreview(true)}>{copy("Preview changes")}</Button><Button type="primary" disabled={busy||!dirty} loading={busy} onClick={()=>void save()}>{copy("Save configuration")}</Button></footer>:null}
   <Modal open={preview} title={copy("Preview changes")} onCancel={()=>setPreview(false)} footer={<Button onClick={()=>setPreview(false)}>{copy("Back to editing")}</Button>} width={720}>
    {changes.map(row=><div className="owb-config-diff" key={row.field}><code>{row.field}</code><span>{display(row.before)} → {display(row.after)}</span></div>)}
-   {[...new Set([...secretInputs.current.keys(),...clearKeys])].map(key=>{const input=secretInputs.current.get(key);return <div key={key} className="owb-config-diff"><code>{key}</code><span>{clearKeys.has(key)?copy("Clear"):input?.value?copy("Update"):copy("Retain")}</span></div>;})}
+   {[...new Set([...secretInputs.current.keys(),...clearKeys])].map(key=>{const secretInput=secretInputs.current.get(key);return <div key={key} className="owb-config-diff"><code>{key}</code><span>{clearKeys.has(key)?copy("Clear"):secretInput?.value?copy("Update"):copy("Retain")}</span></div>;})}
    {!changes.length&&!hasSecretChanges?<p>{copy("Only comments or formatting changed.")}</p>:null}
   </Modal>
   <Modal open={!!conflict} title={copy("Configuration changed on disk")} onCancel={()=>setConflict(null)} footer={<><Button onClick={()=>{if(conflict){accept(conflict);resetSecrets();}}}>{copy("Reload disk and discard draft")}</Button><Button danger loading={busy} onClick={()=>void save(conflict?.revision)}>{copy("Overwrite this version")}</Button><Button onClick={()=>setConflict(null)}>{copy("Keep editing")}</Button></>} width={720}>
