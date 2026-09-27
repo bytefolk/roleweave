@@ -46,12 +46,16 @@ test("scrollable modules keep scrolling local to their own surface", () => {
   assert.equal(lastDecl(".owb-main > .owb-docs-module", "overflow-y"), "auto");
   assert.equal(lastDecl(".owb-main > .owb-memory-module", "overflow-y"), "auto");
   assert.equal(lastDecl(".owb-main > .owb-settings-module", "overflow-y"), "auto");
+  // The overview tab mounts `section.owb-rgraph` straight into the main column,
+  // so it is the one module whose root is not a `.owb-*-module` block.
+  assert.equal(lastDecl(".owb-main > .owb-rgraph", "overflow-y"), "auto");
   for (const selector of [
     ".owb-main > .owb-approval-queue",
     ".owb-main > .owb-reports",
     ".owb-main > .owb-docs-module",
     ".owb-main > .owb-memory-module",
     ".owb-main > .owb-settings-module",
+    ".owb-main > .owb-rgraph",
   ]) {
     assert.equal(lastDecl(selector, "scrollbar-gutter"), "stable", `${selector} must reserve its scrollbar gutter`);
   }

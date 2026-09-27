@@ -26,7 +26,14 @@
 .owb-rgraph__spatial { position: relative; overflow: hidden; color: #f4f4f6; background: #09090b; }
 .owb-rgraph__spatial--galaxy { background: radial-gradient(circle at 50% 36%, #273449 0, #12151c 62%); }
 .owb-rgraph__spatial--minimal.owb-rgraph__spatial--light { color: #18181b; background: #f8f9fa; }
-.owb-rgraph__spatial-stage { position: absolute; inset: 0; }
+/* three's CSS2DRenderer writes a z-index onto every label element (zMax - i,
+   i.e. 1..N for N visible labels). None of the wrappers between the labels and
+   the workspace creates a stacking context, so those indices used to compete
+   page-wide and paint the black name labels over the z-index 3 canvas chrome
+   and the z-index 8 inspector overlay. Giving the stage `z-index: 0` contains
+   them: label indices keep their in-canvas depth order, while the chrome and
+   the inspector stay above the whole layer. */
+.owb-rgraph__spatial-stage { position: absolute; inset: 0; z-index: 0; }
 .owb-rgraph__spatial-stage canvas, .owb-rgraph__spatial-labels { position: absolute; inset: 0; }
 .owb-rgraph__spatial-labels { pointer-events: none; }
 .owb-rgraph__spatial-label { pointer-events: auto; border: 1px solid #ffffff30; border-radius: 3px; padding: 3px 6px; background: #09090bd9; box-shadow: 0 3px 12px #0006; color: #f4f4f6; cursor: pointer; font: inherit; font-size: 10px; letter-spacing: .02em; white-space: nowrap; }
