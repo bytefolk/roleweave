@@ -83,7 +83,7 @@ describe('shared settings draft',()=>{
   expect(screen.getByRole('tab',{name:'常规'})).toHaveAttribute('aria-selected','true');
   expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','false');
   rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="agents"/>);
-  expect(screen.getByRole('tab',{name:'Agent 连接'})).toHaveAttribute('aria-selected','true');
+  await waitFor(()=>expect(screen.getByRole('tab',{name:'Agent 连接'})).toHaveAttribute('aria-selected','true'));
  });
  it('preserves manual tab selection when initialCategory does not change across re-renders',async()=>{
   install();
@@ -166,5 +166,6 @@ describe('shared settings draft',()=>{
   fireEvent.click(footerSave());
   await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1));
   expect((api.save.mock.calls[0]![0] as unknown as {hostChanges:Record<string,unknown>}).hostChanges.OPENAI_API_KEY).toBeNull();
+  await screen.findByText('配置已保存');
  });
 });
