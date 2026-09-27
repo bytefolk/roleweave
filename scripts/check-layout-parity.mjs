@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-/** #127 AC-004: cross-platform layout parity for the two-column org workspace.
+/** #127 AC-004: cross-platform layout parity for the two-column workspace.
+ * Since #523 that pair is the collaboration sidebar beside the conversation
+ * turn panel; before it, it was the org module's left column beside its turn
+ * panel. The geometry under comparison is the same in both shapes.
  * Compares the `layout` measurements embedded in the packaged static smoke
  * reports produced on macOS arm64 and Windows x64.
  *
@@ -46,7 +49,7 @@ export function readLayout(file) {
     throw new Error(`${file}: smoke report has no layout measurement`);
   }
   if (report.layout === null) {
-    throw new Error(`${file}: layout is null — the two-column org module did not render`);
+    throw new Error(`${file}: layout is null — the two-column workspace did not render`);
   }
   const layout = report.layout;
   const viewport = layout.viewport;
