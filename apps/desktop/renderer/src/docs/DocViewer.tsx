@@ -17,7 +17,10 @@ export interface DocViewerProps {
   title?: string;
   /** Position file type; shared previews default to Markdown. */
   path?: string;
-  actions?: ReactNode;
+  showToolbar?: boolean;
+  editor?: ReactNode;
+  showEditor?: boolean;
+  onNavigateDoc?: (target: string, kind: "wikilink" | "relative") => void;
 }
 const META_LABEL_KEYS: Record<string, string> = {
   name: "docs.metaName",
@@ -30,7 +33,10 @@ export function DocViewer({
   updatedAt,
   title,
   path,
-  actions,
+  showToolbar = true,
+  editor,
+  showEditor = true,
+  onNavigateDoc,
 }: DocViewerProps) {
   const t = useT();
   const headingPrefix = `document-${useId().replaceAll(":", "")}`;
@@ -62,8 +68,8 @@ export function DocViewer({
       })
     : undefined;
   return (
-    <article className="owb-doc-viewer">
-      <header className="owb-doc-viewer__toolbar">
+    <article className={`owb-doc-viewer${editor && showEditor ? " owb-doc-viewer--editing" : ""}`}>
+      {showToolbar && <header className="owb-doc-viewer__toolbar">
         <div className="owb-doc-viewer__location">
           <strong title={heading}>{displayHeading}</strong>
           <span>
@@ -78,10 +84,10 @@ export function DocViewer({
             ) : null}
           </span>
         </div>
-        <Tag>{t("reading.preview")}</Tag>
-        {actions}
-      </header>
-      <div className="owb-doc-viewer__page">
+        {(!editor || !showEditor) && <Tag>{t("reading.preview")}</Tag>}
+      </header>}
+      {editor && <div className="owb-doc-viewer__editor" hidden={!showEditor}>{editor}</div>}
+      {(!editor || !showEditor) && <div className="owb-doc-viewer__page">
         {headings.length >= 3 && (
           <details className="owb-doc-viewer__toc">
             <summary>{t("reading.contents")}</summary>
@@ -121,7 +127,7 @@ export function DocViewer({
         )}
         <div className="owb-doc-viewer__body">
           {isMarkdown ? (
-            <Markdown content={body} headingPrefix={headingPrefix} />
+            <Markdown content={body} headingPrefix={headingPrefix} onNavigateDoc={onNavigateDoc} />
           ) : extension === "txt" ? (
             <div className="owb-doc-viewer__text">{source}</div>
           ) : (
@@ -130,7 +136,7 @@ export function DocViewer({
             </pre>
           )}
         </div>
-      </div>
+      </div>}
     </article>
   );
 }

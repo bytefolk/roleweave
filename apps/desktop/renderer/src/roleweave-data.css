@@ -219,24 +219,9 @@
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__list .ant-list-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3px 8px;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
-  padding: 10px 12px;
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__item-main {
-  grid-column: 1 / -1;
-  gap: 8px;
-  min-width: 0;
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__file-icon {
-  width: 20px;
-  height: 24px;
-  border: 0;
-  background: transparent;
-  color: var(--ui-foreground-muted);
+  padding: 2px 6px;
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__file {
@@ -268,25 +253,6 @@
   transform: none;
 }
 
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__item-meta {
-  display: inline-flex;
-  min-width: 0;
-  padding-left: 32px;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-family: var(--ui-font-sans);
-  font-size: 12px;
-}
-
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__file-type {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: normal;
-}
-
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__copy-ref {
   min-width: 0;
   border-color: transparent;
@@ -313,7 +279,6 @@
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(
-  .owb-docs-panel__count, .owb-docs-panel__count small,
   .owb-docs-panel__file-parent, .owb-docs-module__picker-copy span,
   .owb-docs-module__create-hint, .owb-drive-module__count,
   .owb-drive-module__count small, .owb-drive-module__scope,
@@ -698,6 +663,62 @@
   content: "→";
   margin-right: 5px;
   color: var(--ui-foreground-subtle);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-main > .owb-approval-queue {
+  container: approvals / inline-size;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  gap: 10px;
+  overflow: hidden;
+}
+.owb-approval-workspace { display: grid; grid-template-columns: minmax(240px, 30%) minmax(0, 1fr); flex: 1; min-height: 0; min-width: 0; border: 1px solid var(--ui-border); border-radius: 8px; overflow: hidden; background: var(--ui-surface); }
+.owb-approval-workspace__queue { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; border-right: 1px solid var(--ui-border); }
+.owb-approval-workspace__queue-header { display: flex; flex: none; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 4px; padding: 12px; border-bottom: 1px solid var(--ui-border); font-size: 12px; }
+.owb-approval-workspace__queue-header > span { color: var(--ui-foreground-muted); font-size: 11px; }
+.owb-approval-workspace__queue > .owb-approval-queue__list { min-height: 0; overflow: auto; flex: 1; scrollbar-gutter: stable; overscroll-behavior: contain; }
+.owb-approval-workspace__queue .ant-list-pagination { margin: 12px 8px; }
+.owb-approval-workspace__queue .owb-approval-queue__batch-summary { flex: none; max-height: 220px; overflow: auto; border-radius: 0; }
+.owb-approval-workspace__queue .owb-approval-queue__batch-summary .ant-alert-content { min-width: 0; }
+.owb-approval-workspace__queue .owb-approval-queue__batch-summary { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.owb-approval-workspace__queue .owb-approval-queue__batch-summary .ant-space { flex-wrap: wrap; }
+.owb-approval-queue .owb-approval-queue__toolbar { flex: none; flex-direction: row; align-items: center; gap: 8px; }
+.owb-approval-queue .owb-approval-queue__search { flex: 1 1 180px; max-width: 340px; }
+.owb-approval-queue__advanced { display: flex; flex: none; flex-wrap: wrap; gap: 8px; max-height: 128px; overflow: auto; padding: 10px; border: 1px solid var(--ui-border); border-radius: 6px; }
+.owb-approval-detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.owb-approval-detail__header { display: flex; flex: none; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--ui-border); }
+.owb-approval-detail__header h2 { margin: 0 0 5px; font-size: 16px; line-height: 1.5; }
+.owb-approval-detail__body { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 16px 20px; scrollbar-gutter: stable; overscroll-behavior: contain; }
+.owb-approval-detail__body > section, .owb-approval-detail__body > details { margin-bottom: 18px; }
+.owb-approval-detail__body details > summary { cursor: pointer; color: var(--ui-foreground-muted); font-weight: 500; padding-block: 6px; }
+.owb-approval-detail__body .owb-diff-viewer { max-height: none; }
+.owb-approval-detail__body .owb-approval-drawer__references { display: grid; gap: 6px; }
+.owb-approval-detail__body .owb-approval-drawer__references > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }
+.owb-approval-detail__body .owb-approval-drawer__references dd { overflow-wrap: anywhere; min-width: 0; }
+.owb-approval-detail__footer { display: grid; flex: none; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--ui-border); background: var(--ui-surface-raised); max-height: 55%; overflow: auto; }
+.owb-approval-detail__footer .owb-approval-drawer__actions { display: flex; gap: 8px; justify-content: flex-end; padding: 0; margin: 0; border: 0; }
+.owb-approval-detail__footer .owb-approval-drawer__section-title { margin-bottom: 5px; }
+.owb-approval-detail__footer .ant-input-data-count { font-size: 10px; }
+.owb-approval-detail__footer .ant-alert { padding: 6px 10px; font-size: 12px; }
+.owb-approval-detail__empty { margin: auto; padding: 24px; color: var(--ui-foreground-muted); text-align: center; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-workspace .owb-approval-card.is-selected { background: var(--ui-primary-soft); box-shadow: inset 3px 0 var(--ui-primary); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-approval-workspace .owb-approval-card__row { padding: 12px; }
+.owb-approval-workspace .owb-approval-card__description { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.owb-approval-workspace .owb-approval-card__target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.owb-approval-workspace .owb-approval-card__meta { font-size: 11px; }
+.owb-approval-workspace .owb-approval-card__row:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: -2px; }
+.owb-approval-workspace .owb-approval-queue__empty h2 { font-family: var(--ui-font-sans); font-size: 14px; }
+@container approvals (max-width: 720px) {
+  .owb-approval-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: 128px minmax(0, 1fr); }
+  .owb-approval-workspace__queue { border-right: 0; border-bottom: 1px solid var(--ui-border); }
+  .owb-approval-workspace__queue-header { padding: 6px 10px; }
+  .owb-approval-detail__header { padding: 10px 12px; }
+  .owb-approval-detail__body { padding: 10px 12px; }
+  .owb-approval-detail__footer { padding: 8px 12px; max-height: 62%; }
+  .owb-approval-detail__body .owb-approval-drawer__references > div { grid-template-columns: 90px minmax(0, 1fr); gap: 8px; }
+  .owb-approval-workspace:has(.owb-approval-queue__batch-summary) { grid-template-rows: 224px minmax(0, 1fr); }
+  .owb-approval-workspace__queue .owb-approval-queue__batch-summary { max-height: 124px; }
 }
 
 /* Approval requests stay clearly labeled, without a stack of colored pills. */
@@ -1145,6 +1166,55 @@
   padding: 0;
   scroll-padding-top: 88px;
 }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__editor--live {
+  border-bottom: 1px solid var(--ui-border);
+  padding: 16px 24px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__editor--live textarea {
+  min-height: 240px;
+  font-family: var(--ui-font-mono);
+  line-height: 1.6;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__save-status {
+  align-self: center;
+  margin-inline-start: auto;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-docs-panel__conflict, .owb-docs-panel__missing-note) {
+  margin: 12px 24px 0;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 24px 0;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__compare section {
+  min-width: 0;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-docs-panel__compare pre {
+  max-height: 280px;
+  margin: 6px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface-inset);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer {
   max-width: none;
   min-width: 0;
@@ -1166,6 +1236,36 @@
   border-bottom: 1px solid var(--ui-border);
   background: var(--ui-surface);
 }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer__toolbar.owb-docs-panel__toolbar {
+  min-height: 48px;
+  padding: 8px 16px;
+  flex-wrap: nowrap;
+}
+.owb-docs-panel__title {
+  min-width: 0;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+.owb-docs-panel__title:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.owb-doc-menu-label { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.owb-doc-menu-label kbd { color: var(--ui-foreground-muted); font: inherit; font-size: 11px; }
+.owb-docs-panel__shortcuts { width: 100%; border-collapse: collapse; }
+.owb-docs-panel__shortcuts td { padding: 5px 0; font-size: 12.5px; }
+.owb-docs-panel__shortcuts tr + tr td { border-top: 1px solid var(--ui-border); }
+.owb-docs-panel__shortcuts td:first-child { width: 45%; }
+.owb-docs-panel__shortcuts kbd { color: var(--ui-foreground-muted); font: inherit; font-size: 12px; white-space: nowrap; }
+.owb-docs-panel__save-status { flex: none; white-space: nowrap; }
+.owb-docs-panel__reader-pane > .owb-doc-viewer { min-height: 0; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-doc-viewer__location {
   display: flex;
   flex-direction: column;

@@ -863,6 +863,34 @@ test("default timeout is 120000ms when not specified (AC-001)", async () => {
   assert.equal((driver as unknown as { timeoutMs: number }).timeoutMs, 120_000);
 });
 
+test("turn timeout is an inactivity window: a turn that keeps emitting events outlives the budget", async () => {
+  const command = await fixtureCli(`
+    const base = { runId: "run-steady", timestamp: "2026-08-24T00:00:00.000Z" };
+    console.log(JSON.stringify({ ...base, type: "run.started" }));
+    let i = 0;
+    const tick = setInterval(() => {
+      i += 1;
+      console.log(JSON.stringify({ ...base, type: "trace.activity", activityId: "act-" + i, kind: "tool", status: "running", title: "tool " + i }));
+      if (i >= 6) {
+        clearInterval(tick);
+        console.log(JSON.stringify({ ...base, type: "run.completed", output: "steady-ok", terminalReason: "goal_met" }));
+      }
+    }, 600);
+  `);
+  const driver = new DigitalEmployeeCliDriver(command, 1_000);
+  const start = Date.now();
+  const result = await driver.turnRun({
+    workspace: "/workspace",
+    positionId: "repo-owner",
+    engine: "qoder",
+    envelope: ENVELOPE,
+  });
+  const elapsed = Date.now() - start;
+  assert.equal(result.status, "trusted");
+  assert.equal(result.events[result.events.length - 1]!.type, "run.completed");
+  assert.ok(elapsed > 3_000, `turn should have run past the 1000ms budget, took ${elapsed}ms`);
+});
+
 test("timeout reaps engine descendants via process group (AC-006)", async () => {
   if (process.platform === "win32") return;
   const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "owb-turn-group-"));
