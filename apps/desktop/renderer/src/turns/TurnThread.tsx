@@ -5,6 +5,7 @@ import { useConversationCopy } from "../locales/conversation";
 import type { ConversationViewport } from "./conversation-memory";
 import { MessageActions, OperatorMessage } from "./message-actions";
 import { EmptyState, useT } from "@roleweave/ui";
+import { Select } from "@fullstack-ai-infra/ui";
 import { useEngineLabel } from "./engine-select";
 import { EngineIcon } from "./engine-icon";
 import type { TurnRecord } from "./types";
@@ -265,10 +266,15 @@ function ApprovalCard({
             onChange={(event) => setReason(event.target.value)}
           />
           <div className="owb-turn__approval-actions">
-            {request.scopeAllowed?.includes("run") ? <select aria-label={t("apr.scopeTitle")} value={scope} disabled={disabled} onChange={(event) => setScope(event.target.value as "once" | "run")}>
-              <option value="once">{t("apr.scope.once")}</option>
-              <option value="run">{t("apr.scope.run")}</option>
-            </select> : null}
+            {request.scopeAllowed?.includes("run") ? <Select<"once" | "run">
+              aria-label={t("apr.scopeTitle")}
+              className="owb-turn__approval-scope"
+              size="small"
+              value={scope}
+              disabled={disabled}
+              options={[{ value: "once", label: t("apr.scope.once") }, { value: "run", label: t("apr.scope.run") }]}
+              onChange={setScope}
+            /> : null}
             <button
               type="button"
               className="owb-turn__approval-grant"
