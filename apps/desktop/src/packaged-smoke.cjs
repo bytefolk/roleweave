@@ -11,8 +11,8 @@ const { pathToFileURL } = require("node:url");
 // #523: which two columns those are changed. They used to be the org module's
 // left column beside its turn panel; the org module now renders the structure
 // directory or the relationship graph, and the conversation lives in its own
-// module. The pair measured now is the collaboration sidebar beside the
-// conversation turn panel. What is compared — two columns that end together,
+// module. The pair measured now is the collaboration sidebar beside the shell's
+// main region. What is compared — two columns that end together,
 // of equal height, with platform-stable widths — is unchanged.
 //
 // #194: presence is not settled geometry. The mount poll only proves the two
@@ -48,7 +48,12 @@ const LAYOUT_MEASURE_SCRIPT = String.raw`(async () => {
     // and the turn panel it stands beside.
     const left = document.querySelector(".owb-app .ui-app-shell__sidebar")?.getBoundingClientRect()
       ?? document.querySelector(".ui-app-shell__sidebar")?.getBoundingClientRect();
-    const right = document.querySelector(".owb-employee-conversation .owb-turn-panel")?.getBoundingClientRect();
+    // The shell's main region, not the turn panel inside it: the panel sits
+    // below the context header and is legitimately shorter, so measuring it
+    // would compare the header's height against the sidebar rather than the
+    // two columns against each other.
+    const right = document.querySelector(".owb-app .ui-app-shell__main")?.getBoundingClientRect()
+      ?? document.querySelector(".ui-app-shell__main")?.getBoundingClientRect();
     return left && right ? { left, right } : null;
   };
   const measure = (columns) => ({

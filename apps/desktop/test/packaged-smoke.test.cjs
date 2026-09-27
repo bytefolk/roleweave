@@ -811,7 +811,8 @@ test("#194 a permanently pending fonts-ready promise cannot block layout samplin
       querySelector: (selector) => (
         selector === ".owb-app .ui-app-shell__sidebar" ||
         selector === ".ui-app-shell__sidebar" ||
-        selector === ".owb-employee-conversation .owb-turn-panel"
+        selector === ".owb-app .ui-app-shell__main" ||
+        selector === ".ui-app-shell__main"
           ? column
           : null
       ),
