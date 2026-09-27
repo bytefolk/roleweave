@@ -9206,17 +9206,19 @@ body,
 
 .owb-org-module[hidden] { display: none; }
 
-.owb-main > .owb-org-chart--overview {
+/* #517: the overview root (section.owb-rgraph) reaches .owb-main through a
+   display:contents wrapper in App.tsx, so it needs the same flex/scroll
+   contract as the other module roots. Without it .owb-main's overflow:hidden
+   clips the page and the wheel only ever reaches the 3D canvas zoom.
+   (Supersedes the dead .owb-org-chart--overview rules left behind by the
+   relationship-graph refactor.) */
+.owb-main > .owb-rgraph {
   flex: 1;
   min-height: 0;
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
-}
-
-.owb-org-chart--overview .owb-org-chart__body {
-  flex: 1;
-  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Credential values stay in native password controls, outside React state. */

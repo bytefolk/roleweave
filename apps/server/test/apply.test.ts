@@ -273,6 +273,40 @@ test("org restore: lists auditable backups, restores once, and makes a repeated 
   }
 });
 
+test("org restore: lists position backups while ignoring foreign backup namespaces and broken entries", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineApply);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const disband = await api(server.baseUrl, "/org/apply", {
+      method: "POST", token: server.token,
+      body: { schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "community-operator" }] },
+    });
+    assert.equal(disband.status, 200);
+
+    const backupRoot = path.join(dir, ".digital-employee", "backup");
+    // The groups store archives local groups under the same backup root
+    // (#517); neither the namespace directory nor unrelated names may fail
+    // the position-backup listing.
+    await fs.mkdir(path.join(backupRoot, "groups", "6f0b1c5e-2f0a-4d3b-9c8e-1a2b3c4d5e6f-1789885921170-4707eb"), { recursive: true });
+    // A pattern-matching directory without an employee package ...
+    await fs.mkdir(path.join(backupRoot, "ghost-1788401134546-aaaaaa"), { recursive: true });
+    // ... and one with a package but no dismissal provenance in the audit.
+    await fs.mkdir(path.join(backupRoot, "phantom-1788401134547-bbbbbb"), { recursive: true });
+    await fs.writeFile(path.join(backupRoot, "phantom-1788401134547-bbbbbb", "employee.json"), "{}\n");
+
+    const listed = await api(server.baseUrl, "/org/backups", { token: server.token });
+    assert.equal(listed.status, 200);
+    const backups = (listed.body as { backups: Array<{ backupId: string; positionId: string }> }).backups;
+    assert.equal(backups.length, 1);
+    assert.equal(backups[0]?.positionId, "community-operator");
+  } finally {
+    await server.close();
+  }
+});
+
 test("org restore: rejects a conflicting proposal and preserves the backup", async () => {
   const driver = new FakeDriver({ status: "applied" }, emulateEngineApply);
   const server = await startTestServer(driver);

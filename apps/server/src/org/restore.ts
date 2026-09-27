@@ -40,16 +40,21 @@ export async function listOrgBackups(ctx: ControlPlaneContext): Promise<OrgBacku
   const provenance = await readDismissalProvenance(ws.dir);
   const backups: OrgBackupEntry[] = [];
   for (const entry of entries) {
+    // The backup root also hosts non-position namespaces (the groups store
+    // archives local groups under `backup/groups/`, #517). Foreign names and
+    // individually broken backups are skipped so one unrelated or damaged
+    // entry cannot hide every restorable position backup; only entries whose
+    // name matches the backup pattern but whose filesystem state is unsafe
+    // still fail the whole request.
     const parsed = parseBackupId(entry.name);
-    if (!entry.isDirectory() || entry.isSymbolicLink() || parsed === null) {
+    if (parsed === null) continue;
+    if (!entry.isDirectory() || entry.isSymbolicLink()) {
       throw restoreError(500, "organization backup directory contains an unsafe entry");
     }
     const employee = await fs.lstat(path.join(root, entry.name, "employee.json")).catch(() => null);
-    if (!employee?.isFile() || employee.isSymbolicLink()) {
-      throw restoreError(500, "organization backup is missing a regular employee package");
-    }
+    if (!employee?.isFile() || employee.isSymbolicLink()) continue;
     const source = provenance.get(parsed.positionId);
-    if (!source) throw restoreError(500, "organization backup has no dismissal provenance");
+    if (!source) continue;
     backups.push({
       backupId: entry.name,
       positionId: parsed.positionId,
