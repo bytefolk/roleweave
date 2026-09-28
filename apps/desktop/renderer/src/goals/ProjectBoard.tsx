@@ -886,6 +886,7 @@ export function ProjectBoard({
                   className="owb-project-select"
                   aria-label={t("project.assignee")}
                   value={editor.item.assigneePositionId ?? ""}
+                  disabled={busy}
                   options={[
                     { value: "", label: t("project.unassigned") },
                     ...ownerIds.map((id) => ({ value: id, label: own(positionNames, id) ?? id })),
@@ -904,6 +905,7 @@ export function ProjectBoard({
                     className="owb-project-select"
                     aria-label={t("project.taskStatus")}
                     value={editor.item.status}
+                    disabled={busy}
                     options={STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) }))}
                     onChange={(status) =>
                       patch({
@@ -918,6 +920,7 @@ export function ProjectBoard({
                     className="owb-project-select"
                     aria-label={t("project.priority")}
                     value={editor.item.priority}
+                    disabled={busy}
                     options={PRIORITIES.map((priority) => ({ value: priority, label: t(`project.priority.${priority}`) }))}
                     onChange={(priority) =>
                       patch({

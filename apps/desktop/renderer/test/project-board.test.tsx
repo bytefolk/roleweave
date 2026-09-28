@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { OwbBridge } from "../src/owb";
 import { ProjectBoard } from "../src/goals/ProjectBoard";
@@ -107,6 +107,10 @@ function chooseOption(control: HTMLElement, name: string) {
 }
 
 describe("ProjectBoard", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("creates an assigned task with dates and guards duplicate submission until refresh", async () => {
     const saved = defer<{ status: number; body: { goalId: string } }>();
     const updateGoal = vi.fn().mockReturnValue(saved.promise);
