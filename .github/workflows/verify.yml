@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 4a82fce6c52d86ec63a4f3d56b565bc3994c10d4
+          ref: 4a82fce41f89f1a55b6b02cdb54f7a4e9ce9d84d
           path: design-system
 
       - name: Set up Node
@@ -77,7 +77,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 4a82fce6c52d86ec63a4f3d56b565bc3994c10d4
+          ref: 4a82fce41f89f1a55b6b02cdb54f7a4e9ce9d84d
           path: design-system
 
       - name: Set up Node
@@ -141,7 +141,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 4a82fce6c52d86ec63a4f3d56b565bc3994c10d4
+          ref: 4a82fce41f89f1a55b6b02cdb54f7a4e9ce9d84d
           path: design-system
 
       - name: Set up Node
@@ -205,7 +205,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 4a82fce6c52d86ec63a4f3d56b565bc3994c10d4
+          ref: 4a82fce41f89f1a55b6b02cdb54f7a4e9ce9d84d
           path: design-system
 
       - name: Set up Node
@@ -249,7 +249,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ github.repository_owner }}/design-system
-          ref: 4a82fce6c52d86ec63a4f3d56b565bc3994c10d4
+          ref: 4a82fce41f89f1a55b6b02cdb54f7a4e9ce9d84d
           path: design-system
 
       - name: Set up Node
