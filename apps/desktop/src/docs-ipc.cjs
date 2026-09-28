@@ -12,24 +12,53 @@ function invalidResponse(message) {
   };
 }
 
-function validateDocsListRequest(positionId) {
+function parseDocsViewOptions(options) {
+  if (options === undefined || options === null) return { ok: true, archived: false };
+  if (!isPlainObject(options)) return invalidResponse("options must be an object");
+  const keys = Object.keys(options).sort();
+  if (keys.length === 0) return { ok: true, archived: false };
+  if (keys.join(",") !== "archived") {
+    return invalidResponse("options must carry only {archived?}");
+  }
+  if (options.archived !== true && options.archived !== false) {
+    return invalidResponse("archived must be a boolean");
+  }
+  return { ok: true, archived: options.archived === true };
+}
+
+function validateDocsListRequest(positionId, options) {
   if (typeof positionId !== "string" || positionId.length === 0) {
     return invalidResponse("positionId required");
   }
-  return { ok: true, pathname: `/docs/list?position=${encodeURIComponent(positionId)}` };
+  const parsed = parseDocsViewOptions(options);
+  if (!parsed.ok) return parsed;
+  return {
+    ok: true,
+    pathname: `/docs/list?position=${encodeURIComponent(positionId)}${parsed.archived ? "&archived=1" : ""}`,
+  };
 }
 
-function validateDocsReadRequest(positionId, filePath) {
+function validateDocsReadRequest(positionId, filePath, options) {
   if (typeof positionId !== "string" || positionId.length === 0) {
     return invalidResponse("positionId required");
   }
   if (typeof filePath !== "string" || filePath.length === 0) {
     return invalidResponse("filePath required");
   }
+  const parsed = parseDocsViewOptions(options);
+  if (!parsed.ok) return parsed;
   return {
     ok: true,
-    pathname: `/docs/read?position=${encodeURIComponent(positionId)}&path=${encodeURIComponent(filePath)}`,
+    pathname: `/docs/read?position=${encodeURIComponent(positionId)}&path=${encodeURIComponent(filePath)}${parsed.archived ? "&archived=1" : ""}`,
   };
+}
+
+function authorizeDocsIpcSender(event, expectedWindow, allowedUrl) {
+  const { isTrustedWindowSender } = require("./window-ipc.cjs");
+  if (!isTrustedWindowSender(event, expectedWindow, allowedUrl)) {
+    return { ok: false, response: { status: 403, body: { message: "Untrusted sender" } } };
+  }
+  return { ok: true };
 }
 
 function isPlainObject(value) {
@@ -73,9 +102,79 @@ function validateDocsResolveRequest(request) {
   return { ok: true, request: { ref } };
 }
 
+function validateDocsWriteRequest(request) {
+  return validateDocsCreateRequest(request);
+}
+
+function validateDocsRenameRequest(request) {
+  if (!isPlainObject(request)) return invalidResponse("request must be an object");
+  const keys = Object.keys(request).sort().join(",");
+  if (keys !== "from,positionId,to") {
+    return invalidResponse("request must carry exactly {positionId, from, to}");
+  }
+  if (
+    typeof request.positionId !== "string" ||
+    request.positionId.length === 0 ||
+    typeof request.from !== "string" ||
+    request.from.length === 0 ||
+    typeof request.to !== "string" ||
+    request.to.length === 0
+  ) {
+    return invalidResponse("positionId, from and to must be strings");
+  }
+  return {
+    ok: true,
+    request: { positionId: request.positionId, from: request.from, to: request.to },
+  };
+}
+
+function validateDocsPathRequest(request) {
+  if (!isPlainObject(request)) return invalidResponse("request must be an object");
+  const keys = Object.keys(request).sort().join(",");
+  if (keys !== "path,positionId") {
+    return invalidResponse("request must carry exactly {positionId, path}");
+  }
+  if (
+    typeof request.positionId !== "string" ||
+    request.positionId.length === 0 ||
+    typeof request.path !== "string" ||
+    request.path.length === 0
+  ) {
+    return invalidResponse("positionId and path must be strings");
+  }
+  return { ok: true, request: { positionId: request.positionId, path: request.path } };
+}
+
+function validateDocsDeleteRequest(request) {
+  if (!isPlainObject(request)) return invalidResponse("request must be an object");
+  const keys = Object.keys(request).sort().join(",");
+  if (keys !== "path,positionId" && keys !== "archived,path,positionId") {
+    return invalidResponse("request must carry exactly {positionId, path} or {positionId, path, archived}");
+  }
+  if (
+    typeof request.positionId !== "string" ||
+    request.positionId.length === 0 ||
+    typeof request.path !== "string" ||
+    request.path.length === 0
+  ) {
+    return invalidResponse("positionId and path must be strings");
+  }
+  if (request.archived !== undefined && typeof request.archived !== "boolean") {
+    return invalidResponse("archived must be a boolean");
+  }
+  const parsed = { positionId: request.positionId, path: request.path };
+  if (request.archived === true) parsed.archived = true;
+  return { ok: true, request: parsed };
+}
+
 module.exports = {
   validateDocsListRequest,
   validateDocsReadRequest,
   validateDocsCreateRequest,
   validateDocsResolveRequest,
+  validateDocsWriteRequest,
+  validateDocsRenameRequest,
+  validateDocsPathRequest,
+  validateDocsDeleteRequest,
+  authorizeDocsIpcSender,
 };

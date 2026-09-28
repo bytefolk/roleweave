@@ -9,11 +9,19 @@ import type {
   DocPlaneDetailResponse,
   DocPlaneListResponse,
   DocRef,
+  DocsArchiveResponse,
   DocsCreateRequest,
   DocsCreateResponse,
+  DocsDeleteRequest,
+  DocsDeleteResponse,
   DocsFileListResponse,
   DocsFileResponse,
+  DocsPathRequest,
+  DocsRenameRequest,
+  DocsRenameResponse,
   DocsResolveResponse,
+  DocsRestoreResponse,
+  DocsWriteRequest,
   DriveObjectDetailResponse,
   DriveObjectListResponse,
   DriveUploadResponse,
@@ -120,9 +128,14 @@ export interface OwbBridge {
   decideApprovalsBatch(request: import("@roleweave/shared").ApprovalBatchDecisionRequest & { workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalBatchDecisionResponse>>;
   approvalAudit(request: { id: string }): Promise<OwbApiResponse<{ approvalId: string; events: import("@roleweave/shared").ApprovalAuditEvent[] }>>;
   position(positionId: string, engine?: TurnEngine): Promise<OwbApiResponse>;
-  positionDocs(positionId: string): Promise<OwbApiResponse<DocsFileListResponse>>;
-  positionDocFile(positionId: string, filePath: string): Promise<OwbApiResponse<DocsFileResponse>>;
+  positionDocs(positionId: string, options?: { archived?: boolean }): Promise<OwbApiResponse<DocsFileListResponse>>;
+  positionDocFile(positionId: string, filePath: string, options?: { archived?: boolean }): Promise<OwbApiResponse<DocsFileResponse>>;
   createPositionDoc(request: DocsCreateRequest): Promise<OwbApiResponse<DocsCreateResponse>>;
+  writePositionDoc?(request: DocsWriteRequest): Promise<OwbApiResponse<DocsFileResponse>>;
+  renamePositionDoc?(request: DocsRenameRequest): Promise<OwbApiResponse<DocsRenameResponse>>;
+  archivePositionDoc?(request: DocsPathRequest): Promise<OwbApiResponse<DocsArchiveResponse>>;
+  restorePositionDoc?(request: DocsPathRequest): Promise<OwbApiResponse<DocsRestoreResponse>>;
+  deletePositionDoc?(request: DocsDeleteRequest): Promise<OwbApiResponse<DocsDeleteResponse>>;
   resolveDocRef(ref: DocRef): Promise<OwbApiResponse<DocsResolveResponse>>;
   /** #35 R2 MVP: external doc-plane list proxy (bytefolk/doc bridge). */
   docPlaneList(query?: string): Promise<OwbApiResponse<DocPlaneListResponse>>;

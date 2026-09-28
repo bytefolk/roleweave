@@ -3,10 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   ASSET_RECORD_SCHEMA_VERSION,
+  DOCS_ARCHIVE_SCHEMA_VERSION,
   DOCS_CREATE_SCHEMA_VERSION,
+  DOCS_DELETE_SCHEMA_VERSION,
   DOCS_FILE_LIST_SCHEMA_VERSION,
   DOCS_FILE_SCHEMA_VERSION,
+  DOCS_RENAME_SCHEMA_VERSION,
   DOCS_RESOLVE_SCHEMA_VERSION,
+  DOCS_RESTORE_SCHEMA_VERSION,
   MAX_DOC_CREATE_BYTES,
   formatDocRefUri,
   parseDocRef,
@@ -16,11 +20,15 @@ import {
 } from "@roleweave/shared";
 import type {
   AssetRecord,
+  DocsArchiveResponse,
   DocsCreateResponse,
+  DocsDeleteResponse,
   DocsFileEntry,
   DocsFileListResponse,
   DocsFileResponse,
+  DocsRenameResponse,
   DocsResolveResponse,
+  DocsRestoreResponse,
 } from "@roleweave/shared";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { appendAssetIndex, writeAssetRecord } from "../assets/store.js";
@@ -94,14 +102,207 @@ async function walkFiles(dir: string, base: string, entries: DocsFileEntry[]): P
   }
 }
 
+const ARCHIVE_DIR = ".owb-docs-archive";
+const mutationLocks = new Map<string, Promise<void>>();
+
+function isNotFound(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException).code === "ENOENT";
+}
+
+function assertMutableKnowledgePath(rawPath: string): string {
+  const posixPath = assertCreatePath(rawPath);
+  if (posixPath === "SKILL.md" || !posixPath.startsWith("knowledge/")) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, "bound package files stay read-only");
+  }
+  return posixPath;
+}
+
+function archiveRoot(positionDir: string): string {
+  return path.join(positionDir, ARCHIVE_DIR);
+}
+
+/** Resolve a knowledge path inside the hidden archive dir; refuse escapes. */
+function resolveArchivePath(positionDir: string, posixPath: string): string {
+  const root = archiveRoot(positionDir);
+  const resolved = path.resolve(root, posixPath);
+  const relative = path.relative(root, resolved);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, `path escapes the archive directory: ${posixPath}`);
+  }
+  if (relative.split(path.sep).some((segment) => segment.startsWith("."))) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, `hidden path segments are not routable: ${posixPath}`);
+  }
+  return resolved;
+}
+
+function parseArchivedFlag(url: URL): boolean {
+  const values = url.searchParams.getAll("archived");
+  if (values.length === 0) return false;
+  if (values.length > 1) {
+    throw invalidRequest("archived must not be repeated");
+  }
+  const value = values[0];
+  if (value === "1") return true;
+  if (value === "0") return false;
+  throw invalidRequest("archived must be 1 or omitted");
+}
+
+async function lstatOrNull(target: string): Promise<Awaited<ReturnType<typeof fs.lstat>> | null> {
+  try {
+    return await fs.lstat(target);
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
+  }
+}
+
+async function assertRealDirectory(dir: string, message: string): Promise<void> {
+  const stat = await lstatOrNull(dir);
+  if (!stat) {
+    throw new OrgApiError(errorCodes.docs_missing, 404, message);
+  }
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, "symlinks are not mutable");
+  }
+}
+
+async function assertRealFileChain(root: string, target: string, rawPath: string): Promise<void> {
+  await assertRealDirectory(root, "position directory missing");
+  const relative = path.relative(root, target);
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, `path escapes the position directory: ${rawPath}`);
+  }
+  const segments = relative.split(path.sep).filter(Boolean);
+  let current = root;
+  for (let i = 0; i < segments.length; i += 1) {
+    current = path.join(current, segments[i]!);
+    const isLeaf = i === segments.length - 1;
+    const stat = await lstatOrNull(current);
+    if (!stat) {
+      throw new OrgApiError(errorCodes.docs_missing, 404, `document not found: ${rawPath}`);
+    }
+    if (stat.isSymbolicLink()) {
+      throw new OrgApiError(errorCodes.docs_forbidden, 403, `symlinks are not mutable: ${rawPath}`);
+    }
+    if (isLeaf) {
+      if (!stat.isFile()) {
+        throw new OrgApiError(errorCodes.docs_missing, 404, `not a document file: ${rawPath}`);
+      }
+    } else if (!stat.isDirectory()) {
+      throw new OrgApiError(errorCodes.docs_forbidden, 403, `path is not a real directory: ${rawPath}`);
+    }
+  }
+}
+
+async function assertRealDirChain(root: string, dir: string, rawPath: string): Promise<void> {
+  await assertRealDirectory(root, "position directory missing");
+  const relative = path.relative(root, dir);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, `path escapes the position directory: ${rawPath}`);
+  }
+  if (relative === "") return;
+  let current = root;
+  for (const segment of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    await assertRealDirectory(current, `path is not a real directory: ${rawPath}`);
+  }
+}
+
+async function assertOrCreateRealArchiveRoot(positionDir: string): Promise<string> {
+  const root = archiveRoot(positionDir);
+  const existing = await lstatOrNull(root);
+  if (existing) {
+    if (existing.isSymbolicLink() || !existing.isDirectory()) {
+      throw new OrgApiError(errorCodes.docs_forbidden, 403, "archive root must be a real directory");
+    }
+    return root;
+  }
+  try {
+    await fs.mkdir(root, { mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  }
+  const created = await lstatOrNull(root);
+  if (!created || created.isSymbolicLink() || !created.isDirectory()) {
+    throw new OrgApiError(errorCodes.docs_forbidden, 403, "archive root must be a real directory");
+  }
+  return root;
+}
+
+async function atomicReplaceRegularFile(target: string, content: string): Promise<void> {
+  const tmp = path.join(path.dirname(target), `.owb-docs-write-${crypto.randomUUID()}.tmp`);
+  let handle;
+  try {
+    handle = await fs.open(tmp, "wx", 0o600);
+    await handle.writeFile(content, "utf8");
+  } catch (error) {
+    if (handle) await handle.close().catch(() => undefined);
+    await fs.unlink(tmp).catch(() => undefined);
+    throw error;
+  }
+  await handle.close();
+  try {
+    await fs.rename(tmp, target);
+  } catch (error) {
+    await fs.unlink(tmp).catch(() => undefined);
+    throw error;
+  }
+  await fs.chmod(target, 0o600);
+}
+
+async function moveNoReplace(source: string, dest: string, destPath: string): Promise<void> {
+  try {
+    await fs.link(source, dest);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new OrgApiError(errorCodes.docs_exists, 409, `document already exists: ${destPath}`);
+    }
+    throw error;
+  }
+  await fs.unlink(source);
+}
+
+async function withPositionLock<T>(positionId: string, work: () => Promise<T>): Promise<T> {
+  const previous = mutationLocks.get(positionId) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => gate);
+  mutationLocks.set(positionId, tail);
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+    if (mutationLocks.get(positionId) === tail) mutationLocks.delete(positionId);
+  }
+}
+
 export async function handleDocsList(ctx: ControlPlaneContext, res: ServerResponse, url: URL): Promise<void> {
+  const archived = parseArchivedFlag(url);
   const positionId = url.searchParams.get("position") ?? "";
   const positionDir = requirePositionDir(ctx, positionId);
   const files: DocsFileEntry[] = [];
+  const root = archived ? archiveRoot(positionDir) : positionDir;
+  if (archived) {
+    const archiveStat = await lstatOrNull(root);
+    if (!archiveStat) {
+      sendJson(res, 200, { schemaVersion: DOCS_FILE_LIST_SCHEMA_VERSION, positionId, files: [] });
+      return;
+    }
+    if (archiveStat.isSymbolicLink() || !archiveStat.isDirectory()) {
+      throw new OrgApiError(errorCodes.docs_forbidden, 403, "archive root must be a real directory");
+    }
+  }
   try {
-    await walkFiles(positionDir, positionDir, files);
+    await walkFiles(root, root, files);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      if (archived) {
+        sendJson(res, 200, { schemaVersion: DOCS_FILE_LIST_SCHEMA_VERSION, positionId, files: [] });
+        return;
+      }
       throw new OrgApiError(errorCodes.docs_missing, 404, `position directory missing: ${positionId}`);
     }
     throw error;
@@ -116,10 +317,16 @@ export async function handleDocsList(ctx: ControlPlaneContext, res: ServerRespon
 }
 
 export async function handleDocsRead(ctx: ControlPlaneContext, res: ServerResponse, url: URL): Promise<void> {
+  const archived = parseArchivedFlag(url);
   const positionId = url.searchParams.get("position") ?? "";
   const rawPath = url.searchParams.get("path") ?? "";
   const positionDir = requirePositionDir(ctx, positionId);
-  const resolved = resolveDocPath(positionDir, rawPath);
+  const posixPath = archived ? assertMutableKnowledgePath(rawPath) : rawPath;
+  const resolved = archived ? resolveArchivePath(positionDir, posixPath) : resolveDocPath(positionDir, posixPath);
+  if (archived) {
+    await assertRealDirectory(archiveRoot(positionDir), "archive root must be a real directory");
+    await assertRealFileChain(archiveRoot(positionDir), resolved, posixPath);
+  }
 
   let stat;
   try {
@@ -150,7 +357,9 @@ export async function handleDocsRead(ctx: ControlPlaneContext, res: ServerRespon
   const body: DocsFileResponse = {
     schemaVersion: DOCS_FILE_SCHEMA_VERSION,
     positionId,
-    path: path.relative(positionDir, resolved).split(path.sep).join("/"),
+    path: archived
+      ? posixPath
+      : path.relative(positionDir, resolved).split(path.sep).join("/"),
     content,
     version: modifiedAt,
     size: stat.size,
@@ -389,4 +598,204 @@ export async function handleDocsResolve(
     },
   };
   sendJson(res, 200, body);
+}
+
+function parsePositionPathBody(raw: unknown, keys: string): { positionId: string; path: string; archived?: boolean } {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw invalidRequest("body must be an object");
+  }
+  const record = raw as Record<string, unknown>;
+  const actual = Object.keys(record).sort().join(",");
+  if (actual !== keys) {
+    throw invalidRequest(`body must carry exactly {${keys.split(",").join(", ")}}`);
+  }
+  if (typeof record.positionId !== "string" || typeof record.path !== "string") {
+    throw invalidRequest("positionId and path must be strings");
+  }
+  const parsed: { positionId: string; path: string; archived?: boolean } = {
+    positionId: record.positionId,
+    path: record.path,
+  };
+  if (record.archived !== undefined) {
+    if (typeof record.archived !== "boolean") {
+      throw invalidRequest("archived must be a boolean");
+    }
+    parsed.archived = record.archived;
+  }
+  return parsed;
+}
+
+export async function handleDocsWrite(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { positionId, path: rawPath, content } = parseCreateRequest(await readJsonBody<unknown>(req));
+  const posixPath = assertMutableKnowledgePath(rawPath);
+  if (Buffer.byteLength(content, "utf8") > MAX_DOC_CREATE_BYTES) {
+    throw invalidRequest(`content exceeds ${MAX_DOC_CREATE_BYTES} bytes`);
+  }
+  await withPositionLock(positionId, async () => {
+    const positionDir = requirePositionDir(ctx, positionId);
+    const target = resolveDocPath(positionDir, posixPath);
+    await assertRealFileChain(positionDir, target, posixPath);
+    await atomicReplaceRegularFile(target, content);
+    const stat = await fs.lstat(target);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new OrgApiError(errorCodes.docs_forbidden, 403, `symlinks are not mutable: ${posixPath}`);
+    }
+    const modifiedAt = new Date(stat.mtimeMs).toISOString();
+    const body: DocsFileResponse = {
+      schemaVersion: DOCS_FILE_SCHEMA_VERSION,
+      positionId,
+      path: posixPath,
+      content,
+      version: modifiedAt,
+      size: stat.size,
+      modifiedAt,
+    };
+    sendJson(res, 200, body);
+  });
+}
+
+export async function handleDocsRename(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const raw = await readJsonBody<unknown>(req);
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw invalidRequest("body must be an object");
+  }
+  const record = raw as Record<string, unknown>;
+  if (Object.keys(record).sort().join(",") !== "from,positionId,to") {
+    throw invalidRequest("body must carry exactly {positionId, from, to}");
+  }
+  if (
+    typeof record.positionId !== "string" ||
+    typeof record.from !== "string" ||
+    typeof record.to !== "string"
+  ) {
+    throw invalidRequest("positionId, from and to must be strings");
+  }
+  const positionId = record.positionId;
+  const fromPath = assertMutableKnowledgePath(record.from);
+  const toPath = assertMutableKnowledgePath(record.to);
+  await withPositionLock(positionId, async () => {
+    const positionDir = requirePositionDir(ctx, positionId);
+    const fromResolved = resolveDocPath(positionDir, fromPath);
+    const toResolved = resolveDocPath(positionDir, toPath);
+    await assertRealFileChain(positionDir, fromResolved, fromPath);
+    await ensureDocParentDirs(positionDir, toResolved);
+    await assertRealDirChain(positionDir, path.dirname(toResolved), toPath);
+    await moveNoReplace(fromResolved, toResolved, toPath);
+    const body: DocsRenameResponse = {
+      schemaVersion: DOCS_RENAME_SCHEMA_VERSION,
+      positionId,
+      from: fromPath,
+      to: toPath,
+    };
+    sendJson(res, 200, body);
+  });
+}
+
+export async function handleDocsArchive(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { positionId, path: rawPath } = parsePositionPathBody(
+    await readJsonBody<unknown>(req),
+    "path,positionId",
+  );
+  const posixPath = assertMutableKnowledgePath(rawPath);
+  await withPositionLock(positionId, async () => {
+    const positionDir = requirePositionDir(ctx, positionId);
+    const source = resolveDocPath(positionDir, posixPath);
+    await assertRealFileChain(positionDir, source, posixPath);
+    const root = await assertOrCreateRealArchiveRoot(positionDir);
+    const dest = resolveArchivePath(positionDir, posixPath);
+    await ensureDocParentDirs(root, dest);
+    await assertRealDirChain(root, path.dirname(dest), posixPath);
+    await moveNoReplace(source, dest, posixPath);
+    const body: DocsArchiveResponse = {
+      schemaVersion: DOCS_ARCHIVE_SCHEMA_VERSION,
+      positionId,
+      path: posixPath,
+    };
+    sendJson(res, 200, body);
+  });
+}
+
+export async function handleDocsRestore(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const { positionId, path: rawPath } = parsePositionPathBody(
+    await readJsonBody<unknown>(req),
+    "path,positionId",
+  );
+  const posixPath = assertMutableKnowledgePath(rawPath);
+  await withPositionLock(positionId, async () => {
+    const positionDir = requirePositionDir(ctx, positionId);
+    const root = archiveRoot(positionDir);
+    await assertRealDirectory(root, "archive root must be a real directory");
+    const source = resolveArchivePath(positionDir, posixPath);
+    const dest = resolveDocPath(positionDir, posixPath);
+    await assertRealFileChain(root, source, posixPath);
+    await ensureDocParentDirs(positionDir, dest);
+    await assertRealDirChain(positionDir, path.dirname(dest), posixPath);
+    await moveNoReplace(source, dest, posixPath);
+    const body: DocsRestoreResponse = {
+      schemaVersion: DOCS_RESTORE_SCHEMA_VERSION,
+      positionId,
+      path: posixPath,
+    };
+    sendJson(res, 200, body);
+  });
+}
+
+export async function handleDocsDelete(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const raw = await readJsonBody<unknown>(req);
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw invalidRequest("body must be an object");
+  }
+  const record = raw as Record<string, unknown>;
+  const keys = Object.keys(record).sort().join(",");
+  if (keys !== "path,positionId" && keys !== "archived,path,positionId") {
+    throw invalidRequest("body must carry exactly {positionId, path} or {positionId, path, archived}");
+  }
+  if (typeof record.positionId !== "string" || typeof record.path !== "string") {
+    throw invalidRequest("positionId and path must be strings");
+  }
+  if (record.archived !== undefined && typeof record.archived !== "boolean") {
+    throw invalidRequest("archived must be a boolean");
+  }
+  const positionId = record.positionId;
+  const posixPath = assertMutableKnowledgePath(record.path);
+  await withPositionLock(positionId, async () => {
+    const positionDir = requirePositionDir(ctx, positionId);
+    if (record.archived) {
+      const root = archiveRoot(positionDir);
+      await assertRealDirectory(root, "archive root must be a real directory");
+      const target = resolveArchivePath(positionDir, posixPath);
+      await assertRealFileChain(root, target, posixPath);
+      await fs.unlink(target);
+    } else {
+      const target = resolveDocPath(positionDir, posixPath);
+      await assertRealFileChain(positionDir, target, posixPath);
+      await fs.unlink(target);
+    }
+    const body: DocsDeleteResponse = {
+      schemaVersion: DOCS_DELETE_SCHEMA_VERSION,
+      positionId,
+      path: posixPath,
+    };
+    sendJson(res, 200, body);
+  });
 }
