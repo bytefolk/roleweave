@@ -559,58 +559,67 @@ describe("ProjectBoard", () => {
   });
 
   it("clamps schedule bar calculations for inverted dates, window-edge spans, and partially invalid dates", () => {
-    setup(
-      detail([
-        {
-          ...task,
-          taskId: "inverted-task",
-          title: "Inverted dates task",
-          startDate: "2026-09-28",
-          dueDate: "2026-09-22",
-        },
-        {
-          ...task,
-          taskId: "span-task",
-          title: "Span task across window",
-          startDate: "2025-01-01",
-          dueDate: "2027-01-01",
-        },
-        {
-          ...task,
-          taskId: "partial-date-task",
-          title: "Partially invalid date task",
-          startDate: "malformed-date",
-          dueDate: "2026-09-22",
-        },
-      ]),
-    );
+    // The schedule window starts at the Monday of the current week
+    // (ProjectBoard.tsx:95), so these fixed fixtures only stay inside it for a
+    // finite calendar span. Pin the clock to keep the clamping math deterministic.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-24T12:00:00.000Z"));
+    try {
+      setup(
+        detail([
+          {
+            ...task,
+            taskId: "inverted-task",
+            title: "Inverted dates task",
+            startDate: "2026-09-28",
+            dueDate: "2026-09-22",
+          },
+          {
+            ...task,
+            taskId: "span-task",
+            title: "Span task across window",
+            startDate: "2025-01-01",
+            dueDate: "2027-01-01",
+          },
+          {
+            ...task,
+            taskId: "partial-date-task",
+            title: "Partially invalid date task",
+            startDate: "malformed-date",
+            dueDate: "2026-09-22",
+          },
+        ]),
+      );
 
-    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+      fireEvent.click(screen.getByRole("button", { name: "排期" }));
 
-    // Inverted task bar is clamped chronologically without negative width
-    const invBar = screen.getByRole("button", { name: /^Inverted dates task: / });
-    expect(invBar).toBeInTheDocument();
-    const invLeft = parseFloat(invBar.style.left.match(/([\d.]+)%/)![1]);
-    const invWidth = parseFloat(invBar.style.width.match(/([\d.]+)%/)![1]);
-    expect(invLeft).toBeGreaterThanOrEqual(0);
-    expect(invWidth).toBeGreaterThan(0);
+      // Inverted task bar is clamped chronologically without negative width
+      const invBar = screen.getByRole("button", { name: /^Inverted dates task: / });
+      expect(invBar).toBeInTheDocument();
+      const invLeft = parseFloat(invBar.style.left.match(/([\d.]+)%/)![1]);
+      const invWidth = parseFloat(invBar.style.width.match(/([\d.]+)%/)![1]);
+      expect(invLeft).toBeGreaterThanOrEqual(0);
+      expect(invWidth).toBeGreaterThan(0);
 
-    // Span task covering beyond the window boundaries is clamped to [0%, 100%]
-    const spanBar = screen.getByRole("button", { name: /^Span task across window: / });
-    expect(spanBar).toBeInTheDocument();
-    expect(spanBar.style.left).toBe("0%");
-    expect(spanBar.style.width).toBe("100%");
+      // Span task covering beyond the window boundaries is clamped to [0%, 100%]
+      const spanBar = screen.getByRole("button", { name: /^Span task across window: / });
+      expect(spanBar).toBeInTheDocument();
+      expect(spanBar.style.left).toBe("0%");
+      expect(spanBar.style.width).toBe("100%");
 
-    // Partially invalid date task uses the valid date safely without NaN
-    const partialBar = screen.getByRole("button", { name: /^Partially invalid date task: / });
-    expect(partialBar).toBeInTheDocument();
-    const partialLeft = parseFloat(partialBar.style.left.match(/([\d.]+)%/)![1]);
-    const partialWidth = parseFloat(partialBar.style.width.match(/([\d.]+)%/)![1]);
-    expect(Number.isFinite(partialLeft)).toBe(true);
-    expect(Number.isFinite(partialWidth)).toBe(true);
-    expect(partialLeft).toBeGreaterThanOrEqual(0);
-    expect(partialWidth).toBeGreaterThan(0);
-    expect(screen.getByText("截止：2026-09-22 · 开始未定")).toBeInTheDocument();
+      // Partially invalid date task uses the valid date safely without NaN
+      const partialBar = screen.getByRole("button", { name: /^Partially invalid date task: / });
+      expect(partialBar).toBeInTheDocument();
+      const partialLeft = parseFloat(partialBar.style.left.match(/([\d.]+)%/)![1]);
+      const partialWidth = parseFloat(partialBar.style.width.match(/([\d.]+)%/)![1]);
+      expect(Number.isFinite(partialLeft)).toBe(true);
+      expect(Number.isFinite(partialWidth)).toBe(true);
+      expect(partialLeft).toBeGreaterThanOrEqual(0);
+      expect(partialWidth).toBeGreaterThan(0);
+      expect(screen.getByText("截止：2026-09-22 · 开始未定")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("surfaces project.deleteTaskFail error message when deletion fails", async () => {
