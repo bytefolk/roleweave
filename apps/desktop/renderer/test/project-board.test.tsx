@@ -37,6 +37,17 @@ function detail(items: GoalWorkItem[] = [task]): GoalDetail {
     activity: [],
   };
 }
+/** The schedule view renders a 28-day window anchored at the current week's
+ * Monday, so fixed calendar dates drift out of the window over time and their
+ * bars disappear (CI failure on 2026-09-28). Window-sensitive fixtures must
+ * derive their dates from today instead. */
+function isoFromToday(offsetDays: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
 function setup(
   value = detail(),
   overrides: Partial<OwbBridge> = {},
@@ -528,17 +539,19 @@ describe("ProjectBoard", () => {
   });
 
   it("safely groups malformed or invalid dates into unscheduled section", () => {
+    const validStart = isoFromToday(1);
+    const validDue = isoFromToday(4);
     setup(
       detail([
         { ...task, taskId: "bad-date", title: "Corrupted date task", startDate: "not-a-date" },
-        { ...task, taskId: "valid-date", title: "Valid date task", startDate: "2026-09-22", dueDate: "2026-09-25" },
+        { ...task, taskId: "valid-date", title: "Valid date task", startDate: validStart, dueDate: validDue },
       ]),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "排期" }));
 
     // Valid date task is in timeline
-    expect(screen.getByText("2026-09-22 → 2026-09-25")).toBeInTheDocument();
+    expect(screen.getByText(`${validStart} → ${validDue}`)).toBeInTheDocument();
 
     // Malformed date task is safely placed in unscheduled
     const unscheduledSection = screen.getByRole("heading", { name: /未排期/ });
@@ -559,14 +572,17 @@ describe("ProjectBoard", () => {
   });
 
   it("clamps schedule bar calculations for inverted dates, window-edge spans, and partially invalid dates", () => {
+    const invertedStart = isoFromToday(1);
+    const invertedDue = isoFromToday(0);
+    const partialDue = isoFromToday(5);
     setup(
       detail([
         {
           ...task,
           taskId: "inverted-task",
           title: "Inverted dates task",
-          startDate: "2026-09-28",
-          dueDate: "2026-09-22",
+          startDate: invertedStart,
+          dueDate: invertedDue,
         },
         {
           ...task,
@@ -580,7 +596,7 @@ describe("ProjectBoard", () => {
           taskId: "partial-date-task",
           title: "Partially invalid date task",
           startDate: "malformed-date",
-          dueDate: "2026-09-22",
+          dueDate: partialDue,
         },
       ]),
     );
@@ -610,7 +626,7 @@ describe("ProjectBoard", () => {
     expect(Number.isFinite(partialWidth)).toBe(true);
     expect(partialLeft).toBeGreaterThanOrEqual(0);
     expect(partialWidth).toBeGreaterThan(0);
-    expect(screen.getByText("截止：2026-09-22 · 开始未定")).toBeInTheDocument();
+    expect(screen.getByText(`截止：${partialDue} · 开始未定`)).toBeInTheDocument();
   });
 
   it("surfaces project.deleteTaskFail error message when deletion fails", async () => {
