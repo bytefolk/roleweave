@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TurnHistory } from "@roleweave/shared";
+import type { EngineEvent, TurnHistory } from "@roleweave/shared";
 import { adaptTurnHistory } from "../src/turns/adapter";
 
 describe("turn-record.v1 renderer adapter", () => {
@@ -141,7 +141,47 @@ describe("turn-record.v1 renderer adapter", () => {
     const [adapted] = adaptTurnHistory(history, "代码库负责人");
     expect(adapted?.trace).toEqual([
       { activityId: "tool-1", kind: "tool", status: "completed", title: "Read", detail: "roster.csv", at: "2026-08-24T04:00:05.000Z" },
-      { activityId: "thought-1", kind: "thought", status: "running", text: "Now query all records" },
+        { activityId: "thought-1", kind: "thought", status: "running", text: "Now query all records" },
     ]);
+  });
+
+  it("bounds the trail across tools and agents, not only across thoughts", () => {
+    const at = (seconds: number) => new Date(Date.UTC(2026, 7, 24, 4, 0, seconds)).toISOString();
+    const events: EngineEvent[] = [
+      { type: "run.started", runId: "run-5", timestamp: at(0) },
+      { type: "model.delta", runId: "run-5", timestamp: at(1), text: "开工" },
+    ];
+    for (let step = 1; step <= 140; step += 1) {
+      events.push({ type: "trace.activity", runId: "run-5", timestamp: at(step + 1), activityId: `tool-${step}`, kind: step % 2 === 0 ? "agent" : "tool", status: "completed", title: `Step ${step}` });
+    }
+    events.push({ type: "model.delta", runId: "run-5", timestamp: at(200), text: "收尾" });
+
+    const history: TurnHistory = {
+      schemaVersion: "turn-history.v1",
+      conversationId: "conversation-1",
+      positionId: "repo-owner",
+      turns: [{
+        schemaVersion: "turn-record.v1",
+        conversationId: "conversation-1",
+        turnId: "turn-5",
+        positionId: "repo-owner",
+        engine: "qoder",
+        status: "running",
+        input: "核对群成员",
+        envelopeDigest: "sha256:capped",
+        createdAt: at(0),
+        updatedAt: at(200),
+        events,
+      }],
+    };
+
+    const [adapted] = adaptTurnHistory(history, "代码库负责人");
+    const trail = adapted?.trace ?? [];
+    // 1 narration + 140 steps + 1 narration = 142 entries; only the oldest 14
+    // go, and the newest narration is kept rather than dropped by a
+    // thought-only budget.
+    expect(trail).toHaveLength(128);
+    expect(trail[0]?.activityId).toBe("tool-14");
+    expect(trail.at(-1)).toEqual({ activityId: "thought-2", kind: "thought", status: "running", text: "收尾" });
   });
 });

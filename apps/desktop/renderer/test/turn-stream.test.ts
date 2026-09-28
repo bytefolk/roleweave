@@ -12,6 +12,7 @@ import {
   settlePendingTurn,
 } from "../src/turns/turnStream";
 import type { GroupTimeline, TurnRecord } from "@roleweave/shared";
+import { adaptTurnHistory } from "../src/turns/adapter";
 
 const pending = { positionId: "repo-owner", engine: "qoder" as const, input: "检查发布" };
 
@@ -193,6 +194,68 @@ describe("turn stream reducer", () => {
       payload: { runId: "run-1", positionId: "repo-owner", engine: "qoder", timestamp: "2026-08-24T05:00:01.500Z", type: "usage", totalTokens: "many" },
     });
     expect(invalid.runs["run-1"]?.totalTokens).toBeNull();
+  });
+
+  it("folds narration into thought rows live, matching the persisted adapter exactly", () => {
+    const at = (seconds: number) => new Date(Date.UTC(2026, 7, 24, 5, 0, seconds)).toISOString();
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-1"));
+    state = applyTurnEvent(state, delta(2, "run-1", "先读这份表，"));
+    state = applyTurnEvent(state, delta(3, "run-1", "然后查群和人。"));
+    state = applyTurnEvent(state, { seq: 4, type: "turn.trace.activity", payload: { runId: "run-1", positionId: "repo-owner", engine: "qoder", timestamp: at(2), activityId: "tool-1", kind: "tool", status: "running", title: "Terminal", detail: "dws aitable field list" } });
+    state = applyTurnEvent(state, { seq: 5, type: "turn.trace.activity", payload: { runId: "run-1", positionId: "repo-owner", engine: "qoder", timestamp: at(3), activityId: "tool-1", kind: "tool", status: "completed", title: "Terminal", detail: "dws aitable field list" } });
+    state = applyTurnEvent(state, delta(6, "run-1", "正在汇总"));
+
+    // The same run as it arrives over SSE, and as the server persists it.
+    const [persisted] = adaptTurnHistory({
+      schemaVersion: "turn-history.v1",
+      conversationId: "conversation-1",
+      positionId: "repo-owner",
+      turns: [{
+        schemaVersion: "turn-record.v1",
+        conversationId: "conversation-1",
+        turnId: "turn-1",
+        positionId: "repo-owner",
+        engine: "qoder",
+        status: "running",
+        input: "检查发布",
+        envelopeDigest: "sha256:live",
+        createdAt: at(0),
+        updatedAt: at(4),
+        events: [
+          { type: "run.started", runId: "run-1", timestamp: at(0) },
+          { type: "model.delta", runId: "run-1", timestamp: at(1), text: "先读这份表，" },
+          { type: "model.delta", runId: "run-1", timestamp: at(1), text: "然后查群和人。" },
+          { type: "trace.activity", runId: "run-1", timestamp: at(2), activityId: "tool-1", kind: "tool", status: "running", title: "Terminal", detail: "dws aitable field list" },
+          { type: "trace.activity", runId: "run-1", timestamp: at(3), activityId: "tool-1", kind: "tool", status: "completed", title: "Terminal", detail: "dws aitable field list" },
+          { type: "model.delta", runId: "run-1", timestamp: at(4), text: "正在汇总" },
+        ],
+      }],
+    }, "代码库负责人");
+
+    expect(state.runs["run-1"]?.trace).toEqual([
+      { activityId: "thought-1", kind: "thought", status: "completed", text: "先读这份表，然后查群和人。" },
+      { activityId: "tool-1", kind: "tool", status: "completed", title: "Terminal", detail: "dws aitable field list", at: at(3) },
+      { activityId: "thought-2", kind: "thought", status: "running", text: "正在汇总" },
+    ]);
+    expect(state.runs["run-1"]?.trace).toEqual(persisted?.trace);
+  });
+
+  it("bounds the live trail across activities, not only across thoughts", () => {
+    const at = (seconds: number) => new Date(Date.UTC(2026, 7, 24, 5, 0, seconds)).toISOString();
+    let state = beginPendingTurn(EMPTY_TURN_STREAM, pending);
+    state = applyTurnEvent(state, started(1, "run-1"));
+    state = applyTurnEvent(state, delta(2, "run-1", "开工"));
+    for (let seq = 3; seq <= 142; seq += 1) {
+      state = applyTurnEvent(state, { seq, type: "turn.trace.activity", payload: { runId: "run-1", positionId: "repo-owner", engine: "qoder", timestamp: at(seq), activityId: `tool-${seq - 2}`, kind: seq % 2 === 0 ? "agent" : "tool", status: "completed", title: `Step ${seq - 2}` } });
+    }
+
+    const trail = state.runs["run-1"]?.trace ?? [];
+    expect(trail).toHaveLength(128);
+    // One narration row plus 140 steps is 141 entries; the oldest 13 go, so
+    // the narration is not favoured over the steps that overflow it.
+    expect(trail[0]?.activityId).toBe("tool-13");
+    expect(trail.at(-1)?.activityId).toBe("tool-140");
   });
 });
 

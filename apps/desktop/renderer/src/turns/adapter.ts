@@ -5,10 +5,7 @@ import type {
   TurnRecord as ApiTurnRecord,
 } from "@roleweave/shared";
 import type { TurnApprovalRequest, TurnProgressStep, TurnRecord, TurnTraceActivity } from "./types";
-
-/** Bounded thought narration surfaced in the activity trail. */
-const TRAIL_THOUGHT_MAX_CHARS = 200;
-const TRAIL_MAX_ITEMS = 50;
+import { closeNarration, dropOpenNarration, foldNarration, putTrailItem } from "./trail";
 
 /** #146：展示兜底文案走目录；裸调用（测试/无 Provider）回退 zh 词。 */
 function renderOutput(output: unknown, unrenderable: string): string | undefined {
@@ -110,46 +107,29 @@ function totalTokens(record: ApiTurnRecord): number | undefined {
   return undefined;
 }
 
-function thoughtSnippet(raw: string): string {
-  const text = raw.replace(/\s+/g, " ").trim();
-  return text.length > TRAIL_THOUGHT_MAX_CHARS ? `${text.slice(0, TRAIL_THOUGHT_MAX_CHARS)}…` : text;
-}
-
 /**
- * Qoder-style chronological trail: the model's narration between two tool
- * activities (consecutive model.delta runs) becomes a bounded "thought"
- * item, interleaved with tool/agent activities in event order. Tool entries
- * keep their latest status at their first-seen position. The trailing
- * narration of a settled turn IS the answer and stays in the output section,
- * so only a still-running turn keeps its open segment as a live "thinking"
- * item. Bounded: at most TRAIL_MAX_ITEMS entries, thought text truncated.
+ * Qoder-style chronological trail: the model's narration between two
+ * activities becomes a bounded "thought" row, interleaved with tool/agent
+ * activities in event order. Folded through the same primitives as the live
+ * SSE projection (`trail.ts`), so a run reads the same while it streams and
+ * after the history reload. A settled turn drops its trailing narration — that
+ * text is the answer and already renders below. Bounded by TRAIL_MAX_ITEMS
+ * across thoughts, tools and agents alike.
  */
 function buildTrail(record: ApiTurnRecord): TurnTraceActivity[] {
-  const items = new Map<string, TurnTraceActivity>();
-  let segment = "";
+  let trail: TurnTraceActivity[] = [];
   let thoughtSeq = 0;
-  const flushThought = (status: TurnTraceActivity["status"]): void => {
-    const text = thoughtSnippet(segment);
-    segment = "";
-    if (!text || items.size >= TRAIL_MAX_ITEMS) return;
-    thoughtSeq += 1;
-    items.set(`thought-${thoughtSeq}`, {
-      activityId: `thought-${thoughtSeq}`,
-      kind: "thought",
-      status,
-      text,
-    });
-  };
   for (const event of record.events) {
     if (event.type === "model.delta") {
-      segment += event.text;
+      const folded = foldNarration(trail, event.text, thoughtSeq);
+      trail = folded.trail;
+      thoughtSeq = folded.thoughtSeq;
       continue;
     }
     if (event.type === "trace.activity") {
-      flushThought("completed");
-      const previous = items.get(event.activityId);
-      items.set(event.activityId, {
-        ...previous,
+      const previous = trail.find((item) => item.activityId === event.activityId);
+      trail = putTrailItem(closeNarration(trail), {
+        ...(previous ?? {}),
         activityId: event.activityId,
         kind: event.kind,
         status: event.status,
@@ -160,8 +140,7 @@ function buildTrail(record: ApiTurnRecord): TurnTraceActivity[] {
       });
     }
   }
-  if (record.status === "running") flushThought("running");
-  return [...items.values()];
+  return record.status === "running" ? trail : dropOpenNarration(trail);
 }
 
 /**
