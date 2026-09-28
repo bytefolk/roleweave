@@ -392,6 +392,15 @@
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__agent { padding: 6px 9px; border-radius: 8px; background: color-mix(in srgb, var(--ui-brand) 7%, transparent); }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__continuing { color: var(--ui-foreground); }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__continuing svg { color: var(--ui-brand); animation: owb-progress-spin 1s linear infinite; }
+/* Thought entries: the model's narration between two tool calls, kept quieter
+ * than the tool lines so the execution steps stay scannable. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__item { display: flex; align-items: center; gap: 8px; min-width: 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group li > .owb-activity-trace__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__item.is-thought .owb-activity-trace__icon,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__item.is-thought .owb-activity-trace__label,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__thought,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__state { color: var(--ui-foreground-subtle); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__item.is-failed .owb-activity-trace__state { color: var(--ui-danger); }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-failure { display: grid; gap: 5px; margin-top: 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--ui-danger) 32%, var(--ui-border)); border-radius: 9px; background: color-mix(in srgb, var(--ui-danger) 7%, transparent); color: var(--ui-foreground); }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-failure__title { display: flex; align-items: center; gap: 7px; color: var(--ui-danger); font-size: 12px; font-weight: 600; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-failure :is(p, small) { margin: 0; line-height: 1.55; }

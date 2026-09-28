@@ -48,6 +48,37 @@ describe("conversation activity line (Qoder-style)", () => {
     expect(screen.getByText("Read").closest("li")?.querySelector(".owb-activity-trace__status")?.className).toContain("is-completed");
   });
 
+  it("interleaves bounded thought narration with tool activity in event order", () => {
+    render(<TurnThread turns={[turn({ status: "completed", completedAt: ended, output: "结论", trace: [
+      { activityId: "thought-1", kind: "thought", status: "completed", text: "先读这份表，然后查群和人。", at: started },
+      { activityId: "t1", kind: "tool", status: "completed", title: "Terminal", detail: "dws aitable field list", at: "2026-09-10T06:00:02.000Z" },
+      { activityId: "thought-2", kind: "thought", status: "completed", text: "JSON 结构不同，换个方式取。", at: "2026-09-10T06:00:04.000Z" },
+      { activityId: "t2", kind: "tool", status: "failed", title: "Terminal", detail: "dws aitable record list", at: "2026-09-10T06:00:06.000Z" },
+    ] })]} />);
+    expect(disclosure()).toHaveTextContent("执行工具 2 次，其中 1 次失败");
+    fireEvent.click(disclosure());
+    const items = document.querySelectorAll(".owb-activity-trace__item, .owb-activity-trace__agent");
+    expect(items).toHaveLength(4);
+    expect(items[0]).toHaveClass("is-thought");
+    expect(items[0]).toHaveTextContent("已思考");
+    expect(items[0]).toHaveTextContent("先读这份表，然后查群和人。");
+    expect(items[1]).toHaveTextContent("已执行");
+    expect(items[3]).toHaveClass("is-failed");
+    expect(items[3]).toHaveTextContent("运行失败");
+  });
+
+  it("names a running turn's open narration as the live element instead of a second thinking row", () => {
+    render(<TurnThread turns={[turn({ trace: [
+      { activityId: "t1", kind: "tool", status: "completed", title: "Read", detail: "src/App.tsx", at: started },
+      { activityId: "thought-1", kind: "thought", status: "running", text: "Now query all records", at: "2026-09-10T06:00:05.000Z" },
+    ] })]} />);
+    const item = document.querySelector(".owb-activity-trace__item.is-thought.is-running");
+    expect(item).not.toBeNull();
+    expect(item).toHaveTextContent("思考中");
+    expect(item).toHaveTextContent("Now query all records");
+    expect(screen.queryByText("继续推理…")).not.toBeInTheDocument();
+  });
+
   it("folds into its tool-count summary and collapses once settled", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-10T06:00:08.000Z"));

@@ -4,7 +4,11 @@ import type {
   TurnHistory as ApiTurnHistory,
   TurnRecord as ApiTurnRecord,
 } from "@roleweave/shared";
-import type { TurnApprovalRequest, TurnProgressStep, TurnRecord } from "./types";
+import type { TurnApprovalRequest, TurnProgressStep, TurnRecord, TurnTraceActivity } from "./types";
+
+/** Bounded thought narration surfaced in the activity trail. */
+const TRAIL_THOUGHT_MAX_CHARS = 200;
+const TRAIL_MAX_ITEMS = 50;
 
 /** #146：展示兜底文案走目录；裸调用（测试/无 Provider）回退 zh 词。 */
 function renderOutput(output: unknown, unrenderable: string): string | undefined {
@@ -106,15 +110,58 @@ function totalTokens(record: ApiTurnRecord): number | undefined {
   return undefined;
 }
 
-function traceActivities(record: ApiTurnRecord): TurnRecord["trace"] {
-  const byId = new Map<string, NonNullable<TurnRecord["trace"]>[number]>();
+function thoughtSnippet(raw: string): string {
+  const text = raw.replace(/\s+/g, " ").trim();
+  return text.length > TRAIL_THOUGHT_MAX_CHARS ? `${text.slice(0, TRAIL_THOUGHT_MAX_CHARS)}…` : text;
+}
+
+/**
+ * Qoder-style chronological trail: the model's narration between two tool
+ * activities (consecutive model.delta runs) becomes a bounded "thought"
+ * item, interleaved with tool/agent activities in event order. Tool entries
+ * keep their latest status at their first-seen position. The trailing
+ * narration of a settled turn IS the answer and stays in the output section,
+ * so only a still-running turn keeps its open segment as a live "thinking"
+ * item. Bounded: at most TRAIL_MAX_ITEMS entries, thought text truncated.
+ */
+function buildTrail(record: ApiTurnRecord): TurnTraceActivity[] {
+  const items = new Map<string, TurnTraceActivity>();
+  let segment = "";
+  let thoughtSeq = 0;
+  const flushThought = (status: TurnTraceActivity["status"]): void => {
+    const text = thoughtSnippet(segment);
+    segment = "";
+    if (!text || items.size >= TRAIL_MAX_ITEMS) return;
+    thoughtSeq += 1;
+    items.set(`thought-${thoughtSeq}`, {
+      activityId: `thought-${thoughtSeq}`,
+      kind: "thought",
+      status,
+      text,
+    });
+  };
   for (const event of record.events) {
-    if (event.type !== "trace.activity") continue;
-    byId.set(event.activityId, { activityId: event.activityId, kind: event.kind, status: event.status, title: event.title,
-      ...(event.detail !== undefined ? { detail: event.detail } : {}),
-      ...(event.parentActivityId !== undefined ? { parentActivityId: event.parentActivityId } : {}), at: event.timestamp });
+    if (event.type === "model.delta") {
+      segment += event.text;
+      continue;
+    }
+    if (event.type === "trace.activity") {
+      flushThought("completed");
+      const previous = items.get(event.activityId);
+      items.set(event.activityId, {
+        ...previous,
+        activityId: event.activityId,
+        kind: event.kind,
+        status: event.status,
+        title: event.title,
+        ...(event.detail !== undefined ? { detail: event.detail } : {}),
+        ...(event.parentActivityId !== undefined ? { parentActivityId: event.parentActivityId } : {}),
+        at: event.timestamp,
+      });
+    }
   }
-  return [...byId.values()];
+  if (record.status === "running") flushThought("running");
+  return [...items.values()];
 }
 
 /**
@@ -129,7 +176,7 @@ export function adaptTurnRecord(
   const pendingApproval = approvalRequest(record);
   const progress = progressSteps(record);
   const usage = totalTokens(record);
-  const trace = traceActivities(record);
+  const trace = buildTrail(record);
   return {
     id: record.turnId,
     positionId: record.positionId,

@@ -63,12 +63,17 @@ export interface TurnApprovalRequest {
 
 export interface TurnTraceActivity {
   activityId: string;
-  kind: "tool" | "agent";
+  /** "thought" is renderer-derived: the model's narration between two tool
+   * activities (from model.delta runs), bounded and single-line. */
+  kind: "tool" | "agent" | "thought";
   status: "running" | "completed" | "failed";
-  title: string;
+  /** Tool/agent label; thought items carry text instead. */
+  title?: string;
+  /** Bounded thought narration snippet (thought items only). */
+  text?: string;
   detail?: string;
   parentActivityId?: string;
-  at: string;
+  at?: string;
 }
 
 export interface TurnRecord {
