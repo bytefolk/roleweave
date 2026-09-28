@@ -108,6 +108,8 @@ export const errorCodes = {
   docs_storage_failed: "docs_storage_failed",
   /** A document creation target already exists; creation never overwrites (#35 S4). */
   docs_exists: "docs_exists",
+  /** A document changed after it was read and must not be overwritten (#511). */
+  docs_conflict: "docs_conflict",
   /** A doc-ref.v1alpha1 value violates the frozen reference shape (#35 S4). */
   doc_ref_invalid: "doc_ref_invalid",
   /** External doc-plane URL is not configured; bridge routes cannot be served (#35 R2). */

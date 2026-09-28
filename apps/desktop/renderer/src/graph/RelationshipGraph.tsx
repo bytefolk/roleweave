@@ -134,7 +134,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
   const relationText = (edge: RelationshipEdge) => `${nodesById.get(edge.source)?.label ?? edge.source} → ${t(`graph.relation.${edge.kind}`)} → ${nodesById.get(edge.target)?.label ?? edge.target}`;
   const partial = data?.truncated || data?.coverage.some(item => item.state !== "complete");
 
-  return <section className="owb-rgraph" aria-label={t("graph.title")} onKeyDown={event => { if (event.key === "Escape" && selection) closeDetails(); }}>
+  return <section className="owb-rgraph" tabIndex={0} aria-label={t("graph.title")} onKeyDown={event => { if (event.key === "Escape" && selection) closeDetails(); }}>
     <header className="owb-rgraph__header"><div><h1><Network size={19} aria-hidden="true" />{t("graph.title")}</h1><p>{t("graph.subtitle")}</p></div><Button icon={<RefreshCw size={14} />} onClick={onReload} loading={loading}>{t("graph.reload")}</Button></header>
     {error ? <Alert type="error" title={t("graph.loadFailure")} showIcon action={<Button size="small" onClick={onReload}>{t("graph.reload")}</Button>} /> : null}
     {partial ? <Alert type="warning" title={t("graph.partial")} showIcon /> : null}

@@ -3,7 +3,7 @@ const test = require("node:test");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { validateWorkspaceCreateRequest, validateWorkspaceInitializeRequest, openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, nativePathForServerPath, revealWorkspaceInFileManager } = require("../src/workspace-ipc.cjs");
+const { validateWorkspaceCreateRequest, validateWorkspaceInitializeRequest, openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, nativePathForServerPath, revealWorkspaceInFileManager, openWorkspaceFile } = require("../src/workspace-ipc.cjs");
 const { readLastWorkspacePath } = require("../src/last-workspace.cjs");
 const { runtimeEnvironment } = require("../src/runtime-settings.cjs");
 const { openDefaultWorkspace } = require("../src/auto-open-workspace.cjs");
@@ -270,6 +270,20 @@ function revealFixture({ body, status = 200, env = {}, failure = "" }) {
     openPath: async (target) => { opened.push(target); return failure; },
   };
 }
+
+test("workspace file opening is bounded to the open workspace and rejects traversal", async () => {
+  const f = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });
+  assert.deepEqual(await openWorkspaceFile({ ...f, relativePath: "apps/server/src/routes/docs.ts" }), {
+    opened: true,
+    path: "/tmp/projects/local-team/apps/server/src/routes/docs.ts",
+  });
+  assert.deepEqual(f.opened, ["/tmp/projects/local-team/apps/server/src/routes/docs.ts"]);
+  for (const relativePath of ["/etc/passwd", "../secret.txt", "apps/../secret.txt", "apps\\secret.ts", "https://example.com/a.ts", ".hidden/a.ts"]) {
+    const blocked = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });
+    assert.equal((await openWorkspaceFile({ ...blocked, relativePath })).opened, false, relativePath);
+    assert.deepEqual(blocked.opened, []);
+  }
+});
 
 test("reveal opens the native workspace path without any renderer-supplied argument", async () => {
   const f = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });

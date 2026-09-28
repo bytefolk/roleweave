@@ -8,6 +8,13 @@ const { pathToFileURL } = require("node:url");
 // wait for the module to mount; resolves null when absent so the parity job
 // fails loudly instead of silently.
 //
+// #523: which two columns those are changed. They used to be the org module's
+// left column beside its turn panel; the org module now renders the structure
+// directory or the relationship graph, and the conversation lives in its own
+// module. The pair measured now is the collaboration sidebar beside the shell's
+// main region. What is compared — two columns that end together,
+// of equal height, with platform-stable widths — is unchanged.
+//
 // #194: presence is not settled geometry. The mount poll only proves the two
 // columns exist, and measuring the instant they appear sampled the renderer
 // mid-layout: on an identical tree (fbff520 and d89ceb5 share tree 23443b1)
@@ -34,8 +41,19 @@ const LAYOUT_MEASURE_SCRIPT = String.raw`(async () => {
   if (document.querySelector("[data-org-workbench-packaged-smoke-entry='true']")) return null;
   const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
   const readColumns = () => {
-    const left = document.querySelector(".owb-org-module__left")?.getBoundingClientRect();
-    const right = document.querySelector(".owb-org-module__pane--right > .owb-turn-panel")?.getBoundingClientRect();
+    // #523: the org module no longer renders a left column beside a turn panel
+    // — it renders the structure directory or the relationship graph, and the
+    // conversation moved into its own module (which is also the entry module).
+    // The two columns AC-004 compares are therefore the collaboration sidebar
+    // and the turn panel it stands beside.
+    const left = document.querySelector(".owb-app .ui-app-shell__sidebar")?.getBoundingClientRect()
+      ?? document.querySelector(".ui-app-shell__sidebar")?.getBoundingClientRect();
+    // The shell's main region, not the turn panel inside it: the panel sits
+    // below the context header and is legitimately shorter, so measuring it
+    // would compare the header's height against the sidebar rather than the
+    // two columns against each other.
+    const right = document.querySelector(".owb-app .ui-app-shell__main")?.getBoundingClientRect()
+      ?? document.querySelector(".ui-app-shell__main")?.getBoundingClientRect();
     return left && right ? { left, right } : null;
   };
   const measure = (columns) => ({

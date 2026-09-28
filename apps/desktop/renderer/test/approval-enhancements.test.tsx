@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApprovalQueue } from "../src/approvals/ApprovalQueue";
-import { ApprovalDetailDrawer } from "../src/approvals/ApprovalDetailDrawer";
+import { ApprovalDetail } from "../src/approvals/ApprovalDetail";
 import { DiffViewer } from "../src/approvals/DiffViewer";
 import { TurnThread } from "../src/turns/TurnThread";
 import type { ApprovalQueueItem } from "../src/approvals/types";
@@ -95,25 +95,51 @@ describe("Approval Center Enhancements (#456)", () => {
     });
   });
 
-  describe("ApprovalDetailDrawer enhancements", () => {
+  describe("ApprovalDetail enhancements", () => {
+    const now = Date.parse("2026-09-26T12:00:00.000Z");
+    const noop = () => {};
+    const detail = (item: ApprovalQueueItem | null, props: Partial<Parameters<typeof ApprovalDetail>[0]> = {}) => (
+      <ApprovalDetail item={item} now={now} onApprove={noop} onDeny={noop} {...props} />
+    );
+    const openDisclosure = (testId: string) => {
+      const disclosure = screen.getByTestId(testId);
+      expect(disclosure.tagName).toBe("DETAILS");
+      fireEvent.click(disclosure.querySelector("summary")!);
+      expect(disclosure).toHaveAttribute("open");
+      return disclosure;
+    };
+    const auditResponse = (approvalId: string, actor: string) => ({
+      status: 200,
+      body: {
+        approvalId,
+        events: [{
+          approvalId, seq: 1, type: "requested", actor,
+          timestamp: "2026-09-26T10:00:00.000Z",
+          policyVersion: "1", policyDigest: "policy-digest", hash: `sha256:${actor}`,
+        }],
+      },
+    });
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      let reject!: (reason: Error) => void;
+      const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+      return { promise, resolve, reject };
+    }
+    const installAudit = (approvalAudit: ReturnType<typeof vi.fn>) => {
+      window.owb = { ...window.owb, approvalAudit } as unknown as typeof window.owb;
+    };
+
     it("renders multi-party progress bar and my decision status tag", () => {
       const item = makeItem({
         policyProgress: {
           granted: 1,
           required: 2,
+          pending: 1,
           escalated: false,
         },
       });
 
-      render(
-        <ApprovalDetailDrawer
-          item={item}
-          open={true}
-          onClose={() => {}}
-          onApprove={() => {}}
-          onDeny={() => {}}
-        />,
-      );
+      render(detail(item));
 
       expect(screen.getByTestId("approval-policy-progress")).toBeInTheDocument();
       const decisionTag = screen.getByTestId("approval-my-decision-status");
@@ -142,18 +168,14 @@ describe("Approval Center Enhancements (#456)", () => {
         },
       });
 
-      const { container } = render(
-        <ApprovalDetailDrawer
-          item={item}
-          open={true}
-          onClose={() => {}}
-          onApprove={() => {}}
-          onDeny={() => {}}
-        />,
-      );
+      const { container } = render(detail(item));
 
-      expect(screen.getByTestId("approval-change-preview")).toBeInTheDocument();
-      expect(screen.getByTestId("approval-diff-viewer")).toBeInTheDocument();
+      const preview = within(container).getByTestId("approval-change-preview");
+      expect(preview).toBeVisible();
+      expect(preview.closest("details")).toBeNull();
+      expect(within(preview).getByTestId("approval-diff-viewer")).toBeVisible();
+      expect(preview.querySelector(".is-delete")).toHaveTextContent("line2");
+      expect(preview.querySelector(".is-add")).toHaveTextContent("line2_modified");
     });
 
     it("fetches audit trail and renders server-validated tag with real event types", async () => {
@@ -202,15 +224,8 @@ describe("Approval Center Enhancements (#456)", () => {
         approvalAudit: auditMock,
       } as unknown as typeof window.owb;
 
-      render(
-        <ApprovalDetailDrawer
-          item={makeItem()}
-          open={true}
-          onClose={() => {}}
-          onApprove={() => {}}
-          onDeny={() => {}}
-        />,
-      );
+      render(detail(makeItem()));
+      openDisclosure("approval-audit-trail");
 
       await waitFor(() => {
         expect(auditMock).toHaveBeenCalledWith({ id: "appr-1" });
@@ -245,15 +260,8 @@ describe("Approval Center Enhancements (#456)", () => {
         approvalAudit: auditMock,
       } as unknown as typeof window.owb;
 
-      render(
-        <ApprovalDetailDrawer
-          item={makeItem()}
-          open={true}
-          onClose={() => {}}
-          onApprove={() => {}}
-          onDeny={() => {}}
-        />,
-      );
+      render(detail(makeItem()));
+      openDisclosure("approval-audit-trail");
 
       await waitFor(() => {
         expect(auditMock).toHaveBeenCalled();
@@ -264,6 +272,305 @@ describe("Approval Center Enhancements (#456)", () => {
       });
 
       expect(screen.queryByTestId("audit-server-validated-tag")).not.toBeInTheDocument();
+    });
+
+    it("renders in its container without a dialog, with visible risk and footer actions outside the scrolling body", () => {
+      const onApprove = vi.fn();
+      const onDeny = vi.fn();
+      const onNext = vi.fn();
+      const item = makeItem({
+        positionMode: "read_only",
+        requestReason: "A schema migration is required",
+        context: {
+          risk: "high", riskOverlay: "medium", requestedCapability: "write", impact: "workspace_write",
+          parameterSummary: "Update audit column",
+          permissions: { mode: "read_only", allowedTools: ["fs.read"], deniedTools: ["fs.write"] },
+          preview: { status: "unavailable", reason: "engine_preview_not_supplied" },
+          scope: { allowed: ["once"] },
+        },
+      });
+      const { container } = render(detail(item, { onApprove, onDeny, onNext }));
+      const root = within(container).getByTestId("approval-detail");
+      expect(root.tagName).toBe("SECTION");
+      expect(root).toHaveClass("owb-approval-detail");
+      expect(root).not.toHaveClass("owb-approval-drawer");
+      expect(root).toHaveAttribute("aria-label");
+      expect(root).toHaveAttribute("data-approval-id", "appr-1");
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      const header = root.querySelector<HTMLElement>(".owb-approval-detail__header")!;
+      expect(within(header).getByRole("heading", { level: 2, name: "Software Engineer" })).toBeVisible();
+      expect(within(header).getByTestId("approval-rule-risk")).toBeVisible();
+      expect(within(header).getByTestId("approval-risk-overlay")).toBeVisible();
+      const body = root.querySelector<HTMLElement>(".owb-approval-detail__body")!;
+      expect(within(body).getByText("Write database schema")).toBeVisible();
+      expect(within(body).getByText("db/schema.sql")).toBeVisible();
+      expect(within(body).getByText("A schema migration is required")).toBeVisible();
+      expect(within(body).getByText("Update audit column")).toBeVisible();
+      expect(within(body).queryByTestId("approval-change-preview")).not.toBeInTheDocument();
+      const footer = root.querySelector<HTMLElement>(".owb-approval-detail__footer")!;
+      expect(body.contains(footer)).toBe(false);
+      expect(within(footer).getByTestId("approval-reason-input")).toBeVisible();
+      expect(within(footer).getByTestId("approval-approve-button")).toBeVisible();
+      expect(within(footer).getByTestId("approval-deny-button")).toBeVisible();
+      fireEvent.click(within(header).getByRole("button"));
+      expect(onNext).toHaveBeenCalledOnce();
+      expect(onApprove).not.toHaveBeenCalled();
+      expect(onDeny).not.toHaveBeenCalled();
+    });
+
+    it("shows only a simple inline prompt when no request is selected", () => {
+      const audit = vi.fn();
+      installAudit(audit);
+      const { container } = render(detail(null));
+      const root = within(container).getByTestId("approval-detail");
+      expect(root).not.toHaveAttribute("data-approval-id");
+      expect(root.textContent?.trim()).not.toBe("");
+      expect(within(root).queryByRole("heading")).not.toBeInTheDocument();
+      expect(within(root).queryByRole("button")).not.toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(audit).not.toHaveBeenCalled();
+    });
+
+    it("keeps permissions and source references in disclosures with working navigation callbacks", () => {
+      const onOpenSource = vi.fn();
+      const onOpenEvidence = vi.fn();
+      const item = makeItem({
+        executionTurnId: "recovery-1",
+        context: {
+          risk: "medium", requestedCapability: "write", impact: "workspace_write",
+          permissions: { mode: "approval_required", allowedTools: ["fs.read"], deniedTools: ["fs.write"] },
+          preview: { status: "unavailable", reason: "engine_preview_not_supplied" }, scope: { allowed: ["once"] },
+        },
+      });
+      const { rerender } = render(detail(item, { onOpenSource, onOpenEvidence }));
+      const permissions = openDisclosure("approval-permissions");
+      expect(within(permissions).getByText("fs.read")).toBeVisible();
+      expect(within(permissions).getByText("fs.write")).toBeVisible();
+      const source = openDisclosure("approval-source-references");
+      for (const value of ["sess-1", "turn-1", "run-1", "recovery-1"]) {
+        expect(within(source).getByText(value)).toBeVisible();
+      }
+      const buttons = within(source).getAllByRole("button");
+      fireEvent.click(buttons[0]!);
+      fireEvent.click(buttons[1]!);
+      expect(onOpenSource).toHaveBeenCalledWith(item);
+      expect(onOpenEvidence).toHaveBeenCalledWith(item);
+      rerender(detail({ ...item, source: { ...item.source!, kind: "group" } }, { onOpenSource }));
+      expect(within(source).getAllByRole("button").every((button) => button.hasAttribute("disabled"))).toBe(true);
+    });
+
+    it("defaults to once implicitly and only sends run scope after an explicit eligible selection", () => {
+      const onApprove = vi.fn();
+      const onDeny = vi.fn();
+      const item = makeItem();
+      const { rerender } = render(detail(item, { onApprove, onDeny }));
+      expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("approval-approve-button"));
+      expect(onApprove).toHaveBeenLastCalledWith("appr-1", undefined);
+      rerender(detail({ ...item, scopeAllowed: ["once", "run"] }, { onApprove, onDeny }));
+      const radios = screen.getAllByRole("radio");
+      expect(radios[0]).toBeChecked();
+      fireEvent.click(radios[1]!);
+      fireEvent.change(screen.getByTestId("approval-reason-input"), { target: { value: "  checked migration  " } });
+      fireEvent.click(screen.getByTestId("approval-approve-button"));
+      expect(onApprove).toHaveBeenLastCalledWith("appr-1", "checked migration", "run");
+      fireEvent.click(screen.getByTestId("approval-deny-button"));
+      expect(onDeny).toHaveBeenLastCalledWith("appr-1", "checked migration");
+      rerender(detail({ ...item, scopeAllowed: ["once"] }, { onApprove, onDeny }));
+      expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("approval-approve-button"));
+      expect(onApprove).toHaveBeenLastCalledWith("appr-1", "checked migration");
+    });
+
+    it("resets reason and run scope before a newly selected request can submit", () => {
+      const onApprove = vi.fn();
+      const first = makeItem({ scopeAllowed: ["once", "run"] });
+      // The callback ref observes commit-time state, before passive reset effects.
+      function Selection({ item }: { item: ApprovalQueueItem }) {
+        return <div ref={(node) => {
+          if (node && item.approvalId === "appr-2") {
+            screen.getByTestId("approval-approve-button").click();
+          }
+        }}>{detail(item, { onApprove })}</div>;
+      }
+      const { rerender } = render(<Selection item={first} />);
+      fireEvent.change(screen.getByTestId("approval-reason-input"), { target: { value: "first request only" } });
+      fireEvent.click(screen.getAllByRole("radio")[1]!);
+      rerender(<Selection item={{ ...first, approvalId: "appr-2" }} />);
+      expect(onApprove).toHaveBeenCalledOnce();
+      expect(onApprove).toHaveBeenCalledWith("appr-2", undefined);
+      expect(screen.getByTestId("approval-reason-input")).toHaveValue("");
+      expect(screen.getAllByRole("radio")[0]).toBeChecked();
+    });
+
+    it("retains reason and selected scope on the same request after a failed submission", () => {
+      const onApprove = vi.fn();
+      const item = makeItem({ scopeAllowed: ["once", "run"] });
+      const { rerender } = render(detail(item, { onApprove }));
+      fireEvent.change(screen.getByTestId("approval-reason-input"), { target: { value: "retry unchanged" } });
+      fireEvent.click(screen.getAllByRole("radio")[1]!);
+      fireEvent.click(screen.getByTestId("approval-approve-button"));
+      rerender(detail({ ...item, busy: true }, { onApprove }));
+      expect(screen.getByTestId("approval-approve-button")).toBeDisabled();
+      rerender(detail({ ...item, error: "Submission unconfirmed" }, { onApprove }));
+      expect(screen.getByTestId("approval-reason-input")).toHaveValue("retry unchanged");
+      expect(screen.getAllByRole("radio")[1]).toBeChecked();
+      const footer = screen.getByTestId("approval-detail").querySelector<HTMLElement>(".owb-approval-detail__footer")!;
+      expect(within(footer).getByText("Submission unconfirmed")).toBeVisible();
+      fireEvent.click(screen.getByTestId("approval-approve-button"));
+      expect(onApprove).toHaveBeenCalledTimes(2);
+      expect(onApprove).toHaveBeenLastCalledWith("appr-1", "retry unchanged", "run");
+    });
+
+    it.each([
+      ["decided", { decision: { kind: "denied" } }],
+      ["cancelled", { decision: { kind: "cancelled" } }],
+      ["indeterminate", { decision: { kind: "indeterminate" } }],
+      ["expired", { expiresAt: "2026-09-26T12:00:00.000Z" }],
+      ["invalid expiry", { expiresAt: "invalid" }],
+      ["busy", { busy: true }],
+      ["unavailable", { canDecide: false, unavailableReason: "session_missing" }],
+    ] satisfies [string, Partial<ApprovalQueueItem>][])("blocks both verdict callbacks for %s requests", (_name, overrides) => {
+      const onApprove = vi.fn();
+      const onDeny = vi.fn();
+      render(detail(makeItem(overrides), { onApprove, onDeny }));
+      for (const id of ["approval-approve-button", "approval-deny-button"]) {
+        expect(screen.getByTestId(id)).toBeDisabled();
+        fireEvent.click(screen.getByTestId(id));
+      }
+      expect(onApprove).not.toHaveBeenCalled();
+      expect(onDeny).not.toHaveBeenCalled();
+    });
+
+    it("enforces 1024 trimmed UTF-8 bytes without preventing reason correction", () => {
+      const onApprove = vi.fn();
+      render(detail(makeItem(), { onApprove }));
+      const input = screen.getByTestId("approval-reason-input");
+      fireEvent.change(input, { target: { value: "界".repeat(342) } });
+      expect(input).not.toBeDisabled();
+      expect(screen.getByTestId("approval-approve-button")).toBeDisabled();
+      expect(screen.getByTestId("approval-deny-button")).toBeDisabled();
+      fireEvent.click(screen.getByTestId("approval-approve-button"));
+      expect(onApprove).not.toHaveBeenCalled();
+      const boundary = `${"界".repeat(341)}x`;
+      fireEvent.change(input, { target: { value: ` ${boundary} ` } });
+      expect(screen.getByTestId("approval-approve-button")).not.toBeDisabled();
+      fireEvent.click(screen.getByTestId("approval-approve-button"));
+      expect(onApprove).toHaveBeenCalledWith("appr-1", boundary);
+    });
+
+    it("redacts sensitive summaries and real diff content rather than inventing a preview", () => {
+      const { container } = render(detail(makeItem({
+        description: "token=description-secret", target: "https://example.com/?token=target-secret",
+        requestReason: "password=request-secret",
+        context: {
+          risk: "high", requestedCapability: "write", impact: "workspace_write",
+          parameterSummary: "api_key=parameter-secret",
+          permissions: { mode: "approval_required", allowedTools: [], deniedTools: [] },
+          preview: { status: "available", files: [{
+            path: "config.txt", change: "modify", before: "token=before-secret", after: "token=after-secret",
+          }] },
+          scope: { allowed: ["once", "run"] },
+        },
+      })));
+      for (const secret of ["description-secret", "target-secret", "request-secret", "parameter-secret", "before-secret", "after-secret"]) {
+        expect(container.textContent).not.toContain(secret);
+      }
+      expect(container.textContent).toContain("[redacted]");
+      expect(within(container).getByTestId("approval-diff-viewer")).toBeVisible();
+      // Context scope is descriptive; only scopeAllowed authorizes run grants.
+      expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    });
+
+    it("distinguishes a saved decision from failed execution and keeps feedback in the footer", () => {
+      render(detail(makeItem({
+        decision: { kind: "granted", scope: "run", decidedAt: "2026-09-26T11:00:00Z", decidedBy: "reviewer" },
+        executionPhase: "failed", executionErrorCode: "execution_fixture_failed",
+      })));
+      const lifecycle = screen.getByTestId("approval-lifecycle");
+      expect(lifecycle.querySelector(".is-granted")).toBeInTheDocument();
+      expect(lifecycle.querySelector(".is-failed")).toHaveTextContent("execution_fixture_failed");
+      expect(lifecycle).toHaveTextContent("reviewer");
+      const footer = screen.getByTestId("approval-detail").querySelector<HTMLElement>(".owb-approval-detail__footer")!;
+      expect(within(footer).getAllByRole("alert").length).toBeGreaterThanOrEqual(2);
+      expect(within(footer).getByTestId("approval-approve-button")).toBeDisabled();
+    });
+
+    it("refreshes audit when the verdict and execution phase change without refetching on clock ticks", async () => {
+      const audit = vi.fn()
+        .mockResolvedValueOnce(auditResponse("appr-1", "requested-actor"))
+        .mockResolvedValueOnce(auditResponse("appr-1", "decided-actor"))
+        .mockResolvedValueOnce(auditResponse("appr-1", "completed-actor"));
+      installAudit(audit);
+      const item = makeItem({ executionPhase: "not_started" });
+      const { rerender } = render(detail(item));
+      openDisclosure("approval-audit-trail");
+      expect(await screen.findByText("requested-actor")).toBeVisible();
+      rerender(detail(item, { now: now + 60_000 }));
+      expect(audit).toHaveBeenCalledTimes(1);
+      const decided = { ...item, decision: { kind: "granted" as const, scope: "once" as const } };
+      rerender(detail(decided));
+      expect(await screen.findByText("decided-actor")).toBeVisible();
+      rerender(detail({ ...decided, executionPhase: "completed" }));
+      expect(await screen.findByText("completed-actor")).toBeVisible();
+      expect(screen.queryByText("requested-actor")).not.toBeInTheDocument();
+      expect(screen.queryByText("decided-actor")).not.toBeInTheDocument();
+      expect(audit).toHaveBeenCalledTimes(3);
+      expect(audit).toHaveBeenLastCalledWith({ id: "appr-1" });
+    });
+
+    it("clears previous audit data synchronously on identity change", async () => {
+      const pending = deferred<ReturnType<typeof auditResponse>>();
+      installAudit(vi.fn().mockResolvedValueOnce(auditResponse("appr-1", "old-actor")).mockReturnValueOnce(pending.promise));
+      const snapshots: string[] = [];
+      function Selection({ item }: { item: ApprovalQueueItem }) {
+        return <div ref={(node) => {
+          if (node && item.approvalId === "appr-2") snapshots.push(document.body.textContent ?? "");
+        }}>{detail(item)}</div>;
+      }
+      const { rerender } = render(<Selection item={makeItem()} />);
+      openDisclosure("approval-audit-trail");
+      expect(await screen.findByText("old-actor")).toBeVisible();
+      rerender(<Selection item={makeItem({ approvalId: "appr-2" })} />);
+      openDisclosure("approval-audit-trail");
+      expect(snapshots).toHaveLength(1);
+      expect(snapshots[0]).not.toContain("old-actor");
+      expect(screen.queryByTestId("audit-server-validated-tag")).not.toBeInTheDocument();
+      await act(async () => pending.resolve(auditResponse("appr-2", "new-actor")));
+      expect(screen.getByText("new-actor")).toBeInTheDocument();
+    });
+
+    it.each(["resolve", "reject"] as const)("ignores an old request's late audit %s after selection changes", async (outcome) => {
+      const old = deferred<ReturnType<typeof auditResponse>>();
+      const current = deferred<ReturnType<typeof auditResponse>>();
+      installAudit(vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise));
+      const { rerender } = render(detail(makeItem()));
+      rerender(detail(makeItem({ approvalId: "appr-2" })));
+      openDisclosure("approval-audit-trail");
+      await act(async () => current.resolve(auditResponse("appr-2", "current-actor")));
+      await act(async () => {
+        if (outcome === "resolve") old.resolve(auditResponse("appr-1", "stale-actor"));
+        else old.reject(new Error("stale-audit-error"));
+      });
+      expect(screen.getByText("current-actor")).toBeInTheDocument();
+      expect(screen.queryByText("stale-actor")).not.toBeInTheDocument();
+      expect(screen.queryByText("stale-audit-error")).not.toBeInTheDocument();
+    });
+
+    it("ignores an out-of-order audit refresh for an earlier phase of the same request", async () => {
+      const earlier = deferred<ReturnType<typeof auditResponse>>();
+      const later = deferred<ReturnType<typeof auditResponse>>();
+      const audit = vi.fn().mockReturnValueOnce(earlier.promise).mockReturnValueOnce(later.promise);
+      installAudit(audit);
+      const item = makeItem({ decision: { kind: "granted", scope: "once" }, executionPhase: "starting" });
+      const { rerender } = render(detail(item));
+      openDisclosure("approval-audit-trail");
+      rerender(detail({ ...item, executionPhase: "completed" }));
+      await act(async () => later.resolve(auditResponse("appr-1", "latest-phase-actor")));
+      await act(async () => earlier.resolve(auditResponse("appr-1", "stale-phase-actor")));
+      expect(screen.getByText("latest-phase-actor")).toBeInTheDocument();
+      expect(screen.queryByText("stale-phase-actor")).not.toBeInTheDocument();
+      expect(audit).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { pickSelectOption } from "./select-helper";
@@ -64,6 +65,8 @@ function installBridge(
 
 function renderPanel(
   extra: {
+    listHost?: HTMLElement | null;
+    onSelectGroup?: () => void;
     draftSeed?: { members: string[]; nonce: number } | null;
     groups?: GroupConversation[];
     liveRuns?: Record<string, LiveRunState>;
@@ -110,6 +113,8 @@ function renderPanel(
       onSpawnRuns={() => {}}
       onReconcileTimeline={extra.onReconcileTimeline ?? (() => {})}
       draftSeed={extra.draftSeed ?? null}
+      listHost={extra.listHost}
+      onSelectGroup={extra.onSelectGroup}
     />,
     ),
   };
@@ -190,6 +195,148 @@ function completedTimeline(): GroupTimeline {
     ],
   };
 }
+
+describe("GroupsPanel external collaboration list", () => {
+  it("recovers a failed list load without remounting the persistent panel", async () => {
+    const bridge = installBridge();
+    vi.mocked(bridge.groups).mockRejectedValueOnce(new Error("offline"));
+    render(<GroupsPanel workspaceOpen positions={positions} positionNames={positionNames}
+      engine="qoder" engineAvailability={{
+        qoder: readyAvailability, "claude-code": readyAvailability, "claude-local": readyAvailability,
+        codex: readyAvailability, "codex-local": readyAvailability, workbuddy: readyAvailability,
+      }} liveRuns={{}} onSpawnRuns={() => {}} onReconcileTimeline={() => {}} />);
+    const error = await screen.findByRole("alert");
+    fireEvent.click(within(error).getByRole("button", { name: "重试连接" }));
+    expect(await screen.findByRole("heading", { name: "Repo Owner、Release Engineer" })).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  const secondGroup: GroupConversation = {
+    ...group,
+    conversationRef: "22222222-3333-4444-8555-666666666666",
+    members: ["repo-owner", "community-operator"],
+  };
+
+  it("renders the list and create controls only in the supplied portal host", async () => {
+    const { container: host } = render(<aside aria-label="Collaboration" />);
+    const { container, unmount } = renderPanel({ listHost: host });
+
+    expect(await within(host).findByRole("button", { name: /Repo Owner.*Release Engineer/ })).toBeVisible();
+    expect(host.querySelectorAll(".owb-groups__list")).toHaveLength(1);
+    expect(within(host).getByRole("combobox", { name: "搜索并选择群成员" })).toBeInTheDocument();
+    expect(container.querySelector(".owb-groups__list")).toBeNull();
+    expect(container.querySelector(".owb-groups")).toHaveClass("owb-groups--external-list");
+    expect(within(container).getByRole("textbox", { name: "群聊消息" })).toBeInTheDocument();
+
+    unmount();
+    expect(host.querySelector(".owb-groups__list")).toBeNull();
+  });
+
+  it.each([undefined, null])("keeps the list inline when the host is %s", async (listHost) => {
+    const { container } = renderPanel({ listHost });
+    expect(await within(container).findByRole("button", { name: /Repo Owner.*Release Engineer/ })).toBeVisible();
+    expect(container.querySelectorAll(".owb-groups__list")).toHaveLength(1);
+    expect(container.querySelector(".owb-groups")).not.toHaveClass("owb-groups--external-list");
+  });
+
+  it("notifies row selection but not initial selection or a background timeline refresh", async () => {
+    const onSelectGroup = vi.fn();
+    const timeline = vi.fn(async (conversationRef: string) => ({
+      status: 200,
+      body: { schemaVersion: "group-timeline.v1", conversationRef, items: [] },
+    }));
+    const { bridge } = renderPanel({ groups: [group, secondGroup], onSelectGroup, timeline });
+    await screen.findByRole("heading", { name: "Repo Owner、Release Engineer" });
+    expect(onSelectGroup).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Repo Owner.*Community Operator/ }));
+    expect(await screen.findByRole("heading", { name: "Repo Owner、Community Operator" })).toBeVisible();
+    expect(onSelectGroup).toHaveBeenCalledTimes(1);
+
+    vi.mocked(bridge.groupTimeline).mockResolvedValue({ status: 200, body: {
+      schemaVersion: "group-timeline.v1",
+      conversationRef: secondGroup.conversationRef,
+      items: [{
+        kind: "user", schemaVersion: "group-message.v1", conversationRef: secondGroup.conversationRef,
+        messageId: "background-message", input: "Background update", mentions: ["community-operator"], createdAt: group.createdAt,
+      }],
+    } });
+    emitBridgeEvent(bridge, { type: "turn.completed", payload: { groupRef: secondGroup.conversationRef } });
+    expect(await screen.findByText("Background update")).toBeVisible();
+    expect(onSelectGroup).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies successful creation from the portal and selects the new group", async () => {
+    const { container: host } = render(<aside aria-label="Collaboration" />);
+    const onSelectGroup = vi.fn();
+    const { bridge } = renderPanel({
+      listHost: host,
+      onSelectGroup,
+      createGroup: async () => ({ status: 201, body: secondGroup }),
+    });
+    await screen.findByRole("heading", { name: "Repo Owner、Release Engineer" });
+    const createDetails = host.querySelector("details.owb-groups__create")!;
+    await act(async () => {
+      // Native <details> dispatches toggle asynchronously; let its controlled state settle.
+      const toggled = new Promise<void>((resolve) => createDetails.addEventListener("toggle", () => resolve(), { once: true }));
+      fireEvent.click(createDetails.querySelector("summary")!);
+      await toggled;
+    });
+    pickSelectOption("搜索并选择群成员", "Repo Owner");
+    pickSelectOption("搜索并选择群成员", "Community Operator");
+    expect(onSelectGroup).not.toHaveBeenCalled();
+    vi.mocked(bridge.groups).mockResolvedValue({ status: 200, body: {
+      schemaVersion: "conversation-group-list.v1", groups: [group, secondGroup],
+    } });
+    fireEvent.click(within(host).getByRole("button", { name: "创建群聊" }));
+
+    expect(await screen.findByRole("heading", { name: "Repo Owner、Community Operator" })).toBeVisible();
+    expect(onSelectGroup).toHaveBeenCalledTimes(1);
+    expect(host.querySelector("details.owb-groups__create")).not.toHaveAttribute("open");
+    expect(within(host).getByText("已选 0 人")).toBeInTheDocument();
+  });
+
+  it("preserves group selection and message and create drafts across hide/show while mounted", async () => {
+    installBridge({ groups: [group, secondGroup] });
+    const onReconcileTimeline = () => {};
+    function PersistentPanel({ visible }: { visible: boolean }) {
+      const [listHost, setListHost] = useState<HTMLElement | null>(null);
+      return <>
+        <aside aria-label="Collaboration" ref={setListHost} hidden={!visible} />
+        <div hidden={!visible}>
+          <GroupsPanel workspaceOpen positions={positions} positionNames={positionNames}
+            listHost={listHost} engine="qoder" engineAvailability={{
+              qoder: readyAvailability, "claude-code": readyAvailability, "claude-local": readyAvailability,
+              codex: readyAvailability, "codex-local": readyAvailability, workbuddy: readyAvailability,
+            }} liveRuns={{}} onSpawnRuns={() => {}} onReconcileTimeline={onReconcileTimeline} />
+        </div>
+      </>;
+    }
+    const { rerender } = render(<PersistentPanel visible />);
+    const host = screen.getByRole("complementary", { name: "Collaboration" });
+    fireEvent.click(await within(host).findByRole("button", { name: /Repo Owner.*Community Operator/ }));
+    await screen.findByRole("heading", { name: "Repo Owner、Community Operator" });
+    fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), { target: { value: "Keep this group draft" } });
+    pickSelectOption("选择要 @ 的成员", "Community Operator");
+    pickSelectOption("协作方式", "依次接力");
+    fireEvent.click(host.querySelector("details.owb-groups__create summary")!);
+    pickSelectOption("搜索并选择群成员", "Release Engineer");
+    await waitFor(() => expect(host.querySelector("details.owb-groups__create")).toHaveAttribute("open"));
+
+    rerender(<PersistentPanel visible={false} />);
+    expect(screen.queryByRole("textbox", { name: "群聊消息" })).not.toBeInTheDocument();
+    expect(host).not.toBeVisible();
+    rerender(<PersistentPanel visible />);
+
+    expect(screen.getByRole("heading", { name: "Repo Owner、Community Operator" })).toBeVisible();
+    expect(within(host).getByRole("button", { name: /Repo Owner.*Community Operator/ })).toHaveClass("is-active");
+    expect(screen.getByRole("textbox", { name: "群聊消息" })).toHaveValue("Keep this group draft");
+    expect(screen.getByText(/按选择顺序执行：Community Operator/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "发送群消息" })).toBeEnabled();
+    expect(host.querySelector("details.owb-groups__create")).toHaveAttribute("open");
+    expect(within(host).getByText("已选 1 人")).toBeVisible();
+  });
+});
 
 describe("GroupsPanel collaboration visuals (#53)", () => {
   it("renders the member avatar stack in the group header and the member roster sidebar", async () => {
@@ -378,11 +525,9 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     expect(container.querySelectorAll(".is-running")).toHaveLength(0);
     expect(screen.queryByText("working")).not.toBeInTheDocument();
     const terminalProgress = screen.getByRole("group", { name: "执行进展" });
-    expect(within(terminalProgress).getByRole("button")).toHaveAttribute("aria-expanded", "false");
-    expect(within(terminalProgress).getByRole("button")).toHaveTextContent("已完成");
-    expect(within(terminalProgress).getByRole("timer")).toHaveTextContent("1s");
-    fireEvent.click(within(terminalProgress).getByRole("button"));
-    expect(within(terminalProgress).getByText("回合已完成")).toBeVisible();
+    expect(within(terminalProgress).queryByRole("button")).toBeNull();
+    expect(terminalProgress.textContent).toContain("已处理");
+    expect(within(terminalProgress).getByRole("timer")).toHaveTextContent("耗时 1 秒");
   });
 
   it("polls a persisted running turn to terminal when the listener attached after its spawn (#114)", async () => {
@@ -513,7 +658,11 @@ const sessionConflict = {
 /** #116 AC-003: a create the server refused must be readable, not a silent no-op. */
 describe("GroupsPanel create failure alert (#116)", () => {
   it("shows the server error even when no group exists to select", async () => {
+    const { container: host } = render(<aside aria-label="Collaboration" />);
+    const onSelectGroup = vi.fn();
     const { container } = renderPanel({
+      listHost: host,
+      onSelectGroup,
       groups: [],
       draftSeed: { members: ["repo-owner", "release-engineer"], nonce: 1 },
       createGroup: async () => sessionConflict,
@@ -530,6 +679,9 @@ describe("GroupsPanel create failure alert (#116)", () => {
     // previously hidden behind is still the empty state.
     expect(alert.closest(".owb-groups__panel")).not.toBeNull();
     expect(container.querySelector(".owb-groups__panel-header")).toBeNull();
+    expect(onSelectGroup).not.toHaveBeenCalled();
+    expect(within(host).getByRole("button", { name: "创建群聊" })).toBeEnabled();
+    expect(within(host).getByText("已选 2 人")).toBeInTheDocument();
   });
 
   it("keeps showing the error when a group is already selected", async () => {

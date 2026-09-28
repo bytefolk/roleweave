@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { Alert, Badge, Button as AntButton, ConfigProvider, message } from "antd";
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { Alert, Badge, Button as AntButton, ConfigProvider, Dropdown, message } from "antd";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
@@ -34,7 +34,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { Activity, Brain, ChartColumn, ChevronsRight, ClipboardCheck, Flag, FolderKanban, FolderOpen, Network, Orbit, PencilLine, Plus, Settings, Undo2, UsersRound } from "lucide-react";
+import { ChevronsRight, FolderKanban, FolderOpen, Inbox, MessagesSquare, MoreHorizontal, Network, PanelLeft, PencilLine, Plus, Settings, Undo2, X } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -75,7 +75,6 @@ import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from 
 import { useConfigurationBootstrap, useSendShortcut, useWorkspaceFocus, requestSettingsLeave, persistApplicationPreference, preferenceError } from "./configuration-preferences";
 import { createConversationMemory } from "./turns/conversation-memory";
 import { useConversationCopy } from "./locales/conversation";
-import { OrgWorkspaceSplit } from "./org/OrgWorkspaceSplit";
 import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh-coordinator";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
@@ -90,9 +89,6 @@ import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
 import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
 
-/** #472: the 3D star map pulls three.js in; lazy-load so the default bundle
- *  never pays for WebGL until the operator opens the view. */
-const OrgStarMap = lazy(() => import("./org/OrgStarMap"));
 /** #480: keep Timeline/Drawer/Progress off the default App graph so org
  *  workbench tests do not pay for the manager board on every render. */
 const ProgressBoard = lazy(() => import("./progress/ProgressBoard").then((module) => ({ default: module.ProgressBoard })));
@@ -150,12 +146,22 @@ function AppInner({
 }) {
   const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
-    "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress"
-  >("org");
+    "conversation" | "profile" | "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress"
+  >("conversation");
   const [settingsInitialCategory, setSettingsInitialCategory] = useState<ConfigurationCategory | undefined>();
+  const [contactsOpen, setContactsOpen] = useState(false);
+  const [groupListHost, setGroupListHost] = useState<HTMLDivElement | null>(null);
+  const [conversationHeaderHost, setConversationHeaderHost] = useState<HTMLDivElement | null>(null);
+  const [groupsOpened, setGroupsOpened] = useState(false);
   const setActiveModule = useCallback((next: typeof activeModule) => {
-    if (next === "settings") setActiveModuleRaw(next);
-    else requestSettingsLeave(() => setActiveModuleRaw(next));
+    const navigate = () => {
+      setActiveModuleRaw(next);
+      setContactsOpen(false);
+      if (next !== "conversation") setSessionFocusTurnId(null);
+      if (next === "groups") setGroupsOpened(true);
+    };
+    if (next === "settings") navigate();
+    else requestSettingsLeave(navigate);
   }, []);
   /** 2026-09-17 设计评审：导轨默认收拢只出图标（hover 浮名字），展开后
    * icon+名字；展开/收拢手柄骑在导轨与侧栏边界上。手柄默认离底部 72px，
@@ -285,17 +291,12 @@ function AppInner({
   const [startupStage, setStartupStage] = useState<"service" | "workspace" | "organization" | "ready">("service");
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfoResponse | null>(null);
   const approvalState = useApprovals(workspaceInfo?.open ? workspaceInfo.path : undefined);
-  /** Org module view mode (#472 adds the 3D star map as a third surface). */
-  const [orgView, setOrgView] = useState<"workbench" | "overview" | "star">("workbench");
-  const [graphOpened, setGraphOpened] = useState(false);
-  const [starOpened, setStarOpened] = useState(false);
+  const [orgView, setOrgView] = useState<"structure" | "overview">("structure");
   const graph = useRelationshipGraph(workspaceInfo?.open ? workspaceInfo.path : undefined, activeModule === "org" && orgView === "overview");
-  useEffect(() => { setGraphOpened(false); setResourceRequest(null); }, [workspaceInfo?.path]);
+  useEffect(() => { setResourceRequest(null); setContactsOpen(false); }, [workspaceInfo?.path]);
   const [conversationFocused, setConversationFocused] = useWorkspaceFocus(workspaceInfo?.path ?? "");
   const sendShortcut = useSendShortcut();
   const conversationMemory = useRef(createConversationMemory());
-  const workbenchButtonRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => setOrgView("workbench"), [activeModule, workspaceInfo?.path, workspaceInfo?.open]);
   const [snapshot, setSnapshot] = useState<OrgTreeSnapshot | null>(null);
   const [managementTarget, setManagementTarget] = useState<string | null | undefined>(undefined);
   const [treeLoading, setTreeLoading] = useState(true);
@@ -369,6 +370,23 @@ function AppInner({
   useEffect(() => setSessionFocusTurnId(null), [workspaceInfo?.open, workspaceInfo?.path]);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
+  const [orgMessage, orgMessageContextHolder] = message.useMessage();
+  const orgMessageRevision = useRef(0);
+  // A fresh holder resets Ant Design's same-key timer, including during leave motion.
+  const orgMessageHolderKey = useMemo(() => ++orgMessageRevision.current, [orgFeedback]);
+  useEffect(() => {
+    if (orgFeedback?.tone !== "info") return;
+    const feedback = orgFeedback;
+    void orgMessage.open({
+      key: "org-feedback",
+      type: "info",
+      content: feedback.text,
+      duration: 3,
+      // A delayed close must not clear a newer notification or persistent warning.
+      onClose: () => setOrgFeedback((current) => current === feedback ? null : current),
+    });
+    return () => orgMessage.destroy("org-feedback");
+  }, [orgFeedback, orgMessage]);
   const [orgRefreshes] = useState(createOrgRefreshCoordinator);
   const approvalItems = useMemo<ApprovalQueueItem[]>(() => approvalState.items.map(a => ({
     approvalId: a.id, positionId: a.source.positionId, positionName: positionNames[a.source.positionId],
@@ -1069,13 +1087,13 @@ function AppInner({
 
   /** #248 R2 ②：组织树点某人 = 直接打开与他的对话（一键）。 */
   const openConversation = useCallback((positionId: string) => {
-    setOrgView("workbench");
+    setActiveModule("conversation");
     if (selectedIdRef.current === positionId) {
       void ensureActiveSession(positionId);
       return;
     }
     selectPosition(positionId);
-  }, [ensureActiveSession, selectPosition]);
+  }, [ensureActiveSession, selectPosition, setActiveModule]);
 
   const createTurn = useCallback(async (request: CreateTurnRequest) => {
     const sessionId = selectedSessionIdRef.current;
@@ -1359,8 +1377,8 @@ function AppInner({
   const openTurnSource = useCallback((source: { positionId: string; conversationId: string; turnId?: string }) => {
     const workspacePath = workspacePathRef.current;
     if (!workspacePath) return;
+    const reloadSelected = selectedIdRef.current === source.positionId && selectedSessionIdRef.current === source.conversationId;
     const key = JSON.stringify([workspacePath, source.positionId]);
-    setOrgView("workbench");
     selectionVersion.current += 1;
     historyRequest.current += 1;
     selectedIdRef.current = source.positionId;
@@ -1370,10 +1388,12 @@ function AppInner({
     setSelectedSessionId(source.conversationId);
     setSessions([]);
     setTurns([]);
-    setActiveModule("org");
+    setActiveModule("conversation");
     setSessionFocusTurnId(source.turnId ?? null);
-    void loadSessions(source.positionId, source.conversationId, false);
-  }, [loadSessions, setActiveModule]);
+    void loadSessions(source.positionId, source.conversationId, false).then((loaded) => {
+      if (loaded && reloadSelected) void loadTurnHistory(source.positionId, source.conversationId);
+    });
+  }, [loadSessions, loadTurnHistory, setActiveModule]);
 
   const openApprovalSource = useCallback((item: ApprovalQueueItem) => {
     const source = item.source;
@@ -1419,7 +1439,7 @@ function AppInner({
       setTreeLoading(true);
       await refresh();
       setProjectHubOpen(false);
-      setActiveModule("org");
+      setActiveModule("conversation");
       setOrgFeedback({
         tone: "info",
         text: t("project.opened", { name: opened?.business ?? opened?.path ?? t("project.localOnly") }),
@@ -1432,7 +1452,7 @@ function AppInner({
   }, [refresh, setActiveModule, t, workspaceOpening]);
 
   const onProjectCreated = useCallback(async (created: WorkspaceCreateResponse) => {
-    setActiveModule("org");
+    setActiveModule("conversation");
     await refresh();
     // A new project starts with the platform-owned root owner selected, so
     // the next click on “创建员工” already has a concrete parent.
@@ -1793,12 +1813,12 @@ function AppInner({
   const treeAction = (id: string | null, action: TreeAction) => {
     if (action === "edit") { if (id) setEditTargetId(id); return; }
     if (action === "settings") { setManagementTarget(id); return; }
-    if (action === "switch") { setProjectHubOpen(true); return; }
+    if (action === "switch") { requestSettingsLeave(() => setProjectHubOpen(true)); return; }
     if (action === "hire") { setTreeHireParent(id ?? snapshot?.owner ?? null); return; }
     if (action === "group") { setGroupDraftSeed({ members: id ? [id] : [], nonce: Date.now(), scope: groupWorkspaceScope }); setActiveModule("groups"); return; }
     if (id) openConversation(id);
     if (action === "memory") { setMemorySource(id ? "docs" : "shared"); setActiveModule("docs"); }
-    else setActiveModule("org");
+    else setActiveModule("conversation");
   };
   const managedNode = typeof managementTarget === "string" && snapshot ? findNodeById(snapshot.tree, managementTarget) : null;
 
@@ -1839,13 +1859,72 @@ function AppInner({
     } : {}),
   }), [themeContext.effective, themeContext.mode, themeContext.custom, themeContext.presetId, paletteActive, themeMode, themeProfile]);
 
-  const sidebarlessModule = activeModule === "projects" || activeModule === "reports" || activeModule === "approvals" || activeModule === "settings" || activeModule === "progress";
+  const collaborationActive = ["conversation", "profile", "docs", "groups"].includes(activeModule);
+  const projectsActive = ["projects", "goals", "progress"].includes(activeModule);
+  const inboxActive = activeModule === "approvals" || activeModule === "reports";
+  const sidebarlessModule = !collaborationActive;
+  const pendingApprovals = approvalItems.filter((item) => isActionablePending(item, Date.now())).length;
+  const directoryActions = (
+    <div className="owb-side-head__actions">
+      <AntButton size="small" disabled={orgBusy} icon={<Undo2 aria-hidden="true" size={12} />}
+        onClick={() => void undoLastAdjustment()} title={t("tree.undoTitle")}>{t("tree.undo")}</AntButton>
+      <AntButton size="small" type="primary" disabled={orgBusy} icon={<Plus aria-hidden="true" size={12} />}
+        onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>{t("tree.create")}</AntButton>
+    </div>
+  );
+  const directoryTree = workspaceInfo?.open === true ? (
+    treeLoading ? <TreeSkeleton /> : snapshot ? (
+      <div onKeyDown={(event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
+          event.preventDefault();
+          void undoLastAdjustment();
+        }
+      }}>
+        <OrgTree
+          decorateRow={(id, row) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
+          rowActions={(id) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction} />}
+          rowMetadata={(id) => {
+            const bound = positionEngines[id] !== undefined;
+            const engine = engineForPosition(id);
+            const label = engineLabel(engine);
+            const description = t(bound ? "tree.agentIdentity" : "tree.agentDefaultDescription", { name: label });
+            return <span className="ui-org-tree__metadata-content" title={description} aria-label={description}>
+              <EngineIcon engine={engine} />
+              <span className="ui-org-tree__metadata-label">{label}{bound ? null : ` · ${t("tree.agentDefault")}`}</span>
+            </span>;
+          }}
+          snapshot={snapshot}
+          versionStamp={snapshot.updatedAt}
+          displayNames={positionNames}
+          avatarColors={positionColors}
+          avatarUrls={avatarUrls}
+          runningIds={runningPositionIds}
+          selectedId={selectedId}
+          onSelect={(id) => {
+            setContactsOpen(false);
+            if (activeModule === "docs" || activeModule === "profile") selectPosition(id);
+            else openConversation(id);
+          }}
+          onMove={(id, reportTo) => void movePosition(id, reportTo)}
+          onDropPosition={(drop) => void reorderPosition(drop)}
+          onHireEntry={(parent) => setTreeHireParent(parent)}
+          onGroupEntry={(positionId) => {
+            setGroupDraftSeed({ members: [positionId], nonce: Date.now(), scope: groupWorkspaceScope });
+            setActiveModule("groups");
+            setContactsOpen(true);
+          }}
+          moveDisabled={orgBusy}
+        />
+      </div>
+    ) : <p className="owb-muted">{t("tree.unavailable")}</p>
+  ) : <p className="owb-muted">{t("tree.notOpened")}</p>;
 
   return (
     <DSProvider mode={themeMode} profile={themeProfile}>
     <ConfigProvider locale={locale === "en" ? enUS : zhCN} button={{ autoInsertSpace: false }} modal={{ centered: true }}
       theme={{ token: antdToken }}>
-    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "org" && conversationFocused && orgView === "workbench" ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}`} aria-busy={startupStage !== "ready"}>
+    <Fragment key={orgMessageHolderKey}>{orgMessageContextHolder}</Fragment>
+    <div className={`owb-app${railExpanded ? " is-rail-expanded" : ""}${activeModule === "conversation" && conversationFocused ? " is-conversation-focused" : ""}${sidebarlessModule ? " is-sidebarless-module" : ""}${contactsOpen ? " is-contacts-open" : ""}`} aria-busy={startupStage !== "ready"}>
       {startupStage !== "ready" ? (
         <div className="owb-startup" role="status" aria-label={t("startup.aria")}>
           <div className="owb-startup__mark" aria-hidden="true"><span /><span /><span /></div>
@@ -1864,7 +1943,7 @@ function AppInner({
         onSaved={() => { if (selectedIdRef.current === managementTarget) void loadPosition(managementTarget); }} onAvatarChange={(value) => setPositionAvatar(managementTarget, value)} /> : null}
       {managementTarget === null && workspaceInfo?.open ? <ProjectSettings workspace={workspaceInfo} onClose={() => setManagementTarget(undefined)}
         onMemory={() => { treeAction(null, "memory"); setManagementTarget(undefined); }} onCollaborate={() => { treeAction(null, "group"); setManagementTarget(undefined); }}
-        onSwitch={() => { setManagementTarget(undefined); setProjectHubOpen(true); }} /> : null}
+        onSwitch={() => { setManagementTarget(undefined); requestSettingsLeave(() => setProjectHubOpen(true)); }} /> : null}
       {/* 自定义 40px 标题栏（设计稿 .wintitle）：品牌标 + 窗口点 + 引擎/工作区
           状态 chip。状态灯诚实映射 /health，不假装在线。 */}
       <header
@@ -1891,44 +1970,18 @@ function AppInner({
         <ModuleRail
           label={t("misc.modules")}
           items={[
+            { id: "collaboration", label: t("rail.collaboration"), icon: <MessagesSquare aria-hidden="true" size={16} />, active: collaborationActive, onSelect: () => setActiveModule("conversation") },
             { id: "org", label: t("rail.org"), icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
-            { id: "groups", label: t("rail.groups"), icon: <UsersRound aria-hidden="true" size={16} />, active: activeModule === "groups", onSelect: () => setActiveModule("groups") },
-            // 2026-09-17 设计评审排序：审批是待办（带角标、卡着员工干活），
-            // 排在只读的上报中心前面；记忆/目标/设置按频率沉底。
-            {
-              id: "approvals",
-              label: t("rail.approvals"),
-              icon: (
-                <Badge
-                  count={approvalItems.filter((a) => isActionablePending(a, Date.now())).length}
-                  size="small"
-                  showZero={false}
-                  offset={[6, -2]}
-                  color="var(--ui-primary)"
-                >
-                  <ClipboardCheck aria-hidden="true" size={16} />
-                </Badge>
-              ),
-              active: activeModule === "approvals",
-              onSelect: () => { setActiveModule("approvals"); void approvalState.refresh(); },
-            },
-            { id: "reports", label: t("rail.reports"), icon: <ChartColumn aria-hidden="true" size={16} />, active: activeModule === "reports", onSelect: () => { setReportsFocusTurnId(null); setActiveModule("reports"); void loadReports(); } },
-            { id: "progress", label: t("rail.progress"), icon: <Activity aria-hidden="true" size={16} />, active: activeModule === "progress", onSelect: () => setActiveModule("progress") },
-            // mem and position documents are two sources in one employee-memory
-            // surface. Keep one entry here so the user does not have to choose
-            // between two implementation-owned data planes.
-            { id: "docs", label: t("rail.memory"), icon: <Brain aria-hidden="true" size={16} />, active: activeModule === "docs", onSelect: () => { setMemorySource("docs"); setActiveModule("docs"); } },
-            // #134: the update pane needs room for a version, live progress and
-            // a changelog link, so it is a module rather than a third row in
-            // the prefs drawer (#174), which stays two quick toggles.
-            { id: "projects", label: t("project.moduleTitle"), icon: <FolderKanban aria-hidden="true" size={16} />, active: activeModule === "projects", onSelect: () => setActiveModule("projects") },
-            { id: "goals", label: t("rail.goals"), icon: <Flag aria-hidden="true" size={16} />, active: activeModule === "goals", onSelect: () => setActiveModule("goals") },
-            { id: "settings", label: t("rail.settings"), icon: <Settings aria-hidden="true" size={16} />, active: activeModule === "settings", onSelect: () => { setSettingsInitialCategory(undefined); setActiveModule("settings"); } },
+            { id: "projects", label: t("rail.projects"), icon: <FolderKanban aria-hidden="true" size={16} />, active: projectsActive, onSelect: () => setActiveModule("projects") },
+            { id: "inbox", label: t("rail.inbox"), icon: <Badge count={pendingApprovals} size="small" showZero={false} offset={[6, -2]} color="var(--ui-primary)"><Inbox aria-hidden="true" size={16} /></Badge>, active: inboxActive, onSelect: () => { setActiveModule("approvals"); void approvalState.refresh(); } },
           ]}
-          footer={
-            /* 导轨宽窄开关：Pro Layout 式圆形浮 chip，骑在导轨与侧栏的缝上、
-               贴在导轨底部（左下角位置）；箭头 glyph 随状态旋转 180°。
-               ⌘B 同效。 */
+          footer={<>
+            <button type="button" className={`ui-module-rail__item owb-rail-settings${activeModule === "settings" ? " is-active" : ""}`}
+              aria-label={t("rail.settings")} title={t("rail.settings")} aria-current={activeModule === "settings" ? "page" : undefined}
+              onClick={() => { setSettingsInitialCategory(undefined); setActiveModule("settings"); }}>
+              <span className="ui-module-rail__icon"><Settings aria-hidden="true" size={16} /></span>
+              <span className="ui-module-rail__label">{t("rail.settings")}</span>
+            </button>
             <button
               type="button"
               className={`owb-rail-chip${railChipDragging ? " is-dragging" : ""}`}
@@ -1951,103 +2004,47 @@ function AppInner({
                 className={railExpanded ? "owb-rail-chip__glyph is-flipped" : "owb-rail-chip__glyph"}
               />
             </button>
-          }
+          </>}
         />
       }
-      sidebar={
-        <Sidebar
-          label={t("tree.dir")}
-          header={
-            <>
-              <TreeRowMenu id={null} name={workspaceInfo?.business ?? ""} busy={orgBusy} onAction={treeAction}>
-              <div className="owb-project-switcher-row">
-              <ProjectSwitcher
-                workspace={workspaceInfo}
-                disabled={orgBusy}
-                dialogOpen={projectHubOpen}
-                onOpen={() => setProjectHubOpen(true)}
-              />
-              <TreeRowMenu id={null} name={workspaceInfo?.business ?? ""} busy={orgBusy} onAction={treeAction} />
-              </div>
-              </TreeRowMenu>
-              <div className="owb-side-head">
-                <div className="owb-side-head__copy">
-                  <strong className="owb-side-head__title">{t("tree.dir")}</strong>
-                </div>
-                {workspaceInfo?.open === true ? (
-                  <div className="owb-side-head__actions">
-                    <AntButton
-                      size="small"
-                      className="owb-side-head__undo"
-                      disabled={orgBusy}
-                      icon={<Undo2 aria-hidden="true" size={12} />}
-                      onClick={() => void undoLastAdjustment()}
-                      title={t("tree.undoTitle")}
-                    >
-                      {t("tree.undo")}
-                    </AntButton>
-                    {/* ＋ 走装饰性图标而不是文案前缀，可及名保持「创建员工」。 */}
-                    <AntButton size="small" type="primary" disabled={orgBusy} icon={<Plus aria-hidden="true" size={12} />} onClick={() => setTreeHireParent(selectedId ?? snapshot?.owner ?? null)}>{t("tree.create")}</AntButton>
-                  </div>
-                ) : null}
-              </div>
-            </>
-          }
-          footer={
-            workspaceInfo?.open === true && (backupsStatus !== "ready" || backups.length > 0)
-              ? <BackupTray key={workspaceInfo.path} backups={backups} status={backupsStatus} busy={orgBusy} positionNames={positionNames} onRestore={restorePosition} onRetry={() => void loadBackups()} />
-              : null
-          }
+      sidebar={collaborationActive ?
+        <Sidebar label={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")}
+          header={<div className="owb-collaboration-toolbar">
+            <nav className="owb-context-tabs owb-context-tabs--subtle" aria-label={t("nav.collaboration")}>
+              <AntButton type="text" aria-pressed={activeModule !== "groups"} onClick={() => setActiveModule("conversation")}>{t("nav.direct")}</AntButton>
+              <AntButton type="text" aria-pressed={activeModule === "groups"} onClick={() => setActiveModule("groups")}>{t("rail.groups")}</AntButton>
+            </nav>
+            {activeModule !== "groups" && workspaceInfo?.open ? (
+              <Dropdown trigger={["click"]} destroyOnHidden menu={{ items: [
+                { key: "create", label: t("tree.create"), icon: <Plus size={14} />, disabled: orgBusy,
+                  onClick: () => setTreeHireParent(selectedId ?? snapshot?.owner ?? null) },
+                { key: "undo", label: t("tree.undo"), icon: <Undo2 size={14} />, disabled: orgBusy,
+                  onClick: () => { void undoLastAdjustment(); } },
+              ] }}>
+                <AntButton type="text" size="small" aria-label={t("nav.contactsActions")} title={t("nav.contactsActions")} icon={<MoreHorizontal size={17} />} />
+              </Dropdown>
+            ) : null}
+            <AntButton className="owb-contacts-close" type="text" size="small" icon={<X size={16} />} aria-label={t("nav.closeContacts")} onClick={() => setContactsOpen(false)} />
+          </div>}
         >
-          {workspaceInfo?.open === true ? (
-            treeLoading ? (
-              <TreeSkeleton />
-            ) : snapshot ? (
-              <div
-                onKeyDown={(event) => {
-                  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z" && !event.shiftKey) {
-                    event.preventDefault();
-                    void undoLastAdjustment();
-                  }
-                }}
-              >
-                <OrgTree
-                  decorateRow={(id, row) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction}>{row}</TreeRowMenu>}
-                  rowActions={(id) => <TreeRowMenu id={id} name={positionNames[id] ?? id} busy={orgBusy} onAction={treeAction} />}
-                  rowMetadata={(id) => {
-                    const bound = positionEngines[id] !== undefined;
-                    const engine = engineForPosition(id);
-                    const label = engineLabel(engine);
-                    const description = t(bound ? "tree.agentIdentity" : "tree.agentDefaultDescription", { name: label });
-                    return <span className="ui-org-tree__metadata-content" title={description} aria-label={description}>
-                      <EngineIcon engine={engine} />
-                      <span className="ui-org-tree__metadata-label">{label}{bound ? null : ` · ${t("tree.agentDefault")}`}</span>
-                    </span>;
-                  }}
-                  snapshot={snapshot}
-                  versionStamp={snapshot.updatedAt}
-                  displayNames={positionNames}
-                  avatarColors={positionColors}
-                  avatarUrls={avatarUrls}
-                  runningIds={runningPositionIds}
-                  selectedId={selectedId}
-                  onSelect={openConversation}
-                  onMove={(id, reportTo) => void movePosition(id, reportTo)}
-                  onDropPosition={(drop) => void reorderPosition(drop)}
-                  onHireEntry={(parent) => setTreeHireParent(parent)}
-                  onGroupEntry={(positionId) => {
-                    setGroupDraftSeed({ members: [positionId], nonce: Date.now(), scope: groupWorkspaceScope });
-                    setActiveModule("groups");
-                  }}
-                  moveDisabled={orgBusy}
-                />
-              </div>
-            ) : (
-              <p className="owb-muted">{t("tree.unavailable")}</p>
-            )
-          ) : (
-            <p className="owb-muted">{t("tree.notOpened")}</p>
-          )}
+          <div className="owb-contacts-directory" hidden={activeModule === "groups"}>{directoryTree}</div>
+          <div ref={setGroupListHost} className="owb-group-list-host" hidden={activeModule !== "groups"} />
+        </Sidebar> : undefined
+      }
+      topbar={
+        <Topbar
+          breadcrumbs={<div className="owb-project-location">
+            <ProjectSwitcher workspace={workspaceInfo} disabled={orgBusy} dialogOpen={projectHubOpen} onOpen={() => requestSettingsLeave(() => setProjectHubOpen(true))} />
+            <TreeRowMenu id={null} name={workspaceInfo?.business ?? ""} busy={orgBusy} onAction={treeAction} />
+            <Breadcrumbs workspace={workspaceInfo} />
+          </div>}
+          actions={<span className="owb-src" role="status">
+            <span className={engineOk ? "owb-led" : "owb-led owb-led--off"} aria-hidden="true" />
+            <span className="owb-src__text">{startupError ? t("misc.serviceOffline") : health === null ? t("misc.serviceStarting") : engineOk ? t("misc.engineAvailable") : t("misc.engineOffline")}</span>
+          </span>}
+        />
+      }
+    >
           {workspaceInfo?.open === true ? (
             <HireDrawer
               workspacePath={workspaceInfo.path}
@@ -2090,28 +2087,38 @@ function AppInner({
             onOpenWorkspace={() => void openWorkspace()}
             onCreated={(created) => void onProjectCreated(created)}
           />
-        </Sidebar>
-      }
-      topbar={
-        <Topbar
-          breadcrumbs={<Breadcrumbs workspace={workspaceInfo} />}
-          actions={
-            <div className="owb-topbar-actions">
-              {/* 只保留用户需要知道的引擎可用状态；传输层状态不在顶栏重复展示。
-                  诚实映射 /health.engine.available。 */}
-              <span className="owb-src" role="status">
-                <span
-                  className={engineOk ? "owb-led" : "owb-led owb-led--off"}
-                  aria-hidden="true"
-                />
-                <span className="owb-src__text">{startupError ? t("misc.serviceOffline") : health === null ? t("misc.serviceStarting") : engineOk ? t("misc.engineAvailable") : t("misc.engineOffline")}</span>
-              </span>
-            </div>
-          }
-        />
-      }
-    >
       <div className="owb-main">
+        {collaborationActive ? <div className={`owb-context-header${activeModule !== "groups" ? " owb-context-header--employee" : ""}`}>
+          <AntButton className="owb-contacts-toggle" type="text" aria-label={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")} title={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")} icon={<PanelLeft size={15} />} aria-expanded={contactsOpen} onClick={() => setContactsOpen(!contactsOpen)} />
+          {activeModule === "groups" ? <strong>{t("rail.groups")}</strong> : <>
+            <strong className="owb-context-header__name" title={selectedId ? positionNames[selectedId] ?? selectedId : t("nav.selectEmployee")}>{selectedId ? positionNames[selectedId] ?? selectedId : t("nav.selectEmployee")}</strong>
+            <nav className="owb-context-tabs owb-context-tabs--subtle" aria-label={t("nav.employee")}>
+              <AntButton type="text" aria-pressed={activeModule === "conversation"} onClick={() => setActiveModule("conversation")}>{t("nav.conversation")}</AntButton>
+              <AntButton type="text" aria-pressed={activeModule === "docs"} onClick={() => { setMemorySource("docs"); setActiveModule("docs"); }}>{t("rail.memory")}</AntButton>
+              <AntButton type="text" aria-pressed={activeModule === "profile"} onClick={() => setActiveModule("profile")}>{t("nav.profile")}</AntButton>
+            </nav>
+            <div className="owb-conversation-header-host" ref={setConversationHeaderHost} hidden={activeModule !== "conversation"} />
+          </>}
+        </div> : activeModule === "org" ? <div className="owb-context-header">
+          <strong>{t("rail.org")}</strong>
+          <nav className="owb-context-tabs" aria-label={t("nav.organization")}>
+            <AntButton type={orgView === "structure" ? "primary" : "text"} aria-pressed={orgView === "structure"} onClick={() => setOrgView("structure")}>{t("nav.structure")}</AntButton>
+            <AntButton type={orgView === "overview" ? "primary" : "text"} aria-pressed={orgView === "overview"} onClick={() => setOrgView("overview")}>{t("nav.graph")}</AntButton>
+          </nav>
+        </div> : projectsActive ? <div className="owb-context-header">
+          <strong>{t("rail.projects")}</strong>
+          <nav className="owb-context-tabs" aria-label={t("nav.projects")}>
+            <AntButton type={activeModule === "projects" ? "primary" : "text"} aria-pressed={activeModule === "projects"} onClick={() => setActiveModule("projects")}>{t("project.moduleTitle")}</AntButton>
+            <AntButton type={activeModule === "goals" ? "primary" : "text"} aria-pressed={activeModule === "goals"} onClick={() => setActiveModule("goals")}>{t("rail.goals")}</AntButton>
+            <AntButton type={activeModule === "progress" ? "primary" : "text"} aria-pressed={activeModule === "progress"} onClick={() => setActiveModule("progress")}>{t("rail.progress")}</AntButton>
+          </nav>
+        </div> : inboxActive ? <div className="owb-context-header">
+          <strong>{t("rail.inbox")}</strong>
+          <nav className="owb-context-tabs" aria-label={t("nav.inbox")}>
+            <AntButton type={activeModule === "approvals" ? "primary" : "text"} aria-label={t("rail.approvals")} aria-pressed={activeModule === "approvals"} onClick={() => { setActiveModule("approvals"); void approvalState.refresh(); }}>{t("rail.approvals")}<Badge count={pendingApprovals} size="small" /></AntButton>
+            <AntButton type={activeModule === "reports" ? "primary" : "text"} aria-pressed={activeModule === "reports"} onClick={() => { setReportsFocusTurnId(null); setActiveModule("reports"); void loadReports(); }}>{t("rail.reports")}</AntButton>
+          </nav>
+        </div> : null}
         {startupError ? (
           <Alert type="error" showIcon role="alert" title={startupError}
             action={<AntButton size="small" onClick={() => void refresh()}>{t("misc.retryConnection")}</AntButton>} />
@@ -2126,8 +2133,8 @@ function AppInner({
         {turnError ? (
           <Alert type="warning" showIcon role="alert" title={turnError} />
         ) : null}
-        {orgFeedback ? (
-          <Alert type={orgFeedback.tone === "warn" ? "warning" : "info"} showIcon role={orgFeedback.tone === "warn" ? "alert" : "status"} title={orgFeedback.text} />
+        {orgFeedback?.tone === "warn" ? (
+          <Alert type="warning" showIcon role="alert" title={orgFeedback.text} />
         ) : null}
         {reportsError ? <Alert type="warning" showIcon role="alert" title={reportsError} /> : null}
         {fallbackNotice ? (
@@ -2164,7 +2171,7 @@ function AppInner({
             dataState={approvalState.ready ? "ready" : "not-connected"}
             loading={approvalState.loading && !approvalState.ready}
             errorMessage={approvalState.error}
-            onNavigateToOrg={() => setActiveModule("org")}
+            onNavigateToOrg={() => setActiveModule("conversation")}
             onApprove={(id, reason, scope) => { void approvalState.decide(id, "granted", reason, scope); }}
             onDeny={(id, reason) => { void approvalState.decide(id, "denied", reason); }}
             onApproveBatch={(ids) => approvalState.decideBatch(ids)}
@@ -2172,7 +2179,117 @@ function AppInner({
             onOpenSource={openApprovalSource}
             onOpenEvidence={openApprovalEvidence}
           />
-        ) : activeModule === "groups" ? (
+        ) : activeModule === "projects" ? (
+          <ProjectManagementModule
+            workspaceOpen={workspaceInfo?.open === true}
+            workspaceKey={workspaceInfo?.path}
+            positionNames={positionNames}
+            positionEngines={positionEngines}
+            positionAvatars={positionAvatars}
+            positionAvatarSources={avatarUrls}
+            ownerPositionId={snapshot?.owner}
+            onOpenApprovals={() => setActiveModule("approvals")}
+            onOpenBoundSession={(positionId, sessionId, turnId) => {
+              if (selectedIdRef.current === positionId) {
+                if (sessionId) {
+                  const key = JSON.stringify([workspacePathRef.current, positionId]);
+                  selectedSessions.current[key] = sessionId;
+                  setSelectedSessionId(sessionId);
+                  selectedSessionIdRef.current = sessionId;
+                } else {
+                  void ensureActiveSession(positionId);
+                }
+              } else {
+                selectPosition(positionId);
+                if (sessionId) {
+                  selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+                }
+              }
+              if (turnId) {
+                setSessionFocusTurnId(turnId);
+              }
+              setActiveModule("conversation");
+            }}
+          />
+        ) : activeModule === "goals" ? (
+          <GoalsModule
+            workspaceOpen={workspaceInfo?.open === true}
+            workspaceKey={workspaceInfo?.path}
+            positionNames={positionNames}
+            positionEngines={positionEngines}
+            positionAvatars={positionAvatars}
+            positionAvatarSources={avatarUrls}
+            ownerPositionId={snapshot?.owner}
+            onOpenApprovals={() => setActiveModule("approvals")}
+            onOpenBoundSession={(positionId, sessionId, turnId) => {
+              if (selectedIdRef.current === positionId) {
+                if (sessionId) {
+                  const key = JSON.stringify([workspacePathRef.current, positionId]);
+                  selectedSessions.current[key] = sessionId;
+                  setSelectedSessionId(sessionId);
+                  selectedSessionIdRef.current = sessionId;
+                } else {
+                  void ensureActiveSession(positionId);
+                }
+              } else {
+                selectPosition(positionId);
+                if (sessionId) {
+                  selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
+                }
+              }
+              if (turnId) {
+                setSessionFocusTurnId(turnId);
+              }
+              setActiveModule("conversation");
+            }}
+          />
+
+        ) : activeModule === "settings" ? (
+          <SettingsModule initialCategory={settingsInitialCategory} workspacePath={workspaceInfo?.open ? workspaceInfo.path : undefined} workspaceScope={groupWorkspaceScope} />
+        ) : activeModule === "docs" ? (
+          <MemoryModule
+            key={workspaceInfo?.path}
+            onContinue={(id, sessionId) => { selectPosition(id); selectedSessions.current[JSON.stringify([workspacePathRef.current, id])] = sessionId; setActiveModule("conversation"); }}
+            workspaceOpen={workspaceInfo?.open === true}
+            positions={positions}
+            selectedPositionId={selectedId}
+            showEmployeePicker={false}
+            position={card.data}
+            initialSource={memorySource}
+            resourceRequest={resourceRequest}
+          />
+        ) : workspaceInfo?.open !== true ? (
+          <section className="owb-workspace-welcome">
+            <div className="owb-workspace-welcome__icon"><FolderOpen size={28} aria-hidden="true" /></div>
+            <h1>{t("project.welcomeTitle")}</h1>
+            <p>{t("project.welcomeDescription")}</p>
+            <AntButton type="primary" size="large" icon={<Plus size={16} aria-hidden="true" />}
+              disabled={startupError !== null || health === null} onClick={() => requestSettingsLeave(() => setProjectHubOpen(true))}>{t("project.welcomeAction")}</AntButton>
+          </section>
+        ) : null}
+        {activeModule === "org" && workspaceInfo?.open === true ? orgView === "structure" ? (
+          <section className="owb-organization-directory" aria-label={t("nav.structure")}>
+            <header><h1>{t("nav.structure")}</h1>{directoryActions}</header>
+            {directoryTree}
+            {backupsStatus !== "ready" || backups.length > 0 ? <BackupTray key={workspaceInfo.path} backups={backups} status={backupsStatus} busy={orgBusy} positionNames={positionNames} onRestore={restorePosition} onRetry={() => void loadBackups()} /> : null}
+          </section>
+        ) : (
+          <RelationshipGraph
+            workspaceKey={workspaceInfo.path ?? ""}
+            data={graph.data}
+            loading={graph.loading}
+            error={graph.error}
+            onReload={graph.reload}
+            onOpenAgent={openConversation}
+            onOpenResource={(positionId, path) => {
+              selectPosition(positionId);
+              setResourceRequest({ positionId, path, nonce: Date.now() });
+              setMemorySource("docs");
+              setActiveModule("docs");
+            }}
+          />
+        ) : null}
+        {groupsOpened ? <div className="owb-module-pane" hidden={activeModule !== "groups"}>
           <GroupsPanel
             availabilityCheck={availabilityCheck}
             key={`${workspaceInfo?.open}:${workspaceInfo?.path}`}
@@ -2188,160 +2305,12 @@ function AppInner({
             liveRuns={turnStream.runs}
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
+            listHost={groupListHost}
+            onSelectGroup={() => setContactsOpen(false)}
           />
-        ) : activeModule === "projects" ? (
-          <ProjectManagementModule
-            workspaceOpen={workspaceInfo?.open === true}
-            workspaceKey={workspaceInfo?.path}
-            positionNames={positionNames}
-            positionEngines={positionEngines}
-            positionAvatars={positionAvatars}
-            positionAvatarSources={avatarUrls}
-            ownerPositionId={snapshot?.owner}
-            onOpenApprovals={() => setActiveModule("approvals")}
-            onOpenBoundSession={(positionId, sessionId, turnId) => {
-              setOrgView("workbench");
-              if (selectedIdRef.current === positionId) {
-                if (sessionId) {
-                  const key = JSON.stringify([workspacePathRef.current, positionId]);
-                  selectedSessions.current[key] = sessionId;
-                  setSelectedSessionId(sessionId);
-                  selectedSessionIdRef.current = sessionId;
-                } else {
-                  void ensureActiveSession(positionId);
-                }
-              } else {
-                selectPosition(positionId);
-                if (sessionId) {
-                  selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
-                }
-              }
-              if (turnId) {
-                setSessionFocusTurnId(turnId);
-              }
-              setActiveModule("org");
-            }}
-          />
-        ) : activeModule === "goals" ? (
-          <GoalsModule
-            workspaceOpen={workspaceInfo?.open === true}
-            workspaceKey={workspaceInfo?.path}
-            positionNames={positionNames}
-            positionEngines={positionEngines}
-            positionAvatars={positionAvatars}
-            positionAvatarSources={avatarUrls}
-            ownerPositionId={snapshot?.owner}
-            onOpenApprovals={() => setActiveModule("approvals")}
-            onOpenBoundSession={(positionId, sessionId, turnId) => {
-              setOrgView("workbench");
-              if (selectedIdRef.current === positionId) {
-                if (sessionId) {
-                  const key = JSON.stringify([workspacePathRef.current, positionId]);
-                  selectedSessions.current[key] = sessionId;
-                  setSelectedSessionId(sessionId);
-                  selectedSessionIdRef.current = sessionId;
-                } else {
-                  void ensureActiveSession(positionId);
-                }
-              } else {
-                selectPosition(positionId);
-                if (sessionId) {
-                  selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
-                }
-              }
-              if (turnId) {
-                setSessionFocusTurnId(turnId);
-              }
-              setActiveModule("org");
-            }}
-          />
-
-        ) : activeModule === "settings" ? (
-          <SettingsModule initialCategory={settingsInitialCategory} workspacePath={workspaceInfo?.open ? workspaceInfo.path : undefined} workspaceScope={groupWorkspaceScope} />
-        ) : activeModule === "docs" ? (
-          <MemoryModule
-            key={workspaceInfo?.path}
-            onCollaborate={() => setActiveModule("groups")}
-            onContinue={(id, sessionId) => { selectPosition(id); selectedSessions.current[JSON.stringify([workspacePathRef.current, id])] = sessionId; setActiveModule("org"); }}
-            workspaceOpen={workspaceInfo?.open === true}
-            positions={positions}
-            selectedPositionId={selectedId}
-            position={card.data}
-            initialSource={memorySource}
-            resourceRequest={resourceRequest}
-          />
-        ) : workspaceInfo?.open !== true ? (
-          <section className="owb-workspace-welcome">
-            <div className="owb-workspace-welcome__icon"><FolderOpen size={28} aria-hidden="true" /></div>
-            <h1>{t("project.welcomeTitle")}</h1>
-            <p>{t("project.welcomeDescription")}</p>
-            <AntButton type="primary" size="large" icon={<Plus size={16} aria-hidden="true" />}
-              disabled={startupError !== null || health === null} onClick={() => setProjectHubOpen(true)}>{t("project.welcomeAction")}</AntButton>
-          </section>
-        ) : <>
-          <nav className="owb-org-views" aria-label={t("tree.views")}>
-            <AntButton ref={workbenchButtonRef} size="small" type={orgView === "workbench" ? "primary" : "default"}
-              aria-pressed={orgView === "workbench"} onClick={() => setOrgView("workbench")}>{t("tree.workbench")}</AntButton>
-            <AntButton size="small" type={orgView === "overview" ? "primary" : "default"} icon={<Network size={14} aria-hidden="true" />}
-              aria-pressed={orgView === "overview"} onClick={() => { setGraphOpened(true); setOrgView("overview"); }}>{t("tree.overview")}</AntButton>
-            <AntButton size="small" type={orgView === "star" ? "primary" : "default"} icon={<Orbit size={14} aria-hidden="true" />}
-              aria-pressed={orgView === "star"} onClick={() => { setStarOpened(true); setOrgView("star"); }}>{t("star.nav")}</AntButton>
-          </nav>
-          {graphOpened ? <div hidden={orgView !== "overview"} style={orgView === "overview" ? { display: "contents" } : undefined}>
-            <RelationshipGraph
-              workspaceKey={workspaceInfo.path ?? ""}
-              visible={orgView === "overview"}
-              data={graph.data}
-              loading={graph.loading}
-              error={graph.error}
-              onReload={graph.reload}
-              onOpenAgent={(id) => { openConversation(id); workbenchButtonRef.current?.focus(); }}
-              onOpenResource={(positionId, path) => {
-                selectPosition(positionId);
-                setResourceRequest({ positionId, path, nonce: Date.now() });
-                setMemorySource("docs");
-                setActiveModule("docs");
-              }}
-            />
-          </div> : null}
-          {starOpened ? (
-            <div hidden={orgView !== "star"} style={orgView === "star" ? { display: "contents" } : undefined}>
-              <Suspense fallback={<div className="owb-star-map__loading"><Skeleton /></div>}>
-                <OrgStarMap
-                  snapshot={snapshot}
-                  loading={treeLoading}
-                  enterpriseName={workspaceInfo?.business}
-                  displayNames={positionNames}
-                  avatarColors={positionColors}
-                  avatarUrls={avatarUrls}
-                  displayEngines={positionEngines}
-                  runningIds={runningPositionIds}
-                  selectedId={selectedId}
-                  onSelect={openConversation}
-                  onMove={(id, reportTo) => void movePosition(id, reportTo)}
-                  onHireEntry={(parent) => setTreeHireParent(parent)}
-                  onUndo={() => void undoLastAdjustment()}
-                  moveDisabled={orgBusy}
-                  dismissSlot={actionPosition && actionPosition.id !== snapshot?.owner ? (
-                    <DismissPositionDialog
-                      positionName={actionPosition.name}
-                      descendantCount={selectedNode ? countDescendants(selectedNode) : 0}
-                      busy={orgBusy}
-                      onDismiss={() => dismissPosition(actionPosition.id)}
-                    />
-                  ) : undefined}
-                />
-              </Suspense>
-            </div>
-          ) : null}
-          <OrgWorkspaceSplit
-          hidden={orgView !== "workbench"}
-          focused={conversationFocused}
-          ariaLabel={t("tree.splitPane")}
-          resetTitle={t("tree.splitPaneReset")}
-          valueText={(value) => t("tree.splitPaneValue", { value })}
-          left={
-            <div className="owb-org-module__left">
+        </div> : null}
+        {workspaceInfo?.open === true ? <>
+            <div className="owb-module-pane owb-employee-profile" hidden={activeModule !== "profile"}>
               <div className="owb-position-column">
                 <PositionCard
                   position={card.data}
@@ -2380,8 +2349,9 @@ function AppInner({
                 />
               </div>
             </div>
-          }
-          right={<TurnPanel
+          <div className="owb-module-pane owb-employee-conversation" hidden={activeModule !== "conversation"}>
+          <TurnPanel
+            headerHost={conversationHeaderHost}
             availabilityCheck={availabilityCheck}
             qoderLogin={qoderLoginSurface}
             key={workspaceInfo?.path}
@@ -2403,7 +2373,7 @@ function AppInner({
             modelError={selectedId ? modelStates[selectedId]?.error : undefined}
             modelNotice={selectedId ? modelStates[selectedId]?.notice : undefined}
             onReloadModel={() => { if (selectedId) void loadPosition(selectedId); }}
-            active={orgView === "workbench"}
+            active={activeModule === "conversation"}
             avatarUrls={avatarUrls}
             workspaceOpen={workspaceInfo?.open === true}
             modelConfig={selectedId ? positionModels[selectedId] : undefined}
@@ -2429,8 +2399,19 @@ function AppInner({
             decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
             focusTurnId={sessionFocusTurnId}
-          />}
-        /></>}
+            onOpenResource={(positionId, path) => {
+              if (!/^knowledge\//i.test(path) && path !== "SKILL.md") {
+                void window.owb.openWorkspaceFile?.(path);
+                return;
+              }
+              selectPosition(positionId);
+              setResourceRequest({ positionId, path, nonce: Date.now() });
+              setMemorySource("docs");
+              setActiveModule("docs");
+            }}
+          />
+          </div>
+        </> : null}
       </div>
     </AppShell>
     </div>
