@@ -1,0 +1,444 @@
+/* #519 first-run layout and motion (splash -> login card).
+ *
+ * Two hard constraints run through this file:
+ *   1. **Compositor properties only** (transform / opacity / filter). That is
+ *      why the wordmark's "letter-spacing settle" is expressed as a scale()
+ *      convergence and the card's "16px rise" as a translateY — animating
+ *      letter-spacing or top/left would run on the layout thread and drop
+ *      frames exactly while the user is waiting.
+ *   2. **Colour comes from tokens** (`--ui-*`), so both themes hold. The one
+ *      exception is the `--owb-brandmark-*` group below: those are the brand
+ *      asset's own colours, they must match
+ *      `branding/roleweave/roleweave-icon.svg` value for value, and
+ *      apps/desktop/test/onboarding-brand-mark.test.cjs pins them.
+ */
+
+.owb-onboarding {
+  /* Brand mark (branding/roleweave/roleweave-icon.svg) palette. Editing these
+     is editing the product icon; the guard test will say so. */
+  --owb-brandmark-tile: #141820;
+  --owb-brandmark-edge: #2c3a52;
+  --owb-brandmark-role: #722ed1;
+  --owb-brandmark-weave: #1677ff;
+  --owb-brandmark-node: #ffffff;
+
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  /* Same tracks as .owb-app: a 40px title bar over the content. The splash
+     stays under the title bar, so the drag/close hit area exists from the very
+     first frame instead of waiting for App to mount. */
+  grid-template-rows: 40px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-sans);
+  /* The brand ground is painted on the first frame; together with
+     BrowserWindow's backgroundColor that removes the white flash. */
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--ui-primary) 14%, transparent), transparent 42%),
+    var(--ui-canvas);
+  /* The overlay yields drag events; __chrome below owns the drag region. */
+  -webkit-app-region: no-drag;
+}
+
+/* Transition into the workspace: the whole layer fades out to reveal the app
+   that is already mounted. Opacity only. */
+.owb-onboarding[data-stage="transition"][data-pending="workspace"] {
+  opacity: 0;
+  transition: opacity var(--owb-transition-ms, 300ms) var(--ui-ease);
+  pointer-events: none;
+}
+
+/* Styled as the same title bar the workspace draws (.owb-wintitle), so the
+   40px strip does not visibly jump when App takes the window over. */
+.owb-onboarding__chrome {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-surface-raised);
+  -webkit-app-region: drag;
+}
+
+.owb-onboarding__chrome .owb-wintitle__controls {
+  -webkit-app-region: no-drag;
+}
+
+/* ---------- splash ---------- */
+
+.owb-splash {
+  /* Pinned to the second track (under the title bar): by the time the workspace
+     transition starts the chrome is gone, and an explicit grid-row keeps the
+     splash out of the 40px first track. */
+  grid-row: 2;
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
+  justify-items: center;
+  align-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+
+.owb-splash__halo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 320px;
+  height: 320px;
+  margin: -160px 0 0 -160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--ui-primary) 26%, transparent), transparent 68%);
+  opacity: 0.9;
+  animation: owb-onboarding-halo-in 700ms var(--ui-ease) both;
+  pointer-events: none;
+}
+
+.owb-splash__mark {
+  grid-row: 2;
+  animation: owb-onboarding-mark-in 350ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+.owb-brandmark {
+  display: block;
+}
+
+.owb-brandmark__tile,
+.owb-brandmark__cut {
+  fill: var(--owb-brandmark-tile);
+}
+
+.owb-brandmark__edge {
+  fill: none;
+  stroke: var(--owb-brandmark-edge);
+  stroke-width: 8;
+}
+
+.owb-brandmark__role {
+  fill: var(--owb-brandmark-role);
+}
+
+.owb-brandmark__weave {
+  fill: var(--owb-brandmark-weave);
+}
+
+.owb-brandmark__node {
+  fill: var(--owb-brandmark-node);
+}
+
+.owb-brandmark--splash {
+  width: 96px;
+  height: 96px;
+  filter: drop-shadow(0 18px 34px color-mix(in srgb, var(--owb-brandmark-tile) 42%, transparent));
+}
+
+.owb-splash__wordmark {
+  grid-row: 3;
+  margin: 0;
+  font: 600 26px/1.2 var(--ui-font-sans);
+  color: var(--ui-foreground);
+  animation: owb-onboarding-wordmark-in 420ms 160ms var(--ui-ease) both;
+}
+
+.owb-splash__hint {
+  grid-row: 4;
+  margin: 0;
+  min-height: 1.2em;
+  font-size: var(--ui-text-sm, 13px);
+  color: var(--ui-foreground-muted);
+  animation: owb-onboarding-fade-in 260ms 320ms linear both;
+}
+
+/* Three pulsing dots, delayed to 600ms: the last stretch of waiting gets
+   feedback without the first few hundred milliseconds implying that something
+   is stuck. Pure CSS, no requestAnimationFrame timer needed. */
+.owb-splash__progress {
+  grid-row: 5;
+  align-self: start;
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  opacity: 0;
+  animation: owb-onboarding-fade-in 200ms 600ms linear both;
+}
+
+.owb-splash__progress i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ui-primary);
+  animation: owb-onboarding-dot-pulse 1.1s 600ms ease-in-out infinite;
+}
+
+.owb-splash__progress i:nth-child(2) {
+  animation-delay: 750ms;
+}
+
+.owb-splash__progress i:nth-child(3) {
+  animation-delay: 900ms;
+}
+
+/* The shared-element beat: the mark shrinks and fades while the login card's own
+   header logo cross-fades in (a path the motion spec allows), and the halo
+   disperses. Everything here is transform/opacity/filter only. */
+.owb-splash[data-phase="docking"] .owb-splash__mark {
+  transform: scale(0.46) translateY(-14px);
+  opacity: 0;
+  filter: blur(2px);
+  transition:
+    transform var(--owb-transition-ms, 400ms) cubic-bezier(0.22, 1, 0.36, 1),
+    opacity var(--owb-transition-ms, 400ms) linear,
+    filter var(--owb-transition-ms, 400ms) linear;
+}
+
+.owb-splash[data-phase="docking"] .owb-splash__halo {
+  transform: scale(1.5);
+  opacity: 0;
+  transition: transform var(--owb-transition-ms, 400ms) var(--ui-ease), opacity var(--owb-transition-ms, 400ms) linear;
+}
+
+.owb-splash[data-phase="docking"] .owb-splash__wordmark,
+.owb-splash[data-phase="docking"] .owb-splash__hint,
+.owb-splash[data-phase="docking"] .owb-splash__progress {
+  opacity: 0;
+  transition: opacity calc(var(--owb-transition-ms, 400ms) / 2) linear;
+}
+
+@keyframes owb-onboarding-halo-in {
+  from { transform: scale(0.82); opacity: 0; }
+  to   { transform: scale(1); opacity: 0.9; }
+}
+
+@keyframes owb-onboarding-mark-in {
+  from { transform: scale(0.85); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+/* A compositor version of a "letter-spacing settle": uniform scale convergence
+   plus a fade. */
+@keyframes owb-onboarding-wordmark-in {
+  from { transform: scale(1.045); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+@keyframes owb-onboarding-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes owb-onboarding-dot-pulse {
+  0%, 100% { transform: scale(0.7); opacity: 0.35; }
+  50%      { transform: scale(1); opacity: 1; }
+}
+
+/* ---------- login / register card ---------- */
+
+.owb-login {
+  grid-row: 2;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.owb-login__card {
+  width: min(400px, 100%);
+  padding: 28px 28px 20px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-lg);
+  animation: owb-onboarding-card-in var(--owb-transition-ms, 400ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes owb-onboarding-card-in {
+  from { transform: translateY(16px); opacity: 0; filter: blur(6px); }
+  to   { transform: translateY(0); opacity: 1; filter: blur(0); }
+}
+
+.owb-login__title {
+  margin: 0;
+  font: 600 20px/1.25 var(--ui-font-sans);
+}
+
+.owb-login__subtitle {
+  margin: 6px 0 18px;
+  font-size: var(--ui-text-sm, 13px);
+  color: var(--ui-foreground-muted);
+}
+
+.owb-login__tabs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 16px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface-inset);
+}
+
+.owb-login__tab {
+  height: 32px;
+  border: 0;
+  border-radius: calc(var(--ui-radius-md) - 2px);
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  font: 500 13px/1 var(--ui-font-sans);
+  cursor: pointer;
+}
+
+.owb-login__tab[aria-selected="true"] {
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.owb-login__notice {
+  margin: 0 0 14px;
+  padding: 9px 11px;
+  border-radius: var(--ui-radius-sm);
+  font-size: var(--ui-text-sm, 13px);
+}
+
+.owb-login__notice[data-variant="expired"] {
+  background: var(--ui-warning-soft, var(--ui-surface-inset));
+  color: var(--ui-warning-strong, var(--ui-foreground));
+}
+
+.owb-login__notice[data-variant="failure"] {
+  background: var(--ui-danger-soft, var(--ui-surface-inset));
+  color: var(--ui-danger-strong, var(--ui-danger));
+}
+
+.owb-login__form {
+  display: grid;
+  gap: 14px;
+}
+
+.owb-login__field {
+  display: grid;
+  gap: 6px;
+}
+
+.owb-login__field label {
+  font-size: var(--ui-text-sm, 13px);
+  color: var(--ui-foreground-muted);
+}
+
+.owb-login__field input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  font: 400 13px/1 var(--ui-font-sans);
+}
+
+.owb-login__field input:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 1px;
+}
+
+.owb-login__field input[aria-invalid="true"] {
+  border-color: var(--ui-danger);
+}
+
+.owb-login__field-error {
+  margin: 0;
+  font-size: var(--ui-text-xs, 12px);
+  color: var(--ui-danger);
+}
+
+.owb-login__hint {
+  margin: 0;
+  font-size: var(--ui-text-xs, 12px);
+  color: var(--ui-foreground-subtle);
+}
+
+.owb-login__submit {
+  height: 36px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-primary);
+  color: var(--ui-primary-foreground);
+  font: 600 13px/1 var(--ui-font-sans);
+  cursor: pointer;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease);
+}
+
+.owb-login__submit:hover:not(:disabled) {
+  background: var(--ui-primary-hover);
+}
+
+.owb-login__submit:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.owb-login__submit:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+.owb-login__link {
+  justify-self: center;
+  margin-top: 12px;
+  border: 0;
+  background: none;
+  color: var(--ui-primary);
+  font: 500 12px/1 var(--ui-font-sans);
+  cursor: pointer;
+}
+
+.owb-login__link:disabled {
+  color: var(--ui-foreground-subtle);
+  cursor: not-allowed;
+}
+
+.owb-login__legal {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-border);
+  font-size: var(--ui-text-xs, 12px);
+  color: var(--ui-foreground-subtle);
+  text-align: center;
+}
+
+/* ---------- prefers-reduced-motion ---------- */
+/* Fades only: no translation, scale, or blur. The duration is shortened on the
+   JS side as well (REDUCED_MOTION_ONBOARDING_TIMINGS: splash 240ms, inside the
+   ≤500ms acceptance criterion). */
+@media (prefers-reduced-motion: reduce) {
+  .owb-splash__halo,
+  .owb-splash__mark,
+  .owb-login__card {
+    animation-name: owb-onboarding-fade-in;
+    animation-duration: 200ms;
+    animation-delay: 0ms;
+  }
+
+  .owb-splash[data-phase="docking"] .owb-splash__mark,
+  .owb-splash[data-phase="docking"] .owb-splash__halo {
+    transform: none;
+    filter: none;
+  }
+
+  .owb-splash__progress i,
+  .owb-onboarding[data-reduced-motion="true"] .owb-splash__progress i {
+    animation: none;
+    opacity: 0.7;
+  }
+
+  .owb-onboarding[data-stage="transition"][data-pending="workspace"] {
+    transition-duration: var(--owb-transition-ms, 180ms);
+  }
+}

@@ -34,6 +34,7 @@ const {
 } = require("./packaged-behavior-smoke.cjs");
 const {
   awaitHarnessRelease,
+  layoutSmokeLoadOptions,
   packagedSmokeLoadOptions,
   runPackagedSmoke,
   startPackagedSmokeLifecycle,
@@ -859,7 +860,19 @@ function createWindow() {
       ? (process.env.ORG_WORKBENCH_LAYOUT_REPORT ?? null)
       : null;
   const smokeLoad = smokeRequest === null ? null : packagedSmokeLoadOptions(entryPath, smokeRequest);
-  trustedRendererUrl = smokeLoad?.trustedRendererUrl ?? pathToFileURL(entryPath).toString();
+  // #519: the layout harness renders the real app, so it declares itself in the
+  // loaded URL to skip onboarding. See layoutSmokeLoadOptions.
+  const layoutLoad = layoutReportPath === null ? null : layoutSmokeLoadOptions(entryPath);
+  trustedRendererUrl = smokeLoad?.trustedRendererUrl
+    ?? layoutLoad?.trustedRendererUrl
+    ?? pathToFileURL(entryPath).toString();
+  // #519: a normal launch waits for `ready-to-show` so the window never appears
+  // as an empty frame before the renderer has painted the first-run splash. The
+  // three harness paths below keep today's visible-from-the-start behaviour on
+  // purpose — the external staging oracle snapshots native descendants, and
+  // hiding the window during a scored run would be a behaviour change in a lane
+  // this issue does not own.
+  const showsOnReady = smokeRequest === null && behaviorSmokeRequest === null && layoutReportPath === null;
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 800,
@@ -880,6 +893,7 @@ function createWindow() {
     // an AC-002 "no raw hex in components" violation (there is no component
     // here, just Electron's own pre-paint).
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#14151b" : "#f7f8fb",
+      show: !showsOnReady,
       webPreferences: {
         preload: path.join(__dirname, "preload.js"),
         contextIsolation: true,
@@ -893,6 +907,16 @@ function createWindow() {
       },
   });
   mainWindow.setMenuBarVisibility(false);
+  if (showsOnReady) {
+    // `ready-to-show` is the documented "first frame is painted" signal; the
+    // did-finish-load fallback exists because a launch that fails before that
+    // point must not leave an invisible, unclosable window behind.
+    const revealOnce = () => {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
+    };
+    mainWindow.once("ready-to-show", revealOnce);
+    mainWindow.webContents.once("did-finish-load", revealOnce);
+  }
   // Lane A staging harness: static, opt-in, packaged-only, and confined to the
   // caller's freshly created OS-temp root. Source-tree dev behavior is not
   // reachable through this seam.
@@ -1000,7 +1024,7 @@ function createWindow() {
           app.exit(1);
         });
     });
-    void mainWindow.loadFile(entryPath);
+    void mainWindow.loadFile(entryPath, layoutLoad.loadOptions);
   } else {
     void mainWindow.loadFile(entryPath);
   }

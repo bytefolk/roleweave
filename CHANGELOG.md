@@ -7,6 +7,8 @@
 
 ### Added
 
+- #519：桌面端首启体验。冷启动先播品牌标启动画（约 0.9s），再过 0.4s 的共享元素过渡淡入登录 / 注册卡，总时长 ≈1.3s；已有会话则 ≈1.2s 直接进工作区，不显示登录卡；会话过期时落在登录卡上并给一条非阻塞行内提示，不用错误弹窗。登录 / 注册同卡切换，客户端校验错误行内展示；字段在过渡结束前不自动聚焦。`prefers-reduced-motion` 下只留淡入淡出并把启动画压到 240ms。窗口改为 `ready-to-show` 后再显示，消除首帧白闪。认证走 `auth-adapter` 窄接口，默认实现是明确标注的 stub（本地记录、不落密码、不做比对），真实按部署登录仍由 #395 负责，两者可独立合入。零新增运行时依赖。Refs #519。
+
 - #469：可选 Laya 接力停止建议。仅在 `ROLEWEAVE_LAYA_ENABLED` 开启、已完成步骤得到正向建议且仍有未执行步骤时暂停；桌面端由 owner 显式选择“停止剩余步骤”或“继续接力”。30 秒超时、SSE 断连、无效或失败建议均继续原 mention order；Laya 只接收 `status`、`errorCode`、`hasOutput`，不接收输入、输出或 handoff 文本。已接受的消息与 spawn 清单保持不可变。Refs #422。
 
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
