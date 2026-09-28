@@ -110,7 +110,7 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
         ? open
           ? t("turn.activityRunningExpanded")
           : runningActivity
-            ? t("turn.activityRunningTool", { tool: runningActivity.title })
+            ? t("turn.activityRunningTool", { tool: runningActivity.title ?? runningActivity.activityId })
             : runningThought
               ? t("turn.thoughtRunning")
               : t("turn.activityRunning")
