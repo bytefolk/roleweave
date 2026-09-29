@@ -1512,6 +1512,8 @@ export const enCatalog: Record<string, string> = {
   "settings.stateUnavailable": "In-app update is not available on this platform.",
   "settings.unsignedTitle": "In-app update is off for this build",
   "settings.unsignedBody": "This build has no independent update-signing key, so a downloaded update could not be verified before it replaced the app. Download the new version from the releases page instead.",
+  "settings.windowsUnsignedTitle": "Windows updates are available",
+  "settings.windowsUnsignedBody": "This installer has no publisher signature. Updates are downloaded from the HTTPS release feed and checked against its SHA-512 metadata; this does not verify the publisher's identity. Confirm that you trust the release source before installing.",
   "settings.unavailableDarwin": "The native macOS updater needs a Developer ID signed build: Squirrel.Mac refuses an update whose signature does not match the installed app. The free GitHub-signed channel is unavailable in this build.",
   "settings.unavailableLinux": "This build has no Linux release channel. Install and update it from the source tree.",
   "settings.unavailableOther": "In-app update is not available on this platform.",

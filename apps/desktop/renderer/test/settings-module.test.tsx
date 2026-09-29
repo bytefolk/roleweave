@@ -5,8 +5,8 @@
  * through the bridge rather than asserted on markup.
  * AC-004: on a platform with no channel the action is disabled with a stated
  * reason, and is not merely hidden.
- * AC-007: the unsigned refusal renders. It is a download/install return value,
- * not a state, so a state-by-state pass would miss it.
+ * AC-007: an unsigned Windows build can update with an explicit confirmation;
+ * a native-channel refusal is still rendered when the service returns one.
  * AC-008: copy follows a locale switch, including a status read before it.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -24,7 +24,7 @@ const windowsUnsigned: UpdateStatus = {
   requiresConfirmation: true,
   signed: false,
   updateVerified: false,
-  reason: "this build is unsigned, so a downloaded update could not be verified",
+  reason: "this build is unsigned; Windows updates use HTTPS release metadata and SHA-512 without publisher verification",
   platform: "win32",
 };
 
@@ -159,16 +159,22 @@ describe("#134 更新面板：八个状态", () => {
   });
 });
 
-describe("#134 AC-007 未签名拒绝", () => {
-  it("未签名构建上，下载与安装从一开始就不可点，并说明原因", async () => {
-    installBridge(windowsUnsigned);
+describe("#134 AC-007 未签名 Windows 更新", () => {
+  it("未签名构建仍可下载与安装，并说明校验边界", async () => {
+    const harness = installBridge(windowsUnsigned);
     render(<SettingsModule />);
 
-    expect(await screen.findByText("此构建未开启应用内更新")).toBeInTheDocument();
+    expect(await screen.findByText("Windows 更新可用")).toBeInTheDocument();
+    expect(screen.getByText(/SHA-512/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /下载更新/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /安装并重启/ })).toBeDisabled();
-    // 检查仍然开放：知道有新版本本身是有用的。
     expect(screen.getByRole("button", { name: /检查更新/ })).toBeEnabled();
+
+    harness.push({ state: "available", version: "0.2.0" });
+    await waitFor(() => expect(screen.getByRole("button", { name: /下载更新/ })).toBeEnabled());
+    harness.push({ state: "downloaded", version: "0.2.0" });
+    await waitFor(() => expect(screen.getByRole("button", { name: /安装并重启/ })).toBeEnabled());
+    expect(screen.queryByText("此构建未开启应用内更新")).toBeNull();
   });
 
   it("服务返回的 unsigned 拒绝会渲染出来，而不是被吞掉", async () => {
@@ -217,7 +223,7 @@ describe("#134 AC-004 平台无通道", () => {
 
 describe("#134 AC-005 确认与边界", () => {
   it("下载与安装都显式带上用户确认", async () => {
-    const harness = installBridge(windowsSigned, [
+    const harness = installBridge(windowsUnsigned, [
       { state: "available", version: "0.2.0" },
       { state: "downloaded", version: "0.2.0" },
     ]);
@@ -269,7 +275,7 @@ describe("#134 AC-008 文案跟随语言", () => {
     // #179 的教训：存已解析字符串会把上一个语言留在屏幕上。
     expect(await screen.findByText("Version 0.2.0 is available.")).toBeInTheDocument();
     expect(screen.queryByText("有新版本 0.2.0。")).toBeNull();
-    expect(screen.getByText("In-app update is off for this build")).toBeInTheDocument();
+    expect(screen.getByText("Windows updates are available")).toBeInTheDocument();
   });
 });
 
@@ -280,15 +286,18 @@ describe("#134 纯映射", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("下载与安装在未签名时关闭，检查不关闭", () => {
+  it("Windows 未签名也可更新，其他平台仍需可信通道", () => {
     const unsigned = updateAffordances(windowsUnsigned, "available");
     expect(unsigned.canCheck).toBe(true);
-    expect(unsigned.canDownload).toBe(false);
-    expect(unsigned.showUnsignedRefusal).toBe(true);
+    expect(unsigned.canDownload).toBe(true);
+    expect(unsigned.showUnsignedRefusal).toBe(false);
+    expect(unsigned.showWindowsUnsignedNotice).toBe(true);
+    expect(updateAffordances(windowsUnsigned, "downloaded").canInstall).toBe(true);
 
     const signed = updateAffordances(windowsSigned, "available");
     expect(signed.canDownload).toBe(true);
     expect(signed.showUnsignedRefusal).toBe(false);
+    expect(signed.showWindowsUnsignedNotice).toBe(false);
     expect(updateAffordances(windowsSigned, "downloaded").canInstall).toBe(true);
     // 正在检查或下载时不给第二次点击的机会。
     expect(updateAffordances(windowsSigned, "checking").canCheck).toBe(false);
