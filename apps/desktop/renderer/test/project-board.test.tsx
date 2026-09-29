@@ -6,10 +6,11 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { OwbBridge } from "../src/owb";
 import { ProjectBoard } from "../src/goals/ProjectBoard";
+import { visibleSelectOptions } from "./select-helper";
 
 const task: GoalWorkItem = {
   taskId: "task-one",
@@ -94,8 +95,22 @@ function defer<T>() {
   });
   return { promise, resolve };
 }
+function chooseOption(control: HTMLElement, name: string) {
+  fireEvent.mouseDown(control);
+  const option = visibleSelectOptions().find(
+    (candidate) => candidate.textContent?.trim() === name,
+  );
+  if (!option) {
+    throw new Error(`Select has no visible option named "${name}"`);
+  }
+  fireEvent.click(option);
+}
 
 describe("ProjectBoard", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("creates an assigned task with dates and guards duplicate submission until refresh", async () => {
     const saved = defer<{ status: number; body: { goalId: string } }>();
     const updateGoal = vi.fn().mockReturnValue(saved.promise);
@@ -108,9 +123,7 @@ describe("ProjectBoard", () => {
     fireEvent.change(drawer.getByLabelText("任务说明"), {
       target: { value: "Make plans visible" },
     });
-    fireEvent.change(drawer.getByLabelText("负责人"), {
-      target: { value: "engineer" },
-    });
+    chooseOption(drawer.getByLabelText("负责人"), "Engineer");
     fireEvent.change(drawer.getByLabelText("开始日期"), {
       target: { value: "2026-09-22" },
     });
@@ -180,9 +193,9 @@ describe("ProjectBoard", () => {
     const control = screen.getByRole("combobox", {
       name: "变更任务状态：Ship board",
     });
-    fireEvent.change(control, { target: { value: "blocked" } });
+    chooseOption(control, "阻塞");
     await screen.findByText("Save failed");
-    expect(control).toHaveValue("todo");
+    expect(control.closest(".ant-select")).toHaveTextContent("待办");
     expect(updateGoal).toHaveBeenCalledWith(
       expect.objectContaining({ workItems: [{ ...task, status: "blocked" }] }),
     );
@@ -253,8 +266,10 @@ describe("ProjectBoard", () => {
     context.rerender(<ProjectBoard {...context.props} detail={complete} />);
     await screen.findByText("Agent 执行完成");
     expect(
-      screen.getByRole("combobox", { name: "变更任务状态：Ship board" }),
-    ).toHaveValue("todo");
+      screen
+        .getByRole("combobox", { name: "变更任务状态：Ship board" })
+        .closest(".ant-select"),
+    ).toHaveTextContent("待办");
     expect(context.updateGoal).not.toHaveBeenCalled();
   });
 
@@ -290,7 +305,7 @@ describe("ProjectBoard", () => {
 
   it.each(["all", "unassigned"])(
     "filters the supported position ID %s separately from special filter options",
-    (positionId) => {
+    async (positionId) => {
       setup(
         detail([
           {
@@ -314,11 +329,7 @@ describe("ProjectBoard", () => {
         ]),
       );
       const filter = screen.getByRole("combobox", { name: "筛选负责人" });
-      const assignedOption = within(filter).getByRole("option", {
-        name: positionId,
-        exact: true,
-      }) as HTMLOptionElement;
-      fireEvent.change(filter, { target: { value: assignedOption.value } });
+      chooseOption(filter, positionId);
       expect(
         screen.getByRole("article", { name: "Assigned work" }),
       ).toBeInTheDocument();
@@ -329,11 +340,7 @@ describe("ProjectBoard", () => {
         screen.queryByRole("article", { name: "Unassigned work" }),
       ).not.toBeInTheDocument();
 
-      const unassignedOption = within(filter).getByRole("option", {
-        name: "未分配",
-        exact: true,
-      }) as HTMLOptionElement;
-      fireEvent.change(filter, { target: { value: unassignedOption.value } });
+      chooseOption(filter, "未分配");
       expect(
         screen.getByRole("article", { name: "Unassigned work" }),
       ).toBeInTheDocument();
@@ -341,16 +348,12 @@ describe("ProjectBoard", () => {
         screen.queryByRole("article", { name: "Assigned work" }),
       ).not.toBeInTheDocument();
 
-      const allOption = within(filter).getByRole("option", {
-        name: "全部负责人",
-        exact: true,
-      }) as HTMLOptionElement;
-      fireEvent.change(filter, { target: { value: allOption.value } });
+      chooseOption(filter, "全部负责人");
       expect(screen.getAllByRole("article")).toHaveLength(3);
     },
   );
 
-  it("filters tasks and shows partial dates without inventing a duration", () => {
+  it("filters tasks and shows partial dates without inventing a duration", async () => {
     setup(
       detail([
         task,
@@ -364,20 +367,17 @@ describe("ProjectBoard", () => {
       ]),
     );
     const ownerFilter = screen.getByRole("combobox", { name: "筛选负责人" });
-    const designerOption = within(ownerFilter).getByRole("option", {
-      name: "Designer",
-      exact: true,
-    }) as HTMLOptionElement;
-    fireEvent.change(ownerFilter, { target: { value: designerOption.value } });
+    chooseOption(ownerFilter, "Designer");
     expect(
       screen.queryByRole("article", { name: "Ship board" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("article", { name: "Design board" }),
     ).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("combobox", { name: "筛选负责人" }), {
-      target: { value: "all" },
-    });
+    chooseOption(
+      screen.getByRole("combobox", { name: "筛选负责人" }),
+      "全部负责人",
+    );
     fireEvent.click(screen.getByRole("button", { name: "排期" }));
     expect(screen.getByText("开始：2026-09-22 · 截止未定")).toBeInTheDocument();
     expect(
@@ -449,21 +449,21 @@ describe("ProjectBoard", () => {
     );
     // Filter by status dropdown
     const statusFilter = screen.getByRole("combobox", { name: "筛选状态" });
-    fireEvent.change(statusFilter, { target: { value: "in_progress" } });
+    chooseOption(statusFilter, "进行中");
     expect(screen.getByRole("article", { name: "Task 2" })).toBeInTheDocument();
     expect(screen.queryByRole("article", { name: "Task 1" })).not.toBeInTheDocument();
     expect(screen.queryByRole("article", { name: "Task 3" })).not.toBeInTheDocument();
 
     // Filter by priority dropdown
-    fireEvent.change(statusFilter, { target: { value: "all" } });
+    chooseOption(statusFilter, "全部状态");
     const priorityFilter = screen.getByRole("combobox", { name: "筛选优先级" });
-    fireEvent.change(priorityFilter, { target: { value: "high" } });
+    chooseOption(priorityFilter, "高优先级");
     expect(screen.getByRole("article", { name: "Task 2" })).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Task 3" })).toBeInTheDocument();
     expect(screen.queryByRole("article", { name: "Task 1" })).not.toBeInTheDocument();
 
     // Interactive summary metric toggle
-    fireEvent.change(priorityFilter, { target: { value: "all" } });
+    chooseOption(priorityFilter, "全部优先级");
     const inProgressMetric = screen.getByRole("button", { name: /进行中/ });
     fireEvent.click(inProgressMetric);
     expect(screen.getByRole("article", { name: "Task 2" })).toBeInTheDocument();
