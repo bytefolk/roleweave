@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type {
   BufferGeometry,
   Group,
@@ -260,6 +261,22 @@ export function RelationshipSpatialScene({
   latest.current = { onSelect, visible };
   const [ready, setReady] = useState(0);
   const [webglFailed, setWebglFailed] = useState(false);
+  const objects = useRef<HTMLUListElement>(null);
+  const [objectScroll, setObjectScroll] = useState({ previous: false, next: false });
+  useEffect(() => {
+    const list = objects.current;
+    if (!list) return;
+    const measure = () => setObjectScroll({ previous: list.scrollLeft > 1, next: list.scrollLeft + list.clientWidth < list.scrollWidth - 1 });
+    measure();
+    list.addEventListener("scroll", measure);
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
+    observer?.observe(list);
+    return () => { list.removeEventListener("scroll", measure); observer?.disconnect(); };
+  }, [nodes]);
+  const pageObjects = (direction: number) => {
+    const list = objects.current;
+    if (list) list.scrollBy({ left: direction * list.clientWidth * 0.8, behavior: "auto" });
+  };
   const activeLayout = mode === "galaxy" ? "orbit" : layout;
   const points = useMemo(() => buildRelationshipSpatialLayout(nodes, edges, activeLayout), [activeLayout, edges, nodes]);
   const canvasLabel = t(mode === "minimal" ? "graph.minimalCanvas" : "graph.galaxyCanvas");
@@ -292,6 +309,11 @@ export function RelationshipSpatialScene({
         labelRenderer.domElement.className = "owb-rgraph__spatial-labels";
         const currentScene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(46, width / height, 0.1, 400);
+        const onWheel = (event: WheelEvent) => {
+          // Keep ordinary scrolling native before OrbitControls can cancel it.
+          if (!event.ctrlKey && !event.metaKey) event.stopImmediatePropagation();
+        };
+        renderer.domElement.addEventListener("wheel", onWheel, { capture: true, passive: true });
         const controls = new OrbitControlsConstructor(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
@@ -385,6 +407,7 @@ export function RelationshipSpatialScene({
           controls.removeEventListener("change", requestRender);
           renderer.domElement.removeEventListener("pointerdown", onPointerDown);
           renderer.domElement.removeEventListener("pointerup", onPointerUp);
+          renderer.domElement.removeEventListener("wheel", onWheel, true);
           controls.dispose();
           clearWorld(state);
           state.decoration.traverse(disposeObject);
@@ -544,8 +567,12 @@ export function RelationshipSpatialScene({
     </div>
     <div ref={stage} className="owb-rgraph__spatial-stage" aria-hidden="true" />
     {webglFailed ? <p className="owb-rgraph__spatial-fallback" role="status">{t("graph.spatialFallback")}</p> : null}
-    <ul className="owb-rgraph__spatial-objects" aria-label={objectsLabel}>
-      {nodes.map(node => <li key={node.id}><button type="button" aria-label={`${t(`graph.kind.${node.kind}`)} · ${node.label}`} aria-pressed={selectedId === node.id} onClick={() => onSelect(node.id)}><span>{t(`graph.kind.${node.kind}`)}</span><strong>{node.label}</strong></button></li>)}
-    </ul>
+    <div className="owb-rgraph__object-navigation">
+      <button type="button" className="owb-rgraph__object-page" aria-label={t("graph.objectsPrevious")} disabled={!objectScroll.previous} onClick={() => pageObjects(-1)}><ChevronLeft size={16} aria-hidden="true" /></button>
+      <ul ref={objects} className="owb-rgraph__spatial-objects" aria-label={objectsLabel}>
+        {nodes.map(node => <li key={node.id}><button type="button" aria-label={`${t(`graph.kind.${node.kind}`)} · ${node.label}`} aria-pressed={selectedId === node.id} onClick={() => onSelect(node.id)}><span>{t(`graph.kind.${node.kind}`)}</span><strong>{node.label}</strong></button></li>)}
+      </ul>
+      <button type="button" className="owb-rgraph__object-page" aria-label={t("graph.objectsNext")} disabled={!objectScroll.next} onClick={() => pageObjects(1)}><ChevronRight size={16} aria-hidden="true" /></button>
+    </div>
   </div>;
 }

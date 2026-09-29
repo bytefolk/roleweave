@@ -45,34 +45,30 @@ describe("TurnThread evidence timeline (#73)", () => {
     expect(item?.querySelector(".owb-bubble--operator")?.textContent).toContain("检查发布门禁");
     expect(card?.querySelector(".owb-tc__out")?.textContent).toContain("门禁已检查。");
     // 状态由过程摘要统一呈现，settled 回合不再显示 running。
-    expect(card?.querySelector(".owb-turn-progress__title")?.textContent).toContain("已完成");
+    expect(card?.querySelector(".owb-turn-progress__title")?.textContent).toContain("已处理");
   });
 
   it("shows safe execution progress and keeps the final conclusion fully readable", () => {
     const { container } = render(
       <TurnThread
         turns={[turn({
-          progress: [
-            { kind: "received", at: "2026-08-26T04:00:00.000Z" },
-            { kind: "working", at: "2026-08-26T04:00:10.000Z" },
-            { kind: "completed", at: "2026-08-26T04:01:00.000Z" },
-          ],
+          completedAt: "2026-08-26T04:01:00.000Z",
+          trace: [{ activityId: "t1", kind: "tool", status: "completed", title: "Read", detail: "gate.md", at: "2026-08-26T04:00:10.000Z" }],
           output: "第一段结论\n第二段结论，不应该被两行省略。",
         })]}
       />,
     );
     const card = container.querySelector(".owb-tc");
     expect(card?.querySelector('[aria-label="执行进展"]')).not.toBeNull();
-    expect(card?.querySelectorAll(".owb-turn-progress__step")).toHaveLength(2);
-    expect(card?.querySelector(".owb-turn-progress__step")?.querySelector("time")).toBeNull();
-    expect(card?.querySelector(".owb-turn-progress__elapsed")).toHaveTextContent("1m 0s");
-    expect(card?.querySelector(".owb-turn-progress__header")?.textContent).toContain("已完成");
-    const disclosure = screen.getByRole("button", { name: "查看过程详情 · 已完成" });
+    expect(card?.querySelector(".owb-turn-progress__elapsed")).toHaveTextContent("耗时 60 秒");
+    expect(card?.querySelector(".owb-turn-progress__header")?.textContent).toContain("执行工具 1 次");
+    const disclosure = screen.getByRole("button", { name: "查看过程详情 · 执行工具 1 次" });
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
-    expect(card?.querySelector(".owb-turn-progress__steps")).not.toBeVisible();
+    expect(card?.querySelector(".owb-activity-trace__list")).not.toBeVisible();
     fireEvent.click(disclosure);
     expect(disclosure).toHaveAttribute("aria-expanded", "true");
-    expect(card?.querySelector(".owb-turn-progress__steps")).toBeVisible();
+    expect(card?.querySelector(".owb-activity-trace__list")).toBeVisible();
+    expect(card?.querySelector(".owb-activity-trace__list")).toHaveTextContent("gate.md");
     expect(card?.querySelector(".owb-tc__out")).toHaveTextContent("第二段结论，不应该被两行省略。");
     expect(card?.querySelector(".owb-tc__out")?.className).not.toContain("owb-clamp-2");
     expect(card?.querySelector(".owb-tc__out")?.getAttribute("title")).toContain("第二段结论");
@@ -110,11 +106,12 @@ describe("TurnThread evidence timeline (#73)", () => {
     expect(status?.textContent).not.toContain("已完成");
   });
 
-  it("shows the typing indicator while the employee turn is running", () => {
-    render(<TurnThread turns={[turn({ id: "run-1", status: "running", output: undefined })]} />);
-    const typing = screen.getByRole("status");
-    expect(typing.className).toContain("owb-bubble__typing");
-    expect(typing.textContent).toContain("正在等待岗位完成本回合");
+  it("shows the live activity line while the employee turn is running", () => {
+    const { container } = render(<TurnThread turns={[turn({ id: "run-1", status: "running", output: undefined })]} />);
+    const group = container.querySelector(".owb-turn-progress");
+    expect(group?.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+    expect(group?.textContent).toContain("正在执行");
+    expect(container.querySelector(".owb-activity-trace__continuing")?.getAttribute("aria-current")).toBe("step");
   });
 
   it("keeps internal evidence ids out of the ordinary conversation", () => {

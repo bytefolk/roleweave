@@ -120,7 +120,7 @@ describe("conversation interaction refinements without a frame redesign", () => 
     render(<TurnPanel {...props({ onCancelTurn: vi.fn().mockResolvedValue(false), turns: [{ ...finished, status: "running" }] })} />);
     fireEvent.click(screen.getByRole("button", { name: "中断回合" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "中断回合" })).toBeEnabled());
-    expect(screen.getByText("运行中")).toBeInTheDocument();
+    expect(screen.getByText("正在执行中")).toBeInTheDocument();
   });
   it("honors modifier-Enter and IME composition, and preserves draft on send rejection", async () => {
     const create = vi.fn().mockRejectedValue(new Error("offline"));

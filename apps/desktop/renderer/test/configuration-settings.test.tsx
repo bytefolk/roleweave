@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'jsonc-parser';
 import { OwbI18nProvider } from '@roleweave/ui';
 import { ConfigurationSettings } from '../src/settings/ConfigurationSettings';
+import { App } from '../src/App';
 import { requestSettingsLeave } from '../src/configuration-preferences';
 import type { ApplicationConfiguration, ConfigurationSnapshot } from '../src/configuration-types';
 const initial=():ApplicationConfiguration=>({schemaVersion:1,appearance:{mode:'system',profile:'mint',locale:'zh-CN'},chat:{sendShortcut:'enter',rememberLayout:true},layouts:{focusByWorkspace:{}},runtime:{},hosts:{qoder:{},claude:{},codex:{}},services:{},migration:{rendererPreferences:true}});
@@ -18,6 +19,32 @@ function footerSave(){return within(document.querySelector('.owb-config-savebar'
 async function fileView(){fireEvent.click(screen.getByRole('tab',{name:'高级配置'}));fireEvent.click(screen.getByRole('button',{name:'配置文件',exact:true}));return screen.getByRole('textbox',{name:'roleweave.config.jsonc'});}
 beforeEach(()=>{window.localStorage.clear();});
 describe('shared settings draft',()=>{
+ it('guards the global workspace hub before any picker or creation can mutate the workspace',async()=>{
+  const api=install();
+  Object.assign(api,{migratePreferences:vi.fn().mockResolvedValue(snapshot()),onCloseRequested:vi.fn().mockReturnValue(()=>{})});
+  const openWorkspace=vi.fn().mockResolvedValue({canceled:true});
+  Object.assign(window.owb,{
+   status:vi.fn().mockResolvedValue({running:true,health:{status:'ok',api:'v0',engine:{available:true},workspace:{open:false}}}),
+   workspace:vi.fn().mockResolvedValue({status:200,body:{open:false}}),
+   reports:vi.fn().mockResolvedValue({status:200,body:{streams:{escalations:[],audits:[],evidence:[]},budgets:[],page:{cursor:null,hasMore:false}}}),
+   openWorkspace,createWorkspace:vi.fn(),onEvent:vi.fn().mockReturnValue(()=>{}),onSseStatus:vi.fn().mockReturnValue(()=>{}),
+   sseStatus:vi.fn().mockResolvedValue('connected'),onFallbackNotice:vi.fn().mockReturnValue(()=>{}),
+   onUpdateState:vi.fn().mockReturnValue(()=>{}),update:{status:vi.fn().mockResolvedValue({version:'0.3.0',state:'unavailable',available:false,requiresConfirmation:false,signed:false,updateVerified:false,platform:'darwin'})},
+  });
+  render(<App/>);
+  fireEvent.click(screen.getByRole('button',{name:'设置'}));
+  fireEvent.click(await screen.findByRole('checkbox',{name:'记住工作区对话布局'}));
+  fireEvent.click(screen.getByRole('button',{name:'项目入口'}));
+  await waitFor(()=>expect(screen.getByText('设置有未保存的修改')).toBeVisible());
+  expect(document.querySelector('.owb-project-dialog__chooser')).toBeNull();
+  expect(openWorkspace).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'继续编辑'}));
+  expect(document.querySelector('.owb-project-dialog__chooser')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'项目入口'}));
+  fireEvent.click(screen.getByRole('button',{name:'放弃并离开'}));
+  await waitFor(()=>expect(document.querySelector('.owb-project-dialog__chooser')).toBeVisible());
+  expect(openWorkspace).not.toHaveBeenCalled();
+ });
  it('keeps project experiments separate from the application configuration draft',async()=>{
   const api=install(); render(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
   await screen.findByText('请先打开一个项目，再设置实验功能。');

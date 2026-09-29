@@ -40,6 +40,41 @@ describe("shared Markdown reading contract", () => {
     expect(screen.getByRole("link", { name: "Section" }).querySelector('[data-link-icon]')).toBeNull();
     expect(container.querySelectorAll('.owb-markdown-link__icon img')).toHaveLength(0);
   });
+  it("routes wikilinks and safe relative Markdown links as accessible note targets", () => {
+    const navigate = vi.fn();
+    const { container } = render(
+      <Markdown
+        content={"[[Roadmap|Road map]] [Sibling](./sibling.md) [Escape](../../SKILL.md)"}
+        onNavigateDoc={navigate}
+      />,
+    );
+
+    const wiki = screen.getByRole("link", { name: "文档链接：Road map" });
+    const relative = screen.getByRole("link", { name: "文档链接：Sibling" });
+    expect(wiki.querySelector('[data-link-icon="markdown"]')).toBeInTheDocument();
+    expect(relative.querySelector('[data-link-icon="markdown"]')).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Escape/ })).not.toBeInTheDocument();
+    expect(container.textContent).toContain("Escape");
+
+    expect(fireEvent.click(wiki)).toBe(false);
+    expect(fireEvent.click(relative)).toBe(false);
+    expect(navigate).toHaveBeenNthCalledWith(1, "Roadmap", "wikilink");
+    expect(navigate).toHaveBeenNthCalledWith(2, "./sibling.md", "relative");
+  });
+
+  it("indexes bare and inline-code workspace file paths as typed icon links", () => {
+    const navigate = vi.fn();
+    render(<Markdown content="已更新 apps/desktop/renderer/src/App.tsx、`packages/ui/src/locales/zh.ts` 和 docs/guide.md。" onNavigateDoc={navigate} />);
+    const code = screen.getByRole("link", { name: "文档链接：apps/desktop/renderer/src/App.tsx" });
+    const inlineCode = screen.getByRole("link", { name: "文档链接：packages/ui/src/locales/zh.ts" });
+    const markdown = screen.getByRole("link", { name: "文档链接：docs/guide.md" });
+    expect(code.querySelector('[data-link-icon="code"]')).toBeInTheDocument();
+    expect(inlineCode.querySelector('[data-link-icon="code"]')).toBeInTheDocument();
+    expect(markdown.querySelector('[data-link-icon="markdown"]')).toBeInTheDocument();
+    fireEvent.click(code);
+    expect(navigate).toHaveBeenCalledWith("apps/desktop/renderer/src/App.tsx", "relative");
+  });
+
   it("blocks dangerous protocols, local paths, raw HTML and authenticated URLs", () => {
     const { container } = render(<Markdown content={'[bad](javascript:alert%281%29)\n\n[local](file:///etc/passwd)\n\n[good](https://example.com)\n\n<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>'} />);
     expect(screen.queryByRole("link", { name: "bad" })).not.toBeInTheDocument();

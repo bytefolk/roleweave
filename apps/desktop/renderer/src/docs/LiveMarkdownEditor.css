@@ -1,0 +1,169 @@
+[data-theme] .owb-app .owb-docs-panel__reader-pane.owb-docs-panel__reader-pane--live {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+[data-theme] .owb-app .owb-docs-panel__reader-pane--live .owb-doc-viewer.owb-doc-viewer--editing {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.owb-doc-viewer--editing > .owb-doc-viewer__toolbar,
+.owb-docs-panel__reader-pane--live > .owb-docs-panel__toolbar { flex: none; }
+
+.owb-doc-viewer__editor:not([hidden]) {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.owb-live-markdown-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--ui-foreground);
+}
+
+.owb-live-markdown-editor .vditor {
+  --border-color: var(--ui-border);
+  --second-color: var(--ui-foreground-muted);
+  --panel-background-color: var(--ui-surface);
+  --panel-shadow: var(--ui-shadow-sm);
+  --toolbar-background-color: var(--ui-surface);
+  --toolbar-icon-color: var(--ui-foreground-muted);
+  --toolbar-icon-hover-color: var(--ui-primary);
+  --textarea-background-color: var(--ui-surface);
+  --textarea-text-color: var(--ui-foreground);
+  --heading-border-color: var(--ui-border);
+  --blockquote-color: var(--ui-foreground-muted);
+  --ir-heading-color: var(--ui-foreground-muted);
+  --ir-title-color: var(--ui-foreground-muted);
+  --ir-bi-color: var(--ui-foreground-muted);
+  --ir-link-color: var(--ui-primary);
+  --ir-bracket-color: var(--ui-primary);
+  --ir-paren-color: var(--ui-foreground-muted);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--ui-font-sans, sans-serif);
+}
+
+/* Vditor IR paints H1-H6 level chips in the left gutter; keep the surface clean. */
+.owb-live-markdown-editor .vditor-ir .vditor-reset > :is(h1, h2, h3, h4, h5, h6):before {
+  content: none;
+}
+
+.owb-live-markdown-editor .vditor-toolbar { display: none; }
+.owb-live-markdown-editor .vditor-content { min-width: 0; min-height: 0; overflow: hidden; }
+.owb-live-markdown-editor .vditor-ir { min-width: 0; min-height: 0; }
+
+.owb-live-markdown-editor .vditor-ir > .vditor-reset {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  /* Override Vditor's inline padding so the prose width stays stable on resize. */
+  padding: 20px max(24px, calc((100% - 884px) / 2)) 64px !important;
+  color: var(--ui-foreground);
+  background: transparent;
+  font-family: var(--ui-font-sans, sans-serif);
+  font-size: 15px;
+  line-height: 1.75;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  caret-color: var(--ui-foreground);
+}
+
+.owb-live-markdown-editor .vditor-ir > .vditor-reset:focus {
+  background: transparent;
+  outline: none;
+}
+
+.owb-live-markdown-editor .vditor-reset ::selection { background: var(--ui-selection); }
+.owb-live-markdown-editor .vditor-reset :is(h1, h2, h3, h4, h5, h6) {
+  margin: 24px 0 12px;
+  padding: 0;
+  border: 0;
+  color: var(--ui-foreground);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.owb-live-markdown-editor .vditor-reset > :first-child { margin-top: 0; }
+.owb-live-markdown-editor .vditor-reset h1 { font-size: 1.65em; }
+.owb-live-markdown-editor .vditor-reset h2 { font-size: 1.35em; }
+.owb-live-markdown-editor .vditor-reset h3 { font-size: 1.15em; }
+.owb-live-markdown-editor .vditor-reset :is(p, ul, ol, table) { margin: 0 0 12px; }
+.owb-live-markdown-editor .vditor-reset :is(ul, ol) { padding-left: 1.7em; }
+.owb-live-markdown-editor .vditor-reset li > p { margin-bottom: 4px; }
+.owb-live-markdown-editor .vditor-reset blockquote {
+  margin: 12px 0;
+  padding: 0 16px;
+  border-left: 3px solid var(--ui-border-strong);
+  color: var(--ui-foreground-muted);
+}
+.owb-live-markdown-editor .vditor-reset :is(a, .vditor-ir__link) {
+  color: var(--ui-primary);
+  text-underline-offset: 3px;
+}
+.owb-live-markdown-editor .vditor-reset :is(code, kbd) {
+  border-radius: 4px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-mono, monospace);
+  font-size: 0.9em;
+}
+.owb-live-markdown-editor .vditor-reset pre > code:not(.hljs):not(.highlight-chroma) {
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+/* Frontmatter reads as provenance, not as a code block. */
+.owb-live-markdown-editor .vditor-reset pre[data-type="yaml-front-matter"] {
+  margin: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  padding: 0 0 10px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  font-size: 12.5px;
+}
+.owb-live-markdown-editor .vditor-reset pre[data-type="yaml-front-matter"] code {
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  font-size: 12.5px;
+}
+.owb-live-markdown-editor .vditor-reset table { border-collapse: collapse; }
+.owb-live-markdown-editor .vditor-reset :is(th, td) {
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border);
+  text-align: left;
+}
+.owb-live-markdown-editor .vditor-reset tr { background: transparent; border: 0; }
+.owb-live-markdown-editor .vditor-reset th { background: var(--ui-surface-inset); font-weight: 600; }
+.owb-live-markdown-editor .vditor-reset hr { border: 0; height: 1px; background: var(--ui-border); }
+
+@media (max-width: 640px) {
+  .owb-live-markdown-editor .vditor-ir > .vditor-reset { padding: 16px 12px 40px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owb-live-markdown-editor .vditor-ir__marker { transition: none; }
+}

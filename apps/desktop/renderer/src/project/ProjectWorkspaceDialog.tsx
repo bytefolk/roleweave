@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Modal } from "antd";
-import { ArrowLeft, Check, FolderOpen, FolderPlus, LoaderCircle, Wrench } from "lucide-react";
+import { ArrowLeft, Check, FolderOpen, FolderPlus, Wrench } from "lucide-react";
 import type { WorkspaceCreateResponse, WorkspaceInfoResponse } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
 import { ProjectCreateForm } from "./ProjectCreateForm";
@@ -114,7 +114,7 @@ export function ProjectWorkspaceDialog({
           <CurrentWorkspace workspace={workspace} positionCount={positionCount} />
           {opening ? (
             <p className="owb-project-dialog__status" role="status" aria-live="polite">
-              <LoaderCircle size={15} aria-hidden="true" />
+              <span className="owb-project-dialog__spinner" aria-hidden="true"><span /><i /></span>
               {t("project.opening")}
             </p>
           ) : null}
