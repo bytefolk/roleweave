@@ -265,6 +265,9 @@ function contactAction(name: "创建员工" | "撤销"): void {
 }
 
 describe("App context navigation", () => {
+  // Renders the full App and walks every module tab, so on slower runners it
+  // sits above the 5s default and fails fresh runs of main (#529). 15s
+  // matches the other full-App tests in this file.
   it("consolidates the collaboration toolbar and places employee actions beside the tabs", async () => {
     const bridge = openedBridge();
     render(<App />);
@@ -302,7 +305,7 @@ describe("App context navigation", () => {
       expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(input);
       expect(input).toHaveValue("精简布局仍保留草稿");
     }
-  });
+  }, 15_000);
 
   it("opens employee creation from the compact contacts menu without submitting it", async () => {
     const bridge = openedBridge();
