@@ -4,7 +4,8 @@ import type {
   TurnHistory as ApiTurnHistory,
   TurnRecord as ApiTurnRecord,
 } from "@roleweave/shared";
-import type { TurnApprovalRequest, TurnProgressStep, TurnRecord } from "./types";
+import type { TurnApprovalRequest, TurnProgressStep, TurnRecord, TurnTraceActivity } from "./types";
+import { closeNarration, dropOpenNarration, foldNarration, putTrailItem } from "./trail";
 
 /** #146：展示兜底文案走目录；裸调用（测试/无 Provider）回退 zh 词。 */
 function renderOutput(output: unknown, unrenderable: string): string | undefined {
@@ -106,15 +107,40 @@ function totalTokens(record: ApiTurnRecord): number | undefined {
   return undefined;
 }
 
-function traceActivities(record: ApiTurnRecord): TurnRecord["trace"] {
-  const byId = new Map<string, NonNullable<TurnRecord["trace"]>[number]>();
+/**
+ * Qoder-style chronological trail: the model's narration between two
+ * activities becomes a bounded "thought" row, interleaved with tool/agent
+ * activities in event order. Folded through the same primitives as the live
+ * SSE projection (`trail.ts`), so a run reads the same while it streams and
+ * after the history reload. A settled turn drops its trailing narration — that
+ * text is the answer and already renders below. Bounded by TRAIL_MAX_ITEMS
+ * across thoughts, tools and agents alike.
+ */
+function buildTrail(record: ApiTurnRecord): TurnTraceActivity[] {
+  let trail: TurnTraceActivity[] = [];
+  let thoughtSeq = 0;
   for (const event of record.events) {
-    if (event.type !== "trace.activity") continue;
-    byId.set(event.activityId, { activityId: event.activityId, kind: event.kind, status: event.status, title: event.title,
-      ...(event.detail !== undefined ? { detail: event.detail } : {}),
-      ...(event.parentActivityId !== undefined ? { parentActivityId: event.parentActivityId } : {}), at: event.timestamp });
+    if (event.type === "model.delta") {
+      const folded = foldNarration(trail, event.text, thoughtSeq);
+      trail = folded.trail;
+      thoughtSeq = folded.thoughtSeq;
+      continue;
+    }
+    if (event.type === "trace.activity") {
+      const previous = trail.find((item) => item.activityId === event.activityId);
+      trail = putTrailItem(closeNarration(trail), {
+        ...(previous ?? {}),
+        activityId: event.activityId,
+        kind: event.kind,
+        status: event.status,
+        title: event.title,
+        ...(event.detail !== undefined ? { detail: event.detail } : {}),
+        ...(event.parentActivityId !== undefined ? { parentActivityId: event.parentActivityId } : {}),
+        at: event.timestamp,
+      });
+    }
   }
-  return [...byId.values()];
+  return record.status === "running" ? trail : dropOpenNarration(trail);
 }
 
 /**
@@ -129,7 +155,7 @@ export function adaptTurnRecord(
   const pendingApproval = approvalRequest(record);
   const progress = progressSteps(record);
   const usage = totalTokens(record);
-  const trace = traceActivities(record);
+  const trace = buildTrail(record);
   return {
     id: record.turnId,
     positionId: record.positionId,
