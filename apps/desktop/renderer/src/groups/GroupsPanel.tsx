@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button as AntButton, Input, Select as AntSelect } from "antd";
 import { ArrowUp, Plus, Search, Trash2, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
 import { PositionAvatar } from "../PositionAvatar";
 import { DiagnosticNotice, type AvailabilityCheck } from "../DiagnosticNotice";
-import { ProgressTrail, TypingIndicator } from "../turns/TurnThread";
+import { ProgressTrail } from "../turns/TurnThread";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@roleweave/shared";
 import { useEngineLabel } from "../turns/engine-select";
 import { EngineIcon } from "../turns/engine-icon";
@@ -42,6 +43,10 @@ function GroupBubbleExpand({ summaryClassName, summaryTitle, summaryChildren, bo
 export interface GroupsPanelProps {
   availabilityCheck?: AvailabilityCheck;
   workspaceOpen: boolean;
+  /** Optional collaboration sidebar host; standalone panels keep the list inline. */
+  listHost?: HTMLElement | null;
+  /** Explicit row selection or successful creation only, never background refresh. */
+  onSelectGroup?: () => void;
   positions: PositionMentionOption[];
   positionNames: Record<string, string>;
   /** Avatar background colors keyed by position id (metadata.color); positions
@@ -154,6 +159,8 @@ function timeShort(iso: string): string {
 export function GroupsPanel({
   availabilityCheck,
   workspaceOpen,
+  listHost,
+  onSelectGroup,
   positions,
   positionNames,
   positionColors,
@@ -468,13 +475,16 @@ export function GroupsPanel({
       setDraftMembers(new Set());
       setCreateOpen(false);
       await loadGroups();
-      if (isCurrent()) setSelectedRef(created.conversationRef);
+      if (isCurrent()) {
+        setSelectedRef(created.conversationRef);
+        onSelectGroup?.();
+      }
     } catch {
       if (isCurrent()) setPanelError(t("grp.createFailOffline"));
     } finally {
       if (isCurrent()) setCreating(false);
     }
-  }, [captureScope, creating, draftMembers, loadGroups, t]);
+  }, [captureScope, creating, draftMembers, loadGroups, onSelectGroup, t]);
 
   const addMember = useCallback(async (positionId: string) => {
     const isCurrent = captureScope();
@@ -688,88 +698,95 @@ export function GroupsPanel({
     return <p className="owb-muted">{t("tree.notOpened")}</p>;
   }
 
-  return (
-    <section className="owb-groups" aria-label={t("rail.groups")}>
-      <div className="owb-groups__list">
-        <header className="owb-groups__list-header">
-          <h2><UsersRound aria-hidden="true" size={12} />{t("rail.groups")}</h2>
-        </header>
-        {groupsError ? <p className="owb-groups__error" role="alert">{groupsError}</p> : null}
-        <ul className="owb-groups__items">
-          {groups.map((group) => (
-            <li key={group.conversationRef}>
-              <button
-                type="button"
-                className={group.conversationRef === selectedRef ? "is-active" : undefined}
-                onClick={() => setSelectedRef(group.conversationRef)}
-              >
-                <span className="owb-groups__item-name">
-                  <span className="owb-groups__avatar-stack" aria-hidden="true">
-                    {group.members.slice(0, 3).map((memberId) => (
-                      <PositionAvatar
-                        key={memberId}
-                        colors={positionColors ?? {}}
-                        sources={avatarUrls}
-                        id={memberId}
-                        name={displayPositionName(memberId)}
-                        className="owb-groups__avatar owb-groups__avatar--xs"
-                      />
-                    ))}
-                  </span>
-                  {groupLabel(group)}
-                </span>
-                <span className="owb-groups__item-meta">
-                  {t("grp.members", { count: group.members.length })} · {timeShort(group.updatedAt)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <details
-          className="owb-groups__create"
-          open={createOpen}
-          onToggle={(event) => setCreateOpen(event.currentTarget.open)}
-        >
-          <summary><Plus aria-hidden="true" size={13} />{t("grp.createCta")}</summary>
-          <div className="owb-groups__create-body">
-            <div className="owb-groups__create-field">
-              <div className="owb-groups__field-label">
-                <UserRoundPlus aria-hidden="true" size={13} />
-                <span>{t("grp.selectMembers")}</span>
-                <span className="owb-groups__selection-count">
-                  {t("grp.selectedCount", { count: draftMembers.size })}
-                </span>
-              </div>
-              <AntSelect
-                classNames={{ popup: { root: "owb-conversation-select-popup" } }}
-                mode="multiple"
-                aria-label={t("grp.createSearchAria")}
-                placeholder={t("grp.createSearchPh")}
-                showSearch
-                optionFilterProp="label"
-                filterOption={filterPositionOption}
-                value={[...draftMembers]}
-                disabled={creating}
-                maxTagCount="responsive"
-                popupMatchSelectWidth={false}
-                onChange={(values) => setDraftMembers(new Set(values as string[]))}
-                options={positions.map((position) => ({
-                  value: position.id,
-                  label: position.name,
-                }))}
-              />
-            </div>
-            <AntButton
-              size="small"
-              type="primary"
-              disabled={draftMembers.size < 2 || creating || positions.length < 2}
-              onClick={() => void createGroup()}
+  const groupList = (
+    <div className="owb-groups__list">
+      <header className="owb-groups__list-header">
+        <h2><UsersRound aria-hidden="true" size={12} />{t("rail.groups")}</h2>
+      </header>
+      {groupsError ? <p className="owb-groups__error" role="alert">{groupsError} <AntButton size="small" onClick={() => void loadGroups()}>{t("misc.retryConnection")}</AntButton></p> : null}
+      <ul className="owb-groups__items">
+        {groups.map((group) => (
+          <li key={group.conversationRef}>
+            <button
+              type="button"
+              className={group.conversationRef === selectedRef ? "is-active" : undefined}
+              onClick={() => {
+                setSelectedRef(group.conversationRef);
+                onSelectGroup?.();
+              }}
             >
-              {t("grp.create")}
-            </AntButton>
+              <span className="owb-groups__item-name">
+                <span className="owb-groups__avatar-stack" aria-hidden="true">
+                  {group.members.slice(0, 3).map((memberId) => (
+                    <PositionAvatar
+                      key={memberId}
+                      colors={positionColors ?? {}}
+                      sources={avatarUrls}
+                      id={memberId}
+                      name={displayPositionName(memberId)}
+                      className="owb-groups__avatar owb-groups__avatar--xs"
+                    />
+                  ))}
+                </span>
+                {groupLabel(group)}
+              </span>
+              <span className="owb-groups__item-meta">
+                {t("grp.members", { count: group.members.length })} · {timeShort(group.updatedAt)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <details
+        className="owb-groups__create"
+        open={createOpen}
+        onToggle={(event) => setCreateOpen(event.currentTarget.open)}
+      >
+        <summary><Plus aria-hidden="true" size={13} />{t("grp.createCta")}</summary>
+        <div className="owb-groups__create-body">
+          <div className="owb-groups__create-field">
+            <div className="owb-groups__field-label">
+              <UserRoundPlus aria-hidden="true" size={13} />
+              <span>{t("grp.selectMembers")}</span>
+              <span className="owb-groups__selection-count">
+                {t("grp.selectedCount", { count: draftMembers.size })}
+              </span>
+            </div>
+            <AntSelect
+              classNames={{ popup: { root: "owb-conversation-select-popup" } }}
+              mode="multiple"
+              aria-label={t("grp.createSearchAria")}
+              placeholder={t("grp.createSearchPh")}
+              showSearch
+              optionFilterProp="label"
+              filterOption={filterPositionOption}
+              value={[...draftMembers]}
+              disabled={creating}
+              maxTagCount="responsive"
+              popupMatchSelectWidth={false}
+              onChange={(values) => setDraftMembers(new Set(values as string[]))}
+              options={positions.map((position) => ({
+                value: position.id,
+                label: position.name,
+              }))}
+            />
           </div>
-        </details>
-      </div>
+          <AntButton
+            size="small"
+            type="primary"
+            disabled={draftMembers.size < 2 || creating || positions.length < 2}
+            onClick={() => void createGroup()}
+          >
+            {t("grp.create")}
+          </AntButton>
+        </div>
+      </details>
+    </div>
+  );
+
+  return (
+    <section className={`owb-groups${listHost ? " owb-groups--external-list" : ""}`} aria-label={t("rail.groups")}>
+      {listHost ? createPortal(groupList, listHost) : groupList}
 
       <div className="owb-groups__panel">
         {/* #116 REQ-003: the alert must be reachable before a group exists —
@@ -934,8 +951,6 @@ export function GroupsPanel({
                           aria-label={t("grp.expandOutput")}
                           bodyChildren={<Markdown content={turn.output} />}
                         />
-                      ) : isLive ? (
-                        <TypingIndicator />
                       ) : null}
                       {!isLive && (turn.status === "failed" || turn.status === "indeterminate") && turn.error ? (
                         <GroupBubbleExpand

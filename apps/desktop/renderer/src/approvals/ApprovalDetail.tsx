@@ -1,0 +1,378 @@
+/**
+ * Inline approval inspection and verdict panel. Callbacks submit an operator's
+ * explicit decision; the server alone owns the source-bound recovery execution.
+ */
+import { useEffect, useId, useState } from "react";
+import { Alert, Button, Input, Progress, Radio, Skeleton, Space, Tag, Tooltip } from "antd";
+import type { ApprovalAuditEvent } from "@roleweave/shared";
+import { useT } from "@roleweave/ui";
+import {
+  approvalExpiryState,
+  isDecided,
+  isPermissionOverreach,
+  type ApprovalQueueCallbacks,
+  type ApprovalQueueItem,
+} from "./types";
+import { DiffViewer } from "./DiffViewer";
+import { safeApprovalText } from "./safe-display";
+import { decodeEscapedUnicode } from "../display-text";
+
+// Mirrors packages/shared/pending-approval.cjs MAX_APPROVAL_REASON_BYTES.
+// The shared module transitively uses node:module and cannot be bundled here.
+const MAX_APPROVAL_REASON_BYTES = 1024;
+
+export interface ApprovalDetailProps extends ApprovalQueueCallbacks {
+  item: ApprovalQueueItem | null;
+  /** The queue-owned clock, refreshed once a minute. */
+  now: number;
+  onNext?: () => void;
+}
+
+export function ApprovalDetail({ item, ...props }: ApprovalDetailProps) {
+  const t = useT();
+  return (
+    <section
+      className="owb-approval-detail"
+      aria-label={t("apr.detailTitle")}
+      data-testid="approval-detail"
+      data-approval-id={item?.approvalId}
+    >
+      {item ? (
+        // Reset before the new selection can submit, not in a passive effect.
+        <SelectedApprovalDetail key={item.approvalId} item={item} {...props} />
+      ) : (
+        <p className="owb-approval-detail__empty">{t("apr.selectRequest")}</p>
+      )}
+    </section>
+  );
+}
+
+function SelectedApprovalDetail({
+  item, now, onNext, onApprove, onDeny, onOpenSource, onOpenEvidence,
+}: Omit<ApprovalDetailProps, "item"> & { item: ApprovalQueueItem }) {
+  const t = useT();
+  const reasonId = useId();
+  const scopeId = useId();
+  const [reason, setReason] = useState("");
+  const [scope, setScope] = useState<"once" | "run">("once");
+  const runAllowed = item.scopeAllowed?.includes("run") === true;
+
+  useEffect(() => {
+    if (!runAllowed) setScope("once");
+  }, [runAllowed]);
+
+  const decided = isDecided(item);
+  const expired = approvalExpiryState(item, now) === "expired";
+  const readOnlyOrBusy = decided || expired || item.busy === true || item.canDecide === false;
+  const trimmedReason = reason.trim();
+  const reasonByteLength = new TextEncoder().encode(trimmedReason).length;
+  const disabled = readOnlyOrBusy || reasonByteLength > MAX_APPROVAL_REASON_BYTES;
+  const reasonForCallback = trimmedReason.length === 0 ? undefined : trimmedReason;
+  const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
+  const description = safeApprovalText(decodeEscapedUnicode(item.description));
+  const target = item.target ? safeApprovalText(decodeEscapedUnicode(item.target)) : undefined;
+  const context = item.context;
+  const permissionMode = item.positionMode ?? context?.permissions.mode;
+  const source = item.source;
+  const decidedAt = item.decision.kind === "granted" || item.decision.kind === "denied"
+    ? item.decision.decidedAt : undefined;
+  const decidedBy = item.decision.kind === "granted" || item.decision.kind === "denied"
+    ? item.decision.decidedBy : undefined;
+  // Audit state is keyed independently so a refreshed verdict/phase cannot show
+  // stale validation, while a failed submission keeps the operator's draft.
+  const auditRevision = JSON.stringify([
+    item.decision.kind, decidedAt, item.executionPhase, item.canDecide,
+    item.policyProgress?.granted, item.policyProgress?.escalated,
+  ]);
+
+  const handleApprove = () => {
+    if (disabled) return;
+    if (runAllowed && scope === "run") onApprove(item.approvalId, reasonForCallback, "run");
+    else onApprove(item.approvalId, reasonForCallback);
+  };
+  const handleDeny = () => {
+    if (disabled) return;
+    onDeny(item.approvalId, reasonForCallback);
+  };
+
+  return (
+    <>
+      <header className="owb-approval-detail__header">
+        <div>
+          <h2 className="owb-approval-drawer__position" tabIndex={-1}>{positionName}</h2>
+          <div className="owb-approval-drawer__meta">
+            <Tag color="blue">{t(`apr.kind.${item.category}`)}</Tag>
+            {isPermissionOverreach(item) ? <Tag color="red">{t("apr.overreach")}</Tag> : null}
+            {context ? (
+              <>
+                <Tag color={context.risk === "high" ? "red" : "orange"} data-testid="approval-rule-risk">
+                  {t(`apr.risk.${context.risk}`)}
+                </Tag>
+                {context.riskOverlay && context.riskOverlay !== context.risk ? (
+                  <Tag data-testid="approval-risk-overlay">
+                    {t("apr.riskOverlay")}: {t(`apr.risk.${context.riskOverlay}`)} · {t("apr.suggestionNotAdopted")}
+                  </Tag>
+                ) : null}
+              </>
+            ) : null}
+            {permissionMode ? (
+              <Tag color={permissionMode === "read_only" ? "default" : "blue"}>
+                {t("apr.modeTag", { mode: t(`apr.mode.${permissionMode}`) })}
+              </Tag>
+            ) : null}
+          </div>
+        </div>
+        {onNext ? <Button onClick={onNext}>{t("apr.nextRequest")}</Button> : null}
+      </header>
+
+      <div className="owb-approval-detail__body">
+        <section>
+          <h3 className="owb-approval-drawer__section-title">{t("apr.actionDescription")}</h3>
+          <p className="owb-approval-drawer__description">{description}</p>
+          {target ? <p className="owb-approval-drawer__target">{t("apr.targetPrefix")}<code>{target}</code></p> : null}
+          <h3 className="owb-approval-drawer__section-title">{t("apr.deadline")}</h3>
+          <p className="owb-approval-drawer__meta-line">
+            {item.expiresAt ? (
+              <span>{t("apr.expiresPrefix")}{formatApprovalTimestamp(item.expiresAt)}</span>
+            ) : <span className="owb-muted">{t("apr.noExpiry")}</span>}
+          </p>
+          {item.requestReason ? (
+            <>
+              <h3 className="owb-approval-drawer__section-title">{t("apr.requestReason")}</h3>
+              <p className="owb-approval-drawer__description">{safeApprovalText(decodeEscapedUnicode(item.requestReason))}</p>
+            </>
+          ) : null}
+        </section>
+
+        <section data-testid="approval-context">
+          <h3 className="owb-approval-drawer__section-title">{t("apr.context")}</h3>
+          {context ? (
+            <>
+              <dl className="owb-approval-drawer__references">
+                <div><dt>{t("apr.requestedCapability")}</dt><dd>{t(`apr.kind.${context.requestedCapability}`)}</dd></div>
+                <div><dt>{t("apr.impact")}</dt><dd>{t(`apr.impact.${context.impact}`)}</dd></div>
+                <div><dt>{t("apr.parameterSummary")}</dt><dd>{context.parameterSummary ? safeApprovalText(context.parameterSummary) : <span className="owb-muted">{t("apr.contextUnavailable")}</span>}</dd></div>
+              </dl>
+              <h3 className="owb-approval-drawer__section-title">{t("apr.changePreview")}</h3>
+              {context.preview.status === "unavailable" ? (
+                <p className="owb-muted">{t("apr.preview.unavailable")}</p>
+              ) : (
+                <div data-testid="approval-change-preview">
+                  {context.preview.files.map((file) => (
+                    <details key={`${file.change}:${file.path}`} open>
+                      <summary><Tag color="blue">{t(`apr.preview.change.${file.change}`)}</Tag><code>{safeApprovalText(file.path)}</code></summary>
+                      <DiffViewer before={file.before} after={file.after} change={file.change} />
+                    </details>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : <p className="owb-muted">{t("apr.contextUnavailable")}</p>}
+        </section>
+
+        {item.policyProgress ? (
+          <section data-testid="approval-policy-progress">
+            <h3 className="owb-approval-drawer__section-title">{t("apr.policyProgress")}</h3>
+            <Progress
+              percent={Math.min(100, Math.round((item.policyProgress.granted / Math.max(1, item.policyProgress.required)) * 100))}
+              size="small"
+              status={item.policyProgress.granted >= item.policyProgress.required ? "success" : "active"}
+            />
+            <div className="owb-approval-drawer__meta-line">
+              <span>
+                {t("apr.policyProgressValue", { granted: item.policyProgress.granted, required: item.policyProgress.required })}
+                {item.policyProgress.escalated ? ` · ${t("apr.escalated")}` : ""}
+              </span>
+              <Tag
+                data-testid="approval-my-decision-status"
+                color={item.canDecide ? "blue" : decided ? (item.decision.kind === "granted" ? "green" : "red") : "default"}
+              >
+                {item.canDecide ? t("apr.myDecisionPending") : decided ? t(`apr.myDecision.${item.decision.kind}`) : t("apr.myDecisionVoted")}
+              </Tag>
+            </div>
+          </section>
+        ) : null}
+
+        <details data-testid="approval-permissions">
+          <summary className="owb-approval-drawer__section-title">{t("apr.permissionMode")}</summary>
+          {context ? (
+            <dl className="owb-approval-drawer__references">
+              <div><dt>{t("apr.permissionMode")}</dt><dd>{t(`apr.mode.${context.permissions.mode}`)}</dd></div>
+              <div><dt>{t("apr.allowedTools")}</dt><dd>{context.permissions.allowedTools.length > 0 ? context.permissions.allowedTools.join(", ") : t("apr.noneDeclared")}</dd></div>
+              <div><dt>{t("apr.deniedTools")}</dt><dd>{context.permissions.deniedTools.length > 0 ? context.permissions.deniedTools.join(", ") : t("apr.noneDeclared")}</dd></div>
+            </dl>
+          ) : <p className="owb-muted">{t("apr.contextUnavailable")}</p>}
+        </details>
+
+        <details data-testid="approval-source-references">
+          <summary className="owb-approval-drawer__section-title">{t("apr.traceability")}</summary>
+          {source ? (
+            <dl className="owb-approval-drawer__references">
+              <div><dt>{t("apr.sourceType")}</dt><dd>{t(`apr.source.${source.kind}`)}</dd></div>
+              <div><dt>{t("apr.sourceConversation")}</dt><dd><code>{source.conversationId}</code></dd></div>
+              <div><dt>{t("apr.sourceTurn")}</dt><dd><code>{source.turnId}</code></dd></div>
+              <div><dt>{t("apr.sourceRun")}</dt><dd><code>{source.runId}</code></dd></div>
+              {item.executionTurnId ? <div><dt>{t("apr.executionTurn")}</dt><dd><code>{item.executionTurnId}</code></dd></div> : null}
+            </dl>
+          ) : <p className="owb-muted">{t("apr.referencesUnavailable")}</p>}
+          <Space wrap>
+            <Button type="link" disabled={!source || source.kind !== "session" || !onOpenSource} onClick={() => source && onOpenSource?.(item)}>
+              {t("apr.openSource")}
+            </Button>
+            <Button type="link" disabled={!onOpenEvidence} onClick={() => onOpenEvidence?.(item)}>
+              {t("apr.openEvidence")}
+            </Button>
+          </Space>
+          {source && source.kind !== "session" ? <p className="owb-muted">{t("apr.sourceUnavailable")}</p> : null}
+        </details>
+
+        <section data-testid="approval-lifecycle">
+          <h3 className="owb-approval-drawer__section-title">{t("apr.lifecycle")}</h3>
+          <ol className="owb-approval-drawer__lifecycle">
+            <li className={`is-${item.decision.kind}`}>
+              <strong>{t("apr.lifecycleApproval")}</strong>
+              <span>{t(`apr.status.${item.decision.kind}`)}</span>
+              {decidedAt ? <time>{formatApprovalTimestamp(decidedAt)}</time> : null}
+              {decidedBy ? <small>{t("apr.decidedBy", { actor: decidedBy })}</small> : null}
+            </li>
+            <li className={`is-${item.executionPhase ?? "not_started"}`}>
+              <strong>{t("apr.lifecycleExecution")}</strong>
+              <span>{t(`apr.phase.${item.executionPhase ?? "not_started"}`)}</span>
+              {item.executionErrorCode ? <code>{item.executionErrorCode}</code> : null}
+            </li>
+          </ol>
+        </section>
+
+        <details data-testid="approval-audit-trail">
+          <summary className="owb-approval-drawer__section-title">{t("apr.auditTrail")}</summary>
+          <ApprovalAuditEvents key={auditRevision} approvalId={item.approvalId} />
+        </details>
+      </div>
+
+      <footer className="owb-approval-detail__footer">
+        {decided ? (
+          <Alert
+            type={item.decision.kind === "granted" ? "success" : item.decision.kind === "denied" ? "error" : "info"}
+            title={item.decision.kind === "granted" ? t("apr.alertGranted") : item.decision.kind === "denied" ? t("apr.alertDenied") : t(`apr.status.${item.decision.kind}`)}
+            description={item.decision.kind === "granted"
+              ? t("apr.effectiveScope", { scope: t(`apr.scope.${item.decision.scope}`) })
+              : item.decision.kind === "denied" && item.decision.reason
+                ? t("apr.reasonPrefix", { reason: safeApprovalText(item.decision.reason) }) : undefined}
+            showIcon
+          />
+        ) : expired ? (
+          <Alert type="warning" showIcon title={t("apr.alertExpired")} />
+        ) : (
+          <>
+            <section>
+              <h3 className="owb-approval-drawer__section-title"><label htmlFor={reasonId}>{t("apr.reasonOptional")}</label></h3>
+              <Input.TextArea
+                id={reasonId}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder={t("apr.reasonPh")}
+                autoSize={{ minRows: 2, maxRows: 4 }}
+                count={{
+                  max: MAX_APPROVAL_REASON_BYTES,
+                  strategy: (txt) => new TextEncoder().encode(txt).length,
+                  show: ({ count, maxLength }) => t("apr.byteCount", { count, max: maxLength ?? MAX_APPROVAL_REASON_BYTES }),
+                }}
+                data-testid="approval-reason-input"
+                disabled={readOnlyOrBusy}
+              />
+            </section>
+            {runAllowed ? (
+              <section data-testid="approval-scope-choice">
+                <h3 id={scopeId} className="owb-approval-drawer__section-title">{t("apr.scopeTitle")}</h3>
+                <Radio.Group aria-labelledby={scopeId} value={scope} onChange={(event) => setScope(event.target.value)} disabled={disabled}>
+                  <Radio value="once">{t("apr.scope.once")}</Radio>
+                  <Radio value="run">{t("apr.scope.run")}</Radio>
+                </Radio.Group>
+                <p className="owb-muted">{t("apr.scopeRunHint")}</p>
+              </section>
+            ) : null}
+          </>
+        )}
+        <div className="owb-approval-drawer__actions">
+          <Button type="primary" onClick={handleApprove} disabled={disabled} loading={item.busy} data-testid="approval-approve-button">
+            {t("apr.grant")}
+          </Button>
+          <Button danger onClick={handleDeny} disabled={disabled} data-testid="approval-deny-button">
+            {t("apr.deny")}
+          </Button>
+        </div>
+        {item.executionPhase && item.executionPhase !== "not_started" ? <Alert type="info" showIcon title={t(`apr.phase.${item.executionPhase}`)} /> : null}
+        {item.canDecide === false && !decided ? <Alert type="warning" title={t(`apr.unavailable.${item.unavailableReason ?? "unknown"}`)} /> : null}
+        {reasonByteLength > MAX_APPROVAL_REASON_BYTES ? <Alert type="warning" title={t("apr.reasonTooLong")} /> : null}
+        {item.error ? <Alert type="error" showIcon title={item.error} /> : null}
+      </footer>
+    </>
+  );
+}
+
+function ApprovalAuditEvents({ approvalId }: { approvalId: string }) {
+  const t = useT();
+  const [events, setEvents] = useState<ApprovalAuditEvent[]>([]);
+  const [loading, setLoading] = useState(Boolean(window.owb?.approvalAudit));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!window.owb?.approvalAudit) return;
+    let active = true;
+    setLoading(true);
+    setEvents([]);
+    setError(null);
+    window.owb.approvalAudit({ id: approvalId })
+      .then((res) => {
+        if (!active) return;
+        if (res.status === 200 && res.body?.events) {
+          setEvents(res.body.events);
+        } else {
+          const body = res.body as { message?: string } | undefined;
+          setError(body?.message ?? t("apr.auditLoadFailed"));
+        }
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : t("apr.auditLoadFailed"));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [approvalId, t]);
+
+  if (loading) return <Skeleton active paragraph={{ rows: 2 }} />;
+  if (error) return <Alert type="warning" showIcon title={error} />;
+  if (events.length === 0) return <p className="owb-muted">{t("apr.auditEmpty")}</p>;
+  return (
+    <>
+      <Tag color="blue" data-testid="audit-server-validated-tag">{t("apr.auditServerValidated")}</Tag>
+      <div className="owb-approval-audit-list" style={{ display: "grid", gap: 6 }}>
+        {events.map((event) => (
+          <div key={`${event.seq}:${event.hash}`} className="owb-approval-audit-item" data-audit-seq={event.seq} style={{ padding: "6px 8px", background: "var(--ui-surface-inset)", borderRadius: 6, border: "1px solid var(--ui-border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+              <Tag color="blue">{t("apr.auditSeq", { seq: event.seq })}</Tag>
+              <strong>{event.type}</strong>
+              <span className="owb-muted" style={{ marginLeft: "auto", fontSize: 11 }}>{formatApprovalTimestamp(event.timestamp)}</span>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ui-foreground-muted)" }}>
+              {event.actor ? <span>{event.actor}</span> : null}
+              {event.decision ? <span> · {event.decision} ({event.scope ?? "once"})</span> : null}
+            </div>
+            <div style={{ fontFamily: "var(--ui-font-mono)", fontSize: 10, color: "var(--ui-foreground-subtle)", marginTop: 2 }}>
+              <Tooltip title={event.hash}><span>{t("apr.auditHash", { hash: `${event.hash.slice(0, 19)}...` })}</span></Tooltip>
+              {event.previousHash ? (
+                <Tooltip title={event.previousHash}><span style={{ marginLeft: 8 }}>{t("apr.auditPrevHash", { hash: `${event.previousHash.slice(0, 19)}...` })}</span></Tooltip>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function formatApprovalTimestamp(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString([], { hour12: false });
+}

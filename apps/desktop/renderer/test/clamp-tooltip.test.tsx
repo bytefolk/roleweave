@@ -112,12 +112,13 @@ describe("conversation readability", () => {
     expect(executionRecords).toHaveTextContent("Qoder");
   });
 
-  it("renders the typing indicator (screen-reader copy intact) while running", () => {
+  it("renders the live activity line (screen-reader copy intact) while running", () => {
     const running: TurnRecord = { ...shortTurn, id: "turn-run", status: "running", output: undefined };
-    render(<TurnThread turns={[running]} />);
-    const typing = screen.getByRole("status");
-    expect(typing.className).toContain("owb-bubble__typing");
-    expect(typing.textContent).toContain("正在等待岗位完成本回合");
+    const { container } = render(<TurnThread turns={[running]} />);
+    const group = container.querySelector(".owb-turn-progress");
+    expect(group?.getAttribute("aria-label")).toBe("执行进展");
+    expect(group?.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector(".owb-activity-trace__continuing")?.getAttribute("aria-current")).toBe("step");
   });
 
   it("exposes the full error text through title on failed turns", () => {

@@ -740,6 +740,22 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         stdoutBuffer = "";
         terminateChild();
       };
+      let turnTimer: NodeJS.Timeout | undefined;
+      const onTurnTimeout = (): void => {
+        if (settled) return;
+        timedOut = true;
+        acceptingOutput = false;
+        stdoutBuffer = "";
+        terminateChild();
+      };
+      // The budget is an inactivity window, not a wall clock: every accepted
+      // engine event proves the turn is still working, so a long multi-tool
+      // run survives while a stalled engine is still reaped.
+      const armTurnTimeout = (): void => {
+        if (settled) return;
+        if (turnTimer !== undefined) clearTimeout(turnTimer);
+        turnTimer = setTimeout(onTurnTimeout, this.timeoutMs);
+      };
       const consumeLine = (line: string): void => {
         if (!acceptingOutput || settled) return;
         if (line.endsWith("\r")) line = line.slice(0, -1);
@@ -775,6 +791,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
           if (event.type !== "run.completed" && event.type !== "run.failed") {
             request.onEvent?.(event);
           }
+          armTurnTimeout();
         } catch (error) {
           failProtocol(error instanceof Error ? error.message : "invalid engine.v1 event");
         }
@@ -809,13 +826,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         return;
       }
 
-      const timer = setTimeout(() => {
-        if (settled) return;
-        timedOut = true;
-        acceptingOutput = false;
-        stdoutBuffer = "";
-        terminateChild();
-      }, this.timeoutMs);
+      armTurnTimeout();
 
       child.stdout?.on("data", (chunk: Buffer | string) => {
         if (!acceptingOutput || settled) return;
@@ -844,7 +855,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         diagnostic += Buffer.from(text, "utf8").subarray(0, remaining).toString("utf8");
       });
       child.on("error", () => {
-        clearTimeout(timer);
+        if (turnTimer !== undefined) clearTimeout(turnTimer);
         if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
         finish({
           status: "indeterminate",
@@ -854,7 +865,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         });
       });
       child.on("close", (code) => {
-        clearTimeout(timer);
+        if (turnTimer !== undefined) clearTimeout(turnTimer);
         if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
         if (settled) return;
         if (aborted) {

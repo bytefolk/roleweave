@@ -88,11 +88,17 @@ test("#190 a column mis-sized against its own viewport still fails", () => {
   assert.throws(() => run(mac, win), /chrome overhead differs/);
 });
 
-test("#190 columns of different heights on one platform fail even when aligned at the bottom", () => {
-  // bottomDelta 0 says they end together; it does not say they are the same
-  // height, and the old check never asserted that within a platform.
-  const mac = { layout: layout({ leftHeight: 700, rightHeight: 640 }) };
-  assert.throws(() => run(mac, { layout: layout() }), /columns are different heights/);
+test("#523 the two columns no longer have to be the same height, but their difference must agree across platforms", () => {
+  // The columns are now the shell sidebar and the shell main region, and the
+  // main region starts below the context header, so a 48px difference that
+  // reproduces on both platforms is the layout working as designed.
+  const mac = { layout: layout({ leftHeight: 700, rightHeight: 652 }) };
+  const win = { layout: layout({ leftHeight: 700, rightHeight: 652 }) };
+  assert.match(run(mac, win), /"ok":\s*true/);
+  // The same difference on only one platform is the regression this replaces:
+  // it says one runner laid the pair out differently, not that the header
+  // exists.
+  assert.throws(() => run(mac, { layout: layout({ leftHeight: 700, rightHeight: 640 }) }), /column height difference differs/);
 });
 
 test("#190 a report without a viewport is refused, not compared", () => {

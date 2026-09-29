@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor, within, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'jsonc-parser';
+import { OwbI18nProvider } from '@roleweave/ui';
 import { ConfigurationSettings } from '../src/settings/ConfigurationSettings';
+import { App } from '../src/App';
 import { requestSettingsLeave } from '../src/configuration-preferences';
 import type { ApplicationConfiguration, ConfigurationSnapshot } from '../src/configuration-types';
 const initial=():ApplicationConfiguration=>({schemaVersion:1,appearance:{mode:'system',profile:'mint',locale:'zh-CN'},chat:{sendShortcut:'enter',rememberLayout:true},layouts:{focusByWorkspace:{}},runtime:{},hosts:{qoder:{},claude:{},codex:{}},services:{},migration:{rendererPreferences:true}});
@@ -17,6 +19,32 @@ function footerSave(){return within(document.querySelector('.owb-config-savebar'
 async function fileView(){fireEvent.click(screen.getByRole('tab',{name:'高级配置'}));fireEvent.click(screen.getByRole('button',{name:'配置文件',exact:true}));return screen.getByRole('textbox',{name:'roleweave.config.jsonc'});}
 beforeEach(()=>{window.localStorage.clear();});
 describe('shared settings draft',()=>{
+ it('guards the global workspace hub before any picker or creation can mutate the workspace',async()=>{
+  const api=install();
+  Object.assign(api,{migratePreferences:vi.fn().mockResolvedValue(snapshot()),onCloseRequested:vi.fn().mockReturnValue(()=>{})});
+  const openWorkspace=vi.fn().mockResolvedValue({canceled:true});
+  Object.assign(window.owb,{
+   status:vi.fn().mockResolvedValue({running:true,health:{status:'ok',api:'v0',engine:{available:true},workspace:{open:false}}}),
+   workspace:vi.fn().mockResolvedValue({status:200,body:{open:false}}),
+   reports:vi.fn().mockResolvedValue({status:200,body:{streams:{escalations:[],audits:[],evidence:[]},budgets:[],page:{cursor:null,hasMore:false}}}),
+   openWorkspace,createWorkspace:vi.fn(),onEvent:vi.fn().mockReturnValue(()=>{}),onSseStatus:vi.fn().mockReturnValue(()=>{}),
+   sseStatus:vi.fn().mockResolvedValue('connected'),onFallbackNotice:vi.fn().mockReturnValue(()=>{}),
+   onUpdateState:vi.fn().mockReturnValue(()=>{}),update:{status:vi.fn().mockResolvedValue({version:'0.3.0',state:'unavailable',available:false,requiresConfirmation:false,signed:false,updateVerified:false,platform:'darwin'})},
+  });
+  render(<App/>);
+  fireEvent.click(screen.getByRole('button',{name:'设置'}));
+  fireEvent.click(await screen.findByRole('checkbox',{name:'记住工作区对话布局'}));
+  fireEvent.click(screen.getByRole('button',{name:'项目入口'}));
+  await waitFor(()=>expect(screen.getByText('设置有未保存的修改')).toBeVisible());
+  expect(document.querySelector('.owb-project-dialog__chooser')).toBeNull();
+  expect(openWorkspace).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'继续编辑'}));
+  expect(document.querySelector('.owb-project-dialog__chooser')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'项目入口'}));
+  fireEvent.click(screen.getByRole('button',{name:'放弃并离开'}));
+  await waitFor(()=>expect(document.querySelector('.owb-project-dialog__chooser')).toBeVisible());
+  expect(openWorkspace).not.toHaveBeenCalled();
+ });
  it('keeps project experiments separate from the application configuration draft',async()=>{
   const api=install(); render(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
   await screen.findByText('请先打开一个项目，再设置实验功能。');
@@ -69,5 +97,102 @@ describe('shared settings draft',()=>{
   fireEvent.change(editor,{target:{value:valid}});fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));expect(token.value).toBe('dummy-uncommitted-token');
   fireEvent.click(footerSave());await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1));expect((api.save.mock.calls[0]![0] as unknown as {serviceChanges:{doc:string}}).serviceChanges.doc).toBe('dummy-uncommitted-token');
  });
-
+ it('updates category reactively when initialCategory changes after mount',async()=>{
+  install();
+  const {rerender}=render(<ConfigurationSettings updates={<p>Updater fixture</p>}/>);
+  await screen.findByRole('combobox',{name:'发送快捷键'});
+  expect(screen.getByRole('tab',{name:'常规'})).toHaveAttribute('aria-selected','true');
+  rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
+  await screen.findByText('请先打开一个项目，再设置实验功能。');
+  expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','true');
+  rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory={undefined}/>);
+  await screen.findByRole('combobox',{name:'发送快捷键'});
+  expect(screen.getByRole('tab',{name:'常规'})).toHaveAttribute('aria-selected','true');
+  expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','false');
+  rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="agents"/>);
+  await waitFor(()=>expect(screen.getByRole('tab',{name:'Agent 连接'})).toHaveAttribute('aria-selected','true'));
+ });
+ it('preserves manual tab selection when initialCategory does not change across re-renders',async()=>{
+  install();
+  const {rerender}=render(<ConfigurationSettings updates={<p>Updater fixture</p>}/>);
+  await screen.findByRole('combobox',{name:'发送快捷键'});
+  fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));
+  expect(screen.getByRole('tab',{name:'文档与记忆'})).toHaveAttribute('aria-selected','true');
+  rerender(<ConfigurationSettings updates={<p>Updater fixture updated</p>}/>);
+  expect(screen.getByRole('tab',{name:'文档与记忆'})).toHaveAttribute('aria-selected','true');
+ });
+ it('removes uncommitted credential reference when secret input is erased back to empty',async()=>{
+  install();
+  await show();
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  const password=document.getElementById('config-GEMINI_API_KEY') as HTMLInputElement;
+  fireEvent.input(password,{target:{value:'temp-key'}});
+  let editor=await fileView();
+  expect((editor as HTMLTextAreaElement).value).toContain('secret:host/GEMINI_API_KEY');
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  fireEvent.input(password,{target:{value:''}});
+  editor=await fileView();
+  expect((editor as HTMLTextAreaElement).value).not.toContain('secret:host/GEMINI_API_KEY');
+  expect(password.value).toBe('');
+ });
+ it('allows form view editing when non-essential host entries are omitted in JSONC',async()=>{
+  const noQoder=snapshot({...initial(),hosts:{claude:{},codex:{}} as never});
+  install(noQoder);
+  await show();
+  expect(screen.getByRole('combobox',{name:'发送快捷键'})).toBeEnabled();
+  expect(screen.getByRole('checkbox',{name:'记住工作区对话布局'})).toBeEnabled();
+ });
+ it('safely restores credential reference when clearing is unchecked even without prior config text reference',async()=>{
+  const emptyHostConfig=snapshot({...initial(),hosts:{qoder:{},claude:{},codex:{}}});
+  emptyHostConfig.credentials=[{key:'OPENAI_API_KEY',configured:true,last4:'9999'}];
+  install(emptyHostConfig);
+  await show();
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  const clearCheckbox=await screen.findByRole('checkbox',{name:'明确清除此凭据'});
+  expect(clearCheckbox).not.toBeChecked();
+  fireEvent.click(clearCheckbox);
+  expect(clearCheckbox).toBeChecked();
+  let editor=await fileView();
+  expect((editor as HTMLTextAreaElement).value).not.toContain('secret:host/OPENAI_API_KEY');
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  fireEvent.click(clearCheckbox);
+  expect(clearCheckbox).not.toBeChecked();
+  editor=await fileView();
+  expect((editor as HTMLTextAreaElement).value).toContain('secret:host/OPENAI_API_KEY');
+ });
+ it('localizes color profile option labels according to active locale',async()=>{
+  install();
+  await show();
+  expect(screen.getByRole('combobox',{name:'色彩偏好'})).toBeInTheDocument();
+  expect(screen.getByText('薄荷绿')).toBeInTheDocument();
+  fireEvent.mouseDown(screen.getByRole('combobox',{name:'色彩偏好'}));
+  expect(await screen.findByText('经典蓝')).toBeInTheDocument();
+ });
+ it('respects ambient application locale during initial load before configuration is ready',async()=>{
+  const api=install();
+  let resolveGet!:(val:ConfigurationSnapshot)=>void;
+  api.get.mockReturnValueOnce(new Promise(resolve=>{resolveGet=resolve;}));
+  render(
+   <OwbI18nProvider locale="en">
+    <ConfigurationSettings updates={<p>Updater fixture</p>}/>
+   </OwbI18nProvider>
+  );
+  expect(await screen.findByText('Loading settings…')).toBeInTheDocument();
+  expect(screen.queryByText('读取设置…')).not.toBeInTheDocument();
+  act(()=>{resolveGet(snapshot());});
+  await screen.findByRole('tab',{name:'General'});
+ });
+ it('sends hostChanges with null when credential is explicitly cleared and saved',async()=>{
+  const credConfig=snapshot();
+  credConfig.credentials=[{key:'OPENAI_API_KEY',configured:true,last4:'1234'}];
+  const api=install(credConfig);
+  await show();
+  fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
+  const clearCheckbox=await screen.findByRole('checkbox',{name:'明确清除此凭据'});
+  fireEvent.click(clearCheckbox);
+  fireEvent.click(footerSave());
+  await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1));
+  expect((api.save.mock.calls[0]![0] as unknown as {hostChanges:Record<string,unknown>}).hostChanges.OPENAI_API_KEY).toBeNull();
+  await screen.findByText('配置已保存');
+ });
 });

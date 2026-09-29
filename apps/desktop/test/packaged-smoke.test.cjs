@@ -809,7 +809,10 @@ test("#194 a permanently pending fonts-ready promise cannot block layout samplin
     document: {
       fonts: { ready: never },
       querySelector: (selector) => (
-        selector === ".owb-org-module__left" || selector === ".owb-org-module__pane--right > .owb-turn-panel"
+        selector === ".owb-app .ui-app-shell__sidebar" ||
+        selector === ".ui-app-shell__sidebar" ||
+        selector === ".owb-app .ui-app-shell__main" ||
+        selector === ".ui-app-shell__main"
           ? column
           : null
       ),
@@ -891,7 +894,7 @@ function runLayoutMeasure({ geometry, fonts, driveWithRaf = false }) {
     clearTimeout: () => {},
     document: {
       querySelector(selector) {
-        const isLeft = selector === ".owb-org-module__left";
+        const isLeft = selector === ".owb-app .ui-app-shell__sidebar" || selector === ".ui-app-shell__sidebar";
         // readColumns queries the left column first, so that query is what
         // advances the sample; the right column belongs to the same one.
         if (isLeft) {

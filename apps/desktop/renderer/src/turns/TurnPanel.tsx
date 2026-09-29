@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button, Modal, Popover } from "antd";
 import { useConversationCopy } from "../locales/conversation";
 import { createConversationMemory, conversationKey, type ConversationMemory } from "./conversation-memory";
@@ -46,6 +47,9 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 export interface TurnPanelProps {
   active?: boolean;
+  /** Undefined keeps the standalone header. Defined embeds actions in the host
+   * while active; null hides them without unmounting the conversation. */
+  headerHost?: HTMLElement | null;
   workspaceKey?: string;
   /** Changes for every workspace transition, including A -> B -> A. */
   workspaceScope?: symbol;
@@ -102,10 +106,13 @@ export interface TurnPanelProps {
   onRotateSession?: (sessionId: string) => void | Promise<void>;
   /** Deep linking anchor to focus and scroll to a specific turn. */
   focusTurnId?: string | null;
+  /** Opens an indexed workspace file from output or tool activity. */
+  onOpenResource?: (positionId: string, path: string) => void;
 }
 
 export function TurnPanel({
   active = true,
+  headerHost,
   workspaceKey = "",
   workspaceScope,
   memory,
@@ -145,6 +152,7 @@ export function TurnPanel({
   decidedApprovalIds,
   onRotateSession,
   focusTurnId,
+  onOpenResource,
 }: TurnPanelProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
@@ -180,6 +188,8 @@ export function TurnPanel({
     else { setInput(text); document.getElementById("owb-turn-input")?.focus(); }
   }
   useEffect(() => { setHistoryOpen(false); setEditRequest(null); }, [draftKey, active]);
+  useEffect(() => { setHistoryOpen(false); }, [headerHost]);
+  const embedded = headerHost !== undefined;
   const selectedPosition = positions.find((position) => position.id === selectedPositionId) ?? null;
   const runningTurn = selectedPositionId !== null && turns.some(
     (turn) => turn.positionId === selectedPositionId && turn.status === "running",
@@ -346,43 +356,51 @@ export function TurnPanel({
     }
   };
 
+  const headerActions = (
+    <div className="owb-conversation-header-actions">
+      {selectedPosition ? (
+        engineLocked ? (
+          <EngineBadge engine={engine} />
+        ) : (
+          <EngineSelect
+            engines={TURN_ENGINES}
+            engineAvailability={engineAvailability}
+            value={engine}
+            disabled={busy || employeeBusy || sending || modelSaving}
+            onChange={(next) => onSelectEngine?.(next)}
+          />
+        )
+      ) : null}
+      {selectedPosition && sessions && onSelectSession ? <Popover trigger="click" placement="bottomRight" open={active && historyOpen} onOpenChange={setHistoryOpen} title={copy.history}
+        content={<div className="owb-session-history">{sessions.length ? sessions.map(session => <button type="button" key={session.sessionId}
+          className={session.sessionId === selectedSessionId ? "is-selected" : ""}
+          aria-current={session.sessionId === selectedSessionId ? "true" : undefined}
+          onClick={() => { onSelectSession(session.sessionId); setHistoryOpen(false); }}>
+            <span>{new Date(session.createdAt).toLocaleString()}</span><small>{session.sessionId.slice(-8)} · {session.status === "active" ? copy.currentSession : t("turn.sessionReadOnly")}</small>
+        </button>) : copy.unavailableHistory}</div>}>
+        <Button type="text" size="small" aria-label={copy.history} title={selectedSession ? `${copy.history} · ${copy.session} ${selectedSession.sessionId.slice(-8)}` : copy.history} icon={<History size={16} aria-hidden="true" />} />
+      </Popover> : null}
+      {onToggleFocus ? <Button type="text" size="small" aria-label={focused ? copy.exitFocus : copy.focus} title={focused ? copy.exitFocus : copy.focus} aria-pressed={focused}
+        icon={focused ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />} onClick={onToggleFocus}>{focused ? copy.exitFocus : null}</Button> : null}
+    </div>
+  );
+
   return (
-    <section className="owb-turn-panel owb-panel" aria-label={t("turn.panelAria")}>
-      <header className="owb-turn-panel__header owb-panel-head">
-        <div className="owb-conversation-identity">
-          {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
-          <div className="owb-conversation-identity__copy">
-            <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
-            {selectedPosition && selectedSession ? <p>{copy.session} {selectedSession.sessionId.slice(-8)}</p> : null}
+    <section className={`owb-turn-panel owb-panel${embedded ? " owb-turn-panel--embedded" : ""}`} aria-label={t("turn.panelAria")}>
+      {embedded ? (
+        headerHost && active ? createPortal(headerActions, headerHost) : null
+      ) : (
+        <header className="owb-turn-panel__header owb-panel-head">
+          <div className="owb-conversation-identity">
+            {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
+            <div className="owb-conversation-identity__copy">
+              <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
+              {selectedPosition && selectedSession ? <p>{copy.session} {selectedSession.sessionId.slice(-8)}</p> : null}
+            </div>
           </div>
-        </div>
-        <div className="owb-conversation-header-actions">
-          {selectedPosition ? (
-            engineLocked ? (
-              <EngineBadge engine={engine} />
-            ) : (
-              <EngineSelect
-                engines={TURN_ENGINES}
-                engineAvailability={engineAvailability}
-                value={engine}
-                disabled={busy || employeeBusy || sending || modelSaving}
-                onChange={(next) => onSelectEngine?.(next)}
-              />
-            )
-          ) : null}
-          {selectedPosition && sessions && onSelectSession ? <Popover trigger="click" placement="bottomRight" open={active && historyOpen} onOpenChange={setHistoryOpen} title={copy.history}
-            content={<div className="owb-session-history">{sessions.length ? sessions.map(session => <button type="button" key={session.sessionId}
-              className={session.sessionId === selectedSessionId ? "is-selected" : ""}
-              aria-current={session.sessionId === selectedSessionId ? "true" : undefined}
-              onClick={() => { onSelectSession(session.sessionId); setHistoryOpen(false); }}>
-                <span>{new Date(session.createdAt).toLocaleString()}</span><small>{session.sessionId.slice(-8)} · {session.status === "active" ? copy.currentSession : t("turn.sessionReadOnly")}</small>
-            </button>) : copy.unavailableHistory}</div>}>
-            <Button type="text" size="small" aria-label={copy.history} title={copy.history} icon={<History size={16} aria-hidden="true" />} />
-          </Popover> : null}
-          {onToggleFocus ? <Button type="text" size="small" aria-label={focused ? copy.exitFocus : copy.focus} title={focused ? copy.exitFocus : copy.focus} aria-pressed={focused}
-            icon={focused ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />} onClick={onToggleFocus}>{focused ? copy.exitFocus : null}</Button> : null}
-        </div>
-      </header>
+          {headerActions}
+        </header>
+      )}
 
       <TurnThread
         turns={turns}
@@ -398,6 +416,7 @@ export function TurnPanel({
         decidedApprovalIds={decidedApprovalIds}
         scrollKey={draftKey}
         focusTurnId={focusTurnId}
+        onOpenResource={onOpenResource}
       />
 
       {sendErrors[draftKey] ? <p role="alert" className="owb-conversation-error">{sendErrors[draftKey]}</p> : null}
