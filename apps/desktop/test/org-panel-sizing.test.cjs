@@ -395,24 +395,29 @@ test("the organization overview owns a bounded canvas (#284)", () => {
 
   for (const viewport of [VIEWPORTS.stackedAt980, VIEWPORTS.stackedNarrow]) {
     assert.equal(
-      valueAt(rules, ".owb-main > .owb-org-chart--overview", "width", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "width", viewport),
       "100%",
       `${viewport.width}px: the overview must fit the content area rather than the tree max-content width`,
     );
     assert.equal(
-      valueAt(rules, ".owb-main > .owb-org-chart--overview", "min-width", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "min-width", viewport),
       "0",
       `${viewport.width}px: the flex chart item must give up its automatic min-content width`,
     );
     assert.equal(
-      valueAt(rules, ".owb-main > .owb-org-chart--overview", "min-height", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "min-height", viewport),
       "0",
       `${viewport.width}px: the overview must shrink inside a short window`,
     );
     assert.equal(
-      valueAt(rules, ".owb-org-chart--overview .owb-org-chart__body", "min-height", viewport),
-      "0",
-      `${viewport.width}px: the canvas must fit its bounded overview frame`,
+      valueAt(rules, ".owb-main > .owb-rgraph", "overflow-y", viewport),
+      "auto",
+      `${viewport.width}px: the overview section is the page scroll surface, so the results list and the timestamp footer stay reachable`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-main > .owb-rgraph > .owb-rgraph__workspace", "flex", viewport),
+      "none",
+      `${viewport.width}px: the canvas column keeps its height; a shrinkable column would be squashed and clipped by its own scrolling section instead of overflowing it`,
     );
   }
 });
