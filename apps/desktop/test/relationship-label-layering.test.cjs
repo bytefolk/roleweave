@@ -53,7 +53,7 @@ test("canvas chrome, the fallback and the details inspector all paint above the 
   for (const above of [
     ".owb-rgraph__spatial-fallback",
     ".owb-rgraph__spatial-controls",
-    ".owb-rgraph__spatial-objects",
+    ".owb-rgraph__object-navigation",
   ]) {
     const value = zIndex(above);
     assert.notEqual(value, null, `${above} must declare a z-index so it is unambiguously above the label layer`);
