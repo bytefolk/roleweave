@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Drawer, Input } from "antd";
+import { Select } from "@fullstack-ai-infra/ui";
 import {
   CalendarDays,
   ChevronLeft,
@@ -419,31 +420,26 @@ export function ProjectBoard({
             t("project.unscheduled")
           )}
         </div>
-        <select
+        <Select<GoalWorkItem["status"]>
           aria-label={t("project.changeStatus", { title: item.title })}
           className="owb-project-select"
           value={item.status}
           disabled={busy}
-          onChange={(event) =>
+          options={STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) }))}
+          onChange={(status) =>
             void save(
               items.map((existing) =>
                 existing.taskId === item.taskId
                   ? {
                       ...existing,
-                      status: event.target.value as GoalWorkItem["status"],
+                      status,
                     }
                   : existing,
               ),
               detail.goal.updatedAt,
             )
           }
-        >
-          {STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {t(`project.status.${status}`)}
-            </option>
-          ))}
-        </select>
+        />
         <div className="owb-project-card__execution">
           {execution(item)}
           <Button
@@ -577,47 +573,38 @@ export function ProjectBoard({
           allowClear
           onChange={(event) => setQuery(event.target.value)}
         />
-        <select
+        <Select<string>
           className="owb-project-select owb-project-owner-filter"
           aria-label={t("project.filterOwner")}
           value={owner}
-          onChange={(event) => setOwner(event.target.value)}
-        >
-          <option value="all">{t("project.allOwners")}</option>
-          <option value="unassigned">{t("project.unassigned")}</option>
-          {ownerIds.map((id) => (
-            <option value={`position:${id}`} key={id}>
-              {own(positionNames, id) ?? id}
-            </option>
-          ))}
-        </select>
-        <select
+          options={[
+            { value: "all", label: t("project.allOwners") },
+            { value: "unassigned", label: t("project.unassigned") },
+            ...ownerIds.map((id) => ({ value: `position:${id}`, label: own(positionNames, id) ?? id })),
+          ]}
+          onChange={setOwner}
+        />
+        <Select<string>
           className="owb-project-select owb-project-status-filter"
           aria-label={t("project.filterStatus")}
           value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value)}
-        >
-          <option value="all">{t("project.allStatuses")}</option>
-          {STATUSES.map((status) => (
-            <option value={status} key={status}>
-              {t(`project.status.${status}`)}
-            </option>
-          ))}
-          <option value="overdue">{t("project.overdue")}</option>
-        </select>
-        <select
+          options={[
+            { value: "all", label: t("project.allStatuses") },
+            ...STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) })),
+            { value: "overdue", label: t("project.overdue") },
+          ]}
+          onChange={setStatusFilter}
+        />
+        <Select<string>
           className="owb-project-select owb-project-priority-filter"
           aria-label={t("project.filterPriority")}
           value={priorityFilter}
-          onChange={(event) => setPriorityFilter(event.target.value)}
-        >
-          <option value="all">{t("project.allPriorities")}</option>
-          {PRIORITIES.map((priority) => (
-            <option value={priority} key={priority}>
-              {t(`project.priority.${priority}`)}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "all", label: t("project.allPriorities") },
+            ...PRIORITIES.map((priority) => ({ value: priority, label: t(`project.priority.${priority}`) })),
+          ]}
+          onChange={setPriorityFilter}
+        />
         <Button
           type="primary"
           icon={<Plus size={14} aria-hidden="true" />}
@@ -895,60 +882,52 @@ export function ProjectBoard({
               </label>
               <label>
                 <span>{t("project.assignee")}</span>
-                <select
+                <Select<string>
                   className="owb-project-select"
+                  aria-label={t("project.assignee")}
                   value={editor.item.assigneePositionId ?? ""}
-                  onChange={(event) =>
+                  disabled={busy}
+                  options={[
+                    { value: "", label: t("project.unassigned") },
+                    ...ownerIds.map((id) => ({ value: id, label: own(positionNames, id) ?? id })),
+                  ]}
+                  onChange={(assigneePositionId) =>
                     patch({
-                      assigneePositionId: event.target.value || undefined,
+                      assigneePositionId: assigneePositionId || undefined,
                     })
                   }
-                >
-                  <option value="">{t("project.unassigned")}</option>
-                  {ownerIds.map((id) => (
-                    <option key={id} value={id}>
-                      {own(positionNames, id) ?? id}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <div className="owb-project-form__row">
                 <label>
                   <span>{t("project.taskStatus")}</span>
-                  <select
+                  <Select<GoalWorkItem["status"]>
                     className="owb-project-select"
+                    aria-label={t("project.taskStatus")}
                     value={editor.item.status}
-                    onChange={(event) =>
+                    disabled={busy}
+                    options={STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) }))}
+                    onChange={(status) =>
                       patch({
-                        status: event.target.value as GoalWorkItem["status"],
+                        status,
                       })
                     }
-                  >
-                    {STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {t(`project.status.${status}`)}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
                 <label>
                   <span>{t("project.priority")}</span>
-                  <select
+                  <Select<GoalWorkItem["priority"]>
                     className="owb-project-select"
+                    aria-label={t("project.priority")}
                     value={editor.item.priority}
-                    onChange={(event) =>
+                    disabled={busy}
+                    options={PRIORITIES.map((priority) => ({ value: priority, label: t(`project.priority.${priority}`) }))}
+                    onChange={(priority) =>
                       patch({
-                        priority: event.target
-                            .value as GoalWorkItem["priority"],
+                        priority,
                       })
                     }
-                  >
-                    {PRIORITIES.map((priority) => (
-                      <option key={priority} value={priority}>
-                        {t(`project.priority.${priority}`)}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
               </div>
               <div className="owb-project-form__row">
