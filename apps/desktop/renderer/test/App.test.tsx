@@ -1549,6 +1549,9 @@ describe("App runtime bridge", () => {
     expect(await screen.findByText("没有可撤销的组织调整")).toBeInTheDocument();
   });
 
+  // Full-App render with the hire drawer round-trip; a macOS runner timeout
+  // was observed at the 5s default (#529). 15s matches the other full-App
+  // tests in this file.
   it.each(["codex", "codex-local"] as const)("binds the ready %s runtime in HireDrawer and sends it through POST /hire", async (agentEngine) => {
     const hire = vi.fn().mockResolvedValue({
       status: 200,
@@ -1605,7 +1608,7 @@ describe("App runtime bridge", () => {
     }));
     expect(orgApply).not.toHaveBeenCalled();
     expect(await screen.findByText("文档负责人 已加入团队")).toBeInTheDocument();
-  });
+  }, 15_000);
 
   it("requires dismissal confirmation and invokes one-click restore through typed IPC", async () => {
     const childSnapshot = { ...snapshot, positionCount: 2, depth: 2, tree: [{ ...snapshot.tree[0]!, children: [{ id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }] }] };
@@ -2664,7 +2667,10 @@ it("opens project management independently from Goals through the module rail", 
   expect(screen.queryByRole("heading", { name: "项目管理", level: 1 })).not.toBeInTheDocument();
 });
 
-it("reanchors a repeated project turn link without replacing the conversation draft", async () => {
+  // Full-App render with two module switches and turn-link re-anchors, so on
+  // slower runners it sits above the 5s default (#529). 15s matches the
+  // other full-App tests in this file.
+  it("reanchors a repeated project turn link without replacing the conversation draft", async () => {
   const scrollIntoView = vi.fn();
   Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
   const detail: GoalDetail = {
@@ -2700,7 +2706,7 @@ it("reanchors a repeated project turn link without replacing the conversation dr
   }
   expect(bridge.createTurn).not.toHaveBeenCalled();
   expect(bridge.createSessionTurn).not.toHaveBeenCalled();
-});
+}, 15_000);
 
 it("counts only actionable inbox items and opens an approval's exact employee session and turn", async () => {
   const scrollIntoView = vi.fn();
