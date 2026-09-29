@@ -22,6 +22,26 @@ export type RelationshipSpatialMode = "minimal" | "galaxy";
 export type RelationshipSpatialLayout = "topology" | "orbit";
 export type RelationshipSpatialTheme = "dark" | "light";
 
+/**
+ * The canvas paints inside WebGL, so it cannot inherit `background` from CSS.
+ * Resolve the live surface token instead of hardcoding a palette, so the stage
+ * stays in the same tonal family as the surrounding graph shell in both light
+ * and dark themes and no longer reads as an embedded video player.
+ */
+function readSurfaceColor(name: string, fallback: number): number {
+  if (typeof document === "undefined") return fallback;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(raw);
+  if (hex) {
+    const value = hex[1]!;
+    const full = value.length === 3 ? value.split("").map(char => char + char).join("") : value;
+    return Number.parseInt(full, 16);
+  }
+  const rgb = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(raw);
+  if (rgb) return (Number(rgb[1]) << 16) | (Number(rgb[2]) << 8) | Number(rgb[3]);
+  return fallback;
+}
+
 export interface RelationshipSpatialPoint {
   id: string;
   x: number;
@@ -166,6 +186,12 @@ export interface RelationshipSpatialSceneProps {
   mode: RelationshipSpatialMode;
   layout: RelationshipSpatialLayout;
   theme: RelationshipSpatialTheme;
+  /**
+   * The application's resolved light/dark mode. The stage background follows
+   * this, not the renderer's own `theme` switch, so the canvas never sits in a
+   * different tonal family than the rest of the graph shell.
+   */
+  appTheme: RelationshipSpatialTheme;
   showKnowledgeRelationships: boolean;
   selectedId?: string;
   visible?: boolean;
@@ -246,6 +272,7 @@ export function RelationshipSpatialScene({
   mode,
   layout,
   theme,
+  appTheme,
   showKnowledgeRelationships,
   selectedId,
   visible = true,
@@ -433,8 +460,12 @@ export function RelationshipSpatialScene({
     if (!state || !ready) return;
     state.decoration.traverse(disposeObject);
     state.decoration.clear();
-    const minimalLight = mode === "minimal" && theme === "light";
-    const background = mode === "galaxy" ? 0x12151c : minimalLight ? 0xf8f9fa : 0x09090b;
+    const surfaceFallback = mode === "galaxy" ? 0x12151c : appTheme === "light" ? 0xf8f9fa : 0x09090b;
+    // Tone follows the application theme so the canvas blends with the shell.
+    const background = readSurfaceColor("--ui-surface", surfaceFallback);
+    // The renderer switch keeps its own look, but a light shell never gets a
+    // dark hole: on light themes the minimal styling wins regardless of switch.
+    const minimalLight = mode === "minimal" && (appTheme === "light" || theme === "light");
     state.scene.background = new state.THREE.Color(background);
     state.scene.fog = new state.THREE.Fog(background, mode === "galaxy" ? 44 : 58, mode === "galaxy" ? 150 : 170);
     const grid = new state.THREE.GridHelper(84, 42, minimalLight ? 0x52525b : mode === "galaxy" ? 0x33415c : 0x71717a, minimalLight ? 0xd4d4d8 : mode === "galaxy" ? 0x1f293b : 0x27272a);
@@ -443,14 +474,14 @@ export function RelationshipSpatialScene({
     materials.forEach(material => { material.transparent = true; material.opacity = mode === "galaxy" ? 0.22 : 0.32; });
     state.decoration.add(grid);
     resetCamera(state, mode);
-  }, [mode, ready, theme]);
+  }, [appTheme, mode, ready, theme]);
 
   useEffect(() => {
     const state = scene.current;
     if (!state || !ready) return;
     clearWorld(state);
     const positions = new Map(points.map(point => [point.id, point]));
-    const minimalLight = mode === "minimal" && theme === "light";
+    const minimalLight = mode === "minimal" && (appTheme === "light" || theme === "light");
     for (const edge of edges) {
       if (!showKnowledgeRelationships && !structuralRelations.has(edge.kind)) continue;
       const source = positions.get(edge.source);
@@ -513,7 +544,7 @@ export function RelationshipSpatialScene({
     }
     state.requestRender();
     return () => clearWorld(state);
-  }, [edges, mode, nodes, points, ready, showKnowledgeRelationships, theme]);
+  }, [appTheme, edges, mode, nodes, points, ready, showKnowledgeRelationships, theme]);
 
   useEffect(() => {
     const state = scene.current;
@@ -546,7 +577,7 @@ export function RelationshipSpatialScene({
   }, [mode]);
 
   return <div
-    className={`owb-rgraph__spatial owb-rgraph__spatial--${mode} owb-rgraph__spatial--${theme}`}
+    className={`owb-rgraph__spatial owb-rgraph__spatial--${mode} owb-rgraph__spatial--${appTheme}`}
     role="region"
     aria-label={canvasLabel}
     data-visual-style={mode === "minimal" ? "bindy-spatial" : "yuanyang-galaxy"}

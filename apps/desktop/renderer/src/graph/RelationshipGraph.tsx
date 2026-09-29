@@ -4,6 +4,7 @@ import { ArrowUpRight, Network, RefreshCw, Search, X } from "lucide-react";
 import { relationshipNodeKinds, type RelationshipEdge, type RelationshipGraphResponse, type RelationshipKind, type RelationshipNode, type RelationshipNodeKind } from "@roleweave/shared/relationship-graph";
 import { useT, type OwbT } from "@roleweave/ui";
 import { RelationshipSpatialScene, type RelationshipSpatialLayout, type RelationshipSpatialTheme } from "./RelationshipSpatialScene";
+import { useAppTheme } from "./useAppTheme";
 import "./RelationshipGraph.css";
 
 export interface RelationshipGraphProps {
@@ -93,6 +94,7 @@ export function RelationshipGraph(props: RelationshipGraphProps) {
 
 function RelationshipGraphWorkspace({ data, loading, error, visible = true, onReload, onOpenAgent, onOpenResource, scope }: RelationshipGraphProps & { scope: string }) {
   const t = useT();
+  const appTheme = useAppTheme();
   const initial = useRef(rememberedViews.get(scope));
   const [query, setQuery] = useState(initial.current?.query ?? "");
   const [kinds, setKinds] = useState<RelationshipNodeKind[]>(initial.current?.kinds ?? [...relationshipNodeKinds]);
@@ -159,6 +161,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
             mode={renderer}
             layout={spatialLayout}
             theme={spatialTheme}
+            appTheme={appTheme}
             showKnowledgeRelationships={showKnowledgeRelationships}
             selectedId={selection?.type === "node" ? selection.id : undefined}
             visible={visible}
