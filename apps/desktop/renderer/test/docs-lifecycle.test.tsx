@@ -704,6 +704,9 @@ describe("DocsPanel knowledge lifecycle (#347)", () => {
     expect(writeDoc).not.toHaveBeenCalled();
   });
 
+  // Renders the full DocsPanel editor and walks autosave plus two reading
+  // mode round-trips; a macOS runner timeout was observed at the 5s default
+  // (#529). 15s matches the other heavy component tests.
   it("preserves undo and redo history across reading mode after autosave", async () => {
     const writeDoc = vi.fn(async (_id: string, _path: string, content: string) => ({
       ...KNOWLEDGE, content, version: "2026-08-27T00:00:02.000Z",
@@ -746,7 +749,7 @@ describe("DocsPanel knowledge lifecycle (#347)", () => {
     await waitFor(() => expect(writeDoc.mock.calls.map(call => call[2])).toEqual([
       "# Changed\n", "# Knowledge\n", "# Changed\n",
     ]));
-  });
+  }, 15_000);
 
   it("navigates note links and explicitly creates a missing target", async () => {
     const linked = {
