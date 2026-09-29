@@ -2664,6 +2664,9 @@ it("opens project management independently from Goals through the module rail", 
   expect(screen.queryByRole("heading", { name: "项目管理", level: 1 })).not.toBeInTheDocument();
 });
 
+// Renders the full App, opens the project workspace and re-anchors the same
+// turn twice, so on slower runners its cold cost sits above the 5s default and
+// fails fresh runs of main (#532). 15s matches the other full-App tests here.
 it("reanchors a repeated project turn link without replacing the conversation draft", async () => {
   const scrollIntoView = vi.fn();
   Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
@@ -2700,7 +2703,7 @@ it("reanchors a repeated project turn link without replacing the conversation dr
   }
   expect(bridge.createTurn).not.toHaveBeenCalled();
   expect(bridge.createSessionTurn).not.toHaveBeenCalled();
-});
+}, 15_000);
 
 it("counts only actionable inbox items and opens an approval's exact employee session and turn", async () => {
   const scrollIntoView = vi.fn();
