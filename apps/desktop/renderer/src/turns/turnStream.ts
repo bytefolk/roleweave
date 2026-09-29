@@ -1,6 +1,7 @@
 import type { GroupTimeline, TurnRecord } from "@roleweave/shared";
 import { TURN_ENGINES } from "./engine-contract";
 import type { TurnEngine } from "./types";
+import { closeNarration, foldNarration, putTrailItem } from "./trail";
 
 /**
  * Renderer-local projection of the frozen turn.* SSE vocabulary
@@ -37,6 +38,8 @@ export interface LiveRunState {
   totalTokens: number | null;
   /** Bounded, truthful public activities received over SSE. */
   trace: import("./types").TurnTraceActivity[];
+  /** Narration rows opened so far; keeps their ids unique as segments close. */
+  thoughtSeq: number;
   /** Group conversation this run belongs to (#52); absent for 1:1 turns. */
   groupRef?: string;
 }
@@ -238,6 +241,7 @@ export function beginGroupRun(
         startedAt: new Date().toISOString(),
         totalTokens: null,
         trace: [],
+        thoughtSeq: 0,
         groupRef: spawn.groupRef,
       },
     }),
@@ -370,10 +374,19 @@ export function applyTurnEvent(
             (existing.engineRunId !== null && existing.engineRunId !== undefined && existing.engineRunId !== runId)
           ) return { ...state, seq: nextSeq };
         }
+        const folded = foldNarration(existing.trace ?? [], delta, existing.thoughtSeq ?? 0);
         return {
           ...state,
           seq: nextSeq,
-          runs: { ...state.runs, [entry![0]]: { ...existing, text: existing.text + delta } },
+          runs: {
+            ...state.runs,
+            [entry![0]]: {
+              ...existing,
+              text: existing.text + delta,
+              trace: folded.trail,
+              thoughtSeq: folded.thoughtSeq,
+            },
+          },
         };
       }
       // Group runs (#52) are seeded by beginGroupRun under the pre-assigned
@@ -398,6 +411,7 @@ export function applyTurnEvent(
         const runs = { ...state.runs };
         const runKey = availableRunKey(state, runId, [identity.groupRef, identity.turnId, identity.positionId, identity.engine]);
         if (seedId !== null && seedId !== runKey) delete runs[seedId];
+        const carried = foldNarration(seeded.trace ?? [], delta, seeded.thoughtSeq ?? 0);
         return {
           ...state,
           seq: nextSeq,
@@ -408,6 +422,8 @@ export function applyTurnEvent(
               groupRef: groupingRef,
               engineRunId: runId,
               text: seeded.text + delta,
+              trace: carried.trail,
+              thoughtSeq: carried.thoughtSeq,
             },
           }),
         };
@@ -425,6 +441,7 @@ export function applyTurnEvent(
       }
       const startedAt = stringField(payload, "timestamp") ?? new Date().toISOString();
       const runKey = availableRunKey(state, runId, [pending.positionId, pending.engine, pending.sessionId ?? ""]);
+      const opened = foldNarration([], delta, 0);
       return {
         ...state,
         seq: nextSeq,
@@ -441,7 +458,8 @@ export function applyTurnEvent(
             text: delta,
             startedAt,
             totalTokens: null,
-        trace: [],
+            trace: opened.trail,
+            thoughtSeq: opened.thoughtSeq,
           },
         }),
       };
@@ -458,10 +476,15 @@ export function applyTurnEvent(
       if (!entry || !existing || !activityId || !title || !at || (kind !== "tool" && kind !== "agent") ||
           (status !== "running" && status !== "completed" && status !== "failed") ||
           (existing.groupRef === undefined && !matchesPersonalRun(payload, existing))) return { ...state, seq: nextSeq };
-      const next: import("./types").TurnTraceActivity = { activityId, kind, status, title, at,
+      const previousActivity = (existing.trace ?? []).find((item) => item.activityId === activityId);
+      const next: import("./types").TurnTraceActivity = {
+        ...(previousActivity ?? {}),
+        activityId, kind, status, title, at,
         ...(stringField(payload, "detail") ? { detail: stringField(payload, "detail")! } : {}),
         ...(stringField(payload, "parentActivityId") ? { parentActivityId: stringField(payload, "parentActivityId")! } : {}) };
-      const trace = (existing.trace ?? []).filter(item => item.activityId !== activityId).concat(next).slice(-128);
+      // An arriving step ends the narration that preceded it, so the thought
+      // row stays ahead of the step it introduced (trail.ts owns the rule).
+      const trace = putTrailItem(closeNarration(existing.trace ?? []), next);
       return { ...state, seq: nextSeq, runs: { ...state.runs, [entry[0]]: { ...existing, trace } } };
     }
     case "turn.usage": {

@@ -80,9 +80,18 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
   const t = useT();
   const copy = useConversationCopy();
   const bodyId = useId();
-  const tools = turn.trace?.filter((item) => item.kind === "tool") ?? [];
-  const agents = turn.trace?.filter((item) => item.kind === "agent") ?? [];
-  const runningActivity = turn.trace?.find((item) => item.status === "running");
+  // The trail is chronological: thought items (the model's narration between
+  // two tool calls) interleave with tool/agent activities.
+  const trail = turn.trace ?? [];
+  const tools = trail.filter((item) => item.kind === "tool");
+  const agents = trail.filter((item) => item.kind === "agent");
+  const thoughts = trail.filter((item) => item.kind === "thought");
+  const runningActivity = trail.find((item) => item.status === "running" && item.kind !== "thought");
+  // A running thought is always the trail tail — an arriving step closes the
+  // open narration before it lands — so when a tool and a thought are both
+  // live, the thought is the newest element and names the fold title below;
+  // the still-running tool stays visible in the body.
+  const runningThought = trail.find((item) => item.status === "running" && item.kind === "thought");
   const awaitingApproval = turn.approvalRequest !== undefined;
   const running = turn.status === "running" && !awaitingApproval;
   const failedTools = tools.filter((item) => item.status === "failed").length;
@@ -104,9 +113,11 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
       : running
         ? open
           ? t("turn.activityRunningExpanded")
-          : runningActivity
-            ? t("turn.activityRunningTool", { tool: runningActivity.title })
-            : t("turn.activityRunning")
+          : runningThought
+            ? t("turn.thoughtRunning")
+            : runningActivity
+              ? t("turn.activityRunningTool", { tool: runningActivity.title ?? runningActivity.activityId })
+              : t("turn.activityRunning")
         : turn.status === "failed"
           ? t("turn.failed")
           : turn.status === "indeterminate"
@@ -116,8 +127,8 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
               : failedTools > 0
                 ? t("turn.toolsExecutedWithFailures", { count: tools.length, failedCount: failedTools })
                 : t("turn.toolsExecuted", { count: tools.length });
-  const hasBody = tools.length > 0 || agents.length > 0 || running;
-  const thinking = running && !runningActivity;
+  const hasBody = tools.length > 0 || agents.length > 0 || thoughts.length > 0 || running;
+  const thinking = running && !runningActivity && !runningThought;
   return (
     <div className={`owb-turn-progress is-${state}`} role="group" aria-label={t("turn.progressAria")}
       data-motion={running ? "live" : undefined}>
@@ -143,20 +154,39 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
       {hasBody ? (
         <div id={bodyId} className="owb-activity-trace__group">
           <ol className="owb-activity-trace__list" hidden={!open}>
-            {tools.map((item) => (
-              <li key={`${item.activityId}:${item.status}`} className={`is-${item.status}`}>
-                <span className="owb-activity-trace__icon">
-                  {/terminal|bash/i.test(item.title) ? <Terminal size={13} aria-hidden="true" /> : <Wrench size={13} aria-hidden="true" />}
-                </span>
-                <span><strong>{item.title}</strong>{item.detail ? <> · <Markdown content={item.detail} onNavigateDoc={onOpenResource ? (path) => onOpenResource(turn.positionId, path) : undefined} /></> : null}</span>
-                <span className={`owb-activity-trace__status is-${item.status}`}><ActivityStatusIcon status={item.status} /></span>
-              </li>
-            ))}
-            {agents.map((item) => (
-              <li key={`${item.activityId}:${item.status}`} className={`owb-activity-trace__agent is-${item.status}`}>
-                <Bot size={14} aria-hidden="true" /><span>{item.title}{item.detail ? ` · ${item.detail}` : ""}</span>
-              </li>
-            ))}
+            {trail.map((item) => {
+              if (item.kind === "thought") {
+                return (
+                  <li key={`${item.activityId}:${item.status}`} className={`owb-activity-trace__item is-thought is-${item.status}`}>
+                    <span className="owb-activity-trace__icon"><ActivityStatusIcon status={item.status} /></span>
+                    <span className="owb-activity-trace__label">
+                      {item.status === "running" ? t("turn.thoughtRunning") : t("turn.thoughtDone")}
+                      {item.text ? <span className="owb-activity-trace__thought" title={item.text}> · {item.text}</span> : null}
+                    </span>
+                  </li>
+                );
+              }
+              if (item.kind === "agent") {
+                return (
+                  <li key={`${item.activityId}:${item.status}`} className={`owb-activity-trace__agent is-${item.status}`}>
+                    <Bot size={14} aria-hidden="true" /><span>{item.title}{item.detail ? ` · ${item.detail}` : ""}</span>
+                  </li>
+                );
+              }
+              return (
+                <li key={`${item.activityId}:${item.status}`} className={`owb-activity-trace__item is-tool is-${item.status}`}>
+                  <span className="owb-activity-trace__icon">
+                    {/terminal|bash/i.test(item.title ?? "") ? <Terminal size={13} aria-hidden="true" /> : <Wrench size={13} aria-hidden="true" />}
+                  </span>
+                  <span className="owb-activity-trace__label">
+                    <strong>{item.title}</strong>
+                    {item.detail ? <> · <Markdown content={item.detail} onNavigateDoc={onOpenResource ? (path) => onOpenResource(turn.positionId, path) : undefined} /></> : null}
+                    <span className="owb-activity-trace__state"> · {item.status === "running" ? t("turn.toolRunning") : item.status === "failed" ? t("turn.toolFailed") : t("turn.toolDone")}</span>
+                  </span>
+                  <span className={`owb-activity-trace__status is-${item.status}`}><ActivityStatusIcon status={item.status} /></span>
+                </li>
+              );
+            })}
             {thinking ? (
               <li className="owb-activity-trace__continuing" aria-current="step">
                 <LoaderCircle size={13} aria-hidden="true" />{t("turn.continueReasoning")}
