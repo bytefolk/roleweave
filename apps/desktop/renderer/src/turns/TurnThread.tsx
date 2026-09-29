@@ -87,6 +87,10 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
   const agents = trail.filter((item) => item.kind === "agent");
   const thoughts = trail.filter((item) => item.kind === "thought");
   const runningActivity = trail.find((item) => item.status === "running" && item.kind !== "thought");
+  // A running thought is always the trail tail — an arriving step closes the
+  // open narration before it lands — so when a tool and a thought are both
+  // live, the thought is the newest element and names the fold title below;
+  // the still-running tool stays visible in the body.
   const runningThought = trail.find((item) => item.status === "running" && item.kind === "thought");
   const awaitingApproval = turn.approvalRequest !== undefined;
   const running = turn.status === "running" && !awaitingApproval;
@@ -109,10 +113,10 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
       : running
         ? open
           ? t("turn.activityRunningExpanded")
-          : runningActivity
-            ? t("turn.activityRunningTool", { tool: runningActivity.title ?? runningActivity.activityId })
-            : runningThought
-              ? t("turn.thoughtRunning")
+          : runningThought
+            ? t("turn.thoughtRunning")
+            : runningActivity
+              ? t("turn.activityRunningTool", { tool: runningActivity.title ?? runningActivity.activityId })
               : t("turn.activityRunning")
         : turn.status === "failed"
           ? t("turn.failed")

@@ -79,6 +79,26 @@ describe("conversation activity line (Qoder-style)", () => {
     expect(screen.queryByText("继续推理…")).not.toBeInTheDocument();
   });
 
+  it("prefers the open narration in the fold title when narration streams beside a still-running tool", () => {
+    render(<TurnThread turns={[turn({ trace: [
+      { activityId: "t1", kind: "tool", status: "running", title: "Glob", detail: "src/**", at: started },
+      { activityId: "thought-1", kind: "thought", status: "running", text: "等待匹配期间先整理分组", at: "2026-09-10T06:00:05.000Z" },
+    ] })]} />);
+    // While expanded the title is the generic running copy; folding reveals
+    // the live element — and the running thought is the trail tail, so it
+    // names the title, not the still-running tool.
+    expect(disclosure()).toHaveTextContent("正在执行中");
+    fireEvent.click(disclosure());
+    expect(disclosure()).toHaveTextContent("思考中");
+    expect(disclosure()).not.toHaveTextContent("正在调用 Glob");
+    const thought = document.querySelector(".owb-activity-trace__item.is-thought.is-running");
+    expect(thought).not.toBeNull();
+    expect(thought).toHaveTextContent("思考中");
+    expect(thought).toHaveTextContent("等待匹配期间先整理分组");
+    expect(screen.getByText("Glob").closest("li")?.querySelector(".owb-activity-trace__status")?.className).toContain("is-running");
+    expect(screen.queryByText("继续推理…")).not.toBeInTheDocument();
+  });
+
   it("folds into its tool-count summary and collapses once settled", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-10T06:00:08.000Z"));
