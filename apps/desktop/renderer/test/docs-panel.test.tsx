@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DocsPanel } from "../src/docs/DocsPanel";
 import type { DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
@@ -32,7 +32,10 @@ describe("DocsPanel (#35 S2 file routing surface)", () => {
 
   it("lists position documents and routes the selected file into the DocViewer with its file-level version", async () => {
     const listDocs = vi.fn().mockResolvedValue(LIST);
-    const readDoc = vi.fn().mockResolvedValue(DOC);
+    const version = "2026-08-27T00:05:00.000Z";
+    const readDoc = vi.fn().mockResolvedValue({ ...DOC, version });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     render(<DocsPanel positionId="repo-owner" listDocs={listDocs} readDoc={readDoc} />);
 
     await waitFor(() => {
@@ -50,7 +53,17 @@ describe("DocsPanel (#35 S2 file routing surface)", () => {
     expect(document.querySelector(".owb-docs-panel__list-pane")).toBeTruthy();
     expect(document.querySelector(".owb-docs-panel__reader-pane")).toBeTruthy();
     expect(screen.getByText("Owns the repository.")).toBeTruthy();
-    expect(document.querySelector('time[datetime="2026-08-27T00:00:00.000Z"]')).toHaveTextContent("更新于");
+    fireEvent.click(screen.getByRole("button", { name: "更多文档操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "复制引用" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(JSON.stringify({ uri: "owb-doc://repo-owner/SKILL.md", version })));
+    fireEvent.click(screen.getByRole("button", { name: "更多文档操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "快捷键" }));
+    const shortcutsDialog = await screen.findByRole("dialog", { name: "快捷键" });
+    expect(within(shortcutsDialog).getByText("加粗")).toBeTruthy();
+    expect(within(shortcutsDialog).getByText("链接")).toBeTruthy();
+    expect(shortcutsDialog.querySelectorAll("tbody tr")).toHaveLength(18);
+    fireEvent.click(shortcutsDialog.querySelector(".ant-modal-close")!);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "快捷键" })).toBeNull());
   });
 
   it("shows an honest empty state and never invents documents", async () => {

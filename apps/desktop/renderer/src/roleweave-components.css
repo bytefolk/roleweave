@@ -480,7 +480,32 @@
   background: color-mix(in srgb, var(--ui-primary) 8%, var(--ui-surface));
   color: var(--ui-primary);
 }
-:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__status svg { animation: owb-project-dialog-spin 900ms linear infinite; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__spinner {
+  position: relative;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  animation: owb-project-dialog-spin 720ms linear infinite;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__spinner > span {
+  position: absolute;
+  inset: 1px;
+  border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-top-color: currentColor;
+  border-right-color: currentColor;
+  border-radius: 50%;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__spinner > i {
+  position: absolute;
+  top: 0;
+  left: 7px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 5px currentColor;
+}
 :is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__error {
   border: 1px solid color-mix(in srgb, var(--ui-danger) 45%, var(--ui-border));
   background: color-mix(in srgb, var(--ui-danger) 7%, var(--ui-surface));
@@ -488,7 +513,8 @@
 }
 @keyframes owb-project-dialog-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  :is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__status svg { animation: none; }
+  /* Override the shared !important motion reset only for this loading signal. */
+  :is([data-theme="light"], [data-theme="dark"]) .owb-project-dialog__spinner { animation: owb-project-dialog-spin 2400ms steps(8, end) infinite !important; }
 }
 :is([data-theme="light"], [data-theme="dark"]) .owb-project-current-workspace {
   display: grid;

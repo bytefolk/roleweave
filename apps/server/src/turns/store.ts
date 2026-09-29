@@ -1259,6 +1259,14 @@ export class TurnStore {
           dir = sessionConversationDir(workspace, entry.name);
         }
         await assertRealDirectory(dir, "local reports conversation path is unsafe");
+        if (source.kind === "position") {
+          const contents = await fs.readdir(dir, { withFileTypes: true });
+          // Session turns and preflight failures persist progress without a legacy conversation.
+          if (contents.length === 1 && contents[0]!.name === "progress") {
+            await assertRealDirectory(path.join(dir, "progress"), "local reports progress path is unsafe");
+            continue;
+          }
+        }
         const metadataRead = await readJson(path.join(dir, "conversation.json"), MAX_METADATA_BYTES);
         chargeStableBytes(metadataRead.bytes);
         const metadata = metadataRead.value;

@@ -61,10 +61,15 @@ const {
   validateAssetsReadRequest,
 } = require("./assets-ipc.cjs");
 const {
+  authorizeDocsIpcSender,
   validateDocsCreateRequest,
+  validateDocsDeleteRequest,
   validateDocsListRequest,
+  validateDocsPathRequest,
   validateDocsReadRequest,
+  validateDocsRenameRequest,
   validateDocsResolveRequest,
+  validateDocsWriteRequest,
 } = require("./docs-ipc.cjs");
 const {
   validateDriveListRequest,
@@ -96,7 +101,7 @@ const {
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
 } = require("./goal-ipc.cjs");
-const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
+const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, openWorkspaceFile, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
 const { runtimeDescription } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
@@ -419,6 +424,10 @@ ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
 ipcMain.handle("owb:workspace:reveal", async () => revealWorkspaceInFileManager({
   apiRequest, env: desktopEnv, openPath: (target) => shell.openPath(target),
 }));
+ipcMain.handle("owb:workspace:file-open", async (event, relativePath) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { opened: false, reason: "untrusted_sender" };
+  return openWorkspaceFile({ apiRequest, env: desktopEnv, relativePath, openPath: (target) => shell.openPath(target) });
+});
 
 ipcMain.handle("owb:org:tree", async () => apiRequest("/org/tree"));
 
@@ -545,14 +554,14 @@ ipcMain.handle("owb:position:profile", async (event, request) => {
 });
 
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.
-ipcMain.handle("owb:position:docs:list", async (_event, positionId) => {
-  const validated = validateDocsListRequest(positionId);
+ipcMain.handle("owb:position:docs:list", async (_event, positionId, options) => {
+  const validated = validateDocsListRequest(positionId, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
 
-ipcMain.handle("owb:position:docs:read", async (_event, positionId, filePath) => {
-  const validated = validateDocsReadRequest(positionId, filePath);
+ipcMain.handle("owb:position:docs:read", async (_event, positionId, filePath, options) => {
+  const validated = validateDocsReadRequest(positionId, filePath, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
@@ -568,6 +577,46 @@ ipcMain.handle("owb:docs:resolve", async (_event, request) => {
   const validated = validateDocsResolveRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/resolve", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:write", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsWriteRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/write", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:rename", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsRenameRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/rename", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:archive", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsPathRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/archive", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:restore", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsPathRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/restore", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:delete", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsDeleteRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/delete", { method: "POST", body: validated.request });
 });
 
 // External doc-plane bridge (#35 R2 MVP): read-only proxy in front of

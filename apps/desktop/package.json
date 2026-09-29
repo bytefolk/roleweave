@@ -34,6 +34,7 @@
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
     "three": "^0.186.0",
-    "unified": "11.0.5"
+    "unified": "11.0.5",
+    "vditor": "4.0.0"
   }
 }
