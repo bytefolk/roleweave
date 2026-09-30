@@ -27,3 +27,21 @@ test('a saved removal of service overrides never claims live environment default
   getStore:()=>({save:()=>({ok:true,servicesChanged:true,servicesRestartRequired:true})}),onSaved:async()=>true,shell:{},setDirty:()=>{},close:()=>{}});
  const result=await handlers.get('owb:configuration:save')({},{});assert.equal(result.ok,true);assert.equal(result.servicesApplied,false);assert.equal(result.servicesRestartRequired,true);
 });
+test('storage diagnostics and native project picker require the trusted enumerated bridge',async()=>{
+ const handlers=new Map(),calls=[];
+ registerConfigurationIpc({ipcMain:{handle:(name,handler)=>handlers.set(name,handler)},getStore:()=>({}),
+  isTrusted:event=>event.trusted,shell:{},setDirty:()=>{},close:()=>{},
+  pickProjectDirectory:async()=>{calls.push('pick');return{ok:true,path:'/tmp/projects'};},
+  cacheInfo:async()=>{calls.push('size');return{ok:true,bytes:42};},
+  openCache:async()=>{calls.push('open');return{ok:true};}});
+ for(const name of ['pick-project-directory','cache-info','open-cache']){
+  const handler=handlers.get(`owb:configuration:${name}`);
+  assert.deepEqual(await handler({trusted:false}),{ok:false,code:'untrusted_sender'});
+  assert.deepEqual(await handler({trusted:true},'unexpected'),{ok:false,code:'invalid_request'});
+ }
+ assert.deepEqual(calls,[]);
+ assert.equal((await handlers.get('owb:configuration:pick-project-directory')({trusted:true})).path,'/tmp/projects');
+ assert.equal((await handlers.get('owb:configuration:cache-info')({trusted:true})).bytes,42);
+ assert.equal((await handlers.get('owb:configuration:open-cache')({trusted:true})).ok,true);
+ assert.deepEqual(calls,['pick','size','open']);
+});

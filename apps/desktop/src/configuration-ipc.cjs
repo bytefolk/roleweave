@@ -1,6 +1,6 @@
 const { validateConfigurationText } = require('./configuration.cjs');
 const failure = code => ({ok:false,code});
-function registerConfigurationIpc({ ipcMain, getStore, isTrusted, shell, onSaved = async () => true, setDirty, close }) {
+function registerConfigurationIpc({ ipcMain, getStore, isTrusted, shell, onSaved = async () => true, setDirty, close, pickProjectDirectory, cacheInfo, openCache }) {
   let pending=Promise.resolve();
   const serial=fn=>{const result=pending.then(fn,fn);pending=result.catch(()=>{});return result;};
   const register=(name,arity,handler)=>ipcMain.handle(`owb:configuration:${name}`,(event,...args)=>{
@@ -17,6 +17,9 @@ function registerConfigurationIpc({ ipcMain, getStore, isTrusted, shell, onSaved
   register('migrate-preferences',1,request=>getStore().migratePreferences(request));
   register('restore',1,revision=>saved(getStore().restore(revision)));
   register('open-location',0,()=>{const current=getStore().getPreferences();if(!current.ok)return current;shell.showItemInFolder(current.filePath);return{ok:true};});
+  if (pickProjectDirectory) register('pick-project-directory',0,()=>pickProjectDirectory());
+  if (cacheInfo) register('cache-info',0,()=>cacheInfo());
+  if (openCache) register('open-cache',0,()=>openCache());
   register('dirty',1,value=>{if(typeof value!=='boolean')return failure('invalid_request');setDirty(value);return{ok:true};});
   register('confirm-close',0,()=>{setDirty(false);close();return{ok:true};});
 }

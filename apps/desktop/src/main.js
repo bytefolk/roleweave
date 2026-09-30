@@ -102,7 +102,7 @@ const {
   validateGoalUpdateRequest,
 } = require("./goal-ipc.cjs");
 const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, openWorkspaceFile, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
-const { runtimeDescription } = require("./runtime-settings.cjs");
+const { runtimeDescription, workspaceDialogOptions } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
 const { createCredentialStore, registerSettingsIpc, forwardCredentialSafeStderr } = require("./credential-settings.cjs");
@@ -163,6 +163,36 @@ registerConfigurationIpc({ ipcMain, getStore: configurationStore, shell,
   isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
   onSaved: () => serviceConnections.initialize(), setDirty: (value) => { configurationDirty = value; },
   close: () => app.quit(),
+  pickProjectDirectory: async () => {
+    const options = workspaceDialogOptions(desktopEnv, true);
+    const current = configurationStore().getPreferences();
+    if (current.ok && current.config.storage?.projectDirectory) options.defaultPath = current.config.storage.projectDirectory;
+    const picked = await (mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options));
+    return picked.canceled || !picked.filePaths.length ? { canceled: true } : { ok: true, path: picked.filePaths[0] };
+  },
+  cacheInfo: async () => {
+    const directory = path.join(app.getPath('sessionData'), 'Cache');
+    let bytes = 0, entries = 0;
+    const pending = [directory];
+    while (pending.length) {
+      const current = pending.pop();
+      for (const item of await fs.promises.readdir(current, { withFileTypes: true }).catch(error => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      })) {
+        if (++entries > 100000) return { ok: false, code: 'cache_too_large' };
+        const name = path.join(current, item.name);
+        if (item.isDirectory()) pending.push(name);
+        else if (item.isFile()) bytes += (await fs.promises.stat(name).catch(() => ({ size: 0 }))).size;
+      }
+    }
+    return { ok: true, bytes };
+  },
+  openCache: async () => {
+    const directory = path.join(app.getPath('sessionData'), 'Cache');
+    await fs.promises.mkdir(directory, { recursive: true });
+    return { ok: (await shell.openPath(directory)) === '' };
+  },
 });
 registerExternalUrlIpc({ ipcMain, shell,
   isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
@@ -415,6 +445,7 @@ ipcMain.handle("owb:workspace:initialize", async (_event, request) => initialize
 ipcMain.handle("owb:workspace:create", async (_event, request) => createWorkspaceWithPicker({
   request, pickDirectory: pickWorkspaceDirectory, apiRequest, env: desktopEnv,
   userDataPath: app.getPath("userData"),
+  preferredDirectory: configurationStore().getPreferences().config?.storage?.projectDirectory,
 }));
 
 ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));

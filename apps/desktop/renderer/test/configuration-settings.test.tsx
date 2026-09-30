@@ -19,6 +19,21 @@ function footerSave(){return within(document.querySelector('.owb-config-savebar'
 async function fileView(){fireEvent.click(screen.getByRole('tab',{name:'高级配置'}));fireEvent.click(screen.getByRole('button',{name:'配置文件',exact:true}));return screen.getByRole('textbox',{name:'roleweave.config.jsonc'});}
 beforeEach(()=>{window.localStorage.clear();});
 describe('shared settings draft',()=>{
+ it('uses the native picker for a draft default project location and saves it only with the shared configuration',async()=>{
+  const api=install();
+  Object.assign(api,{pickProjectDirectory:vi.fn().mockResolvedValue({ok:true,path:'/tmp/team-projects'}),cacheInfo:vi.fn().mockResolvedValue({ok:true,bytes:1048576}),openCache:vi.fn().mockResolvedValue({ok:true})});
+  await show();
+  fireEvent.click(screen.getByRole('button',{name:'查看占用'}));
+  expect(await screen.findByText(/1\s*MB/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:/更\s*改/}));
+  fireEvent.click(screen.getByRole('button',{name:'浏览…'}));
+  expect(await screen.findByText('/tmp/team-projects')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button',{name:'保存位置'}));
+  expect(api.save).not.toHaveBeenCalled();
+  fireEvent.click(footerSave());
+  await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1));
+  expect(parse(api.save.mock.calls[0]![0].text).storage.projectDirectory).toBe('/tmp/team-projects');
+ });
  it('guards the global workspace hub before any picker or creation can mutate the workspace',async()=>{
   const api=install();
   Object.assign(api,{migratePreferences:vi.fn().mockResolvedValue(snapshot()),onCloseRequested:vi.fn().mockReturnValue(()=>{})});

@@ -32,6 +32,10 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
  const[issues,setIssues]=useState<ConfigurationIssue[]>([]),[validatedText,setValidatedText]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true);
  const[error,setError]=useState<string|null>(null),[notice,setNotice]=useState<string|null>(null),[conflict,setConflict]=useState<ConfigurationSnapshot|null>(null);
  const[preview,setPreview]=useState(false),[leaveOpen,setLeaveOpen]=useState(false),[secretVersion,setSecretVersion]=useState(0);
+ const[locationOpen,setLocationOpen]=useState(false),[selectedLocation,setSelectedLocation]=useState<string|null>(null);
+ const[locationBusy,setLocationBusy]=useState(false),[locationError,setLocationError]=useState(false);
+ const[cacheBytes,setCacheBytes]=useState<number|null>(null),[cacheBusy,setCacheBusy]=useState(false),[cacheError,setCacheError]=useState(false);
+ const[notificationPermission,setNotificationPermission]=useState<NotificationPermission|'unsupported'>(()=>typeof Notification==='undefined'?'unsupported':Notification.permission);
  const[clearKeys,setClearKeys]=useState<Set<string>>(new Set());
  const secretInputs=useRef(new Map<string,HTMLInputElement>()),pendingAction=useRef<(()=>void)|null>(null);
  const validationSequence=useRef(0),saving=useRef(false),latestSave=useRef<()=>Promise<boolean>>(async()=>false);
@@ -128,6 +132,8 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
  async function restore(){if(!snapshot||busy)return;setBusy(true);try{const result=await window.owb.configuration!.restore(snapshot.revision);if(!result.ok){setError(result.code);if(result.current)setConflict(result.current);return;}accept(result);resetSecrets();applyConfiguration(result);setNotice(result.pendingRestart?'restart':'saved');}catch{setError('storage_unavailable');}finally{setBusy(false);}}
  const errorCopy=error==='service_endpoint_changed'?copy("The API URL changed. Update or explicitly clear its token before saving."):error==='validate'?copy("Fix the marked fields. The active configuration has not changed."):copy("Could not read or save configuration. Your draft is retained; retry.");
  const input=(label:string,path:string[],value:string|undefined,placeholder?:string)=><label className="owb-config-field"><span>{label}</span><Input value={value??''} onChange={e=>field(path,e.target.value||undefined)} placeholder={placeholder} spellCheck={false} maxLength={4096} /></label>;
+ async function browseProjectDirectory(){setLocationBusy(true);setLocationError(false);try{const result=await window.owb.configuration!.pickProjectDirectory();if('ok' in result&&result.ok)setSelectedLocation(result.path);else if(!('canceled' in result))setLocationError(true);}catch{setLocationError(true);}finally{setLocationBusy(false);}}
+ async function readCache(){setCacheBusy(true);setCacheError(false);try{const result=await window.owb.configuration!.cacheInfo();if(result.ok)setCacheBytes(result.bytes);else setCacheError(true);}catch{setCacheError(true);}finally{setCacheBusy(false);}}
  return <section className="owb-settings-module owb-config-settings" aria-label={t('settings.moduleAria')}>
   <header className="owb-settings-module__header"><h1>{t('settings.title')}</h1></header>
   <div className="owb-config-tabs" role="tablist" aria-label={copy("Settings categories")}>
@@ -142,6 +148,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
    {category==='experiments'?<section id="settings-panel-experiments" role="tabpanel" aria-labelledby="settings-tab-experiments"><ExperimentalSettings {...scope} /></section>:null}
    {snapshot&&config?<>
     <section id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={category!=='general'}>
+     <div className="owb-config-intro"><h2>{copy("General")}</h2><p>{copy("Manage appearance, project storage and notifications.")}</p></div>
      <fieldset disabled={busy||formBlocked}><legend>{copy("Appearance and input")}</legend>
       <label className="owb-config-field"><span>{copy("Language")}</span><Select aria-label={copy("Language")} value={config.appearance.locale} options={[{value:'zh-CN',label:copy('Simplified Chinese')},{value:'en',label:'English'}]} onChange={v=>field(['appearance','locale'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-field"><span>{copy("Theme")}</span><Select aria-label={copy("Theme")} value={config.appearance.mode} options={[{value:'system',label:copy("System")},{value:'light',label:copy("Light")},{value:'dark',label:copy("Dark")}]} onChange={v=>field(['appearance','mode'],v)} disabled={busy||formBlocked}/></label>
@@ -149,6 +156,16 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
       <label className="owb-config-field"><span>{copy("Send shortcut")}</span><Select aria-label={copy("Send shortcut")} value={config.chat.sendShortcut} options={[{value:'enter',label:'Enter'},{value:'mod-enter',label:'⌘ / Ctrl + Enter'}]} onChange={v=>field(['chat','sendShortcut'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-checkbox"><input type="checkbox" checked={config.chat.rememberLayout} onChange={e=>field(['chat','rememberLayout'],e.target.checked)}/>{copy("Remember workspace conversation layout")}</label>
       <p className="owb-settings-module__hint">{copy("Appearance applies after save. Quick preferences use the same configuration. Composing text with an IME never sends a message.")}</p>
+     </fieldset>
+     <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend>{copy("Storage")}</legend>
+      <div className="owb-config-setting-row"><div><strong>{copy("System cache directory")}</strong><p>{copy("Managed by the system · contains client cache")}</p></div><Button onClick={()=>void window.owb.configuration!.openCache().then(result=>{if(!result.ok)setCacheError(true);}).catch(()=>setCacheError(true))}>{copy("Open directory")}</Button></div>
+      <div className="owb-config-setting-row"><div><strong>{copy("Cache usage")}</strong><p role="status">{cacheError?copy("Could not read cache usage"):cacheBytes===null?copy("Not calculated yet"):new Intl.NumberFormat(english?'en':'zh-CN',{style:'unit',unit:'megabyte',maximumFractionDigits:1}).format(cacheBytes/1048576)}</p></div><Button loading={cacheBusy} onClick={()=>void readCache()}>{copy("Check usage")}</Button></div>
+      <div className="owb-config-setting-row"><div><strong>{copy("Default project location")}</strong><p>{config.storage?.projectDirectory??copy("Use system default location")}</p><small>{copy("Only affects new projects. Existing projects stay in their current locations.")}</small></div><Button onClick={()=>{setSelectedLocation(config.storage?.projectDirectory??null);setLocationError(false);setLocationOpen(true);}}>{copy("Change")}</Button></div>
+     </fieldset>
+     <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend>{copy("Notifications")}</legend>
+      <label className="owb-config-setting-row"><span><strong>{copy("Client notifications")}</strong><p>{copy("Show a system notification when a task completes")}</p></span><input type="checkbox" checked={config.notifications?.taskComplete??false} onChange={e=>{const enabled=e.target.checked;field(['notifications','taskComplete'],enabled);if(enabled&&notificationPermission==='default'&&typeof Notification!=='undefined')void Notification.requestPermission().then(setNotificationPermission).catch(()=>setNotificationPermission('denied'));}} /></label>
+      {config.notifications?.taskComplete&&notificationPermission!=='granted'?<p className="owb-settings-module__hint" role="status">{copy("System notification permission is not granted.")}</p>:null}
+      <div className="owb-config-setting-row"><div><strong>{copy("Sound")}</strong><p>{copy("Default system sound")}</p></div></div>
      </fieldset>
     </section>
     <section id="settings-panel-agents" role="tabpanel" aria-labelledby="settings-tab-agents" hidden={category!=='agents'}>
@@ -199,6 +216,13 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
    {changes.map(row=><div className="owb-config-diff" key={row.field}><code>{row.field}</code><span>{display(row.before)} → {display(row.after)}</span></div>)}
    {[...new Set([...secretInputs.current.keys(),...clearKeys])].map(key=>{const secretInput=secretInputs.current.get(key);return <div key={key} className="owb-config-diff"><code>{key}</code><span>{clearKeys.has(key)?copy("Clear"):secretInput?.value?copy("Update"):copy("Retain")}</span></div>;})}
    {!changes.length&&!hasSecretChanges?<p>{copy("Only comments or formatting changed.")}</p>:null}
+  </Modal>
+  <Modal open={locationOpen} title={copy("Change default project location")} onCancel={()=>setLocationOpen(false)} footer={<><Button onClick={()=>setLocationOpen(false)}>{copy("Cancel")}</Button><Button type="primary" disabled={locationBusy||selectedLocation===(config?.storage?.projectDirectory??null)} onClick={()=>{field(['storage','projectDirectory'],selectedLocation??undefined);setLocationOpen(false);}}>{copy("Save location")}</Button></>} width={580}>
+   <p>{copy("New projects will use the selected directory as the starting location. Existing projects will not move.")}</p>
+   <div className="owb-config-location"><strong>{copy("Current default location")}</strong><span>{config?.storage?.projectDirectory??copy("Use system default location")}</span></div>
+   <div className="owb-config-location"><strong>{copy("Choose a new location")}</strong><div><span>{selectedLocation??copy("No folder selected")}</span><Button loading={locationBusy} onClick={()=>void browseProjectDirectory()}>{copy("Browse…")}</Button></div></div>
+   {selectedLocation?<Button type="link" onClick={()=>setSelectedLocation(null)}>{copy("Use system default location")}</Button>:null}
+   {locationError?<p role="alert">{copy("Could not select a folder. Try again.")}</p>:null}
   </Modal>
   <Modal open={!!conflict} title={copy("Configuration changed on disk")} onCancel={()=>setConflict(null)} footer={<><Button onClick={()=>{if(conflict){accept(conflict);resetSecrets();}}}>{copy("Reload disk and discard draft")}</Button><Button danger loading={busy} onClick={()=>void save(conflict?.revision)}>{copy("Overwrite this version")}</Button><Button onClick={()=>setConflict(null)}>{copy("Keep editing")}</Button></>} width={720}>
    <p>{copy("Current disk values → your draft. Overwrite checks the disk revision again.")}</p>
