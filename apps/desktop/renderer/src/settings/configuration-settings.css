@@ -7,6 +7,7 @@
 .owb-config-tabs button > svg { width:16px; height:16px; flex:none; color:var(--owb-text-icon); stroke-width:1.7; }
 .owb-config-tabs button > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .owb-config-tabs button { text-align:left; font-size:13px; }
+.owb-config-tabs button[aria-selected="true"] > svg { color:var(--ui-primary); }
 .owb-config-tabs button[aria-selected="true"] { background:var(--ui-primary-soft); color:var(--ui-primary,#11875f); font-weight:600; }
 .owb-config-tabs button:focus-visible { outline:2px solid var(--ui-primary,#1677ff); outline-offset:2px; }
 .owb-config-content { grid-column:2; grid-row:1 / 3; min-height:0; overflow:auto; margin:0; padding:22px 28px 18px; background:var(--ui-canvas); }
@@ -14,10 +15,11 @@
 .owb-config-content [hidden] { display:none !important; }
 .owb-config-content .ant-alert { margin-bottom:12px; }
 .owb-config-content fieldset { margin:0 0 12px; padding:0; border:0; min-width:0; }
-.owb-config-content > #settings-panel-general > fieldset { padding:16px 18px !important; border:1px solid var(--ui-border,#e1e7eb) !important; border-radius:10px; background:var(--ui-surface-raised,#fff); }
-.owb-config-content legend { display:flex; align-items:center; gap:8px; color:var(--owb-text-heading); font-size:15px; font-weight:600; margin:0 0 12px; }
+.owb-config-content > #settings-panel-general > fieldset, .owb-config-settings .owb-config-card { padding:16px 18px !important; border:1px solid var(--ui-border,#e1e7eb) !important; border-radius:10px; background:var(--ui-surface-raised,#fff); }
+.owb-config-content legend { display:flex; align-items:center; gap:8px; color:var(--owb-text-heading); font-size:15px; font-weight:600; margin:0 0 12px; float:left; width:100%; }
+.owb-config-content legend + * { clear:both; }
 .owb-config-content legend svg { width:16px; height:16px; color:var(--owb-text-icon); stroke-width:1.8; }
-.owb-config-content > #settings-panel-general legend { padding-inline:6px; }
+.owb-config-content > #settings-panel-general legend { padding:0; }
 .owb-config-intro { display:flex; flex-direction:column; gap:14px; margin:0 0 14px; }
 .owb-config-intro h2 { margin:0; color:var(--owb-text-heading); font-size:21px; font-weight:700; line-height:1.3; }
 .owb-config-intro p { margin:0; color:var(--owb-text-secondary); font-size:12px; }
@@ -46,26 +48,63 @@
 .owb-config-field > .ant-input { min-height:36px; }
 .owb-config-checkbox { display:flex; align-items:center; gap:8px; margin:12px 0; color:var(--owb-text-primary); font-size:13px; }
 .owb-config-checkbox input { accent-color:var(--ui-primary,#1677ff); }
-.owb-config-host { border:1px solid var(--ui-border,#e5e7eb); border-radius:8px; padding:0 16px; margin:12px 0; }
-.owb-config-host summary { display:flex; align-items:center; gap:16px; cursor:pointer; min-height:52px; }
-.owb-config-host summary span { font-size:12px; color:var(--ui-foreground-muted); }
-.owb-config-host summary .owb-config-edit { margin-left:auto; }
-.owb-config-host fieldset { padding-top:8px; margin-bottom:16px; }
-.owb-config-secret { display:grid; gap:8px; max-width:720px; margin:16px 0; }
-.owb-config-secret input.ant-input { min-height:36px; }
-.owb-config-secret .owb-config-checkbox { margin:0; }
-.owb-config-service { padding:12px 0 20px; border-bottom:1px solid var(--ui-border,#e5e7eb); }
-.owb-config-service h3 { margin:0; font-size:15px; }
+/* Shared cards match the Pencil spacing and use the active theme's tokens. */
+.owb-config-card { margin:0 0 14px; min-width:0; }
+.owb-config-card h3 { display:flex; align-items:center; gap:8px; margin:0 0 12px; color:var(--owb-text-heading); font-size:15px; font-weight:600; }
+.owb-config-card h3 svg { width:16px; height:16px; color:var(--owb-text-icon); flex:none; }
+.owb-config-info { display:flex; align-items:flex-start; gap:9px; margin:14px 0; padding:10px 14px; border-radius:7px; background:var(--ui-surface-inset); color:var(--owb-text-secondary); font-size:12px; }
+.owb-config-info svg { flex:none; width:16px; height:16px; margin-top:1px; color:var(--owb-text-icon); }
+.owb-config-runtime-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.owb-config-runtime-fields .owb-config-field { display:flex; flex-direction:column; align-items:stretch; gap:6px; margin:0 0 12px; min-width:0; font-size:12px; }
+.owb-config-runtime .owb-settings-module__hint { clear:both; margin:8px 0 0; }
+.owb-config-host { margin:0; border:0; border-bottom:1px solid var(--ui-border); }
+.owb-config-host:last-child { border-bottom:0; }
+.owb-config-host summary { display:flex; align-items:center; gap:12px; cursor:pointer; min-height:56px; list-style:none; }
+.owb-config-host summary::-webkit-details-marker { display:none; }
+.owb-config-host summary:focus-visible { outline:2px solid var(--ui-primary); outline-offset:2px; }
+.owb-config-host-label { display:flex; flex:1; min-width:0; flex-direction:column; gap:3px; }
+.owb-config-host-label strong { font-size:13px; font-weight:600; color:var(--owb-text-heading); }
+.owb-config-host-label small { font-size:11px; color:var(--owb-text-subtle); }
+.owb-config-host-status { padding:3px 8px; border-radius:5px; color:var(--owb-text-secondary); background:var(--ui-surface-inset); font-size:11px; }
+.owb-config-host-status.is-saved { color:var(--ui-primary); background:var(--ui-primary-soft); }
+.owb-config-host-status.is-environment { color:var(--ui-warning); background:var(--ui-warning-soft); }
+.owb-config-host summary .owb-config-edit { flex:none; padding:4px 10px; border:1px solid var(--ui-border); border-radius:6px; color:var(--owb-text-primary); font-size:12px; }
+.owb-config-host[open] { padding-bottom:6px; }
+.owb-config-host[open] .owb-config-edit { color:var(--ui-primary); border-color:var(--ui-primary); }
+.owb-config-host fieldset { padding:8px 0 0; margin:0 0 12px; }
+.owb-config-host .owb-config-field { grid-template-columns:180px minmax(0,1fr); }
+.owb-config-secret { display:grid; grid-template-columns:180px minmax(0,1fr); column-gap:16px; row-gap:4px; margin:12px 0; align-items:center; }
+.owb-config-secret > label:first-child { grid-column:1; grid-row:1; font-size:12px; }
+.owb-config-secret > .owb-settings-module__hint { grid-column:1; grid-row:2; font-size:11px; }
+.owb-config-content .owb-config-secret > input.ant-input { padding:4px 10px; border:1px solid var(--ui-border); border-radius:6px; background:var(--ui-surface); color:var(--owb-text-primary); font:12px/1.5 var(--ui-font-sans); }
+.owb-config-content .owb-config-secret > input.ant-input:focus { outline:2px solid var(--ui-primary-soft); border-color:var(--ui-primary); }
+.owb-config-content .owb-config-secret > input.ant-input:disabled { background:var(--ui-surface-inset); color:var(--owb-text-subtle); cursor:not-allowed; }
+.owb-config-secret > input { grid-column:2; grid-row:1 / 3; min-width:0; min-height:32px; }
+.owb-config-secret .owb-config-checkbox { grid-column:2; margin:6px 0 0; font-size:12px; }
+.owb-config-services-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:14px; }
+.owb-config-service { margin:0; }
+.owb-config-service .owb-config-field { grid-template-columns:minmax(0,1fr); gap:5px; font-size:12px; margin:12px 0; }
+.owb-config-service .owb-config-field > .ant-input { min-height:32px; }
+.owb-config-service .owb-config-secret { display:flex; flex-direction:column; align-items:stretch; gap:5px; }
+.owb-config-service .owb-config-secret .owb-config-checkbox { margin:4px 0; }
+.owb-config-service .owb-settings-module__hint { font-size:11px; margin:0; }
+.owb-config-service .owb-service-connection { gap:10px; padding:12px 0 0; margin-top:12px; }
+.owb-config-service .owb-service-connection__release { border-top:1px solid var(--ui-border); padding-top:12px; }
+.owb-config-service .ant-tag { margin:0; font-size:11px; }
 .owb-config-savebar { grid-column:1 / -1; grid-row:3; display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-height:58px; margin:0; padding:8px 24px; border-top:1px solid var(--ui-border,#e4e9ee); background:var(--ui-surface-raised,#fff); }
-.owb-config-savebar > span { flex:1; color:var(--owb-text-status); font-size:12px; }
+.owb-config-savebar > span { display:flex; align-items:center; gap:8px; flex:1; color:var(--owb-text-status); font-size:12px; }
 .owb-config-file-head { display:flex; align-items:center; justify-content:space-between; gap:16px; }
-.owb-config-file-head h2 { font-size:15px; margin:0 0 8px; }
+.owb-config-file-head h2 { color:var(--owb-text-primary); font-weight:500; font-size:13px; margin:0 0 8px; }
 .owb-config-file-head p { overflow-wrap:anywhere; }
-.owb-config-view,.owb-config-file-actions { display:flex; gap:8px; margin:16px 0; }
-.owb-config-editor-label { display:block; margin:12px 0; font-size:12px; }
-.owb-config-editor.ant-input { height:440px; min-height:240px; font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace; resize:vertical; tab-size:2; }
-.owb-config-summary > div { display:grid; grid-template-columns:100px minmax(0,1fr); gap:12px; padding:8px 0; }
-.owb-config-summary dd { margin:0; overflow-wrap:anywhere; font-size:12px; }
+.owb-config-view,.owb-config-file-actions { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; }
+.owb-config-file-card { overflow:hidden; border:1px solid var(--ui-border); border-radius:10px; background:var(--ui-surface-raised); }
+.owb-config-editor-label { display:block; margin:0; padding:10px 16px; font-size:12px; color:var(--owb-text-secondary); background:var(--ui-surface-inset); }
+.owb-config-editor.ant-input { border:0; border-radius:0; padding:16px; height:360px; min-height:240px; font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace; resize:vertical; tab-size:2; }
+.owb-config-summary { margin:0; }
+.owb-config-summary > div { display:grid; grid-template-columns:minmax(140px,1fr) minmax(0,2fr); align-items:center; gap:18px; padding:8px 0; border-bottom:1px solid var(--ui-border); }
+.owb-config-summary > div:last-child { border-bottom:0; }
+.owb-config-summary dt { color:var(--owb-text-secondary); font-size:12px; }
+.owb-config-summary dd { padding:7px 10px; border:1px solid var(--ui-border); border-radius:6px; color:var(--owb-text-primary); margin:0; overflow-wrap:anywhere; font-size:12px; }
 .owb-config-diff { display:grid; gap:6px; border-bottom:1px solid var(--ui-border,#e5e7eb); padding:10px 0; overflow-wrap:anywhere; }
 .owb-config-diff code { font-size:12px; }
 .owb-config-diff span { white-space:pre-wrap; }
@@ -73,7 +112,7 @@
 .owb-config-errors p { margin:0 0 8px; }
 .owb-config-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 .owb-config-settings .owb-settings-module { height:auto; }
-@media(max-width:760px) { .owb-main > .owb-config-settings { display:flex; flex-direction:column; } .owb-config-settings > .owb-settings-module__header { padding:16px; border-right:0; } .owb-config-field { grid-template-columns:1fr; gap:8px; } .owb-config-tabs { flex-direction:row; flex:none; overflow-x:auto; padding:0 16px 10px; border-right:0; border-bottom:1px solid var(--ui-border,#e5e7eb); } .owb-config-tabs button { white-space:nowrap; } .owb-config-content { flex:1; padding:16px; } .owb-config-content > #settings-panel-general > fieldset { padding:18px !important; } .owb-config-savebar { padding:12px 16px; } .owb-config-host summary { flex-wrap:wrap; gap:8px; } .owb-config-setting-row { gap:10px; } }
+@media(max-width:760px) { .owb-main > .owb-config-settings { display:flex; flex-direction:column; } .owb-config-settings > .owb-settings-module__header { padding:16px; border-right:0; } .owb-config-field { grid-template-columns:1fr; gap:8px; } .owb-config-tabs { flex-direction:row; flex:none; overflow-x:auto; padding:0 16px 10px; border-right:0; border-bottom:1px solid var(--ui-border,#e5e7eb); } .owb-config-tabs button { white-space:nowrap; } .owb-config-content { flex:1; padding:16px; } .owb-config-content > #settings-panel-general > fieldset, .owb-config-settings .owb-config-card { padding:18px !important; } .owb-config-savebar { padding:12px 16px; } .owb-config-host summary { flex-wrap:wrap; gap:8px; } .owb-config-setting-row { gap:10px; } }
 @media(prefers-reduced-motion:reduce) { .owb-config-settings * { transition:none !important; } }
 
 .owb-config-theme { margin:0 0 12px; border:1px solid var(--ui-border,#e1e7eb); border-radius:10px; background:var(--ui-surface-raised,#fff); }
@@ -85,3 +124,32 @@
 .owb-config-theme[open] > summary { border-bottom:1px solid var(--ui-border,#e1e7eb); }
 .owb-config-settings .owb-theme-settings--inline { width:100%; max-width:100%; max-height:none; margin:12px 0 0; box-shadow:none; }
 .owb-config-settings .owb-theme-settings--inline .owb-theme-settings__content { max-height: none; }
+
+/* Override application data-pane resets within Settings only. */
+[data-theme] .owb-app .owb-config-settings .owb-settings-module__pane { max-width:none; padding:16px 18px; border:1px solid var(--ui-border); border-radius:10px; background:var(--ui-surface-raised); }
+.owb-config-updates { display:flex; flex-direction:column; gap:14px; }
+.owb-config-updates .owb-settings-module__pane-header h2 { display:flex; align-items:center; gap:8px; font-size:15px; }
+.owb-config-updates .owb-settings-module__pane-header svg { width:16px; height:16px; color:var(--owb-text-icon); }
+.owb-config-updates .owb-settings-module__fact { justify-content:space-between; }
+.owb-config-updates .owb-settings-module__fact dd { flex:0 1 50%; padding:6px 10px; border:1px solid var(--ui-border); border-radius:6px; font-size:12px; }
+.owb-config-updates .owb-settings-module__notes { flex-wrap:wrap; }
+.owb-config-updates .owb-settings-module__hint { font-size:11px; }
+.owb-config-modal .ant-modal-body { color:var(--owb-text-primary); font-size:13px; }
+.owb-config-modal .ant-modal-title { font-size:18px; color:var(--owb-text-heading); }
+.owb-config-modal .ant-modal-content { border:1px solid var(--ui-border); border-radius:12px; }
+.owb-config-modal p { overflow-wrap:anywhere; }
+.owb-config-diff { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; }
+.owb-config-diff code { color:var(--owb-text-secondary); }
+@media(max-width:1050px) { .owb-config-services-grid { grid-template-columns:minmax(0,1fr); } .owb-config-runtime-fields { grid-template-columns:minmax(0,1fr); } }
+@media(max-width:760px) {
+ .owb-config-card { padding:16px !important; }
+ .owb-config-host summary { flex-wrap:nowrap; }
+ .owb-config-host-status { max-width:36%; overflow-wrap:anywhere; }
+ .owb-config-host .owb-config-field { grid-template-columns:minmax(0,1fr); }
+ .owb-config-secret { display:flex; flex-direction:column; align-items:stretch; }
+ .owb-config-secret .owb-config-checkbox { margin:4px 0; }
+ .owb-config-file-head { align-items:flex-start; flex-wrap:wrap; }
+ .owb-config-summary > div { grid-template-columns:minmax(0,1fr); gap:6px; }
+ .owb-config-diff { grid-template-columns:minmax(0,1fr); gap:6px; }
+ .owb-config-savebar > span { flex-basis:100%; }
+}

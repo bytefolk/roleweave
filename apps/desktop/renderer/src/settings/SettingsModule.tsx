@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Button, Progress } from "antd";
-import { Download, ExternalLink, RefreshCw, RotateCcw } from "lucide-react";
+import { Download, ExternalLink, RefreshCw, RotateCcw, Terminal } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type { UpdateEvent, UpdateStatus } from "@roleweave/shared";
 import { ServiceConnections } from "./ServiceConnections";
@@ -94,25 +94,16 @@ function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }
   });
 
   return (
-    <section className="owb-settings-module" aria-label={t("settings.moduleAria")}>
+    <section className={onlyUpdates ? "owb-config-updates" : "owb-settings-module"} aria-label={t("settings.moduleAria")}>
       {!onlyUpdates ? <header className="owb-settings-module__header">
         <h1>{t("settings.title")}</h1>
       </header> : null}
 
-      {runtime ? (
-        <section className="owb-settings-module__pane" aria-label={t("settings.runtimeTitle")}>
-          <header className="owb-settings-module__pane-header">
-            <h2>{t("settings.runtimeTitle")}</h2>
-          </header>
-          <p>{runtime.mode === "wsl" ? `WSL · ${runtime.distro ?? t("settings.runtimeDefaultDistro")}` : t("settings.runtimeNative")}</p>
-          <p className="owb-settings-module__hint">{t("settings.runtimeHint")}</p>
-        </section>
-      ) : null}
       {!onlyUpdates ? <><HostCredentials /><ServiceConnections /></> : null}
 
       <section className="owb-settings-module__pane" aria-label={t("settings.updateTitle")}>
         <header className="owb-settings-module__pane-header">
-          <h2>{t("settings.updateTitle")}</h2>
+          <h2><RefreshCw aria-hidden="true" size={16} />{t("settings.updateTitle")}</h2>
         </header>
 
         <dl className="owb-settings-module__facts">
@@ -138,7 +129,7 @@ function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }
 
         <div className="owb-settings-module__actions">
           <Button
-            type="primary"
+            type={affordances.canDownload ? "default" : "primary"}
             icon={<RefreshCw aria-hidden="true" size={14} />}
             disabled={!affordances.canCheck}
             loading={state === "checking"}
@@ -147,6 +138,7 @@ function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }
             {t("settings.check")}
           </Button>
           <Button
+            type={affordances.canDownload ? "primary" : "default"}
             icon={<Download aria-hidden="true" size={14} />}
             disabled={!affordances.canDownload}
             onClick={() => void onDownload()}
@@ -154,6 +146,7 @@ function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }
             {t("settings.download")}
           </Button>
           <Button
+            type={affordances.canInstall ? "primary" : "default"}
             icon={<RotateCcw aria-hidden="true" size={14} />}
             disabled={!affordances.canInstall}
             onClick={() => void onInstall()}
@@ -194,6 +187,15 @@ function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }
         </div>
 
       </section>
+      {runtime ? (
+        <section className="owb-settings-module__pane" aria-label={t("settings.runtimeTitle")}>
+          <header className="owb-settings-module__pane-header">
+            <h2><Terminal aria-hidden="true" size={16} />{t("settings.runtimeTitle")}</h2>
+          </header>
+          <p>{runtime.mode === "wsl" ? `WSL · ${runtime.distro ?? t("settings.runtimeDefaultDistro")}` : t("settings.runtimeNative")}</p>
+          <p className="owb-settings-module__hint">{t("settings.runtimeHint")}</p>
+        </section>
+      ) : null}
     </section>
   );
 }
