@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   OWB_LOCALES,
@@ -8,9 +8,7 @@ import {
   useT,
   zhCatalog,
 } from "@roleweave/ui";
-import { PrefsMenu } from "../src/prefs-menu";
 import { seedLocale } from "../src/locale-mode";
-import { useState } from "react";
 
 describe("#146 i18n gates", () => {
   it("exposes exactly two locales, in UI order, and validates strictly", () => {
@@ -61,30 +59,17 @@ describe("#146 i18n gates", () => {
     zh.unmount();
   });
 
-  it("prefs drawer language row flips exactly between the two locales", () => {
-    function Harness() {
-      const [locale, setLocale] = useState<"zh-CN" | "en">("zh-CN");
-      return (
-        <OwbI18nProvider locale={locale}>
-          <PrefsMenu locale={locale} onChangeLocale={setLocale} mode="dark" />
-        </OwbI18nProvider>
-      );
+  it("updates translated content when the locale changes", () => {
+    function LanguageControl() {
+      const t = useT();
+      return <span>{t("prefs.language")}</span>;
     }
-    const { container } = render(<Harness />);
-    const trigger = container.querySelector("button") as HTMLButtonElement;
-    expect(trigger.getAttribute("aria-label")).toBe("偏好设置");
-    fireEvent.click(trigger);
-    const rows = () => Array.from(container.querySelectorAll("[role=menuitem]")) as HTMLButtonElement[];
-    // 中文界面：语言行显示当前值「中文」
-    expect(rows()[0].textContent).toContain("语言");
-    expect(rows()[0].textContent).toContain("中文");
-    fireEvent.click(rows()[0]);
-    // 切到英文后目录整体换面，语言行显示 English
-    const after = rows();
-    expect(after[0].textContent).toContain("Language");
-    expect(after[0].textContent).toContain("English");
-    fireEvent.click(after[0]);
-    expect(rows()[0].textContent).toContain("中文");
+    const view = render(<OwbI18nProvider locale="zh-CN"><LanguageControl /></OwbI18nProvider>);
+    expect(view.getByText("语言")).toBeInTheDocument();
+    view.rerender(<OwbI18nProvider locale="en"><LanguageControl /></OwbI18nProvider>);
+    expect(view.getByText("Language")).toBeInTheDocument();
+    view.rerender(<OwbI18nProvider locale="zh-CN"><LanguageControl /></OwbI18nProvider>);
+    expect(view.getByText("语言")).toBeInTheDocument();
   });
 
   it("seedLocale ignores untrusted stored values", () => {

@@ -61,3 +61,6 @@
 .owb-config-settings .owb-settings-module { height:auto; }
 @media(max-width:760px) { .owb-main > .owb-config-settings { display:flex; flex-direction:column; } .owb-config-settings > .owb-settings-module__header { padding:16px; border-right:0; } .owb-config-field { grid-template-columns:1fr; gap:8px; } .owb-config-tabs { flex-direction:row; flex:none; overflow-x:auto; padding:0 16px 10px; border-right:0; border-bottom:1px solid var(--ui-border,#e5e7eb); } .owb-config-tabs button { white-space:nowrap; } .owb-config-content { flex:1; padding:16px; } .owb-config-content > #settings-panel-general > fieldset { padding:18px !important; } .owb-config-savebar { padding:12px 16px; } .owb-config-host summary { flex-wrap:wrap; gap:8px; } .owb-config-setting-row { gap:10px; } }
 @media(prefers-reduced-motion:reduce) { .owb-config-settings * { transition:none !important; } }
+
+.owb-config-settings .owb-theme-settings--inline { width: 100%; max-width: 100%; max-height: none; margin: 0 0 20px; box-shadow: none; }
+.owb-config-settings .owb-theme-settings--inline .owb-theme-settings__content { max-height: none; }

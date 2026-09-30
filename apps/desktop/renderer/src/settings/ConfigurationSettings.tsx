@@ -9,6 +9,7 @@ import { CREDENTIAL_FIELDS, type CredentialKey } from './credential-settings';
 import { ServiceConnections } from './ServiceConnections';
 import './configuration-settings.css';
 import { ExperimentalSettings } from './ExperimentalSettings';
+import { ThemeSettings } from '../theme-settings';
 import type { ExperimentScope } from '../experiments/useWorkspaceExperiments';
 const groups = configurationGroups;
 export type ConfigurationCategory = typeof groups[number][0];
@@ -160,8 +161,9 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
       <label className="owb-config-field"><span>{copy("Color profile")}</span><Select aria-label={copy("Color profile")} value={config.appearance.profile} options={[{value:'mint',label:copy('Mint')},{value:'default',label:copy('Ant Blue')}]} onChange={v=>field(['appearance','profile'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-field"><span>{copy("Send shortcut")}</span><Select aria-label={copy("Send shortcut")} value={config.chat.sendShortcut} options={[{value:'enter',label:'Enter'},{value:'mod-enter',label:'⌘ / Ctrl + Enter'}]} onChange={v=>field(['chat','sendShortcut'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-checkbox"><input type="checkbox" checked={config.chat.rememberLayout} onChange={e=>field(['chat','rememberLayout'],e.target.checked)}/>{copy("Remember workspace conversation layout")}</label>
-      <p className="owb-settings-module__hint">{copy("Appearance applies after save. Quick preferences use the same configuration. Composing text with an IME never sends a message.")}</p>
+      <p className="owb-settings-module__hint">{copy("Language, theme mode and color profile apply after saving configuration. Composing text with an IME never sends a message.")}</p>
      </fieldset>
+     {category==='general'?<ThemeSettings />:null}
      <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend>{copy("Storage")}</legend>
       <div className="owb-config-setting-row"><div><strong>{copy("System cache directory")}</strong><p>{copy("Managed by the system · contains client cache")}</p></div><Button onClick={()=>void window.owb.configuration!.openCache().then(result=>{if(!result.ok)setCacheError(true);}).catch(()=>setCacheError(true))}>{copy("Open directory")}</Button></div>
       <div className="owb-config-setting-row"><div><strong>{copy("Cache usage")}</strong><p role="status">{cacheError?copy("Could not read cache usage"):cacheBytes===null?copy("Not calculated yet"):formatCacheBytes(cacheBytes,english?'en':'zh-CN')}</p></div><Button loading={cacheBusy} onClick={()=>void readCache()}>{copy("Check usage")}</Button></div>
@@ -170,7 +172,6 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
      <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend>{copy("Notifications")}</legend>
       <label className="owb-config-setting-row"><span><strong>{copy("Client notifications")}</strong><p>{copy("Show a system notification when a task completes")}</p></span><input type="checkbox" checked={config.notifications?.taskComplete??false} onChange={e=>{const enabled=e.target.checked;field(['notifications','taskComplete'],enabled);if(enabled&&notificationPermission==='default'&&typeof Notification!=='undefined')void Notification.requestPermission().then(setNotificationPermission).catch(()=>setNotificationPermission('denied'));}} /></label>
       {config.notifications?.taskComplete&&notificationPermission!=='granted'?<p className="owb-settings-module__hint" role="status">{copy("System notification permission is not granted.")}</p>:null}
-      <div className="owb-config-setting-row"><div><strong>{copy("Sound")}</strong><p>{copy("Default system sound")}</p></div></div>
      </fieldset>
     </section>
     <section id="settings-panel-agents" role="tabpanel" aria-labelledby="settings-tab-agents" hidden={category!=='agents'}>

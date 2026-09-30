@@ -4,8 +4,11 @@ import { parse } from 'jsonc-parser';
 import { OwbI18nProvider } from '@roleweave/ui';
 import { ConfigurationSettings } from '../src/settings/ConfigurationSettings';
 import { App } from '../src/App';
+import { ThemeProvider } from '../src/theme-context';
+import { readStoredPresetId, readStoredTheme } from '../src/theme-storage';
 import { requestSettingsLeave } from '../src/configuration-preferences';
 import type { ApplicationConfiguration, ConfigurationSnapshot } from '../src/configuration-types';
+function SettingsFixture(props: React.ComponentProps<typeof ConfigurationSettings>) { return <ThemeProvider><ConfigurationSettings {...props}/></ThemeProvider>; }
 const initial=():ApplicationConfiguration=>({schemaVersion:1,appearance:{mode:'system',profile:'mint',locale:'zh-CN'},chat:{sendShortcut:'enter',rememberLayout:true},layouts:{focusByWorkspace:{}},runtime:{},hosts:{qoder:{},claude:{},codex:{}},services:{},migration:{rendererPreferences:true}});
 function snapshot(config=initial(),revision='v1'):ConfigurationSnapshot{return{ok:true,config,text:'// keep this comment\n'+JSON.stringify(config,null,2),revision,filePath:'/test-user-data/roleweave.config.jsonc',warnings:[],errors:[],sources:{},storageAvailable:true,credentials:[],platform:'darwin',canRestore:true};}
 function install(start=snapshot()){
@@ -14,11 +17,31 @@ function install(start=snapshot()){
  Object.defineProperty(window,'owb',{configurable:true,value:{configuration:api,services:{list:vi.fn().mockResolvedValue({status:200,body:{connections:[]}})}}});
  return api;
 }
-async function show(){render(<ConfigurationSettings updates={<p>Updater fixture</p>}/>);await screen.findByRole('combobox',{name:'发送快捷键'});}
+async function show(){render(<SettingsFixture updates={<p>Updater fixture</p>}/>);await screen.findByRole('combobox',{name:'发送快捷键'});}
 function footerSave(){return within(document.querySelector('.owb-config-savebar')!).getByRole('button',{name:'保存配置'});}
 async function fileView(){fireEvent.click(screen.getByRole('tab',{name:'高级配置'}));fireEvent.click(screen.getByRole('button',{name:'配置文件',exact:true}));return screen.getByRole('textbox',{name:'roleweave.config.jsonc'});}
 beforeEach(()=>{window.localStorage.clear();});
 describe('shared settings draft',()=>{
+ it('offers working preset and custom colours inside General without dropping the shared draft',async()=>{
+  const api=install();await show();
+  expect(screen.getByRole('heading',{name:'主题设置'})).toBeVisible();
+  expect(screen.queryByRole('button',{name:'AI 生成'})).toBeNull();
+  expect(screen.queryByText('提示音',{exact:true})).toBeNull();
+  fireEvent.click(screen.getByRole('checkbox',{name:'记住工作区对话布局'}));
+  fireEvent.click(screen.getByRole('button',{name:/One Dark/}));
+  expect(readStoredPresetId()).toBe('one-dark');
+  expect(api.save).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button',{name:'自定义配色'}));
+  const color=screen.getByRole('textbox',{name:'primary'});
+  fireEvent.change(color,{target:{value:'#123456'}});fireEvent.blur(color);
+  expect(readStoredTheme()).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'保存配色'}));
+  expect(readStoredTheme()?.light.primary).toBe('#123456');
+  expect(api.save).not.toHaveBeenCalled();
+  expect(screen.getByRole('checkbox',{name:'记住工作区对话布局'})).not.toBeChecked();
+  fireEvent.click(footerSave());await screen.findByText('配置已保存');
+  expect(parse(api.save.mock.calls[0]![0].text).chat.rememberLayout).toBe(false);
+ });
  it('uses the native picker for a draft default project location and saves it only with the shared configuration',async()=>{
   const api=install();
   Object.assign(api,{pickProjectDirectory:vi.fn().mockResolvedValue({ok:true,path:'/tmp/team-projects'}),cacheInfo:vi.fn().mockResolvedValueOnce({ok:true,bytes:512}).mockResolvedValue({ok:true,bytes:1048576}),openCache:vi.fn().mockResolvedValue({ok:true})});
@@ -63,7 +86,7 @@ describe('shared settings draft',()=>{
   expect(openWorkspace).not.toHaveBeenCalled();
  });
  it('keeps project experiments separate from the application configuration draft',async()=>{
-  const api=install(); render(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
+  const api=install(); render(<SettingsFixture updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
   await screen.findByText('请先打开一个项目，再设置实验功能。');
   expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','true');
   expect(document.querySelector('.owb-config-savebar')).toBeNull();
@@ -116,26 +139,26 @@ describe('shared settings draft',()=>{
  });
  it('updates category reactively when initialCategory changes after mount',async()=>{
   install();
-  const {rerender}=render(<ConfigurationSettings updates={<p>Updater fixture</p>}/>);
+  const {rerender}=render(<SettingsFixture updates={<p>Updater fixture</p>}/>);
   await screen.findByRole('combobox',{name:'发送快捷键'});
   expect(screen.getByRole('tab',{name:'常规'})).toHaveAttribute('aria-selected','true');
-  rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
+  rerender(<SettingsFixture updates={<p>Updater fixture</p>} initialCategory="experiments"/>);
   await screen.findByText('请先打开一个项目，再设置实验功能。');
   expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','true');
-  rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory={undefined}/>);
+  rerender(<SettingsFixture updates={<p>Updater fixture</p>} initialCategory={undefined}/>);
   await screen.findByRole('combobox',{name:'发送快捷键'});
   expect(screen.getByRole('tab',{name:'常规'})).toHaveAttribute('aria-selected','true');
   expect(screen.getByRole('tab',{name:'实验功能'})).toHaveAttribute('aria-selected','false');
-  rerender(<ConfigurationSettings updates={<p>Updater fixture</p>} initialCategory="agents"/>);
+  rerender(<SettingsFixture updates={<p>Updater fixture</p>} initialCategory="agents"/>);
   await waitFor(()=>expect(screen.getByRole('tab',{name:'Agent 连接'})).toHaveAttribute('aria-selected','true'));
  });
  it('preserves manual tab selection when initialCategory does not change across re-renders',async()=>{
   install();
-  const {rerender}=render(<ConfigurationSettings updates={<p>Updater fixture</p>}/>);
+  const {rerender}=render(<SettingsFixture updates={<p>Updater fixture</p>}/>);
   await screen.findByRole('combobox',{name:'发送快捷键'});
   fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));
   expect(screen.getByRole('tab',{name:'文档与记忆'})).toHaveAttribute('aria-selected','true');
-  rerender(<ConfigurationSettings updates={<p>Updater fixture updated</p>}/>);
+  rerender(<SettingsFixture updates={<p>Updater fixture updated</p>}/>);
   expect(screen.getByRole('tab',{name:'文档与记忆'})).toHaveAttribute('aria-selected','true');
  });
  it('removes uncommitted credential reference when secret input is erased back to empty',async()=>{
@@ -191,7 +214,7 @@ describe('shared settings draft',()=>{
   api.get.mockReturnValueOnce(new Promise(resolve=>{resolveGet=resolve;}));
   render(
    <OwbI18nProvider locale="en">
-    <ConfigurationSettings updates={<p>Updater fixture</p>}/>
+    <SettingsFixture updates={<p>Updater fixture</p>}/>
    </OwbI18nProvider>
   );
   expect(await screen.findByText('Loading settings…')).toBeInTheDocument();

@@ -2,10 +2,8 @@
  * Settings surface with the update pane (#134, Lane D of #110).
  *
  * The updater service already exists in the main process (#133) and reports
- * eight states plus one refusal that is not a state. This module is the surface
- * that makes them reachable without a terminal, and the only surface that does:
- * the prefs drawer (#174) stays what it is, two quick toggles for language and
- * theme, and does not grow an update section.
+ * eight states plus one refusal that is not a state. General preferences and
+ * theme customization are grouped in ConfigurationSettings.
  *
  * Header is title-only, per the chrome discipline from #172/#173/#179.
  */
