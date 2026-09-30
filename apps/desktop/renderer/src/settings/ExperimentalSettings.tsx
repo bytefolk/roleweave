@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Modal, Spin, Switch, Tag } from "antd";
+import { FlaskConical, Folder, Info } from "lucide-react";
 import { EXPERIMENTS_CHANGED, useWorkspaceExperiments, type ExperimentScope } from "../experiments/useWorkspaceExperiments";
 import { useExperimentCopy } from "../locales/experiments";
 import "../experiments/experiments.css";
@@ -32,8 +33,9 @@ export function ExperimentalSettings(scope: ExperimentScope) {
   }
   if (!scope.workspacePath) return <Alert type="info" showIcon title={c("empty")} />;
   return <section className="owb-experiment" aria-label={c("title")}>
-    <header className="owb-experiment__heading"><div><h2>{c("title")} <Tag>{c("preview")}</Tag></h2><p>{c("description")}</p></div><Switch aria-label={c("title")} checked={snapshot?.enabled ?? false} loading={saving} disabled={!snapshot || loading || saving || snapshot.availability === "storage_error"} onChange={enabled => enabled ? setConfirm(true) : void update(false)} /></header>
-    <p className="owb-experiment__scope">{c("scope")}<code>{scope.workspacePath}</code></p>
+    <p className="owb-experiment__scope"><Folder size={16} aria-hidden="true" /><span>{c("scope")}<code>{scope.workspacePath}</code></span></p>
+    <div className="owb-config-card owb-experiment__card">
+    <header className="owb-experiment__heading"><div><h2><FlaskConical size={16} aria-hidden="true" />{c("title")} <Tag>{c("preview")}</Tag></h2><p>{c("description")}</p></div><Switch aria-label={c("title")} checked={snapshot?.enabled ?? false} loading={saving} disabled={!snapshot || loading || saving || snapshot.availability === "storage_error"} onChange={enabled => enabled ? setConfirm(true) : void update(false)} /></header>
     {loading ? <div role="status"><Spin size="small" /> {c("loading")}</div> : null}
     {error ? <Alert type="error" showIcon title={c("loadError")} action={<Button onClick={() => void refresh()}>{c("retry")}</Button>} /> : null}
     {saveError ? <Alert type="error" showIcon title={c("saveError")} action={<Button onClick={() => { setSaveError(false); void refresh(); }}>{c("refresh")}</Button>} /> : null}
@@ -43,9 +45,9 @@ export function ExperimentalSettings(scope: ExperimentScope) {
       <p>{c("sends")}</p><p className="owb-settings-module__hint">{c("excludes")}</p>
       {snapshot.availability === "storage_error" ? <Alert type="warning" showIcon title={c("storageError")} action={<Button loading={saving} onClick={() => void update(false)}>{c("restoreOff")}</Button>} /> : !snapshot.provider.configured ? <Alert type={snapshot.enabled ? "warning" : "info"} showIcon title={c("unavailable")} action={<Button onClick={() => void refresh()}>{c("refresh")}</Button>} /> : null}
       <p role="status" className="owb-experiment__state">{c(snapshot.enabled ? snapshot.availability === "ready" ? "ready" : "enabledUnavailable" : "off")}</p>
-      <p className="owb-settings-module__hint">{c("advisory")}</p>
     </> : null}
-    <Modal open={confirm && !!snapshot} title={c("confirmTitle")} okText={c("confirm")} cancelText={c("cancel")} cancelButtonProps={{ "aria-label": c("cancel") }} onCancel={() => setConfirm(false)} onOk={() => void update(true)}>
+    </div><p className="owb-config-info"><Info size={16} aria-hidden="true" />{c("advisory")}</p>
+    <Modal className="owb-config-modal" open={confirm && !!snapshot} title={c("confirmTitle")} okText={c("confirm")} cancelText={c("cancel")} cancelButtonProps={{ "aria-label": c("cancel") }} onCancel={() => setConfirm(false)} onOk={() => void update(true)}>
       <p>{c("scope")}</p><p className="owb-experiment__path"><code>{scope.workspacePath}</code></p>
       <p>{c("provider")}：{snapshot?.provider.name} · <code className="owb-experiment__endpoint">{snapshot?.provider.endpointUrl}</code></p>
       <p>{c("sends")}</p><p>{c("excludes")}</p><p>{c("incomplete")}</p>
