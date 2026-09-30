@@ -64,12 +64,14 @@ export function unavailableMessage(platform: UpdatePlatform): UpdateMessage {
 }
 
 export interface UpdateAffordances {
-  /** Checking stays open on an unsigned build: knowing a version exists is useful. */
+  /** Checking stays open whenever the platform has a release channel. */
   canCheck: boolean;
   canDownload: boolean;
   canInstall: boolean;
-  /** The platform has a channel but this build has no independent update trust root. */
+  /** A native channel requires a signature that this build does not have. */
   showUnsignedRefusal: boolean;
+  /** Windows can update unsigned NSIS installers using HTTPS metadata and SHA-512. */
+  showWindowsUnsignedNotice: boolean;
   /** The platform has no channel at all. */
   showPlatformNotice: boolean;
 }
@@ -91,15 +93,18 @@ export function updateAffordances(
       canDownload: false,
       canInstall: false,
       showUnsignedRefusal: false,
+      showWindowsUnsignedNotice: false,
       showPlatformNotice: false,
     };
   }
   const busy = state === "checking" || state === "downloading";
+  const windowsChannel = status.available && status.platform === "win32";
   return {
     canCheck: status.available && !busy,
-    canDownload: status.available && status.updateVerified && state === "available",
-    canInstall: status.available && status.updateVerified && state === "downloaded",
-    showUnsignedRefusal: status.available && !status.updateVerified,
+    canDownload: status.available && (status.updateVerified || windowsChannel) && state === "available",
+    canInstall: status.available && (status.updateVerified || windowsChannel) && state === "downloaded",
+    showUnsignedRefusal: status.available && !status.updateVerified && !windowsChannel,
+    showWindowsUnsignedNotice: windowsChannel && !status.signed,
     showPlatformNotice: !status.available,
   };
 }
