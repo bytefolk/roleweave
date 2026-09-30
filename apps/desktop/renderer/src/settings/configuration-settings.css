@@ -14,11 +14,10 @@
 .owb-config-content fieldset { margin:0 0 24px; padding:0; border:0; min-width:0; }
 .owb-config-content > #settings-panel-general > fieldset { padding:22px 24px !important; border:1px solid var(--ui-border,#e5e7eb) !important; border-radius:8px; background:var(--ui-surface-raised); }
 .owb-config-content legend { font-size:15px; font-weight:600; margin:0 0 16px; }
-.owb-config-content > #settings-panel-general legend { float:left; width:100%; margin:0 0 12px; }
+.owb-config-content > #settings-panel-general legend { padding-inline:6px; }
 .owb-config-intro { margin:4px 0 30px; }
 .owb-config-intro h2 { margin:0 0 7px; font-size:20px; font-weight:650; }
 .owb-config-intro p { margin:0; color:var(--ui-foreground-muted); font-size:13px; }
-.owb-config-storage { clear:both; }
 .owb-config-setting-row { display:flex; align-items:center; justify-content:space-between; gap:24px; max-width:780px; min-height:74px; border-bottom:1px solid var(--ui-border,#e5e7eb); }
 .owb-config-setting-row > div { min-width:0; }
 .owb-config-setting-row strong,.owb-config-location strong { font-size:13px; font-weight:600; }
