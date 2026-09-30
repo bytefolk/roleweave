@@ -78,7 +78,7 @@ describe("status payload", () => {
   const windowsUnsigned = {
     state: "idle",
     availability: { available: true, requiresConfirmation: true },
-    build: { signed: false, reason: "this build is unsigned, so a downloaded update could not be verified" },
+    build: { signed: false, reason: "this build is unsigned; Windows updates use HTTPS release metadata and SHA-512 without publisher verification" },
   };
 
   it("reports an available channel with an unsigned build, and why", () => {
@@ -94,7 +94,7 @@ describe("status payload", () => {
       requiresConfirmation: true,
       signed: false,
       updateVerified: false,
-      reason: "this build is unsigned, so a downloaded update could not be verified",
+      reason: "this build is unsigned; Windows updates use HTTPS release metadata and SHA-512 without publisher verification",
       platform: "win32",
     });
   });

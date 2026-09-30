@@ -1531,6 +1531,8 @@ export const zhCatalog: Record<string, string> = {
   "settings.stateUnavailable": "此平台不提供应用内更新。",
   "settings.unsignedTitle": "此构建未开启应用内更新",
   "settings.unsignedBody": "这个构建没有独立的更新签名密钥，下载的更新在替换应用之前无法验证。请到发布页手动下载新版本。",
+  "settings.windowsUnsignedTitle": "Windows 更新可用",
+  "settings.windowsUnsignedBody": "此安装包没有发布者签名。更新会从 HTTPS 发布源下载，并根据发布元数据校验 SHA-512；此方式不验证发布者身份。安装前请确认发布源可信。",
   "settings.unavailableDarwin": "macOS 原生更新需要 Developer ID 签名构建：Squirrel.Mac 会拒绝签名与已安装应用不一致的更新。当前构建也没有可用的 GitHub 独立签名更新通道。",
   "settings.unavailableLinux": "此构建没有 Linux 发布通道，请从源码树安装与更新。",
   "settings.unavailableOther": "此平台不提供应用内更新。",

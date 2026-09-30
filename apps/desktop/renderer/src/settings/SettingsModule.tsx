@@ -184,6 +184,16 @@ function LegacySettingsModule({ onlyUpdates = false }: { onlyUpdates?: boolean }
           />
         ) : null}
 
+        {affordances.showWindowsUnsignedNotice ? (
+          <Alert
+            type="info"
+            showIcon
+            className="owb-settings-module__notice"
+            title={t("settings.windowsUnsignedTitle")}
+            description={t("settings.windowsUnsignedBody")}
+          />
+        ) : null}
+
         <div className="owb-settings-module__notes">
           <Button
             type="link"
