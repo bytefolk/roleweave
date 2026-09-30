@@ -29,7 +29,8 @@
 .owb-config-location > div > span { min-width:0; }
 .owb-config-field { display:grid; grid-template-columns:180px minmax(160px,1fr); gap:12px; align-items:center; margin:12px 0; max-width:720px; }
 .owb-config-field .ant-select { min-width:0; width:100%; }
-.owb-config-field input { min-height:36px; }
+/* Select owns its internal combobox height; only plain inputs use this minimum. */
+.owb-config-field > .ant-input { min-height:36px; }
 .owb-config-checkbox { display:flex; align-items:center; gap:8px; margin:12px 0; font-size:13px; }
 .owb-config-checkbox input { accent-color:var(--ui-primary,#1677ff); }
 .owb-config-host { border:1px solid var(--ui-border,#e5e7eb); border-radius:8px; padding:0 16px; margin:12px 0; }
