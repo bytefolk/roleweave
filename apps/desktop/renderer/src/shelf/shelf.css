@@ -1,0 +1,77 @@
+.owb-shelf {
+  padding: 24px 28px;
+  min-height: 100%;
+}
+
+.owb-shelf__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.owb-shelf__intro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.owb-shelf__title.ant-typography {
+  margin: 0;
+}
+
+.owb-shelf__badge {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--ui-border, #d9e2dc);
+  border-radius: var(--ui-radius-sm, 6px);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.owb-shelf__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.owb-shelf__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--ui-border, #d9e2dc);
+  border-radius: var(--ui-radius-md, 10px);
+  background: var(--ui-surface, #fff);
+}
+
+.owb-shelf__row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.owb-shelf__row-title {
+  font-weight: 600;
+}
+
+.owb-shelf__row-meta {
+  font-size: 12px;
+  color: var(--ui-muted, #6b7280);
+}
+
+.owb-shelf__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.owb-shelf-drawer .ant-descriptions-item-label {
+  white-space: nowrap;
+}
