@@ -1,6 +1,7 @@
 import { configurationText, configurationGroups } from '../locales/configuration';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Input, Modal, Select, Spin } from 'antd';
+import { Bell, Files, FlaskConical, HardDrive, Palette, PlugZap, RefreshCw, SlidersHorizontal, Wrench } from 'lucide-react';
 import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
 import { useT, useOwbLocale } from '@roleweave/ui';
 import type { ApplicationConfiguration, ConfigurationSnapshot, ConfigurationIssue, ConfigurationChange, ConfigurationSave } from '../configuration-types';
@@ -14,6 +15,14 @@ import type { ExperimentScope } from '../experiments/useWorkspaceExperiments';
 const groups = configurationGroups;
 export type ConfigurationCategory = typeof groups[number][0];
 type Category = ConfigurationCategory;
+const categoryIcons: Record<ConfigurationCategory, ReactNode> = {
+ general: <SlidersHorizontal aria-hidden="true" />,
+ agents: <PlugZap aria-hidden="true" />,
+ services: <Files aria-hidden="true" />,
+ updates: <RefreshCw aria-hidden="true" />,
+ experiments: <FlaskConical aria-hidden="true" />,
+ advanced: <Wrench aria-hidden="true" />,
+};
 const hostKeys={Qoder:'qoder',Claude:'claude',Codex:'codex',Gemini:'gemini'} as const;
 const refFields:Partial<Record<CredentialKey,string>>={QODER_PERSONAL_ACCESS_TOKEN:'personalAccessTokenRef',ANTHROPIC_API_KEY:'apiKeyRef',ANTHROPIC_AUTH_TOKEN:'authTokenRef',OPENAI_API_KEY:'apiKeyRef',GEMINI_API_KEY:'apiKeyRef'};
 function differences(a:unknown,b:unknown,prefix=''):ConfigurationChange[]{
@@ -143,7 +152,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
  return <section className="owb-settings-module owb-config-settings" aria-label={t('settings.moduleAria')}>
   <header className="owb-settings-module__header"><h1>{t('settings.title')}</h1></header>
   <div className="owb-config-tabs" role="tablist" aria-label={copy("Settings categories")}>
-   {groups.map(([id,en])=><button type="button" key={id} id={`settings-tab-${id}`} role="tab" aria-selected={category===id} aria-controls={`settings-panel-${id}`} onClick={()=>setCategory(id)}>{copy(en)}</button>)}
+   {groups.map(([id,en])=><button type="button" key={id} id={`settings-tab-${id}`} role="tab" aria-selected={category===id} aria-controls={`settings-panel-${id}`} onClick={()=>setCategory(id)}>{categoryIcons[id]}<span>{copy(en)}</span></button>)}
   </div>
   <div className="owb-config-content">
    {loading?<div role="status"><Spin size="small" /> {copy("Loading settings…")}</div>:null}
@@ -155,21 +164,22 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
    {snapshot&&config?<>
     <section id="settings-panel-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={category!=='general'}>
      <div className="owb-config-intro"><h2>{copy("General")}</h2><p>{copy("Manage appearance, project storage and notifications.")}</p></div>
-     <fieldset disabled={busy||formBlocked}><legend>{copy("Appearance and input")}</legend>
+     <fieldset disabled={busy||formBlocked}><legend><Palette aria-hidden="true" />{copy("Appearance and input")}</legend>
       <label className="owb-config-field"><span>{copy("Language")}</span><Select aria-label={copy("Language")} value={config.appearance.locale} options={[{value:'zh-CN',label:copy('Simplified Chinese')},{value:'en',label:'English'}]} onChange={v=>field(['appearance','locale'],v)} disabled={busy||formBlocked}/></label>
       <label className="owb-config-field"><span>{copy("Theme")}</span><Select aria-label={copy("Theme")} value={config.appearance.mode} options={[{value:'system',label:copy("System")},{value:'light',label:copy("Light")},{value:'dark',label:copy("Dark")}]} onChange={v=>field(['appearance','mode'],v)} disabled={busy||formBlocked}/></label>
-      <label className="owb-config-field"><span>{copy("Color profile")}</span><Select aria-label={copy("Color profile")} value={config.appearance.profile} options={[{value:'mint',label:copy('Mint')},{value:'default',label:copy('Ant Blue')}]} onChange={v=>field(['appearance','profile'],v)} disabled={busy||formBlocked}/></label>
-      <label className="owb-config-field"><span>{copy("Send shortcut")}</span><Select aria-label={copy("Send shortcut")} value={config.chat.sendShortcut} options={[{value:'enter',label:'Enter'},{value:'mod-enter',label:'⌘ / Ctrl + Enter'}]} onChange={v=>field(['chat','sendShortcut'],v)} disabled={busy||formBlocked}/></label>
-      <label className="owb-config-checkbox"><input type="checkbox" checked={config.chat.rememberLayout} onChange={e=>field(['chat','rememberLayout'],e.target.checked)}/>{copy("Remember workspace conversation layout")}</label>
-      <p className="owb-settings-module__hint">{copy("Language, theme mode and color profile apply after saving configuration. Composing text with an IME never sends a message.")}</p>
+      <label className="owb-config-field"><span>{copy("Send shortcut")}<small>{copy("Composing text with an IME never sends a message.")}</small></span><Select aria-label={copy("Send shortcut")} value={config.chat.sendShortcut} options={[{value:'enter',label:'Enter'},{value:'mod-enter',label:'⌘ / Ctrl + Enter'}]} onChange={v=>field(['chat','sendShortcut'],v)} disabled={busy||formBlocked}/></label>
      </fieldset>
-     {category==='general'?<details className="owb-config-theme"><summary>{copy("Theme presets and custom colours")}</summary><ThemeSettings /></details>:null}
-     <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend>{copy("Storage")}</legend>
+     {category==='general'?<details className="owb-config-theme"><summary>{copy("More appearance options")}</summary><div className="owb-config-extra-appearance">
+      <label className="owb-config-field"><span>{copy("Color profile")}</span><Select aria-label={copy("Color profile")} value={config.appearance.profile} options={[{value:'mint',label:copy('Mint')},{value:'default',label:copy('Ant Blue')}]} onChange={v=>field(['appearance','profile'],v)} disabled={busy||formBlocked}/></label>
+      <label className="owb-config-checkbox"><input type="checkbox" checked={config.chat.rememberLayout} disabled={busy||formBlocked} onChange={e=>field(['chat','rememberLayout'],e.target.checked)}/>{copy("Remember workspace conversation layout")}</label>
+      <ThemeSettings />
+     </div></details>:null}
+     <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend><HardDrive aria-hidden="true" />{copy("Storage")}</legend>
       <div className="owb-config-setting-row"><div><strong>{copy("System cache directory")}</strong><p>{copy("Managed by the system · contains client cache")}</p></div><Button onClick={()=>void window.owb.configuration!.openCache().then(result=>{if(!result.ok)setCacheError(true);}).catch(()=>setCacheError(true))}>{copy("Open directory")}</Button></div>
       <div className="owb-config-setting-row"><div><strong>{copy("Cache usage")}</strong><p role="status">{cacheError?copy("Could not read cache usage"):cacheBytes===null?copy("Not calculated yet"):formatCacheBytes(cacheBytes,english?'en':'zh-CN')}</p></div><Button loading={cacheBusy} onClick={()=>void readCache()}>{copy("Check usage")}</Button></div>
       <div className="owb-config-setting-row"><div><strong>{copy("Default project location")}</strong><p>{config.storage?.projectDirectory??copy("Use system default location")}</p><small>{copy("Only affects new projects. Existing projects stay in their current locations.")}</small></div><Button onClick={()=>{setSelectedLocation(config.storage?.projectDirectory??null);setLocationError(false);setLocationOpen(true);}}>{copy("Change")}</Button></div>
      </fieldset>
-     <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend>{copy("Notifications")}</legend>
+     <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend><Bell aria-hidden="true" />{copy("Notifications")}</legend>
       <label className="owb-config-setting-row"><span><strong>{copy("Client notifications")}</strong><p>{copy("Show a system notification when a task completes")}</p></span><input type="checkbox" checked={config.notifications?.taskComplete??false} onChange={e=>{const enabled=e.target.checked;field(['notifications','taskComplete'],enabled);if(enabled&&notificationPermission==='default'&&typeof Notification!=='undefined')void Notification.requestPermission().then(setNotificationPermission).catch(()=>setNotificationPermission('denied'));}} /></label>
       {config.notifications?.taskComplete&&notificationPermission!=='granted'?<p className="owb-settings-module__hint" role="status">{copy("System notification permission is not granted.")}</p>:null}
      </fieldset>
