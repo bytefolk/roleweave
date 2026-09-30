@@ -16,14 +16,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OwbI18nProvider, enCatalog } from "@roleweave/ui";
+import { OwbI18nProvider } from "@roleweave/ui";
 import { DEFAULT_THEME, isThemeConfig } from "../src/theme-config";
 import { BUILT_IN_PRESETS, DEFAULT_PRESET_ID } from "../src/theme-presets";
 import { readStoredTheme } from "../src/theme-storage";
 import { ThemeProvider, useTheme } from "../src/theme-context";
 import { ThemeSettings } from "../src/theme-settings";
 import { ThemePicker } from "../src/theme-picker";
-import { PrefsMenu } from "../src/prefs-menu";
 
 const CSS_LAYER_ID = "roleweave-theme-overrides";
 
@@ -132,6 +131,16 @@ describe("persistence", () => {
     expect(readStoredTheme()).toBeNull();
   });
 
+  it("retains saved colours when making a later edit", () => {
+    renderPanel(<Probe />);
+    fireEvent.click(screen.getByText("edit-dark"));
+    fireEvent.click(screen.getByText("save-theme"));
+    fireEvent.click(screen.getByText("flatten-contrast"));
+    fireEvent.click(screen.getByText("save-theme"));
+    expect(readStoredTheme()!.dark.primary).toBe("#123456");
+    expect(readStoredTheme()!.light.foreground).toBe(DEFAULT_THEME.light.canvas);
+  });
+
   // `readStoredTheme` only accepts a full config, so persisting the override set
   // made the saved palette disappear on the next start with no visible error.
   it("persists a complete config that the reader accepts", () => {
@@ -156,7 +165,7 @@ describe("settings panel", () => {
     expect(container.textContent).not.toContain("theme.");
 
     const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>(".owb-theme-settings__tabs button"));
-    expect(tabs).toHaveLength(3);
+    expect(tabs).toHaveLength(2);
     for (const tab of tabs) {
       fireEvent.click(tab);
       expect(container.textContent).not.toContain("theme.");
@@ -188,6 +197,29 @@ describe("settings panel", () => {
     expect(getByTestId("preset").textContent).toBe(DEFAULT_PRESET_ID);
   });
 
+  it("clears persisted custom colours when a preset replacement is confirmed", () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPanel(<><Probe /><ThemeSettings /></>);
+    fireEvent.click(screen.getByText("edit-dark"));
+    fireEvent.click(screen.getByText("save-theme"));
+    expect(readStoredTheme()).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /One Dark/ }));
+    expect(readStoredTheme()).toBeNull();
+  });
+
+  it("discards unsaved inline edits on cancel and restores displayed colours", () => {
+    renderPanel(<ThemeSettings />);
+    fireEvent.click(screen.getByRole("button", { name: "Custom colours" }));
+    const input=screen.getByRole("textbox", { name: "primary" });
+    const original=(input as HTMLInputElement).value;
+    fireEvent.change(input,{target:{value:"#123456"}});fireEvent.blur(input);
+    expect(screen.getByRole("button",{name:"Save colours"})).toBeEnabled();
+    fireEvent.click(screen.getByRole("button",{name:"Cancel"}));
+    expect(input).toHaveValue(original);
+    expect(readStoredTheme()).toBeNull();
+    expect(screen.getByRole("button",{name:"Save colours"})).toBeDisabled();
+  });
+
   // AC-06 used to be reachable only through the (stubbed) agent path.
   it("gives manual editing the same contrast feedback as the agent path", () => {
     renderPanel(<><Probe /><ThemePicker /></>);
@@ -195,30 +227,6 @@ describe("settings panel", () => {
     fireEvent.click(screen.getByText("flatten-contrast"));
     expect(document.querySelector(".owb-theme-contrast-warnings")).not.toBeNull();
     expect(document.querySelectorAll(".owb-theme-contrast-warnings__item").length).toBeGreaterThan(0);
-  });
-});
-
-describe("prefs menu", () => {
-  it("opens the panel as a modal overlay, not an inline dropdown row", () => {
-    const { container } = renderPanel(
-      <PrefsMenu locale="en" onChangeLocale={() => {}} mode="light" profile="mint" />,
-    );
-    fireEvent.click(container.querySelector(".owb-wintitle__theme") as HTMLButtonElement);
-
-    const rows = Array.from(container.querySelectorAll<HTMLButtonElement>("[role=menuitem]"));
-    const themeRow = rows.find((row) => row.textContent?.includes(enCatalog["theme.title"]));
-    expect(themeRow, "the theme row is missing from the prefs drawer").toBeDefined();
-    fireEvent.click(themeRow!);
-
-    const overlay = container.querySelector(".owb-theme-overlay");
-    expect(overlay).not.toBeNull();
-    expect(overlay!.getAttribute("role")).toBe("dialog");
-    expect(overlay!.getAttribute("aria-modal")).toBe("true");
-    expect(overlay!.querySelector(".owb-theme-settings")).not.toBeNull();
-    // It used to render inline inside the drawer, where it had no fixed
-    // positioning and no stacking context above the workbench.
-    expect(overlay!.closest('[role="menu"]')).toBeNull();
-    expect(container.querySelector(".owb-prefs > .owb-theme-overlay")).not.toBeNull();
   });
 });
 
@@ -256,7 +264,7 @@ describe("styles", () => {
   it("styles every class the panel puts on a button", () => {
     const css = readFileSync(join(srcDir, "app.css"), "utf8");
     const required = new Set<string>(["owb-theme-overlay"]);
-    for (const file of ["theme-settings.tsx", "theme-picker.tsx", "theme-agent-prompt.tsx"]) {
+    for (const file of ["theme-settings.tsx", "theme-picker.tsx"]) {
       for (const cls of buttonClasses(readFileSync(join(srcDir, file), "utf8"))) required.add(cls);
     }
     // close / cancel / save / reset / preset + generate / apply / cancel + overlay

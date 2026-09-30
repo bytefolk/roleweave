@@ -226,7 +226,7 @@
 }
 
 /* Portaled drawers and menus share the same surface and hairline treatment. */
-:is([data-theme="light"], [data-theme="dark"]) :is(.owb-prefs__panel, .owb-project-switcher__menu) {
+:is([data-theme="light"], [data-theme="dark"]) :is(.owb-project-switcher__menu) {
   border-color: var(--ui-border);
   box-shadow: var(--ui-shadow-md);
 }
