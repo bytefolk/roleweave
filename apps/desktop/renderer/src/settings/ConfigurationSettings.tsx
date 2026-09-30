@@ -163,7 +163,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
       <label className="owb-config-checkbox"><input type="checkbox" checked={config.chat.rememberLayout} onChange={e=>field(['chat','rememberLayout'],e.target.checked)}/>{copy("Remember workspace conversation layout")}</label>
       <p className="owb-settings-module__hint">{copy("Language, theme mode and color profile apply after saving configuration. Composing text with an IME never sends a message.")}</p>
      </fieldset>
-     {category==='general'?<ThemeSettings />:null}
+     {category==='general'?<details className="owb-config-theme"><summary>{copy("Theme presets and custom colours")}</summary><ThemeSettings /></details>:null}
      <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend>{copy("Storage")}</legend>
       <div className="owb-config-setting-row"><div><strong>{copy("System cache directory")}</strong><p>{copy("Managed by the system · contains client cache")}</p></div><Button onClick={()=>void window.owb.configuration!.openCache().then(result=>{if(!result.ok)setCacheError(true);}).catch(()=>setCacheError(true))}>{copy("Open directory")}</Button></div>
       <div className="owb-config-setting-row"><div><strong>{copy("Cache usage")}</strong><p role="status">{cacheError?copy("Could not read cache usage"):cacheBytes===null?copy("Not calculated yet"):formatCacheBytes(cacheBytes,english?'en':'zh-CN')}</p></div><Button loading={cacheBusy} onClick={()=>void readCache()}>{copy("Check usage")}</Button></div>

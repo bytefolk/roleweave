@@ -14,6 +14,7 @@ const zh: Record<string, string> = {
   "OS encrypted storage is unavailable. General preferences remain editable; unlock your keychain to change credentials.": "OS 加密存储不可用。仍可修改常规设置；凭据需要解锁系统钥匙串。",
   "Line ": "第",
   "Appearance and input": "外观与输入",
+  "Theme presets and custom colours": "主题预设与自定义配色",
   "Manage appearance, project storage and notifications.": "管理应用外观、项目存储和通知方式。",
   "Storage": "存储",
   "System cache directory": "系统缓存目录",
