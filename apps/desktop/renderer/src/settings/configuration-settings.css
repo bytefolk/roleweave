@@ -9,7 +9,7 @@
 .owb-config-tabs button { text-align:left; font-size:13px; }
 .owb-config-tabs button[aria-selected="true"] { background:var(--ui-primary-soft); color:var(--ui-primary,#11875f); font-weight:600; }
 .owb-config-tabs button:focus-visible { outline:2px solid var(--ui-primary,#1677ff); outline-offset:2px; }
-.owb-config-content { grid-column:2; grid-row:1 / 3; min-height:0; overflow:auto; margin:0; padding:22px 28px 18px; background:var(--ui-background,#fff); }
+.owb-config-content { grid-column:2; grid-row:1 / 3; min-height:0; overflow:auto; margin:0; padding:22px 28px 18px; background:var(--ui-canvas); }
 .owb-config-content > [role="tabpanel"] { max-width:1040px; }
 .owb-config-content [hidden] { display:none !important; }
 .owb-config-content .ant-alert { margin-bottom:12px; }
