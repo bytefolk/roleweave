@@ -25,6 +25,11 @@ function differences(a:unknown,b:unknown,prefix=''):ConfigurationChange[]{
  });
 }
 const display=(value:unknown)=>value===null?'—':typeof value==='object'?JSON.stringify(value):String(value);
+function formatCacheBytes(bytes:number,locale:string):string {
+ const unit=bytes<1024?'byte':bytes<1048576?'kilobyte':'megabyte';
+ const divisor=unit==='byte'?1:unit==='kilobyte'?1024:1048576;
+ return new Intl.NumberFormat(locale,{style:'unit',unit,maximumFractionDigits:1}).format(bytes/divisor);
+}
 export function ConfigurationSettings({updates, initialCategory, ...scope}:{updates:ReactNode; initialCategory?: ConfigurationCategory} & ExperimentScope) {
  const t=useT();const activeLocale=useOwbLocale();const[snapshot,setSnapshot]=useState<ConfigurationSnapshot|null>(null),[text,setText]=useState('');
  const[category,setCategory]=useState<Category>(initialCategory ?? 'general'),[view,setView]=useState<'form'|'file'>('form');
@@ -159,7 +164,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
      </fieldset>
      <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend>{copy("Storage")}</legend>
       <div className="owb-config-setting-row"><div><strong>{copy("System cache directory")}</strong><p>{copy("Managed by the system · contains client cache")}</p></div><Button onClick={()=>void window.owb.configuration!.openCache().then(result=>{if(!result.ok)setCacheError(true);}).catch(()=>setCacheError(true))}>{copy("Open directory")}</Button></div>
-      <div className="owb-config-setting-row"><div><strong>{copy("Cache usage")}</strong><p role="status">{cacheError?copy("Could not read cache usage"):cacheBytes===null?copy("Not calculated yet"):new Intl.NumberFormat(english?'en':'zh-CN',{style:'unit',unit:'megabyte',maximumFractionDigits:1}).format(cacheBytes/1048576)}</p></div><Button loading={cacheBusy} onClick={()=>void readCache()}>{copy("Check usage")}</Button></div>
+      <div className="owb-config-setting-row"><div><strong>{copy("Cache usage")}</strong><p role="status">{cacheError?copy("Could not read cache usage"):cacheBytes===null?copy("Not calculated yet"):formatCacheBytes(cacheBytes,english?'en':'zh-CN')}</p></div><Button loading={cacheBusy} onClick={()=>void readCache()}>{copy("Check usage")}</Button></div>
       <div className="owb-config-setting-row"><div><strong>{copy("Default project location")}</strong><p>{config.storage?.projectDirectory??copy("Use system default location")}</p><small>{copy("Only affects new projects. Existing projects stay in their current locations.")}</small></div><Button onClick={()=>{setSelectedLocation(config.storage?.projectDirectory??null);setLocationError(false);setLocationOpen(true);}}>{copy("Change")}</Button></div>
      </fieldset>
      <fieldset className="owb-config-storage" disabled={busy||formBlocked}><legend>{copy("Notifications")}</legend>

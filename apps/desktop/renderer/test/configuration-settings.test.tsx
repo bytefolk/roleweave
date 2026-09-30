@@ -21,8 +21,10 @@ beforeEach(()=>{window.localStorage.clear();});
 describe('shared settings draft',()=>{
  it('uses the native picker for a draft default project location and saves it only with the shared configuration',async()=>{
   const api=install();
-  Object.assign(api,{pickProjectDirectory:vi.fn().mockResolvedValue({ok:true,path:'/tmp/team-projects'}),cacheInfo:vi.fn().mockResolvedValue({ok:true,bytes:1048576}),openCache:vi.fn().mockResolvedValue({ok:true})});
+  Object.assign(api,{pickProjectDirectory:vi.fn().mockResolvedValue({ok:true,path:'/tmp/team-projects'}),cacheInfo:vi.fn().mockResolvedValueOnce({ok:true,bytes:512}).mockResolvedValue({ok:true,bytes:1048576}),openCache:vi.fn().mockResolvedValue({ok:true})});
   await show();
+  fireEvent.click(screen.getByRole('button',{name:'查看占用'}));
+  expect(await screen.findByText(/512\s*B/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button',{name:'查看占用'}));
   expect(await screen.findByText(/1\s*MB/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button',{name:/更\s*改/}));
