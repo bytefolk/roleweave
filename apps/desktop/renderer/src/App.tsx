@@ -39,8 +39,7 @@ import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
 import { DEFAULT_PRESET_ID } from "./theme-presets";
-import { PrefsMenu } from "./prefs-menu";
-import { persistLocale, seedLocale } from "./locale-mode";
+import { seedLocale } from "./locale-mode";
 import {
   EMPTY_TURN_STREAM,
   TurnPanel,
@@ -72,7 +71,7 @@ import { HireDrawer } from "./org/HireDrawer";
 import { RelationshipGraph } from "./graph/RelationshipGraph";
 import { useRelationshipGraph } from "./graph/useRelationshipGraph";
 import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from "./org/TreeManagement";
-import { useConfigurationBootstrap, useSendShortcut, useWorkspaceFocus, requestSettingsLeave, persistApplicationPreference, preferenceError } from "./configuration-preferences";
+import { useConfigurationBootstrap, useSendShortcut, useWorkspaceFocus, requestSettingsLeave, taskCompletionNotification } from "./configuration-preferences";
 import { createConversationMemory } from "./turns/conversation-memory";
 import { useConversationCopy } from "./locales/conversation";
 import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh-coordinator";
@@ -123,26 +122,16 @@ export function App() {
 function AppRoot() {
   const [locale, setLocale] = useState<OwbLocale>(() => seedLocale());
   useConfigurationBootstrap(setLocale);
-  const changeLocale = useCallback((next: OwbLocale) => {
-    if (window.owb?.configuration) {
-      void persistApplicationPreference({ appearance: { locale: next } }).catch(preferenceError);
-      return;
-    }
-    setLocale(next);
-    persistLocale(next);
-  }, []);
   return (
     <OwbI18nProvider locale={locale}>
-      <AppInner locale={locale} onChangeLocale={changeLocale} />
+      <AppInner locale={locale} />
     </OwbI18nProvider>
   );
 }
 function AppInner({
   locale,
-  onChangeLocale,
 }: {
   locale: OwbLocale;
-  onChangeLocale: (next: OwbLocale) => void;
 }) {
   const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
@@ -347,6 +336,7 @@ function AppInner({
   const historyRequest = useRef(0);
   const sessionOperations = useRef(new Map<string, symbol>());
   const workspacePathRef = useRef(workspaceInfo?.path);
+  const notifiedCompletedTurns = useRef(new Set<string>());
   const [turnError, setTurnError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<WorkbenchSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -1040,6 +1030,20 @@ function AppInner({
         if (owner !== undefined) updateWorkspaceStream(owner, (current) => applyTurnEvent(current, envelope as TurnStreamEnvelope));
       }
       if (["turn.completed", "turn.failed", "turn.indeterminate"].includes(envelope?.type ?? "")) {
+        if (envelope.type === "turn.completed") {
+          const payload = envelope.payload as { workspacePath?: unknown; turnId?: unknown } | undefined;
+          const id = payload?.turnId;
+          const preference = taskCompletionNotification();
+          if (preference.enabled && typeof id === "string" &&
+              payload?.workspacePath === workspacePathRef.current &&
+              !notifiedCompletedTurns.current.has(id) &&
+              typeof Notification !== "undefined" && Notification.permission === "granted") {
+            notifiedCompletedTurns.current.add(id);
+            if (notifiedCompletedTurns.current.size > 256) notifiedCompletedTurns.current.delete(notifiedCompletedTurns.current.values().next().value!);
+            try { new Notification("RoleWeave", { body: preference.body, tag: `roleweave-turn-${id}` }); }
+            catch { /* The OS may revoke notification access after the permission check. */ }
+          }
+        }
         void loadReports();
         const id = selectedIdRef.current;
         if (id !== null) {
@@ -1954,12 +1958,6 @@ function AppInner({
         <WindowControls />
         <span className="owb-wintitle__name">RoleWeave</span>
         <span className="owb-wintitle__spacer" />
-        <PrefsMenu
-          locale={locale}
-          onChangeLocale={onChangeLocale}
-          mode={themeMode}
-          profile={themeProfile}
-        />
       </header>
 
     {/* 壳层尺寸（导轨 54 / 侧栏 300 / topbar 48）定在 app.css 的

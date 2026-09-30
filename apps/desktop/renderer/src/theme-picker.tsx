@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useT } from "@roleweave/ui";
 import { COLOR_TOKEN_KEYS, type ColorTokenKey, type ColorTokenValues, type ThemeMode } from "./theme-config";
 import { useTheme } from "./theme-context";
@@ -74,6 +74,7 @@ export function ContrastWarningsView({ theme, title }: { theme: ColorTokenValues
 
 function ColorItem({ tokenKey, value, onChange }: { tokenKey: ColorTokenKey; value: string; onChange: (value: string) => void; }) {
   const [inputValue, setInputValue] = useState(value);
+  useEffect(() => setInputValue(value), [value]);
   const handleBlur = () => {
     if (inputValue !== value && isValidColorValue(inputValue)) onChange(inputValue);
     else setInputValue(value);
@@ -84,10 +85,10 @@ function ColorItem({ tokenKey, value, onChange }: { tokenKey: ColorTokenKey; val
   };
   return (
     <div className="owb-theme-picker__item">
-      <label className="owb-theme-picker__item-label" title={`--ui-${tokenKey}`}>{tokenKey}</label>
+      <label htmlFor={`theme-color-${tokenKey}`} className="owb-theme-picker__item-label" title={`--ui-${tokenKey}`}>{tokenKey}</label>
       <div className="owb-theme-picker__item-controls">
-        <input type="color" value={value.startsWith("#") ? value.slice(0, 7) : "#000000"} onChange={handleColorChange} className="owb-theme-picker__color-input" />
-        <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onBlur={handleBlur} onKeyDown={(e) => { if (e.key === "Enter") handleBlur(); }} className="owb-theme-picker__text-input" />
+        <input aria-label={`${tokenKey} color`} type="color" value={value.startsWith("#") ? value.slice(0, 7) : "#000000"} onChange={handleColorChange} className="owb-theme-picker__color-input" />
+        <input id={`theme-color-${tokenKey}`} type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onBlur={handleBlur} onKeyDown={(e) => { if (e.key === "Enter") handleBlur(); }} className="owb-theme-picker__text-input" />
       </div>
     </div>
   );

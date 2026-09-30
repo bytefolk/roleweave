@@ -347,3 +347,17 @@ test("nativePathForServerPath is the identity outside WSL mode", () => {
   assert.equal(nativePathForServerPath("/tmp/projects", {}), "/tmp/projects");
   assert.equal(nativePathForServerPath("/tmp/projects", { ROLEWEAVE_CONTROL_PLANE_MODE: "native" }), "/tmp/projects");
 });
+test('new project picker starts in saved default while native selection remains authoritative', async t => {
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'rw-project-pref-'));
+ t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+ let options,body;
+ const result=await createWorkspaceWithPicker({
+  request:{projectId:'example',business:'Example',description:''},
+  preferredDirectory:'/tmp/preferred-projects',env:{},userDataPath:directory,
+  pickDirectory:async value=>{options=value;return{canceled:false,filePaths:['/tmp/actually-selected']};},
+  apiRequest:async (_url,value)=>{body=value.body;return{status:201,body:{path:'/tmp/actually-selected/example'}};},
+ });
+ assert.equal(options.defaultPath,'/tmp/preferred-projects');
+ assert.equal(body.parentPath,'/tmp/actually-selected');
+ assert.equal(result.status,201);
+});

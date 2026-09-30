@@ -152,7 +152,7 @@
   background: transparent;
   box-shadow: none;
 }
-:is([data-theme="light"], [data-theme="dark"]) :is(.owb-modal__panel, .owb-prefs__panel) {
+:is([data-theme="light"], [data-theme="dark"]) :is(.owb-modal__panel) {
   border-radius: 10px;
   box-shadow: var(--ui-shadow-md);
 }
