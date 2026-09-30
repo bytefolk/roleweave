@@ -1,3 +1,4 @@
+import { applyConfiguration } from "../src/configuration-preferences";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { message } from "antd";
@@ -590,12 +591,22 @@ describe("App organization feedback", () => {
     try {
       await openWorkspace();
       expect(screen.getByText("项目「开源业务」已打开")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "偏好设置" }));
-      await act(async () => { fireEvent.click(screen.getByRole("menuitem", { name: /语言/ })); });
+      await act(async () => {
+        applyConfiguration({ config: {
+          schemaVersion: 1, appearance: { locale: "en", mode: "system", profile: "mint" },
+          chat: { sendShortcut: "enter", rememberLayout: true }, layouts: { focusByWorkspace: {} },
+          runtime: {}, hosts: {}, services: {}, migration: { rendererPreferences: true },
+        } } as Parameters<typeof applyConfiguration>[0]);
+      });
       expect(screen.queryByText("项目「开源业务」已打开")).not.toBeInTheDocument();
       expect(document.querySelector(".ant-message-notice")).toBeNull();
     } finally {
       view.unmount();
+      applyConfiguration({ config: {
+        schemaVersion: 1, appearance: { locale: previousLocale === "en" ? "en" : "zh-CN", mode: "system", profile: "mint" },
+        chat: { sendShortcut: "enter", rememberLayout: true }, layouts: { focusByWorkspace: {} },
+        runtime: {}, hosts: {}, services: {}, migration: { rendererPreferences: true },
+      } } as Parameters<typeof applyConfiguration>[0]);
       if (previousLocale === null) window.localStorage.removeItem("owb-locale");
       else window.localStorage.setItem("owb-locale", previousLocale);
     }
@@ -1866,9 +1877,7 @@ describe("App settings module wiring (#134)", () => {
     expect(await screen.findByRole("heading", { name: "设置", level: 1 })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "应用更新", level: 2 })).toBeInTheDocument();
     expect(bridge.update.status).toHaveBeenCalled();
-    // The prefs drawer (#174) keeps its own two toggles; the update pane did not
-    // move into it and does not duplicate them here.
-    expect(screen.queryByRole("button", { name: /语言/ })).toBeNull();
+    expect(document.querySelector(".owb-wintitle .owb-prefs")).toBeNull();
   });
 });
 

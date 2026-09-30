@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld("owb", {
     migratePreferences: (legacy) => ipcRenderer.invoke("owb:configuration:migrate-preferences", legacy),
     restore: (revision) => ipcRenderer.invoke("owb:configuration:restore", revision),
     openLocation: () => ipcRenderer.invoke("owb:configuration:open-location"),
+    pickProjectDirectory: () => ipcRenderer.invoke("owb:configuration:pick-project-directory"),
+    cacheInfo: () => ipcRenderer.invoke("owb:configuration:cache-info"),
+    openCache: () => ipcRenderer.invoke("owb:configuration:open-cache"),
     setDirty: (dirty) => ipcRenderer.invoke("owb:configuration:dirty", dirty),
     confirmClose: () => ipcRenderer.invoke("owb:configuration:confirm-close"),
     onCloseRequested: (callback) => {

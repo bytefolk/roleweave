@@ -110,10 +110,13 @@ async function initializeWorkspace({ request, apiRequest, env, userDataPath }) {
   return res;
 }
 
-async function createWorkspaceWithPicker({ request, pickDirectory, apiRequest, env, userDataPath }) {
+async function createWorkspaceWithPicker({ request, pickDirectory, apiRequest, env, userDataPath, preferredDirectory }) {
   const validated = validateWorkspaceCreateRequest(request);
   if (!validated.ok) return validated.response;
-  const picked = await pickDirectory(workspaceDialogOptions(env, true));
+  const options = workspaceDialogOptions(env, true);
+  if (typeof preferredDirectory === 'string' && isAbsoluteNativePath(preferredDirectory) && !/[\x00-\x1f]/.test(preferredDirectory))
+    options.defaultPath = preferredDirectory;
+  const picked = await pickDirectory(options);
   if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
   const parentPath = picked.filePaths[0];
   let serverParentPath;
