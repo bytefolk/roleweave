@@ -1,5 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const {registerConfigurationIpc,registerExternalUrlIpc,safeExternalUrl}=require('../src/configuration-ipc.cjs');
+const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
+const {createConfigurationStore}=require('../src/configuration.cjs');
 test('configuration IPC is enumerated, trusted, and rejects malformed arity before storage',async()=>{
  const handlers=new Map(),calls=[];
  registerConfigurationIpc({ipcMain:{handle:(n,f)=>handlers.set(n,f)},getStore:()=>({get:()=>{calls.push('get');return{ok:true};},getPreferences:()=>{calls.push('preferences');return{ok:true};}}),isTrusted:e=>e.trusted,shell:{},setDirty:()=>{},close:()=>{}});
@@ -45,3 +47,27 @@ test('storage diagnostics and native project picker require the trusted enumerat
  assert.equal((await handlers.get('owb:configuration:open-cache')({trusted:true})).ok,true);
  assert.deepEqual(calls,['pick','size','open']);
 });
+for(const [name,callback] of [['open-cache','openCache'],['cache-info','cacheInfo'],['pick-project-directory','pickProjectDirectory']]){
+ test(`pending ${name} does not block validation, saving, reading or dirty state`,async t=>{
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'roleweave-ipc-'));
+  t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+  const store=createConfigurationStore({userDataPath:directory,env:{},safeStorage:{isEncryptionAvailable:()=>false}});
+  const current=store.get();assert.equal(current.ok,true);
+  const config=structuredClone(current.config);config.storage={projectDirectory:'/tmp/saved-projects'};
+  const text=JSON.stringify(config),handlers=new Map();let release,dirty=false;
+  registerConfigurationIpc({ipcMain:{handle:(n,f)=>handlers.set(n,f)},getStore:()=>store,isTrusted:()=>true,
+   shell:{},setDirty:value=>{dirty=value;},close:()=>{},[callback]:()=>new Promise(resolve=>{release=resolve;})});
+  const invoke=(channel,...args)=>handlers.get(`owb:configuration:${channel}`)({},...args);
+  const auxiliary=invoke(name);await Promise.resolve();
+  let savedBeforeRelease=false,validatedBeforeRelease=false,readBeforeRelease=false;
+  const validated=invoke('validate',text).then(result=>{validatedBeforeRelease=result.ok;});
+  const saved=invoke('save',{text,revision:current.revision}).then(result=>{savedBeforeRelease=result.ok;});
+  const read=invoke('get').then(result=>{readBeforeRelease=result.config.storage?.projectDirectory==='/tmp/saved-projects';});
+  const marked=invoke('dirty',true);
+  await new Promise(setImmediate);
+  const observed={savedBeforeRelease,validatedBeforeRelease,readBeforeRelease,dirty};
+  release({ok:false});await Promise.all([auxiliary,validated,saved,read,marked]);
+  assert.deepEqual(observed,{savedBeforeRelease:true,validatedBeforeRelease:true,readBeforeRelease:true,dirty:true});
+  assert.equal(store.get().config.storage.projectDirectory,'/tmp/saved-projects');
+ });
+}
