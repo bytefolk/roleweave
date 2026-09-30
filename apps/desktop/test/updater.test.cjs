@@ -190,10 +190,8 @@ test("every state the service publishes is a declared one", async () => {
 });
 
 test("neither download nor install proceeds without explicit confirmation", async () => {
-  // #110 R3, verbatim: an unsigned platform "must not silently download, apply,
-  // or restart into that update". The refusal lives here rather than in a UI,
-  // because #134's UI does not exist yet and a later one must not be able to
-  // skip the prompt by forgetting to ask.
+  // The confirmation lives in the service, so a renderer bug cannot silently
+  // download or restart into an update.
   const updater = fakeUpdater();
   const service = createUpdaterService({ updater, platform: "win32", signature: { signed: true } });
   assert.equal(service.availability.requiresConfirmation, true);
@@ -249,7 +247,7 @@ test("checking needs no confirmation, because checking changes nothing", async (
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { UNSIGNED_REFUSAL, readBuildSignature } = require("../src/updater.cjs");
+const { readBuildSignature } = require("../src/updater.cjs");
 
 /** A packaged resources directory, with or without the file electron-builder writes. */
 function resources(t, contents = null) {
@@ -307,7 +305,7 @@ test("a build with no update configuration is treated as unsigned", (t) => {
   assert.match(sourceTree.reason, /source-tree run/);
 });
 
-test("an unsigned build may check for updates but not apply one", async () => {
+test("an unsigned Windows build checks, downloads and installs after confirmation", async () => {
   const updater = fakeUpdater();
   const service = createUpdaterService({
     updater,
@@ -315,20 +313,19 @@ test("an unsigned build may check for updates but not apply one", async () => {
     signature: { signed: false, reason: "unsigned" },
   });
 
-  // Knowing a new version exists is still useful, so check stays open.
+  assert.equal(service.updateVerified, false);
   await service.check();
   updater.emit("update-available", { version: "0.2.0" });
   assert.equal(service.state, "available");
 
   const downloaded = await service.download({ confirmedByUser: true });
-  assert.equal(downloaded.unsigned, true);
-  assert.equal(downloaded.reason, UNSIGNED_REFUSAL);
+  assert.notEqual(downloaded.unsigned, true);
+  assert.deepEqual(updater.calls, ["checkForUpdates", "downloadUpdate"]);
 
+  updater.emit("update-downloaded", { version: "0.2.0" });
   const installed = await service.install({ confirmedByUser: true });
-  assert.equal(installed.unsigned, true);
-
-  // Confirmation does not buy past the gate, and nothing was asked of the updater.
-  assert.deepEqual(updater.calls, ["checkForUpdates"]);
+  assert.equal(installed.installing, true);
+  assert.deepEqual(updater.calls, ["checkForUpdates", "downloadUpdate", "quitAndInstall"]);
 });
 
 test("the gate opens on its own once the build carries a publisher", async () => {
@@ -352,12 +349,12 @@ test("the gate opens on its own once the build carries a publisher", async () =>
   assert.equal(service.build.signed, true);
 });
 
-test("both gates hold independently: confirmation without signing, signing without confirmation", async () => {
+test("unsigned Windows still requires confirmation", async () => {
   const unsignedButConfirmed = createUpdaterService({
     updater: fakeUpdater(), platform: "win32", signature: { signed: false, reason: "x" },
   });
   await unsignedButConfirmed.check();
-  assert.equal((await unsignedButConfirmed.download({ confirmedByUser: true })).unsigned, true);
+  assert.match((await unsignedButConfirmed.download()).reason, /requires explicit confirmation/);
 
   const signedButUnconfirmed = createUpdaterService({
     updater: fakeUpdater(), platform: "win32", signature: { signed: true },
@@ -400,7 +397,7 @@ test("the loader is not called on macOS when the free channel has no packaged ap
   assert.match(service.availability.reason, /source-tree/);
 });
 
-test("a loaded updater still reaches the signed gate", async () => {
+test("a loaded updater permits the unsigned Windows channel", async () => {
   const updater = fakeUpdater();
   const service = startUpdaterService({
     loadUpdater: () => updater,
@@ -411,8 +408,9 @@ test("a loaded updater still reaches the signed gate", async () => {
   assert.equal(service.state, "idle");
   await service.check();
   updater.emit("update-available", { version: "0.2.0" });
-  const refused = await service.download({ confirmedByUser: true });
-  assert.equal(refused.unsigned, true);
+  const downloaded = await service.download({ confirmedByUser: true });
+  assert.notEqual(downloaded.unsigned, true);
+  assert.deepEqual(updater.calls, ["checkForUpdates", "downloadUpdate"]);
 });
 
 test("a signed macOS build loads the updater and can apply with confirmation", async () => {
