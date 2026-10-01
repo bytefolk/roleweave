@@ -1,10 +1,11 @@
-import {
-  ACCEPTANCE_SCHEMA_VERSION,
-  type AcceptanceDecision,
-  type AcceptanceRecord,
-  type AcceptanceVerdict,
+// Value import via the subpath; see SpaceModule for why the barrel is avoided.
+import { ACCEPTANCE_SCHEMA_VERSION } from "@roleweave/shared/acceptance";
+import type {
+  AcceptanceDecision,
+  AcceptanceRecord,
+  AcceptanceVerdict,
+  SpaceDocCriterion,
 } from "@roleweave/shared";
-import type { SpaceDocCriterion } from "@roleweave/shared";
 
 /**
  * Build the acceptance payload for a space gate.

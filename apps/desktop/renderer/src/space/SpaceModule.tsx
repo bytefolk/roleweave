@@ -2,15 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Empty, Spin, Tag } from "antd";
 import { FileText, Folder, GitBranch, LayoutList, Users } from "lucide-react";
 import { useT } from "@roleweave/ui";
-import {
-  parseSpaceDoc,
-  renderSpaceDoc,
-  type AcceptanceDecision,
-  type AcceptanceRecord,
-  type DocsFileEntry,
-  type SpaceDoc,
-  type SpaceDocCriterion,
-  type SpaceDocTask,
+// Value imports go through the subpath, not the barrel: the barrel reaches
+// node-only modules such as position-id.js (createRequire), which the renderer
+// bundle cannot resolve.
+import { parseSpaceDoc, renderSpaceDoc } from "@roleweave/shared/space-doc";
+import type {
+  AcceptanceDecision,
+  AcceptanceRecord,
+  DocsFileEntry,
+  SpaceDoc,
+  SpaceDocCriterion,
+  SpaceDocTask,
 } from "@roleweave/shared";
 import { Markdown } from "../markdown/Markdown.js";
 import { AcceptanceGate } from "./AcceptanceGate.js";
