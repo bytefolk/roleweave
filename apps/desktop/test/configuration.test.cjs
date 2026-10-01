@@ -49,6 +49,16 @@ test('save persists, reloads, previews and detects external edits; invalid text 
   assert.equal(h.store.save({text:text(c),revision:conflict.current.revision}).ok,true);
   fs.writeFileSync(h.file,'{broken'); const recovered=h.store.get(); assert.equal(recovered.ok,true); assert.ok(recovered.warnings.length);
 });
+for (const mode of ['system', 'light', 'dark']) {
+ test(`saved appearance ${mode} survives a fresh store and stale renderer preferences`, t => {
+  const h=setup(t),current=h.store.get(),config=structuredClone(current.config);
+  config.appearance.mode=mode;config.migration.rendererPreferences=true;
+  const saved=h.store.save({text:text(config),revision:current.revision});assert.equal(saved.ok,true);
+  const restarted=createConfigurationStore({userDataPath:h.dir,safeStorage:h.safeStorage,env:{}});
+  assert.equal(restarted.get().config.appearance.mode,mode);
+  assert.equal(restarted.migratePreferences({mode:mode==='dark'?'light':'dark',profile:'default',locale:'en'}).config.appearance.mode,mode);
+ });
+}
 test('grouped credentials validate before any write and roll back if config commit fails; blank retains', t => {
   let fail=false; const h=setup(t,{beforeWrite: name => {if(fail&&name==='roleweave.config.jsonc')throw Error('disk');}});
   const a=h.store.get(); const c=structuredClone(a.config); c.hosts.codex.apiKeyRef='secret:host/OPENAI_API_KEY';

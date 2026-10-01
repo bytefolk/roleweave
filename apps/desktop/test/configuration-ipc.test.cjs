@@ -47,6 +47,23 @@ test('storage diagnostics and native project picker require the trusted enumerat
  assert.equal((await handlers.get('owb:configuration:open-cache')({trusted:true})).ok,true);
  assert.deepEqual(calls,['pick','size','open']);
 });
+test('cache usage shares an in-flight traversal and allows fresh scans after success or failure',async()=>{
+ const handlers=new Map();let calls=0,resolveScan,rejectScan;
+ registerConfigurationIpc({ipcMain:{handle:(n,f)=>handlers.set(n,f)},getStore:()=>({}),isTrusted:e=>e.trusted,
+  shell:{},setDirty:()=>{},close:()=>{},cacheInfo:()=>{calls++;return new Promise((resolve,reject)=>{resolveScan=resolve;rejectScan=reject;});}});
+ const invoke=()=>handlers.get('owb:configuration:cache-info')({trusted:true});
+ for(const fails of [false,true,false]){
+  const before=calls,first=invoke(),second=invoke();await Promise.resolve();
+  assert.equal(calls,before+1);
+  assert.deepEqual(await handlers.get('owb:configuration:cache-info')({trusted:false}),{ok:false,code:'untrusted_sender'});
+  assert.deepEqual(await handlers.get('owb:configuration:cache-info')({trusted:true},'extra'),{ok:false,code:'invalid_request'});
+  assert.equal(calls,before+1);
+  if(fails)rejectScan(new Error('scan failed'));else resolveScan({ok:true,bytes:calls*42});
+  const expected=fails?{ok:false,code:'storage_unavailable'}:{ok:true,bytes:calls*42};
+  assert.deepEqual(await first,expected);assert.deepEqual(await second,expected);
+ }
+ assert.equal(calls,3);
+});
 for(const [name,callback] of [['open-cache','openCache'],['cache-info','cacheInfo'],['pick-project-directory','pickProjectDirectory']]){
  test(`pending ${name} does not block validation, saving, reading or dirty state`,async t=>{
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'roleweave-ipc-'));

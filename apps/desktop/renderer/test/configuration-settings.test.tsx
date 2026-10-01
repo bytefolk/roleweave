@@ -6,9 +6,11 @@ import { ConfigurationSettings } from '../src/settings/ConfigurationSettings';
 import { App } from '../src/App';
 import { ThemeProvider } from '../src/theme-context';
 import { readStoredPresetId, readStoredTheme } from '../src/theme-storage';
-import { requestSettingsLeave } from '../src/configuration-preferences';
+import { applyConfiguration, initializeConfiguration, requestSettingsLeave } from '../src/configuration-preferences';
+import { useThemeMode } from '../src/theme-toggle';
 import type { ApplicationConfiguration, ConfigurationSnapshot } from '../src/configuration-types';
 function SettingsFixture(props: React.ComponentProps<typeof ConfigurationSettings>) { return <ThemeProvider><ConfigurationSettings {...props}/></ThemeProvider>; }
+function AppearanceProbe(){return <output data-testid="saved-theme-mode">{useThemeMode()}</output>;}
 const initial=():ApplicationConfiguration=>({schemaVersion:1,appearance:{mode:'system',profile:'mint',locale:'zh-CN'},chat:{sendShortcut:'enter',rememberLayout:true},layouts:{focusByWorkspace:{}},runtime:{},hosts:{qoder:{},claude:{},codex:{}},services:{},migration:{rendererPreferences:true}});
 function snapshot(config=initial(),revision='v1'):ConfigurationSnapshot{return{ok:true,config,text:'// keep this comment\n'+JSON.stringify(config,null,2),revision,filePath:'/test-user-data/roleweave.config.jsonc',warnings:[],errors:[],sources:{},storageAvailable:true,credentials:[],platform:'darwin',canRestore:true};}
 function install(start=snapshot()){
@@ -22,6 +24,43 @@ function footerSave(){return within(document.querySelector('.owb-config-savebar'
 async function fileView(){fireEvent.click(screen.getByRole('tab',{name:'高级配置'}));fireEvent.click(screen.getByRole('button',{name:'配置文件',exact:true}));return screen.getByRole('textbox',{name:'roleweave.config.jsonc'});}
 beforeEach(()=>{window.localStorage.clear();});
 describe('shared settings draft',()=>{
+ it.each([
+  {mode:'light',label:'浅色',systemDark:true,resolved:'light'},
+  {mode:'dark',label:'深色',systemDark:false,resolved:'dark'},
+  {mode:'system',label:'跟随系统',systemDark:true,resolved:'dark'},
+  {mode:'system',label:'跟随系统',systemDark:false,resolved:'light'},
+ ])('saves General appearance $mode (system dark=$systemDark) and restores it on bootstrap',async({mode,label,systemDark,resolved})=>{
+  const media=vi.spyOn(window,'matchMedia').mockImplementation(query=>({matches:query==='(prefers-color-scheme: dark)'&&systemDark,media:query,onchange:null,addListener:vi.fn(),removeListener:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn(),dispatchEvent:vi.fn()}));
+  try{
+   let persisted=snapshot({...initial(),appearance:{...initial().appearance,mode:mode==='dark'?'light':'dark'}});
+   const api=install(persisted);
+   api.get.mockImplementation(async()=>persisted);
+   api.save.mockImplementation(async request=>{persisted={...persisted,config:parse(request.text),text:request.text,revision:'v2'};return persisted;});
+   applyConfiguration(persisted);
+   const before=document.documentElement.getAttribute('data-theme');
+   render(<AppearanceProbe/>);await show();
+   fireEvent.mouseDown(screen.getByRole('combobox',{name:'主题'}));
+   fireEvent.click(await screen.findByText(label,{selector:'.ant-select-item-option-content'}));
+   expect(document.documentElement).toHaveAttribute('data-theme',before);
+   fireEvent.click(footerSave());await screen.findByText('配置已保存');
+   expect(persisted.config.appearance.mode).toBe(mode);
+   expect(document.documentElement).toHaveAttribute('data-theme',resolved);
+   await waitFor(()=>expect(screen.getByTestId('saved-theme-mode')).toHaveTextContent(resolved));
+   expect(window.localStorage.getItem('owb.theme-mode')).toBe(mode==='system'?null:mode);
+   // A new bridge forces the production bootstrap path to reload the saved
+   // snapshot, even if the renderer's pre-paint compatibility cache is lost.
+   window.localStorage.clear();
+   document.documentElement.setAttribute('data-theme',resolved==='dark'?'light':'dark');
+   const reloaded=install(persisted);
+   const migratePreferences=vi.fn().mockResolvedValue(persisted);
+   Object.assign(reloaded,{migratePreferences});
+   await act(async()=>{await initializeConfiguration();});
+   expect(migratePreferences).toHaveBeenCalledTimes(1);
+   expect(document.documentElement).toHaveAttribute('data-theme',resolved);
+   await waitFor(()=>expect(screen.getByTestId('saved-theme-mode')).toHaveTextContent(resolved));
+   expect(window.localStorage.getItem('owb.theme-mode')).toBe(mode==='system'?null:mode);
+  }finally{media.mockRestore();}
+ });
  it('keeps a credential draft when its Host is collapsed and reopened, then saves it',async()=>{
   const api=install();await show();fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
   const host=document.querySelectorAll<HTMLDetailsElement>('.owb-config-host')[1]!;

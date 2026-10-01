@@ -21,7 +21,14 @@ function registerConfigurationIpc({ ipcMain, getStore, isTrusted, shell, onSaved
   // must not occupy the queue that protects configuration reads and writes.
   register('open-location',0,()=>{const current=getStore().getPreferences();if(!current.ok)return current;shell.showItemInFolder(current.filePath);return{ok:true};},false);
   if (pickProjectDirectory) register('pick-project-directory',0,()=>pickProjectDirectory(),false);
-  if (cacheInfo) register('cache-info',0,()=>cacheInfo(),false);
+  if (cacheInfo) {
+    let cacheInFlight = null;
+    register('cache-info',0,()=>{
+      // Share one traversal across windows/clicks without blocking settings I/O.
+      if (!cacheInFlight) cacheInFlight = Promise.resolve().then(cacheInfo).finally(()=>{cacheInFlight=null;});
+      return cacheInFlight;
+    },false);
+  }
   if (openCache) register('open-cache',0,()=>openCache(),false);
   register('dirty',1,value=>{if(typeof value!=='boolean')return failure('invalid_request');setDirty(value);return{ok:true};},false);
   register('confirm-close',0,()=>{setDirty(false);close();return{ok:true};},false);
