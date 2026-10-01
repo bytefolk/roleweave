@@ -32,7 +32,7 @@ test("accepts a well-formed accepted record", () => {
   assert.equal(value.schemaVersion, ACCEPTANCE_SCHEMA_VERSION);
   assert.equal(value.decision, "accepted");
   assert.equal(value.verdicts.length, 2);
-  assert.equal(value.verdicts[1].evidencePath, "产出/增量更新.md");
+  assert.equal(value.verdicts[1]?.evidencePath, "产出/增量更新.md");
 });
 
 test("rejects an accepted decision when a criterion is not passed", () => {
