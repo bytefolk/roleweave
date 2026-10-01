@@ -34,7 +34,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
-import { ChevronsRight, FolderKanban, FolderOpen, Inbox, MessagesSquare, MoreHorizontal, Network, PanelLeft, PencilLine, Plus, Settings, Undo2, X } from "lucide-react";
+import { Boxes, ChevronsRight, FolderKanban, FolderOpen, Inbox, MessagesSquare, MoreHorizontal, Network, PanelLeft, PencilLine, Plus, Settings, Undo2, X } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
@@ -84,6 +84,7 @@ import { decodeEscapedUnicode } from "./display-text";
 import { SettingsModule, type ConfigurationCategory } from "./settings/SettingsModule";
 import { GoalsModule } from "./goals/GoalsModule";
 import { ProjectManagementModule } from "./projects/ProjectManagementModule";
+import { SpaceHost } from "./space/SpaceHost.js";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
 import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
@@ -135,7 +136,7 @@ function AppInner({
 }) {
   const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
-    "conversation" | "profile" | "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress"
+    "conversation" | "profile" | "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress" | "space"
   >("conversation");
   const [settingsInitialCategory, setSettingsInitialCategory] = useState<ConfigurationCategory | undefined>();
   const [contactsOpen, setContactsOpen] = useState(false);
@@ -1971,6 +1972,7 @@ function AppInner({
             { id: "collaboration", label: t("rail.collaboration"), icon: <MessagesSquare aria-hidden="true" size={16} />, active: collaborationActive, onSelect: () => setActiveModule("conversation") },
             { id: "org", label: t("rail.org"), icon: <Network aria-hidden="true" size={16} />, active: activeModule === "org", onSelect: () => setActiveModule("org") },
             { id: "projects", label: t("rail.projects"), icon: <FolderKanban aria-hidden="true" size={16} />, active: projectsActive, onSelect: () => setActiveModule("projects") },
+            { id: "space", label: t("rail.space"), icon: <Boxes aria-hidden="true" size={16} />, active: activeModule === "space", onSelect: () => setActiveModule("space") },
             { id: "inbox", label: t("rail.inbox"), icon: <Badge count={pendingApprovals} size="small" showZero={false} offset={[6, -2]} color="var(--ui-primary)"><Inbox aria-hidden="true" size={16} /></Badge>, active: inboxActive, onSelect: () => { setActiveModule("approvals"); void approvalState.refresh(); } },
           ]}
           footer={<>
@@ -2206,6 +2208,17 @@ function AppInner({
               if (turnId) {
                 setSessionFocusTurnId(turnId);
               }
+              setActiveModule("conversation");
+            }}
+          />
+        ) : activeModule === "space" ? (
+          <SpaceHost
+            workspaceOpen={workspaceInfo?.open === true}
+            spacePositionId={selectedId}
+            positionNames={positionNames}
+            ownerPositionId={snapshot?.owner}
+            onOpenBoundSession={(positionId) => {
+              selectPosition(positionId);
               setActiveModule("conversation");
             }}
           />
