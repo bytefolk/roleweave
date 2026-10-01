@@ -40,6 +40,7 @@ const zh: Record<string, string> = {
   "Storage": "存储",
   "System cache directory": "系统缓存目录",
   "Managed by the system · contains client cache": "由系统管理 · 存放客户端缓存",
+  "To clear this cache, fully quit RoleWeave first. Do not delete files while the app is running.": "如需清理此缓存，请先完全退出 RoleWeave。不要在应用运行时删除文件。",
   "Open directory": "打开目录",
   "Cache usage": "缓存占用",
   "Not calculated yet": "尚未计算",

@@ -9,6 +9,11 @@ import { readStoredPresetId, readStoredTheme } from '../src/theme-storage';
 import { applyConfiguration, initializeConfiguration, requestSettingsLeave } from '../src/configuration-preferences';
 import { useThemeMode } from '../src/theme-toggle';
 import type { ApplicationConfiguration, ConfigurationSnapshot } from '../src/configuration-types';
+import { createRequire } from 'node:module';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+const { createConfigurationStore } = createRequire(import.meta.url)('../../src/configuration.cjs');
 function SettingsFixture(props: React.ComponentProps<typeof ConfigurationSettings>) { return <ThemeProvider><ConfigurationSettings {...props}/></ThemeProvider>; }
 function AppearanceProbe(){return <output data-testid="saved-theme-mode">{useThemeMode()}</output>;}
 const initial=():ApplicationConfiguration=>({schemaVersion:1,appearance:{mode:'system',profile:'mint',locale:'zh-CN'},chat:{sendShortcut:'enter',rememberLayout:true},layouts:{focusByWorkspace:{}},runtime:{},hosts:{qoder:{},claude:{},codex:{}},services:{},migration:{rendererPreferences:true}});
@@ -31,11 +36,16 @@ describe('shared settings draft',()=>{
   {mode:'system',label:'跟随系统',systemDark:false,resolved:'light'},
  ])('saves General appearance $mode (system dark=$systemDark) and restores it on bootstrap',async({mode,label,systemDark,resolved})=>{
   const media=vi.spyOn(window,'matchMedia').mockImplementation(query=>({matches:query==='(prefers-color-scheme: dark)'&&systemDark,media:query,onchange:null,addListener:vi.fn(),removeListener:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn(),dispatchEvent:vi.fn()}));
+  const directory=mkdtempSync(join(tmpdir(),'roleweave-appearance-'));
+  const options={userDataPath:directory,env:{},safeStorage:{isEncryptionAvailable:()=>false}};
   try{
-   let persisted=snapshot({...initial(),appearance:{...initial().appearance,mode:mode==='dark'?'light':'dark'}});
+   const store=createConfigurationStore(options),original=store.get();
+   const config={...original.config,appearance:{...initial().appearance,mode:mode==='dark'?'light':'dark'},migration:{rendererPreferences:true}};
+   expect(store.save({text:JSON.stringify(config),revision:original.revision}).ok).toBe(true);
+   let persisted=store.get() as ConfigurationSnapshot;
    const api=install(persisted);
-   api.get.mockImplementation(async()=>persisted);
-   api.save.mockImplementation(async request=>{persisted={...persisted,config:parse(request.text),text:request.text,revision:'v2'};return persisted;});
+   api.get.mockImplementation(async()=>store.get());
+   api.save.mockImplementation(async request=>{const saved=store.save(request);if(saved.ok)persisted=saved;return saved;});
    applyConfiguration(persisted);
    const before=document.documentElement.getAttribute('data-theme');
    render(<AppearanceProbe/>);await show();
@@ -47,19 +57,20 @@ describe('shared settings draft',()=>{
    expect(document.documentElement).toHaveAttribute('data-theme',resolved);
    await waitFor(()=>expect(screen.getByTestId('saved-theme-mode')).toHaveTextContent(resolved));
    expect(window.localStorage.getItem('owb.theme-mode')).toBe(mode==='system'?null:mode);
-   // A new bridge forces the production bootstrap path to reload the saved
-   // snapshot, even if the renderer's pre-paint compatibility cache is lost.
+   // Recreate the store and bridge so bootstrap reads the actual saved JSONC,
+   // even if the renderer's pre-paint compatibility cache is lost.
    window.localStorage.clear();
    document.documentElement.setAttribute('data-theme',resolved==='dark'?'light':'dark');
-   const reloaded=install(persisted);
-   const migratePreferences=vi.fn().mockResolvedValue(persisted);
+   const restarted=createConfigurationStore(options);
+   const reloaded=install(restarted.get());
+   const migratePreferences=vi.fn(async preferences=>restarted.migratePreferences(preferences));
    Object.assign(reloaded,{migratePreferences});
    await act(async()=>{await initializeConfiguration();});
    expect(migratePreferences).toHaveBeenCalledTimes(1);
    expect(document.documentElement).toHaveAttribute('data-theme',resolved);
    await waitFor(()=>expect(screen.getByTestId('saved-theme-mode')).toHaveTextContent(resolved));
    expect(window.localStorage.getItem('owb.theme-mode')).toBe(mode==='system'?null:mode);
-  }finally{media.mockRestore();}
+  }finally{media.mockRestore();rmSync(directory,{recursive:true,force:true});}
  });
  it('keeps a credential draft when its Host is collapsed and reopened, then saves it',async()=>{
   const api=install();await show();fireEvent.click(screen.getByRole('tab',{name:'Agent 连接'}));
