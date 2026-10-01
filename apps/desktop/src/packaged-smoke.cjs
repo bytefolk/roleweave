@@ -363,6 +363,26 @@ function packagedSmokeLoadOptions(entryPath, request) {
   };
 }
 
+// #519: the full-app layout smoke (#127 AC-004) deliberately renders the real
+// renderer instead of the static marker. That renderer now opens behind the
+// first-run gate, and a fresh CI install has no saved session — so the gate
+// would route to the login card and the two org columns the harness measures
+// would never mount inside its 5s poll budget, turning the parity job red on a
+// correct build. The harness therefore declares itself in the URL exactly like
+// the static smoke entry does, and the renderer skips onboarding only for that
+// exact declaration. The trusted URL is built the same way as above so the
+// ordinary window IPC trust check keeps matching the loaded frame.
+const LAYOUT_SMOKE_QUERY_KEY = "orgWorkbenchLayoutSmoke";
+
+function layoutSmokeLoadOptions(entryPath) {
+  const entryUrl = pathToFileURL(path.resolve(entryPath));
+  entryUrl.searchParams.set(LAYOUT_SMOKE_QUERY_KEY, "1");
+  return {
+    trustedRendererUrl: entryUrl.toString(),
+    loadOptions: { query: { [LAYOUT_SMOKE_QUERY_KEY]: "1" } },
+  };
+}
+
 function createPackagedSmokeLifecycle({ reportRequest, failureReport = null, onUnexpected }) {
   let intentionalClose = false;
   let failed = false;
@@ -528,9 +548,11 @@ module.exports = {
   awaitHarnessRelease,
   harnessLeasePath,
   PACKAGED_SMOKE_QUERY_KEY,
+  LAYOUT_SMOKE_QUERY_KEY,
   closeSmokeReportReservation,
   createPackagedSmokeLifecycle,
   packagedSmokeLoadOptions,
+  layoutSmokeLoadOptions,
   packagedSmokeControlFamilies,
   packagedSmokeControlValue,
   packagedSmokeRequest,
