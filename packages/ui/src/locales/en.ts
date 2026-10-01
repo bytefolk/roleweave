@@ -1769,6 +1769,7 @@ export const enCatalog: Record<string, string> = {
   "space.rootHint": "A space is a folder inside a workspace",
   "space.emptyWorkspace": "Open a workspace before entering a space.",
   "space.filesTitle": "Files",
+  "space.spineFile": "goal.md",
   "space.spineTag": "Spine",
   "space.participantsTitle": "Participants",
   "space.ownerTag": "Owner",

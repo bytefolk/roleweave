@@ -323,7 +323,7 @@ describe("App context navigation", () => {
     render(<App />);
     await screen.findByRole("tree");
     const rail = within(screen.getByRole("navigation", { name: "模块" }));
-    expect(rail.getAllByRole("button").filter(button => !button.hasAttribute("aria-expanded")).map(button => button.getAttribute("aria-label") ?? button.textContent)).toEqual(["协作", "组织", "项目", "收件箱", "设置"]);
+    expect(rail.getAllByRole("button").filter(button => !button.hasAttribute("aria-expanded")).map(button => button.getAttribute("aria-label") ?? button.textContent)).toEqual(["协作", "组织", "项目", "协作区", "收件箱", "设置"]);
     expect(rail.getByRole("button", { name: "协作" })).toHaveAttribute("aria-current", "page");
   });
 

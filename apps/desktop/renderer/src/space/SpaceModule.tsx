@@ -18,7 +18,7 @@ import { buildAcceptanceRecord, type GateDraft } from "./acceptance-gate-model.j
 import "./space.css";
 
 /** The spine file of a space. Every other file in the folder is supporting. */
-export const SPACE_SPINE_FILE = "目标.md";
+export const SPACE_SPINE_FILE_KEY = "space.spineFile";
 
 export interface SpaceAgent {
   positionId: string;
@@ -61,8 +61,9 @@ function statusTone(status: SpaceDocTask["status"]): string {
 
 export function SpaceModule(props: SpaceModuleProps) {
   const t = useT();
+  const spineFile = t(SPACE_SPINE_FILE_KEY);
   const [view, setView] = useState<SpaceView>("document");
-  const [activePath, setActivePath] = useState<string>(props.requestedPath ?? SPACE_SPINE_FILE);
+  const [activePath, setActivePath] = useState<string>(props.requestedPath ?? spineFile);
   const [source, setSource] = useState("");
   const [version, setVersion] = useState("");
   const [loading, setLoading] = useState(false);
@@ -94,7 +95,7 @@ export function SpaceModule(props: SpaceModuleProps) {
 
   const parsed = useMemo(() => parseSpaceDoc(source), [source]);
   const doc = parsed.doc;
-  const isSpine = activePath === SPACE_SPINE_FILE;
+  const isSpine = activePath === spineFile;
 
   const owner = props.participants?.find((agent) => agent.owner);
   const others = props.participants?.filter((agent) => !agent.owner) ?? [];
@@ -146,7 +147,7 @@ export function SpaceModule(props: SpaceModuleProps) {
         <div className="owb-space-header__title">
           <Folder size={16} aria-hidden="true" />
           <h2>{props.spaceName ?? t("space.untitled")}</h2>
-          <Tag className="owb-space-header__root" bordered={false}>
+          <Tag className="owb-space-header__root" variant="filled">
             {t("space.rootHint")}
           </Tag>
         </div>
@@ -183,8 +184,8 @@ export function SpaceModule(props: SpaceModuleProps) {
                 >
                   <FileText size={13} aria-hidden="true" />
                   <span className="owb-space-files__name">{file.path}</span>
-                  {file.path === SPACE_SPINE_FILE ? (
-                    <Tag bordered={false} className="owb-space-files__spine">
+                  {file.path === spineFile ? (
+                    <Tag variant="filled" className="owb-space-files__spine">
                       {t("space.spineTag")}
                     </Tag>
                   ) : null}
@@ -199,7 +200,7 @@ export function SpaceModule(props: SpaceModuleProps) {
               <li className="owb-space-agents__item owb-space-agents__item--owner">
                 <Users size={13} aria-hidden="true" />
                 <span>{owner.name}</span>
-                <Tag color="blue" bordered={false}>
+                <Tag color="blue" variant="filled">
                   {t("space.ownerTag")}
                 </Tag>
               </li>
@@ -292,7 +293,7 @@ function SpaceStructure({ doc, decided }: SpaceStructureProps) {
               <div key={column.id} className="owb-space-board__column">
                 <div className="owb-space-board__column-head">
                   <span>{column.label}</span>
-                  <Tag bordered={false}>{tasks.length}</Tag>
+                  <Tag variant="filled">{tasks.length}</Tag>
                 </div>
                 <ul>
                   {tasks.map((task, index) => (
@@ -302,7 +303,7 @@ function SpaceStructure({ doc, decided }: SpaceStructureProps) {
                         <div className="owb-space-board__card-meta">{task.assigneePositionId}</div>
                       ) : null}
                       {task.dueDate ? (
-                        <Tag bordered={false} color={statusTone(task.status)}>
+                        <Tag variant="filled" color={statusTone(task.status)}>
                           {task.dueDate}
                         </Tag>
                       ) : null}

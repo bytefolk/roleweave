@@ -1,7 +1,15 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { SpaceModule, SPACE_SPINE_FILE } from "../src/space/SpaceModule.js";
+import { zhCatalog } from "@roleweave/ui";
+import { SpaceModule, SPACE_SPINE_FILE_KEY } from "../src/space/SpaceModule.js";
 import type { DocsFileEntry } from "@roleweave/shared";
+
+/**
+ * The spine filename is UI copy, so it lives in the catalog rather than as a
+ * literal in the component (the CJK gate forbids string literals under src/).
+ * Read it back from the same catalog so the fixtures cannot drift.
+ */
+const SPACE_SPINE_FILE = zhCatalog[SPACE_SPINE_FILE_KEY] as string;
 
 const SPINE = `# 目标：对账自动化
 

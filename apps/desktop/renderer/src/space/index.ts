@@ -1,4 +1,4 @@
-export { SpaceModule, SPACE_SPINE_FILE } from "./SpaceModule.js";
+export { SpaceModule, SPACE_SPINE_FILE_KEY } from "./SpaceModule.js";
 export type { SpaceModuleProps, SpaceAgent } from "./SpaceModule.js";
 export { SpaceHost } from "./SpaceHost.js";
 export type { SpaceHostProps } from "./SpaceHost.js";

@@ -1772,6 +1772,7 @@ export const zhCatalog: Record<string, string> = {
   "space.rootHint": "协作区 = 工作区里的一个文件夹",
   "space.emptyWorkspace": "先打开一个工作区，再进入协作区。",
   "space.filesTitle": "文件",
+  "space.spineFile": "目标.md",
   "space.spineTag": "主线",
   "space.participantsTitle": "参与者",
   "space.ownerTag": "负责人",
