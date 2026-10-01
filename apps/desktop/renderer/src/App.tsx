@@ -78,6 +78,7 @@ import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
+import { ShelfModule } from "./shelf/ShelfModule";
 import { ApprovalQueue, isActionablePending, type ApprovalQueueItem } from "./approvals";
 import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
@@ -135,7 +136,7 @@ function AppInner({
 }) {
   const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
-    "conversation" | "profile" | "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress"
+    "conversation" | "profile" | "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress" | "shelf"
   >("conversation");
   const [settingsInitialCategory, setSettingsInitialCategory] = useState<ConfigurationCategory | undefined>();
   const [contactsOpen, setContactsOpen] = useState(false);
@@ -2097,11 +2098,12 @@ function AppInner({
             </nav>
             <div className="owb-conversation-header-host" ref={setConversationHeaderHost} hidden={activeModule !== "conversation"} />
           </>}
-        </div> : activeModule === "org" ? <div className="owb-context-header">
+        </div> : (activeModule === "org" || activeModule === "shelf") ? <div className="owb-context-header">
           <strong>{t("rail.org")}</strong>
           <nav className="owb-context-tabs" aria-label={t("nav.organization")}>
-            <AntButton type={orgView === "structure" ? "primary" : "text"} aria-pressed={orgView === "structure"} onClick={() => setOrgView("structure")}>{t("nav.structure")}</AntButton>
-            <AntButton type={orgView === "overview" ? "primary" : "text"} aria-pressed={orgView === "overview"} onClick={() => setOrgView("overview")}>{t("nav.graph")}</AntButton>
+            <AntButton type={activeModule === "org" && orgView === "structure" ? "primary" : "text"} aria-pressed={activeModule === "org" && orgView === "structure"} onClick={() => { setOrgView("structure"); setActiveModule("org"); }}>{t("nav.structure")}</AntButton>
+            <AntButton type={activeModule === "org" && orgView === "overview" ? "primary" : "text"} aria-pressed={activeModule === "org" && orgView === "overview"} onClick={() => { setOrgView("overview"); setActiveModule("org"); }}>{t("nav.graph")}</AntButton>
+            <AntButton type={activeModule === "shelf" ? "primary" : "text"} aria-pressed={activeModule === "shelf"} onClick={() => setActiveModule("shelf")}>{t("rail.shelf")}</AntButton>
           </nav>
         </div> : projectsActive ? <div className="owb-context-header">
           <strong>{t("rail.projects")}</strong>
@@ -2149,6 +2151,16 @@ function AppInner({
           <Suspense fallback={<div className="owb-progress" aria-hidden="true"><Skeleton /></div>}>
             <ProgressBoard workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
           </Suspense>
+        ) : activeModule === "shelf" ? (
+          /* Half the hand-off, on purpose: the selected listing reaches this
+             callback, but HireDrawer builds a local HirePositionRequest for an
+             employee already in this workspace and has no marketplace notion.
+             Carrying listingId through needs the buyer-facing HTTP surface in
+             digital-employee-platform#21; #544 tracks it. */
+          <ShelfModule
+            workspaceOpen={workspaceInfo?.open === true}
+            onHire={(_listing) => setTreeHireParent(snapshot?.owner ?? null)}
+          />
         ) : activeModule === "reports" ? (
           <ReportsCenter
             key={workspaceInfo?.path}
