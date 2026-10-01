@@ -1,0 +1,293 @@
+.owb-app .owb-space-module {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
+}
+
+.owb-app .owb-space-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.owb-app .owb-space-header__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.owb-app .owb-space-header__title h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.owb-app .owb-space-header__view {
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--ui-surface-sunken, rgba(127, 127, 127, 0.12));
+}
+
+.owb-app .owb-space-header__view button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.owb-app .owb-space-header__view button.is-active {
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.owb-app .owb-space-body {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.owb-app .owb-space-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 8px;
+  border-inline-end: 1px solid var(--ui-border);
+  overflow-y: auto;
+}
+
+.owb-app .owb-space-files__head {
+  padding: 8px 8px 4px;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.owb-app .owb-space-files__list,
+.owb-app .owb-space-agents {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.owb-app .owb-space-files__list button,
+.owb-app .owb-space-agents__item button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground);
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.owb-app .owb-space-files__list button:hover,
+.owb-app .owb-space-agents__item button:hover {
+  background: var(--ui-surface-hover, rgba(127, 127, 127, 0.12));
+}
+
+.owb-app .owb-space-files__list button.is-active {
+  background: var(--ui-primary-soft, rgba(134, 160, 255, 0.16));
+  color: var(--ui-primary);
+}
+
+.owb-app .owb-space-files__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owb-app .owb-space-agents__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.owb-app .owb-space-agents__item--owner {
+  color: var(--ui-foreground);
+}
+
+.owb-app .owb-space-content {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 20px 28px;
+}
+
+.owb-app .owb-space-content__loading,
+.owb-app .owb-space-content__error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  color: var(--ui-foreground-muted);
+  font-size: 13px;
+}
+
+.owb-app .owb-space-content__error {
+  color: var(--ui-danger, #e5484d);
+}
+
+.owb-app .owb-space-doc {
+  max-width: 780px;
+}
+
+.owb-app .owb-space-structure {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.owb-app .owb-space-structure__section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.owb-app .owb-space-structure__hint,
+.owb-app .owb-space-structure__warn {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+}
+
+.owb-app .owb-space-structure__warn {
+  color: var(--ui-warning, #f5a524);
+}
+
+.owb-app .owb-space-criteria-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.owb-app .owb-space-criteria-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.owb-app .owb-space-criteria-list__box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border: 1px solid var(--ui-border);
+  border-radius: 4px;
+  color: var(--ui-primary);
+  font-size: 11px;
+}
+
+.owb-app .owb-space-criteria-list li[data-done="true"] {
+  color: var(--ui-foreground-muted);
+  text-decoration: line-through;
+}
+
+.owb-app .owb-space-board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.owb-app .owb-space-board__column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface-sunken, rgba(127, 127, 127, 0.06));
+}
+
+.owb-app .owb-space-board__column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.owb-app .owb-space-board__column ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.owb-app .owb-space-board__card {
+  padding: 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-surface);
+}
+
+.owb-app .owb-space-board__card-title {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.owb-app .owb-space-board__card-meta {
+  margin-top: 4px;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+}
+
+.owb-app .owb-space-gate-host {
+  border-top: 1px solid var(--ui-border);
+  padding: 12px 20px 16px;
+  background: var(--ui-surface-sunken, rgba(127, 127, 127, 0.05));
+}
+
+@media (max-width: 1100px) {
+  .owb-app .owb-space-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .owb-app .owb-space-files {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--ui-border);
+  }
+  .owb-app .owb-space-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

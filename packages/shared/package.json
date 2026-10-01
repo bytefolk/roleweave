@@ -49,6 +49,10 @@
       "types": "./dist/acceptance.d.ts",
       "import": "./dist/acceptance.js"
     },
+    "./space-doc": {
+      "types": "./dist/space-doc.d.ts",
+      "import": "./dist/space-doc.js"
+    },
     "./task-board": {
       "types": "./dist/task-board.d.ts",
       "import": "./dist/task-board.js"
