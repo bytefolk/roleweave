@@ -98,3 +98,24 @@
     grid-template-columns: 1fr;
   }
 }
+
+.owb-progress__hero p { margin: 0; color: var(--ui-foreground-muted); font-size: 13px; }
+.owb-progress__layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; }
+.owb-progress__timeline, .owb-progress__follow-up { min-width: 0; padding: 20px 22px; border: 1px solid var(--ui-border); border-radius: 9px; background: var(--ui-surface); }
+.owb-progress__layout h2 { margin: 0 0 14px; font-size: 14px; }
+.owb-progress__row { grid-template-columns: 12px minmax(0, 1fr) auto; gap: 8px 12px; border: 0; border-bottom: 1px solid var(--ui-border); border-radius: 0; background: transparent; padding: 14px 0; color: var(--ui-foreground); }
+.owb-progress__row > .owb-progress__dot { grid-row: 1; grid-column: 1; }
+.owb-progress__title { grid-row: 1; grid-column: 2; font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+.owb-progress__who { grid-row: 2; grid-column: 2; color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-progress__elapsed { grid-row: 1; grid-column: 3; color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-progress__step { grid-row: 3; grid-column: 2; color: var(--ui-foreground-muted); font-size: 12px; white-space: normal; }
+.owb-progress__bar { grid-row: 4; grid-column: 2 / 4; }
+.owb-progress__row > .ant-tag { grid-row: 2; grid-column: 3; margin: 0; justify-self: end; }
+.owb-progress__follow-up-row { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; padding: 12px; border: 0; border-radius: 7px; background: var(--ui-surface-inset); color: var(--ui-foreground); margin-bottom: 10px; cursor: pointer; overflow-wrap: anywhere; }
+.owb-progress__follow-up-row span, .owb-progress__boundary { font-size: 12px; line-height: 1.6; color: var(--ui-foreground-muted); }
+.owb-progress__error { padding: 12px; margin-bottom: 16px; color: var(--ui-danger-foreground); border: 1px solid var(--ui-border); border-radius: 6px; }
+.owb-progress__error p { margin: 0; }
+.owb-progress__row:focus-visible, .owb-progress__follow-up-row:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+@media (max-width: 1100px) { .owb-progress__layout { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .owb-progress { padding: 16px; } .owb-progress__hero { gap: 12px; flex-wrap: wrap; } .owb-progress__timeline, .owb-progress__follow-up { padding: 16px; } .owb-progress__elapsed { grid-row: 5; grid-column: 2 / 4; } }
+.owb-progress { background: var(--ui-canvas-subtle); }
