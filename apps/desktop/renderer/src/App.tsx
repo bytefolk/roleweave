@@ -353,7 +353,9 @@ function AppInner({
   const [reports, setReports] = useState<ReportsResponse | null>(null);
   const reportsRead = useRef(0);
   const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsUpdatedAt, setReportsUpdatedAt] = useState<string>();
   const [reportsError, setReportsError] = useState<string | null>(null);
+  const [approvalFocusId, setApprovalFocusId] = useState<string>();
   const [reportsFocusTurnId, setReportsFocusTurnId] = useState<string | null>(null);
   useEffect(() => setReportsFocusTurnId(null), [workspaceInfo?.open, workspaceInfo?.path]);
   const [sessionFocusTurnId, setSessionFocusTurnId] = useState<string | null>(null);
@@ -552,15 +554,14 @@ function AppInner({
       const response = await window.owb.reports();
       if (!isCurrent()) return;
       if (response.status !== 200) {
-        setReports(null);
         setReportsError(apiErrorMessage(response.body, t("rep.readFail")));
         return;
       }
       setReports(response.body as ReportsResponse);
+      setReportsUpdatedAt(new Date().toISOString());
       setReportsError(null);
     } catch {
       if (isCurrent()) {
-        setReports(null);
         setReportsError(t("rep.readFailOffline"));
       }
     } finally {
@@ -600,7 +601,7 @@ function AppInner({
       backupWorkspace.current = { path: backupPath };
       backupRead.current += 1;
       reportsRead.current += 1;
-      setReports(null);
+      setReports(null); setReportsUpdatedAt(undefined); setApprovalFocusId(undefined);
       setReportsError(null);
       setReportsLoading(false);
       setBackups([]);
@@ -699,7 +700,7 @@ function AppInner({
       selectedSessionIdRef.current = null;
       setTurnError(null);
       setBackups([]);
-      setReports(null);
+      setReports(null); setReportsUpdatedAt(undefined); setApprovalFocusId(undefined);
       setReportsError(null);
     }
     } catch {
@@ -1867,7 +1868,7 @@ function AppInner({
   const projectsActive = ["projects", "goals", "progress"].includes(activeModule);
   const inboxActive = activeModule === "approvals" || activeModule === "reports";
   const sidebarlessModule = !collaborationActive;
-  const pendingApprovals = approvalItems.filter((item) => isActionablePending(item, Date.now())).length;
+  const pendingApprovals = approvalItems.filter((item) => isActionablePending(item, Date.now()) && item.canDecide !== false).length;
   const directoryActions = (
     <div className="owb-side-head__actions">
       <AntButton size="small" disabled={orgBusy} icon={<Undo2 aria-hidden="true" size={12} />}
@@ -2110,7 +2111,7 @@ function AppInner({
             <AntButton type={activeModule === "goals" ? "primary" : "text"} aria-pressed={activeModule === "goals"} onClick={() => setActiveModule("goals")}>{t("rail.goals")}</AntButton>
             <AntButton type={activeModule === "progress" ? "primary" : "text"} aria-pressed={activeModule === "progress"} onClick={() => setActiveModule("progress")}>{t("rail.progress")}</AntButton>
           </nav>
-        </div> : inboxActive ? <div className="owb-context-header">
+        </div> : inboxActive ? <div className="owb-context-header owb-context-header--inbox">
           <strong>{t("rail.inbox")}</strong>
           <nav className="owb-context-tabs" aria-label={t("nav.inbox")}>
             <AntButton type={activeModule === "approvals" ? "primary" : "text"} aria-label={t("rail.approvals")} aria-pressed={activeModule === "approvals"} onClick={() => { setActiveModule("approvals"); void approvalState.refresh(); }}>{t("rail.approvals")}<Badge count={pendingApprovals} size="small" /></AntButton>
@@ -2134,7 +2135,7 @@ function AppInner({
         {orgFeedback?.tone === "warn" ? (
           <Alert type="warning" showIcon role="alert" title={orgFeedback.text} />
         ) : null}
-        {reportsError ? <Alert type="warning" showIcon role="alert" title={reportsError} /> : null}
+
         {fallbackNotice ? (
           <Alert
             type="warning"
@@ -2156,7 +2157,12 @@ function AppInner({
             workspaceScope={groupWorkspaceScope}
             onOpenExperiments={() => { setSettingsInitialCategory("experiments"); setActiveModule("settings"); }}
             onRefresh={() => void loadReports()}
+            approvals={approvalItems}
+            onOpenApproval={id => { setApprovalFocusId(id); setActiveModule("approvals"); void approvalState.refresh(); }}
             reports={reports}
+            errorMessage={reportsError ?? undefined}
+            updatedAt={reportsUpdatedAt}
+            onNavigateToOrg={() => setActiveModule("conversation")}
             loading={reportsLoading}
             positionNames={positionNames}
             positionColors={positionColors}
@@ -2165,6 +2171,9 @@ function AppInner({
           />
         ) : activeModule === "approvals" ? (
           <ApprovalQueue
+            key={workspaceInfo?.path}
+            focusApprovalId={approvalFocusId}
+            onRefresh={() => void approvalState.refresh()}
             items={approvalItems}
             dataState={approvalState.ready ? "ready" : "not-connected"}
             loading={approvalState.loading && !approvalState.ready}

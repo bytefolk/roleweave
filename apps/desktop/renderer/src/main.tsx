@@ -20,6 +20,7 @@ import "./roleweave-data.css";
 import "./workspace-polish.css";
 import "./memory/memory-workspace.css";
 import "./control-legibility.css";
+import "./inbox/inbox-workspace.css";
 import { App } from "./App";
 import { initThemeMode } from "./theme-mode";
 
