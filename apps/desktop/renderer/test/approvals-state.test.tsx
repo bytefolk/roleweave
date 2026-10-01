@@ -16,6 +16,31 @@ function bridge(overrides: Record<string, unknown>) {
   window.owb = { onEvent: () => () => {}, onSseStatus: () => () => {}, ...overrides } as unknown as typeof window.owb;
 }
 describe("authoritative approval state", () => {
+  it("keeps cached records during read failures and never submits a cached decision", async () => {
+    const listApprovals = vi.fn().mockResolvedValueOnce(page()).mockRejectedValue(new Error("connection lost"));
+    const decideApproval = vi.fn();
+    bridge({ listApprovals, decideApproval });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(() => result.current.refresh());
+    expect(result.current.items[0]?.id).toBe(row.id);
+    expect(result.current.error).toBe("connection lost");
+    await act(() => result.current.decide(row.id, "granted"));
+    expect(decideApproval).not.toHaveBeenCalled();
+    expect(listApprovals).toHaveBeenCalledTimes(3);
+  });
+  it("revalidates a failed submission before retry and honors a newly expired record", async () => {
+    const listApprovals = vi.fn().mockResolvedValue(page());
+    const decideApproval = vi.fn().mockRejectedValue(new Error("unknown result"));
+    bridge({ listApprovals, decideApproval });
+    const { result } = renderHook(() => useApprovals("/a"));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await act(() => result.current.decide(row.id, "granted"));
+    listApprovals.mockResolvedValue(page([{ ...row, status: "expired", canDecide: false }]));
+    await act(() => result.current.decide(row.id, "granted"));
+    expect(decideApproval).toHaveBeenCalledTimes(1);
+    expect(result.current.items[0]?.status).toBe("expired");
+  });
   it("locks duplicate clicks and shares the saved verdict without waiting for execution", async () => {
     let release!: (result: unknown) => void;
     const saved = { ...row, status: "granted" as const, canDecide: false, execution: { phase: "running" as const } };

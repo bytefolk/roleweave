@@ -66,6 +66,7 @@ function SelectedApprovalDetail({
   const readOnlyOrBusy = decided || expired || item.busy === true || item.canDecide === false;
   const trimmedReason = reason.trim();
   const reasonByteLength = new TextEncoder().encode(trimmedReason).length;
+  const overreach = isPermissionOverreach(item);
   const disabled = readOnlyOrBusy || reasonByteLength > MAX_APPROVAL_REASON_BYTES;
   const reasonForCallback = trimmedReason.length === 0 ? undefined : trimmedReason;
   const positionName = decodeEscapedUnicode(item.positionName ?? t("apr.unknownPosition"));
@@ -86,7 +87,7 @@ function SelectedApprovalDetail({
   ]);
 
   const handleApprove = () => {
-    if (disabled) return;
+    if (disabled || overreach) return;
     if (runAllowed && scope === "run") onApprove(item.approvalId, reasonForCallback, "run");
     else onApprove(item.approvalId, reasonForCallback);
   };
@@ -99,8 +100,10 @@ function SelectedApprovalDetail({
     <>
       <header className="owb-approval-detail__header">
         <div>
-          <h2 className="owb-approval-drawer__position" tabIndex={-1}>{positionName}</h2>
+          <h2 className="owb-approval-drawer__position" tabIndex={-1}>{description}</h2>
+          <code className="owb-inbox-record-id">{item.approvalId}</code>
           <div className="owb-approval-drawer__meta">
+            <span>{positionName}</span>
             <Tag color="blue">{t(`apr.kind.${item.category}`)}</Tag>
             {isPermissionOverreach(item) ? <Tag color="red">{t("apr.overreach")}</Tag> : null}
             {context ? (
@@ -122,7 +125,7 @@ function SelectedApprovalDetail({
             ) : null}
           </div>
         </div>
-        {onNext ? <Button onClick={onNext}>{t("apr.nextRequest")}</Button> : null}
+
       </header>
 
       <div className="owb-approval-detail__body">
@@ -204,7 +207,7 @@ function SelectedApprovalDetail({
           ) : <p className="owb-muted">{t("apr.contextUnavailable")}</p>}
         </details>
 
-        <details data-testid="approval-source-references">
+        <details data-testid="approval-source-references" open>
           <summary className="owb-approval-drawer__section-title">{t("apr.traceability")}</summary>
           {source ? (
             <dl className="owb-approval-drawer__references">
@@ -226,8 +229,8 @@ function SelectedApprovalDetail({
           {source && source.kind !== "session" ? <p className="owb-muted">{t("apr.sourceUnavailable")}</p> : null}
         </details>
 
-        <section data-testid="approval-lifecycle">
-          <h3 className="owb-approval-drawer__section-title">{t("apr.lifecycle")}</h3>
+        <details data-testid="approval-lifecycle">
+          <summary className="owb-approval-drawer__section-title">{t("apr.lifecycle")}</summary>
           <ol className="owb-approval-drawer__lifecycle">
             <li className={`is-${item.decision.kind}`}>
               <strong>{t("apr.lifecycleApproval")}</strong>
@@ -241,7 +244,7 @@ function SelectedApprovalDetail({
               {item.executionErrorCode ? <code>{item.executionErrorCode}</code> : null}
             </li>
           </ol>
-        </section>
+        </details>
 
         <details data-testid="approval-audit-trail">
           <summary className="owb-approval-drawer__section-title">{t("apr.auditTrail")}</summary>
@@ -264,22 +267,23 @@ function SelectedApprovalDetail({
           <Alert type="warning" showIcon title={t("apr.alertExpired")} />
         ) : (
           <>
-            <section>
-              <h3 className="owb-approval-drawer__section-title"><label htmlFor={reasonId}>{t("apr.reasonOptional")}</label></h3>
+            <section className="owb-approval-detail__reason">
+              <h3 className="owb-approval-drawer__section-title owb-sr-only"><label htmlFor={reasonId}>{t("apr.reasonOptional")}</label></h3>
               <Input.TextArea
                 id={reasonId}
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 placeholder={t("apr.reasonPh")}
-                autoSize={{ minRows: 2, maxRows: 4 }}
+                autoSize={{ minRows: 1, maxRows: 3 }}
                 count={{
                   max: MAX_APPROVAL_REASON_BYTES,
-                  strategy: (txt) => new TextEncoder().encode(txt).length,
+                  strategy: (txt) => new TextEncoder().encode(txt.trim()).length,
                   show: ({ count, maxLength }) => t("apr.byteCount", { count, max: maxLength ?? MAX_APPROVAL_REASON_BYTES }),
                 }}
                 data-testid="approval-reason-input"
                 disabled={readOnlyOrBusy}
               />
+              <p className="owb-approval-detail__audit-hint">{t("inbox.decisionAuditHint")}</p>
             </section>
             {runAllowed ? (
               <section data-testid="approval-scope-choice">
@@ -293,8 +297,10 @@ function SelectedApprovalDetail({
             ) : null}
           </>
         )}
+        {overreach && !decided ? <Alert type="error" showIcon title={t("inbox.overreachTitle")} description={t("inbox.overreachHint")} /> : null}
         <div className="owb-approval-drawer__actions">
-          <Button type="primary" onClick={handleApprove} disabled={disabled} loading={item.busy} data-testid="approval-approve-button">
+          {onNext ? <Button className="owb-inbox-next" onClick={onNext}>{t("apr.nextRequest")}</Button> : null}
+          <Button type="primary" onClick={handleApprove} disabled={disabled || overreach} loading={item.busy} data-testid="approval-approve-button">
             {t("apr.grant")}
           </Button>
           <Button danger onClick={handleDeny} disabled={disabled} data-testid="approval-deny-button">

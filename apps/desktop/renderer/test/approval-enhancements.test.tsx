@@ -104,7 +104,7 @@ describe("Approval Center Enhancements (#456)", () => {
     const openDisclosure = (testId: string) => {
       const disclosure = screen.getByTestId(testId);
       expect(disclosure.tagName).toBe("DETAILS");
-      fireEvent.click(disclosure.querySelector("summary")!);
+      if (!disclosure.hasAttribute("open")) fireEvent.click(disclosure.querySelector("summary")!);
       expect(disclosure).toHaveAttribute("open");
       return disclosure;
     };
@@ -298,7 +298,7 @@ describe("Approval Center Enhancements (#456)", () => {
       expect(root).toHaveAttribute("data-approval-id", "appr-1");
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       const header = root.querySelector<HTMLElement>(".owb-approval-detail__header")!;
-      expect(within(header).getByRole("heading", { level: 2, name: "Software Engineer" })).toBeVisible();
+      expect(within(header).getByRole("heading", { level: 2, name: "Write database schema" })).toBeVisible();
       expect(within(header).getByTestId("approval-rule-risk")).toBeVisible();
       expect(within(header).getByTestId("approval-risk-overlay")).toBeVisible();
       const body = root.querySelector<HTMLElement>(".owb-approval-detail__body")!;
@@ -312,7 +312,7 @@ describe("Approval Center Enhancements (#456)", () => {
       expect(within(footer).getByTestId("approval-reason-input")).toBeVisible();
       expect(within(footer).getByTestId("approval-approve-button")).toBeVisible();
       expect(within(footer).getByTestId("approval-deny-button")).toBeVisible();
-      fireEvent.click(within(header).getByRole("button"));
+      fireEvent.click(within(footer).getByRole("button", { name: "下一条" }));
       expect(onNext).toHaveBeenCalledOnce();
       expect(onApprove).not.toHaveBeenCalled();
       expect(onDeny).not.toHaveBeenCalled();
