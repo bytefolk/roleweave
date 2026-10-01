@@ -21,7 +21,7 @@
 // config blocks.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -161,7 +161,11 @@ function sshDir() {
 }
 
 function ensureKey(keyPath, { dryRun, forceKey }) {
-  if (existsSync(keyPath) && !forceKey) {
+  // Reuse an existing private key unless rotation was requested. The presence
+  // test reads the file rather than stat-ing it, so there is no check-then-use
+  // window; ssh-keygen then owns the write.
+  const existingKey = readTextIfPresent(keyPath);
+  if (existingKey !== "" && !forceKey) {
     return { created: false, keyPath };
   }
   if (dryRun) {
@@ -182,8 +186,8 @@ function ensureKey(keyPath, { dryRun, forceKey }) {
 
 function readPublicKey(keyPath) {
   const pubPath = `${keyPath}.pub`;
-  if (!existsSync(pubPath)) throw new Error(`public key not found: ${pubPath}`);
-  const key = readFileSync(pubPath, "utf8").trim();
+  const key = readTextIfPresent(pubPath).trim();
+  if (key === "") throw new Error(`public key not found: ${pubPath}`);
   if (!/^ssh-(ed25519|rsa)\s/.test(key)) {
     throw new Error(`unexpected public key format in ${pubPath}`);
   }
@@ -210,6 +214,17 @@ function installAuthorizedKey({ distro, key, dryRun }) {
   return wslExec(distro, `ROLEWEAVE_SSH_KEY='${key.replace(/'/g, "'\\''")}'; ${script}`);
 }
 
+function readTextIfPresent(filePath) {
+  // Read once and treat ENOENT as "no existing content". A separate existence
+  // check would introduce a race between the check and the read.
+  try {
+    return readFileSync(filePath, "utf8");
+  } catch (error) {
+    if (error && error.code === "ENOENT") return "";
+    throw error;
+  }
+}
+
 function upsertSshConfig({ alias, keyPath, distro, user, port, dryRun }) {
   const configPath = join(sshDir(), "config");
   const block = [
@@ -228,7 +243,7 @@ function upsertSshConfig({ alias, keyPath, distro, user, port, dryRun }) {
     .filter((line) => line !== "")
     .join("\n");
 
-  const existing = existsSync(configPath) ? readFileSync(configPath, "utf8") : "";
+  const existing = readTextIfPresent(configPath);
   const begin = existing.indexOf(MARKER_BEGIN);
   const end = existing.indexOf(MARKER_END);
   let next;
