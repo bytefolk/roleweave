@@ -118,6 +118,38 @@ describe("ProjectBoard", () => {
     vi.useRealTimers();
   });
 
+  it("shows creation guidance without empty board columns or a zero-total progress meter", () => {
+    const { container } = setup(detail([]));
+    expect(screen.getByText("把项目拆成可跟进的任务")).toBeInTheDocument();
+    expect(screen.getByText("分配责任岗位")).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(container.querySelector(".owb-project-columns")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+    expect(container.querySelector(".owb-project-schedule")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("replaces filtered-out tasks with a recoverable empty state in both views", () => {
+    const { container } = setup();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索任务" }), { target: { value: "missing" } });
+    expect(container.querySelector(".owb-project-columns")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+    expect(container.querySelector(".owb-project-schedule")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+    expect(screen.getByRole("button", { name: "Ship board" })).toBeInTheDocument();
+    expect(container.querySelector(".owb-project-schedule")).not.toBeNull();
+  });
+
+  it("names the missing date for a task with only a start or due date", () => {
+    setup(detail([
+      { ...task, taskId: "start-only", startDate: "2026-10-08" },
+      { ...task, taskId: "due-only", dueDate: "2026-10-09" },
+    ]));
+    expect(screen.getByText("开始：2026-10-08 · 截止未定")).toBeInTheDocument();
+    expect(screen.getByText("截止：2026-10-09 · 开始未定")).toBeInTheDocument();
+  });
+
   it("creates an assigned task with dates and guards duplicate submission until refresh", async () => {
     const saved = defer<{ status: number; body: { goalId: string } }>();
     const updateGoal = vi.fn().mockReturnValue(saved.promise);

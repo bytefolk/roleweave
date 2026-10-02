@@ -13,15 +13,17 @@ export function GoalEvidence({ branches, positionNames, onOpenBoundSession }: {
   const t = useT();
   const completed = branches.filter((branch) => branch.status === "completed").length;
   return <section className="owb-goal-evidence">
+    <div className="owb-goal-evidence__heading">
+      <h3>{t("goals.executionBranches")}</h3>
+      <span>{t("goals.branchCount", { count: branches.length })}</span>
+    </div>
     <div className="owb-goal-evidence__progress">
       <span>{t("goals.branchProgress")}</span>
       {branches.length ? <>
         <Progress percent={Math.round(completed / branches.length * 100)} showInfo={false} size="small" />
         <strong>{t("goals.branchFraction", { completed, total: branches.length })}</strong>
-      </> : <span>{t("goals.noBranches")}</span>}
+      </> : <span>{t("goals.progressUnknown")}</span>}
     </div>
-    <p className="owb-goal-evidence__hint">{t("goals.branchProgressHint")}</p>
-    <h3>{t("goals.executionBranches")}</h3>
     {branches.length ? <ul className="owb-goal-evidence__branches">
       {branches.map((branch) => {
         const Icon = branchIcons[branch.status];
@@ -36,5 +38,6 @@ export function GoalEvidence({ branches, positionNames, onOpenBoundSession }: {
         </li>;
       })}
     </ul> : <p className="owb-goal-evidence__hint">{t("goals.noBranches")}</p>}
+    <p className="owb-goal-evidence__hint">{t("goals.branchProgressHint")}</p>
   </section>;
 }

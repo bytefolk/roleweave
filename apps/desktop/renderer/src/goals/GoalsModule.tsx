@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button as AntButton, Checkbox, Dropdown, Input, Modal, Select } from "antd";
-import { ArrowLeft, MoreHorizontal, Target, AlertTriangle, BriefcaseBusiness } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Target, AlertTriangle, BriefcaseBusiness, Plus, Search, Circle } from "lucide-react";
 import { PositionAvatar } from "../PositionAvatar.js";
 import { useT } from "@roleweave/ui";
 import {
@@ -66,6 +66,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
   const projectMode = presentation === "projects";
   const selectionKey = workspaceKey ? `${presentation}:${workspaceKey}` : undefined;
   const Overview = projectMode ? "details" : "div";
+  const ActivitySection = projectMode ? "section" : "details";
   const [view, setView] = useState<"goals" | "board">("goals");
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
@@ -321,7 +322,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
   const createButton = (
     <AntButton
       type="primary"
-      icon={<Target aria-hidden="true" size={16} />}
+      icon={<Plus aria-hidden="true" size={16} />}
       onClick={() => setShowCreate(true)}
     >
       {t(projectMode ? "project.createProject" : "goals.create")}
@@ -331,7 +332,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
     <section className={`owb-goals-module${projectMode ? " owb-goals-module--project" : " owb-goals-module--overview"}`} aria-label={t(projectMode ? "project.moduleAria" : "goals.moduleAria")}>
       <header className="owb-module-header">
         <div className="owb-goals-heading"><h1>{t(projectMode ? "project.moduleTitle" : "goals.title")}</h1>
-          {!projectMode && <p>{t("goals.lede")}</p>}
+          <p>{t(projectMode ? "project.lede" : "goals.lede")}</p>
         </div>
         {!projectMode && (
           <div className="owb-goals-tabs" role="tablist">
@@ -393,6 +394,25 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
               </AntButton>
             </div>
           )}
+          {!projectMode && !loading && goals.length > 0 && (
+            <div className="owb-goals-summary" aria-label={t("goals.summary")}>
+              <button type="button" onClick={() => { setStatusFilter("all"); setQuery(""); setMobileDetail(false); }}>
+                <span>{t("goals.summary.total")}</span>
+                <strong>{goals.length}</strong>
+                <small>{t("goals.summary.totalHint")}</small>
+              </button>
+              <button type="button" onClick={() => { setStatusFilter("in_progress"); setQuery(""); setMobileDetail(false); }}>
+                <span>{t("goals.summary.active")}</span>
+                <strong>{goals.filter((goal) => goal.status === "in_progress").length}</strong>
+                <small>{t("goals.summary.activeHint")}</small>
+              </button>
+              <button type="button" onClick={() => { setStatusFilter("completed"); setQuery(""); setMobileDetail(false); }}>
+                <span>{t("goals.summary.completed")}</span>
+                <strong>{goals.filter((goal) => goal.status === "completed").length}</strong>
+                <small>{t("goals.summary.completedHint")}</small>
+              </button>
+            </div>
+          )}
           {loading && goals.length === 0 && (
             <div className="owb-goals-global-state" role="status">
               {t("misc.loading")}
@@ -409,12 +429,13 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
           {goals.length > 0 && (
             <div className="owb-goals-layout" data-mobile-detail={mobileDetail}>
               <div className="owb-goals-list-pane">
-                {!projectMode && <h2 className="owb-goals-list-heading">{t("goals.currentGoals")}</h2>}
+                <div className="owb-goals-list-heading"><h2>{t(projectMode ? "project.listAria" : "goals.currentGoals")}</h2><span>{t(projectMode ? "project.projectCount" : "goals.count", { count: filtered.length })}</span></div>
                 <div className="owb-goals-filters">
                   <Input
                     aria-label={t(projectMode ? "project.searchProjects" : "reading.goals.search")}
                     placeholder={t(projectMode ? "project.searchProjects" : "reading.goals.search")}
                     value={query}
+                    prefix={<Search size={14} aria-hidden="true" />}
                     allowClear
                     onChange={(e) => setQuery(e.target.value)}
                   />
@@ -469,13 +490,13 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                         >
                           {goal.title}
                         </span>
-                        {!projectMode && <span className="owb-goals-list__subtitle">{t("goals.branchCount", { count: goal.branchCount })}</span>}
+                        {!projectMode && <span className="owb-goals-list__subtitle">{t("goals.branchCount", { count: goal.branchCount })}<span aria-hidden="true"> · </span>{t(`goals.status.${goal.status}`)}</span>}
                         <span className="owb-goals-list__meta">
-                          <span
+                          {projectMode && <span
                             className={`owb-badge ${STATUS_BADGE[goal.status]}`}
                           >
                             {t(`goals.status.${goal.status}`)}
-                          </span>
+                          </span>}
                           <span
                             className={`owb-health-dot ${HEALTH_DOT[goal.health]}`}
                             title={t(`goals.health.${goal.health}`)}
@@ -539,6 +560,8 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                         />
                       </Dropdown>
                     </div>
+                    {projectMode && <p className="owb-project-description-preview">{detail.goal.description}</p>}
+                    {!projectMode && <p className="owb-goals-detail__updated"><time dateTime={detail.goal.updatedAt}>{t("reading.updatedAt", { time: new Date(detail.goal.updatedAt).toLocaleString() })}</time></p>}
                     <div className="owb-goals-detail__meta">
                       <Select
                         value={detail.goal.status}
@@ -654,10 +677,10 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                     {detail.goal.acceptanceCriteria.length > 0 && (
                       <section>
                         <h3>{t(projectMode ? "project.form.criteria" : "goals.criteria")}</h3>
-                        <ol>
+                        <ol className={!projectMode ? "owb-goals-criteria" : undefined}>
                           {detail.goal.acceptanceCriteria.map(
                             (criterion, index) => (
-                              <li key={index}>{criterion}</li>
+                              <li key={index}>{!projectMode && <Circle size={16} aria-hidden="true" />}<span>{criterion}</span></li>
                             ),
                           )}
                         </ol>
@@ -681,11 +704,12 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                         </ul>
                       </section>
                     )}
-                    <section>
-                      <h3>{t("goals.activity")}</h3>
+                    <ActivitySection className={!projectMode ? "owb-goals-activity-section" : undefined}>
+                      {!projectMode && <summary>{t("goals.activity")}<span>{detail.activity.length}</span></summary>}
+                      {projectMode && <h3>{t("goals.activity")}</h3>}
                       {detail.activity.length === 0 && <p className="owb-goal-evidence__hint">{t("goals.noActivity")}</p>}
                       <ol className="owb-goals-activity">
-                        {detail.activity.map((activity) => (
+                        {(projectMode ? detail.activity : [...detail.activity].sort((a, b) => b.createdAt.localeCompare(a.createdAt))).map((activity) => (
                           <li key={activity.activityId}>
                             <time dateTime={activity.createdAt}>
                               {new Date(activity.createdAt).toLocaleString()}
@@ -697,7 +721,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                           </li>
                         ))}
                       </ol>
-                    </section>
+                    </ActivitySection>
                     </Overview>
                   </div>
                 )}

@@ -1,48 +1,106 @@
-.owb-app .owb-goals-module--overview > .owb-module-header {
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 20px;
+/* Goals follow the project-management artboard in org-workbench-groups-module.pen.
+   Scope the rules above the shared data styles and use the available module width. */
+[data-theme="light"] .owb-app .owb-goals-module.owb-goals-module--overview {
+  --ui-canvas-subtle: #f7f9fb;
+  --ui-primary-soft: #eaf6f1;
+  --ui-surface-inset: #f7f9fa;
+  --ui-border: #e2e8ec;
 }
-.owb-goals-heading p { margin: 6px 0 0; color: var(--ui-foreground-muted); font-size: 13px; }
-.owb-app .owb-goals-module--overview .owb-goals-layout { grid-template-columns: 360px minmax(0, 1fr); gap: 16px; }
-.owb-app .owb-goals-module--overview :is(.owb-goals-list-pane, .owb-goals-detail) {
-  background: var(--ui-surface);
-  border: 1px solid var(--ui-border);
-  border-radius: 9px;
-  padding: 20px;
-  overflow-y: auto;
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview {
+  container: goals / inline-size;
+  background: var(--ui-canvas-subtle);
+  padding: 24px 28px;
 }
-.owb-goals-list-heading { margin: 0; font-size: 14px; font-weight: 600; }
-.owb-app .owb-goals-module--overview .owb-goals-list { border: 0; border-radius: 0; flex: none; overflow: visible; }
-.owb-app .owb-goals-module--overview .owb-goals-list__item { border: 0; border-radius: 7px; margin-bottom: 6px; gap: 7px; padding: 13px 12px; }
-.owb-app .owb-goals-module--overview .owb-goals-list__item--active { background: var(--ui-primary-soft); }
-.owb-goals-list__subtitle { font-size: 12px; color: var(--ui-foreground-muted); }
-.owb-app .owb-goals-module--overview .owb-goals-detail__content { max-width: none; padding: 0; }
-.owb-app .owb-goals-module--overview .owb-goals-detail__head h2 { font-size: 19px; }
-.owb-app .owb-goals-module--overview .owb-goals-detail__content h3 { margin: 20px 0 10px; font-size: 14px; }
-.owb-goal-evidence__progress { display: flex; align-items: center; gap: 12px; font-size: 12px; margin-top: 16px; }
-.owb-goal-evidence__progress > :not(.ant-progress) { flex: none; }
-.owb-goal-evidence__progress .ant-progress { flex: 1; min-width: 40px; margin: 0; }
-.owb-goal-evidence__hint { color: var(--ui-foreground-muted); font-size: 12px; line-height: 1.6; }
-.owb-app .owb-goals-module--overview .owb-goal-evidence__branches { list-style: none; padding: 0; margin: 0; }
-.owb-app .owb-goals-module--overview .owb-goal-evidence__branch {
-  display: flex; align-items: center; gap: 12px; padding: 12px; margin: 0 0 8px;
-  border-radius: 7px; background: var(--ui-surface-inset); font-size: 12px;
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview > .owb-module-header { flex-wrap: wrap; gap: 12px 18px; margin-bottom: 16px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-heading { flex: 1; min-width: 220px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-heading h1 { font-weight: 700; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-heading p { margin: 5px 0 0; color: var(--ui-foreground-muted); font-size: 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-tabs { margin-left: 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-module-header__count { display: none; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; flex: none; margin-bottom: 16px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary button {
+  text-align: start; display: flex; flex-direction: column; gap: 5px;
+  background: var(--ui-surface); border: 1px solid var(--ui-border);
+  border-radius: 9px; padding: 14px 16px; cursor: pointer;
+  color: var(--ui-foreground); min-width: 0;
 }
-.owb-goal-evidence__branch > svg { flex: none; color: var(--ui-foreground-muted); }
-.owb-goal-evidence__branch.is-completed > svg { color: var(--ui-success); }
-.owb-goal-evidence__identity { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
-.owb-goal-evidence__identity strong { overflow-wrap: anywhere; }
-.owb-goal-evidence__identity span { color: var(--ui-foreground-muted); }
-.owb-app .owb-goals-module--overview .owb-goals-detail__meta { margin: 12px 0 16px; }
-@media (max-width: 1100px) {
-  .owb-app .owb-goals-module--overview .owb-goals-layout { grid-template-columns: minmax(0, 1fr); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary button:hover { border-color: var(--ui-primary); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary button:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary span, :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary small { color: var(--ui-foreground-muted); font-size: 11px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary strong { font-size: 22px; line-height: 1.2; font-weight: 650; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary button:nth-child(2) strong { color: var(--ui-primary); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-layout { grid-template-columns: clamp(280px, 31.2%, 415px) minmax(0, 1fr); gap: 16px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview :is(.owb-goals-list-pane, .owb-goals-detail) {
+  background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 9px;
+  overflow-y: auto; min-height: 0;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list-pane { padding: 18px 16px; gap: 14px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail { padding: 22px 24px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-layout[data-mobile-detail] .owb-goals-list-pane { display: flex; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-layout[data-mobile-detail] .owb-goals-detail { display: block; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-back { display: none; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list-heading h2 { margin: 0; font-size: 14px; font-weight: 600; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list-heading span { font-size: 11px; color: var(--ui-foreground-muted); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-filters { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 8px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-filters > * { min-width: 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-filters .ant-input-prefix { color: var(--ui-foreground-muted); margin-inline-end: 7px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list { border: 0; border-radius: 0; flex: none; overflow: visible; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list__item { position: relative; border: 0; border-radius: 7px; margin-bottom: 10px; gap: 5px; padding: 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list__item:hover { background: var(--ui-surface-inset); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list__item--active, :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list__item--active:hover { background: var(--ui-primary-soft); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list__title { font-weight: 600; font-size: 13px; padding-inline-end: 16px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list__subtitle { font-size: 12px; color: var(--ui-foreground-muted); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-list__meta { position: absolute; inset-inline-end: 12px; top: 18px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__content { max-width: none; padding: 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__head { align-items: flex-start; margin-bottom: 8px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__head h2 { font-size: 21px; font-weight: 650; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__updated { color: var(--ui-foreground-muted); font-size: 11px; margin: 0 0 14px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__meta { margin: 0 0 20px; font-size: 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__content h3 { font-size: 14px; font-weight: 600; margin: 0 0 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__content section { margin-top: 20px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__content section + section { border-top: 1px solid var(--ui-border); padding-top: 20px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__desc { margin: 0; font-size: 13px; line-height: 1.8; max-width: 90ch; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__content .owb-goals-criteria { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-criteria li { display: flex; gap: 10px; align-items: flex-start; background: var(--ui-surface-inset); padding: 12px; border-radius: 7px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-criteria svg { flex: none; margin-top: 3px; color: var(--ui-foreground-muted); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__heading h3 { margin: 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__heading > span { color: var(--ui-foreground-muted); font-size: 11px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__progress { display: flex; align-items: center; gap: 12px; font-size: 12px; margin-bottom: 14px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__progress > :not(.ant-progress) { flex: none; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__progress .ant-progress { flex: 1; min-width: 40px; margin: 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__hint { color: var(--ui-foreground-muted); font-size: 11px; line-height: 1.6; margin: 10px 0 0; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail__content .owb-goal-evidence__branches { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__branch { display: flex; align-items: center; gap: 11px; padding: 12px; margin: 0; min-height: 62px; border-radius: 7px; background: var(--ui-surface-inset); font-size: 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__branch > svg { flex: none; color: var(--ui-foreground-muted); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__branch.is-completed > svg { color: var(--ui-success); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__identity { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__identity strong { overflow-wrap: anywhere; font-weight: 500; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__identity span { color: var(--ui-foreground-muted); font-size: 11px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__branch > span { font-size: 11px; color: var(--ui-foreground-muted); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-activity-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--ui-border); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-activity-section > summary { cursor: pointer; font-size: 13px; color: var(--ui-foreground-muted); font-weight: 500; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-activity-section > summary span { margin-inline-start: 8px; font-size: 11px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-activity-section section { margin-top: 12px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-activity-section h3 { display: none; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-activity li { padding: 10px 0; gap: 4px 10px; align-items: flex-start; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-activity li > span:last-child { flex-basis: 100%; color: var(--ui-foreground-muted); }
+@container goals (max-width: 780px) {
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-layout { grid-template-columns: minmax(0, 1fr); }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-layout[data-mobile-detail="false"] .owb-goals-detail,
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-layout[data-mobile-detail="true"] .owb-goals-list-pane { display: none; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-back { display: inline-flex; margin-bottom: 16px; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-heading { flex-basis: 100%; }
+}
+@container goals (max-width: 480px) {
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary { gap: 8px; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary button { padding: 12px 10px; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary small { display: none; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-detail { padding: 18px 16px; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__branch { flex-wrap: wrap; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goal-evidence__identity { flex-basis: calc(100% - 32px); }
 }
 @media (max-width: 600px) {
-  .owb-app .owb-goals-module--overview { padding: 16px; }
-  .owb-app .owb-goals-module--overview :is(.owb-goals-list-pane, .owb-goals-detail) { padding: 16px; }
-  .owb-app .owb-goals-module--overview .owb-goal-evidence__branch { flex-wrap: wrap; }
-  .owb-goal-evidence__identity { flex-basis: calc(100% - 30px); }
-  .owb-goals-heading { width: 100%; }
+  :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview { padding: 16px; }
 }
-.owb-app .owb-goals-module--overview { background: var(--ui-canvas-subtle); }
