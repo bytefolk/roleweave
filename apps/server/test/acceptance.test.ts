@@ -13,6 +13,7 @@ function baseRecord(overrides: Record<string, unknown> = {}): Record<string, unk
     acceptanceId: "acc-1",
     spaceId: "space-billing",
     source: { positionId: "analyst" },
+    criteriaCount: 2,
     verdicts: [
       { criteriaIndex: 0, passed: true },
       { criteriaIndex: 1, passed: true, evidencePath: "产出/增量更新.md" },
@@ -144,7 +145,8 @@ test("rejects a non-string note", () => {
     baseRecord({
       decision: "rejected",
       note: 42,
-      verdicts: [{ criteriaIndex: 0, passed: false }],
+      criteriaCount: 1,
+    verdicts: [{ criteriaIndex: 0, passed: false }],
     }),
   );
   assert.equal(result.ok, false);
@@ -172,6 +174,7 @@ test("create request mirrors the same decision/verdict consistency", () => {
   const rejected = validateAcceptanceCreateRequest({
     spaceId: "space-billing",
     source: { positionId: "analyst" },
+    criteriaCount: 1,
     verdicts: [{ criteriaIndex: 0, passed: false }],
     decision: "accepted",
   });
@@ -182,8 +185,71 @@ test("create request mirrors the same decision/verdict consistency", () => {
   const accepted = validateAcceptanceCreateRequest({
     spaceId: "space-billing",
     source: { positionId: "analyst" },
+    criteriaCount: 1,
     verdicts: [{ criteriaIndex: 0, passed: true }],
     decision: "accepted",
   });
   assert.equal(accepted.ok, true);
+});
+
+
+test("accepted records cover exactly the declared criterion set", () => {
+  for (const verdicts of [[{criteriaIndex: 5, passed: true}], [{criteriaIndex: 0, passed: true}], [{criteriaIndex: 0, passed: true}, {criteriaIndex: 2, passed: true}]]) {
+    const result = validateAcceptanceRecord(baseRecord({verdicts}));
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.code, "acceptance_incomplete_verdicts");
+  }
+  assert.equal(validateAcceptanceRecord(baseRecord({verdicts: [{criteriaIndex: 1, passed: true}, {criteriaIndex: 0, passed: true}]})).ok, true);
+});
+
+test("criteria count is required and bounded, and empty plans cannot be accepted", () => {
+  const raw = baseRecord(); delete raw.criteriaCount;
+  assert.equal(validateAcceptanceRecord(raw).ok, false);
+  for (const criteriaCount of [-1, 1.5, 65, "2", 0]) assert.equal(validateAcceptanceRecord(baseRecord({criteriaCount})).ok, false);
+  const verdicts = Array.from({length: 64}, (_, criteriaIndex) => ({criteriaIndex, passed: true}));
+  assert.equal(validateAcceptanceRecord(baseRecord({criteriaCount: 64, verdicts})).ok, true);
+  assert.equal(validateAcceptanceRecord(baseRecord({criteriaCount: 64, verdicts: [...verdicts, {criteriaIndex: 64, passed: true}]})).ok, false);
+  assert.equal(validateAcceptanceRecord(baseRecord({criteriaCount: 0, verdicts: [], decision: "rejected", note: "missing plan"})).ok, true);
+});
+
+test("all identifier fields enforce the exported 128-character bound", () => {
+  for (const field of ["acceptanceId", "spaceId", "decidedBy"]) {
+    assert.equal(validateAcceptanceRecord(baseRecord({[field]: "a".repeat(128)})).ok, true);
+    assert.equal(validateAcceptanceRecord(baseRecord({[field]: "a".repeat(129)})).ok, false);
+  }
+  for (const field of ["positionId", "turnId"]) {
+    assert.equal(validateAcceptanceRecord(baseRecord({source: {positionId: "p", [field]: "a".repeat(128)}})).ok, true);
+    assert.equal(validateAcceptanceRecord(baseRecord({source: {positionId: "p", [field]: "a".repeat(129)}})).ok, false);
+  }
+});
+
+test("decidedAt requires a real UTC instant rather than Date.parse shorthand", () => {
+  for (const decidedAt of ["1", "2026", "2026-10-01", "Fri Oct 02 2026", "2026-02-30T00:00:00Z", "2026-13-01T00:00:00Z", "2026-10-01T24:00:00Z"])
+    assert.equal(validateAcceptanceRecord(baseRecord({decidedAt})).ok, false, decidedAt);
+  for (const decidedAt of ["2026-10-01T12:00:00Z", "2026-10-01T12:00:00.1Z", "2026-10-01T12:00:00.123Z"])
+    assert.equal(validateAcceptanceRecord(baseRecord({decidedAt})).ok, true, decidedAt);
+});
+
+test("unsafe controls and bidi characters cannot enter ids, notes or paths", () => {
+  for (const control of ["\u0001", "\u007f", "\u0085", "\u009f", "\u200b", "\u202e", "\u2066"]) {
+    for (const override of [{spaceId: `a${control}b`}, {note: `a${control}b`}, {source: {positionId: "p", artifactPath: `a${control}b`}}])
+      assert.equal(validateAcceptanceRecord(baseRecord(override)).ok, false);
+  }
+  assert.equal(validateAcceptanceRecord(baseRecord({note: "line one\nline two\tend"})).ok, true);
+});
+
+test("artifact pointers are relative and bounded and notes respect their limit", () => {
+  for (const artifactPath of ["../secret", "/absolute", "a/../b", "C:/absolute", "a\\b", "a//b", "a".repeat(1025)])
+    assert.equal(validateAcceptanceRecord(baseRecord({source: {positionId: "p", artifactPath}})).ok, false, artifactPath);
+  assert.equal(validateAcceptanceRecord(baseRecord({source: {positionId: "p", artifactPath: "a".repeat(1024)}})).ok, true);
+  assert.equal(validateAcceptanceRecord(baseRecord({note: "a".repeat(4096)})).ok, true);
+  assert.equal(validateAcceptanceRecord(baseRecord({note: "a".repeat(4097)})).ok, false);
+  assert.equal(validateAcceptanceRecord(baseRecord({note: " ".repeat(4097)})).ok, false);
+});
+
+test("create requests also refuse omitted, partial and out-of-range criterion coverage", () => {
+  const {schemaVersion, acceptanceId, decidedBy, decidedAt, ...request} = baseRecord();
+  assert.equal(validateAcceptanceCreateRequest(request).ok, true);
+  for (const overrides of [{criteriaCount: undefined}, {verdicts: [{criteriaIndex: 0, passed: true}]}, {verdicts: [{criteriaIndex: 2, passed: true}]}])
+    assert.equal(validateAcceptanceCreateRequest({...request, ...overrides}).ok, false);
 });

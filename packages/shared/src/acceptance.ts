@@ -32,13 +32,14 @@ export type AcceptanceDecision = (typeof acceptanceDecisions)[number];
 export interface AcceptanceVerdict {
   criteriaIndex: number;
   passed: boolean;
-  /** Optional pointer to the artifact that satisfies the criterion. */
+  /** Space-relative artifact path; consumers must also enforce filesystem confinement. */
   evidencePath?: string;
 }
 
 export interface AcceptanceSource {
   positionId: string;
   turnId?: string;
+  /** Space-relative path; never an authorization to read the file. */
   artifactPath?: string;
 }
 
@@ -47,6 +48,8 @@ export interface AcceptanceRecord {
   acceptanceId: string;
   spaceId: string;
   source: AcceptanceSource;
+  /** Number of criteria in the plan being accepted (0–64). */
+  criteriaCount: number;
   verdicts: AcceptanceVerdict[];
   decision: AcceptanceDecision;
   note?: string;
@@ -57,6 +60,8 @@ export interface AcceptanceRecord {
 export interface AcceptanceCreateRequest {
   spaceId: string;
   source: AcceptanceSource;
+  /** Number of criteria in the plan being accepted (0–64). */
+  criteriaCount: number;
   verdicts: AcceptanceVerdict[];
   decision: AcceptanceDecision;
   note?: string;
@@ -107,6 +112,10 @@ function keysMatch(
   );
 }
 
+function hasUnsafeControl(value: string): boolean {
+  return /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/u.test(value);
+}
+
 function nonEmptyText(
   value: unknown,
   field: string,
@@ -118,14 +127,14 @@ function nonEmptyText(
   if (value.length > maxLength) {
     return fail("acceptance_text_too_long", `${field} exceeds its text bound`);
   }
-  if ([...value].some((ch) => ch.charCodeAt(0) < 0x20 && ch !== "\n" && ch !== "\r" && ch !== "\t")) {
+  if (hasUnsafeControl(value)) {
     return fail("acceptance_invalid", `${field} contains a control character`);
   }
   return { ok: true, value };
 }
 
 function identifier(value: unknown, field: string): AcceptanceValidationResult<string> {
-  const result = nonEmptyText(value, field, ACCEPTANCE_MAX_SHORT_TEXT_LENGTH);
+  const result = nonEmptyText(value, field, ACCEPTANCE_MAX_ID_LENGTH);
   if (!result.ok) return result;
   if (/\s/.test(result.value)) {
     return fail("acceptance_invalid", `${field} must not contain whitespace`);
@@ -134,7 +143,12 @@ function identifier(value: unknown, field: string): AcceptanceValidationResult<s
 }
 
 function pathText(value: unknown, field: string): AcceptanceValidationResult<string> {
-  return nonEmptyText(value, field, ACCEPTANCE_MAX_PATH_LENGTH);
+  const result = nonEmptyText(value, field, ACCEPTANCE_MAX_PATH_LENGTH);
+  if (!result.ok) return result;
+  if (/^[\/\\]|^[A-Za-z]:|[\r\n\t\\]/u.test(result.value) || result.value.split("/").some((part) => part === ".." || part === "." || part === "")) {
+    return fail("acceptance_invalid", `${field} must be a space-relative file path`);
+  }
+  return result;
 }
 
 function enumValue<T extends string>(
@@ -153,7 +167,10 @@ function iso8601(value: unknown, field: string): AcceptanceValidationResult<stri
   if (value.length > ACCEPTANCE_MAX_SHORT_TEXT_LENGTH) {
     return fail("acceptance_text_too_long", `${field} exceeds its text bound`);
   }
-  if (Number.isNaN(Date.parse(value))) {
+  const instant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value);
+  const timestamp = Date.parse(value);
+  const canonical = value.replace(/(?:\.(\d{1,3}))?Z$/, (_match, fraction: string | undefined) => `.${(fraction ?? "").padEnd(3, "0")}Z`);
+  if (!instant || Number.isNaN(timestamp) || new Date(timestamp).toISOString() !== canonical) {
     return fail("acceptance_invalid", `${field} is not a valid ISO-8601 timestamp`);
   }
   return { ok: true, value };
@@ -179,6 +196,13 @@ function validateSource(raw: unknown, field: string): AcceptanceValidationResult
     source.artifactPath = artifactPath.value;
   }
   return { ok: true, value: source };
+}
+
+function validateCriteriaCount(raw: unknown): AcceptanceValidationResult<number> {
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0 || raw > ACCEPTANCE_MAX_VERDICTS) {
+    return fail("acceptance_invalid", `criteriaCount must be an integer from 0 to ${ACCEPTANCE_MAX_VERDICTS}`);
+  }
+  return { ok: true, value: raw };
 }
 
 function validateVerdicts(raw: unknown): AcceptanceValidationResult<AcceptanceVerdict[]> {
@@ -222,7 +246,7 @@ function validateVerdicts(raw: unknown): AcceptanceValidationResult<AcceptanceVe
 /**
  * Enforce the decision/verdicts cross-checks that keep an accepted record
  * meaningful:
- *   - accepted requires a non-empty verdict list, all `passed: true`
+ *   - accepted covers exactly indices 0..criteriaCount-1, all `passed: true`
  *   - rejected requires a non-empty reason note
  *
  * `note` is taken raw so a blank note on a rejection is reported as the
@@ -230,11 +254,15 @@ function validateVerdicts(raw: unknown): AcceptanceValidationResult<AcceptanceVe
  */
 function checkDecisionConsistency(
   decision: AcceptanceDecision,
+  criteriaCount: number,
   verdicts: AcceptanceVerdict[],
   note: string | undefined,
 ): { ok: true } | { ok: false; code: AcceptanceValidationCode; message: string } {
+  if (verdicts.some((verdict) => verdict.criteriaIndex >= criteriaCount)) {
+    return fail("acceptance_incomplete_verdicts", "verdict index is outside the declared criteria count");
+  }
   if (decision === "accepted") {
-    if (verdicts.length === 0 || verdicts.some((verdict) => !verdict.passed)) {
+    if (criteriaCount === 0 || verdicts.length !== criteriaCount || verdicts.some((verdict) => !verdict.passed)) {
       return fail(
         "acceptance_incomplete_verdicts",
         "an accepted record requires every criterion to be present and passed",
@@ -259,11 +287,10 @@ function parseNote(
 ): AcceptanceValidationResult<string | undefined> {
   if (raw === undefined) return { ok: true, value: undefined };
   if (typeof raw !== "string") return fail("acceptance_invalid", `${fallbackField} must be a string`);
-  if (raw.trim().length === 0) return { ok: true, value: raw };
   if (raw.length > ACCEPTANCE_MAX_TEXT_LENGTH) {
     return fail("acceptance_text_too_long", `${fallbackField} exceeds its text bound`);
   }
-  if ([...raw].some((ch) => ch.charCodeAt(0) < 0x20 && ch !== "\n" && ch !== "\r" && ch !== "\t")) {
+  if (hasUnsafeControl(raw)) {
     return fail("acceptance_invalid", `${fallbackField} contains a control character`);
   }
   return { ok: true, value: raw };
@@ -274,7 +301,7 @@ export function validateAcceptanceRecord(raw: unknown): AcceptanceValidationResu
     !isRecord(raw) ||
     !keysMatch(
       raw,
-      ["schemaVersion", "acceptanceId", "spaceId", "source", "verdicts", "decision", "decidedBy", "decidedAt"],
+      ["schemaVersion", "acceptanceId", "spaceId", "source", "criteriaCount", "verdicts", "decision", "decidedBy", "decidedAt"],
       ["note"],
     )
   ) {
@@ -289,6 +316,8 @@ export function validateAcceptanceRecord(raw: unknown): AcceptanceValidationResu
   if (!spaceId.ok) return spaceId;
   const source = validateSource(raw.source, "acceptance.source");
   if (!source.ok) return source;
+  const criteriaCount = validateCriteriaCount(raw.criteriaCount);
+  if (!criteriaCount.ok) return criteriaCount;
   const verdicts = validateVerdicts(raw.verdicts);
   if (!verdicts.ok) return verdicts;
   const decision = enumValue(raw.decision, acceptanceDecisions, "acceptance.decision");
@@ -302,7 +331,7 @@ export function validateAcceptanceRecord(raw: unknown): AcceptanceValidationResu
   if (!parsedNote.ok) return parsedNote;
   const note = parsedNote.value;
 
-  const consistency = checkDecisionConsistency(decision.value, verdicts.value, note);
+  const consistency = checkDecisionConsistency(decision.value, criteriaCount.value, verdicts.value, note);
   if (!consistency.ok) return fail(consistency.code, consistency.message);
 
   return {
@@ -312,6 +341,7 @@ export function validateAcceptanceRecord(raw: unknown): AcceptanceValidationResu
       acceptanceId: acceptanceId.value,
       spaceId: spaceId.value,
       source: source.value,
+      criteriaCount: criteriaCount.value,
       verdicts: verdicts.value,
       decision: decision.value,
       ...(note !== undefined ? { note } : {}),
@@ -324,7 +354,7 @@ export function validateAcceptanceRecord(raw: unknown): AcceptanceValidationResu
 export function validateAcceptanceCreateRequest(raw: unknown): AcceptanceValidationResult<AcceptanceCreateRequest> {
   if (
     !isRecord(raw) ||
-    !keysMatch(raw, ["spaceId", "source", "verdicts", "decision"], ["note"])
+    !keysMatch(raw, ["spaceId", "source", "criteriaCount", "verdicts", "decision"], ["note"])
   ) {
     return fail("acceptance_unknown_field", "create request has unexpected or missing fields");
   }
@@ -332,6 +362,8 @@ export function validateAcceptanceCreateRequest(raw: unknown): AcceptanceValidat
   if (!spaceId.ok) return spaceId;
   const source = validateSource(raw.source, "source");
   if (!source.ok) return source;
+  const criteriaCount = validateCriteriaCount(raw.criteriaCount);
+  if (!criteriaCount.ok) return criteriaCount;
   const verdicts = validateVerdicts(raw.verdicts);
   if (!verdicts.ok) return verdicts;
   const decision = enumValue(raw.decision, acceptanceDecisions, "decision");
@@ -341,7 +373,7 @@ export function validateAcceptanceCreateRequest(raw: unknown): AcceptanceValidat
   if (!parsedNote.ok) return parsedNote;
   const note = parsedNote.value;
 
-  const consistency = checkDecisionConsistency(decision.value, verdicts.value, note);
+  const consistency = checkDecisionConsistency(decision.value, criteriaCount.value, verdicts.value, note);
   if (!consistency.ok) return fail(consistency.code, consistency.message);
 
   return {
@@ -349,6 +381,7 @@ export function validateAcceptanceCreateRequest(raw: unknown): AcceptanceValidat
     value: {
       spaceId: spaceId.value,
       source: source.value,
+      criteriaCount: criteriaCount.value,
       verdicts: verdicts.value,
       decision: decision.value,
       ...(note !== undefined ? { note } : {}),

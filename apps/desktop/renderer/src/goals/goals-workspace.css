@@ -1,0 +1,48 @@
+.owb-app .owb-goals-module--overview > .owb-module-header {
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.owb-goals-heading p { margin: 6px 0 0; color: var(--ui-foreground-muted); font-size: 13px; }
+.owb-app .owb-goals-module--overview .owb-goals-layout { grid-template-columns: 360px minmax(0, 1fr); gap: 16px; }
+.owb-app .owb-goals-module--overview :is(.owb-goals-list-pane, .owb-goals-detail) {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  padding: 20px;
+  overflow-y: auto;
+}
+.owb-goals-list-heading { margin: 0; font-size: 14px; font-weight: 600; }
+.owb-app .owb-goals-module--overview .owb-goals-list { border: 0; border-radius: 0; flex: none; overflow: visible; }
+.owb-app .owb-goals-module--overview .owb-goals-list__item { border: 0; border-radius: 7px; margin-bottom: 6px; gap: 7px; padding: 13px 12px; }
+.owb-app .owb-goals-module--overview .owb-goals-list__item--active { background: var(--ui-primary-soft); }
+.owb-goals-list__subtitle { font-size: 12px; color: var(--ui-foreground-muted); }
+.owb-app .owb-goals-module--overview .owb-goals-detail__content { max-width: none; padding: 0; }
+.owb-app .owb-goals-module--overview .owb-goals-detail__head h2 { font-size: 19px; }
+.owb-app .owb-goals-module--overview .owb-goals-detail__content h3 { margin: 20px 0 10px; font-size: 14px; }
+.owb-goal-evidence__progress { display: flex; align-items: center; gap: 12px; font-size: 12px; margin-top: 16px; }
+.owb-goal-evidence__progress > :not(.ant-progress) { flex: none; }
+.owb-goal-evidence__progress .ant-progress { flex: 1; min-width: 40px; margin: 0; }
+.owb-goal-evidence__hint { color: var(--ui-foreground-muted); font-size: 12px; line-height: 1.6; }
+.owb-app .owb-goals-module--overview .owb-goal-evidence__branches { list-style: none; padding: 0; margin: 0; }
+.owb-app .owb-goals-module--overview .owb-goal-evidence__branch {
+  display: flex; align-items: center; gap: 12px; padding: 12px; margin: 0 0 8px;
+  border-radius: 7px; background: var(--ui-surface-inset); font-size: 12px;
+}
+.owb-goal-evidence__branch > svg { flex: none; color: var(--ui-foreground-muted); }
+.owb-goal-evidence__branch.is-completed > svg { color: var(--ui-success); }
+.owb-goal-evidence__identity { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+.owb-goal-evidence__identity strong { overflow-wrap: anywhere; }
+.owb-goal-evidence__identity span { color: var(--ui-foreground-muted); }
+.owb-app .owb-goals-module--overview .owb-goals-detail__meta { margin: 12px 0 16px; }
+@media (max-width: 1100px) {
+  .owb-app .owb-goals-module--overview .owb-goals-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .owb-app .owb-goals-module--overview { padding: 16px; }
+  .owb-app .owb-goals-module--overview :is(.owb-goals-list-pane, .owb-goals-detail) { padding: 16px; }
+  .owb-app .owb-goals-module--overview .owb-goal-evidence__branch { flex-wrap: wrap; }
+  .owb-goal-evidence__identity { flex-basis: calc(100% - 30px); }
+  .owb-goals-heading { width: 100%; }
+}
+.owb-app .owb-goals-module--overview { background: var(--ui-canvas-subtle); }

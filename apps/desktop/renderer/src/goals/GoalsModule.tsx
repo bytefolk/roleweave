@@ -14,6 +14,8 @@ import type { TurnEngine } from "@roleweave/shared";
 import { isPendingTaskCollaboration, type AgentTask } from "@roleweave/shared/task-board";
 import { ProjectBoard } from "./ProjectBoard.js";
 import "./goals-project.css";
+import "./goals-workspace.css";
+import { GoalEvidence } from "./GoalEvidence.js";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
 
 interface GoalsModuleProps {
@@ -326,9 +328,11 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
     </AntButton>
   );
   return (
-    <section className={`owb-goals-module${projectMode ? " owb-goals-module--project" : ""}`} aria-label={t(projectMode ? "project.moduleAria" : "goals.moduleAria")}>
+    <section className={`owb-goals-module${projectMode ? " owb-goals-module--project" : " owb-goals-module--overview"}`} aria-label={t(projectMode ? "project.moduleAria" : "goals.moduleAria")}>
       <header className="owb-module-header">
-        <h1>{t(projectMode ? "project.moduleTitle" : "goals.title")}</h1>
+        <div className="owb-goals-heading"><h1>{t(projectMode ? "project.moduleTitle" : "goals.title")}</h1>
+          {!projectMode && <p>{t("goals.lede")}</p>}
+        </div>
         {!projectMode && (
           <div className="owb-goals-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={view === "goals"} onClick={() => setView("goals")}>{t("goals.tabGoals")}</button>
@@ -405,6 +409,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
           {goals.length > 0 && (
             <div className="owb-goals-layout" data-mobile-detail={mobileDetail}>
               <div className="owb-goals-list-pane">
+                {!projectMode && <h2 className="owb-goals-list-heading">{t("goals.currentGoals")}</h2>}
                 <div className="owb-goals-filters">
                   <Input
                     aria-label={t(projectMode ? "project.searchProjects" : "reading.goals.search")}
@@ -464,6 +469,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                         >
                           {goal.title}
                         </span>
+                        {!projectMode && <span className="owb-goals-list__subtitle">{t("goals.branchCount", { count: goal.branchCount })}</span>}
                         <span className="owb-goals-list__meta">
                           <span
                             className={`owb-badge ${STATUS_BADGE[goal.status]}`}
@@ -656,7 +662,8 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                         </ol>
                       </section>
                     )}
-                    {detail.goal.branches.length > 0 && (
+                    {!projectMode && <GoalEvidence branches={detail.goal.branches} positionNames={positionNames} onOpenBoundSession={onOpenBoundSession} />}
+                    {projectMode && detail.goal.branches.length > 0 && (
                       <section>
                         <h3>{t("goals.branches")}</h3>
                         <ul>
@@ -675,6 +682,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                     )}
                     <section>
                       <h3>{t("goals.activity")}</h3>
+                      {detail.activity.length === 0 && <p className="owb-goal-evidence__hint">{t("goals.noActivity")}</p>}
                       <ol className="owb-goals-activity">
                         {detail.activity.map((activity) => (
                           <li key={activity.activityId}>
