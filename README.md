@@ -37,7 +37,7 @@ RoleWeave is an **early preview**. This source targets **v0.3.0**. The versioned
 
 See the [v0.3.0 release notes](docs/releases/v0.3.0.md) for this candidate's changes and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
 
-**Installation notes:** macOS packages are not Apple Developer ID-signed or notarized, and the Windows installer is not Authenticode-signed. Your operating system may show a security prompt on installation or first launch. The macOS update manifest has a separate cryptographic signature; this does not provide Apple code-signing trust. Users of older Org Workbench development builds need to install RoleWeave manually once.
+**Installation notes:** macOS packages are not Apple Developer ID-signed or notarized, and the Windows installer is not Authenticode-signed. Your operating system may show a security prompt on installation or first launch. The macOS update manifest has a separate cryptographic signature; this does not provide Apple code-signing trust. Windows updates use the HTTPS release feed and the installer's SHA-512 checksum, without publisher verification. Users of older Org Workbench development builds need to install RoleWeave manually once. Existing unsigned Windows builds that disable in-app installation also need one manual upgrade to a build containing this update change.
 
 ## Get started
 
@@ -70,6 +70,8 @@ After fully restarting RoleWeave, project pickers start in the selected WSL home
 For environment-based provider, document or memory connections, keep each endpoint and its credentials together in one environment. A Windows override replaces that connection's Linux environment values as a group; missing credentials are never borrowed from Linux. Connections without a Windows override keep their Linux environment configuration.
 
 Choose an Agent when creating a project or hiring an employee. Each employee keeps its own saved runtime binding across restarts and health changes; conversations do not share a global Host selector. Claude Code and Codex prefer an available local configuration for new bindings. A ready status does not prove model entitlement or a successful model request. Settings shows which environment supplies the project and Agents alongside the document and memory service connections. Closing the desktop also closes its WSL backend.
+
+For interactive or scripted operator work inside the distribution — a native Linux shell with `ssh`, `scp`, and `rsync` instead of per-command `wsl.exe` calls — set up passwordless SSH with `node scripts/setup-wsl-ssh.mjs`. See [driving a WSL workspace over SSH](docs/development/wsl-ssh.md). This is an optional developer convenience; the application keeps using `wsl.exe`.
 
 ## How workspaces work
 
@@ -184,7 +186,7 @@ Useful commands from the repository root:
 ## Current limits
 
 - Real Qoder execution has been verified on a macOS machine. Claude Code live execution, full delegation chains, and end-to-end long-term context workflows are not yet part of the verified baseline.
-- macOS has a signed-manifest update mechanism. Windows can check the existing Electron update channel, but unsigned builds require manual installation; in-app download and install remain disabled without a publisher identity. Publishing a release exposes its metadata to clients checking these channels.
+- macOS has a signed-manifest update mechanism. New Windows builds can check, download, and install unsigned NSIS updates after user confirmation. The downloaded installer is checked against SHA-512 metadata fetched over HTTPS; there is no independent publisher signature on this channel. Publishing a release exposes its metadata to clients checking these channels.
 - Native builds, packaged launch and layout checks, and asset integrity are covered by CI. Installation, uninstallation, and cross-version automatic updates on user machines are not claimed as fully verified end to end.
 
 See the [latest published release notes](https://github.com/bytefolk/roleweave/releases/latest) for the downloaded build's exact scope.

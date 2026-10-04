@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, Button, Checkbox, Input, Spin, Tag } from "antd";
 import { ExternalLink, Link2, RefreshCw, Save, Unplug } from "lucide-react";
 import { useT } from "@roleweave/ui";
@@ -18,7 +18,7 @@ export function serviceErrorKey(body: unknown): string {
   return "services.failed";
 }
 
-function ConnectionForm({ connection, onChange, operationsOnly = false }: { connection: ServiceConnectionView; onChange: (view: ServiceConnectionView) => void; operationsOnly?: boolean }) {
+function ConnectionForm({ connection, onChange, operationsOnly = false, actionsDisabled = false }: { connection: ServiceConnectionView; onChange: (view: ServiceConnectionView) => void; operationsOnly?: boolean; actionsDisabled?: boolean }) {
   const t = useT();
   const kind = connection.kind;
   const name = kind === "doc" ? "Doc" : "Mem";
@@ -97,12 +97,12 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
   return <form className="owb-service-connection" aria-label={t("services.connectionAria", { name })}
     onSubmit={(event) => { event.preventDefault(); void run("save", save); }}>
     <header className="owb-service-connection__header">
-      <h3>{name}</h3>
+      {!operationsOnly ? <h3>{name}</h3> : null}
       <Tag>{t(connection.configured ? "services.configured" : "services.notConfigured")}</Tag>
-      <Button size="small" icon={<ExternalLink size={14} aria-hidden="true" />} disabled={!connection.configured || !!busy}
+      <Button size="small" icon={<ExternalLink size={14} aria-hidden="true" />} disabled={!connection.configured || !!busy || actionsDisabled}
         onClick={() => void run("open", open)}>{t("services.open", { name })}</Button>
     </header>
-    <p className="owb-settings-module__hint">{t(`services.${kind}Description`)}</p>
+    {!operationsOnly ? <p className="owb-settings-module__hint">{t(`services.${kind}Description`)}</p> : null}
     {!operationsOnly ? <><div className="owb-service-connection__fields">
       <label htmlFor={`service-${kind}-api`}>
         <span>{t("services.apiUrl")}</span>
@@ -133,7 +133,7 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
     </> : null}
     <div className="owb-settings-module__actions">
       {!operationsOnly ? <Button htmlType="submit" type="primary" icon={<Save size={14} aria-hidden="true" />} loading={busy === "save"} disabled={!!busy || !apiUrl.trim()}>{t("services.save")}</Button> : null}
-      <Button icon={<Link2 size={14} aria-hidden="true" />} loading={busy === "probe"} disabled={!!busy || !connection.configured}
+      <Button icon={<Link2 size={14} aria-hidden="true" />} loading={busy === "probe"} disabled={!!busy || !connection.configured || actionsDisabled}
         onClick={() => void run("probe", check)}>{t("services.check")}</Button>
       {!operationsOnly ? <Button icon={<Unplug size={14} aria-hidden="true" />} disabled={!!busy || !connection.configured}
         onClick={() => void run("disconnect", disconnect)}>{t("services.disconnect")}</Button> : null}
@@ -158,7 +158,7 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
   </form>;
 }
 
-export function ServiceConnections({ kind, operationsOnly = false }: { kind?: ExternalServiceKind; operationsOnly?: boolean }) {
+export function ServiceConnections({ kind, operationsOnly = false, actionsDisabled = false, renderConnection }: { kind?: ExternalServiceKind; operationsOnly?: boolean; actionsDisabled?: boolean; renderConnection?: (kind: ExternalServiceKind, operations: ReactNode) => ReactNode }) {
   const t = useT();
   const [connections, setConnections] = useState<ServiceConnectionView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +173,19 @@ export function ServiceConnections({ kind, operationsOnly = false }: { kind?: Ex
     refresh(); window.addEventListener(SERVICES_CHANGED, refresh);
     return () => { cancelled = true; window.removeEventListener(SERVICES_CHANGED, refresh); };
   }, []);
+  if (renderConnection) return <>
+    {error ? <Alert showIcon type="error" title={t(error)} /> : null}
+    <div className="owb-config-services-grid">
+      {(["doc", "mem"] as const).map(serviceKind => <Fragment key={serviceKind}>
+        {renderConnection(serviceKind, window.owb.services ? <>
+          {connections === null && !error ? <Spin size="small" /> : null}
+          <ConnectionForm operationsOnly actionsDisabled={actionsDisabled || connections === null}
+            connection={connections?.find(view => view.kind === serviceKind) ?? emptyConnection(serviceKind)}
+            onChange={view => setConnections(current => [...(current ?? []).filter(entry => entry.kind !== view.kind), view])} />
+        </> : null)}
+      </Fragment>)}
+    </div>
+  </>;
   // Older packaged shells and existing preview fixtures may lack this bridge.
   if (!window.owb.services) return null;
   return <section className="owb-settings-module__pane owb-service-connections" aria-label={t("services.title")}>

@@ -4,6 +4,8 @@ export interface ApplicationConfiguration {
   appearance: { mode: 'system'|'light'|'dark'; profile: 'mint'|'default'; locale: 'zh-CN'|'en' };
   chat: { sendShortcut: 'enter'|'mod-enter'; rememberLayout: boolean };
   layouts: { focusByWorkspace: Record<string, boolean> };
+  storage?: { projectDirectory?: string };
+  notifications?: { taskComplete: boolean };
   runtime: { mode?: 'native'|'wsl'; distro?: string; nodePath?: string; homePath?: string };
   hosts: { qoder: { personalAccessTokenRef?: string }; claude: { apiKeyRef?: string; authTokenRef?: string; baseUrl?: string }; codex: { apiKeyRef?: string; baseUrl?: string }; gemini: { apiKeyRef?: string }; 'openai-compatible': { apiKeyRef?: string; baseUrl?: string; model?: string } };
   services: Partial<Record<'doc'|'mem', { apiUrl: string; webUrl?: string; workspaceId?: string; tokenRef?: string } | null>>;
@@ -29,6 +31,9 @@ export interface ConfigurationBridge {
   migratePreferences(legacy:Record<string,unknown>): Promise<ConfigurationResult>;
   restore(revision:string): Promise<ConfigurationResult>;
   openLocation(): Promise<{ok:boolean}>;
+  pickProjectDirectory(): Promise<{ok:true;path:string}|{canceled:true}|{ok:false;code:string}>;
+  cacheInfo(): Promise<{ok:true;bytes:number}|{ok:false;code:string}>;
+  openCache(): Promise<{ok:boolean}>;
   setDirty(dirty:boolean): Promise<{ok:boolean}>;
   confirmClose(): Promise<{ok:boolean}>;
   onCloseRequested(callback:()=>void): ()=>void;
