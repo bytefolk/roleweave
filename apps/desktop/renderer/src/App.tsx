@@ -36,6 +36,7 @@ import type {
 } from "@roleweave/shared";
 import { ChevronsRight, FolderKanban, FolderOpen, Inbox, MessagesSquare, MoreHorizontal, Network, PanelLeft, PencilLine, Plus, Settings, Undo2, X } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
+import { WindowControls } from "./WindowControls";
 import { useTheme, ThemeProvider } from "./theme-context";
 import { themeToAntdSeed } from "./theme-resolution";
 import { DEFAULT_PRESET_ID } from "./theme-presets";
@@ -2553,49 +2554,6 @@ function normalizePositionForDisplay(position: PositionCardData, locale: OwbLoca
       Object.entries(position.metadata).map(([key, value]) => [key, decodeEscapedUnicode(value)]),
     ),
   }, locale);
-}
-
-function WindowControls() {
-  const t = useT();
-  return (
-    <span className="owb-wintitle__controls">
-      <button
-        type="button"
-        className="owb-wctl owb-wctl--close"
-        aria-label={t("win.close")}
-        title={t("win.closeTitle")}
-        onClick={() => void window.owb.windowClose?.()}
-      >
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        className="owb-wctl owb-wctl--min"
-        aria-label={t("win.minimize")}
-        title={t("win.minimizeTitle")}
-        onClick={() => void window.owb.windowMinimize?.()}
-      >
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2.2 5h5.6" />
-        </svg>
-      </button>
-      {/* 文案保持静态：WSLg 下 isMaximized() 不可信，不向用户谎报当前状态。 */}
-      <button
-        type="button"
-        className="owb-wctl owb-wctl--max"
-        aria-label={t("win.maximize")}
-        title={t("win.maximizeTitle")}
-        onClick={() => void window.owb.windowToggleMaximize?.()}
-      >
-        {/* #248 小 UI 单②：fullscreen 为绿底斜杠 ⃠ glyph。 */}
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2.8 7.2L7.2 2.8" />
-        </svg>
-      </button>
-    </span>
-  );
 }
 
 function Breadcrumbs({
