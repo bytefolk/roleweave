@@ -297,8 +297,6 @@ export function parseSpaceDoc(source: string): SpaceDocParseResult {
  */
 export function renderSpaceDoc(doc: SpaceDoc, source: string): string {
   const eol = source.includes("\r\n") ? "\r\n" : "\n";
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
-
   const criterionLines = doc.criteria.map(
     (criterion) => `- [${criterion.done ? "x" : " "}] ${criterion.text}`,
   );
@@ -315,39 +313,53 @@ export function renderSpaceDoc(doc: SpaceDoc, source: string): string {
     ),
   ];
 
-  const replacements = new Map<string, string[]>();
-  if (criterionLines.length > 0 || doc.criteria.length > 0) {
-    replacements.set(SPACE_DOC_CRITERIA_HEADING, criterionLines);
-  }
-  const hasTaskSection = lines.some((line) => isH2(line) && h2Heading(line) === SPACE_DOC_TASKS_HEADING);
-  if (doc.tasks.length > 0 || hasTaskSection) {
-    replacements.set(SPACE_DOC_TASKS_HEADING, taskLines);
-  }
-
-  const out: string[] = [];
+  const replacements = new Map<string, string[]>([
+    [SPACE_DOC_CRITERIA_HEADING, criterionLines],
+    [SPACE_DOC_TASKS_HEADING, taskLines],
+  ]);
+  // Keep complete source lines, including their individual line endings.
+  // Only a structured section's nonblank body is regenerated.
+  const chunks = source.match(/[^\r\n]*(?:\r\n|\r|\n|$)/g)?.filter((line) => line.length > 0) ?? [];
+  const textOf = (line: string) => line.replace(/(?:\r\n|\r|\n)$/, "");
+  const seen = new Set<string>();
+  let out = "";
   let index = 0;
-  while (index < lines.length) {
-    const line = lines[index] ?? "";
-    if (!isH2(line)) {
-      out.push(line);
-      index += 1;
-      continue;
-    }
-    const heading = h2Heading(line);
+  while (index < chunks.length) {
+    const chunk = chunks[index] ?? "";
+    const line = textOf(chunk);
+    const heading = isH2(line) ? h2Heading(line) : "";
     const replacement = replacements.get(heading);
     if (!replacement) {
-      out.push(line);
+      out += chunk;
       index += 1;
       continue;
     }
-    out.push(line);
+    seen.add(heading);
+    out += chunk;
     index += 1;
-    // Skip the original body up to the next heading, then emit the new body.
-    while (index < lines.length && !isH2(lines[index] ?? "")) index += 1;
-    out.push(...replacement);
+    const start = index;
+    while (index < chunks.length && !isH2(textOf(chunks[index] ?? ""))) index += 1;
+    let bodyStart = start;
+    let bodyEnd = index;
+    while (bodyStart < bodyEnd && textOf(chunks[bodyStart] ?? "").trim() === "") bodyStart += 1;
+    while (bodyEnd > bodyStart && textOf(chunks[bodyEnd - 1] ?? "").trim() === "") bodyEnd -= 1;
+    if (replacement.length > 0 && !/[\r\n]$/.test(chunk)) out += eol;
+    out += chunks.slice(start, bodyStart).join("");
+    out += replacement.join(eol);
+    // Preserve the last content line's terminator and every separator byte.
+    const terminator = (chunks[bodyEnd - 1] ?? "").match(/(?:\r\n|\r|\n)$/)?.[0] ?? "";
+    if (replacement.length > 0) out += bodyEnd > bodyStart ? terminator : (index < chunks.length ? eol : "");
+    out += chunks.slice(bodyEnd, index).join("");
   }
-
-  return out.join(eol);
+  for (const [heading, replacement] of replacements) {
+    if (seen.has(heading) || (heading === SPACE_DOC_CRITERIA_HEADING ? doc.criteria.length === 0 : doc.tasks.length === 0)) continue;
+    if (out.length > 0) {
+      if (!/[\r\n]$/.test(out)) out += eol;
+      if (!out.endsWith(eol + eol)) out += eol;
+    }
+    out += `## ${heading}${eol}${replacement.join(eol)}${eol}`;
+  }
+  return out;
 }
 
 /** Derive the `acceptance.v1` criteria count a space exposes to the gate. */

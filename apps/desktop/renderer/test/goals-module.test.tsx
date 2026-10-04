@@ -164,6 +164,33 @@ function deferred<T>() {
 const secondSummary = { ...goalSummary, goalId: "goal-two", title: "Second goal", description: "Second description" };
 const secondDetail = { goal: { ...goalDetail.goal, ...secondSummary, branches: [] }, activity: [] };
 
+describe("Pencil goal evidence (#556)", () => {
+  it("uses completed/all branches and navigates the branch's exact role/session", async () => {
+    const branches = [
+      { branchId: "verified", title: "Installer validation", status: "completed" as const, positionId: "engineer", sessionId: "bound-session", createdAt: goalSummary.createdAt, updatedAt: goalSummary.updatedAt },
+      { branchId: "cancelled", title: "Cancelled plan", status: "cancelled" as const, createdAt: goalSummary.createdAt, updatedAt: goalSummary.updatedAt },
+    ];
+    installBridge({ goal: vi.fn().mockResolvedValue({ status: 200, body: { ...goalDetail, goal: { ...goalDetail.goal, branches } } }) });
+    const open = vi.fn();
+    render(<GoalsModule workspaceOpen positionNames={{ engineer: "工程师" }} onOpenBoundSession={open} />);
+    await screen.findByText("Installer validation");
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    expect(document.querySelector('.owb-goal-evidence .ant-progress[aria-valuenow="50"]')).toBeInTheDocument();
+    expect(screen.getByText("未分配")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "打开会话" }));
+    expect(open).toHaveBeenCalledWith("engineer", "bound-session");
+  });
+
+  it("keeps unknown progress without branches even for a completed goal", async () => {
+    installBridge({ goal: vi.fn().mockResolvedValue({ status: 200, body: { ...goalDetail, goal: { ...goalDetail.goal, status: "completed" } } }) });
+    render(<GoalsModule workspaceOpen />);
+    await screen.findByText("Release the first stable version");
+    expect(screen.getAllByText("暂无执行分支").length).toBeGreaterThan(0);
+    expect(document.querySelector(".owb-goal-evidence .ant-progress")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开会话" })).not.toBeInTheDocument();
+  });
+});
+
 describe("Goal state integrity (#294)", () => {
   it("uses one global empty state without a stale selection prompt", async () => {
     installBridge({ goals: vi.fn().mockResolvedValue({ status: 200, body: { goals: [] } }) });

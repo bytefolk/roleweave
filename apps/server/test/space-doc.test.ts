@@ -189,3 +189,43 @@ test("criteria before a later section do not leak into it", () => {
   assert.equal(doc.otherSections.length, 1);
   assert.equal(at(doc.otherSections, 0).heading, "备注");
 });
+
+
+test("canonical round trips preserve every byte including separators and EOF", () => {
+  assert.equal(renderSpaceDoc(parseSpaceDoc(DOC).doc, DOC), DOC);
+  for (const eol of ["\n", "\r\n"]) {
+    for (const ending of ["", eol, eol + eol]) {
+      const source = ["# x", "", "## 验收标准", "", "- [ ] a"].join(eol) + ending;
+      assert.equal(renderSpaceDoc(parseSpaceDoc(source).doc, source), source);
+    }
+  }
+});
+
+test("missing sections are inserted rather than silently dropping new data", () => {
+  const source = "# x\n\nKeep this prose.\n";
+  const {doc} = parseSpaceDoc(source);
+  doc.criteria = [{criteriaIndex: 0, text: "new criterion", done: false, marker: " "}];
+  doc.tasks = [{title: "new task", status: "todo", raw: []}];
+  const rendered = renderSpaceDoc(doc, source);
+  assert.ok(rendered.startsWith(source));
+  assert.equal(parseSpaceDoc(rendered).doc.criteria[0]?.text, "new criterion");
+  assert.equal(parseSpaceDoc(rendered).doc.tasks[0]?.title, "new task");
+  assert.equal(renderSpaceDoc(parseSpaceDoc(rendered).doc, rendered), rendered);
+});
+
+test("a missing task section is added without disturbing the existing criteria section", () => {
+  const source = "# x\n\n## 验收标准\n- [ ] a\n";
+  const {doc} = parseSpaceDoc(source);
+  doc.tasks = [{title: "new task", status: "review", raw: []}];
+  const rendered = renderSpaceDoc(doc, source);
+  assert.ok(rendered.startsWith(source));
+  assert.equal(parseSpaceDoc(rendered).doc.tasks[0]?.title, "new task");
+});
+
+test("empty structured sections can be cleared while preserving surrounding prose", () => {
+  const source = "# x\n\n## 验收标准\n- [ ] remove\n\n## Notes\nKeep this.\n";
+  const {doc} = parseSpaceDoc(source); doc.criteria = [];
+  const rendered = renderSpaceDoc(doc, source);
+  assert.ok(!rendered.includes("remove"));
+  assert.ok(rendered.endsWith("\n## Notes\nKeep this.\n"));
+});

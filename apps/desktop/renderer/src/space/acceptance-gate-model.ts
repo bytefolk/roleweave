@@ -1,5 +1,5 @@
 // Value import via the subpath; see SpaceModule for why the barrel is avoided.
-import { ACCEPTANCE_SCHEMA_VERSION } from "@roleweave/shared/acceptance";
+import { ACCEPTANCE_SCHEMA_VERSION, validateAcceptanceRecord } from "@roleweave/shared/acceptance";
 import type {
   AcceptanceDecision,
   AcceptanceRecord,
@@ -77,9 +77,10 @@ export function buildAcceptanceRecord(
 
   const record: AcceptanceRecord = {
     schemaVersion: ACCEPTANCE_SCHEMA_VERSION,
-    acceptanceId: `${draft.spaceId}:${now().toISOString()}`,
+    acceptanceId: `acceptance:${crypto.randomUUID()}`,
     spaceId: draft.spaceId,
     source: { positionId: draft.positionId },
+    criteriaCount: criteria.length,
     verdicts: buildVerdicts(criteria, ticks, evidence),
     decision,
     decidedBy: draft.decidedBy,
@@ -89,5 +90,7 @@ export function buildAcceptanceRecord(
   if (draft.artifactPath !== undefined) record.source.artifactPath = draft.artifactPath;
   if (decision === "rejected") record.note = note.trim();
 
-  return record;
+  const result = validateAcceptanceRecord(record);
+  if (!result.ok) throw new Error(result.message);
+  return result.value;
 }

@@ -45,7 +45,9 @@ export function SpaceHost({
 
   return (
     <SpaceModule
+      key={spacePositionId ?? "none"}
       workspaceOpen={workspaceOpen}
+      spaceId={spacePositionId ?? undefined}
       spaceName={spacePositionId ? (positionNames[spacePositionId] ?? spacePositionId) : t("space.untitled")}
       files={state.files}
       readFile={state.readFile}

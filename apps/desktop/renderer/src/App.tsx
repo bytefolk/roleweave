@@ -2149,7 +2149,7 @@ function AppInner({
         ) : null}
         {activeModule === "progress" ? (
           <Suspense fallback={<div className="owb-progress" aria-hidden="true"><Skeleton /></div>}>
-            <ProgressBoard workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
+            <ProgressBoard key={workspaceInfo?.path} workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
           </Suspense>
         ) : activeModule === "reports" ? (
           <ReportsCenter

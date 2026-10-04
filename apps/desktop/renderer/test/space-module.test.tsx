@@ -130,3 +130,20 @@ describe("SpaceModule", () => {
     expect(content).toContain("- [x] 口径已评审");
   });
 });
+
+
+describe("acceptance write failure", () => {
+  it("does not report acceptance when optimistic document persistence fails", async () => {
+    const writeFile = vi.fn(async () => { throw new Error("version conflict"); });
+    const {onAccept} = setup({writeFile});
+    await screen.findByText(/先说结论/);
+    const gate = document.querySelector(".owb-space-gate") as HTMLElement;
+    for (const box of gate.querySelectorAll('input[type="checkbox"]')) fireEvent.click(box);
+    fireEvent.click(Array.from(gate.querySelectorAll("button")).find((b) => b.textContent?.includes("验收通过")) as HTMLButtonElement);
+    fireEvent.click(Array.from(gate.querySelectorAll("button")).find((b) => b.textContent?.replace(/\s/g, "") === "确认") as HTMLButtonElement);
+    await waitFor(() => expect(writeFile).toHaveBeenCalledTimes(1));
+    await screen.findByText(/写入|保存|无法/);
+    expect(onAccept).not.toHaveBeenCalled();
+    expect(document.querySelector(".owb-space-structure__decision")).toBeNull();
+  });
+});

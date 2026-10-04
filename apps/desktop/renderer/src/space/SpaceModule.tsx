@@ -33,6 +33,8 @@ export interface SpaceModuleProps {
   workspaceOpen: boolean;
   /** Name of the space (the folder). */
   spaceName?: string;
+  /** Stable identity, independent of the display name. */
+  spaceId?: string;
   files: DocsFileEntry[];
   /** Injected loader, mirroring DocsPanel's contract so this stays testable. */
   readFile: (path: string) => Promise<{ content: string; version: string }>;
@@ -104,18 +106,17 @@ export function SpaceModule(props: SpaceModuleProps) {
 
   const gateDraft: GateDraft = useMemo(
     () => ({
-      spaceId: props.spaceName ?? "space",
+      spaceId: props.spaceId ?? "space",
       positionId: owner?.positionId ?? "operator",
       artifactPath: activePath,
       decidedBy: "operator",
     }),
-    [props.spaceName, owner?.positionId, activePath],
+    [props.spaceId, owner?.positionId, activePath],
   );
 
   const handleDecide = useCallback(
     async (decision: AcceptanceDecision, record: AcceptanceRecord) => {
-      setDecided(record);
-      await props.onAccept?.(record);
+      setError(null);
       if (decision === "accepted" && props.writeFile && isSpine) {
         // Acceptance is the only thing allowed to mark criteria done.
         const next: SpaceDoc = {
@@ -129,7 +130,14 @@ export function SpaceModule(props: SpaceModuleProps) {
           setVersion(result.version);
         } catch {
           setError(t("space.error.write", { path: activePath }));
+          return;
         }
+      }
+      try {
+        await props.onAccept?.(record);
+        setDecided(record);
+      } catch {
+        setError(t("space.error.write", { path: activePath }));
       }
     },
     [props, doc, source, version, activePath, isSpine, t],
