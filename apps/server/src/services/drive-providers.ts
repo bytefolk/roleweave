@@ -154,12 +154,15 @@ export class BdpanDriveProvider implements DriveProvider {
 
   constructor(
     spawn: BdpanSpawnConfig = bdpanSpawnConfigFromEnv(),
-    runner: BdpanRunner = defaultBdpanRunner,
+    runner: BdpanRunner | undefined = undefined,
     timeouts: { listMs?: number; probeMs?: number } = {},
   ) {
     this.listTimeoutMs = timeouts.listMs ?? BDPAN_LIST_TIMEOUT_MS;
     this.probeTimeoutMs = timeouts.probeMs ?? BDPAN_PROBE_TIMEOUT_MS;
-    this.run = (args, timeoutMs) => runner([spawn.command, ...(spawn.prefixArgs ?? []), ...args], timeoutMs);
+    // Keep the trusted executable separate from request-derived arguments.
+    // A runner sees CLI arguments only, never an argv array that can select a command.
+    this.run = runner ?? ((args, timeoutMs) =>
+      defaultBdpanRunner(spawn.command, [...(spawn.prefixArgs ?? []), ...args], timeoutMs));
   }
 
   async list(query: string): Promise<DriveObject[]> {
@@ -187,7 +190,7 @@ export class BdpanDriveProvider implements DriveProvider {
   async probe(): Promise<DriveProviderStatus> {
     let stdout: string;
     try {
-      stdout = await this.run(["whoami", "--json"], BDPAN_PROBE_TIMEOUT_MS);
+      stdout = await this.run(["whoami", "--json"], this.probeTimeoutMs);
     } catch (error) {
       if (error instanceof OrgApiError) {
         if (error.code === errorCodes.drive_upstream_unavailable) {
@@ -202,8 +205,7 @@ export class BdpanDriveProvider implements DriveProvider {
   }
 }
 
-function defaultBdpanRunner(argv: readonly string[], timeoutMs: number): Promise<string> {
-  const [command, ...args] = argv;
+function defaultBdpanRunner(command: string, args: readonly string[], timeoutMs: number): Promise<string> {
   if (command === undefined || command === "") {
     return Promise.reject(
       new OrgApiError(errorCodes.drive_upstream_unavailable, 502, "the bdpan CLI is not configured"),
@@ -238,10 +240,10 @@ function classifyBdpanSpawnError(
   if (error.killed || /terminated|timed out/iu.test(String(error.signal ?? ""))) {
     return new OrgApiError(errorCodes.drive_upstream_unavailable, 502, "the bdpan CLI did not answer in time", true);
   }
-  if (/errno=-7|token\s+(has\s+)?expired|token 过期/iu.test(combined)) {
+  if (/token\s+(has\s+)?expired|token 过期/iu.test(combined)) {
     return new OrgApiError(errorCodes.drive_auth_expired, 503, "the bdpan authorization has expired; run bdpan login again", false);
   }
-  if (/errno=13045/iu.test(combined)) {
+  if (/errno=(?:-7|13045)/iu.test(combined)) {
     return new OrgApiError(errorCodes.drive_upstream_failed, 502, "the bdpan upstream rejected the operation");
   }
   return new OrgApiError(errorCodes.drive_upstream_failed, 502, "the bdpan CLI reported a failure", true);
@@ -262,11 +264,11 @@ function parseBdpanRecords(stdout: string): BdpanRecord[] {
     throw new OrgApiError(errorCodes.drive_upstream_failed, 502, "the bdpan CLI returned an invalid listing");
   }
   // The CLI can exit 0 yet report an upstream failure in its JSON envelope
-  // (observed with an expired token: {"code":1,"error":"... errno=-7"}).
+  // (observed with an endpoint-level rejection: {"code":1,"error":"... errno=-7"}).
   if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
     const envelope = parsed as Record<string, unknown>;
     if (envelope.code === 1 && typeof envelope.error === "string") {
-      if (/errno=-7|token\s+(has\s+)?expired|token 过期/iu.test(envelope.error)) {
+      if (/token\s+(has\s+)?expired|token 过期/iu.test(envelope.error)) {
         throw new OrgApiError(errorCodes.drive_auth_expired, 503, "the bdpan authorization has expired; run bdpan login again");
       }
       throw new OrgApiError(errorCodes.drive_upstream_failed, 502, "the bdpan CLI reported a failure");
@@ -368,7 +370,7 @@ function classifyWhoami(stdout: string): DriveProviderState {
     try { parsed = JSON.parse(stdout.slice(start)); } catch { /* fall through to text matching */ }
   }
   const text = stdout;
-  if (/errno=-7|token\s+(has\s+)?expired|token 过期|即将过期/iu.test(text)) return "auth_expired";
+  if (/token\s+(has\s+)?expired|token 过期|即将过期/iu.test(text)) return "auth_expired";
   if (typeof parsed === "object" && parsed !== null) {
     const raw = parsed as Record<string, unknown>;
     if (raw.authenticated === false || raw.loggedIn === false || raw.logged_in === false) return "not_connected";

@@ -1,0 +1,1877 @@
+{
+  "version": "2.19",
+  "children": [
+    {
+      "type": "frame",
+      "id": "cAn8V",
+      "x": 1540,
+      "y": 0,
+      "name": "RoleWeave 客户端重设计 · 目标",
+      "clip": true,
+      "width": 1440,
+      "height": 900,
+      "fill": "#F7F9FB",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "QasUy",
+          "name": "RoleWeave 客户端重设计 · 目标 标题栏",
+          "width": "fill_container",
+          "height": 40,
+          "fill": "#FFFFFF",
+          "stroke": "#E4E9EE",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "gap": 10,
+          "padding": [
+            0,
+            16
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "byxSy",
+              "name": "RoleWeave 客户端重设计 · 目标 窗口关闭",
+              "width": 10,
+              "height": 10,
+              "fill": "#F05A5A",
+              "cornerRadius": 5
+            },
+            {
+              "type": "frame",
+              "id": "lekRv",
+              "name": "RoleWeave 客户端重设计 · 目标 窗口最小化",
+              "width": 10,
+              "height": 10,
+              "fill": "#F2C24E",
+              "cornerRadius": 5
+            },
+            {
+              "type": "frame",
+              "id": "jaLsS",
+              "name": "RoleWeave 客户端重设计 · 目标 窗口最大化",
+              "width": 10,
+              "height": 10,
+              "fill": "#52BE76",
+              "cornerRadius": 5
+            },
+            {
+              "type": "text",
+              "id": "jvqtq",
+              "name": "RoleWeave 客户端重设计 · 目标 品牌",
+              "fill": "#18232F",
+              "content": "RoleWeave",
+              "fontFamily": "Inter",
+              "fontSize": 13,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "BNkQU",
+              "name": "RoleWeave 客户端重设计 · 目标 标题间隔",
+              "width": "fill_container",
+              "height": 1
+            },
+            {
+              "type": "icon",
+              "id": "t9u5iY",
+              "name": "RoleWeave 客户端重设计 · 目标 偏好图标",
+              "width": 15,
+              "height": 15,
+              "icon": "settings",
+              "library": "lucide",
+              "fill": "#5D7182"
+            },
+            {
+              "type": "text",
+              "id": "NvSYf",
+              "name": "RoleWeave 客户端重设计 · 目标 偏好",
+              "fill": "#536271",
+              "content": "偏好",
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "xB5cj",
+          "name": "RoleWeave 客户端重设计 · 目标 主体",
+          "width": "fill_container",
+          "height": "fill_container",
+          "children": [
+            {
+              "type": "frame",
+              "id": "C1yK3",
+              "name": "RoleWeave 客户端重设计 · 目标 54px 导轨",
+              "width": 54,
+              "height": "fill_container",
+              "fill": "#FFFFFF",
+              "stroke": "#E4E9EE",
+              "strokeWidth": {
+                "right": 1
+              },
+              "layout": "vertical",
+              "gap": 12,
+              "padding": [
+                14,
+                0
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "JLcmN",
+                  "name": "RoleWeave 客户端重设计 · 目标 导轨 协作",
+                  "width": 38,
+                  "height": 38,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 9,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "Nk5LH",
+                      "name": "RoleWeave 客户端重设计 · 目标 协作图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "messages-square",
+                      "library": "lucide",
+                      "fill": "#536271"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "LNutK",
+                  "name": "RoleWeave 客户端重设计 · 目标 导轨 组织",
+                  "width": 38,
+                  "height": 38,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 9,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "Gbd40",
+                      "name": "RoleWeave 客户端重设计 · 目标 组织图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "network",
+                      "library": "lucide",
+                      "fill": "#536271"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "z7VG1Z",
+                  "name": "RoleWeave 客户端重设计 · 目标 导轨 项目",
+                  "width": 38,
+                  "height": 38,
+                  "fill": "#E7F5F0",
+                  "cornerRadius": 9,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "VjicT",
+                      "name": "RoleWeave 客户端重设计 · 目标 项目图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "folder-kanban",
+                      "library": "lucide",
+                      "fill": "#11875F"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "RANoZ",
+                  "name": "RoleWeave 客户端重设计 · 目标 导轨 收件箱",
+                  "width": 38,
+                  "height": 38,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 9,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "Dtxh8",
+                      "name": "RoleWeave 客户端重设计 · 目标 收件箱图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "inbox",
+                      "library": "lucide",
+                      "fill": "#536271"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "oo3hw",
+                  "name": "RoleWeave 客户端重设计 · 目标 导轨间隔",
+                  "width": 1,
+                  "height": "fill_container"
+                },
+                {
+                  "type": "frame",
+                  "id": "QFZZW",
+                  "name": "RoleWeave 客户端重设计 · 目标 设置入口",
+                  "width": 38,
+                  "height": 38,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "YIpE5",
+                      "name": "RoleWeave 客户端重设计 · 目标 设置图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "settings",
+                      "library": "lucide",
+                      "fill": "#5D7182"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "p1pHC3",
+              "name": "RoleWeave 客户端重设计 · 目标 主工作区",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "NtNsY",
+                  "name": "RoleWeave 客户端重设计 · 目标 48px 顶栏",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#FFFFFF",
+                  "stroke": "#E4E9EE",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    22
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Q28BPO",
+                      "name": "RoleWeave 客户端重设计 · 目标 位置",
+                      "fill": "#596879",
+                      "content": "当前项目",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "icon",
+                      "id": "HKqaR",
+                      "name": "RoleWeave 客户端重设计 · 目标 面包屑",
+                      "width": 13,
+                      "height": 13,
+                      "icon": "chevron-right",
+                      "library": "lucide",
+                      "fill": "#98A4B1"
+                    },
+                    {
+                      "type": "text",
+                      "id": "WBPnj",
+                      "name": "RoleWeave 客户端重设计 · 目标 模块位置",
+                      "fill": "#1D2733",
+                      "content": "项目",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "zePe3",
+                      "name": "RoleWeave 客户端重设计 · 目标 顶栏间隔",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "S6DisC",
+                      "name": "RoleWeave 客户端重设计 · 目标 引擎灯",
+                      "width": 7,
+                      "height": 7,
+                      "fill": "#17AB75",
+                      "cornerRadius": 4
+                    },
+                    {
+                      "type": "text",
+                      "id": "Bhgf4",
+                      "name": "RoleWeave 客户端重设计 · 目标 引擎状态",
+                      "fill": "#596879",
+                      "content": "引擎可用",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "t2oohG",
+                  "name": "RoleWeave 客户端重设计 · 目标 内页签",
+                  "width": "fill_container",
+                  "height": 56,
+                  "fill": "#FFFFFF",
+                  "stroke": "#E4E9EE",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    0,
+                    24
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ai1a9",
+                      "name": "RoleWeave 客户端重设计 · 目标 模块名",
+                      "fill": "#1D2733",
+                      "content": "项目",
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "bnm7W",
+                      "name": "RoleWeave 客户端重设计 · 目标 模块分隔",
+                      "width": 1,
+                      "height": 20,
+                      "fill": "#E5EAEE"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Dysih",
+                      "name": "RoleWeave 客户端重设计 · 目标 页签 项目",
+                      "height": 36,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 6,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "DbGke",
+                          "name": "RoleWeave 客户端重设计 · 目标 页签文字 项目",
+                          "fill": "#6D7D8A",
+                          "content": "项目",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "g3vbQm",
+                      "name": "RoleWeave 客户端重设计 · 目标 页签 目标",
+                      "height": 36,
+                      "fill": "#E7F5F0",
+                      "cornerRadius": 6,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "yGpkD",
+                          "name": "RoleWeave 客户端重设计 · 目标 页签文字 目标",
+                          "fill": "#11875F",
+                          "content": "目标",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "qhAUe",
+                      "name": "RoleWeave 客户端重设计 · 目标 页签 进展",
+                      "height": 36,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 6,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "S9oLL",
+                          "name": "RoleWeave 客户端重设计 · 目标 页签文字 进展",
+                          "fill": "#6D7D8A",
+                          "content": "进展",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Q1R6BE",
+                  "name": "RoleWeave 客户端重设计 · 目标 内容",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "layout": "vertical",
+                  "gap": 16,
+                  "padding": [
+                    24,
+                    28
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "nvwbu",
+                      "name": "目标页头",
+                      "width": "fill_container",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "fIHsH",
+                          "name": "目标页头文案",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 5,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "q1abap",
+                              "name": "目标标题",
+                              "fill": "#1D2733",
+                              "content": "目标",
+                              "fontFamily": "Inter",
+                              "fontSize": 22,
+                              "fontWeight": "700"
+                            },
+                            {
+                              "type": "text",
+                              "id": "i69yn",
+                              "name": "目标页说明",
+                              "fill": "#80909D",
+                              "content": "从项目目标追踪到关键结果与责任岗位。",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "E8ybt",
+                          "name": "新增目标",
+                          "width": 100,
+                          "height": 34,
+                          "fill": "#16A879",
+                          "cornerRadius": 6,
+                          "gap": 5,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "niznh",
+                              "name": "新增图标",
+                              "width": 14,
+                              "height": 14,
+                              "icon": "plus",
+                              "library": "lucide",
+                              "fill": "#FFFFFF"
+                            },
+                            {
+                              "type": "text",
+                              "id": "nqfEQ",
+                              "name": "新增目标文字",
+                              "fill": "#FFFFFF",
+                              "content": "新增目标",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "wOvKe",
+                      "name": "目标视图区",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "gap": 16,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "yo7w6",
+                          "name": "项目目标列表",
+                          "width": 400,
+                          "height": "fill_container",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 9,
+                          "stroke": "#E2E8EC",
+                          "strokeWidth": 1,
+                          "layout": "vertical",
+                          "gap": 10,
+                          "padding": [
+                            18,
+                            16
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "v3L4YZ",
+                              "name": "项目目标列表标题",
+                              "fill": "#263443",
+                              "content": "当前项目目标",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Moodz",
+                              "name": "项目目标 稳定交付客户端更新",
+                              "width": "fill_container",
+                              "fill": "#E9F5EF",
+                              "cornerRadius": 7,
+                              "layout": "vertical",
+                              "gap": 7,
+                              "padding": [
+                                13,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "daQhR",
+                                  "name": "稳定交付客户端更新名称",
+                                  "fill": "#263443",
+                                  "content": "稳定交付客户端更新",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "xEALD",
+                                  "name": "稳定交付客户端更新辅助",
+                                  "fill": "#81909D",
+                                  "content": "2 项关键结果 · 进行中",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "m0QYu6",
+                              "name": "项目目标 统一客户端设置体验",
+                              "width": "fill_container",
+                              "fill": "#FFFFFF",
+                              "cornerRadius": 7,
+                              "layout": "vertical",
+                              "gap": 7,
+                              "padding": [
+                                13,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "JRrdO",
+                                  "name": "统一客户端设置体验名称",
+                                  "fill": "#263443",
+                                  "content": "统一客户端设置体验",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 13,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "cXwzB",
+                                  "name": "统一客户端设置体验辅助",
+                                  "fill": "#81909D",
+                                  "content": "2 项关键结果 · 规划中",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "AQv4h",
+                          "name": "目标详情",
+                          "width": "fill_container",
+                          "height": "fill_container",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 9,
+                          "stroke": "#E2E8EC",
+                          "strokeWidth": 1,
+                          "layout": "vertical",
+                          "gap": 14,
+                          "padding": [
+                            22,
+                            24
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "rBgLL",
+                              "name": "目标详情名称",
+                              "fill": "#1D2733",
+                              "content": "稳定交付客户端更新",
+                              "fontFamily": "Inter",
+                              "fontSize": 19,
+                              "fontWeight": "700"
+                            },
+                            {
+                              "type": "text",
+                              "id": "JjOdG",
+                              "name": "目标详情说明",
+                              "fill": "#7F8F9C",
+                              "content": "保证更新路径有清晰的用户确认、资产校验和验证记录。",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "GmrPc",
+                              "name": "目标完成状态",
+                              "width": "fill_container",
+                              "gap": 12,
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "WQcID",
+                                  "name": "目标进度标签",
+                                  "fill": "#6E808E",
+                                  "content": "当前进展",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "H6qhlA",
+                                  "name": "目标进度轨道",
+                                  "width": "fill_container",
+                                  "height": 7,
+                                  "fill": "#E8EDF0",
+                                  "cornerRadius": 4,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "ywcFx",
+                                      "name": "目标已完成部分",
+                                      "width": 420,
+                                      "height": 7,
+                                      "fill": "#18AA78",
+                                      "cornerRadius": 4
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "kLdHt",
+                                  "name": "目标进度百分比",
+                                  "fill": "#11875F",
+                                  "content": "62%",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "600"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Hv2dz",
+                              "name": "目标详情分隔",
+                              "width": "fill_container",
+                              "height": 1,
+                              "fill": "#EDF1F3"
+                            },
+                            {
+                              "type": "text",
+                              "id": "iPUf6",
+                              "name": "关键结果区标题",
+                              "fill": "#263443",
+                              "content": "关键结果",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "QPSCI",
+                              "name": "关键结果 Windows 安装与重启验证",
+                              "width": "fill_container",
+                              "height": 66,
+                              "fill": "#F7F9FA",
+                              "cornerRadius": 7,
+                              "gap": 11,
+                              "padding": [
+                                0,
+                                12
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "I4j16",
+                                  "name": "Windows 安装与重启验证图标",
+                                  "width": 17,
+                                  "height": 17,
+                                  "icon": "circle-dot",
+                                  "library": "lucide",
+                                  "fill": "#18AA78"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "R1Bzu9",
+                                  "name": "Windows 安装与重启验证文案",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 4,
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "nkDRA",
+                                      "name": "Windows 安装与重启验证标题",
+                                      "fill": "#2C3E4A",
+                                      "content": "Windows 安装与重启验证",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "600"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "iipe5",
+                                      "name": "Windows 安装与重启验证岗位",
+                                      "fill": "#8A98A5",
+                                      "content": "工程师",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "z7AdQB",
+                                  "name": "Windows 安装与重启验证状态",
+                                  "fill": "#168D68",
+                                  "content": "进行中",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "N87qRI",
+                              "name": "关键结果 设置页存储位置方案",
+                              "width": "fill_container",
+                              "height": 66,
+                              "fill": "#F7F9FA",
+                              "cornerRadius": 7,
+                              "gap": 11,
+                              "padding": [
+                                0,
+                                12
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "AnFKO",
+                                  "name": "设置页存储位置方案图标",
+                                  "width": 17,
+                                  "height": 17,
+                                  "icon": "circle",
+                                  "library": "lucide",
+                                  "fill": "#B3BEC6"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "w8W05E",
+                                  "name": "设置页存储位置方案文案",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 4,
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "aU8QB",
+                                      "name": "设置页存储位置方案标题",
+                                      "fill": "#2C3E4A",
+                                      "content": "设置页存储位置方案",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 12,
+                                      "fontWeight": "600"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "O5wa1",
+                                      "name": "设置页存储位置方案岗位",
+                                      "fill": "#8A98A5",
+                                      "content": "设计师",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "v4Wdc",
+                                  "name": "设置页存储位置方案状态",
+                                  "fill": "#98A5AF",
+                                  "content": "待开始",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "B0FpSc",
+      "x": 3080,
+      "y": 0,
+      "name": "RoleWeave 客户端重设计 · 进展",
+      "clip": true,
+      "width": 1440,
+      "height": 900,
+      "fill": "#F7F9FB",
+      "layout": "vertical",
+      "children": [
+        {
+          "type": "frame",
+          "id": "h0aX1R",
+          "name": "RoleWeave 客户端重设计 · 进展 标题栏",
+          "width": "fill_container",
+          "height": 40,
+          "fill": "#FFFFFF",
+          "stroke": "#E4E9EE",
+          "strokeWidth": {
+            "bottom": 1
+          },
+          "gap": 10,
+          "padding": [
+            0,
+            16
+          ],
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "wrdt1",
+              "name": "RoleWeave 客户端重设计 · 进展 窗口关闭",
+              "width": 10,
+              "height": 10,
+              "fill": "#F05A5A",
+              "cornerRadius": 5
+            },
+            {
+              "type": "frame",
+              "id": "m9rtPF",
+              "name": "RoleWeave 客户端重设计 · 进展 窗口最小化",
+              "width": 10,
+              "height": 10,
+              "fill": "#F2C24E",
+              "cornerRadius": 5
+            },
+            {
+              "type": "frame",
+              "id": "GRMXR",
+              "name": "RoleWeave 客户端重设计 · 进展 窗口最大化",
+              "width": 10,
+              "height": 10,
+              "fill": "#52BE76",
+              "cornerRadius": 5
+            },
+            {
+              "type": "text",
+              "id": "ohkMp",
+              "name": "RoleWeave 客户端重设计 · 进展 品牌",
+              "fill": "#18232F",
+              "content": "RoleWeave",
+              "fontFamily": "Inter",
+              "fontSize": 13,
+              "fontWeight": "600"
+            },
+            {
+              "type": "frame",
+              "id": "F9OKz",
+              "name": "RoleWeave 客户端重设计 · 进展 标题间隔",
+              "width": "fill_container",
+              "height": 1
+            },
+            {
+              "type": "icon",
+              "id": "EHyRS",
+              "name": "RoleWeave 客户端重设计 · 进展 偏好图标",
+              "width": 15,
+              "height": 15,
+              "icon": "settings",
+              "library": "lucide",
+              "fill": "#5D7182"
+            },
+            {
+              "type": "text",
+              "id": "Rx3ls",
+              "name": "RoleWeave 客户端重设计 · 进展 偏好",
+              "fill": "#536271",
+              "content": "偏好",
+              "fontFamily": "Inter",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "NpI4M",
+          "name": "RoleWeave 客户端重设计 · 进展 主体",
+          "width": "fill_container",
+          "height": "fill_container",
+          "children": [
+            {
+              "type": "frame",
+              "id": "xrnrd",
+              "name": "RoleWeave 客户端重设计 · 进展 54px 导轨",
+              "width": 54,
+              "height": "fill_container",
+              "fill": "#FFFFFF",
+              "stroke": "#E4E9EE",
+              "strokeWidth": {
+                "right": 1
+              },
+              "layout": "vertical",
+              "gap": 12,
+              "padding": [
+                14,
+                0
+              ],
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "fuk6g",
+                  "name": "RoleWeave 客户端重设计 · 进展 导轨 协作",
+                  "width": 38,
+                  "height": 38,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 9,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "r8CsaP",
+                      "name": "RoleWeave 客户端重设计 · 进展 协作图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "messages-square",
+                      "library": "lucide",
+                      "fill": "#536271"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "AvGa5",
+                  "name": "RoleWeave 客户端重设计 · 进展 导轨 组织",
+                  "width": 38,
+                  "height": 38,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 9,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "QkYex",
+                      "name": "RoleWeave 客户端重设计 · 进展 组织图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "network",
+                      "library": "lucide",
+                      "fill": "#536271"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "KEveK",
+                  "name": "RoleWeave 客户端重设计 · 进展 导轨 项目",
+                  "width": 38,
+                  "height": 38,
+                  "fill": "#E7F5F0",
+                  "cornerRadius": 9,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "I9aEN",
+                      "name": "RoleWeave 客户端重设计 · 进展 项目图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "folder-kanban",
+                      "library": "lucide",
+                      "fill": "#11875F"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "JHVGp",
+                  "name": "RoleWeave 客户端重设计 · 进展 导轨 收件箱",
+                  "width": 38,
+                  "height": 38,
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 9,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "Z5xn6",
+                      "name": "RoleWeave 客户端重设计 · 进展 收件箱图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "inbox",
+                      "library": "lucide",
+                      "fill": "#536271"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "x6kTG0",
+                  "name": "RoleWeave 客户端重设计 · 进展 导轨间隔",
+                  "width": 1,
+                  "height": "fill_container"
+                },
+                {
+                  "type": "frame",
+                  "id": "pN2lx",
+                  "name": "RoleWeave 客户端重设计 · 进展 设置入口",
+                  "width": 38,
+                  "height": 38,
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "HUvL2",
+                      "name": "RoleWeave 客户端重设计 · 进展 设置图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "settings",
+                      "library": "lucide",
+                      "fill": "#5D7182"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "i3gPCY",
+              "name": "RoleWeave 客户端重设计 · 进展 主工作区",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "D9fq20",
+                  "name": "RoleWeave 客户端重设计 · 进展 48px 顶栏",
+                  "width": "fill_container",
+                  "height": 48,
+                  "fill": "#FFFFFF",
+                  "stroke": "#E4E9EE",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 8,
+                  "padding": [
+                    0,
+                    22
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Ukbur",
+                      "name": "RoleWeave 客户端重设计 · 进展 位置",
+                      "fill": "#596879",
+                      "content": "当前项目",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "icon",
+                      "id": "JyAXH",
+                      "name": "RoleWeave 客户端重设计 · 进展 面包屑",
+                      "width": 13,
+                      "height": 13,
+                      "icon": "chevron-right",
+                      "library": "lucide",
+                      "fill": "#98A4B1"
+                    },
+                    {
+                      "type": "text",
+                      "id": "NePSV",
+                      "name": "RoleWeave 客户端重设计 · 进展 模块位置",
+                      "fill": "#1D2733",
+                      "content": "项目",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "E5745",
+                      "name": "RoleWeave 客户端重设计 · 进展 顶栏间隔",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "DrafT",
+                      "name": "RoleWeave 客户端重设计 · 进展 引擎灯",
+                      "width": 7,
+                      "height": 7,
+                      "fill": "#17AB75",
+                      "cornerRadius": 4
+                    },
+                    {
+                      "type": "text",
+                      "id": "r7Cdeo",
+                      "name": "RoleWeave 客户端重设计 · 进展 引擎状态",
+                      "fill": "#596879",
+                      "content": "引擎可用",
+                      "fontFamily": "Inter",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "iFkKD",
+                  "name": "RoleWeave 客户端重设计 · 进展 内页签",
+                  "width": "fill_container",
+                  "height": 56,
+                  "fill": "#FFFFFF",
+                  "stroke": "#E4E9EE",
+                  "strokeWidth": {
+                    "bottom": 1
+                  },
+                  "gap": 16,
+                  "padding": [
+                    0,
+                    24
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "ynpYw",
+                      "name": "RoleWeave 客户端重设计 · 进展 模块名",
+                      "fill": "#1D2733",
+                      "content": "项目",
+                      "fontFamily": "Inter",
+                      "fontSize": 15,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "B0p9rQ",
+                      "name": "RoleWeave 客户端重设计 · 进展 模块分隔",
+                      "width": 1,
+                      "height": 20,
+                      "fill": "#E5EAEE"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "InT8P",
+                      "name": "RoleWeave 客户端重设计 · 进展 页签 项目",
+                      "height": 36,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 6,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "w7MPT",
+                          "name": "RoleWeave 客户端重设计 · 进展 页签文字 项目",
+                          "fill": "#6D7D8A",
+                          "content": "项目",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "x1qqBD",
+                      "name": "RoleWeave 客户端重设计 · 进展 页签 目标",
+                      "height": 36,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 6,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "Q5EEoR",
+                          "name": "RoleWeave 客户端重设计 · 进展 页签文字 目标",
+                          "fill": "#6D7D8A",
+                          "content": "目标",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "I9fCKY",
+                      "name": "RoleWeave 客户端重设计 · 进展 页签 进展",
+                      "height": 36,
+                      "fill": "#E7F5F0",
+                      "cornerRadius": 6,
+                      "padding": [
+                        0,
+                        12
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "R3f6O",
+                          "name": "RoleWeave 客户端重设计 · 进展 页签文字 进展",
+                          "fill": "#11875F",
+                          "content": "进展",
+                          "fontFamily": "Inter",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "D8gxal",
+                  "name": "RoleWeave 客户端重设计 · 进展 内容",
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "layout": "vertical",
+                  "gap": 16,
+                  "padding": [
+                    24,
+                    28
+                  ],
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "oWve6",
+                      "name": "进展页头",
+                      "width": "fill_container",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Z87Tcz",
+                          "name": "进展页头文案",
+                          "width": "fill_container",
+                          "layout": "vertical",
+                          "gap": 5,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "VWmEi",
+                              "name": "进展标题",
+                              "fill": "#1D2733",
+                              "content": "进展",
+                              "fontFamily": "Inter",
+                              "fontSize": 22,
+                              "fontWeight": "700"
+                            },
+                            {
+                              "type": "text",
+                              "id": "G9crU",
+                              "name": "进展说明",
+                              "fill": "#80909D",
+                              "content": "按时间查看执行记录、阻塞和待跟进项。",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Xy3pJ",
+                          "name": "刷新进展",
+                          "width": 88,
+                          "height": 34,
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 6,
+                          "stroke": "#DCE4E9",
+                          "strokeWidth": 1,
+                          "gap": 6,
+                          "justifyContent": "center",
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "icon",
+                              "id": "oKJOV",
+                              "name": "刷新图标",
+                              "width": 14,
+                              "height": 14,
+                              "icon": "refresh-cw",
+                              "library": "lucide",
+                              "fill": "#5D7182"
+                            },
+                            {
+                              "type": "text",
+                              "id": "o71eH",
+                              "name": "刷新文字",
+                              "fill": "#435767",
+                              "content": "刷新",
+                              "fontFamily": "Inter",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "HtXUk",
+                      "name": "进展内容区",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "gap": 16,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "IpeOs",
+                          "name": "执行时间线",
+                          "width": "fill_container",
+                          "height": "fill_container",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 9,
+                          "stroke": "#E2E8EC",
+                          "strokeWidth": 1,
+                          "layout": "vertical",
+                          "gap": 14,
+                          "padding": [
+                            20,
+                            22
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "lmhMg",
+                              "name": "执行时间线标题",
+                              "fill": "#263443",
+                              "content": "执行时间线",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "XJfO9",
+                              "name": "进展记录 工程师完成构建验证",
+                              "width": "fill_container",
+                              "height": 70,
+                              "stroke": "#EFF2F4",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
+                              "gap": 12,
+                              "padding": [
+                                0,
+                                8
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "YQhnU",
+                                  "name": "工程师完成构建验证图标",
+                                  "width": 17,
+                                  "height": 17,
+                                  "icon": "circle-check",
+                                  "library": "lucide",
+                                  "fill": "#18AA78"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "lzRoX",
+                                  "name": "工程师完成构建验证信息",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 5,
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "g2rrhK",
+                                      "name": "工程师完成构建验证标题",
+                                      "fill": "#2A3B49",
+                                      "content": "工程师完成构建验证",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 13,
+                                      "fontWeight": "600"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "KtVbc",
+                                      "name": "工程师完成构建验证说明",
+                                      "fill": "#84939F",
+                                      "content": "Windows 安装器资产校验通过",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "hLUOa",
+                                  "name": "工程师完成构建验证时间",
+                                  "fill": "#95A2AD",
+                                  "content": "10:42",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "PZ0EY",
+                              "name": "进展记录 产品经理更新验收范围",
+                              "width": "fill_container",
+                              "height": 70,
+                              "stroke": "#EFF2F4",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
+                              "gap": 12,
+                              "padding": [
+                                0,
+                                8
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "Mo9hH",
+                                  "name": "产品经理更新验收范围图标",
+                                  "width": 17,
+                                  "height": 17,
+                                  "icon": "file-pen-line",
+                                  "library": "lucide",
+                                  "fill": "#5A7A91"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "J0afoc",
+                                  "name": "产品经理更新验收范围信息",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 5,
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "u9o11",
+                                      "name": "产品经理更新验收范围标题",
+                                      "fill": "#2A3B49",
+                                      "content": "产品经理更新验收范围",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 13,
+                                      "fontWeight": "600"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "Pmmrw",
+                                      "name": "产品经理更新验收范围说明",
+                                      "fill": "#84939F",
+                                      "content": "明确版本范围与优先级",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "cKSw0",
+                                  "name": "产品经理更新验收范围时间",
+                                  "fill": "#95A2AD",
+                                  "content": "09:28",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "pxQsB",
+                              "name": "进展记录 设计师开始设置改版",
+                              "width": "fill_container",
+                              "height": 70,
+                              "stroke": "#EFF2F4",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
+                              "gap": 12,
+                              "padding": [
+                                0,
+                                8
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "icon",
+                                  "id": "d9WXzo",
+                                  "name": "设计师开始设置改版图标",
+                                  "width": 17,
+                                  "height": 17,
+                                  "icon": "circle-dot",
+                                  "library": "lucide",
+                                  "fill": "#D59A4B"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "IUWqk",
+                                  "name": "设计师开始设置改版信息",
+                                  "width": "fill_container",
+                                  "layout": "vertical",
+                                  "gap": 5,
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "cqqAf",
+                                      "name": "设计师开始设置改版标题",
+                                      "fill": "#2A3B49",
+                                      "content": "设计师开始设置改版",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 13,
+                                      "fontWeight": "600"
+                                    },
+                                    {
+                                      "type": "text",
+                                      "id": "fajcd",
+                                      "name": "设计师开始设置改版说明",
+                                      "fill": "#84939F",
+                                      "content": "存储位置方案待评审",
+                                      "fontFamily": "Inter",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "t79TRz",
+                                  "name": "设计师开始设置改版时间",
+                                  "fill": "#95A2AD",
+                                  "content": "昨天",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "Hj0Xh",
+                          "name": "待跟进面板",
+                          "width": 320,
+                          "height": "fill_container",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 9,
+                          "stroke": "#E2E8EC",
+                          "strokeWidth": 1,
+                          "layout": "vertical",
+                          "gap": 12,
+                          "padding": [
+                            20,
+                            18
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "NVu2P",
+                              "name": "待跟进标题",
+                              "fill": "#263443",
+                              "content": "待跟进",
+                              "fontFamily": "Inter",
+                              "fontSize": 14,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "vibry",
+                              "name": "待跟进 Windows 实机烟测",
+                              "width": "fill_container",
+                              "fill": "#F7F9FA",
+                              "cornerRadius": 7,
+                              "layout": "vertical",
+                              "gap": 5,
+                              "padding": [
+                                10,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "MbkNP",
+                                  "name": "Windows 实机烟测标题",
+                                  "fill": "#2E4050",
+                                  "content": "Windows 实机烟测",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "YJiuw",
+                                  "name": "Windows 实机烟测说明",
+                                  "fill": "#81919D",
+                                  "textGrowth": "fixed-width",
+                                  "width": 260,
+                                  "content": "跨版本安装和重启需记录结果",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "DCTIk",
+                              "name": "待跟进 设计方案评审",
+                              "width": "fill_container",
+                              "fill": "#F7F9FA",
+                              "cornerRadius": 7,
+                              "layout": "vertical",
+                              "gap": 5,
+                              "padding": [
+                                10,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "L4wmJU",
+                                  "name": "设计方案评审标题",
+                                  "fill": "#2E4050",
+                                  "content": "设计方案评审",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 12,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "text",
+                                  "id": "yzdu3",
+                                  "name": "设计方案评审说明",
+                                  "fill": "#81919D",
+                                  "textGrowth": "fixed-width",
+                                  "width": 260,
+                                  "content": "确认存储位置与通知设置范围",
+                                  "fontFamily": "Inter",
+                                  "fontSize": 11,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variables": {
+    "canvas": {
+      "type": "color",
+      "value": "#0A0C10"
+    },
+    "canvas-subtle": {
+      "type": "color",
+      "value": "#0E1116"
+    },
+    "surface": {
+      "type": "color",
+      "value": "#14171D"
+    },
+    "surface-inset": {
+      "type": "color",
+      "value": "#101318"
+    },
+    "nav-hover": {
+      "type": "color",
+      "value": "#1D222A"
+    },
+    "border": {
+      "type": "color",
+      "value": "#232830"
+    },
+    "border-strong": {
+      "type": "color",
+      "value": "#343B45"
+    },
+    "brand": {
+      "type": "color",
+      "value": "#19D89B"
+    },
+    "brand-soft": {
+      "type": "color",
+      "value": "#0D2A22"
+    },
+    "brand-vivid": {
+      "type": "color",
+      "value": "#2EE9A8"
+    },
+    "fg": {
+      "type": "color",
+      "value": "#E9EDF2"
+    },
+    "fg-muted": {
+      "type": "color",
+      "value": "#A3ABB8"
+    },
+    "fg-subtle": {
+      "type": "color",
+      "value": "#7D8694"
+    },
+    "led-on": {
+      "type": "color",
+      "value": "#2EE0A2"
+    },
+    "danger": {
+      "type": "color",
+      "value": "#F08F8F"
+    },
+    "danger-soft": {
+      "type": "color",
+      "value": "#321E22"
+    },
+    "warning": {
+      "type": "color",
+      "value": "#E6BF6D"
+    },
+    "warning-soft": {
+      "type": "color",
+      "value": "#2E2717"
+    },
+    "blue": {
+      "type": "color",
+      "value": "#5CC8E8"
+    },
+    "blue-soft": {
+      "type": "color",
+      "value": "#0F2733"
+    },
+    "success": {
+      "type": "color",
+      "value": "#63D19B"
+    },
+    "success-soft": {
+      "type": "color",
+      "value": "#0F2A20"
+    }
+  },
+  "fileToken": "2a0a9caf-7433-4bf0-94ad-a9729ce73015"
+}

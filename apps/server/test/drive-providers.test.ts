@@ -98,7 +98,7 @@ test("bdpan list maps ls records into drive-object.v1 with inferred mime types",
   const provider = new BdpanDriveProvider(
     { command: "bdpan" },
     okRunner((args) => {
-      assert.deepEqual(args.slice(0, 2), ["bdpan", "ls"]);
+      assert.deepEqual(args, ["ls", "--json"]);
       assert.ok(args.includes("--json"));
       return JSON.stringify(LS_RECORDS);
     }),
@@ -115,8 +115,8 @@ test("bdpan list with a query uses server-side search and skips malformed record
   const provider = new BdpanDriveProvider(
     { command: "bdpan" },
     okRunner((args) => {
-      assert.equal(args[1], "search");
-      assert.equal(args[2], "报告");
+      assert.equal(args[0], "search");
+      assert.equal(args[1], "报告");
       assert.ok(args.includes("--page-size"));
       return JSON.stringify({
         total: 3,
@@ -162,7 +162,7 @@ test("bdpan list is bounded to 200 records and rejects option-like queries befor
 test("bdpan list surfaces an exit-0 failure envelope as auth expiry or upstream failure", async () => {
   const expired = new BdpanDriveProvider(
     { command: "bdpan" },
-    okRunner(() => "很抱歉，内部服务错误。\n{\"code\":1,\"error\":\"列表请求失败: baidupan: API error errno=-7\"}"),
+    okRunner(() => "很抱歉，内部服务错误。\n{\"code\":1,\"error\":\"列表请求失败: baidupan: API error token expired\"}"),
   );
   const expiredError = codeOf(await expired.list("").catch((caught) => caught));
   assert.equal(expiredError.code, "drive_auth_expired");
@@ -245,7 +245,7 @@ test("bdpan non-zero exit with an expired-token diagnostic maps to drive_auth_ex
   const provider = new BdpanDriveProvider(
     {
       command: process.execPath,
-      prefixArgs: ["-e", "console.error('请将错误 ID 反馈给官方客服'); console.log(JSON.stringify({code:1,error:'API error errno=-7'})); process.exit(1)"],
+      prefixArgs: ["-e", "console.error('请将错误 ID 反馈给官方客服'); console.log(JSON.stringify({code:1,error:'token expired'})); process.exit(1)"],
     },
     undefined,
     { listMs: 8000 },
@@ -284,4 +284,41 @@ test("the drive provider endpoint reports the selected provider without decorati
     if (previousAlias === undefined) delete process.env.ORG_WORKBENCH_MEM_URL;
     else process.env.ORG_WORKBENCH_MEM_URL = previousAlias;
   }
+});
+
+
+test("endpoint errno -7 is an upstream failure rather than an invitation to log in again", async () => {
+  const providers = [
+    new BdpanDriveProvider({command: "bdpan"}, okRunner(() => JSON.stringify({code: 1, error: "API error errno=-7"}))),
+    new BdpanDriveProvider({command: process.execPath, prefixArgs: ["-e", "console.log(JSON.stringify({code:1,error:'API error errno=-7'})); process.exit(1)"]}),
+  ];
+  for (const provider of providers) {
+    const error = codeOf(await provider.list("").catch((caught) => caught));
+    assert.equal(error.code, "drive_upstream_failed");
+    assert.equal(error.status, 502);
+  }
+  const status = await new BdpanDriveProvider({command: "bdpan"}, okRunner(() => JSON.stringify({code: 1, error: "API error errno=-7"}))).probe();
+  assert.equal(status.state, "error");
+});
+
+test("the real subprocess receives a search as one literal argument", async () => {
+  // Run a disposable node fixture through the production runner, with no shell.
+  const query = "report; echo shell $(echo substitution) --help";
+  const fixture = "const args=process.argv.slice(1); if(args[0]!=='search'||args[1]!==process.env.DRIVE_TEST_QUERY) process.exit(2); console.log('[]')";
+  const previous = process.env.DRIVE_TEST_QUERY;
+  try {
+    process.env.DRIVE_TEST_QUERY = query;
+    const provider = new BdpanDriveProvider({command: process.execPath, prefixArgs: ["-e", fixture]});
+    assert.deepEqual(await provider.list(query), []);
+  } finally {
+    if (previous === undefined) delete process.env.DRIVE_TEST_QUERY;
+    else process.env.DRIVE_TEST_QUERY = previous;
+  }
+});
+
+test("a probe honors its configured timeout", async () => {
+  const provider = new BdpanDriveProvider({command: process.execPath, prefixArgs: ["-e", "setTimeout(() => {}, 30000)"]}, undefined, {probeMs: 100});
+  const started = Date.now();
+  await provider.probe();
+  assert.ok(Date.now() - started < 4000);
 });
