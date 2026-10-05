@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ReportsCenter } from "../src/reports/ReportsCenter";
 import { TurnThread } from "../src/turns";
@@ -100,9 +100,8 @@ describe("conversation readability", () => {
       page: { cursor: null, hasMore: false },
     };
     const { container } = render(<ReportsCenter reports={reports} loading={false} />);
-    const escalation = container.querySelector(".owb-report-card.is-escalation p");
-    expect(escalation?.className).toContain("owb-clamp-2");
-    expect(escalation?.getAttribute("title")).toBe(escalation?.textContent);
+    const exception = screen.getByRole("complementary", { name: "异常详情" });
+    expect(within(exception).getByRole("heading", { name: "engine_failed" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
     expect(container.querySelector(".owb-report-card code")).toBeNull();
     expect(container.textContent).not.toContain(digest);

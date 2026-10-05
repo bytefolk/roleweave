@@ -437,7 +437,7 @@ describe("App context navigation", () => {
     fireEvent.click(rail.getByRole("button", { name: "收件箱" }));
     const inboxViews = within(screen.getByRole("navigation", { name: "收件箱视图" }));
     fireEvent.click(inboxViews.getByRole("button", { name: "上报" }));
-    expect(await screen.findByRole("region", { name: "上报中心" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "执行上报" })).toBeInTheDocument();
     fireEvent.click(inboxViews.getByRole("button", { name: "审批" }));
     expect(rail.getByRole("button", { name: "收件箱" })).toHaveAttribute("aria-current", "page");
   });
@@ -1752,8 +1752,8 @@ describe("App runtime bridge", () => {
     openedBridge({ reports: vi.fn().mockResolvedValue({ status: 200, body: reports }), turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
     render(<App />);
     await openInbox("上报");
-    expect(await screen.findByRole("heading", { name: "上报中心" })).toBeInTheDocument();
-    expect(screen.queryByText("position_budget_exceeded")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "执行上报" })).toBeInTheDocument();
+    expect(within(screen.getByRole("complementary", { name: "异常详情" })).getByRole("heading", { name: "position_budget_exceeded" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /用量与预算/ }));
     expect(screen.getByRole("meter", { name: "单任务消耗" })).toHaveAttribute("aria-valuenow", "50");
     expect(screen.queryByRole("meter", { name: "单日用量不可用" })).not.toBeInTheDocument();
@@ -1767,7 +1767,7 @@ describe("App runtime bridge", () => {
     // sanitized evidence reaches reports.v1 it must also populate the derived timeline.
     // #394: the stream switcher is flat now, so anchor the nav tab label to
     // avoid matching the evidence table's per-row "查看时间线" link button.
-    fireEvent.click(screen.getByRole("button", { name: /^时间线/ }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "上报数据流" })).getByRole("button", { name: /^时间线/ }));
     expect(screen.getByLabelText("执行时间线")).toBeInTheDocument();
     expect(screen.getByText("共 3 条")).toBeInTheDocument();
     expect(screen.getByTestId("timeline-budget-tag-turn-1")).toBeInTheDocument();
@@ -1815,7 +1815,7 @@ describe("App runtime bridge", () => {
       expect(conversation).toBeVisible();
       expect(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "协作" })).toHaveAttribute("aria-current", "page");
       expect(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
-      expect(screen.queryByRole("region", { name: "上报中心" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "执行上报" })).not.toBeInTheDocument();
       expect(bridge.sessions).toHaveBeenCalledWith("repo-owner");
       await waitFor(() =>
         expect(conversation.querySelector('[data-turn-id="turn-1"]')).toBeInTheDocument(),
@@ -2765,7 +2765,8 @@ it("counts only actionable inbox items and opens an approval's exact employee se
   expect(inbox).toHaveAttribute("aria-current", "page");
   fireEvent.click(await screen.findByTestId("approval-card-actionable"));
   const detail = screen.getByRole("region", { name: "审批详情" });
-  fireEvent.click(detail.querySelector('[data-testid="approval-source-references"] summary')!);
+  const references = detail.querySelector('[data-testid="approval-source-references"]')!;
+  if (!references.hasAttribute("open")) fireEvent.click(references.querySelector("summary")!);
   expect(within(detail).getByText(sourceSession.sessionId)).toBeVisible();
   fireEvent.click(within(detail).getByRole("button", { name: "打开原会话" }));
 
