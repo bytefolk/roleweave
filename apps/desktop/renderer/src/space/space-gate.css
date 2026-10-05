@@ -1,0 +1,63 @@
+.owb-app .owb-space-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 780px;
+}
+
+.owb-app .owb-space-gate__empty {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+}
+
+.owb-app .owb-space-gate__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.owb-app .owb-space-gate__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.owb-app .owb-space-gate__progress,
+.owb-app .owb-space-gate__hint,
+.owb-app .owb-space-gate__confirm {
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+}
+
+.owb-app .owb-space-gate__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.owb-app .owb-space-gate__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.owb-app .owb-space-gate__evidence {
+  flex: 1;
+  min-width: 0;
+  max-width: 260px;
+}
+
+.owb-app .owb-space-gate__note {
+  max-width: 520px;
+}
+
+.owb-app .owb-space-gate__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

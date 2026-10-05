@@ -191,6 +191,7 @@ const SHARED_RUNTIME_FILES = [
   "dist/semantic-runtime.js",
   "dist/services.js",
   "dist/sessions.js",
+  "dist/space-doc.js",
   "dist/task-board.js",
   "dist/turn-progress.js",
   "dist/turns.js",
