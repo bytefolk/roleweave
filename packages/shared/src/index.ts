@@ -23,6 +23,7 @@ export * from "./sessions.js";
 export * from "./groups.js";
 export * from "./docs.js";
 export * from "./drive.js";
+export * from "./drive-provider.js";
 export * from "./context-sources.js";
 export * from "./updates.js";
 export * from "./goals.js";
