@@ -7,7 +7,7 @@
 
 ### Added
 
-- #549: Implement the accepted Inbox workbench with request-first approval rows, actor/risk/expiry filters, anchored decisions, execution evidence and exception inspectors, traceable audit records and chronological run summaries. Preserve cached snapshots on disconnect, revalidate uncertain approval retries, and show unobserved usage and actual budget percentages honestly.
+- #549：按已确认设计更新收件箱审批工作台，提供请求列表、风险与岗位筛选、裁决操作、执行证据与异常详情、可追溯审计和运行时间线；断线保留只读快照，不确定的审批重试先核验权限，如实展示未观测用量和实际预算比例。
 
 - #469：可选 Laya 接力停止建议。仅在 `ROLEWEAVE_LAYA_ENABLED` 开启、已完成步骤得到正向建议且仍有未执行步骤时暂停；桌面端由 owner 显式选择“停止剩余步骤”或“继续接力”。30 秒超时、SSE 断连、无效或失败建议均继续原 mention order；Laya 只接收 `status`、`errorCode`、`hasOutput`，不接收输入、输出或 handoff 文本。已接受的消息与 spawn 清单保持不可变。Refs #422。
 
@@ -24,6 +24,8 @@
 
 ### Changed
 
+- #556：目标模块按完善后的 Pencil 设计展示列表/详情、真实分支完成比例、责任岗位及关联会话；进展改为时间线与失败/卡住回合跟进，读取失败保留快照并可刷新，切换工作区丢弃过期响应。兼容中文/英文、明暗主题及窄屏。
+
 - #545：语言、明暗模式、色彩偏好及主题预设/手动配色统一放入“设置 → 常规”，移除标题栏右上角的重复偏好入口、未接入的 AI 生成主题入口和不可配置的提示音占位行。预设立即保存；自定义颜色支持预览、保存及取消。
 
 - 智能协作建议、Goals 健康 overlay 与审批风险 overlay 使用 Apache-2.0 Laya 本地推理。Provider 仅接受 loopback `POST /v1/systemone` 地址，不发送 API Key 或 Authorization header，并保留项目 opt-in、规则权威、低置信度弃权及有界失败语义。运行时只用 `ROLEWEAVE_LAYA_*`；不再读取 `ROLEWEAVE_JEV_*`。
@@ -31,6 +33,8 @@
 - 组织目录树行改为「头像 + 岗位名」主信息，id / 引擎 / 运行状态作次行；树顶增加搜索与全部展开/收起；选中行圆角高亮加强。员工会话面板去掉线程渐变，复制/重试改为悬停浮现，头部与输入工具条收成一行。不改拖拽、招聘占位、审批卡片与重试语义。Refs #458。
 
 ### Fixed
+
+- 构建下载统一使用 `@electron/get` 5.1.0，移除存在高危缓存复用问题的旧 `got` / `http-cache-semantics` 依赖；构建环境最低 Node 版本明确为 22.12。
 
 - 更新构建依赖 `brace-expansion` 的锁定版本至 1.1.21 / 2.1.7 / 5.0.12，修复拒绝服务漏洞并恢复 CI 依赖安全检查。
 - #545：修复设置下拉框选中后文字偏上；再次编辑自定义颜色时保留已保存的其他颜色；切换主题预设时清除旧的持久化配色，避免重启后恢复旧颜色。
