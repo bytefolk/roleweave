@@ -12,7 +12,13 @@ import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 async function fixture(t: test.TestContext, withExecution = true) {
   const server = await startTestServer();
   const workspace = await copyExampleWorkspace();
-  t.after(async () => { await server.close(); await fs.rm(workspace, { recursive: true, force: true }); });
+  t.after(async () => {
+    await server.close();
+    // Completed turns enqueue context exports out-of-band. Drain their actual
+    // writes before deleting this fixture, even when an assertion fails early.
+    await server.ctx.contextExporter.waitForIdle();
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
   const call = (url: string, method = "GET", body?: unknown, token: string | null = server.token) =>
     api(server.baseUrl, url, { method, token, ...(body !== undefined ? { body } : {}) });
   assert.equal((await call("/workspace/open", "POST", { path: workspace })).status, 200);
