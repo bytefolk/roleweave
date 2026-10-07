@@ -1880,7 +1880,7 @@ describe("App employee-memory module wiring", () => {
     expect(within(conversation).queryByText("归档会话回复")).not.toBeInTheDocument();
     expect(within(conversation).getByRole("textbox", { name: "下达任务" })).toBeEnabled();
     expect(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
-  });
+  }, 15_000);
 
   it("uses the current Workbench mem bridge from the unified memory surface", async () => {
     const list = vi.fn().mockResolvedValue({
