@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Button, Modal, Popover } from "antd";
+import { Button, Modal, Popover, Tooltip } from "antd";
 import { useConversationCopy } from "../locales/conversation";
 import { createConversationMemory, conversationKey, type ConversationMemory } from "./conversation-memory";
 import { Maximize2, Minimize2, History, MessagesSquare } from "lucide-react";
@@ -194,6 +194,9 @@ export function TurnPanel({
   const runningTurn = selectedPositionId !== null && turns.some(
     (turn) => turn.positionId === selectedPositionId && turn.status === "running",
   );
+  const modelDispatchPending = selectedPositionId !== null && turns.some(
+    (turn) => turn.positionId === selectedPositionId && turn.status === "running" && turn.dispatchPending === true,
+  );
 
   const stopping = cancelling || stopRequests.has(draftKey);
   useEffect(() => {
@@ -378,10 +381,14 @@ export function TurnPanel({
           onClick={() => { onSelectSession(session.sessionId); setHistoryOpen(false); }}>
             <span>{new Date(session.createdAt).toLocaleString()}</span><small>{session.sessionId.slice(-8)} · {session.status === "active" ? copy.currentSession : t("turn.sessionReadOnly")}</small>
         </button>) : copy.unavailableHistory}</div>}>
-        <Button type="text" size="small" aria-label={copy.history} title={selectedSession ? `${copy.history} · ${copy.session} ${selectedSession.sessionId.slice(-8)}` : copy.history} icon={<History size={16} aria-hidden="true" />} />
+        <Tooltip title={selectedSession ? `${copy.history} · ${copy.session} ${selectedSession.sessionId.slice(-8)}` : copy.history} trigger={["hover", "focus"]} open={historyOpen ? false : undefined}>
+          <Button type="text" size="small" aria-label={copy.history} icon={<History size={16} aria-hidden="true" />} />
+        </Tooltip>
       </Popover> : null}
-      {onToggleFocus ? <Button type="text" size="small" aria-label={focused ? copy.exitFocus : copy.focus} title={focused ? copy.exitFocus : copy.focus} aria-pressed={focused}
-        icon={focused ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />} onClick={onToggleFocus}>{focused ? copy.exitFocus : null}</Button> : null}
+      {onToggleFocus ? <Tooltip title={focused ? copy.exitFocus : copy.focus} trigger={["hover", "focus"]}>
+        <Button type="text" size="small" aria-label={focused ? copy.exitFocus : copy.focus} aria-pressed={focused}
+          icon={focused ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />} onClick={onToggleFocus} />
+      </Tooltip> : null}
     </div>
   );
 
@@ -426,7 +433,7 @@ export function TurnPanel({
           : undefined}
         sendShortcut={sendShortcut}
         options={active ? <ConversationOptions
-          config={modelConfig} saving={modelSaving} disabled={runningTurn || busy || employeeBusy || sending || sessionBusy}
+          config={modelConfig} saving={modelSaving} disabled={modelDispatchPending || sessionBusy || ((busy || sending) && !runningTurn && !employeeBusy)}
           loading={modelLoading} error={modelError} notice={modelNotice} onReload={onReloadModel} running={runningTurn || employeeBusy}
           session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
           onRotate={onRotateSession}

@@ -4,7 +4,35 @@
 .owb-rgraph__header h1 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 19px; font-weight: 650; }
 .owb-rgraph__header p { margin: 5px 0 0; color: var(--ui-foreground-muted); font-size: 12px; }
 .owb-rgraph__workspace { position: relative; display: grid; grid-template-columns: 176px minmax(0, 1fr) 258px; min-width: 0; border: 1px solid var(--ui-border); border-radius: 12px; overflow: clip; background: var(--ui-surface); }
+.owb-rgraph__workspace--context { grid-template-columns: 218px minmax(0, 1fr) 254px; }
+.owb-rgraph__header-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.owb-rgraph__workflow { display: flex; flex-wrap: wrap; gap: 12px 32px; margin: 0; padding: 12px 16px; list-style: none; border: 1px solid var(--ui-border); border-radius: 9px; background: var(--ui-surface); }
+.owb-rgraph__workflow li { display: flex; align-items: center; gap: 8px; color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-rgraph__workflow li > span { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid var(--ui-border); border-radius: 50%; font-size: 11px; }
+.owb-rgraph__workflow li.is-current { color: var(--ui-primary); font-weight: 600; }
+.owb-rgraph__workflow li.is-current > span { border-color: var(--ui-primary); background: var(--ui-brand-soft); }
+.owb-rgraph__guide { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 22px; padding: 16px; border: 1px solid var(--ui-border); border-radius: 9px; background: var(--ui-brand-soft); font-size: 12px; }
+.owb-rgraph__guide p { margin: 6px 0 0; line-height: 1.8; color: var(--ui-foreground-muted); }
+.owb-rgraph__guide > p { grid-column: 1 / -1; padding-top: 10px; border-top: 1px solid var(--ui-border); }
+.owb-rgraph__scope { padding: 0 4px; font-size: 11px; color: var(--ui-foreground-muted); }
+.owb-rgraph__scope summary { display: flex; align-items: center; gap: 7px; cursor: pointer; list-style: none; }
+.owb-rgraph__scope summary::after { content: "⌄"; }
+.owb-rgraph__scope[open] summary::after { content: "⌃"; }
+.owb-rgraph__scope summary small { margin-left: auto; font-size: 11px; }
+.owb-rgraph__scope p { margin: 10px 0; line-height: 1.8; }
+.owb-rgraph__scope-coverage { display: flex; flex-wrap: wrap; gap: 8px 18px; padding-bottom: 5px; }
+.owb-rgraph__scope-coverage > div { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.owb-rgraph__scope-coverage .ant-tag { margin: 0; font-size: 10px; }
 .owb-rgraph__filters { padding: 14px 12px; border-right: 1px solid var(--ui-border); min-width: 0; }
+.owb-rgraph__advanced { margin-top: 16px; font-size: 11px; color: var(--ui-foreground-muted); }
+.owb-rgraph__advanced summary { cursor: pointer; padding: 10px 0; border-top: 1px solid var(--ui-border); }
+.owb-rgraph__workspace--context .owb-rgraph__results { border: 0; margin: 8px -5px 0; }
+.owb-rgraph__workspace--context .owb-rgraph__result-head { padding: 9px 5px; }
+.owb-rgraph__workspace--context .owb-rgraph__list { max-height: min(62vh, 610px); padding: 0; }
+.owb-rgraph__workspace--context .owb-rgraph__list li + li { border: 0; }
+.owb-rgraph__workspace--context .owb-rgraph__list button { padding: 10px 6px; align-items: center; }
+.owb-rgraph__workspace--context .owb-rgraph__list small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.owb-rgraph__workspace--context .owb-rgraph__list button > svg { flex: none; color: var(--ui-foreground-muted); }
 .owb-rgraph fieldset { border: 0; padding: 0; margin: 23px 0; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
 .owb-rgraph legend { margin-bottom: 10px; font-size: 11px; font-weight: 700; color: var(--ui-foreground-muted); letter-spacing: .06em; }
 .owb-rgraph fieldset .ant-checkbox-wrapper { font-size: 12px; margin: 0; align-items: center; }
@@ -20,9 +48,70 @@
 .owb-rgraph__main { min-width: 0; }
 .owb-rgraph__toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px; border-bottom: 1px solid var(--ui-border); }
 .owb-rgraph__toolbar > div { display: flex; align-items: center; gap: 4px; }
+.owb-rgraph__workspace--context .owb-rgraph__toolbar { padding: 12px 16px; }
 .owb-rgraph__toolbar button[aria-pressed="true"] { border-color: var(--ui-primary); color: var(--ui-primary); }
 .owb-rgraph__renderer { display: inline-flex; align-items: center; gap: 4px; }
 .owb-rgraph__canvas-wrap { position: relative; }
+.owb-rgraph__context-wrap { position: relative; min-height: 380px; }
+.owb-rgraph__context-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 20px 0; }
+.owb-rgraph__context { padding: 20px; min-width: 0; }
+.owb-rgraph__context h2 { margin: 10px 0; font-size: 20px; line-height: 1.5; font-weight: 650; }
+.owb-rgraph__welcome-intro > p { margin: 0; color: var(--ui-foreground-muted); font-size: 12px; line-height: 1.9; }
+.owb-rgraph__focus-eyebrow { display: flex; align-items: center; gap: 7px; color: var(--ui-primary); font-size: 11px; font-weight: 550; }
+.owb-rgraph__schema-example { margin: 20px 0 24px; padding: 14px 12px; border: 1px dashed var(--ui-border); border-radius: 8px; background: var(--ui-surface-raised, var(--ui-surface)); }
+.owb-rgraph__schema-example > small { font-size: 10px; color: var(--ui-foreground-muted); }
+.owb-rgraph__schema-chain { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding-top: 12px; }
+.owb-rgraph__schema-node { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 550; padding: 9px 11px; border: 1px solid var(--ui-border); border-radius: 7px; background: var(--ui-surface); }
+.owb-rgraph__schema-relation { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--ui-foreground-muted); font-size: 10px; }
+.owb-rgraph__question-starters { display: flex; flex-direction: column; gap: 9px; }
+.owb-rgraph__question-starters h2 { margin: 0 0 4px; font-size: 13px; }
+.owb-rgraph__question-starter { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 14px; border: 1px solid var(--ui-border); border-radius: 9px; text-align: left; background: var(--ui-surface); color: var(--ui-foreground); cursor: pointer; font: inherit; }
+.owb-rgraph__question-starter > svg { flex: none; color: var(--ui-primary); }
+.owb-rgraph__question-starter > span { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 4px; }
+.owb-rgraph__question-starter strong { font-size: 13px; font-weight: 600; }
+.owb-rgraph__question-starter small { color: var(--ui-foreground-muted); font-size: 11px; line-height: 1.65; }
+.owb-rgraph__question-starter em { color: var(--ui-primary); font-size: 10px; font-style: normal; overflow-wrap: anywhere; }
+.owb-rgraph__question-starter:disabled { opacity: .6; cursor: default; }
+.owb-rgraph__question-starter:not(:disabled):hover { border-color: var(--ui-primary); background: var(--ui-brand-soft); }
+.owb-rgraph__trail { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 10px 14px; border-bottom: 1px solid var(--ui-border); }
+.owb-rgraph__trail ol { display: flex; flex: 1; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.owb-rgraph__trail li { display: inline-flex; align-items: center; min-width: 0; gap: 4px; }
+.owb-rgraph__trail button { border: 0; padding: 4px; border-radius: 4px; background: transparent; color: var(--ui-foreground-muted); font: inherit; font-size: 11px; cursor: pointer; overflow-wrap: anywhere; }
+.owb-rgraph__trail > button { flex: none; display: flex; align-items: center; }
+.owb-rgraph__trail button[aria-current] { color: var(--ui-primary); font-weight: 550; }
+.owb-rgraph__trail button:disabled { opacity: .35; cursor: default; }
+.owb-rgraph__focus-card { padding: 16px; border: 1px solid var(--ui-border); border-left: 3px solid var(--ui-primary); border-radius: 8px; background: var(--ui-brand-soft); }
+.owb-rgraph__focus-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.owb-rgraph__focus-identity > strong { font-size: 19px; font-weight: 650; overflow-wrap: anywhere; }
+.owb-rgraph__focus-identity > span { font-size: 10px; padding: 2px 6px; border: 1px solid var(--ui-border); border-radius: 4px; color: var(--ui-foreground-muted); }
+.owb-rgraph__focus-help { margin: 9px 0 12px; color: var(--ui-foreground-muted); font-size: 12px; line-height: 1.8; }
+.owb-rgraph__context-metrics { display: flex; gap: 16px; color: var(--ui-foreground-muted); font-size: 11px; }
+.owb-rgraph__context-metrics strong { color: var(--ui-primary); }
+.owb-rgraph__context-hint { display: flex; align-items: center; gap: 6px; margin: 16px 0; color: var(--ui-foreground-muted); font-size: 11px; }
+.owb-rgraph__relation-groups { display: flex; flex-direction: column; gap: 22px; }
+.owb-rgraph__relation-group-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px; margin-bottom: 8px; }
+.owb-rgraph__relation-group-header h3 { font-size: 12px; margin: 0; font-weight: 650; }
+.owb-rgraph__relation-group-header > span { font-size: 10px; color: var(--ui-foreground-muted); }
+.owb-rgraph__relation-cards { display: flex; flex-direction: column; gap: 8px; list-style: none; padding: 0; margin: 0; }
+.owb-rgraph__relation-card { min-width: 0; border: 1px solid var(--ui-border); border-radius: 8px; overflow: hidden; }
+.owb-rgraph__relation-statement { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: center; gap: 7px; padding: 10px 11px; }
+.owb-rgraph__relation-endpoint, .owb-rgraph__neighbor-button { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 6px; text-align: left; }
+.owb-rgraph__relation-endpoint strong, .owb-rgraph__neighbor-button strong { font-size: 12px; font-weight: 550; overflow-wrap: anywhere; }
+.owb-rgraph__relation-endpoint small, .owb-rgraph__neighbor-button small { font-size: 10px; color: var(--ui-foreground-muted); }
+.owb-rgraph__neighbor-button { border: 1px solid var(--ui-border); border-radius: 6px; color: var(--ui-primary); background: var(--ui-brand-soft); font: inherit; cursor: pointer; }
+.owb-rgraph__neighbor-button:hover { border-color: var(--ui-primary); }
+.owb-rgraph__relation-arrow { color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-rgraph__relation-label { color: var(--ui-foreground-muted); font-size: 10px; text-align: center; }
+.owb-rgraph__relation-evidence { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; padding: 6px 11px; border-top: 1px solid var(--ui-border); }
+.owb-rgraph__relation-evidence > span { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 10px; color: var(--ui-foreground-muted); min-width: 0; }
+.owb-rgraph__relation-evidence small { font-size: 10px; overflow-wrap: anywhere; }
+.owb-rgraph__evidence-button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 0; border: 0; background: transparent; color: var(--ui-primary); cursor: pointer; font: inherit; font-size: 10px; }
+.owb-rgraph__context-empty { display: flex; align-items: center; flex-direction: column; gap: 9px; padding: 28px 10px; font-size: 12px; color: var(--ui-foreground-muted); line-height: 1.8; }
+.owb-rgraph__evidence-intro { border-top: 1px solid var(--ui-border); margin-top: 20px; padding-top: 14px; }
+.owb-rgraph__evidence-intro h4 { margin: 0; font-size: 12px; }
+.owb-rgraph__evidence-intro p { margin: 8px 0 0; color: var(--ui-foreground-muted); font-size: 11px; line-height: 1.8; }
+.owb-rgraph__edge-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+.owb-rgraph__edge-actions button { height: auto; min-height: 28px; white-space: normal; }
 .owb-rgraph__spatial, .owb-rgraph__spatial-stage { height: clamp(340px, 48vh, 560px); width: 100%; }
 .owb-rgraph__spatial { position: relative; overflow: hidden; color: #f4f4f6; background: #09090b; }
 .owb-rgraph__spatial--galaxy { background: radial-gradient(circle at 50% 36%, #273449 0, #12151c 62%); }
@@ -103,6 +192,10 @@
   .owb-rgraph__main { grid-column: 2; grid-row: 1; }
   .owb-rgraph__inspector { display: none; }
   .owb-rgraph__workspace.has-selection .owb-rgraph__inspector { display: block; grid-column: 2; grid-row: 1; justify-self: end; z-index: 8; width: min(285px, 100%); max-height: calc(100vh - 180px); box-sizing: border-box; background: var(--ui-surface); box-shadow: -10px 0 24px #00000014; }
+  .owb-rgraph__workspace--context { grid-template-columns: 190px minmax(0, 1fr); }
+  .owb-rgraph__workspace--context.has-selection .owb-rgraph__inspector { grid-column: 1 / -1; grid-row: 2; width: 100%; max-height: none; border-left: 0; border-top: 1px solid var(--ui-border); position: static; box-shadow: none; }
+  .owb-rgraph__workspace--context .owb-rgraph__list { max-height: 520px; }
+  .owb-rgraph__context { padding: 16px; }
 }
 @container rgraph (max-width: 620px) {
   .owb-rgraph__workspace { grid-template-columns: 128px minmax(0, 1fr); }
@@ -112,5 +205,21 @@
   .owb-rgraph__toolbar > div { flex-wrap: wrap; }
   .owb-rgraph__caption span:last-child { display: none; }
   .owb-rgraph__list button { flex-wrap: wrap; }
+  .owb-rgraph__header { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+  .owb-rgraph__header p { line-height: 1.7; }
+  .owb-rgraph__workflow { gap: 12px; padding: 10px; }
+  .owb-rgraph__workflow li { font-size: 11px; gap: 5px; }
+  .owb-rgraph__guide { grid-template-columns: 1fr; }
+  .owb-rgraph__workspace--context { grid-template-columns: minmax(0, 1fr); }
+  .owb-rgraph__workspace--context .owb-rgraph__filters { grid-column: 1; grid-row: 1; border-right: 0; border-bottom: 1px solid var(--ui-border); padding: 12px; }
+  .owb-rgraph__workspace--context .owb-rgraph__main { grid-column: 1; grid-row: 2; }
+  .owb-rgraph__workspace--context.has-selection .owb-rgraph__inspector { grid-column: 1; grid-row: 3; }
+  .owb-rgraph__workspace--context .owb-rgraph__list { max-height: 165px; }
+  .owb-rgraph__workspace--context .owb-rgraph__list button { flex-wrap: nowrap; }
+  .owb-rgraph__workspace--context .owb-rgraph__advanced { margin-top: 5px; }
+  .owb-rgraph__context h2 { font-size: 18px; }
+  .owb-rgraph__relation-statement { gap: 4px; padding: 8px 6px; }
+  .owb-rgraph__relation-endpoint strong, .owb-rgraph__neighbor-button strong { font-size: 11px; }
+  .owb-rgraph__scope summary small { font-size: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .owb-rgraph *, .owb-rgraph *::before, .owb-rgraph *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

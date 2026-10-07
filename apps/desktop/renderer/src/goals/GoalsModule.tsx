@@ -633,6 +633,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                     )}
                     {projectMode && <ProjectBoard
                       key={detail.goal.goalId}
+                      workspaceKey={workspaceKey}
                       detail={detail}
                       positionNames={positionNames}
                       positionEngines={positionEngines}

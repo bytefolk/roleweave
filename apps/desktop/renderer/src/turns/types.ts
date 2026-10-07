@@ -80,6 +80,8 @@ export interface TurnRecord {
   model?: string;
   /** Renderer-only live/pending projection; never a persisted receipt. */
   provisional?: boolean;
+  /** Optimistic dispatch waiting for the server to capture its model snapshot. */
+  dispatchPending?: boolean;
   id: string;
   positionId: string;
   positionName: string;

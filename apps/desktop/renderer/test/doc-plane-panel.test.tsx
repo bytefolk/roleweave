@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { OwbI18nProvider } from "@roleweave/ui";
 import type { DocPlaneDetailResponse, DocPlaneListResponse } from "@roleweave/shared";
 import {
   DocPlanePanel,
@@ -55,6 +56,20 @@ function okDetail(): DocPlaneDetailLoadResult {
 }
 
 describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
+  it.each([
+    { locale: "zh-CN" as const, tooltip: "共享文档：Engineering/Runbook" },
+    { locale: "en" as const, tooltip: "Shared document: Engineering/Runbook" },
+  ])("explains the full shared-document title in $locale without treating it as a file path", async ({ locale, tooltip }) => {
+    const entry = { ...LIST_RESPONSE.entries[0]!, title: "Engineering/Runbook" };
+    const readDoc = vi.fn().mockResolvedValue(okDetail());
+    render(<OwbI18nProvider locale={locale}><DocPlanePanel listDocs={vi.fn().mockResolvedValue({ kind: "ok", response: { ...LIST_RESPONSE, entries: [entry] } })} readDoc={readDoc} /></OwbI18nProvider>);
+    const document = await screen.findByRole("button", { name: entry.title });
+    act(() => document.focus());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(tooltip);
+    fireEvent.click(document);
+    await waitFor(() => expect(readDoc).toHaveBeenCalledWith(entry.id));
+  });
+
   it("lists documents on mount and shows the mock-source badge", async () => {
     const listDocs = vi.fn().mockResolvedValue(okList());
     const readDoc = vi.fn().mockResolvedValue(okDetail());

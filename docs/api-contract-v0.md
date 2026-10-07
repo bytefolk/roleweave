@@ -568,6 +568,32 @@ GET  /groups/:conversationRef/turns
 { "status": "updated", "positionId": "docs-writer", "name": "文档工程师", "mode": "approval_required", "version": { "seq": 7, "updatedAt": "..." } }
 ```
 
+### 项目任务人工验收
+
+`POST /goals/:goalId/tasks/:taskId/acceptance` 使用本地 operator Bearer 凭据，桌面 IPC 仅接受主窗口受信任主 frame。请求不接受 `decidedBy`、时间、状态或 Space 标识；服务端提供裁决人及时间。
+
+```json
+{
+  "expectedWorkspacePath": "/fixture/workspace",
+  "expectedUpdatedAt": "2026-10-07T00:00:00.000Z",
+  "idempotencyKey": "11111111-1111-4111-8111-111111111111",
+  "source": {
+    "positionId": "repo-owner",
+    "turnId": "22222222-2222-4222-8222-222222222222",
+    "sessionId": "33333333-3333-4333-8333-333333333333",
+    "outputDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "decision": "accepted",
+  "verdicts": [{ "criteriaIndex": 0, "passed": true }]
+}
+```
+
+`source` 必须直接采用 `GET /goals/:goalId` 的 `taskDeliveries[taskId].source`。该投影包含最新已完成的个人会话产出，且必须属于当前任务和员工；失败、运行中、无正文或旧版无 session 的记录不能验收。`taskExecutions` 保留执行状态，并增加可选 `sessionId` 用于精确回看。
+
+接受必须覆盖项目全部非空验收标准并逐项通过；拒绝必须带非空 `note`。成功返回 `{ "record": GoalTaskAcceptanceRecord }`。裁决使用 `goal-task-acceptance.v1`，`scope` 固定为 `goal-task`，复用 `acceptance.v1` 的决定与逐项校验规则，不创建 Space。记录包含计划版本、标准快照和产出 digest，与任务的 `done` / `review` 状态在同一 goal 文件原子保存。
+
+工作区、计划或产出变化返回 409 `goal_conflict`；同一幂等键与同一请求重试返回原记录，不同请求重用键返回 409。已有执行的任务不能通过普通 `PATCH workItems` 伪造完成；无执行的人工计划仍可直接更新规划状态。每个 goal 最多保留 64 条验收记录，达到上限拒绝新写入，不静默删除历史。旧版本的严格读取器不支持 `taskAcceptances`，降级前需保留数据备份。
+
 ## 3. 稳定错误码登记表
 
 控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）；hire 通道码（#33 加法）：`hire_request_invalid`（400 形状级）、`hire_position_exists`（409 重名）；群聊通道码（#52 加法）：`group_request_invalid`（400 形状级）、`group_missing`（404）、`group_conflict`（409 重复成员/成员上限）、`group_storage_failed`（500 fail-closed）；员工档案通道码（#291 加法）：`position_profile_invalid`（400 形状级，含权限投影的边界校验）。

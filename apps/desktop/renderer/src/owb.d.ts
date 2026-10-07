@@ -108,7 +108,7 @@ export interface OwbBridge {
   /** Reveal the open workspace in the OS file manager. Takes no argument: the main process re-reads the open workspace itself. */
   revealWorkspace?(): Promise<{ opened: boolean; path?: string; reason?: string }>;
   /** Open one validated path below the currently open workspace. */
-  openWorkspaceFile?(relativePath: string): Promise<{ opened: boolean; path?: string; reason?: string }>;
+  openWorkspaceFile?(relativePath: string, expectedWorkspacePath?: string): Promise<{ opened: boolean; path?: string; reason?: string }>;
   orgTree(): Promise<OwbApiResponse>;
   orgApply(manifest: ChangeManifest): Promise<OwbApiResponse>;
   orgBackups(): Promise<OwbApiResponse<OrgBackupsResponse>>;
@@ -154,7 +154,7 @@ export interface OwbBridge {
   session(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
   sessionSetContext(request: { sessionId: string; enabled: boolean }): Promise<OwbApiResponse<WorkbenchSession>>;
   rotateSession(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
-  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval; retryOf?: string; attachmentIds?: string[] }): Promise<OwbApiResponse<TurnRecord>>;
+  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval; goalId?: string; branchId?: string; retryOf?: string; attachmentIds?: string[] }): Promise<OwbApiResponse<TurnRecord>>;
   sessionTurnHistory(sessionId: string): Promise<OwbApiResponse<TurnHistory>>;
   uploadAttachment(request: { sessionId: string; fileName: string; mimeType: string; dataBase64: string }): Promise<OwbApiResponse<{ attachment: import("@roleweave/shared").TurnAttachment }>>;
   createGroup(request: { memberPositionIds: string[] }): Promise<OwbApiResponse<GroupConversation>>;
@@ -191,6 +191,7 @@ export interface OwbBridge {
   updateTaskStatus(request: import("@roleweave/shared").TaskStatusRequest & { taskId: string }): Promise<OwbApiResponse<import("@roleweave/shared").AgentTask>>;
   goal(goalId: string): Promise<OwbApiResponse<GoalDetail>>;
   updateGoal(request: GoalsUpdateRequest & { goalId: string }): Promise<OwbApiResponse<{ goalId: string }>>;
+  createGoalTaskAcceptance?(request: import("@roleweave/shared/goals").GoalTaskAcceptanceCreateRequest & { goalId: string; taskId: string }): Promise<OwbApiResponse<{ record: import("@roleweave/shared/goals").GoalTaskAcceptanceRecord }>>;
   deleteGoal(goalId: string): Promise<OwbApiResponse<{ goalId: string; deleted: boolean }>>;
   drive: {
     list(q?: string): Promise<OwbApiResponse<DriveObjectListResponse>>;

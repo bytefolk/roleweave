@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld("owb", {
   createWorkspace: (request) => ipcRenderer.invoke("owb:workspace:create", request),
   workspace: () => ipcRenderer.invoke("owb:workspace:get"),
   revealWorkspace: () => ipcRenderer.invoke("owb:workspace:reveal"),
-  openWorkspaceFile: (relativePath) => ipcRenderer.invoke("owb:workspace:file-open", relativePath),
+  openWorkspaceFile: (relativePath, expectedWorkspacePath) => ipcRenderer.invoke("owb:workspace:file-open", relativePath, expectedWorkspacePath),
   orgTree: () => ipcRenderer.invoke("owb:org:tree"),
   orgApply: (manifest) => ipcRenderer.invoke("owb:org:apply", manifest),
   orgBackups: () => ipcRenderer.invoke("owb:org:backups"),
@@ -101,6 +101,7 @@ contextBridge.exposeInMainWorld("owb", {
   updateTaskStatus: (request) => ipcRenderer.invoke("owb:task:status", request),
   goal: (goalId) => ipcRenderer.invoke("owb:goal:get", goalId),
   updateGoal: (request) => ipcRenderer.invoke("owb:goal:update", request),
+  createGoalTaskAcceptance: (request) => ipcRenderer.invoke("owb:goal:task-acceptance", request),
   deleteGoal: (goalId) => ipcRenderer.invoke("owb:goal:delete", goalId),
   drive: {
     list: (q) => ipcRenderer.invoke("owb:drive:list", q),

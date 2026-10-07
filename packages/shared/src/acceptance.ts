@@ -67,6 +67,27 @@ export interface AcceptanceCreateRequest {
   note?: string;
 }
 
+/** Shared human-verdict semantics, independent of Space or Goal ownership. */
+export type AcceptanceDecisionInput = Pick<AcceptanceCreateRequest, "criteriaCount" | "verdicts" | "decision" | "note">;
+
+export function validateAcceptanceDecisionInput(raw: unknown): AcceptanceValidationResult<AcceptanceDecisionInput> {
+  if (!isRecord(raw) || !keysMatch(raw, ["criteriaCount", "verdicts", "decision"], ["note"])) {
+    return fail("acceptance_unknown_field", "decision has unexpected or missing fields");
+  }
+  const count = validateCriteriaCount(raw.criteriaCount);
+  if (!count.ok) return count;
+  const verdicts = validateVerdicts(raw.verdicts);
+  if (!verdicts.ok) return verdicts;
+  const decision = enumValue(raw.decision, acceptanceDecisions, "decision");
+  if (!decision.ok) return decision;
+  const note = parseNote(raw.note, "note");
+  if (!note.ok) return note;
+  const consistency = checkDecisionConsistency(decision.value, count.value, verdicts.value, note.value);
+  if (!consistency.ok) return consistency;
+  return { ok: true, value: { criteriaCount: count.value, verdicts: verdicts.value, decision: decision.value,
+    ...(note.value !== undefined ? { note: note.value } : {}) } };
+}
+
 // ── Validators ──────────────────────────────────────────────────────────────
 
 export type AcceptanceValidationCode =

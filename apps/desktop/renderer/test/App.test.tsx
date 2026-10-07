@@ -904,7 +904,8 @@ describe("App runtime bridge", () => {
     render(<App />);
 
     const chip = await screen.findByRole("button", { name: /\/fixture\/workspace$/ });
-    expect(chip.getAttribute("title")).toContain("/fixture/workspace");
+    fireEvent.mouseEnter(chip);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("/fixture/workspace");
     fireEvent.click(chip);
     await waitFor(() => expect(revealWorkspace).toHaveBeenCalledTimes(1));
   });
@@ -1829,6 +1830,58 @@ describe("App runtime bridge", () => {
 });
 
 describe("App employee-memory module wiring", () => {
+  it("continues the active session from employee memory after viewing a rotated conversation", async () => {
+    const rotatedSession: WorkbenchSession = {
+      ...activeSession,
+      sessionId: "22222222-2222-4222-8222-222222222222",
+      status: "rotated",
+      rotatedTo: activeSession.sessionId,
+      rotatedAt: "2026-08-24T05:00:00.000Z",
+    };
+    const sessionTurnHistory = vi.fn(async (sessionId: string) => ({
+      status: 200,
+      body: {
+        ...history([apiTurn({
+          conversationId: sessionId,
+          turnId: sessionId === activeSession.sessionId ? "active-memory-turn" : "rotated-memory-turn",
+          input: sessionId === activeSession.sessionId ? "当前会话任务" : "归档会话任务",
+          output: sessionId === activeSession.sessionId ? "当前会话回复" : "归档会话回复",
+        })]),
+        conversationId: sessionId,
+      },
+    }));
+    openedBridge({
+      sessions: vi.fn().mockResolvedValue({
+        status: 200,
+        body: { schemaVersion: "workbench-session-list.v1", positionId: position.id, activeSessionId: activeSession.sessionId, sessions: [activeSession, rotatedSession] },
+      }),
+      sessionTurnHistory,
+    });
+    render(<App />);
+    await selectRepoOwner();
+    expect(await screen.findByText("当前会话回复")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "会话历史" }));
+    fireEvent.click(await screen.findByRole("button", { name: /22222222.*历史会话只读/ }));
+    expect(await screen.findByText("归档会话回复")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "下达任务" })).toBeDisabled();
+
+    selectEmployeeView("记忆");
+    fireEvent.click(screen.getByRole("button", { name: "打开 会话记忆 记忆来源" }));
+    await screen.findByRole("combobox", { name: "选择会话" });
+    pickSelectOption("选择会话", "当前");
+    const memory = screen.getByRole("region", { name: "员工记忆" });
+    expect(await within(memory).findByRole("heading", { name: "当前会话任务" })).toBeVisible();
+    sessionTurnHistory.mockClear();
+    fireEvent.click(within(memory).getByRole("button", { name: "继续对话" }));
+
+    await waitFor(() => expect(sessionTurnHistory).toHaveBeenLastCalledWith(activeSession.sessionId));
+    const conversation = screen.getByRole("region", { name: "岗位对话" });
+    expect(await within(conversation).findByText("当前会话回复")).toBeVisible();
+    expect(within(conversation).queryByText("归档会话回复")).not.toBeInTheDocument();
+    expect(within(conversation).getByRole("textbox", { name: "下达任务" })).toBeEnabled();
+    expect(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("uses the current Workbench mem bridge from the unified memory surface", async () => {
     const list = vi.fn().mockResolvedValue({
       status: 200,
@@ -2439,7 +2492,7 @@ it("preserves the actual composer, draft and selected session across organizatio
   openGraph();
   fireEvent.click(await within(screen.getByRole("list", { name: "对象" })).findByRole("button", { name: /Repo Owner/ }));
   expect(input).not.toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "打开员工工作台" }));
+  fireEvent.click(within(screen.getByRole("complementary", { name: "关系详情" })).getByRole("button", { name: "打开员工工作台" }));
   await waitFor(expectConversation);
   expect(bridge.createSessionTurn).not.toHaveBeenCalled();
   expect(bridge.createSession).not.toHaveBeenCalled();
@@ -2690,7 +2743,7 @@ it("opens project management independently from Goals through the module rail", 
       createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z",
     },
     activity: [],
-    taskExecutions: { "project-task": { turnId: "project-turn", positionId: "repo-owner", status: "completed" } },
+    taskExecutions: { "project-task": { turnId: "project-turn", positionId: "repo-owner", sessionId: activeSession.sessionId, status: "completed" } },
   };
   const bridge = openedBridge({
     goals: vi.fn().mockResolvedValue({ status: 200, body: { goals: [{ ...detail.goal, branchCount: 0 }] } }),
@@ -2713,6 +2766,42 @@ it("opens project management independently from Goals through the module rail", 
     expect(screen.getByLabelText("下达任务")).toBe(composer);
     expect(composer).toHaveValue("保留未发送草稿");
   }
+  expect(bridge.createTurn).not.toHaveBeenCalled();
+  expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+}, 15_000);
+
+it("opens a legacy project result read-only without replacing the active conversation", async () => {
+  const detail: GoalDetail = {
+    goal: { schemaVersion: "goal.v1", goalId: "legacy-project", title: "旧项目", description: "查看旧派工结果",
+      acceptanceCriteria: [], status: "open", health: "unknown", branches: [],
+      workItems: [{ taskId: "legacy-task", title: "旧派工", status: "review", priority: "normal", assigneePositionId: "repo-owner" }],
+      createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" }, activity: [],
+    taskExecutions: { "legacy-task": { turnId: "legacy-turn", positionId: "repo-owner", status: "completed" } },
+  };
+  const bridge = openedBridge({
+    goals: vi.fn().mockResolvedValue({ status: 200, body: { goals: [{ ...detail.goal, branchCount: 0 }] } }),
+    goal: vi.fn().mockResolvedValue({ status: 200, body: detail }),
+    turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([apiTurn({ turnId: "legacy-turn", output: "旧派工的精确结果" })]) }),
+    sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([apiTurn({ turnId: "current-turn", output: "当前会话结果" })]) }),
+  });
+  render(<App />);
+  await selectRepoOwner();
+  await screen.findByText("当前会话结果");
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "保留当前草稿" } });
+  fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "项目", exact: true }));
+  fireEvent.click(await screen.findByRole("button", { name: "查看任务执行：旧派工" }));
+  await waitFor(() => expect(bridge.turnHistory).toHaveBeenCalledWith("repo-owner"));
+  // rc-component's test-mode IDs collide with the background filter label.
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() => expect(within(dialog).getByText("旧版执行结果")).toBeVisible());
+  await waitFor(() => expect(within(dialog).getByText("旧派工的精确结果")).toBeVisible());
+  expect(within(dialog).queryByText("当前会话结果")).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole("textbox", { name: "下达任务" })).not.toBeInTheDocument();
+  expect(bridge.turnHistory).toHaveBeenCalledWith("repo-owner");
+  fireEvent.click(within(dialog).getByRole("button", { name: "关闭", exact: true }));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "协作", exact: true }));
+  expect(await screen.findByText("当前会话结果")).toBeVisible();
+  expect(screen.getByLabelText("下达任务")).toHaveValue("保留当前草稿");
   expect(bridge.createTurn).not.toHaveBeenCalled();
   expect(bridge.createSessionTurn).not.toHaveBeenCalled();
 }, 15_000);
@@ -2789,6 +2878,24 @@ it("counts only actionable inbox items and opens an approval's exact employee se
   } });
   await openInbox();
   await waitFor(() => expect(inbox.querySelector(".ant-badge-count")).toBeNull());
+});
+
+it.each([
+  { source: "/fixture/workspace/apps/server/src/index.ts", opened: true, allowed: true },
+  { source: "/outside/private.ts", opened: true, allowed: false },
+  { source: "/fixture/workspace/apps/server/src/index.ts", opened: false, allowed: true },
+])("opens an observed source only within its workspace and reports failures: $source / $opened", async ({ source, opened, allowed }) => {
+  const openWorkspaceFile = vi.fn().mockResolvedValue({ opened });
+  const warning = vi.spyOn(message, "warning");
+  const turn = apiTurn({ events: [{ type: "trace.activity", runId: "source-run", timestamp: "2026-08-24T04:00:00Z", activityId: "read-source", kind: "tool", status: "completed", title: "Read", detail: `path: ${source}` }] });
+  openedBridge({ openWorkspaceFile, sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([turn]) }) });
+  render(<App />);
+  await selectRepoOwner();
+  fireEvent.click(await screen.findByRole("button", { name: /查看过程详情/ }));
+  fireEvent.click(screen.getByRole("link", { name: `文档链接：${source}` }));
+  if (allowed) await waitFor(() => expect(openWorkspaceFile).toHaveBeenCalledWith("apps/server/src/index.ts", "/fixture/workspace"));
+  else expect(openWorkspaceFile).not.toHaveBeenCalled();
+  if (!allowed || !opened) await waitFor(() => expect(warning).toHaveBeenCalledWith("此资源暂无文档打开入口"));
 });
 
 it("wires approval module bulk deny so failed items remain selected in the queue", async () => {

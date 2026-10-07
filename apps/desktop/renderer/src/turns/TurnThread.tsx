@@ -1,7 +1,10 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { AlertTriangle, Bot, ChevronRight, CircleCheck, CircleX, LoaderCircle, MessagesSquare, RotateCcw, ShieldAlert, ShieldQuestion, Terminal, Wrench } from "lucide-react";
+import { AlertTriangle, Bot, ChevronRight, CircleCheck, CircleX, FileCode2, LoaderCircle, MessagesSquare, RotateCcw, ShieldAlert, ShieldQuestion, Terminal, Wrench } from "lucide-react";
 import { Markdown, markdownToPlainText } from "../markdown/Markdown";
 import { useConversationCopy } from "../locales/conversation";
+import { activityAction, useActivityCopy } from "../locales/activity";
+import { visibleTrail } from "./trail";
+import "./activity-trace.css";
 import type { ConversationViewport } from "./conversation-memory";
 import { MessageActions, OperatorMessage } from "./message-actions";
 import { EmptyState, useT } from "@roleweave/ui";
@@ -10,6 +13,7 @@ import { useEngineLabel } from "./engine-select";
 import { EngineIcon } from "./engine-icon";
 import type { TurnRecord } from "./types";
 import { DiffViewer } from "../approvals/DiffViewer";
+import { Tooltip } from "antd";
 
 export interface TurnThreadProps {
   turns: TurnRecord[];
@@ -61,6 +65,53 @@ function ActivityStatusIcon({ status }: { status: "running" | "completed" | "fai
   return <CircleCheck size={12} aria-hidden="true" />;
 }
 
+type ActivityParameterKey = "pattern" | "files" | "offset" | "limit" | "path";
+
+function activityParameters(detail: string): { key?: ActivityParameterKey; value: string }[] {
+  return detail.split(/\s+·\s+|\r?\n/).map(segment => {
+    const text = segment.trim();
+    const labeled = /^(pattern|files|offset|limit|path|file_path):\s*(.*)$/i.exec(text);
+    if (labeled) return { key: (labeled[1]!.toLowerCase() === "file_path" ? "path" : labeled[1]!.toLowerCase()) as ActivityParameterKey, value: labeled[2]! };
+    // Legacy events carry bare paths. Keep every character, including a POSIX
+    // leading slash or Windows drive, rather than Markdown-autolinking part of it.
+    if (/[*?]/.test(text)) return { key: "pattern" as const, value: text };
+    if (/[\\/]/.test(text) || /\.[a-z0-9]{1,10}$/i.test(text)) return { key: "path" as const, value: text };
+    return { value: text };
+  }).filter(segment => segment.value !== "");
+}
+
+function ActivityParameters({ detail, positionId, onOpenResource }: { detail: string; positionId: string; onOpenResource?: TurnThreadProps["onOpenResource"] }) {
+  const copy = useActivityCopy();
+  return <div className="owb-activity-trace__parameters">
+    {activityParameters(detail).map(({ key, value }, index) => {
+      const file = key === "path" && !/[*?]/.test(value) && /\.[a-z0-9]{1,10}$/i.test(value);
+      return <div key={index} className="owb-activity-trace__parameter">
+        {key ? <span className="owb-activity-trace__parameter-key">{copy[key]}: </span> : null}
+        {file && onOpenResource ? <a className="owb-activity-trace__resource" href="#"
+          aria-label={`${copy.resourceLink}${value}`} title={value}
+          onClick={event => { event.preventDefault(); onOpenResource(positionId, value); }}>
+          <span className="owb-activity-trace__resource-icon" data-link-icon="code"><FileCode2 size={12} aria-hidden="true" /></span>
+          <code>{value}</code>
+        </a> : <code className="owb-activity-trace__parameter-value">{value}</code>}
+      </div>;
+    })}
+  </div>;
+}
+
+function ActivityDetails({ detail, positionId, onOpenResource }: { detail: string; positionId: string; onOpenResource?: TurnThreadProps["onOpenResource"] }) {
+  const copy = useActivityCopy();
+  const [expanded, setExpanded] = useState(false);
+  if (detail.length <= 140 && !detail.includes("\n")) {
+    return <div title={detail}><ActivityParameters detail={detail} positionId={positionId} onOpenResource={onOpenResource} /></div>;
+  }
+  const fullPreview = activityParameters(detail).map(({ key, value }) => `${key ? `${copy[key]}: ` : ""}${value}`).join(" · ");
+  const preview = fullPreview.length > 100 ? `${fullPreview.slice(0, 100)}…` : fullPreview;
+  return <details className="owb-activity-trace__details" onToggle={event => setExpanded(event.currentTarget.open)}>
+    <summary title={detail}><span className="owb-activity-trace__detail-preview">{preview}</span> <span className="owb-activity-trace__detail-hint">{expanded ? copy.collapseDetails : copy.details}</span></summary>
+    <div className="owb-activity-trace__detail-body"><ActivityParameters detail={detail} positionId={positionId} onOpenResource={onOpenResource} /></div>
+  </details>;
+}
+
 /** Live clock while executing; a settled turn freezes its duration. A missing
  * terminal timestamp stays absent instead of borrowing today's clock. */
 function ElapsedTime({ turn, now }: { turn: TurnRecord; now: number }) {
@@ -80,13 +131,13 @@ function ElapsedTime({ turn, now }: { turn: TurnRecord; now: number }) {
 export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }: { turn: TurnRecord; approvalDecided?: boolean; onOpenResource?: TurnThreadProps["onOpenResource"] }) {
   const t = useT();
   const copy = useConversationCopy();
+  const activityCopy = useActivityCopy();
   const bodyId = useId();
   // The trail is chronological: thought items (the model's narration between
   // two tool calls) interleave with tool/agent activities.
   const trail = turn.trace ?? [];
+  const displayedTrail = visibleTrail(trail, turn.output);
   const tools = trail.filter((item) => item.kind === "tool");
-  const agents = trail.filter((item) => item.kind === "agent");
-  const thoughts = trail.filter((item) => item.kind === "thought");
   const runningActivity = trail.find((item) => item.status === "running" && item.kind !== "thought");
   // A running thought is always the trail tail — an arriving step closes the
   // open narration before it lands — so when a tool and a thought are both
@@ -117,7 +168,7 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
           : runningThought
             ? t("turn.thoughtRunning")
             : runningActivity
-              ? t("turn.activityRunningTool", { tool: runningActivity.title ?? runningActivity.activityId })
+              ? t("turn.activityRunningTool", { tool: activityAction(runningActivity.title, activityCopy) })
               : t("turn.activityRunning")
         : turn.status === "failed"
           ? t("turn.failed")
@@ -128,8 +179,8 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
               : failedTools > 0
                 ? t("turn.toolsExecutedWithFailures", { count: tools.length, failedCount: failedTools })
                 : t("turn.toolsExecuted", { count: tools.length });
-  const hasBody = tools.length > 0 || agents.length > 0 || thoughts.length > 0 || running;
   const thinking = running && !runningActivity && !runningThought;
+  const hasBody = displayedTrail.length > 0 || thinking;
   return (
     <div className={`owb-turn-progress is-${state}`} role="group" aria-label={t("turn.progressAria")}
       data-motion={running ? "live" : undefined}>
@@ -155,13 +206,13 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
       {hasBody ? (
         <div id={bodyId} className="owb-activity-trace__group">
           <ol className="owb-activity-trace__list" hidden={!open}>
-            {trail.map((item) => {
+            {displayedTrail.map((item) => {
               if (item.kind === "thought") {
                 return (
-                  <li key={`${item.activityId}:${item.status}`} className={`owb-activity-trace__item is-thought is-${item.status}`}>
+                  <li key={item.activityId} className={`owb-activity-trace__item is-thought is-${item.status}`}>
                     <span className="owb-activity-trace__icon"><ActivityStatusIcon status={item.status} /></span>
                     <span className="owb-activity-trace__label">
-                      {item.status === "running" ? t("turn.thoughtRunning") : t("turn.thoughtDone")}
+                      {item.status === "running" ? t("turn.thoughtRunning") : activityCopy.narration}
                       {item.text ? <span className="owb-activity-trace__thought" title={item.text}> · {item.text}</span> : null}
                     </span>
                   </li>
@@ -169,21 +220,25 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
               }
               if (item.kind === "agent") {
                 return (
-                  <li key={`${item.activityId}:${item.status}`} className={`owb-activity-trace__agent is-${item.status}`}>
+                  <li key={item.activityId} className={`owb-activity-trace__agent is-${item.status}`}>
                     <Bot size={14} aria-hidden="true" /><span>{item.title}{item.detail ? ` · ${item.detail}` : ""}</span>
                   </li>
                 );
               }
               return (
-                <li key={`${item.activityId}:${item.status}`} className={`owb-activity-trace__item is-tool is-${item.status}`}>
+                <li key={item.activityId} className={`owb-activity-trace__item is-tool is-${item.status}`}>
                   <span className="owb-activity-trace__icon">
                     {/terminal|bash/i.test(item.title ?? "") ? <Terminal size={13} aria-hidden="true" /> : <Wrench size={13} aria-hidden="true" />}
                   </span>
-                  <span className="owb-activity-trace__label">
-                    <strong>{item.title}</strong>
-                    {item.detail ? <> · <Markdown content={item.detail} onNavigateDoc={onOpenResource ? (path) => onOpenResource(turn.positionId, path) : undefined} /></> : null}
-                    <span className="owb-activity-trace__state"> · {item.status === "running" ? t("turn.toolRunning") : item.status === "failed" ? t("turn.toolFailed") : t("turn.toolDone")}</span>
-                  </span>
+                  <div className="owb-activity-trace__label">
+                    <div className="owb-activity-trace__action">
+                      <strong>{activityAction(item.title, activityCopy)}</strong>
+                      {item.title ? <span className="owb-activity-trace__tool-name">{item.title}</span> : null}
+                      <span className="owb-activity-trace__state">{item.status === "running" ? activityCopy.running : item.status === "failed" ? activityCopy.failed : activityCopy.completed}</span>
+                    </div>
+                    {item.detail ? <ActivityDetails detail={item.detail} positionId={turn.positionId} onOpenResource={onOpenResource} /> :
+                      <span className="owb-activity-trace__parameters">{activityCopy.missingDetails}</span>}
+                  </div>
                   <span className={`owb-activity-trace__status is-${item.status}`}><ActivityStatusIcon status={item.status} /></span>
                 </li>
               );
@@ -475,10 +530,12 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
                 <span className="owb-tc-head__who">
                   {turn.positionName}
                 </span>
-                <span className="owb-tc-head__eng" title={turn.model ? `${copy.requested}: ${turn.model}` : engineLabel(turn.engine)}>
+                <Tooltip title={turn.model ? `${engineLabel(turn.engine)} · ${copy.requested}: ${turn.model}` : engineLabel(turn.engine)} trigger={["hover", "focus"]}>
+                <span className="owb-tc-head__eng" tabIndex={0}>
                   <EngineIcon engine={turn.engine} />
                   {turn.model ? `${copy.requested}: ${turn.model}` : engineLabel(turn.engine)}
                 </span>
+                </Tooltip>
                 {isProvisional ? (
                   <span className="owb-tc-head__provisional" aria-label={t("turn.provisionalTitle")}>
                     {t("turn.provisional")}
@@ -498,11 +555,11 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
                 >
                   <div className="owb-turn-conclusion-label">{isProvisional ? t("turn.liveOutput") : turn.status === "completed" ? t("turn.finalConclusion") : t("turn.unconfirmedOutput")}</div>
                   {isProvisional ? (
-                    <div className="owb-tc__out owb-tc__out--markdown owb-tc__out--provisional" title={turn.output}>
+                    <div className="owb-tc__out owb-tc__out--markdown owb-tc__out--provisional">
                       <Markdown content={turn.output} onNavigateDoc={onOpenResource ? (path) => onOpenResource(turn.positionId, path) : undefined} />
                     </div>
                   ) : (
-                    <div className="owb-tc__out owb-tc__out--markdown" title={turn.output}>
+                    <div className="owb-tc__out owb-tc__out--markdown">
                       <Markdown content={turn.output} onNavigateDoc={onOpenResource ? (path) => onOpenResource(turn.positionId, path) : undefined} />
                     </div>
                   )}

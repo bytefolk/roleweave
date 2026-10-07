@@ -5,8 +5,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Alert, Button, Empty, Input, List, Space, Spin, Tag } from "antd";
-import { FileText } from "lucide-react";
+import { Alert, Button, Empty, Input, List, Space, Spin, Tag, Tooltip } from "antd";
+import { FileText, Search } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type {
   DocPlaneDetailResponse,
@@ -147,6 +147,7 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
             <Space.Compact style={{ width: "100%" }}>
               <Input
                 aria-label={t("docs.planeSearchAria")}
+                prefix={<Search aria-hidden="true" size={14} />}
                 placeholder={t("docs.planeSearchPlaceholder")}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -157,9 +158,10 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
                   void runList("");
                 }}
               />
-              <Button onClick={() => runList(query.trim())} loading={listing}>
-                {t("docs.planeSearchAction")}
-              </Button>
+              <Tooltip title={t("docs.planeSearchAction")} trigger={["hover", "focus"]}>
+                <Button aria-label={t("docs.planeSearchAction")} icon={<Search aria-hidden="true" size={15} />}
+                  onClick={() => runList(query.trim())} loading={listing} />
+              </Tooltip>
             </Space.Compact>
             {source !== null ? (
               <div className="owb-doc-plane__source" role="status">
@@ -225,15 +227,17 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
                       : []
                   }
                 >
-                  <button
-                    type="button"
-                    className="owb-doc-plane__entry"
-                    aria-pressed={selectedId === entry.id}
-                    onClick={() => openEntry(entry.id)}
-                  >
-                    <span aria-hidden="true">{entry.icon ?? "📄"}</span>{" "}
-                    {entry.title}
-                  </button>
+                  <Tooltip placement="right" title={t("docs.sharedDocumentTitle", { title: entry.title })} trigger={["hover", "focus"]}>
+                    <button
+                      type="button"
+                      className="owb-doc-plane__entry"
+                      aria-pressed={selectedId === entry.id}
+                      onClick={() => openEntry(entry.id)}
+                    >
+                      <span className="owb-doc-plane__entry-icon" aria-hidden="true">{entry.icon ?? <FileText size={15} strokeWidth={1.7} />}</span>
+                      <span className="owb-doc-plane__entry-title">{entry.title}</span>
+                    </button>
+                  </Tooltip>
                 </List.Item>
               )}
             />

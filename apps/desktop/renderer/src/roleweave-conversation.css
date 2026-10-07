@@ -29,7 +29,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--ui-border);
+  border-bottom: 0;
 }
 
 :is(.owb-turn-panel__header, .owb-conversation-header-host) .owb-engine-badge {
@@ -76,7 +76,7 @@
  * a stack of decorative cards. */
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-conversation-controls {
   padding: 10px 20px 12px;
-  border-bottom: 1px solid var(--ui-border);
+  border-bottom: 0;
   background: var(--ui-surface);
 }
 
@@ -127,7 +127,7 @@
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread {
-  padding: 18px 20px 22px;
+  padding: 24px max(20px, calc((100% - 760px) / 2)) 22px;
   background: var(--ui-surface-inset);
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
@@ -138,8 +138,8 @@
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread .owb-turn {
-  gap: 14px;
-  padding: 0 0 26px;
+  gap: 22px;
+  padding: 0 0 30px;
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread .owb-turn::before {
@@ -149,13 +149,13 @@
 /* Human messages are the only filled message surface. */
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-thread, .owb-groups__timeline) .owb-bubble--operator {
   max-width: min(82%, 720px);
-  padding: 10px 12px;
-  border: 1px solid var(--ui-border);
-  border-radius: 7px;
-  background: var(--ui-surface);
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--ui-surface-inset);
   box-shadow: none;
   color: var(--ui-foreground);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.65;
 }
 
@@ -165,20 +165,19 @@
   max-width: 100%;
   padding: 0 0 20px;
   border: 0;
-  border-bottom: 1px solid var(--ui-border);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
   color: var(--ui-foreground);
-  font-size: 13px;
+  font-size: 14px;
   opacity: 1;
 }
 
 /* Keep names, engine identity, and exact states as a readable metadata row. */
 :is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-tc-head, .owb-groups__timeline .owb-bubble__header) {
   flex-wrap: wrap;
-  gap: 6px 10px;
-  margin-bottom: 8px;
+  gap: 5px 10px;
+  margin-bottom: 10px;
   color: var(--ui-foreground-muted);
   font-size: 12px;
   line-height: 1.5;
@@ -187,7 +186,7 @@
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-thread .owb-tc-head__who,
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-groups__timeline .owb-bubble__name {
   color: var(--ui-foreground);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -260,7 +259,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
+  min-height: 32px;
 }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__summary-spinner {
   position: relative;
@@ -293,10 +292,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 9px;
-  padding: 4px 0;
+  gap: 7px;
+  min-height: 32px;
+  padding: 4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 7px;
   background: transparent;
   color: var(--ui-foreground-muted);
   font: inherit;
@@ -306,16 +306,42 @@
   display: grid;
   place-items: center;
   flex: none;
-  width: 19px;
-  height: 19px;
-  border: 1px solid var(--ui-border);
-  border-radius: 5px;
-  background: var(--ui-surface);
+  width: 16px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
 }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__header:hover .owb-turn-progress__toggle {
   border-color: var(--ui-border-strong);
   background: var(--ui-surface-inset);
 }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__header:hover {
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app :is(.owb-turn-progress__header, .owb-message-actions button, .owb-tc-head__eng, .owb-thread-latest, .owb-message-expand):focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-message-actions button {
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  border-radius: 7px;
+  color: var(--ui-foreground-muted);
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-message-actions button:hover {
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+}
+.owb-message-actions__feedback:empty { display: none; }
+.owb-message-actions__trigger { display: inline-flex; }
+.owb-bubble__hover-actions:has(.owb-message-actions__feedback:not(:empty)),
+.owb-bubble--operator .owb-message-actions:has(.owb-message-actions__feedback:not(:empty)) { opacity: 1; }
+.owb-message-meta time { color: var(--ui-foreground-subtle); font-variant-numeric: tabular-nums; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__header[aria-expanded="true"] .owb-turn-progress__chevron {
   transform: rotate(90deg);
 }
@@ -377,7 +403,7 @@
   }
 }
 
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group ol { display: grid; gap: 6px; max-height: min(240px, 32vh); margin: 7px 0 0 9px; padding: 3px 8px 3px 18px; overflow-y: auto; overscroll-behavior: contain; border-left: 1px solid var(--ui-border); scrollbar-gutter: stable; list-style: none; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group ol { display: grid; gap: 6px; max-height: min(240px, 32vh); margin: 7px 0 0 9px; padding: 3px 8px 3px 10px; overflow-y: auto; overscroll-behavior: contain; border-left: 0; scrollbar-gutter: stable; list-style: none; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group ol[hidden] { display: none; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__group li,
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-activity-trace__agent,
@@ -431,7 +457,7 @@
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn__conclusion .owb-tc__out {
   color: var(--ui-foreground);
   font-family: var(--ui-font-sans);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
 }
 

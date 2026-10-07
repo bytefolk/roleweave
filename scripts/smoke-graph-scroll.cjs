@@ -76,6 +76,8 @@ if (!process.versions.electron) {
     const evaluate = source => win.webContents.executeJavaScript(source);
     const waitFor = condition => evaluate(`new Promise((resolve, reject) => { const start = performance.now(); const check = () => { if (${condition}) return resolve(true); if (performance.now() - start > 10000) return reject(new Error('Timed out: ' + ${JSON.stringify(condition)})); requestAnimationFrame(check); }; check(); })`);
     const frames = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+    await waitFor('document.querySelector(".owb-rgraph__renderer button")');
+    await evaluate(`Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === '极简关系图').click()`);
     await waitFor('document.querySelector(".owb-rgraph__spatial-stage canvas") && document.querySelector(".owb-rgraph__spatial-label")');
     const failures = [];
     const check = (name, fn) => { try { fn(); } catch (error) { failures.push(`${name}: ${error.message}`); } };
@@ -97,7 +99,7 @@ if (!process.versions.electron) {
         await evaluate(`window.setFixtureTheme(${JSON.stringify(theme)})`);
         await frames();
         for (const mode of ['minimal', 'galaxy']) {
-          await evaluate(`(() => { const buttons = document.querySelectorAll('.owb-rgraph__renderer button'); buttons[${mode === 'minimal' ? 0 : 1}].click(); document.querySelector('.owb-rgraph').scrollTop = 0; })()`);
+          await evaluate(`(() => { const label = ${JSON.stringify(mode === 'minimal' ? '极简关系图' : '星系关系图')}; Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === label).click(); document.querySelector('.owb-rgraph').scrollTop = 0; })()`);
           await frames();
           if (mode === 'minimal') {
             await evaluate(`document.querySelector('[aria-label="空间主题"] button:nth-child(${theme === 'light' ? 2 : 1})').click()`);
