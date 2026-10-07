@@ -75,6 +75,8 @@ const {
 const {
   validateDriveListRequest,
   validateDriveDetailRequest,
+  validateDrivePreviewRequest,
+  authorizeDriveReadSender,
   validateDriveUploadRequest,
 } = require("./drive-ipc.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
@@ -913,6 +915,20 @@ ipcMain.handle("owb:drive:detail", async (_event, id) => {
   const validated = validateDriveDetailRequest(id);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
+});
+
+ipcMain.handle("owb:drive:preview", async (event, id) => {
+  const authorized = authorizeDriveReadSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDrivePreviewRequest(id);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname);
+});
+
+ipcMain.handle("owb:drive:provider", async (event) => {
+  const authorized = authorizeDriveReadSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  return apiRequest("/drive/provider");
 });
 
 ipcMain.handle("owb:drive:upload", async (_event, filePath) => {

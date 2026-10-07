@@ -4,9 +4,10 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { Alert, Button, Empty, Input, List, Space, Spin, Tag, Tooltip } from "antd";
-import { FileText, Search } from "lucide-react";
+import { FileText, Search, Files } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type {
   DocPlaneDetailResponse,
@@ -14,6 +15,7 @@ import type {
   DocPlaneListResponse,
 } from "@roleweave/shared";
 import { DocViewer } from "./DocViewer";
+import "./doc-plane-empty.css";
 
 /**
  * External doc-plane surface (#35 R2 MVP): browses documents from an
@@ -27,6 +29,8 @@ import { DocViewer } from "./DocViewer";
  */
 
 export interface DocPlanePanelProps {
+  /** Shell-owned connection/open action, shown once in the relevant surface. */
+  serviceAction?: ReactNode;
   /** Loader for the list surface; injected so tests can stub the bridge. */
   listDocs(query: string): Promise<DocPlaneListLoadResult>;
   /** Loader for the detail surface; injected so tests can stub the bridge. */
@@ -42,7 +46,7 @@ export type DocPlaneDetailLoadResult =
   | { kind: "ok"; response: DocPlaneDetailResponse }
   | { kind: "error"; message: string };
 
-export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
+export function DocPlanePanel({ listDocs, readDoc, serviceAction }: DocPlanePanelProps) {
   const t = useT();
   const readerRef = useRef<HTMLDivElement>(null);
   const listVersion = useRef(0);
@@ -139,11 +143,28 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
         scrollPositions.current.get(selectedId) ?? 0;
   }, [detail, selectedId]);
 
+  if (listStatus.kind === "unconfigured") {
+    return <section className="owb-doc-plane owb-doc-plane--disconnected" aria-label={t("docs.planeAria")}>
+      <div className="owb-doc-plane__connection-empty" role="status">
+        <span className="owb-doc-plane__connection-icon"><Files size={30} aria-hidden="true" strokeWidth={1.5} /></span>
+        <h2>{t("docs.planeDisconnectedTitle")}</h2>
+        <p>{t("docs.planeDisconnectedPurpose")}</p>
+        <p className="owb-doc-plane__connection-scope">{t("docs.planeDisconnectedScope")}</p>
+        <p className="owb-doc-plane__connection-setup">{t("docs.planeDisconnectedSetup")}</p>
+        <div className="owb-doc-plane__connection-actions">
+          {serviceAction}
+          <Button type="text" onClick={() => void runList("")}>{t("hire.retry")}</Button>
+        </div>
+      </div>
+    </section>;
+  }
+
   return (
     <section className="owb-doc-plane" aria-label={t("docs.planeAria")}>
       <div className="owb-doc-plane__workspace">
         <div className="owb-doc-plane__list-pane">
           <div className="owb-doc-plane__toolbar">
+            {serviceAction ? <div className="owb-doc-plane__service-action">{serviceAction}</div> : null}
             <Space.Compact style={{ width: "100%" }}>
               <Input
                 aria-label={t("docs.planeSearchAria")}
@@ -174,12 +195,6 @@ export function DocPlanePanel({ listDocs, readDoc }: DocPlanePanelProps) {
               </div>
             ) : null}
           </div>
-          {listStatus.kind === "unconfigured" ? (
-            <div className="owb-doc-plane__unconfigured" role="status">
-              <i aria-hidden="true" />
-              <strong>{t("docs.planeUnconfigured")}</strong>
-            </div>
-          ) : null}
           {listStatus.kind === "error" ? (
             <Alert
               type="error"

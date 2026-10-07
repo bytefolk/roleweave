@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
   Button,
@@ -45,6 +45,7 @@ export interface DocsModuleProps {
   selectedPositionId: string | null;
   /** When composed by the employee-memory surface, omit the duplicate page header. */
   embedded?: boolean;
+  sharedServiceAction?: ReactNode;
   resourceRequest?: { positionId: string; path: string; nonce: number } | null;
 }
 
@@ -78,6 +79,7 @@ export function DocsModule({
   selectedPositionId,
   embedded = false,
   surface,
+  sharedServiceAction,
   resourceRequest,
 }: DocsModuleProps) {
   const t = useT();
@@ -402,7 +404,7 @@ export function DocsModule({
       {surface === "position" ? (
         positionSurface
       ) : surface === "plane" ? (
-        <DocPlanePanel listDocs={docPlaneList} readDoc={docPlaneDetail} />
+        <DocPlanePanel listDocs={docPlaneList} readDoc={docPlaneDetail} serviceAction={sharedServiceAction} />
       ) : (
         <Tabs
           defaultActiveKey="position"
@@ -419,6 +421,7 @@ export function DocsModule({
                 <DocPlanePanel
                   listDocs={docPlaneList}
                   readDoc={docPlaneDetail}
+                  serviceAction={sharedServiceAction}
                 />
               ),
             },

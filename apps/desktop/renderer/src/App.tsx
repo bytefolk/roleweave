@@ -2255,6 +2255,7 @@ function AppInner({
         ) : activeModule === "docs" ? (
           <MemoryModule
             key={workspaceInfo?.path}
+            workspaceKey={workspaceInfo?.path}
             onContinue={(id, sessionId) => {
               const samePosition = selectedIdRef.current === id;
               selectPosition(id);
