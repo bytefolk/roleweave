@@ -48,6 +48,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/updater.cjs",
   "src/update-ipc.cjs",
   "src/window-ipc.cjs",
+  "src/window-chrome.cjs",
   "dist/renderer/**/*",
 ];
 

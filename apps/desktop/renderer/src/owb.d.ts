@@ -218,6 +218,8 @@ export interface OwbBridge {
     openReleaseNotes(): Promise<{ ok: boolean; url?: string }>;
   };
   /** #73 custom title bar controls (frameless window). */
+  windowChrome?: { platform: "win32" | "darwin" | "linux" | "other"; nativeControls: boolean };
+  setWindowChromeColors?(colors: { color: string; symbolColor: string }): Promise<{ ok: boolean }>;
   windowMinimize(): Promise<{ ok: boolean }>;
   windowToggleMaximize(): Promise<{ ok: boolean }>;
   windowClose(): Promise<{ ok: boolean }>;

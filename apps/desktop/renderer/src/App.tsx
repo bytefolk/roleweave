@@ -88,6 +88,7 @@ import { GoalsModule } from "./goals/GoalsModule";
 import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
+import { WindowTitleBar } from "./window/WindowTitleBar";
 import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
 
 /** #480: keep Timeline/Drawer/Progress off the default App graph so org
@@ -1990,17 +1991,7 @@ function AppInner({
       {managementTarget === null && workspaceInfo?.open ? <ProjectSettings workspace={workspaceInfo} onClose={() => setManagementTarget(undefined)}
         onMemory={() => { treeAction(null, "memory"); setManagementTarget(undefined); }} onCollaborate={() => { treeAction(null, "group"); setManagementTarget(undefined); }}
         onSwitch={() => { setManagementTarget(undefined); requestSettingsLeave(() => setProjectHubOpen(true)); }} /> : null}
-      {/* 自定义 40px 标题栏（设计稿 .wintitle）：品牌标 + 窗口点 + 引擎/工作区
-          状态 chip。状态灯诚实映射 /health，不假装在线。 */}
-      <header
-        className="owb-wintitle"
-        onDoubleClick={() => void window.owb.windowToggleMaximize?.()}
-      >
-        {/* #248 小 UI 单①：左上只保留三个窗口控制钮，删品牌标；头像将来放右上，现在不加。 */}
-        <WindowControls />
-        <span className="owb-wintitle__name">RoleWeave</span>
-        <span className="owb-wintitle__spacer" />
-      </header>
+      <WindowTitleBar />
 
     {/* 壳层尺寸（导轨 54 / 侧栏 300 / topbar 48）定在 app.css 的
         `.owb-app .ui-app-shell` 里，不走内联 style——内联优先级最高，会把
@@ -2578,11 +2569,6 @@ function findNodeById(nodes: OrgTreeNodeV1[], id: string): OrgTreeNodeV1 | null 
   return null;
 }
 
-/** Real window chrome for the frameless shell (设计稿 .wintitle 左上三点).
- * macOS-style traffic lights: close / minimize / maximize, each an actual
- * button with an accessible name — the previous decorative dots sat under the
- * native frame and did nothing. Guarded with `?.` so the renderer still boots
- * against an older preload bridge (tests stub a partial bridge). */
 function normalizePositionForDisplay(position: PositionCardData, locale: OwbLocale): PositionCardData {
   return localizePositionCard({
     ...position,
@@ -2597,49 +2583,6 @@ function normalizePositionForDisplay(position: PositionCardData, locale: OwbLoca
       Object.entries(position.metadata).map(([key, value]) => [key, decodeEscapedUnicode(value)]),
     ),
   }, locale);
-}
-
-function WindowControls() {
-  const t = useT();
-  return (
-    <span className="owb-wintitle__controls">
-      <button
-        type="button"
-        className="owb-wctl owb-wctl--close"
-        aria-label={t("win.close")}
-        title={t("win.closeTitle")}
-        onClick={() => void window.owb.windowClose?.()}
-      >
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        className="owb-wctl owb-wctl--min"
-        aria-label={t("win.minimize")}
-        title={t("win.minimizeTitle")}
-        onClick={() => void window.owb.windowMinimize?.()}
-      >
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2.2 5h5.6" />
-        </svg>
-      </button>
-      {/* 文案保持静态：WSLg 下 isMaximized() 不可信，不向用户谎报当前状态。 */}
-      <button
-        type="button"
-        className="owb-wctl owb-wctl--max"
-        aria-label={t("win.maximize")}
-        title={t("win.maximizeTitle")}
-        onClick={() => void window.owb.windowToggleMaximize?.()}
-      >
-        {/* #248 小 UI 单②：fullscreen 为绿底斜杠 ⃠ glyph。 */}
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2.8 7.2L7.2 2.8" />
-        </svg>
-      </button>
-    </span>
-  );
 }
 
 function Breadcrumbs({

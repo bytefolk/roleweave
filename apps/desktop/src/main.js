@@ -54,6 +54,7 @@ const {
   stopControlPlaneProcess,
 } = require("./control-plane-lifecycle.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
+const { windowChromeInfo, windowChromeOptions, setWindowChromeColors } = require("./window-chrome.cjs");
 const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
   validateAssetsCreateRequest,
@@ -130,6 +131,7 @@ let controlPlaneStopPromise = null;
 let updaterService = null;
 let controlPlaneError = null;
 let mainWindow = null;
+let mainWindowUsesNativeControls = false;
 /** file:// URL of the packaged renderer entry loaded into mainWindow — the
  * one and only URL a trusted window IPC call may be sent from (#77 review). */
 let trustedRendererUrl = null;
@@ -975,7 +977,7 @@ function createWindow() {
     minWidth: 640,
     minHeight: 680,
     title: "RoleWeave",
-    frame: false,
+    ...windowChromeOptions(process.platform, nativeTheme.shouldUseDarkColors),
     resizable: true,
     icon: fs.existsSync(ROLEWEAVE_DEV_ICON) ? ROLEWEAVE_DEV_ICON : undefined,
     // Native window paint color before any CSS loads (avoids a white flash);
@@ -996,6 +998,7 @@ function createWindow() {
         backgroundThrottling: smokeRequest !== null || behaviorSmokeRequest !== null || layoutReportPath !== null,
       },
   });
+  mainWindowUsesNativeControls = windowChromeInfo(process.platform).nativeControls;
   mainWindow.setMenuBarVisibility(false);
   // Lane A staging harness: static, opt-in, packaged-only, and confined to the
   // caller's freshly created OS-temp root. Source-tree dev behavior is not
@@ -1127,6 +1130,7 @@ function createWindow() {
   mainWindow.on("close", (event) => { requestConfigurationClose(event); });
   mainWindow.on("closed", () => {
     mainWindow = null;
+    mainWindowUsesNativeControls = false;
     trustedRendererUrl = null;
   });
 }
@@ -1136,6 +1140,11 @@ function createWindow() {
 // gated on isTrustedWindowSender (#77 review item 2: ipcMain.handle() is not
 // scoped to a window on its own). Rejection returns { ok: false } rather than
 // throwing, matching this bridge's existing response shape.
+ipcMain.handle("owb:window:chrome-colors", (event, request) => setWindowChromeColors({
+  event, request, browserWindow: mainWindow, trustedRendererUrl,
+  platform: process.platform, nativeControls: mainWindowUsesNativeControls,
+}));
+
 ipcMain.handle("owb:window:minimize", (event) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { ok: false };
   mainWindow?.minimize();
