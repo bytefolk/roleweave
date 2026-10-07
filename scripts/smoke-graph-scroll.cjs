@@ -99,7 +99,9 @@ if (!process.versions.electron) {
         await evaluate(`window.setFixtureTheme(${JSON.stringify(theme)})`);
         await frames();
         for (const mode of ['minimal', 'galaxy']) {
-          await evaluate(`(() => { const label = ${JSON.stringify(mode === 'minimal' ? '极简关系图' : '星系关系图')}; Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === label).click(); document.querySelector('.owb-rgraph').scrollTop = 0; })()`);
+          await evaluate(mode === 'minimal'
+            ? "Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === '极简关系图').click(); document.querySelector('.owb-rgraph').scrollTop = 0;"
+            : "Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === '星系关系图').click(); document.querySelector('.owb-rgraph').scrollTop = 0;");
           await frames();
           if (mode === 'minimal') {
             await evaluate(`document.querySelector('[aria-label="空间主题"] button:nth-child(${theme === 'light' ? 2 : 1})').click()`);
