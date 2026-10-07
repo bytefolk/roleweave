@@ -47,6 +47,45 @@ async function openImage(name = "示意图.png") {
 }
 
 describe("drive file browser", () => {
+  it("recognizes real upstream directory entries in both views and uses only listed metadata for their details", async () => {
+    const directory = { id: "bdpan-directory", name: "项目资料", size: 8192, mime: "inode/directory", createdAt: "2026-10-07T08:00:00.000Z" };
+    const bridge = installBridge([...objects, directory]);
+    render(<DriveModule workspaceOpen />);
+    const folder = await screen.findByRole("button", { name: "选择 项目资料" });
+    const row = within(folder.closest("tr")!);
+    expect(row.getByText("文件夹")).toBeVisible();
+    expect(row.getByText("—")).toBeVisible();
+    expect(folder.querySelector('[data-kind="folder"] .lucide-folder')).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "文件夹", exact: true }));
+    expect(screen.queryByRole("button", { name: "选择 会议纪要-Q3.md" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "网格" }));
+    expect(screen.getByRole("list", { name: "网盘文件列表" })).toHaveTextContent("文件夹 · —");
+    fireEvent.click(screen.getByRole("button", { name: "选择 项目资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "文件详情" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("当前存储来源尚不支持进入文件夹。")).toBeInTheDocument();
+    expect(within(dialog).getByText("—")).toBeInTheDocument();
+    expect(bridge.detail).not.toHaveBeenCalled();
+    expect(bridge.preview).not.toHaveBeenCalled();
+    expect(bridge.list).toHaveBeenCalledOnce();
+  });
+
+  it.each(["double-click", "Enter"])("explains unsupported folder browsing on %s without issuing a content request or changing location", async (action) => {
+    const directory = { id: "bdpan-directory", name: "项目资料", size: 0, mime: " INODE/DIRECTORY; charset=binary ", createdAt: "2026-10-07T08:00:00.000Z" };
+    const bridge = installBridge([directory]);
+    render(<DriveModule workspaceOpen />);
+    const folder = await screen.findByRole("button", { name: "选择 项目资料" });
+    if (action === "Enter") fireEvent.keyDown(folder, { key: "Enter" }); else fireEvent.doubleClick(folder);
+    const dialog = await screen.findByRole("dialog", { name: "预览：项目资料" });
+    await waitFor(() => expect(within(dialog).getByText("当前存储来源尚不支持进入文件夹。")).toBeVisible());
+    expect(within(dialog).getByText("文件夹")).toBeVisible();
+    expect(within(dialog).getByText("—")).toBeVisible();
+    expect(bridge.detail).not.toHaveBeenCalled();
+    expect(bridge.preview).not.toHaveBeenCalled();
+    expect(bridge.list).toHaveBeenCalledExactlyOnceWith("");
+    expect(screen.getByText("全部文件")).toBeInTheDocument();
+  });
+
   it("uses the whole file area and only opens metadata on demand", async () => {
     const bridge = installBridge();
     render(<DriveModule workspaceOpen />);

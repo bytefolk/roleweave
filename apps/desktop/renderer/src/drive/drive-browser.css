@@ -36,6 +36,7 @@
 .owb-drive-browser__file-name strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
 .owb-drive-browser__file-icon { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; color: var(--ui-foreground-muted); }
 .owb-drive-browser__file-icon[data-kind="document"] { color: var(--ui-primary); }
+.owb-drive-browser__file-icon[data-kind="folder"] { color: var(--ui-warning); }
 .owb-drive-browser__file-icon[data-kind="image"] { color: var(--ui-success); }
 .owb-drive-browser__file-icon[data-kind="audio"], .owb-drive-browser__file-icon[data-kind="video"] { color: var(--ui-warning); }
 .owb-drive-browser__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; list-style: none; padding: 12px; margin: 0; }

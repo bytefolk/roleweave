@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Alert, Button, Drawer, Empty, Image as ImagePreview, Input, Modal, Spin } from "antd";
-import { Cloud, File, FileText, Film, Image, Info, LayoutGrid, List, Music2, RefreshCw, Search } from "lucide-react";
+import { Cloud, File, FileText, Film, Folder, Image, Info, LayoutGrid, List, Music2, RefreshCw, Search } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
 import type { DriveObject, DriveObjectDetailResponse, DriveObjectListResponse, DriveObjectPreviewResponse, DriveProviderStatusResponse } from "@roleweave/shared";
 import "./drive-browser.css";
@@ -14,24 +14,25 @@ export interface DriveModuleProps {
 }
 
 type ConnectionState = "checking" | "connected" | "unconfigured" | "unavailable";
-type FileKind = "document" | "image" | "audio" | "video" | "other";
+type FileKind = "folder" | "document" | "image" | "audio" | "video" | "other";
 type Sort = "nameAsc" | "nameDesc" | "newest" | "oldest" | "sizeDesc" | "sizeAsc";
 type Preview = DriveObjectPreviewResponse["preview"];
 type Provider = DriveProviderStatusResponse["status"];
 const PREVIEW_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const FILTERS = ["all", "document", "image", "audio", "video", "other"] as const;
+const FILTERS = ["all", "folder", "document", "image", "audio", "video", "other"] as const;
 const SORTS: Sort[] = ["nameAsc", "nameDesc", "newest", "oldest", "sizeDesc", "sizeAsc"];
 
 function mimeOf(mime: string) { return mime.split(";", 1)[0]?.trim().toLowerCase() ?? ""; }
 function fileKind(mime: string): FileKind {
   const normalized = mimeOf(mime);
+  if (normalized === "inode/directory") return "folder";
   if (normalized.startsWith("image/")) return "image";
   if (normalized.startsWith("audio/")) return "audio";
   if (normalized.startsWith("video/")) return "video";
   if (normalized.startsWith("text/") || normalized === "application/pdf" || normalized === "application/json" || normalized === "application/msword" || normalized.includes("officedocument")) return "document";
   return "other";
 }
-function fileIcon(mime: string) { return { document: FileText, image: Image, audio: Music2, video: Film, other: File }[fileKind(mime)]; }
+function fileIcon(mime: string) { return { folder: Folder, document: FileText, image: Image, audio: Music2, video: Film, other: File }[fileKind(mime)]; }
 function kindKey(kind: FileKind | "all") { return kind === "all" ? "drive.typeAll" : kind === "other" ? "drive.typeOther" : `drive.type${kind[0]!.toUpperCase()}${kind.slice(1)}`; }
 function typeKey(mime: string) { return mimeOf(mime) === "application/pdf" ? "drive.typePdf" : kindKey(fileKind(mime)); }
 function errorCode(body: unknown): string | null {
@@ -40,7 +41,8 @@ function errorCode(body: unknown): string | null {
 function errorMessage(body: unknown, fallback: string): string {
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 }
-function formatBytes(bytes: number) {
+function formatBytes(bytes: number, mime?: string) {
+  if (mime && fileKind(mime) === "folder") return "—";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
@@ -134,6 +136,7 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
   }, [clearSelection, loadObjects, loadProvider, workspaceOpen]);
 
   const loadDetail = async (object: DriveObject) => {
+    if (fileKind(object.mime) === "folder") return;
     const request = ++detailEpoch.current;
     const current = () => alive.current && currentScope.current === scope && request === detailEpoch.current && activeRef.current === object.id && inspectorRef.current !== null;
     setDetail(null); setDetailLoading(true); setDetailError(null);
@@ -174,7 +177,11 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
   const openInspector = (object: DriveObject, mode: "details" | "preview") => {
     if (activeRef.current === object.id && inspectorRef.current === mode) return;
     invalidateInspector(); activeRef.current = object.id; setActiveId(object.id); setSelectedIds(new Set([object.id]));
-    inspectorRef.current = mode; setInspector(mode); void loadDetail(object); if (mode === "preview") void loadPreview(object);
+    inspectorRef.current = mode; setInspector(mode);
+    // Directory rows are real upstream records, but this API cannot enter
+    // them or fetch directory contents. Their listed metadata remains usable.
+    if (fileKind(object.mime) === "folder") return;
+    void loadDetail(object); if (mode === "preview") void loadPreview(object);
   };
   const visible = useMemo(() => {
     const files = objects.filter((object) => filter === "all" || fileKind(object.mime) === filter);
@@ -217,10 +224,11 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
     </button>;
   };
   const metadata = activeObject ? <div className="owb-drive-browser__metadata">
+    {fileKind(activeObject.mime) === "folder" && inspector === "details" && <p className="owb-drive-browser__content-note" role="status">{t("drive.folderUnsupported")}</p>}
     {detailLoading ? <Spin aria-label={t("drive.detailLoading")} /> : null}
     {detailError ? <Alert type="error" showIcon title={t("drive.detailFail")} description={detailError} action={<Button size="small" onClick={() => void loadDetail(activeObject)}>{t("drive.retry")}</Button>} /> : null}
     <p className="owb-drive-browser__summary">{(detail ?? activeObject).summary ?? t("drive.noSummary")}</p>
-    <dl><div><dt>{t("drive.metaType")}</dt><dd>{t(typeKey((detail ?? activeObject).mime))}</dd></div><div><dt>{t("drive.metaSize")}</dt><dd>{formatBytes((detail ?? activeObject).size)}</dd></div><div><dt>{t("drive.metaCreated")}</dt><dd>{dateLabel((detail ?? activeObject).createdAt)}</dd></div><div><dt>{t("drive.metaSource")}</dt><dd>{providerName}</dd></div></dl>
+    <dl><div><dt>{t("drive.metaType")}</dt><dd>{t(typeKey((detail ?? activeObject).mime))}</dd></div><div><dt>{t("drive.metaSize")}</dt><dd>{formatBytes((detail ?? activeObject).size, (detail ?? activeObject).mime)}</dd></div><div><dt>{t("drive.metaCreated")}</dt><dd>{dateLabel((detail ?? activeObject).createdAt)}</dd></div><div><dt>{t("drive.metaSource")}</dt><dd>{providerName}</dd></div></dl>
   </div> : null;
 
   if (!workspaceOpen) return <section className="owb-drive-module owb-drive-browser" aria-label={t("drive.moduleAria")}><Empty description={t("tree.notOpened")} /></section>;
@@ -245,7 +253,7 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
     {!loading && connection === "connected" && <div className={`owb-drive-browser__files is-${view}`} ref={browser}>
       {visible.length === 0 ? <Empty description={objects.length === 0 ? t("drive.empty") : t("drive.noMatches")}>
         {filter !== "all" && <Button onClick={() => { setFilter("all"); clearSelection(); }}>{t("drive.resetFilter")}</Button>}
-      </Empty> : view === "list" ? <table aria-label={t("drive.listAria")}><thead><tr><th className="owb-drive-browser__check"><input type="checkbox" aria-label={t("drive.selectAll")} checked={visible.every((object) => selectedIds.has(object.id))} onChange={(event) => { invalidateInspector(); const next = event.target.checked ? new Set(visible.map((object) => object.id)) : new Set<string>(); const only = next.size === 1 ? [...next][0]! : null; activeRef.current = only; setActiveId(only); setSelectedIds(next); }} /></th><th>{t("drive.columnName")}</th><th>{t("drive.metaType")}</th><th>{t("drive.metaSize")}</th><th>{t("drive.metaCreated")}</th></tr></thead><tbody>{visible.map((object) => <tr key={object.id} data-selected={selectedIds.has(object.id)} onClick={() => selectObject(object)} onDoubleClick={() => openInspector(object, "preview")}><td><input type="checkbox" aria-label={t("drive.selectObject", { name: object.name })} checked={selectedIds.has(object.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleSelection(object.id)} /></td><td>{fileButton(object)}</td><td>{t(typeKey(object.mime))}</td><td>{formatBytes(object.size)}</td><td>{dateLabel(object.createdAt)}</td></tr>)}</tbody></table> : <ul className="owb-drive-browser__grid" aria-label={t("drive.listAria")}>{visible.map((object) => <li key={object.id} data-selected={selectedIds.has(object.id)} onClick={() => selectObject(object)} onDoubleClick={() => openInspector(object, "preview")}><input type="checkbox" aria-label={t("drive.selectObject", { name: object.name })} checked={selectedIds.has(object.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleSelection(object.id)} />{fileButton(object)}<span>{t(typeKey(object.mime))} · {formatBytes(object.size)}</span><time dateTime={object.createdAt}>{dateLabel(object.createdAt)}</time></li>)}</ul>}
+      </Empty> : view === "list" ? <table aria-label={t("drive.listAria")}><thead><tr><th className="owb-drive-browser__check"><input type="checkbox" aria-label={t("drive.selectAll")} checked={visible.every((object) => selectedIds.has(object.id))} onChange={(event) => { invalidateInspector(); const next = event.target.checked ? new Set(visible.map((object) => object.id)) : new Set<string>(); const only = next.size === 1 ? [...next][0]! : null; activeRef.current = only; setActiveId(only); setSelectedIds(next); }} /></th><th>{t("drive.columnName")}</th><th>{t("drive.metaType")}</th><th>{t("drive.metaSize")}</th><th>{t("drive.metaCreated")}</th></tr></thead><tbody>{visible.map((object) => <tr key={object.id} data-selected={selectedIds.has(object.id)} onClick={() => selectObject(object)} onDoubleClick={() => openInspector(object, "preview")}><td><input type="checkbox" aria-label={t("drive.selectObject", { name: object.name })} checked={selectedIds.has(object.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleSelection(object.id)} /></td><td>{fileButton(object)}</td><td>{t(typeKey(object.mime))}</td><td>{formatBytes(object.size, object.mime)}</td><td>{dateLabel(object.createdAt)}</td></tr>)}</tbody></table> : <ul className="owb-drive-browser__grid" aria-label={t("drive.listAria")}>{visible.map((object) => <li key={object.id} data-selected={selectedIds.has(object.id)} onClick={() => selectObject(object)} onDoubleClick={() => openInspector(object, "preview")}><input type="checkbox" aria-label={t("drive.selectObject", { name: object.name })} checked={selectedIds.has(object.id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleSelection(object.id)} />{fileButton(object)}<span>{t(typeKey(object.mime))} · {formatBytes(object.size, object.mime)}</span><time dateTime={object.createdAt}>{dateLabel(object.createdAt)}</time></li>)}</ul>}
     </div>}
     <p className="owb-drive-browser__hint">{t("drive.readOnlyHint")}</p>
     <Drawer className="owb-drive-browser__drawer" title={activeObject?.name} open={inspector === "details"} onClose={invalidateInspector} size="min(460px, calc(100vw - 24px))" destroyOnHidden closable={{ "aria-label": t("drive.closeDetail") }}>{metadata}</Drawer>
@@ -255,7 +263,7 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
           {previewLoading && <div className="owb-drive-browser__image-loading" role="status" aria-label={t("drive.previewLoading")}><Spin size="small" /><span>{t("drive.previewLoading")}</span></div>}
           {previewError && <Alert type="error" showIcon title={t("drive.previewFail")} description={previewError === t("drive.previewFail") ? undefined : previewError} action={<Button onClick={() => void loadPreview(activeObject)}>{t("drive.retry")}</Button>} />}
           {preview && !previewError && <><ImagePreview key={`${preview.objectId}:${previewAttempt}`} src={preview.dataUrl} alt={activeObject.name} preview={{ cover: t("drive.previewLarge") }} onError={() => { if (previewEpoch.current === renderedPreviewEpoch && activeRef.current === preview.objectId && inspectorRef.current === "preview") { setPreview(null); setPreviewError(t("drive.previewInvalid")); } }} /><figcaption>{t("drive.previewHint")}</figcaption></>}
-        </figure> : <p className="owb-drive-browser__content-note">{t(fileKind(activeObject.mime) === "image" ? "drive.previewUnsupported" : "drive.contentUnavailable")}</p>}
+        </figure> : <p className="owb-drive-browser__content-note" role="status">{t(fileKind(activeObject.mime) === "folder" ? "drive.folderUnsupported" : fileKind(activeObject.mime) === "image" ? "drive.previewUnsupported" : "drive.contentUnavailable")}</p>}
         {metadata}
       </div>}
     </Modal>

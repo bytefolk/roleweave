@@ -41,7 +41,9 @@
   gap: 0; padding: 0; overflow: hidden; border: 0; border-radius: 0;
 }
 [data-theme] .owb-app .owb-memory-workspace__content { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
-[data-theme] .owb-app .owb-memory-module :is(.owb-docs-module--embedded, .owb-docs-module__position-surface, .owb-docs-panel, .owb-doc-plane, .owb-drive-module--embedded) {
+[data-theme] .owb-app .owb-memory-module .owb-drive-browser { flex: 1; max-width: none; padding: 14px 16px 12px; gap: 10px; overflow: hidden; border: 0; border-radius: 0; }
+[data-theme] .owb-app .owb-memory-module .owb-drive-browser__files { flex: 1; min-height: 0; }
+[data-theme] .owb-app .owb-memory-module :is(.owb-docs-module--embedded, .owb-docs-module__position-surface, .owb-docs-panel, .owb-doc-plane) {
   display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; max-width: none;
   gap: 0; margin: 0; padding: 0; overflow: hidden; border: 0; border-radius: 0; box-shadow: none;
 }

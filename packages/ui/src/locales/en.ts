@@ -2002,6 +2002,8 @@ export const enCatalog: Record<string, string> = {
   "drive.filterAria": "Filter by file type",
   "drive.typeAll": "All",
   "drive.typeOther": "Other",
+  "drive.typeFolder": "Folder",
+  "drive.folderUnsupported": "This storage source does not support browsing folders yet.",
   "drive.sortAria": "Sort files",
   "drive.sort.nameAsc": "Name A–Z",
   "drive.sort.nameDesc": "Name Z–A",

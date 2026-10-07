@@ -2005,6 +2005,8 @@ export const zhCatalog: Record<string, string> = {
   "drive.filterAria": "按文件类型筛选",
   "drive.typeAll": "全部",
   "drive.typeOther": "其他",
+  "drive.typeFolder": "文件夹",
+  "drive.folderUnsupported": "当前存储来源尚不支持进入文件夹。",
   "drive.sortAria": "文件排序",
   "drive.sort.nameAsc": "名称 A–Z",
   "drive.sort.nameDesc": "名称 Z–A",
