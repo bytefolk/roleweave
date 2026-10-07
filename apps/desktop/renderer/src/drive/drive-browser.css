@@ -63,3 +63,16 @@
 .owb-drive-browser__image-loading { min-height: 220px; display: flex; justify-content: center; align-items: center; gap: 10px; color: var(--ui-foreground-muted); font-size: 12px; }
 .owb-drive-browser__content-note { margin: 0; padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; color: var(--ui-foreground-muted); font-size: 12px; }
 @media(max-width:640px) { .owb-drive-browser__search { flex-basis: 100%; } .owb-drive-browser__selectionbar > div { margin-left: 0; flex-basis: 100%; } .owb-drive-browser__grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); } }
+
+/* Wrapped controls must not consume the entire file viewport. Keep the
+ * embedded browser scrollable when its chrome outgrows a narrow/short pane. */
+@media (max-width: 640px), (max-height: 700px) {
+  [data-theme] .owb-app .owb-memory-module .owb-drive-browser.owb-drive-module { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+  [data-theme] .owb-app .owb-memory-module .owb-drive-browser.owb-drive-module > :not(.owb-drive-browser__files) { flex-shrink: 0; }
+  [data-theme] .owb-app .owb-memory-module .owb-drive-browser.owb-drive-module > .owb-drive-browser__files { flex: 1 0 240px; min-height: 240px; }
+}
+@container memory (max-width: 640px) {
+  [data-theme] .owb-app .owb-memory-module .owb-drive-browser.owb-drive-module { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+  [data-theme] .owb-app .owb-memory-module .owb-drive-browser.owb-drive-module > :not(.owb-drive-browser__files) { flex-shrink: 0; }
+  [data-theme] .owb-app .owb-memory-module .owb-drive-browser.owb-drive-module > .owb-drive-browser__files { flex: 1 0 240px; min-height: 240px; }
+}
