@@ -13,7 +13,7 @@ import { CheckCircle2, ChevronDown, Code2, ListChecks, LoaderCircle, Palette, Ro
 import { Input as OwbInput } from "@fullstack-ai-infra/ui";
 import { useT, type OwbT } from "@roleweave/ui";
 import { hireSkillCatalog } from "@roleweave/shared/capabilities";
-import type { HireMemorySource, HirePermissions } from "@roleweave/shared";
+import type { HireMemorySource, HireMcpGrant, HirePermissions } from "@roleweave/shared";
 import { AGENT_HOST_LABEL, AGENT_HOSTS, agentHostForEngine, resolveAgentEngine, type AgentHost } from "../turns/agent-host";
 import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
 import { CapabilityPicker, PermissionPolicyEditor, replaceCapabilityRules } from "./PermissionsEditor";
@@ -97,6 +97,17 @@ function proposalText(record: unknown): string {
 
 function defaultBrief(t: OwbT): string {
   return t("hire.roleBriefDefault");
+}
+
+function sameValues(left: readonly string[], right: readonly string[]): boolean {
+  return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+}
+
+function sameMcpGrants(left: readonly HireMcpGrant[], right: readonly HireMcpGrant[]): boolean {
+  const normalized = (grants: readonly HireMcpGrant[]) => grants
+    .map(grant => ({ id: grant.id, tools: [...grant.tools].sort() }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return JSON.stringify(normalized(left)) === JSON.stringify(normalized(right));
 }
 
 function HireChoiceSelect({ ariaLabel, value, options, onChange, t }: {
@@ -273,12 +284,11 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const previewPreset = HIRE_ROLE_PRESETS.find((preset) => preset.id === selectedPreset);
   const presetMatchesDraft = !!appliedPreset && appliedPreset.id === selectedPreset && name === appliedPreset.name && description === appliedPreset.description;
   const parsedCandidate = useMemo(() => candidateProposal === null ? null : parseHireProposal(candidateProposal), [candidateProposal]);
-  const sameValues = (left: readonly string[], right: readonly string[]) => JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
   const candidateHasPolicy = !!parsedCandidate && (
     (parsedCandidate.mode !== undefined && parsedCandidate.mode !== mode) ||
     (parsedCandidate.tools !== undefined && !sameValues(parsedCandidate.tools, permissions.tools)) ||
     (parsedCandidate.skills !== undefined && !sameValues(parsedCandidate.skills, (permissions.skills ?? []).map(skill => skill.id))) ||
-    (parsedCandidate.mcpServers !== undefined && JSON.stringify(parsedCandidate.mcpServers) !== JSON.stringify(permissions.mcpServers ?? [])) ||
+    (parsedCandidate.mcpServers !== undefined && !sameMcpGrants(parsedCandidate.mcpServers, permissions.mcpServers ?? [])) ||
     (parsedCandidate.memorySources !== undefined && !sameValues(parsedCandidate.memorySources, memorySources.map(source => source.kind)))
   );
 
@@ -288,10 +298,24 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
     if (proposal.description) setDescription(proposal.description.slice(0, 1_024));
     if (proposal.mode) setMode(proposal.mode);
     if (proposal.tools) setPermissions((current) => ({ ...current, tools: proposal.tools! }));
-    if (proposal.skills || proposal.mcpServers) setPermissions((current) => {
-      const skills = (proposal.skills ?? []).map((id) => hireSkillCatalog.find((skill) => skill.id === id)).filter((skill): skill is (typeof hireSkillCatalog)[number] => skill !== undefined).map((skill) => ({ id: skill.id }));
-      const mcpServers = proposal.mcpServers ?? [];
-      return replaceCapabilityRules(current, skills, mcpServers);
+    if (proposal.skills !== undefined || proposal.mcpServers !== undefined) setPermissions((current) => {
+      const currentSkills = current.skills ?? [];
+      const currentMcpServers = current.mcpServers ?? [];
+      const skills = proposal.skills === undefined || sameValues(proposal.skills, currentSkills.map(skill => skill.id))
+        ? currentSkills
+        : proposal.skills.map((id) => hireSkillCatalog.find((skill) => skill.id === id)).filter((skill): skill is (typeof hireSkillCatalog)[number] => skill !== undefined).map((skill) => ({ id: skill.id }));
+      const mcpServers = proposal.mcpServers === undefined || sameMcpGrants(proposal.mcpServers, currentMcpServers)
+        ? currentMcpServers : proposal.mcpServers;
+      // An omitted or equivalent group must preserve its objects and rules,
+      // including operator-authored constraints rather than catalog defaults.
+      if (skills === currentSkills && mcpServers === currentMcpServers) return current;
+      const next = replaceCapabilityRules(current, skills, mcpServers);
+      const changedRule = (resource: string) => (skills !== currentSkills && resource.startsWith("skill://"))
+        || (mcpServers !== currentMcpServers && resource.startsWith("mcp://"));
+      return { ...next, rules: [
+        ...current.rules.filter(rule => !changedRule(rule.resource)),
+        ...next.rules.filter(rule => changedRule(rule.resource)),
+      ] };
     });
     if (proposal.memorySources) setMemorySources(proposal.memorySources.flatMap((kind) => { const option = MEMORY_OPTIONS.find((item) => item.kind === kind); return option ? [{ kind, locator: option.locator }] : []; }));
     setSelectedPreset(null); setAppliedPreset(null);

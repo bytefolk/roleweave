@@ -122,6 +122,24 @@ function generationProps(): Partial<ComponentProps<typeof HireDrawer>> {
   };
 }
 
+async function configureReviewedCapabilities() {
+  const advanced = screen.getByText("高级配置").closest("details")!;
+  fireEvent.click(advanced.querySelector("summary")!);
+  await waitFor(() => expect(advanced).toHaveAttribute("open"));
+  fireEvent.click(screen.getByRole("button", { name: "文档审校" }));
+  fireEvent.click(screen.getByRole("button", { name: /代码仓库/ }));
+  fireEvent.change(screen.getByDisplayValue("skill://docs-review"), { target: { value: "skill://docs-review/approved-only" } });
+  fireEvent.change(screen.getByDisplayValue("mcp://repository"), { target: { value: "mcp://repository/approved-only" } });
+  fireEvent.click(advanced.querySelector("summary")!);
+  await waitFor(() => expect(advanced).not.toHaveAttribute("open"));
+  return advanced;
+}
+
+const reviewedSkillRule = { scope: "position", resource: "skill://docs-review/approved-only", actions: ["execute"] };
+const reviewedMcpRule = { scope: "workspace", resource: "mcp://repository/approved-only", actions: ["execute"], approval: true };
+const baseKnowledgeRule = { scope: "position", resource: "./knowledge/**", actions: ["read"] };
+const reviewedMcpGrant = { id: "repository", tools: ["search", "read"] };
+
 describe("selection-first employee creation", () => {
   afterEach(() => vi.useRealTimers());
   it("fills a useful template in one click and creates without manual input or broader defaults", async () => {
@@ -200,6 +218,46 @@ describe("selection-first employee creation", () => {
     expect(screen.getByText("高级配置").closest("details")).toHaveAttribute("open");
     fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
     await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({ mode: "read_only", permissions: expect.objectContaining({ tools: ["Read"] }) })));
+  });
+
+  it.each([
+    { label: "the same skills and omitted MCP", proposal: { skills: ["docs-review"] } },
+    { label: "the same MCP and omitted skills", proposal: { mcpServers: [{ id: "repository", tools: ["read", "search"] }] } },
+  ])("preserves both reviewed capability groups and their custom rules for $label", async ({ proposal }) => {
+    const bridge = fixtureBridge({ createTurn: vi.fn().mockResolvedValue({ status: 200, body: { output: JSON.stringify({ name: "Reviewed candidate", description: "Keep the approved capabilities", ...proposal }) } }) });
+    renderCreateDrawer(generationProps());
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    const advanced = await configureReviewedCapabilities();
+    fireEvent.click(screen.getByRole("button", { name: "描述需求" }));
+    fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+    fireEvent.click(await screen.findByRole("button", { name: "应用候选草稿" }));
+    expect(advanced).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Reviewed candidate",
+      permissions: {
+        tools: ["Read", "Grep", "Glob"], skills: [{ id: "docs-review" }], mcpServers: [reviewedMcpGrant],
+        rules: [baseKnowledgeRule, reviewedSkillRule, reviewedMcpRule],
+      },
+    })));
+  });
+
+  it.each([
+    { label: "skills", proposal: { skills: [] }, skills: [], mcpServers: [reviewedMcpGrant], rules: [baseKnowledgeRule, reviewedMcpRule] },
+    { label: "MCP", proposal: { mcpServers: [] }, skills: [{ id: "docs-review" }], mcpServers: [], rules: [baseKnowledgeRule, reviewedSkillRule] },
+  ])("clears an explicitly empty $label group while retaining the unmentioned group's custom rule", async ({ proposal, skills, mcpServers, rules }) => {
+    const bridge = fixtureBridge({ createTurn: vi.fn().mockResolvedValue({ status: 200, body: { output: JSON.stringify({ name: "Scoped candidate", description: "Clear only the requested capability group", ...proposal }) } }) });
+    renderCreateDrawer(generationProps());
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    const advanced = await configureReviewedCapabilities();
+    fireEvent.click(screen.getByRole("button", { name: "描述需求" }));
+    fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+    fireEvent.click(await screen.findByRole("button", { name: "应用候选草稿" }));
+    expect(advanced).toHaveAttribute("open");
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({
+      name: "Scoped candidate", permissions: { tools: ["Read", "Grep", "Glob"], skills, mcpServers, rules },
+    })));
   });
 
   it("keeps real generation errors retryable without discarding the current template draft", async () => {
