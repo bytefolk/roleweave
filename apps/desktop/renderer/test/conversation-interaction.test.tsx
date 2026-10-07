@@ -109,7 +109,12 @@ describe("conversation interaction refinements without a frame redesign", () => 
     expect(create).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "中断回合" }));
     await act(async () => {});
-    expect(screen.getByText("正在停止这个任务…")).toBeInTheDocument();
+    expect(screen.queryByText("正在停止这个任务…")).not.toBeInTheDocument();
+    const stop = screen.getByRole("button", { name: "中断回合" });
+    expect(stop).not.toHaveAttribute("title");
+    fireEvent.mouseEnter(stop.parentElement!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("正在停止这个任务…");
+    fireEvent.mouseLeave(stop.parentElement!);
     expect(screen.getByRole("button", { name: "中断回合" })).toBeDisabled();
     expect(cancel).toHaveBeenCalledExactlyOnceWith("owner");
     rerender(<TurnPanel {...props({ onCreateTurn: create, onCancelTurn: cancel })} />);
@@ -155,7 +160,7 @@ describe("conversation interaction refinements without a frame redesign", () => 
     }));
     expect(screen.getByText("Original task")).toBeInTheDocument();
   });
-  it.each(["saving", "running", "read-only"])("blocks model changes while %s without replacing the draft, history, or session context", async state => {
+  it.each(["saving", "running", "read-only"])("keeps the draft, history and context unchanged by model controls while %s", async state => {
     const change = vi.fn();
     const setContext = vi.fn();
     const selectSession = vi.fn();
@@ -175,16 +180,22 @@ describe("conversation interaction refinements without a frame redesign", () => 
     rerender(<TurnPanel {...panelProps} modelSaving={state === "saving"} employeeBusy={state === "running"}
       modelConfig={{ ...config, editable: state !== "read-only" }} />);
     const select = screen.getByRole("combobox", { name: "员工模型" });
-    expect(select).toBeDisabled();
-    fireEvent.mouseDown(select);
-    expect(select).toHaveAttribute("aria-expanded", "false");
-    expect(change).not.toHaveBeenCalled();
+    if (state === "running") {
+      expect(select).toBeEnabled();
+      pickSelectOption("员工模型", "Performance");
+      expect(change).toHaveBeenCalledExactlyOnceWith("performance");
+    } else {
+      expect(select).toBeDisabled();
+      fireEvent.mouseDown(select);
+      expect(select).toHaveAttribute("aria-expanded", "false");
+      expect(change).not.toHaveBeenCalled();
+    }
     expect(screen.getByLabelText("下达任务")).toHaveValue("Keep this draft");
     expect(screen.getByText("Original task")).toBeInTheDocument();
 
     rerender(<TurnPanel {...panelProps} />);
     expect(screen.getByRole("combobox", { name: "员工模型" })).toBeEnabled();
-    pickSelectOption("员工模型", "Performance");
+    if (state !== "running") pickSelectOption("员工模型", "Performance");
     expect(change).toHaveBeenCalledExactlyOnceWith("performance");
     expect(screen.getByLabelText("下达任务")).toHaveValue("Keep this draft");
     expect(screen.getByText("Original task")).toBeInTheDocument();
@@ -230,7 +241,7 @@ describe("conversation interaction refinements without a frame redesign", () => 
     rerender(<TurnThread turns={[finished, { ...finished, id: "next", output: "More content" }]} scrollKey="history" />);
     expect(log.scrollTop).toBe(1000);
   });
-  it("shows loading, load errors with retry, unsupported and running model states in place", () => {
+  it("shows loading, load errors with retry, unsupported and running model states in place", async () => {
     const reload = vi.fn();
     const base = { saving: false, disabled: false, session: null, turns: [], onReload: reload };
     const { rerender } = render(<ConversationOptions {...base} loading />);
@@ -241,10 +252,16 @@ describe("conversation interaction refinements without a frame redesign", () => 
     expect(reload).toHaveBeenCalledTimes(1);
     const config = { selected: "provider-default", recommended: "provider-default", editable: false, source: "default" as const, options: [{ id: "provider-default", name: "Default", tier: "default" as const }] };
     rerender(<ConversationOptions {...base} config={config} />);
-    expect(screen.getByText("此 Host 不支持选择模型")).toBeInTheDocument();
+    const selectRoot = screen.getByRole("combobox", { name: "员工模型" }).closest(".ant-select")!;
+    expect(selectRoot).not.toHaveAttribute("title");
+    fireEvent.mouseEnter(selectRoot);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("此 Host 不支持选择模型");
     expect(screen.getByRole("combobox", { name: "员工模型" })).toBeDisabled();
-    rerender(<ConversationOptions {...base} config={{ ...config, editable: true }} onModel={vi.fn()} running disabled />);
-    expect(screen.getByText("任务结束后可切换")).toBeInTheDocument();
+    rerender(<ConversationOptions {...base} config={{ ...config, editable: true }} onModel={vi.fn()} running />);
+    expect(screen.getByRole("combobox", { name: "员工模型" })).toBeEnabled();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("下次发送时生效，当前任务继续使用原模型。");
+    fireEvent.mouseLeave(selectRoot);
+    expect(screen.queryByText("任务结束后可切换")).not.toBeInTheDocument();
   });
   it("offers full message expansion and copies original Markdown separately from readable text", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);

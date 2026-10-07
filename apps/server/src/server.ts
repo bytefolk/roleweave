@@ -35,6 +35,7 @@ import {
   handleGoalGet,
   handleGoalList,
   handleGoalUpdate,
+  handleGoalTaskAcceptance,
 } from "./routes/goals.js";
 import { handleHealth } from "./routes/health.js";
 import { handleQoderLoginStart, handleQoderLoginStatus } from "./routes/qoder-login.js";
@@ -400,6 +401,15 @@ async function dispatch(
     }
     if (pathname === routes.goals && method === "GET") {
       await handleGoalList(ctx, res);
+      return;
+    }
+    const goalAcceptanceMatch = pathname.match(/^\/goals\/([a-zA-Z0-9_-]{1,64})\/tasks\/([a-zA-Z0-9_-]{1,64})\/acceptance$/);
+    if (goalAcceptanceMatch) {
+      if (method !== "POST") {
+        sendJson(res, 405, new OrgApiError(errorCodes.method_not_allowed, 405, "task acceptance requires POST").toBody());
+        return;
+      }
+      await handleGoalTaskAcceptance(ctx, req, res, goalAcceptanceMatch[1]!, goalAcceptanceMatch[2]!, actor!);
       return;
     }
     const goalMatch = pathname.match(/^\/goals\/([^/]+)$/);

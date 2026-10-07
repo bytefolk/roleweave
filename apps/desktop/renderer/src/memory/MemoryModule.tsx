@@ -161,23 +161,24 @@ export function MemoryModule({
           <header className="owb-memory-tabs">
             <nav className="owb-context-tabs owb-context-tabs--subtle" aria-label={t("memory.sourcesTitle")}>
               {(["docs", "shared", "sessions", "drive"] as const).map((source) => (
-                <Button key={source} type="text"
-                  aria-pressed={activeSource === source}
-                  aria-label={t("memory.openSource", { name: sourceTitle(source, t) })}
-                  title={`${sourceTitle(source, t)} · ${sourceTabStatus(source, source === "docs" ? summaries.get(sourceKind(source)) : undefined, t)}`}
-                  onClick={() => setActiveSource(source)}>
-                  {sourceTitle(source, t)}
-                </Button>
+                <Tooltip key={source} trigger={["hover", "focus"]} title={`${sourceTitle(source, t)} · ${sourceTabStatus(source, source === "docs" ? summaries.get(sourceKind(source)) : undefined, t)}`}>
+                  <Button type="text"
+                    aria-pressed={activeSource === source}
+                    aria-label={t("memory.openSource", { name: sourceTitle(source, t) })}
+                    onClick={() => setActiveSource(source)}>
+                    {sourceTitle(source, t)}
+                  </Button>
+                </Tooltip>
               ))}
             </nav>
             <div className="owb-memory-tabs__actions">
               {activeSummary ? <span className="owb-memory-tabs__status">{sourceStatus(activeSummary, t)}</span> : null}
               {activeSource === "shared" ? <ServiceLaunch kind="doc" /> : activeSource === "drive" ? <ServiceLaunch kind="mem" /> : null}
-              {isDocument ? <Tooltip title={t(focused ? "memory.exitFocus" : "memory.focusReading")}>
+              {isDocument ? <Tooltip trigger={["hover", "focus"]} title={t(focused ? "memory.exitFocus" : "memory.focusReading")}>
                 <Button type="text" size="small" aria-label={t(focused ? "memory.exitFocus" : "memory.focusReading")} aria-pressed={focused}
                   icon={focused ? <Minimize2 size={15} /> : <Maximize2 size={15} />} onClick={() => setReadingFocus(!readingFocus)} />
               </Tooltip> : null}
-              <Tooltip title={`${t(`memory.scope.${activeSource}`)} · ${sourceTabStatus(activeSource, activeSummary, t)}`}>
+              <Tooltip trigger={["hover", "focus"]} title={`${t(`memory.scope.${activeSource}`)} · ${sourceTabStatus(activeSource, activeSummary, t)}`}>
                 <Button type="text" size="small" aria-label={t("memory.sourceInfo")} icon={<Info size={14} />} />
               </Tooltip>
             </div>

@@ -1,11 +1,12 @@
 import { useLayoutEffect, useRef, type ChangeEvent, type ClipboardEvent, type FormEvent, type ReactNode } from "react";
-import { Button as AntButton, Input } from "antd";
+import { Button as AntButton, Input, Tooltip } from "antd";
 import { ArrowUp, Paperclip, Square } from "lucide-react";
 import { useConversationCopy } from "../locales/conversation";
 import { useT } from "@roleweave/ui";
 import { DiagnosticNotice, type AvailabilityCheck, type NoticeAction } from "../DiagnosticNotice";
 import type { PendingAttachment } from "./types";
 import { PendingAttachmentCard } from "./AttachmentCard";
+import "./composer-toolbar.css";
 
 export interface TurnComposerProps {
   advisory?: ReactNode;
@@ -103,7 +104,7 @@ export function TurnComposer({
   };
 
   return (
-    <form className="owb-turn-composer" onSubmit={submit}>
+    <form className="owb-turn-composer owb-turn-composer--compact" onSubmit={submit}>
       <label className="owb-sr-only" htmlFor="owb-turn-input">{t("turn.compose")}</label>
       <div className="owb-turn-composer__surface">
         {attachments.length > 0 ? (
@@ -116,7 +117,7 @@ export function TurnComposer({
         <Input.TextArea
           id="owb-turn-input"
           value={value}
-          autoSize={{ minRows: 3, maxRows: 8 }}
+          autoSize={{ minRows: 2, maxRows: 8 }}
           placeholder={placeholder}
           disabled={draftDisabled ?? (disabledReason !== null && !running)}
           onChange={(event) => onChange(event.target.value)}
@@ -146,53 +147,41 @@ export function TurnComposer({
             }
           }}
         />
-        {onAddAttachments ? (
-          <AntButton
-            type="text"
-            aria-label={t("turn.addAttachment")}
-            title={t("turn.addAttachment")}
-            icon={<Paperclip aria-hidden="true" size={15} />}
-            onClick={() => fileInputRef.current?.click()}
-          />
-        ) : null}
-        <input ref={fileInputRef} type="file" accept={ACCEPTED_TYPES.join(",")} multiple style={{ display: "none" }} onChange={handleFileChange} />
-        {running ? (
-          <AntButton
-            danger
-            disabled={cancelling || !canCancel}
-            aria-label={t("turn.interrupt")}
-            title={cancelling ? t("turn.interrupting") : t("turn.interruptTitle")}
-            loading={cancelling}
-            icon={<Square aria-hidden="true" size={15} />}
-            onClick={() => void onCancel()}
-          />
-        ) : (
-          <AntButton
-            type="primary"
-            htmlType="submit"
-            disabled={disabledReason !== null || !hasContent}
-            aria-label={t("turn.send")}
-            title={disabledSummary ?? disabledReason ?? (hasContent ? t("turn.send") : copy.emptySend)}
-            icon={<ArrowUp aria-hidden="true" size={15} />}
-          />
-        )}
+        <div className="owb-turn-composer__toolbar">
+          {options ? <div className="owb-turn-composer__options">{options}</div> : null}
+          <div className="owb-turn-composer__actions">
+            {advisory}
+            {onAddAttachments ? <Tooltip title={t("turn.addAttachment")} trigger={["hover", "focus"]}>
+              <AntButton type="text" aria-label={t("turn.addAttachment")}
+                icon={<Paperclip aria-hidden="true" size={16} />} onClick={() => fileInputRef.current?.click()} />
+            </Tooltip> : null}
+            <input ref={fileInputRef} type="file" accept={ACCEPTED_TYPES.join(",")} multiple style={{ display: "none" }} onChange={handleFileChange} />
+            {running ? <Tooltip title={cancelling ? t("turn.interrupting") : canCancel ? copy.interruptHint : copy.interruptUnavailable} trigger={["hover", "focus"]}>
+              <span className="owb-turn-composer__action-trigger" tabIndex={cancelling || !canCancel ? 0 : undefined}>
+                <AntButton danger disabled={cancelling || !canCancel} aria-label={t("turn.interrupt")}
+                  aria-keyshortcuts="Meta+. Control+." loading={cancelling}
+                  icon={<Square aria-hidden="true" size={15} />} onClick={() => void onCancel()} />
+              </span>
+            </Tooltip> : <Tooltip title={disabledSummary ?? disabledReason ?? (hasContent ? sendShortcut === "mod-enter" ? copy.modEnterHint : t("turn.keyboardHint") : copy.emptySend)} trigger={["hover", "focus"]}>
+              <span className="owb-turn-composer__action-trigger" tabIndex={disabledReason !== null || !hasContent ? 0 : undefined}>
+                <AntButton type="primary" htmlType="submit" disabled={disabledReason !== null || !hasContent}
+                  aria-label={t("turn.send")} aria-keyshortcuts={sendShortcut === "mod-enter" ? "Meta+Enter Control+Enter" : "Enter"}
+                  icon={<ArrowUp aria-hidden="true" size={17} />} />
+              </span>
+            </Tooltip>}
+          </div>
+        </div>
       </div>
-      {advisory}
-      {options}
-      {running || disabledReason ? (
+      {!running && disabledReason ? (
         <DiagnosticNotice className="owb-turn-composer__hint"
-          message={running
-            ? cancelling
-              ? t("turn.interrupting")
-              : t("turn.running")
-            : disabledSummary ?? disabledReason!}
-          diagnostic={running ? undefined : disabledDiagnostic}
-          availabilityCheck={running ? undefined : availabilityCheck}
-          primaryAction={running ? undefined : primaryAction}
-          linkAction={running ? undefined : linkAction}
-          primaryFeedback={running ? undefined : primaryFeedback}
+          message={disabledSummary ?? disabledReason}
+          diagnostic={disabledDiagnostic}
+          availabilityCheck={availabilityCheck}
+          primaryAction={primaryAction}
+          linkAction={linkAction}
+          primaryFeedback={primaryFeedback}
           diagnosticKey={diagnosticKey} />
-      ) : <p className="owb-turn-composer__shortcut">{sendShortcut === "mod-enter" ? copy.modEnterHint : t("turn.keyboardHint")}</p>}
+      ) : null}
     </form>
   );
 }

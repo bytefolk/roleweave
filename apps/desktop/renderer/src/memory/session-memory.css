@@ -1,0 +1,172 @@
+/* Durable conversation records use their natural height, independent of the
+ * document workspace's flexible panes. */
+[data-theme] .owb-app .owb-memory-module .owb-session-memory.owb-session-memory--compact,
+.owb-session-memory.owb-session-memory--compact {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  gap: 0;
+  padding: 20px 24px 32px;
+  border: 0;
+  border-radius: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.owb-session-memory--compact :is(.owb-session-memory__toolbar, .owb-memory-history) {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.owb-session-memory--compact .owb-session-memory__toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding-bottom: 0;
+  margin-bottom: 24px;
+}
+
+.owb-session-memory.owb-session-memory--compact .owb-session-memory__picker {
+  flex: 0 1 260px;
+  width: 260px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.owb-session-memory--compact .owb-session-memory__toolbar .ant-btn {
+  flex: none;
+  height: 32px;
+  padding-inline: 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  box-shadow: none;
+}
+
+.owb-session-memory--compact .owb-session-memory__continue-trigger {
+  display: inline-flex;
+  margin-left: auto;
+  border-radius: 8px;
+}
+
+.owb-session-memory--compact .owb-session-memory__context { color: var(--ui-foreground-muted); }
+.owb-session-memory--compact .owb-session-memory__continue { color: var(--ui-foreground); font-weight: 500; }
+.owb-session-memory--compact .owb-session-memory__continue:disabled { color: var(--ui-foreground-subtle); opacity: 0.55; }
+.owb-session-memory--compact .owb-session-memory__loading { display: flex; justify-content: center; padding: 28px 0; }
+
+[data-theme] .owb-app .owb-memory-module .owb-session-memory.owb-session-memory--compact .owb-memory-history,
+.owb-session-memory.owb-session-memory--compact .owb-memory-history {
+  display: grid;
+  flex: none;
+  align-items: start;
+  align-content: start;
+  grid-auto-rows: max-content;
+  min-height: 0;
+  max-height: none;
+  gap: 26px;
+  overflow: visible;
+}
+
+.owb-session-memory--compact .owb-memory-history .owb-session-memory__turn {
+  align-self: start;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.owb-session-memory--compact .owb-session-memory__turn header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: 32px;
+  gap: 4px 10px;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.owb-session-memory--compact .owb-session-memory__turn time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.owb-session-memory--compact .owb-session-memory__model { max-width: 220px; overflow-wrap: anywhere; }
+.owb-session-memory--compact .owb-session-memory__status { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.owb-session-memory--compact .owb-session-memory__status::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.owb-session-memory--compact .owb-session-memory__status[data-status="failed"] { color: var(--ui-danger-strong); }
+.owb-session-memory--compact .owb-session-memory__status[data-status="indeterminate"] { color: var(--ui-warning-strong); }
+.owb-session-memory--compact .owb-session-memory__status[data-status="running"] { color: var(--ui-info); }
+
+.owb-session-memory--compact .owb-session-memory__receipt.ant-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--ui-foreground-subtle);
+}
+.owb-session-memory--compact .owb-session-memory__receipt.is-truncated { color: var(--ui-warning-strong); }
+
+.owb-session-memory--compact .owb-session-memory__turn h3 {
+  margin: 8px 0 6px;
+  color: var(--ui-foreground);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.owb-session-memory--compact .owb-session-memory__turn p { margin: 6px 0; font-size: 12px; line-height: 1.6; }
+.owb-session-memory--compact .owb-session-memory__turn .owb-session-memory__trimmed { color: var(--ui-warning-strong); }
+.owb-session-memory--compact .owb-session-memory__no-answer { color: var(--ui-foreground-subtle); }
+
+.owb-session-memory--compact .owb-session-memory__turn summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 100%;
+  min-height: 32px;
+  border-radius: 4px;
+  list-style: none;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.owb-session-memory--compact .owb-session-memory__turn summary::-webkit-details-marker { display: none; }
+.owb-session-memory--compact .owb-session-memory__turn summary > svg { flex: none; transform: rotate(-90deg); }
+.owb-session-memory--compact .owb-session-memory__turn details[open] summary > svg { transform: none; }
+.owb-session-memory--compact .owb-session-memory__turn summary:hover { color: var(--ui-foreground); }
+.owb-session-memory--compact .owb-session-memory__turn pre {
+  max-height: 480px;
+  margin: 8px 0 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground);
+  font-family: var(--ui-font-sans);
+  font-size: 14px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+}
+
+.owb-session-memory--compact :is(.ant-btn, summary, .owb-session-memory__continue-trigger):focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.owb-session-memory__context-tip p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; }
+.owb-session-memory__context-tip strong { font-size: 12px; font-weight: 500; }
+
+@container memory (max-width: 560px) {
+  [data-theme] .owb-app .owb-memory-module .owb-session-memory.owb-session-memory--compact { padding: 16px; }
+  .owb-session-memory--compact .owb-session-memory__toolbar { gap: 6px; }
+  .owb-session-memory.owb-session-memory--compact .owb-session-memory__picker { flex: 1 1 180px; }
+}

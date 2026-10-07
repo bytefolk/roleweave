@@ -1,0 +1,33 @@
+.owb-task-acceptance { display: grid; gap: 20px; min-width: 0; }
+.owb-task-acceptance p { margin: 0; line-height: 1.6; }
+.owb-task-acceptance h4 { margin: 0 0 10px; font-size: 13px; }
+.owb-task-acceptance__intro, .owb-task-acceptance__criteria > p,
+.owb-task-acceptance__actor, .owb-task-acceptance__source {
+  color: var(--ui-foreground-muted); font-size: 12px; overflow-wrap: anywhere;
+}
+.owb-task-acceptance__delivery dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0 0 12px; font-size: 12px; }
+.owb-task-acceptance__delivery dt { color: var(--ui-foreground-muted); }
+.owb-task-acceptance__delivery dd { margin: 0; overflow-wrap: anywhere; }
+.owb-task-acceptance__delivery pre { padding: 12px; margin: 0; max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--ui-border); border-radius: 8px; background: var(--ui-surface-inset); font-size: 12px; line-height: 1.6; }
+.owb-task-acceptance__criteria { display: grid; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.owb-task-acceptance__criteria legend { margin-bottom: 10px; font-size: 13px; font-weight: 600; }
+.owb-task-acceptance__criteria .ant-checkbox-wrapper { align-items: flex-start; margin: 0; overflow-wrap: anywhere; }
+.owb-task-acceptance__note { display: grid; gap: 7px; font-size: 12px; }
+.owb-task-acceptance__footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.owb-task-acceptance__conflict { display: grid; justify-items: start; gap: 10px; padding: 12px; border: 1px solid var(--ui-warning); border-radius: 8px; font-size: 12px; }
+.owb-task-acceptance__success { padding: 10px 12px; border-radius: 8px; color: var(--ui-success); background: color-mix(in srgb, var(--ui-success) 10%, var(--ui-surface)); }
+.owb-task-acceptance__history { display: grid; gap: 12px; }
+.owb-task-acceptance__history article { padding: 12px; border: 1px solid var(--ui-border); border-radius: 8px; display: grid; gap: 8px; }
+.owb-task-acceptance__history header { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 12px; }
+.owb-task-acceptance__history time { color: var(--ui-foreground-muted); }
+.owb-task-acceptance__history article[data-decision="accepted"] header strong { color: var(--ui-success); }
+.owb-task-acceptance__history article[data-decision="rejected"] header strong { color: var(--ui-danger); }
+.owb-task-acceptance__history ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 12px; }
+.owb-task-acceptance__history li { display: flex; gap: 8px; overflow-wrap: anywhere; }
+.owb-task-acceptance__history li > span { flex-shrink: 0; }
+.owb-task-acceptance__history li[data-passed="true"] > span { color: var(--ui-success); }
+.owb-task-acceptance__history-note { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.owb-project-card__acceptance { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--ui-border); padding-top: 8px; font-size: 11px; }
+.owb-project-card__acceptance > span { color: var(--ui-foreground-muted); }
+.owb-project-card__acceptance > span[data-decision="accepted"] { color: var(--ui-success); }
+.owb-project-card__acceptance > span[data-decision="rejected"] { color: var(--ui-danger); }

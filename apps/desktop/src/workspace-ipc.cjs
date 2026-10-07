@@ -161,7 +161,7 @@ function nativePathForServerPath(serverPath, env) {
  * `openPath` is Electron's `shell.openPath`, which resolves to an empty
  * string on success and to an error message on failure.
  */
-async function openWorkspaceFile({ apiRequest, env, openPath, relativePath }) {
+async function openWorkspaceFile({ apiRequest, env, openPath, relativePath, expectedWorkspacePath }) {
   if (typeof relativePath !== "string" || relativePath.length === 0 || relativePath.length > 1024 ||
       relativePath.startsWith("/") || relativePath.includes("\\") || /[\x00-\x1f]/.test(relativePath) ||
       /^[A-Za-z][A-Za-z\d+.-]*:/.test(relativePath) || relativePath.split("/").some((segment) => segment === ".." || segment.startsWith("."))) {
@@ -170,6 +170,9 @@ async function openWorkspaceFile({ apiRequest, env, openPath, relativePath }) {
   const res = await apiRequest("/workspace");
   if (res.status !== 200 || res.body?.open !== true || typeof res.body.path !== "string" || res.body.path.length === 0) {
     return { opened: false, reason: "workspace_not_open" };
+  }
+  if (expectedWorkspacePath !== undefined && (typeof expectedWorkspacePath !== "string" || expectedWorkspacePath !== res.body.path)) {
+    return { opened: false, reason: "workspace_changed" };
   }
   try {
     const workspace = nativePathForServerPath(res.body.path, env);

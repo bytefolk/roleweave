@@ -100,6 +100,8 @@ const {
   goalPath,
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
+  authorizeGoalIpcSender,
+  validateGoalTaskAcceptanceRequest,
 } = require("./goal-ipc.cjs");
 const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, openWorkspaceFile, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
 const { runtimeDescription, workspaceDialogOptions } = require("./runtime-settings.cjs");
@@ -455,9 +457,9 @@ ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
 ipcMain.handle("owb:workspace:reveal", async () => revealWorkspaceInFileManager({
   apiRequest, env: desktopEnv, openPath: (target) => shell.openPath(target),
 }));
-ipcMain.handle("owb:workspace:file-open", async (event, relativePath) => {
+ipcMain.handle("owb:workspace:file-open", async (event, relativePath, expectedWorkspacePath) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { opened: false, reason: "untrusted_sender" };
-  return openWorkspaceFile({ apiRequest, env: desktopEnv, relativePath, openPath: (target) => shell.openPath(target) });
+  return openWorkspaceFile({ apiRequest, env: desktopEnv, relativePath, expectedWorkspacePath, openPath: (target) => shell.openPath(target) });
 });
 
 ipcMain.handle("owb:org:tree", async () => apiRequest("/org/tree"));
@@ -585,26 +587,34 @@ ipcMain.handle("owb:position:profile", async (event, request) => {
 });
 
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.
-ipcMain.handle("owb:position:docs:list", async (_event, positionId, options) => {
+ipcMain.handle("owb:position:docs:list", async (event, positionId, options) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsListRequest(positionId, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
 
-ipcMain.handle("owb:position:docs:read", async (_event, positionId, filePath, options) => {
+ipcMain.handle("owb:position:docs:read", async (event, positionId, filePath, options) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsReadRequest(positionId, filePath, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
 
 // Minimal doc creation + doc-ref resolution (#35 S4): whitelisted, enumerated.
-ipcMain.handle("owb:position:docs:create", async (_event, request) => {
+ipcMain.handle("owb:position:docs:create", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsCreateRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/create", { method: "POST", body: validated.request });
 });
 
-ipcMain.handle("owb:docs:resolve", async (_event, request) => {
+ipcMain.handle("owb:docs:resolve", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsResolveRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/resolve", { method: "POST", body: validated.request });
@@ -831,7 +841,9 @@ ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {
 });
 
 // Additive #222: workspace-local goal surface.
-ipcMain.handle("owb:goal:create", async (_event, request) => {
+ipcMain.handle("owb:goal:create", async (event, request) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateGoalCreateRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/goals", { method: "POST", body: validated.request });
@@ -852,7 +864,9 @@ ipcMain.handle("owb:goal:get", async (_event, goalId) => {
   return apiRequest(pathname);
 });
 
-ipcMain.handle("owb:goal:update", async (_event, request) => {
+ipcMain.handle("owb:goal:update", async (event, request) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   if (request === null || typeof request !== "object" || Array.isArray(request)) {
     return { status: 400, body: { code: "goal_request_invalid", message: "goal update requires an object", retryable: false } };
   }
@@ -866,7 +880,17 @@ ipcMain.handle("owb:goal:update", async (_event, request) => {
   return apiRequest(pathname, { method: "PATCH", body: validated.request });
 });
 
-ipcMain.handle("owb:goal:delete", async (_event, goalId) => {
+ipcMain.handle("owb:goal:task-acceptance", async (event, request) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = await validateGoalTaskAcceptanceRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname, { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:goal:delete", async (event, goalId) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const pathname = goalPath(goalId);
   if (pathname === null) {
     return { status: 400, body: { code: "goal_request_invalid", message: "goalId is invalid", retryable: false } };

@@ -7,6 +7,7 @@ import {
   Modal,
   Select,
   Tabs,
+  Tooltip,
   message,
 } from "antd";
 import { MAX_DOC_CREATE_BYTES } from "@roleweave/shared/docs";
@@ -329,17 +330,18 @@ export function DocsModule({
   }
 
   const createButton = (
-    <Button
-      className="owb-docs-module__create"
-      disabled={positionId === null}
-      icon={<Plus aria-hidden="true" size={14} />}
-      onClick={() => {
-        setCreateError(null);
-        setCreateOpen(true);
-      }}
-    >
-      {t("docs.create")}
-    </Button>
+    <Tooltip title={t("docs.create")} trigger={["hover", "focus"]}>
+      <Button
+        className="owb-docs-module__create"
+        aria-label={t("docs.create")}
+        disabled={positionId === null}
+        icon={<Plus aria-hidden="true" size={16} />}
+        onClick={() => {
+          setCreateError(null);
+          setCreateOpen(true);
+        }}
+      />
+    </Tooltip>
   );
 
   const positionSurface = (

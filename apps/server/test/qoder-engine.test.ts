@@ -693,7 +693,7 @@ test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and pa
   const trace = events.filter((event) => event.type === "trace.activity");
   assert.deepEqual(trace, [
     { type: "trace.activity", runId, timestamp: trace[0]?.timestamp, activityId: "tool-1", kind: "tool", status: "running", title: "Read", detail: "apps/server/src/routes/turns.ts · packages/shared/src/turns.ts · apps/desktop/renderer/src/turns/TurnThread.tsx" },
-    { type: "trace.activity", runId, timestamp: trace[1]?.timestamp, activityId: "tool-1", kind: "tool", status: "completed", title: "Read" },
+    { type: "trace.activity", runId, timestamp: trace[1]?.timestamp, activityId: "tool-1", kind: "tool", status: "completed", title: "Read", detail: "apps/server/src/routes/turns.ts · packages/shared/src/turns.ts · apps/desktop/renderer/src/turns/TurnThread.tsx" },
   ]);
   assert.ok(!result.stdout.includes("internal"), "private reasoning is never emitted");
   assert.ok(!result.stdout.includes("must-not-leak"), "secret-shaped tool input is never emitted");

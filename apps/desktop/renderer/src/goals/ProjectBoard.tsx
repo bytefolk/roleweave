@@ -15,10 +15,12 @@ import { useOwbLocale, useT } from "@roleweave/ui";
 import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { TurnEngine } from "@roleweave/shared";
 import { useEngineLabel } from "../turns/engine-select";
+import { TaskAcceptanceDrawer } from "./TaskAcceptanceDrawer";
 import "./project-board.css";
 
 export interface ProjectBoardProps {
   detail: GoalDetail;
+  workspaceKey?: string;
   positionNames: Record<string, string>;
   positionEngines?: Record<string, TurnEngine>;
   onRefresh: () => void | Promise<void>;
@@ -73,6 +75,7 @@ function responseError(body: unknown, fallback: string) {
 /** Planning state is explicitly separate from the latest observed Agent turn. */
 export function ProjectBoard({
   detail,
+  workspaceKey,
   positionNames,
   positionEngines = {},
   onRefresh,
@@ -88,6 +91,7 @@ export function ProjectBoard({
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [acceptanceTask, setAcceptanceTask] = useState<{ item: GoalWorkItem; scopeKey: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -99,6 +103,16 @@ export function ProjectBoard({
   const launchLocks = useRef(new Set<string>());
   const detailRef = useRef(detail);
   detailRef.current = detail;
+  const scopeKey = JSON.stringify([workspaceKey, detail.goal.goalId]);
+  const scopeRef = useRef({ key: scopeKey, generation: 0 });
+  if (scopeRef.current.key !== scopeKey) {
+    scopeRef.current = { key: scopeKey, generation: scopeRef.current.generation + 1 };
+  }
+  useEffect(() => {
+    setAccepted({});
+    setLaunching({});
+    setError(null);
+  }, [scopeKey]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -164,17 +178,44 @@ export function ProjectBoard({
     );
   };
 
-  const refresh = async () => {
+  const acceptanceRequired = (item: GoalWorkItem) =>
+    !!own(accepted, item.taskId) || !!own(detail.taskExecutions, item.taskId) ||
+    !!own(detail.taskDeliveries, item.taskId) || !!own(detail.taskDeliveryUnavailable, item.taskId) ||
+    !!detail.executionUnavailable || !!detail.goal.taskAcceptances?.some((record) => record.taskId === item.taskId);
+  const openAcceptance = (item: GoalWorkItem) =>
+    setAcceptanceTask({ item: { ...item }, scopeKey });
+  const acceptanceItem = acceptanceTask?.scopeKey === scopeKey
+    ? items.find((item) => item.taskId === acceptanceTask.item.taskId) ?? acceptanceTask.item : undefined;
+  const acceptanceEntry = (item: GoalWorkItem) => {
+    const delivery = own(detail.taskDeliveries, item.taskId);
+    const records = (detail.goal.taskAcceptances ?? []).filter((record) => record.taskId === item.taskId);
+    if (!delivery && records.length === 0 && executionOf(item)?.status !== "completed") return null;
+    const latest = records[records.length - 1];
+    const currentRecord = latest && delivery && latest.source.turnId === delivery.source.turnId &&
+      latest.source.outputDigest === delivery.source.outputDigest &&
+      JSON.stringify(latest.criteriaSnapshot) === JSON.stringify(detail.goal.acceptanceCriteria) ? latest : undefined;
+    return <div className="owb-project-card__acceptance">
+      <span data-decision={currentRecord?.decision}>{currentRecord
+        ? t(`project.acceptance.decision.${currentRecord.decision}`)
+        : t(records.length > 0 ? "project.acceptance.hasHistory" : "project.acceptance.pending")}</span>
+      <Button size="small" type="link" disabled={busy} onClick={() => openAcceptance(item)}
+        aria-label={t(currentRecord ? "project.acceptance.historyNamed" : "project.acceptance.reviewNamed", { title: item.title })}>
+        {t(currentRecord ? "project.acceptance.history" : "project.acceptance.review")}
+      </Button>
+    </div>;
+  };
+
+  const refresh = async (isCurrent = () => alive.current) => {
     try {
       await onRefresh();
-      if (typeof window.owb.goal === "function") {
+      if (isCurrent() && typeof window.owb.goal === "function") {
         const res = await window.owb.goal(detail.goal.goalId);
-        if (res.status === 200 && res.body?.goal && alive.current) {
+        if (res.status === 200 && res.body?.goal && isCurrent()) {
           detailRef.current = res.body;
         }
       }
     } catch {
-      if (alive.current) setError(t("project.refreshError"));
+      if (isCurrent()) setError(t("project.refreshError"));
     }
   };
   const save = async (
@@ -250,6 +291,11 @@ export function ProjectBoard({
     );
   const submit = () => {
     if (!editor || !validEditor) return;
+    if (!editor.isNew && editor.item.status === "done" &&
+      items.find((item) => item.taskId === editor.item.taskId)?.status !== "done" && acceptanceRequired(editor.item)) {
+      setError(t("project.acceptance.useAcceptance"));
+      return;
+    }
     const draft = editor.item;
     const item: GoalWorkItem = {
       taskId: draft.taskId,
@@ -300,26 +346,50 @@ export function ProjectBoard({
   const launch = async (item: GoalWorkItem) => {
     const positionId = item.assigneePositionId;
     const engine = positionId ? own(positionEngines, positionId) : undefined;
+    const launchScope = scopeRef.current;
+    const lockKey = `${launchScope.generation}:${item.taskId}`;
+    const isCurrent = () => alive.current && scopeRef.current === launchScope;
     if (
       !positionId ||
       !engine ||
-      launchLocks.current.has(item.taskId) ||
+      launchLocks.current.has(lockKey) ||
       executionOf(item)?.status === "running" ||
       detail.executionUnavailable
     )
       return;
-    launchLocks.current.add(item.taskId);
+    launchLocks.current.add(lockKey);
     setLaunching((current) => ({ ...current, [item.taskId]: true }));
     setError(null);
     try {
-      const result = await window.owb.createTurn({
-        positionId,
+      let listed = await window.owb.sessions(positionId);
+      if (!isCurrent()) return;
+      if (listed.status !== 200) throw new Error(responseError(listed.body, t("project.runError")));
+      let sessionId = listed.body.activeSessionId;
+      if (!sessionId) {
+        const created = await window.owb.createSession({ positionId });
+        if (!isCurrent()) return;
+        if (created.status === 201) {
+          sessionId = created.body.sessionId;
+        } else if (created.status === 409) {
+          // A conversation opened while we were creating its first session.
+          // Reuse that session; never rotate or replace the user's thread.
+          listed = await window.owb.sessions(positionId);
+          if (!isCurrent()) return;
+          if (listed.status !== 200) throw new Error(responseError(listed.body, t("project.runError")));
+          sessionId = listed.body.activeSessionId;
+        } else {
+          throw new Error(responseError(created.body, t("project.runError")));
+        }
+      }
+      if (!sessionId) throw new Error(t("project.runError"));
+      const result = await window.owb.createSessionTurn({
+        sessionId,
         engine,
         input: [item.title, item.description].filter(Boolean).join("\n\n"),
         goalId: detail.goal.goalId,
         branchId: item.taskId,
       });
-      if (!alive.current) return;
+      if (!isCurrent()) return;
       if (
         result.status !== 200 &&
         result.status !== 201 &&
@@ -331,19 +401,20 @@ export function ProjectBoard({
         [item.taskId]: {
           turnId: result.body.turnId,
           positionId,
+          sessionId,
           status: result.body.status,
           startedAt: result.body.createdAt,
         },
       }));
-      await refresh();
+      await refresh(isCurrent);
     } catch (cause) {
-      if (alive.current)
+      if (isCurrent())
         setError(
           cause instanceof Error ? cause.message : t("project.runError"),
         );
     } finally {
-      launchLocks.current.delete(item.taskId);
-      if (alive.current)
+      launchLocks.current.delete(lockKey);
+      if (isCurrent())
         setLaunching((current) => ({ ...current, [item.taskId]: false }));
     }
   };
@@ -365,7 +436,7 @@ export function ProjectBoard({
             size="small"
             type="link"
             className="owb-project-view-turn-btn"
-            onClick={() => onOpenBoundSession(run.positionId, undefined, run.turnId)}
+            onClick={() => onOpenBoundSession(run.positionId, run.sessionId, run.turnId)}
             title={t("project.viewTurn")}
             aria-label={t("project.viewTurnNamed", { title: item.title })}
           >
@@ -426,7 +497,11 @@ export function ProjectBoard({
           value={item.status}
           disabled={busy}
           options={STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) }))}
-          onChange={(status) =>
+          onChange={(status) => {
+            if (status === "done" && item.status !== "done" && acceptanceRequired(item)) {
+              openAcceptance(item);
+              return;
+            }
             void save(
               items.map((existing) =>
                 existing.taskId === item.taskId
@@ -437,8 +512,8 @@ export function ProjectBoard({
                   : existing,
               ),
               detail.goal.updatedAt,
-            )
-          }
+            );
+          }}
         />
         <div className="owb-project-card__execution">
           {execution(item)}
@@ -466,6 +541,7 @@ export function ProjectBoard({
             {t("project.run")}
           </Button>
         </div>
+        {acceptanceEntry(item)}
         {item.assigneePositionId && !engine && (
           <p className="owb-project-card__hint">
             {t("project.configureEngine")}
@@ -756,6 +832,7 @@ export function ProjectBoard({
                       </span>
                       <small>{label}</small>
                       {execution(item)}
+                      {acceptanceEntry(item)}
                     </div>
                     <div
                       className="owb-project-timeline__track"
@@ -906,7 +983,7 @@ export function ProjectBoard({
                     aria-label={t("project.taskStatus")}
                     value={editor.item.status}
                     disabled={busy}
-                    options={STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) }))}
+                    options={STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`), disabled: status === "done" && !editor.isNew && editor.item.status !== "done" && acceptanceRequired(editor.item) }))}
                     onChange={(status) =>
                       patch({
                         status,
@@ -930,6 +1007,14 @@ export function ProjectBoard({
                   />
                 </label>
               </div>
+              {!editor.isNew && acceptanceRequired(editor.item) && <p className="owb-project-caption">
+                {t("project.acceptance.useAcceptance")}
+                <Button size="small" type="link" disabled={busy || JSON.stringify(editor.item) !== JSON.stringify(items.find((item) => item.taskId === editor.item.taskId))}
+                  onClick={() => { openAcceptance(editor.item); setEditor(null); setError(null); }}>
+                  {t("project.acceptance.review")}
+                </Button>
+                {JSON.stringify(editor.item) !== JSON.stringify(items.find((item) => item.taskId === editor.item.taskId)) && t("project.acceptance.saveEditsFirst")}
+              </p>}
               <div className="owb-project-form__row">
                 <label>
                   <span>{t("project.startDate")}</span>
@@ -999,6 +1084,14 @@ export function ProjectBoard({
           </>
         )}
       </Drawer>
+      {acceptanceItem && <TaskAcceptanceDrawer
+        key={`${scopeKey}:${acceptanceItem.taskId}`}
+        detail={detail}
+        item={acceptanceItem}
+        workspaceKey={workspaceKey}
+        onClose={() => setAcceptanceTask(null)}
+        onRefresh={onRefresh}
+      />}
     </section>
   );
 }

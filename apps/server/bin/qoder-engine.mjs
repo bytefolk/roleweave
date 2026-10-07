@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
+import { redactApprovalSecrets } from "@roleweave/shared/approval-redaction";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
 import { openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
@@ -25,6 +26,49 @@ import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
 import { resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../src/local-provider-config.js";
 
 const VERSION = "0.2.0";
+
+function activityText(value, maxBytes) {
+  let result = "";
+  let bytes = 0;
+  for (const character of value) {
+    bytes += Buffer.byteLength(character, "utf8");
+    if (bytes > maxBytes) break;
+    result += character;
+  }
+  return result;
+}
+
+/** Allowlisted file selectors and search patterns, with credential redaction.
+ * Never serialize arbitrary input, commands, queries, URLs or tool results. */
+export function publicQoderActivityDetail(block, redactConfiguredSecrets = value => value) {
+  const input = block?.input;
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const details = [];
+  for (const key of ["path", "file_path", "paths", "files", "file_paths"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) details.push(value.trim());
+    else if (Array.isArray(value)) details.push(...value.filter(item => typeof item === "string" && item.trim()).map(item => item.trim()));
+  }
+  const name = typeof block.name === "string" ? block.name.toLowerCase().replace(/[\s_.-]/g, "") : "";
+  const firstString = (keys) => keys.map(key => input[key]).find(value => typeof value === "string" && value.trim());
+  if (/^(glob|globsearch|findfiles|grep|searchfiles|searchcontents)$/.test(name)) {
+    const pattern = firstString(name.startsWith("glob") || name === "findfiles" ? ["pattern", "glob_pattern", "glob"] : ["pattern"]);
+    if (pattern) details.unshift(`pattern: ${pattern.trim()}`);
+    if (/^(grep|searchfiles|searchcontents)$/.test(name)) {
+      const glob = firstString(["glob", "include"]);
+      if (glob) details.push(`files: ${glob.trim()}`);
+    }
+  }
+  if (/^(read|readfile|readfiles)$/.test(name)) {
+    for (const key of ["offset", "limit"]) {
+      if (Number.isSafeInteger(input[key]) && input[key] >= 0) details.push(`${key}: ${input[key]}`);
+    }
+  }
+  // Redact before truncation so a secret crossing the byte boundary cannot
+  // survive as a partial value in the durable public trace.
+  return details.length > 0 ? activityText(redactApprovalSecrets(redactConfiguredSecrets([...new Set(details)].join(" · "))), 2048) : undefined;
+}
+
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const QODER_PERMISSION_MODES = new Set([
   "default",
@@ -1166,28 +1210,7 @@ async function turnRunQoder(workspaceDir, positionId, input) {
     }
 
     let buffer = "";
-    const toolNames = new Map();
-    const activityText = (value, maxBytes) => {
-      let result = "";
-      let bytes = 0;
-      for (const character of value) {
-        bytes += Buffer.byteLength(character, "utf8");
-        if (bytes > maxBytes) break;
-        result += character;
-      }
-      return result;
-    };
-    const publicDetail = (block) => {
-      const input = block?.input;
-      if (!input || typeof input !== "object") return undefined;
-      const details = [];
-      for (const key of ["path", "file_path", "paths", "files", "file_paths"]) {
-        const value = input[key];
-        if (typeof value === "string" && value.trim()) details.push(value.trim());
-        else if (Array.isArray(value)) details.push(...value.filter(item => typeof item === "string" && item.trim()).map(item => item.trim()));
-      }
-      return details.length > 0 ? activityText([...new Set(details)].join(" · "), 2048) : undefined;
-    };
+    const toolActivities = new Map();
     child.stdout.on("data", (chunk) => {
       buffer += String(chunk);
       let newline = buffer.indexOf("\n");
@@ -1215,10 +1238,11 @@ async function turnRunQoder(workspaceDir, positionId, input) {
           if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
             emit({ type: "model.delta", runId, timestamp: now(), text: block.text });
           } else if (block?.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
-            toolNames.set(block.id, activityText(block.name, 256));
-            const detail = publicDetail(block);
+            const title = activityText(block.name, 256);
+            const detail = publicQoderActivityDetail(block, redactDiagnostic);
+            toolActivities.set(block.id, { title, ...(detail ? { detail } : {}) });
             emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.id, 256), kind: "tool",
-              status: "running", title: toolNames.get(block.id), ...(detail ? { detail } : {}) });
+              status: "running", ...toolActivities.get(block.id) });
           }
         }
       }
@@ -1226,7 +1250,7 @@ async function turnRunQoder(workspaceDir, positionId, input) {
         for (const block of event.message.content) {
           if (block?.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
           emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.tool_use_id, 256), kind: "tool",
-            status: block.is_error === true ? "failed" : "completed", title: toolNames.get(block.tool_use_id) ?? "Tool" });
+            status: block.is_error === true ? "failed" : "completed", ...(toolActivities.get(block.tool_use_id) ?? { title: "Tool" }) });
         }
       }
       if (event?.type === "result") {
