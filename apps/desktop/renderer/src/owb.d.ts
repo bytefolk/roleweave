@@ -24,6 +24,8 @@ import type {
   DocsWriteRequest,
   DriveObjectDetailResponse,
   DriveObjectListResponse,
+  DriveObjectPreviewResponse,
+  DriveProviderStatusResponse,
   DriveUploadResponse,
   ExternalServiceKind,
   ServiceConnectionInput,
@@ -196,6 +198,9 @@ export interface OwbBridge {
   drive: {
     list(q?: string): Promise<OwbApiResponse<DriveObjectListResponse>>;
     detail(id: string): Promise<OwbApiResponse<DriveObjectDetailResponse>>;
+    preview?(id: string): Promise<OwbApiResponse<DriveObjectPreviewResponse>>;
+    /** Explicit readonly probe of the configured server provider. */
+    provider?(): Promise<OwbApiResponse<DriveProviderStatusResponse>>;
     upload(filePath: string): Promise<OwbApiResponse<DriveUploadResponse>>;
     pickAndUpload(): Promise<OwbApiResponse<DriveUploadResponse> | { canceled: true }>;
   };

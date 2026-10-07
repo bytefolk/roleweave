@@ -137,6 +137,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/server.js",
   "dist/src/services/connections.js",
   "dist/src/services/doc-contract.js",
+  "dist/src/services/drive-preview.js",
   "dist/src/services/drive-providers.js",
   "dist/src/services/mem-contract.js",
   "dist/src/services/probes.js",

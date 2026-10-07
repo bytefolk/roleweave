@@ -1,10 +1,12 @@
 import { execFile, type ExecFileException } from "node:child_process";
 import { OrgApiError, errorCodes } from "@roleweave/shared";
-import type { DriveObject, DriveProviderKind, DriveProviderState, DriveProviderStatus } from "@roleweave/shared";
+import type { DriveObject, DriveObjectPreview, DriveProviderKind, DriveProviderState, DriveProviderStatus } from "@roleweave/shared";
 import { DRIVE_PROVIDER_SCHEMA_VERSION, parseDriveProviderKind } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
-import { requestService, resolveServiceConnection } from "./connections.js";
+import { requestService, resolveServiceConnection, SERVICE_TIMEOUT_MS } from "./connections.js";
+import type { ServiceConnection } from "./connections.js";
 import { normalizeMemFile } from "./mem-contract.js";
+import { fetchMemImagePreview } from "./drive-preview.js";
 
 /**
  * Drive provider seam (drive-provider.v1).
@@ -34,6 +36,7 @@ export interface DriveProvider {
   readonly kind: DriveProviderKind;
   list(query: string): Promise<DriveObject[]>;
   detail(id: string): Promise<DriveObject>;
+  preview?(id: string): Promise<DriveObjectPreview>;
   probe(): Promise<DriveProviderStatus>;
 }
 
@@ -77,13 +80,21 @@ export class MemDriveProvider implements DriveProvider {
     return object;
   }
 
+  async preview(id: string): Promise<DriveObjectPreview> {
+    const connection = resolveServiceConnection(this.ctx, "mem");
+    const deadline = Date.now() + SERVICE_TIMEOUT_MS;
+    const object = requireMemFile(await this.fetchMem(`/v1/files/${encodeURIComponent(id)}`, connection));
+    if (object.id !== id) throw invalidMemResponse();
+    // Snapshot the same configured connection for metadata and protected bytes.
+    return fetchMemImagePreview(connection!, object, deadline - Date.now());
+  }
+
   async probe(): Promise<DriveProviderStatus> {
     const connection = resolveServiceConnection(this.ctx, "mem");
     return providerStatus("mem", connection === null ? "not_connected" : "ready");
   }
 
-  private async fetchMem(pathname: string): Promise<unknown> {
-    const connection = resolveServiceConnection(this.ctx, "mem");
+  private async fetchMem(pathname: string, connection: ServiceConnection | null = resolveServiceConnection(this.ctx, "mem")): Promise<unknown> {
     if (connection === null) {
       throw new OrgApiError(
         errorCodes.drive_not_configured,

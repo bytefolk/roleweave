@@ -112,6 +112,8 @@ contextBridge.exposeInMainWorld("owb", {
   drive: {
     list: (q) => ipcRenderer.invoke("owb:drive:list", q),
     detail: (id) => ipcRenderer.invoke("owb:drive:detail", id),
+    preview: (id) => ipcRenderer.invoke("owb:drive:preview", id),
+    provider: () => ipcRenderer.invoke("owb:drive:provider"),
     upload: (filePath) => ipcRenderer.invoke("owb:drive:upload", filePath),
     pickAndUpload: () => ipcRenderer.invoke("owb:drive:pick-and-upload"),
   },

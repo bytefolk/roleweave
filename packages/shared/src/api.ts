@@ -72,6 +72,7 @@ export const routes = {
    * never mirrors mem storage, it only forwards to the configured MEM_URL. */
   driveList: "/drive/list",
   driveDetail: "/drive/detail",
+  drivePreview: "/drive/preview",
   driveUpload: "/drive/upload",
   driveProvider: "/drive/provider",
   /** Additive #306: attachment upload/read surface. */

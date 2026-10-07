@@ -84,7 +84,7 @@ function installBridge() {
   return bridge;
 }
 
-describe("员工记忆模块", () => {
+describe("资料与记忆模块", () => {
   it.each([true, false])("omits duplicate heading and collaboration action with showEmployeePicker=%s", async (showEmployeePicker) => {
     const bridge = installBridge();
     const { container } = render(<MemoryModule workspaceOpen
@@ -97,11 +97,11 @@ describe("员工记忆模块", () => {
     const header = container.querySelector(".owb-memory-module__header");
     if (showEmployeePicker) {
       expect(header).toBeInTheDocument();
-      expect(within(header as HTMLElement).getByRole("combobox", { name: "选择员工查看记忆" })).toBeVisible();
+      expect(within(header as HTMLElement).getByRole("combobox", { name: "选择员工查看资料与记忆" })).toBeVisible();
       expect.soft(within(header as HTMLElement).queryByRole("button", { name: "专注阅读" })).not.toBeInTheDocument();
     } else {
       expect.soft(header).not.toBeInTheDocument();
-      expect(screen.queryByRole("combobox", { name: "选择员工查看记忆" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
     }
   });
 
@@ -131,9 +131,9 @@ describe("员工记忆模块", () => {
     const { rerender } = render(memory(position.id));
     expect(await screen.findByRole("heading", { name: "Community handbook" })).toBeVisible();
     if (showEmployeePicker === false) {
-      expect(screen.queryByRole("combobox", { name: "选择员工查看记忆" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
     } else {
-      expect(screen.getByRole("combobox", { name: "选择员工查看记忆" })).toBeVisible();
+      expect(screen.getByRole("combobox", { name: "选择员工查看资料与记忆" })).toBeVisible();
     }
     expect(screen.queryByRole("combobox", { name: "选择岗位查看文档" })).not.toBeInTheDocument();
 
@@ -142,11 +142,11 @@ describe("员工记忆模块", () => {
     expect(screen.queryByRole("heading", { name: "Community handbook" })).not.toBeInTheDocument();
     expect(bridge.positionDocFile).toHaveBeenLastCalledWith("repo-owner", "SKILL.md");
     if (showEmployeePicker === false) {
-      expect(screen.queryByRole("combobox", { name: "选择员工查看记忆" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
     } else {
-      pickSelectOption("选择员工查看记忆", position.name);
+      pickSelectOption("选择员工查看资料与记忆", position.name);
       expect(await screen.findByRole("heading", { name: "Community handbook" })).toBeVisible();
-      const picker = screen.getByRole("combobox", { name: "选择员工查看记忆" });
+      const picker = screen.getByRole("combobox", { name: "选择员工查看资料与记忆" });
       act(() => picker.focus());
       expect(picker).toHaveFocus();
       fireEvent.keyDown(picker, { key: "ArrowDown", code: "ArrowDown", keyCode: 40 });
@@ -176,14 +176,14 @@ describe("员工记忆模块", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "打开 岗位文档 记忆来源" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "打开 岗位文档 记忆来源" })).not.toHaveTextContent("2");
+    expect(screen.getByRole("button", { name: "打开岗位资料" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "打开岗位资料" })).not.toHaveTextContent("2");
     expect(screen.queryByText("岗位运行上下文")).not.toBeInTheDocument();
     expect(screen.queryByText("context://position/community-operator")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "打开 统一网盘 记忆来源" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开网盘文件" }));
     expect(await screen.findByText("社区周报.md")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "打开 统一网盘 记忆来源" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "打开网盘文件" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("button", { name: "专注阅读" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "退出专注阅读" })).not.toBeInTheDocument();
     await waitFor(() => expect(bridge.drive.list).toHaveBeenCalledWith(""));
@@ -197,7 +197,7 @@ describe("员工记忆模块", () => {
     const { container } = render(<MemoryModule workspaceOpen positions={[{ id: position.id, name: position.name }]}
       selectedPositionId={position.id} position={position} showEmployeePicker={showEmployeePicker} />);
     const reader = await screen.findByRole("heading", { name: "岗位职责" });
-    const module = screen.getByRole("region", { name: "员工记忆" });
+    const module = screen.getByRole("region", { name: "资料与记忆" });
     const tabs = container.querySelector(".owb-memory-tabs")!;
     expect(within(tabs as HTMLElement).getByText("已绑定")).toBeVisible();
     expect(within(module).getByRole("status", { name: "绑定期间只读" })).toBeVisible();
@@ -244,7 +244,7 @@ describe("员工记忆模块", () => {
         initialSource={initialSource} onContinue={onContinue} />
     );
     const { container, rerender } = render(memory("shared"));
-    const module = screen.getByRole("region", { name: "员工记忆" });
+    const module = screen.getByRole("region", { name: "资料与记忆" });
     const tabs = container.querySelector(".owb-memory-tabs")!;
     fireEvent.click(within(tabs as HTMLElement).getByRole("button", { name: "专注阅读" }));
     expect(module).toHaveAttribute("data-reading-focus", "true");
@@ -259,10 +259,77 @@ describe("员工记忆模块", () => {
     expect(onContinue).toHaveBeenCalledExactlyOnceWith(position.id, "session-a");
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "打开 共享知识 记忆来源" }));
+      fireEvent.click(screen.getByRole("button", { name: "打开共享资料" }));
     });
     expect(module).toHaveAttribute("data-reading-focus", "true");
     fireEvent.click(screen.getByRole("button", { name: "退出专注阅读" }));
     expect(module).toHaveAttribute("data-reading-focus", "false");
+  });
+
+  it("groups role and shared resources, session memory, and file storage as different navigation scopes", async () => {
+    const bridge = installBridge();
+    render(<MemoryModule workspaceOpen positions={[{ id: position.id, name: position.name }]}
+      selectedPositionId={position.id} position={position} showEmployeePicker={false} />);
+    await waitFor(() => expect(bridge.positionDocs).toHaveBeenCalled());
+    const navigation = within(screen.getByRole("navigation", { name: "资料与记忆导航" }));
+    const documents = within(navigation.getByRole("group", { name: "资料" }));
+    expect(documents.getByRole("button", { name: "打开岗位资料" })).toHaveTextContent("岗位");
+    expect(documents.getByRole("button", { name: "打开共享资料" })).toHaveTextContent("团队");
+    expect(within(navigation.getByRole("group", { name: "记忆" })).getByRole("button", { name: "打开会话记忆" })).toHaveTextContent("过程");
+    expect(within(navigation.getByRole("group", { name: "存储位置" })).getByRole("button", { name: "打开网盘文件" })).toHaveTextContent("文件");
+    expect(screen.getByRole("heading", { name: "岗位资料", level: 2 })).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
+  });
+
+  it("uses grouped compact navigation to open the selected employee's session memory", async () => {
+    installBridge();
+    window.owb.sessions = vi.fn().mockResolvedValue({ status: 200, body: { activeSessionId: "session-a", sessions: [{
+      sessionId: "session-a", positionId: position.id, status: "active", createdAt: "2026-09-12T00:00:00Z",
+    }] } });
+    window.owb.sessionTurnHistory = vi.fn().mockResolvedValue({ status: 200, body: { turns: [] } });
+    const onContinue = vi.fn();
+    render(<MemoryModule workspaceOpen positions={[{ id: position.id, name: position.name }]}
+      selectedPositionId={position.id} position={position} showEmployeePicker={false} onContinue={onContinue} />);
+    pickSelectOption("选择资料或记忆来源", "会话记忆 · 过程");
+    expect(screen.getByRole("heading", { name: "会话记忆", level: 2 })).toBeVisible();
+    const continueButton = await screen.findByRole("button", { name: "继续对话" });
+    await waitFor(() => expect(continueButton).toBeEnabled());
+    fireEvent.click(continueButton);
+    expect(onContinue).toHaveBeenCalledExactlyOnceWith(position.id, "session-a");
+  });
+
+  it("a fresh resource-request nonce returns to role resources even when the initial source is unchanged", async () => {
+    const bridge = installBridge();
+    bridge.positionDocFile.mockResolvedValue({ status: 200, body: {
+      schemaVersion: "docs-file.v1", positionId: position.id, path: "SKILL.md", version: "v1", content: "# Requested role file",
+    } });
+    window.owb.docPlaneList = vi.fn().mockResolvedValue({ status: 503, body: { code: "doc_plane_unconfigured" } });
+    const memory = (nonce?: number) => <MemoryModule workspaceOpen initialSource="docs"
+      positions={[{ id: position.id, name: position.name }]} selectedPositionId={position.id} position={position}
+      showEmployeePicker={false} resourceRequest={nonce === undefined ? null : { positionId: position.id, path: "SKILL.md", nonce }} />;
+    const { rerender } = render(memory());
+    expect(await screen.findByRole("heading", { name: "Requested role file" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "打开共享资料" }));
+    expect(await screen.findByRole("heading", { name: "尚未连接共享资料" })).toBeVisible();
+    rerender(memory(1));
+    expect(await screen.findByRole("heading", { name: "Requested role file" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开岗位资料" })).toHaveAttribute("aria-current", "page");
+    fireEvent.click(screen.getByRole("button", { name: "打开共享资料" }));
+    expect(await screen.findByRole("heading", { name: "尚未连接共享资料" })).toBeVisible();
+    rerender(memory(2));
+    expect(await screen.findByRole("heading", { name: "Requested role file" })).toBeVisible();
+    expect(bridge.positionDocFile).toHaveBeenLastCalledWith(position.id, "SKILL.md");
+  });
+
+  it("offers a single meaningful shared-resource connection action in the empty content area", async () => {
+    installBridge();
+    window.owb.docPlaneList = vi.fn().mockResolvedValue({ status: 503, body: { code: "doc_plane_unconfigured" } });
+    window.owb.services = { list: vi.fn().mockResolvedValue({ status: 200, body: { connections: [] } }) } as unknown as OwbBridge["services"];
+    const { container } = render(<MemoryModule workspaceOpen initialSource="shared"
+      positions={[{ id: position.id, name: position.name }]} selectedPositionId={position.id} position={position} showEmployeePicker={false} />);
+    expect(await screen.findByRole("heading", { name: "尚未连接共享资料" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "连接共享资料" })).toHaveLength(1);
+    expect(within(container.querySelector(".owb-memory-tabs") as HTMLElement).queryByRole("button", { name: "连接共享资料" })).not.toBeInTheDocument();
+    expect(window.owb.services.list).toHaveBeenCalled();
   });
 });

@@ -17,7 +17,7 @@ import {
   handleDocsRestore,
   handleDocsWrite,
 } from "./routes/docs.js";
-import { handleDriveDetail, handleDriveList, handleDriveProviderStatus, handleDriveUpload } from "./routes/drive.js";
+import { handleDriveDetail, handleDriveList, handleDrivePreview, handleDriveProviderStatus, handleDriveUpload } from "./routes/drive.js";
 import { handleEvents } from "./routes/events.js";
 import {
   handleGroupAddMember,
@@ -370,6 +370,10 @@ async function dispatch(
     }
     if (pathname === routes.driveDetail && method === "GET") {
       await handleDriveDetail(ctx, res, url);
+      return;
+    }
+    if (pathname === routes.drivePreview && method === "GET") {
+      await handleDrivePreview(ctx, res, url);
       return;
     }
     if (pathname === routes.driveUpload && method === "POST") {

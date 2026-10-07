@@ -256,7 +256,7 @@ async function openInbox(view: "审批" | "上报" = "审批"): Promise<void> {
   }
 }
 
-function selectEmployeeView(name: "对话" | "记忆" | "档案"): void {
+function selectEmployeeView(name: "对话" | "资料与记忆" | "档案"): void {
   fireEvent.click(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name }));
 }
 
@@ -290,7 +290,7 @@ describe("App context navigation", () => {
     expect(conversation).toHaveClass("owb-turn-panel--embedded");
     const input = screen.getByRole("textbox", { name: "下达任务" });
     fireEvent.change(input, { target: { value: "精简布局仍保留草稿" } });
-    selectEmployeeView("记忆");
+    selectEmployeeView("资料与记忆");
     expect(screen.queryByRole("button", { name: "会话历史" })).toBeNull();
     selectEmployeeView("对话");
     expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(input);
@@ -335,9 +335,9 @@ describe("App context navigation", () => {
     fireEvent.change(composer, { target: { value: "保留这段协作草稿" } });
     const views = within(screen.getByRole("navigation", { name: "员工视图" }));
     const tree = screen.getByRole("tree");
-    fireEvent.click(views.getByRole("button", { name: "记忆" }));
-    expect(await screen.findByRole("region", { name: "员工记忆" })).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "选择员工查看记忆" })).not.toBeInTheDocument();
+    fireEvent.click(views.getByRole("button", { name: "资料与记忆" }));
+    expect(await screen.findByRole("region", { name: "资料与记忆" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
     expect(screen.getByRole("tree")).toBe(tree);
     fireEvent.click(views.getByRole("button", { name: "档案" }));
     expect(await screen.findByRole("region", { name: "岗位档案" })).toHaveTextContent("代码库负责人");
@@ -346,7 +346,7 @@ describe("App context navigation", () => {
     expect(composer).toHaveValue("保留这段协作草稿");
   });
 
-  it.each(["记忆", "档案"] as const)("keeps the %s subview and correct identity when switching between two contacts", async subview => {
+  it.each(["资料与记忆", "档案"] as const)("keeps the %s subview and correct identity when switching between two contacts", async subview => {
     const employees = [position, { ...position, id: "docs-writer", name: "文档负责人", description: "负责文档维护", reportTo: "repo-owner" }];
     const sessions = employees.map((employee, index) => ({
       ...activeSession, positionId: employee.id, principal: `position.${employee.id}`,
@@ -386,12 +386,12 @@ describe("App context navigation", () => {
       expect(screen.queryByRole("region", { name: "岗位对话" })).not.toBeInTheDocument();
       expect(document.querySelector(".owb-context-header__name")).toHaveTextContent(employee.name);
       const other = employees.find(candidate => candidate.id !== employee.id)!;
-      if (subview === "记忆") {
-        const memory = within(screen.getByRole("region", { name: "员工记忆" }));
+      if (subview === "资料与记忆") {
+        const memory = within(screen.getByRole("region", { name: "资料与记忆" }));
         expect(await memory.findByRole("button", { name: `${employee.id}.md` })).toBeVisible();
         expect(memory.queryByRole("button", { name: `${other.id}.md` })).not.toBeInTheDocument();
         expect(positionDocs).toHaveBeenLastCalledWith(employee.id);
-        expect(memory.queryByRole("combobox", { name: "选择员工查看记忆" })).not.toBeInTheDocument();
+        expect(memory.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
       } else {
         const profile = within(screen.getByRole("region", { name: "岗位档案" }));
         expect(await profile.findByRole("heading", { name: employee.name })).toBeVisible();
@@ -1865,11 +1865,11 @@ describe("App employee-memory module wiring", () => {
     expect(await screen.findByText("归档会话回复")).toBeVisible();
     expect(screen.getByRole("textbox", { name: "下达任务" })).toBeDisabled();
 
-    selectEmployeeView("记忆");
-    fireEvent.click(screen.getByRole("button", { name: "打开 会话记忆 记忆来源" }));
+    selectEmployeeView("资料与记忆");
+    fireEvent.click(screen.getByRole("button", { name: "打开会话记忆" }));
     await screen.findByRole("combobox", { name: "选择会话" });
     pickSelectOption("选择会话", "当前");
-    const memory = screen.getByRole("region", { name: "员工记忆" });
+    const memory = screen.getByRole("region", { name: "资料与记忆" });
     expect(await within(memory).findByRole("heading", { name: "当前会话任务" })).toBeVisible();
     sessionTurnHistory.mockClear();
     fireEvent.click(within(memory).getByRole("button", { name: "继续对话" }));
@@ -1887,7 +1887,7 @@ describe("App employee-memory module wiring", () => {
       status: 200,
       body: {
         schemaVersion: "drive-object-list.v1",
-        mocked: true,
+        mocked: false,
         objects: [{
           id: "mem-001",
           name: "会议纪要.md",
@@ -1907,9 +1907,9 @@ describe("App employee-memory module wiring", () => {
     });
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "记忆" }));
-    expect(await screen.findByRole("region", { name: "员工记忆" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "打开 统一网盘 记忆来源" }));
+    fireEvent.click(await screen.findByRole("button", { name: "资料与记忆" }));
+    expect(await screen.findByRole("region", { name: "资料与记忆" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "打开网盘文件" }));
     expect(await screen.findByText("会议纪要.md")).toBeInTheDocument();
     expect(list).toHaveBeenCalledWith("");
     expect(screen.queryByText(/Obsidian/)).not.toBeInTheDocument();
@@ -1962,12 +1962,12 @@ describe("App docs module wiring (#35 S3)", () => {
     await selectRepoOwner();
 
     // Ant Design replaces the button when its variant changes from text to primary.
-    const docsEntry = () => within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "记忆" });
+    const docsEntry = () => within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "资料与记忆" });
     expect(docsEntry()).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(docsEntry());
     expect(docsEntry()).toHaveAttribute("aria-pressed", "true");
     expect(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "协作" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("region", { name: "员工记忆" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "资料与记忆" })).toBeInTheDocument();
     await waitFor(() => expect(positionDocs).toHaveBeenCalledWith("repo-owner"));
 
     fireEvent.click(await screen.findByRole("button", { name: "handbook.md" }));

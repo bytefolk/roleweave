@@ -3,11 +3,13 @@ import { OrgApiError, errorCodes } from "@roleweave/shared";
 import type {
   DriveObjectDetailResponse,
   DriveObjectListResponse,
+  DriveObjectPreviewResponse,
   DriveProviderStatusResponse,
 } from "@roleweave/shared";
 import {
   DRIVE_OBJECT_LIST_SCHEMA_VERSION,
   DRIVE_OBJECT_SCHEMA_VERSION,
+  DRIVE_OBJECT_PREVIEW_SCHEMA_VERSION,
   DRIVE_PROVIDER_SCHEMA_VERSION,
 } from "@roleweave/shared";
 import { sendJson } from "../http.js";
@@ -63,6 +65,17 @@ export async function handleDriveDetail(ctx: ControlPlaneContext, res: ServerRes
     object,
     mocked: false,
   };
+  sendJson(res, 200, body);
+}
+
+/** GET /drive/preview?id: authenticated bounded raster bytes, no upstream URL. */
+export async function handleDrivePreview(ctx: ControlPlaneContext, res: ServerResponse, url: URL): Promise<void> {
+  const id = url.searchParams.get("id") ?? "";
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(id)) throw invalidRequest("a valid file id is required");
+  const provider = resolveDriveProvider(ctx);
+  if (!provider.preview) throw new OrgApiError(errorCodes.drive_action_unsupported, 501, "This drive provider does not support image previews");
+  const body: DriveObjectPreviewResponse = { schemaVersion: DRIVE_OBJECT_PREVIEW_SCHEMA_VERSION, preview: await provider.preview(id) };
+  res.setHeader("Cache-Control", "no-store");
   sendJson(res, 200, body);
 }
 
