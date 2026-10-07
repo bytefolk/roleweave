@@ -273,7 +273,14 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const previewPreset = HIRE_ROLE_PRESETS.find((preset) => preset.id === selectedPreset);
   const presetMatchesDraft = !!appliedPreset && appliedPreset.id === selectedPreset && name === appliedPreset.name && description === appliedPreset.description;
   const parsedCandidate = useMemo(() => candidateProposal === null ? null : parseHireProposal(candidateProposal), [candidateProposal]);
-  const candidateHasPolicy = !!parsedCandidate && !!(parsedCandidate.mode || parsedCandidate.tools || parsedCandidate.skills || parsedCandidate.mcpServers || parsedCandidate.memorySources);
+  const sameValues = (left: readonly string[], right: readonly string[]) => JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+  const candidateHasPolicy = !!parsedCandidate && (
+    (parsedCandidate.mode !== undefined && parsedCandidate.mode !== mode) ||
+    (parsedCandidate.tools !== undefined && !sameValues(parsedCandidate.tools, permissions.tools)) ||
+    (parsedCandidate.skills !== undefined && !sameValues(parsedCandidate.skills, (permissions.skills ?? []).map(skill => skill.id))) ||
+    (parsedCandidate.mcpServers !== undefined && JSON.stringify(parsedCandidate.mcpServers) !== JSON.stringify(permissions.mcpServers ?? [])) ||
+    (parsedCandidate.memorySources !== undefined && !sameValues(parsedCandidate.memorySources, memorySources.map(source => source.kind)))
+  );
 
   const applyProposal = useCallback((raw: string) => {
     const proposal = parseHireProposal(raw);
@@ -289,8 +296,8 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
     if (proposal.memorySources) setMemorySources(proposal.memorySources.flatMap((kind) => { const option = MEMORY_OPTIONS.find((item) => item.kind === kind); return option ? [{ kind, locator: option.locator }] : []; }));
     setSelectedPreset(null); setAppliedPreset(null);
     // A basic role proposal should keep the policy tables out of the main path.
-    if (proposal.mode || proposal.tools || proposal.skills || proposal.mcpServers || proposal.memorySources) setAdvancedOpen(true);
-  }, []);
+    if (candidateHasPolicy) setAdvancedOpen(true);
+  }, [candidateHasPolicy]);
 
   const askAgent = useCallback(async () => {
     const hostId = conversationHostId ?? positions[0]?.id ?? null;

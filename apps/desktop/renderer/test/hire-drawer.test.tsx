@@ -177,7 +177,7 @@ describe("selection-first employee creation", () => {
     expect(screen.getByRole("region", { name: "岗位创建对话" })).not.toHaveTextContent("只输出一个 JSON");
     fireEvent.change(screen.getByLabelText("姓名*"), { target: { value: "My name during generation" } });
     fireEvent.change(screen.getByLabelText("职责描述*"), { target: { value: "My edited responsibilities" } });
-    await act(async () => { pending.resolve({ status: 200, body: { output: '{"name":"Release reviewer","description":"Review release evidence"}' } }); });
+    await act(async () => { pending.resolve({ status: 200, body: { output: '{"name":"Release reviewer","description":"Review release evidence","mode":"approval_required","tools":["Read","Grep","Glob"],"skills":[],"mcpServers":[],"memorySources":["position_docs"]}' } }); });
     expect(screen.getByLabelText("姓名*")).toHaveValue("My name during generation");
     expect(screen.getByLabelText("职责描述*")).toHaveValue("My edited responsibilities");
     expect(screen.getByRole("region", { name: "Agent 生成的候选草稿" })).toHaveTextContent("Release reviewer");
@@ -188,6 +188,18 @@ describe("selection-first employee creation", () => {
     expect(screen.getByText("高级配置").closest("details")).not.toHaveAttribute("open");
     fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
     await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({ name: "Release reviewer", description: "Review release evidence" })));
+  });
+
+  it("reveals advanced review when an applied candidate changes the role policy", async () => {
+    const bridge = fixtureBridge({ createTurn: vi.fn().mockResolvedValue({ status: 200, body: { output: '{"name":"Read-only reviewer","description":"Review approved evidence","mode":"read_only","tools":["Read"]}' } }) });
+    renderCreateDrawer(generationProps());
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "描述需求" }));
+    fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+    fireEvent.click(await screen.findByRole("button", { name: "应用候选草稿" }));
+    expect(screen.getByText("高级配置").closest("details")).toHaveAttribute("open");
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({ mode: "read_only", permissions: expect.objectContaining({ tools: ["Read"] }) })));
   });
 
   it("keeps real generation errors retryable without discarding the current template draft", async () => {
