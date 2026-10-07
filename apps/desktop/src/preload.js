@@ -2,6 +2,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("owb", {
+  // The Electron shell's platform remains win32 when its backend runs in WSL.
+  windowChrome: {
+    platform: ["win32", "darwin", "linux"].includes(process.platform) ? process.platform : "other",
+    nativeControls: process.platform === "win32",
+  },
+  setWindowChromeColors: (colors) => ipcRenderer.invoke("owb:window:chrome-colors", colors),
   configuration: {
     get: () => ipcRenderer.invoke("owb:configuration:get"),
     getPreferences: () => ipcRenderer.invoke("owb:configuration:get-preferences"),
