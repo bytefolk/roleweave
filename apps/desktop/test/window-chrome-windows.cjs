@@ -17,7 +17,7 @@ test("real Windows overlay exposes a safe area and tracks native maximize/restor
   const electron = process.env.ROLEWEAVE_WINDOWS_ELECTRON || require("electron");
   assert.equal(typeof electron, "string", "run this acceptance with Node and a Windows Electron executable");
   assert.ok(fs.existsSync(electron), `Windows Electron runtime is missing: ${electron}`);
-  const tempRoot = fs.realpathSync(os.tmpdir());
+  const tempRoot = fs.realpathSync.native(os.tmpdir());
   const fixture = fs.mkdtempSync(path.join(tempRoot, "roleweave-window-chrome-"));
   let child;
   t.after(async () => {
@@ -40,14 +40,15 @@ test("real Windows overlay exposes a safe area and tracks native maximize/restor
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
+const { pathToFileURL, fileURLToPath } = require('node:url');
 const { app, BrowserWindow, ipcMain } = require('electron');
-const { windowChromeInfo, windowChromeOptions, setWindowChromeColors } = require('./window-chrome.cjs');
+const { windowChromeInfo, windowChromeOptions, validateWindowChromeColors, setWindowChromeColors } = require('./window-chrome.cjs');
 fs.mkdirSync(path.join(__dirname, 'user-data'), { recursive: true });
 app.setPath('userData', path.join(__dirname, 'user-data'));
 app.disableHardwareAcceleration();
 const reportPath = path.join(__dirname, 'report.json');
 let win;
+const diagnostics = { stage: 'startup', htmlPath: null, requestedRendererUrl: null, loadedRendererUrl: null, mainFrameUrl: null, trustedRendererUrl: null, lastChromeIpc: null };
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(read) {
   const deadline = Date.now() + 6000;
@@ -64,24 +65,64 @@ function verifySafeArea(measurement) {
   assert.ok(Math.abs(measurement.rect.height - 40) <= 1);
 }
 app.whenReady().then(async () => {
-  const html = path.join(__dirname, 'index.html');
-  const trustedRendererUrl = pathToFileURL(html).toString();
+  const html = fs.realpathSync.native(path.join(__dirname, 'index.html'));
+  let trustedRendererUrl = null;
+  diagnostics.htmlPath = html;
+  diagnostics.requestedRendererUrl = pathToFileURL(html).toString();
+  diagnostics.stage = 'create-window';
   win = new BrowserWindow({ width: 800, height: 700, show: false, focusable: false,
     title: 'RoleWeave isolated native chrome acceptance', ...windowChromeOptions(process.platform),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
-  ipcMain.handle('owb:window:chrome-colors', (event, request) => setWindowChromeColors({
-    event, request, browserWindow: win, trustedRendererUrl, platform: process.platform,
-    nativeControls: windowChromeInfo(process.platform).nativeControls,
-  }));
+  const nativeSetOverlay = win.setTitleBarOverlay.bind(win);
+  win.setTitleBarOverlay = options => {
+    if (diagnostics.lastChromeIpc) diagnostics.lastChromeIpc.nativeCallAttempted = true;
+    try { return nativeSetOverlay(options); }
+    catch (error) {
+      if (diagnostics.lastChromeIpc) diagnostics.lastChromeIpc.nativeCallError = error.stack || String(error);
+      throw error;
+    }
+  };
+  ipcMain.handle('owb:window:chrome-colors', (event, request) => {
+    diagnostics.lastChromeIpc = {
+      senderUrl: event.senderFrame?.url ?? null, trustedRendererUrl,
+      sameMainFrame: event.senderFrame === win.webContents.mainFrame,
+      urlMatches: event.senderFrame?.url === trustedRendererUrl,
+      platform: process.platform, nativeControls: windowChromeInfo(process.platform).nativeControls,
+      colorsValid: validateWindowChromeColors(request) !== null, nativeCallAttempted: false, nativeCallError: null,
+    };
+    const result = setWindowChromeColors({ event, request, browserWindow: win, trustedRendererUrl,
+      platform: process.platform, nativeControls: windowChromeInfo(process.platform).nativeControls });
+    diagnostics.lastChromeIpc.result = result;
+    return result;
+  });
+  diagnostics.stage = 'load-fixture';
   await win.loadFile(html);
+  // Chromium may expand Windows 8.3 temp names or normalize URL spelling.
+  // Verify the loaded file identity before pinning its exact actual URL; never
+  // relax the production sender/frame equality guard to accommodate aliases.
+  const loadedRendererUrl = win.webContents.getURL();
+  diagnostics.loadedRendererUrl = loadedRendererUrl;
+  diagnostics.mainFrameUrl = win.webContents.mainFrame.url;
+  const loaded = new URL(loadedRendererUrl);
+  assert.equal(loaded.protocol, 'file:');
+  assert.equal(loaded.search, '');
+  assert.equal(loaded.hash, '');
+  assert.equal(fs.realpathSync.native(fileURLToPath(loaded)).toLowerCase(), html.toLowerCase(), 'loaded URL must resolve to the private fixture HTML');
+  assert.equal(diagnostics.mainFrameUrl, loadedRendererUrl, 'main frame and webContents URL must agree');
+  trustedRendererUrl = loadedRendererUrl;
+  diagnostics.trustedRendererUrl = trustedRendererUrl;
+  diagnostics.stage = 'initial-overlay';
   win.showInactive();
   const initial = await until(async () => { const value = await measure(); return value.visible ? value : null; });
   verifySafeArea(initial);
   assert.equal(win.isMaximized(), false);
+  diagnostics.stage = 'color-update';
   const themed = await win.webContents.executeJavaScript("window.owb.setWindowChromeColors({color:'#202127',symbolColor:'#f7f8fb'})");
   assert.equal(themed.ok, true);
+  diagnostics.stage = 'reject-geometry-update';
   const rejected = await win.webContents.executeJavaScript("window.owb.setWindowChromeColors({color:'#202127',symbolColor:'#f7f8fb',height:200})");
   assert.equal(rejected.ok, false);
+  diagnostics.stage = 'maximize';
   win.maximize();
   await until(() => win.isMaximized());
   await delay(120);
@@ -89,6 +130,7 @@ app.whenReady().then(async () => {
   verifySafeArea(maximized);
   const maximizedState = win.isMaximized();
   assert.equal(maximizedState, true);
+  diagnostics.stage = 'restore';
   win.unmaximize();
   await until(() => !win.isMaximized());
   await delay(120);
@@ -96,12 +138,13 @@ app.whenReady().then(async () => {
   verifySafeArea(restored);
   const restoredState = win.isMaximized();
   assert.equal(restoredState, false);
-  fs.writeFileSync(reportPath, JSON.stringify({ ok: true, platform: process.platform, backendPreference: process.env.ROLEWEAVE_CONTROL_PLANE_MODE,
+  diagnostics.stage = 'complete';
+  fs.writeFileSync(reportPath, JSON.stringify({ ok: true, diagnostics, platform: process.platform, backendPreference: process.env.ROLEWEAVE_CONTROL_PLANE_MODE,
     initial, maximized: { ...maximized, isMaximized: maximizedState }, restored: { ...restored, isMaximized: restoredState }, themed, rejected }));
   win.destroy();
   app.exit(0);
 }).catch(error => {
-  fs.writeFileSync(reportPath, JSON.stringify({ ok: false, error: error.stack || String(error) }));
+  fs.writeFileSync(reportPath, JSON.stringify({ ok: false, diagnostics, error: error.stack || String(error) }));
   if (win && !win.isDestroyed()) win.destroy();
   app.exit(1);
 });
@@ -121,6 +164,7 @@ app.whenReady().then(async () => {
   const reportPath = path.join(fixture, "report.json");
   assert.ok(fs.existsSync(reportPath), diagnostics);
   const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  if (result !== 0 || report.ok !== true) t.diagnostic(JSON.stringify(report));
   assert.equal(result, 0, report.error || diagnostics);
   assert.equal(report.ok, true, report.error);
   assert.equal(report.platform, "win32");
