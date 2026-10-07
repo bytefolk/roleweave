@@ -736,6 +736,8 @@ export const enCatalog: Record<string, string> = {
   "project.created": "Project “{name}” is ready; add your first employee",
   "project.switcherAria": "Project entry point",
   "project.current": "Current project",
+  "project.currentWorkspace": "Current workspace",
+  "project.workspaceInUse": "Active",
   "project.launcherTitle": "Open or create a project",
   "project.localOnly": "Local workspace",
   "project.noProjectOpen": "No project is open",
