@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Modal } from "antd";
-import { ArrowLeft, Check, FolderOpen, FolderPlus, Wrench } from "lucide-react";
+import { ArrowLeft, ChevronRight, FolderOpen, FolderPlus, Wrench } from "lucide-react";
 import type { WorkspaceCreateResponse, WorkspaceInfoResponse } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
 import { ProjectCreateForm } from "./ProjectCreateForm";
@@ -28,20 +28,23 @@ function WorkspaceAction({
   description,
   disabled,
   onClick,
+  primary = false,
 }: {
   icon: ReactNode;
   title: string;
   description: string;
   disabled: boolean;
   onClick: () => void;
+  primary?: boolean;
 }) {
   return (
-    <button type="button" className="owb-project-workspace-action" disabled={disabled} onClick={onClick}>
+    <button type="button" className={`owb-project-workspace-action${primary ? " owb-project-workspace-action--primary" : ""}`} disabled={disabled} onClick={onClick}>
       <span className="owb-project-workspace-action__icon" aria-hidden="true">{icon}</span>
-      <span>
+      <span className="owb-project-workspace-action__copy">
         <strong>{title}</strong>
         <small>{description}</small>
       </span>
+      <ChevronRight className="owb-project-workspace-action__arrow" size={16} aria-hidden="true" />
     </button>
   );
 }
@@ -50,13 +53,19 @@ function CurrentWorkspace({ workspace, positionCount }: Pick<ProjectWorkspaceDia
   const t = useT();
   if (workspace?.open !== true) return null;
   return (
-    <section className="owb-project-current-workspace" aria-label={t("project.current")}>
-      <span className="owb-project-current-workspace__mark" aria-hidden="true"><Check size={13} /></span>
-      <span>
-        <strong>{workspace.business ?? t("tree.workspaceFallback")}</strong>
-        <small title={workspace.path}>{workspace.path ?? t("project.localOnly")}</small>
-        <em>{positionCount === null ? t("project.positionsUnknown") : t("tree.positions", { count: positionCount })}</em>
-      </span>
+    <section className="owb-project-current-workspace" aria-label={t("project.currentWorkspace")}>
+      <header className="owb-project-current-workspace__header">
+        <span>{t("project.currentWorkspace")}</span>
+        <span className="owb-project-current-workspace__status"><i aria-hidden="true" />{t("project.workspaceInUse")}</span>
+      </header>
+      <div className="owb-project-current-workspace__identity">
+        <span className="owb-project-current-workspace__mark" aria-hidden="true"><FolderOpen size={20} /></span>
+        <div className="owb-project-current-workspace__copy">
+          <strong>{workspace.business ?? t("tree.workspaceFallback")}</strong>
+          <small title={workspace.path}>{workspace.path ?? t("project.localOnly")}</small>
+          <em>{positionCount === null ? t("project.positionsUnknown") : t("tree.positions", { count: positionCount })}</em>
+        </div>
+      </div>
     </section>
   );
 }
@@ -95,12 +104,12 @@ export function ProjectWorkspaceDialog({
   return (
     <Modal
       className="owb-project-dialog"
-      title={page === "choose" ? t("project.chooseTitle") : page === "create" ? t("project.createTitle") : t("project.initializeTitle")}
+      title={<span className="owb-project-dialog__heading"><span className="owb-project-dialog__heading-icon" aria-hidden="true"><FolderOpen size={19} /></span>{page === "choose" ? t("project.chooseTitle") : page === "create" ? t("project.createTitle") : t("project.initializeTitle")}</span>}
       open={open}
       footer={null}
       width="min(560px, calc(100vw - 32px))"
       styles={{
-        container: { maxHeight: "calc(100dvh - 32px)", display: "flex", flexDirection: "column" },
+        container: { padding: 0, maxHeight: "calc(100dvh - 32px)", display: "flex", flexDirection: "column" },
         body: { minHeight: 0, overflowY: "auto" },
       }}
       onCancel={() => { if (!createBusy && !opening) onClose(); }}
@@ -126,6 +135,7 @@ export function ProjectWorkspaceDialog({
               description={t("project.openActionHint")}
               disabled={dialogBusy}
               onClick={openExisting}
+              primary
             />
             <WorkspaceAction
               icon={<FolderPlus size={18} />}

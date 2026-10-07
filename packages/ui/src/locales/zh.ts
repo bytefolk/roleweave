@@ -739,6 +739,8 @@ export const zhCatalog: Record<string, string> = {
   "project.created": "项目「{name}」已创建，可以开始添加员工",
   "project.switcherAria": "项目入口",
   "project.current": "当前项目",
+  "project.currentWorkspace": "当前工作区",
+  "project.workspaceInUse": "使用中",
   "project.launcherTitle": "打开或新建项目",
   "project.localOnly": "本地工作区",
   "project.noProjectOpen": "还没有打开项目",
