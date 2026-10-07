@@ -1,10 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { HireDrawer } from "../src/org/HireDrawer";
 import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
+import type { OwbBridge } from "../src/owb";
 
 // #301: the create drawer's header close button looked actionable, but its
 // handler was phase-gated, so in the in-flight phases it silently swallowed
@@ -19,11 +21,13 @@ const AVAILABILITY: Record<TurnEngine, TurnEngineAvailability> = {
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
+  gemini: { configured: false, ready: false },
+  "openai-compatible": { configured: false, ready: false },
 };
 
-function renderCreateDrawer() {
+function renderCreateDrawer(overrides: Partial<ComponentProps<typeof HireDrawer>> = {}) {
   const onClose = vi.fn();
-  render(
+  const rendered = render(
     <HireDrawer
       open
       positions={[]}
@@ -33,9 +37,10 @@ function renderCreateDrawer() {
       conversationHostId={null}
       onClose={onClose}
       onHired={vi.fn()}
+      {...overrides}
     />,
   );
-  return { onClose };
+  return { onClose, ...rendered };
 }
 
 describe("HireDrawer header close control (#301)", () => {
@@ -95,5 +100,201 @@ describe("HireDrawer header close control (#301)", () => {
     expect(screen.getByLabelText("岗位创建对话").closest("details")).toHaveAttribute("open");
     expect(screen.getByLabelText("附加能力与授权").closest("details")).toHaveAttribute("open");
     expect(screen.getByLabelText("员工头像").closest("details")).toHaveAttribute("open");
+  });
+});
+
+function fixtureBridge(overrides: Partial<OwbBridge> = {}) {
+  const hire = vi.fn().mockResolvedValue({ status: 200, body: { status: "hired" } });
+  const createTurn = vi.fn().mockResolvedValue({ status: 200, body: { output: '{"name":"Agent candidate","description":"A clear proposed responsibility"}' } });
+  const bridge = { hire, createTurn, cancelTurn: vi.fn().mockResolvedValue({ status: 200, body: {} }), onEvent: vi.fn().mockReturnValue(() => {}), ...overrides };
+  window.owb = bridge as unknown as OwbBridge;
+  return bridge;
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+function generationProps(): Partial<ComponentProps<typeof HireDrawer>> {
+  return {
+    workspacePath: "/workspace-a", positions: [{ id: "manager", name: "Manager" }], presetReportTo: "manager",
+    conversationHostId: "manager", conversationHostName: "Manager", conversationEngine: "codex-local",
+  };
+}
+
+describe("selection-first employee creation", () => {
+  afterEach(() => vi.useRealTimers());
+  it("fills a useful template in one click and creates without manual input or broader defaults", async () => {
+    const bridge = fixtureBridge();
+    const onHired = vi.fn();
+    renderCreateDrawer({ ...generationProps(), onHired });
+    expect(screen.getByRole("button", { name: /员工 Agent/ })).toHaveTextContent("Codex");
+    expect(screen.getByRole("button", { name: /上级，当前/ })).toHaveTextContent("Manager");
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    expect(screen.getByLabelText("姓名*")).toHaveValue("研发工程师");
+    expect((screen.getByLabelText("职责描述*") as HTMLTextAreaElement).value).toContain("阅读代码与需求");
+    expect(screen.getByText("高级配置").closest("details")).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(onHired).toHaveBeenCalledOnce());
+    expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({
+      name: "研发工程师", reportTo: "manager", agentEngine: "codex-local", mode: "approval_required",
+      budget: { perTask: { tokens: 20_000, iterations: 8 }, perDay: { tokens: 200_000, iterations: 64 } },
+      permissions: { tools: ["Read", "Grep", "Glob"], rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }], skills: [], mcpServers: [] },
+      memorySources: [{ kind: "position_docs", locator: "./knowledge/**" }],
+    }));
+    expect(bridge.createTurn).not.toHaveBeenCalled();
+  });
+
+  it("switches pristine templates directly but requires explicit application after user edits", () => {
+    renderCreateDrawer();
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "产品设计师 · 模板" }));
+    expect(screen.getByLabelText("姓名*")).toHaveValue("产品设计师");
+    fireEvent.change(screen.getByLabelText("姓名*"), { target: { value: "My edited designer" } });
+    fireEvent.change(screen.getByLabelText("职责描述*"), { target: { value: "Keep my responsibilities" } });
+    fireEvent.click(screen.getByRole("button", { name: "测试工程师 · 模板" }));
+    expect(screen.getByLabelText("姓名*")).toHaveValue("My edited designer");
+    expect(screen.getByLabelText("职责描述*")).toHaveValue("Keep my responsibilities");
+    expect(screen.getByRole("region", { name: "角色模板" })).toHaveTextContent("你已修改草稿");
+    fireEvent.click(screen.getByRole("button", { name: "应用模板" }));
+    expect(screen.getByLabelText("姓名*")).toHaveValue("测试工程师");
+  });
+
+  it("uses the real Agent request and presents its parsed proposal without overwriting edits made while waiting", async () => {
+    const pending = deferred<{ status: number; body: { output: string } }>();
+    const bridge = fixtureBridge({ createTurn: vi.fn().mockReturnValue(pending.promise) });
+    renderCreateDrawer(generationProps());
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "描述需求" }));
+    fireEvent.change(screen.getByLabelText("岗位设计提示词"), { target: { value: "Draft a release reviewer" } });
+    const ask = screen.getByRole("button", { name: "让 Agent 生成草案" });
+    fireEvent.click(ask);
+    fireEvent.click(ask);
+    expect(bridge.createTurn).toHaveBeenCalledExactlyOnceWith({ positionId: "manager", engine: "codex-local", input: expect.stringContaining("Draft a release reviewer") });
+    fireEvent.change(screen.getByLabelText("姓名*"), { target: { value: "My name during generation" } });
+    fireEvent.change(screen.getByLabelText("职责描述*"), { target: { value: "My edited responsibilities" } });
+    await act(async () => { pending.resolve({ status: 200, body: { output: '{"name":"Release reviewer","description":"Review release evidence"}' } }); });
+    expect(screen.getByLabelText("姓名*")).toHaveValue("My name during generation");
+    expect(screen.getByLabelText("职责描述*")).toHaveValue("My edited responsibilities");
+    expect(screen.getByRole("region", { name: "Agent 生成的候选草稿" })).toHaveTextContent("Release reviewer");
+    expect(bridge.hire).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "应用候选草稿" }));
+    expect(screen.getByLabelText("姓名*")).toHaveValue("Release reviewer");
+    expect(screen.getByLabelText("职责描述*")).toHaveValue("Review release evidence");
+    expect(screen.getByText("高级配置").closest("details")).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({ name: "Release reviewer", description: "Review release evidence" })));
+  });
+
+  it("keeps real generation errors retryable without discarding the current template draft", async () => {
+    const bridge = fixtureBridge({ createTurn: vi.fn().mockResolvedValueOnce({ status: 500, body: {} }).mockResolvedValue({ status: 200, body: { output: '{"name":"Retry proposal","description":"Valid retry description"}' } }) });
+    renderCreateDrawer(generationProps());
+    fireEvent.click(screen.getByRole("button", { name: "研究分析师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "描述需求" }));
+    fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+    await screen.findByText("Agent 对话未完成，请检查返回结果后重试。");
+    expect(screen.getByLabelText("姓名*")).toHaveValue("研究分析师");
+    fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+    await screen.findByRole("button", { name: "应用候选草稿" });
+    expect(bridge.createTurn).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText("姓名*")).toHaveValue("研究分析师");
+  });
+
+  it("resets the selection and ignores an old Agent proposal when the workspace changes", async () => {
+    const pending = deferred<{ status: number; body: { output: string } }>();
+    fixtureBridge({ createTurn: vi.fn().mockReturnValue(pending.promise) });
+    const context = renderCreateDrawer(generationProps());
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "描述需求" }));
+    fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+    context.rerender(<HireDrawer open {...generationProps()} workspacePath="/workspace-b" positions={[{ id: "other-manager", name: "Other manager" }]} presetReportTo="other-manager" conversationHostId="other-manager" conversationEngine="workbuddy" engine="qoder" engineAvailability={AVAILABILITY} onClose={vi.fn()} onHired={vi.fn()} />);
+    expect(screen.getByLabelText("姓名*")).toHaveValue("");
+    expect(screen.getByRole("button", { name: /员工 Agent/ })).toHaveTextContent("WorkBuddy");
+    expect(screen.getByRole("button", { name: /上级，当前/ })).toHaveTextContent("Other manager");
+    await act(async () => { pending.resolve({ status: 200, body: { output: '{"name":"Old workspace proposal","description":"Must not cross workspaces"}' } }); });
+    expect(screen.queryByRole("button", { name: "应用候选草稿" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("姓名*")).toHaveValue("");
+  });
+
+  it("ignores a late hire result after switching workspaces", async () => {
+    const pending = deferred<{ status: number; body: { status: string } }>();
+    fixtureBridge({ hire: vi.fn().mockReturnValue(pending.promise) });
+    const onHired = vi.fn();
+    const context = renderCreateDrawer({ ...generationProps(), onHired });
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    context.rerender(<HireDrawer open {...generationProps()} workspacePath="/workspace-b" engine="qoder" engineAvailability={AVAILABILITY} onClose={vi.fn()} onHired={onHired} />);
+    await act(async () => { pending.resolve({ status: 200, body: { status: "hired" } }); });
+    expect(onHired).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("姓名*")).toHaveValue("");
+  });
+
+  it("keeps an issued Agent turn's timeout attached to its original workspace after navigation", async () => {
+    vi.useFakeTimers();
+    const bridge = fixtureBridge({ createTurn: vi.fn().mockReturnValue(new Promise(() => {})) });
+    const context = renderCreateDrawer(generationProps());
+    fireEvent.click(screen.getByRole("button", { name: "描述需求" }));
+    fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+    context.rerender(<HireDrawer open {...generationProps()} workspacePath="/workspace-b" engine="qoder" engineAvailability={AVAILABILITY} onClose={vi.fn()} onHired={vi.fn()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(75_001); });
+    expect(bridge.cancelTurn).toHaveBeenCalledExactlyOnceWith({ positionId: "manager", workspacePath: "/workspace-a" });
+    expect(screen.queryByRole("button", { name: "应用候选草稿" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("姓名*")).toHaveValue("");
+  });
+
+  it("does not let a previous hire response clear the new workspace's in-flight timeout", async () => {
+    vi.useFakeTimers();
+    const first = deferred<{ status: number; body: { status: string } }>();
+    const second = deferred<{ status: number; body: { status: string } }>();
+    fixtureBridge({ hire: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise) });
+    const onHired = vi.fn();
+    const context = renderCreateDrawer({ ...generationProps(), onHired });
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    context.rerender(<HireDrawer open {...generationProps()} workspacePath="/workspace-b" engine="qoder" engineAvailability={AVAILABILITY} onClose={vi.fn()} onHired={onHired} />);
+    fireEvent.click(screen.getByRole("button", { name: "测试工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await act(async () => { first.resolve({ status: 200, body: { status: "hired" } }); });
+    expect(onHired).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_001); });
+    expect(screen.getByRole("button", { name: /^重\s*试$/ })).toBeEnabled();
+    expect(onHired).not.toHaveBeenCalled();
+  });
+
+  it("retries a stalled hire using the same draft and ignores the superseded response", async () => {
+    vi.useFakeTimers();
+    const first = deferred<{ status: number; body: { status: string } }>();
+    const second = deferred<{ status: number; body: { status: string } }>();
+    const hire = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    fixtureBridge({ hire });
+    const onHired = vi.fn();
+    renderCreateDrawer({ ...generationProps(), onHired });
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_001); });
+    fireEvent.click(screen.getByRole("button", { name: /^重\s*试$/ }));
+    expect(hire).toHaveBeenCalledTimes(2);
+    expect(hire.mock.calls[1]?.[0]).toEqual(hire.mock.calls[0]?.[0]);
+    expect(screen.queryByRole("button", { name: /^重\s*试$/ })).not.toBeInTheDocument();
+    await act(async () => { first.resolve({ status: 200, body: { status: "hired" } }); });
+    expect(onHired).not.toHaveBeenCalled();
+    await act(async () => { second.resolve({ status: 200, body: { status: "hired" } }); });
+    expect(onHired).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a previous workspace's avatar response when a new employee is created", async () => {
+    const pending = deferred<{ status: number; body: { imageDataUrl: string } }>();
+    const bridge = fixtureBridge({ generateAvatar: vi.fn().mockReturnValue(pending.promise) });
+    const onHired = vi.fn();
+    const context = renderCreateDrawer({ ...generationProps(), onHired });
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByText("高级配置"));
+    fireEvent.click(screen.getByRole("button", { name: "用 AI 生成透明头像" }));
+    expect(bridge.generateAvatar).toHaveBeenCalledOnce();
+    context.rerender(<HireDrawer open {...generationProps()} workspacePath="/workspace-b" engine="qoder" engineAvailability={AVAILABILITY} onClose={vi.fn()} onHired={onHired} />);
+    await act(async () => { pending.resolve({ status: 200, body: { imageDataUrl: "data:image/png;base64,old-workspace-avatar" } }); });
+    fireEvent.click(screen.getByRole("button", { name: "测试工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(onHired).toHaveBeenCalledWith(expect.any(String), "测试工程师", undefined));
   });
 });
