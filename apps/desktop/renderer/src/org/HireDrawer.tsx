@@ -95,8 +95,8 @@ function proposalText(record: unknown): string {
   return typeof error?.message === "string" ? error.message : "";
 }
 
-function defaultPrompt(t: OwbT): string {
-  return t("hire.agentPromptTemplate");
+function defaultBrief(t: OwbT): string {
+  return t("hire.roleBriefDefault");
 }
 
 function HireChoiceSelect({ ariaLabel, value, options, onChange, t }: {
@@ -154,7 +154,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const [taskIterations, setTaskIterations] = useState("8");
   const [dayTokens, setDayTokens] = useState("200000");
   const [dayIterations, setDayIterations] = useState("64");
-  const [prompt, setPrompt] = useState(() => defaultPrompt(t));
+  const [prompt, setPrompt] = useState(() => defaultBrief(t));
   const [messages, setMessages] = useState<HireMessage[]>([]);
   const [conversationBusy, setConversationBusy] = useState(false);
   const [conversationError, setConversationError] = useState<string | null>(null);
@@ -209,7 +209,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
     setName(""); setDescription(""); setAvatar(undefined); setAvatarGenerating(false); setAvatarError(null); setReportTo(presetReportTo);
     setMode("approval_required"); setTaskTokens("20000"); setTaskIterations("8"); setDayTokens("200000"); setDayIterations("64");
     setAgentHost(agentHostForEngine(conversationEngine ?? engine));
-    setPrompt(defaultPrompt(t)); setMessages([]); setConversationBusy(false); setConversationError(null); setDesignAssistOpen(false); setAdvancedOpen(false);
+    setPrompt(defaultBrief(t)); setMessages([]); setConversationBusy(false); setConversationError(null); setDesignAssistOpen(false); setAdvancedOpen(false);
     setSelectedPreset(null); setAppliedPreset(null); setCandidateProposal(null);
     setPermissions({ tools: ["Read", "Grep", "Glob"], rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }], skills: [], mcpServers: [] });
     setMemorySources([{ kind: "position_docs", locator: "./knowledge/**" }]); setPhaseCopy(t("hire.phaseSubmit"));
@@ -301,8 +301,8 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
     let timedOut = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     setConversationBusy(true); setConversationError(null); setCandidateProposal(null);
-    const input = `${prompt.trim()}${t("hire.agentContext", { name: name.trim() || t("hire.proposalPendingName"), reportTo: reportTo ?? t("hire.ownerRoot") })}`;
-    setMessages((current) => [...current, { role: "user", text: input }]);
+    const input = `${t("hire.agentPromptTemplate")}\n${prompt.trim()}${t("hire.agentContext", { name: name.trim() || t("hire.proposalPendingName"), reportTo: reportTo ?? t("hire.ownerRoot") })}`;
+    setMessages((current) => [...current, { role: "user", text: prompt.trim() }]);
     try {
       const response = await Promise.race([
         window.owb.createTurn({ positionId: hostId, engine: designEngine, input }),
@@ -319,8 +319,10 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
       if (response.status !== 200) { setConversationError(t("hire.agentConversationFail")); return; }
       const output = proposalText(response.body);
       if (!output) { setConversationError(t("hire.agentNoProposal")); return; }
-      setMessages((current) => [...current, { role: "assistant", text: output }]);
-      if (Object.keys(parseHireProposal(output)).length === 0) { setConversationError(t("hire.agentNoProposal")); return; }
+      const proposal = parseHireProposal(output);
+      if (Object.keys(proposal).length === 0) { setConversationError(t("hire.agentNoProposal")); return; }
+      const summary = [proposal.name, proposal.description].filter(Boolean).join("\n\n") || t("hire.generatedPolicyHint");
+      setMessages((current) => [...current, { role: "assistant", text: summary }]);
       setCandidateProposal(output);
     } catch {
       if (!isCurrentRequest()) return;
@@ -443,7 +445,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
             </section>
             <details className="owb-hire-assist" open={designAssistOpen} onToggle={(event) => setDesignAssistOpen(event.currentTarget.open)}>
               <summary><Sparkles aria-hidden="true" size={15} />{t("hire.assistTitle")}<span>{t("hire.assistHint")}</span></summary>
-              <section className="owb-hire-conversation" aria-label={t("hire.agentConversationAria")}><div className="owb-hire-conversation__meta"><span className="owb-hire-conversation__host"><span className="owb-led owb-led--running" />{conversationHostName ?? t("hire.agentWorkspaceContext")}</span><span>{t("hire.agentNoWrite")}</span></div>{messages.length === 0 ? <div className="owb-hire-conversation__empty"><Sparkles aria-hidden="true" size={20} /><span>{t("hire.agentEmpty")}</span></div> : <div className="owb-hire-conversation__messages">{messages.map((entry, index) => <div className={`owb-hire-message is-${entry.role}`} key={`${entry.role}-${index}`}><span>{entry.role === "user" ? t("hire.you") : t("hire.agent")}</span><p>{entry.text}</p></div>)}</div>}<div className="owb-hire-prompt"><div className="owb-hire-prompt__heading"><label htmlFor="owb-hire-prompt-input">{t("hire.promptLabel")}</label><button type="button" onClick={() => setPrompt(defaultPrompt(t))}><RotateCcw aria-hidden="true" size={12} /><span>{t("hire.resetPrompt")}</span></button></div><Input.TextArea id="owb-hire-prompt-input" value={prompt} rows={4} onChange={(event) => setPrompt(event.target.value)} placeholder={t("hire.promptPh")} /><div className="owb-hire-prompt__footer"><span>{t("hire.promptEditable")}</span><AntButton type="primary" loading={conversationBusy} disabled={!engineAvailability[designEngine]?.ready || (!conversationHostId && positions.length === 0) || prompt.trim().length === 0} onClick={() => void askAgent()} icon={<Sparkles aria-hidden="true" size={14} />}>{conversationBusy ? t("hire.askingAgent") : t("hire.askAgent")}</AntButton></div>{conversationError ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{conversationError}</p> : null}</div></section>
+              <section className="owb-hire-conversation" aria-label={t("hire.agentConversationAria")}><div className="owb-hire-conversation__meta"><span className="owb-hire-conversation__host"><span className="owb-led owb-led--running" />{conversationHostName ?? t("hire.agentWorkspaceContext")}</span><span>{t("hire.agentNoWrite")}</span></div>{messages.length === 0 ? <div className="owb-hire-conversation__empty"><Sparkles aria-hidden="true" size={20} /><span>{t("hire.agentEmpty")}</span></div> : <div className="owb-hire-conversation__messages">{messages.map((entry, index) => <div className={`owb-hire-message is-${entry.role}`} key={`${entry.role}-${index}`}><span>{entry.role === "user" ? t("hire.you") : t("hire.agent")}</span><p>{entry.text}</p></div>)}</div>}<div className="owb-hire-prompt"><div className="owb-hire-prompt__heading"><label htmlFor="owb-hire-prompt-input">{t("hire.promptLabel")}</label><button type="button" onClick={() => setPrompt(defaultBrief(t))}><RotateCcw aria-hidden="true" size={12} /><span>{t("hire.resetPrompt")}</span></button></div><Input.TextArea id="owb-hire-prompt-input" value={prompt} rows={4} onChange={(event) => setPrompt(event.target.value)} placeholder={t("hire.promptPh")} /><div className="owb-hire-prompt__footer"><span>{t("hire.promptEditable")}</span><AntButton type="primary" loading={conversationBusy} disabled={!engineAvailability[designEngine]?.ready || (!conversationHostId && positions.length === 0) || prompt.trim().length === 0} onClick={() => void askAgent()} icon={<Sparkles aria-hidden="true" size={14} />}>{conversationBusy ? t("hire.askingAgent") : t("hire.askAgent")}</AntButton></div>{conversationError ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{conversationError}</p> : null}</div></section>
             </details>
             {candidateProposal && parsedCandidate ? <section className="owb-hire-generated-preview" aria-label={t("hire.generatedProposalTitle")}>
               <strong>{t("hire.generatedProposalTitle")}</strong><p>{parsedCandidate.name ?? t("hire.proposalPendingName")}</p>

@@ -166,11 +166,15 @@ describe("selection-first employee creation", () => {
     renderCreateDrawer(generationProps());
     fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
     fireEvent.click(screen.getByRole("button", { name: "描述需求" }));
-    fireEvent.change(screen.getByLabelText("岗位设计提示词"), { target: { value: "Draft a release reviewer" } });
+    const brief = screen.getByLabelText("需要怎样的员工");
+    expect((brief as HTMLTextAreaElement).value).not.toContain("JSON");
+    fireEvent.change(brief, { target: { value: "Draft a release reviewer" } });
     const ask = screen.getByRole("button", { name: "让 Agent 生成草案" });
     fireEvent.click(ask);
     fireEvent.click(ask);
     expect(bridge.createTurn).toHaveBeenCalledExactlyOnceWith({ positionId: "manager", engine: "codex-local", input: expect.stringContaining("Draft a release reviewer") });
+    expect(vi.mocked(bridge.createTurn).mock.calls[0]![0].input).toContain("只输出一个 JSON");
+    expect(screen.getByRole("region", { name: "岗位创建对话" })).not.toHaveTextContent("只输出一个 JSON");
     fireEvent.change(screen.getByLabelText("姓名*"), { target: { value: "My name during generation" } });
     fireEvent.change(screen.getByLabelText("职责描述*"), { target: { value: "My edited responsibilities" } });
     await act(async () => { pending.resolve({ status: 200, body: { output: '{"name":"Release reviewer","description":"Review release evidence"}' } }); });
