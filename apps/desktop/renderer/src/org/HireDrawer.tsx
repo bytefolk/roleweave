@@ -9,17 +9,19 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Button as AntButton, Checkbox, Drawer, Input, Steps, message } from "antd";
-import { CheckCircle2, ChevronDown, LoaderCircle, RotateCcw, Sparkles, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronDown, Code2, ListChecks, LoaderCircle, Palette, RotateCcw, Search, Sparkles, XCircle } from "lucide-react";
 import { Input as OwbInput } from "@fullstack-ai-infra/ui";
 import { useT, type OwbT } from "@roleweave/ui";
 import { hireSkillCatalog } from "@roleweave/shared/capabilities";
-import type { HireMemorySource, HirePermissions } from "@roleweave/shared";
-import { AGENT_HOST_LABEL, AGENT_HOSTS, defaultAgentHost, resolveAgentEngine, type AgentHost } from "../turns/agent-host";
+import type { HireMemorySource, HireMcpGrant, HirePermissions } from "@roleweave/shared";
+import { AGENT_HOST_LABEL, AGENT_HOSTS, agentHostForEngine, resolveAgentEngine, type AgentHost } from "../turns/agent-host";
 import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
 import { CapabilityPicker, PermissionPolicyEditor, replaceCapabilityRules } from "./PermissionsEditor";
 import { createHireDraft, initialHireFlow, parseHireProposal, reduceHireFlow, toHirePositionRequest } from "./hire-flow";
 import type { HireDraft } from "./hire-flow";
 import { AVATAR_PRESETS, avatarSrcFor } from "../PositionAvatar";
+import { HIRE_ROLE_PRESETS, type HireRolePreset, type HireRolePresetId } from "./hire-presets";
+import "./hire-presets.css";
 
 const MAX_POSITION_ID_LENGTH = 64;
 const HIRE_STALL_TIMEOUT_MS = 60_000;
@@ -93,8 +95,19 @@ function proposalText(record: unknown): string {
   return typeof error?.message === "string" ? error.message : "";
 }
 
-function defaultPrompt(t: OwbT): string {
-  return t("hire.agentPromptTemplate");
+function defaultBrief(t: OwbT): string {
+  return t("hire.roleBriefDefault");
+}
+
+function sameValues(left: readonly string[], right: readonly string[]): boolean {
+  return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+}
+
+function sameMcpGrants(left: readonly HireMcpGrant[], right: readonly HireMcpGrant[]): boolean {
+  const normalized = (grants: readonly HireMcpGrant[]) => grants
+    .map(grant => ({ id: grant.id, tools: [...grant.tools].sort() }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return JSON.stringify(normalized(left)) === JSON.stringify(normalized(right));
 }
 
 function HireChoiceSelect({ ariaLabel, value, options, onChange, t }: {
@@ -147,70 +160,100 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [reportTo, setReportTo] = useState<string | null>(presetReportTo);
   const [mode, setMode] = useState<HireDraft["mode"]>("approval_required");
-  const [agentHost, setAgentHost] = useState<AgentHost>(() => defaultAgentHost(engineAvailability));
+  const [agentHost, setAgentHost] = useState<AgentHost>(() => agentHostForEngine(conversationEngine ?? engine));
   const [taskTokens, setTaskTokens] = useState("20000");
   const [taskIterations, setTaskIterations] = useState("8");
   const [dayTokens, setDayTokens] = useState("200000");
   const [dayIterations, setDayIterations] = useState("64");
-  const [prompt, setPrompt] = useState(() => defaultPrompt(t));
+  const [prompt, setPrompt] = useState(() => defaultBrief(t));
   const [messages, setMessages] = useState<HireMessage[]>([]);
   const [conversationBusy, setConversationBusy] = useState(false);
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [designAssistOpen, setDesignAssistOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [selectedPreset, setSelectedPreset] = useState<HireRolePresetId | null>(null);
+  const [appliedPreset, setAppliedPreset] = useState<{ id: HireRolePresetId; name: string; description: string } | null>(null);
+  const [candidateProposal, setCandidateProposal] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<HirePermissions>({ tools: ["Read", "Grep", "Glob"], rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }], skills: [], mcpServers: [] });
   const [memorySources, setMemorySources] = useState<HireMemorySource[]>([{ kind: "position_docs", locator: "./knowledge/**" }]);
   const [phaseCopy, setPhaseCopy] = useState(t("hire.phaseSubmit"));
   const [messageApi, contextHolder] = message.useMessage();
   const stallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const conversationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const conversationTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
   const conversationRequest = useRef(0);
+  const conversationPending = useRef(false);
+  const hireRequest = useRef(0);
+  const hirePending = useRef(false);
+  const avatarRequest = useRef(0);
   const workspaceScope = useMemo(() => Symbol("hire-workspace"), [workspacePath]);
   const currentWorkspaceScope = useRef(workspaceScope);
   currentWorkspaceScope.current = workspaceScope;
   const unsubscribe = useRef<(() => void) | null>(null);
 
   const clearTimers = useCallback(() => { if (stallTimer.current !== null) clearTimeout(stallTimer.current); stallTimer.current = null; unsubscribe.current?.(); unsubscribe.current = null; }, []);
-  const opened = useRef(false);
+  const opened = useRef<symbol | null>(null);
   useEffect(() => {
     if (!open) {
-      opened.current = false;
+      opened.current = null;
       conversationRequest.current += 1;
-      if (conversationTimer.current !== null) clearTimeout(conversationTimer.current);
-      conversationTimer.current = null;
+      hireRequest.current += 1;
+      hirePending.current = false;
+      avatarRequest.current += 1;
+      for (const timer of conversationTimers.current) clearTimeout(timer);
+      conversationTimers.current.clear();
       setConversationBusy(false);
+      conversationPending.current = false;
       clearTimers();
       return;
     }
-    if (opened.current) return;
-    opened.current = true;
+    if (opened.current === workspaceScope) return;
+    opened.current = workspaceScope;
+    clearTimers();
+    conversationRequest.current += 1;
+    hireRequest.current += 1;
+    hirePending.current = false;
+    avatarRequest.current += 1;
+    conversationPending.current = false;
+    // Issued turns retain their originating workspace timeout even after
+    // the form moves elsewhere; only their UI responses are invalidated.
     dispatch({ type: "reset", draft: createHireDraft() });
     setName(""); setDescription(""); setAvatar(undefined); setAvatarGenerating(false); setAvatarError(null); setReportTo(presetReportTo);
     setMode("approval_required"); setTaskTokens("20000"); setTaskIterations("8"); setDayTokens("200000"); setDayIterations("64");
-    setAgentHost(defaultAgentHost(engineAvailability));
-    setPrompt(defaultPrompt(t)); setMessages([]); setConversationBusy(false); setConversationError(null); setDesignAssistOpen(false); setAdvancedOpen(false);
+    setAgentHost(agentHostForEngine(conversationEngine ?? engine));
+    setPrompt(defaultBrief(t)); setMessages([]); setConversationBusy(false); setConversationError(null); setDesignAssistOpen(false); setAdvancedOpen(false);
+    setSelectedPreset(null); setAppliedPreset(null); setCandidateProposal(null);
     setPermissions({ tools: ["Read", "Grep", "Glob"], rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }], skills: [], mcpServers: [] });
     setMemorySources([{ kind: "position_docs", locator: "./knowledge/**" }]); setPhaseCopy(t("hire.phaseSubmit"));
-  }, [clearTimers, engineAvailability, open, presetReportTo, t]);
+  }, [clearTimers, conversationEngine, engine, open, presetReportTo, t, workspaceScope]);
   useEffect(() => () => {
     conversationRequest.current += 1;
-    if (conversationTimer.current !== null) clearTimeout(conversationTimer.current);
-    conversationTimer.current = null;
+    hireRequest.current += 1;
+    avatarRequest.current += 1;
+    for (const timer of conversationTimers.current) clearTimeout(timer);
+    conversationTimers.current.clear();
   }, []);
   useEffect(() => clearTimers, [clearTimers]);
-  const armStallTimer = useCallback((targetId: string) => {
+  const armStallTimer = useCallback((targetId: string, isCurrentRequest: () => boolean) => {
+    const timeout = () => {
+      if (!isCurrentRequest()) return;
+      // A stalled request is superseded by an explicit retry; its eventual
+      // response must not settle the replacement operation.
+      hireRequest.current += 1; hirePending.current = false; clearTimers();
+      dispatch({ type: "fail", code: "hire_timeout", retryable: true });
+    };
     if (stallTimer.current !== null) clearTimeout(stallTimer.current);
-    stallTimer.current = setTimeout(() => dispatch({ type: "fail", code: "hire_timeout", retryable: true }), HIRE_STALL_TIMEOUT_MS);
+    stallTimer.current = setTimeout(timeout, HIRE_STALL_TIMEOUT_MS);
     unsubscribe.current?.();
     unsubscribe.current = window.owb.onEvent((event) => {
       const envelope = event as { type?: string; payload?: { positionId?: string; phase?: string } };
+      if (!isCurrentRequest()) return;
       if (envelope.type !== "hire.progress" || envelope.payload?.positionId !== targetId) return;
       const phase = envelope.payload.phase ?? "";
       setPhaseCopy((previous) => PHASE_COPY_KEYS[phase] !== undefined ? t(PHASE_COPY_KEYS[phase]) : previous);
       if (stallTimer.current !== null) clearTimeout(stallTimer.current);
-      stallTimer.current = setTimeout(() => dispatch({ type: "fail", code: "hire_timeout", retryable: true }), HIRE_STALL_TIMEOUT_MS);
+      stallTimer.current = setTimeout(timeout, HIRE_STALL_TIMEOUT_MS);
     });
-  }, [t]);
+  }, [clearTimers, t]);
 
   const generatedId = useMemo(() => nextGeneratedId(name, positions), [name, positions]);
   const positionId = generatedId;
@@ -228,31 +271,69 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
 
   const buildDraft = useCallback((): HireDraft => createHireDraft({ id: positionId, name: name.trim(), description: description.trim(), reportTo: reportTo || null, mode, budget: { perTask: { tokens: Number(taskTokens), ...(taskIterations.trim() ? { iterations: Number(taskIterations) } : {}) }, perDay: { tokens: Number(dayTokens), ...(dayIterations.trim() ? { iterations: Number(dayIterations) } : {}) } }, permissions, prompt: prompt.trim(), memorySources, agentEngine }), [agentEngine, dayIterations, dayTokens, description, memorySources, mode, name, permissions, positionId, prompt, reportTo, taskIterations, taskTokens]);
 
+  const applyPreset = (preset: HireRolePreset) => {
+    const values = { id: preset.id, name: t(preset.nameKey).slice(0, 24), description: t(preset.descriptionKey).slice(0, 1_024) };
+    setName(values.name); setDescription(values.description); setAppliedPreset(values);
+  };
+  const choosePreset = (preset: HireRolePreset) => {
+    const untouched = (!name.trim() && !description.trim()) ||
+      (appliedPreset !== null && name === appliedPreset.name && description === appliedPreset.description);
+    setSelectedPreset(preset.id);
+    if (untouched) applyPreset(preset);
+  };
+  const previewPreset = HIRE_ROLE_PRESETS.find((preset) => preset.id === selectedPreset);
+  const presetMatchesDraft = !!appliedPreset && appliedPreset.id === selectedPreset && name === appliedPreset.name && description === appliedPreset.description;
+  const parsedCandidate = useMemo(() => candidateProposal === null ? null : parseHireProposal(candidateProposal), [candidateProposal]);
+  const candidateHasPolicy = !!parsedCandidate && (
+    (parsedCandidate.mode !== undefined && parsedCandidate.mode !== mode) ||
+    (parsedCandidate.tools !== undefined && !sameValues(parsedCandidate.tools, permissions.tools)) ||
+    (parsedCandidate.skills !== undefined && !sameValues(parsedCandidate.skills, (permissions.skills ?? []).map(skill => skill.id))) ||
+    (parsedCandidate.mcpServers !== undefined && !sameMcpGrants(parsedCandidate.mcpServers, permissions.mcpServers ?? [])) ||
+    (parsedCandidate.memorySources !== undefined && !sameValues(parsedCandidate.memorySources, memorySources.map(source => source.kind)))
+  );
+
   const applyProposal = useCallback((raw: string) => {
     const proposal = parseHireProposal(raw);
     if (proposal.name) setName(proposal.name.slice(0, 24));
     if (proposal.description) setDescription(proposal.description.slice(0, 1_024));
     if (proposal.mode) setMode(proposal.mode);
     if (proposal.tools) setPermissions((current) => ({ ...current, tools: proposal.tools! }));
-    if (proposal.skills || proposal.mcpServers) setPermissions((current) => {
-      const skills = (proposal.skills ?? []).map((id) => hireSkillCatalog.find((skill) => skill.id === id)).filter((skill): skill is (typeof hireSkillCatalog)[number] => skill !== undefined).map((skill) => ({ id: skill.id }));
-      const mcpServers = proposal.mcpServers ?? [];
-      return replaceCapabilityRules(current, skills, mcpServers);
+    if (proposal.skills !== undefined || proposal.mcpServers !== undefined) setPermissions((current) => {
+      const currentSkills = current.skills ?? [];
+      const currentMcpServers = current.mcpServers ?? [];
+      const skills = proposal.skills === undefined || sameValues(proposal.skills, currentSkills.map(skill => skill.id))
+        ? currentSkills
+        : proposal.skills.map((id) => hireSkillCatalog.find((skill) => skill.id === id)).filter((skill): skill is (typeof hireSkillCatalog)[number] => skill !== undefined).map((skill) => ({ id: skill.id }));
+      const mcpServers = proposal.mcpServers === undefined || sameMcpGrants(proposal.mcpServers, currentMcpServers)
+        ? currentMcpServers : proposal.mcpServers;
+      // An omitted or equivalent group must preserve its objects and rules,
+      // including operator-authored constraints rather than catalog defaults.
+      if (skills === currentSkills && mcpServers === currentMcpServers) return current;
+      const next = replaceCapabilityRules(current, skills, mcpServers);
+      const changedRule = (resource: string) => (skills !== currentSkills && resource.startsWith("skill://"))
+        || (mcpServers !== currentMcpServers && resource.startsWith("mcp://"));
+      return { ...next, rules: [
+        ...current.rules.filter(rule => !changedRule(rule.resource)),
+        ...next.rules.filter(rule => changedRule(rule.resource)),
+      ] };
     });
     if (proposal.memorySources) setMemorySources(proposal.memorySources.flatMap((kind) => { const option = MEMORY_OPTIONS.find((item) => item.kind === kind); return option ? [{ kind, locator: option.locator }] : []; }));
-    setAdvancedOpen(true);
-  }, []);
+    setSelectedPreset(null); setAppliedPreset(null);
+    // A basic role proposal should keep the policy tables out of the main path.
+    if (candidateHasPolicy) setAdvancedOpen(true);
+  }, [candidateHasPolicy]);
 
   const askAgent = useCallback(async () => {
     const hostId = conversationHostId ?? positions[0]?.id ?? null;
-    if (!hostId || !engineAvailability[designEngine]?.ready || prompt.trim().length === 0) return;
+    if (conversationPending.current || !hostId || !engineAvailability[designEngine]?.ready || prompt.trim().length === 0) return;
+    conversationPending.current = true;
     const requestId = ++conversationRequest.current;
     const isCurrentRequest = () => requestId === conversationRequest.current && currentWorkspaceScope.current === workspaceScope;
     let timedOut = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    setConversationBusy(true); setConversationError(null);
-    const input = `${prompt.trim()}${t("hire.agentContext", { name: name.trim() || t("hire.proposalPendingName"), reportTo: reportTo ?? t("hire.ownerRoot") })}`;
-    setMessages((current) => [...current, { role: "user", text: input }]);
+    setConversationBusy(true); setConversationError(null); setCandidateProposal(null);
+    const input = `${t("hire.agentPromptTemplate")}\n${prompt.trim()}${t("hire.agentContext", { name: name.trim() || t("hire.proposalPendingName"), reportTo: reportTo ?? t("hire.ownerRoot") })}`;
+    setMessages((current) => [...current, { role: "user", text: prompt.trim() }]);
     try {
       const response = await Promise.race([
         window.owb.createTurn({ positionId: hostId, engine: designEngine, input }),
@@ -262,35 +343,45 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
             void window.owb.cancelTurn(workspacePath ? { positionId: hostId, workspacePath } : hostId).catch(() => undefined);
             reject(new Error("agent conversation timed out"));
           }, AGENT_CONVERSATION_TIMEOUT_MS);
-          conversationTimer.current = timer;
+          conversationTimers.current.add(timer);
         }),
       ]);
       if (!isCurrentRequest()) return;
       if (response.status !== 200) { setConversationError(t("hire.agentConversationFail")); return; }
       const output = proposalText(response.body);
       if (!output) { setConversationError(t("hire.agentNoProposal")); return; }
-      setMessages((current) => [...current, { role: "assistant", text: output }]);
-      applyProposal(output);
+      const proposal = parseHireProposal(output);
+      if (Object.keys(proposal).length === 0) { setConversationError(t("hire.agentNoProposal")); return; }
+      const summary = [proposal.name, proposal.description].filter(Boolean).join("\n\n") || t("hire.generatedPolicyHint");
+      setMessages((current) => [...current, { role: "assistant", text: summary }]);
+      setCandidateProposal(output);
     } catch {
       if (!isCurrentRequest()) return;
       setConversationError(timedOut ? t("hire.agentConversationTimeout") : t("hire.agentConversationOffline"));
     } finally {
       if (timer !== null) clearTimeout(timer);
-      if (conversationTimer.current === timer) conversationTimer.current = null;
-      if (requestId === conversationRequest.current) setConversationBusy(false);
+      if (timer !== null) conversationTimers.current.delete(timer);
+      if (isCurrentRequest()) { conversationPending.current = false; setConversationBusy(false); }
     }
-  }, [applyProposal, conversationHostId, designEngine, engineAvailability, name, positions, prompt, reportTo, t, workspacePath, workspaceScope]);
+  }, [conversationHostId, designEngine, engineAvailability, name, positions, prompt, reportTo, t, workspacePath, workspaceScope]);
 
   const submitRequest = useCallback(async (draft: HireDraft) => {
-    dispatch({ type: "edit", draft }); dispatch({ type: "submit" }); setPhaseCopy(t("hire.phaseSubmit")); armStallTimer(draft.id);
+    if (hirePending.current) return;
+    hirePending.current = true;
+    const requestId = ++hireRequest.current;
+    const isCurrentRequest = () => requestId === hireRequest.current && currentWorkspaceScope.current === workspaceScope;
+    dispatch({ type: "edit", draft }); dispatch({ type: "submit" }); setPhaseCopy(t("hire.phaseSubmit")); armStallTimer(draft.id, isCurrentRequest);
     try {
-      const response = await window.owb.hire(toHirePositionRequest(draft)); clearTimers();
+      const response = await window.owb.hire(toHirePositionRequest(draft));
+      if (!isCurrentRequest()) return;
+      clearTimers();
       if (response.status === 200 && response.body.status === "hired") { dispatch({ type: "succeed", positionId: draft.id }); messageApi.success(t("hire.joined", { name: draft.name })); onHired(draft.id, draft.name, avatar); onClose(); return; }
       const body = response.body as { code?: string; retryable?: boolean }; dispatch({ type: "fail", code: body.code ?? "hire_failed", retryable: body.retryable ?? false });
-    } catch { clearTimers(); dispatch({ type: "fail", code: "control_plane_unreachable", retryable: true }); }
-  }, [armStallTimer, avatar, clearTimers, messageApi, onClose, onHired, t]);
+    } catch { if (isCurrentRequest()) { clearTimers(); dispatch({ type: "fail", code: "control_plane_unreachable", retryable: true }); } }
+    finally { if (isCurrentRequest()) hirePending.current = false; }
+  }, [armStallTimer, avatar, clearTimers, messageApi, onClose, onHired, t, workspaceScope]);
   const submit = useCallback(() => { if (formValid) void submitRequest(buildDraft()); }, [buildDraft, formValid, submitRequest]);
-  const retry = useCallback(() => { if (flow.phase === "failed" && flow.retryable) void submitRequest(flow.draft); }, [flow, submitRequest]);
+  const retry = useCallback(() => { if (flow.phase === "failed" && flow.retryable) { dispatch({ type: "retry" }); void submitRequest(flow.draft); } }, [flow, submitRequest]);
   const stepCurrent = flow.phase === "draft" ? 0 : flow.phase === "succeeded" ? 2 : 1;
   const poolPercent = budgetPoolTokens > 0 ? Math.min(100, (allocated / budgetPoolTokens) * 100) : 100;
   const toggleMemory = (kind: HireMemorySource["kind"]) => setMemorySources((current) => { if (current.some((source) => source.kind === kind)) return current.filter((source) => source.kind !== kind); const option = MEMORY_OPTIONS.find((item) => item.kind === kind)!; return [...current, { kind, locator: option.locator }]; });
@@ -299,8 +390,12 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
       if (file) void messageApi.warning(t("avatar.fileWarning"));
       return;
     }
+    const requestId = ++avatarRequest.current;
+    setAvatarGenerating(false); setAvatarError(null);
     const reader = new FileReader();
-    reader.onload = () => typeof reader.result === "string" && setAvatar(reader.result);
+    reader.onload = () => {
+      if (requestId === avatarRequest.current && currentWorkspaceScope.current === workspaceScope && typeof reader.result === "string") setAvatar(reader.result);
+    };
     reader.readAsDataURL(file);
   };
   const generateAvatar = useCallback(async () => {
@@ -309,10 +404,13 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
       void messageApi.warning(t("avatar.missingBrief"));
       return;
     }
+    const requestId = ++avatarRequest.current;
+    const isCurrentRequest = () => requestId === avatarRequest.current && currentWorkspaceScope.current === workspaceScope;
     setAvatarGenerating(true);
     setAvatarError(null);
     try {
       const response = await window.owb.generateAvatar({ brief });
+      if (!isCurrentRequest()) return;
       const imageDataUrl = (response.body as { imageDataUrl?: unknown })?.imageDataUrl;
       if (response.status !== 200 || typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/png;base64,")) {
         throw new Error("avatar generation failed");
@@ -320,11 +418,16 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
       setAvatar(imageDataUrl);
       void messageApi.success(t("avatar.generated"));
     } catch {
-      setAvatarError(t("avatar.generationFailed"));
+      if (isCurrentRequest()) setAvatarError(t("avatar.generationFailed"));
     } finally {
-      setAvatarGenerating(false);
+      if (isCurrentRequest()) setAvatarGenerating(false);
     }
-  }, [description, messageApi, name, t]);
+  }, [description, messageApi, name, t, workspaceScope]);
+
+  const chooseAvatar = (value: string | undefined) => {
+    avatarRequest.current += 1;
+    setAvatar(value); setAvatarGenerating(false); setAvatarError(null);
+  };
 
   return (
     <Drawer className="owb-hire-drawer-shell owb-hire-drawer-shell--create" title={t("hire.createTitle")} width="min(720px, calc(100vw - 24px))" open={open} closable={false} onClose={() => { if (flow.phase !== "draft" && flow.phase !== "failed") return; clearTimers(); onClose(); }} destroyOnHidden>
@@ -333,6 +436,26 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
         <div className="owb-hire-shell__scroll">
           <div className="owb-hire-drawer owb-hire-drawer--conversation">
             <div className="owb-hire-design-section">
+            <section className="owb-hire-selection" aria-label={t("hire.presetsLabel")}>
+              <div className="owb-hire-selection__intro"><h3>{t("hire.selectionTitle")}</h3><p>{t("hire.selectionDescription")}</p></div>
+              <div className="owb-hire-preset-grid" role="group" aria-label={t("hire.presetsLabel")}>
+                {HIRE_ROLE_PRESETS.map((preset) => {
+                  const Icon = { engineer: Code2, designer: Palette, qa: ListChecks, research: Search }[preset.id];
+                  return <button type="button" className="owb-hire-preset" key={preset.id} aria-pressed={selectedPreset === preset.id}
+                    aria-label={`${t(preset.nameKey)} · ${t("hire.presetBadge")}`} onClick={() => choosePreset(preset)}>
+                    <span className="owb-hire-preset__icon" aria-hidden="true"><Icon size={17} /></span>
+                    <span className="owb-hire-preset__copy"><span className="owb-hire-preset__name"><strong>{t(preset.nameKey)}</strong><span className="owb-hire-preset__badge">{t("hire.presetBadge")}</span></span><small>{t(preset.summaryKey)}</small></span>
+                  </button>;
+                })}
+              </div>
+              {previewPreset && !presetMatchesDraft ? <div className="owb-hire-preset-preview" aria-label={t("hire.presetPreview")}>
+                <strong>{t(previewPreset.nameKey)}</strong><p>{t(previewPreset.descriptionKey)}</p><small>{t("hire.presetReplaceHint")}</small>
+                <AntButton onClick={() => applyPreset(previewPreset)}>{t("hire.presetApply")}</AntButton>
+              </div> : presetMatchesDraft ? <p className="owb-hire-preset-feedback" role="status">{t("hire.presetApplied")}</p> : null}
+              <div className="owb-hire-generator-entry"><div><strong>{t("hire.generateEntry")}</strong><p>{t("hire.generateEntryHint")}</p></div>
+                <AntButton icon={<Sparkles size={14} aria-hidden="true" />} onClick={() => setDesignAssistOpen(true)}>{t("hire.generateOpen")}</AntButton>
+              </div>
+            </section>
             <section className="owb-hire-agent-picker">
               <div>
                 <p className="owb-hire-eyebrow">{t("hire.agentStep")}</p>
@@ -353,8 +476,14 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
             </section>
             <details className="owb-hire-assist" open={designAssistOpen} onToggle={(event) => setDesignAssistOpen(event.currentTarget.open)}>
               <summary><Sparkles aria-hidden="true" size={15} />{t("hire.assistTitle")}<span>{t("hire.assistHint")}</span></summary>
-              <section className="owb-hire-conversation" aria-label={t("hire.agentConversationAria")}><div className="owb-hire-conversation__meta"><span className="owb-hire-conversation__host"><span className="owb-led owb-led--running" />{conversationHostName ?? t("hire.agentWorkspaceContext")}</span><span>{t("hire.agentNoWrite")}</span></div>{messages.length === 0 ? <div className="owb-hire-conversation__empty"><Sparkles aria-hidden="true" size={20} /><span>{t("hire.agentEmpty")}</span></div> : <div className="owb-hire-conversation__messages">{messages.map((entry, index) => <div className={`owb-hire-message is-${entry.role}`} key={`${entry.role}-${index}`}><span>{entry.role === "user" ? t("hire.you") : t("hire.agent")}</span><p>{entry.text}</p></div>)}</div>}<div className="owb-hire-prompt"><div className="owb-hire-prompt__heading"><label htmlFor="owb-hire-prompt-input">{t("hire.promptLabel")}</label><button type="button" onClick={() => setPrompt(defaultPrompt(t))}><RotateCcw aria-hidden="true" size={12} /><span>{t("hire.resetPrompt")}</span></button></div><Input.TextArea id="owb-hire-prompt-input" value={prompt} rows={4} onChange={(event) => setPrompt(event.target.value)} placeholder={t("hire.promptPh")} /><div className="owb-hire-prompt__footer"><span>{t("hire.promptEditable")}</span><AntButton type="primary" loading={conversationBusy} disabled={!engineAvailability[designEngine]?.ready || (!conversationHostId && positions.length === 0) || prompt.trim().length === 0} onClick={() => void askAgent()} icon={<Sparkles aria-hidden="true" size={14} />}>{conversationBusy ? t("hire.askingAgent") : t("hire.askAgent")}</AntButton></div>{conversationError ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{conversationError}</p> : null}</div></section>
+              <section className="owb-hire-conversation" aria-label={t("hire.agentConversationAria")}><div className="owb-hire-conversation__meta"><span className="owb-hire-conversation__host"><span className="owb-led owb-led--running" />{conversationHostName ?? t("hire.agentWorkspaceContext")}</span><span>{t("hire.agentNoWrite")}</span></div>{messages.length === 0 ? <div className="owb-hire-conversation__empty"><Sparkles aria-hidden="true" size={20} /><span>{t("hire.agentEmpty")}</span></div> : <div className="owb-hire-conversation__messages">{messages.map((entry, index) => <div className={`owb-hire-message is-${entry.role}`} key={`${entry.role}-${index}`}><span>{entry.role === "user" ? t("hire.you") : t("hire.agent")}</span><p>{entry.text}</p></div>)}</div>}<div className="owb-hire-prompt"><div className="owb-hire-prompt__heading"><label htmlFor="owb-hire-prompt-input">{t("hire.promptLabel")}</label><button type="button" onClick={() => setPrompt(defaultBrief(t))}><RotateCcw aria-hidden="true" size={12} /><span>{t("hire.resetPrompt")}</span></button></div><Input.TextArea id="owb-hire-prompt-input" value={prompt} rows={4} onChange={(event) => setPrompt(event.target.value)} placeholder={t("hire.promptPh")} /><div className="owb-hire-prompt__footer"><span>{t("hire.promptEditable")}</span><AntButton type="primary" loading={conversationBusy} disabled={!engineAvailability[designEngine]?.ready || (!conversationHostId && positions.length === 0) || prompt.trim().length === 0} onClick={() => void askAgent()} icon={<Sparkles aria-hidden="true" size={14} />}>{conversationBusy ? t("hire.askingAgent") : t("hire.askAgent")}</AntButton></div>{conversationError ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{conversationError}</p> : null}</div></section>
             </details>
+            {candidateProposal && parsedCandidate ? <section className="owb-hire-generated-preview" aria-label={t("hire.generatedProposalTitle")}>
+              <strong>{t("hire.generatedProposalTitle")}</strong><p>{parsedCandidate.name ?? t("hire.proposalPendingName")}</p>
+              {parsedCandidate.description ? <p>{parsedCandidate.description}</p> : null}<small>{t("hire.generatedProposalHint")}</small>
+              {candidateHasPolicy ? <small>{t("hire.generatedPolicyHint")}</small> : null}
+              <AntButton onClick={() => { applyProposal(candidateProposal); setCandidateProposal(null); }}>{t("hire.generatedProposalApply")}</AntButton>
+            </section> : null}
             </div>
             <section className="owb-hire-draft-card">
               <div className="owb-hire-draft-card__heading">
@@ -376,9 +505,9 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
                   <section className="owb-hire-avatar-picker" aria-label={t("avatar.title")}>
                     <div><strong>{t("avatar.title")}</strong><p>{t("avatar.description")}</p>{avatarError ? <p className="owb-hire-avatar-picker__error">{avatarError}</p> : null}</div>
                     <div className="owb-hire-avatar-picker__choices">
-                      <button type="button" className={avatar === undefined ? "is-selected" : ""} onClick={() => setAvatar(undefined)} aria-label={t("avatar.autoAria")}><img src={avatarSrcFor(positionId)} alt="" /><span>{t("avatar.auto")}</span></button>
+                      <button type="button" className={avatar === undefined ? "is-selected" : ""} onClick={() => chooseAvatar(undefined)} aria-label={t("avatar.autoAria")}><img src={avatarSrcFor(positionId)} alt="" /><span>{t("avatar.auto")}</span></button>
                       <button type="button" className="owb-hire-avatar-picker__generate" onClick={() => void generateAvatar()} disabled={avatarGenerating} aria-label={t("avatar.generateAria")}><Sparkles aria-hidden="true" size={15} /><span>{avatarGenerating ? t("avatar.generating") : "AI"}</span></button>
-                      {AVATAR_PRESETS.map((preset) => <button type="button" className={avatar === preset.id ? "is-selected" : ""} key={preset.id} onClick={() => setAvatar(preset.id)} aria-label={t("avatar.selectPreset", { name: t(preset.labelKey) })}><img src={preset.src} alt="" /></button>)}
+                      {AVATAR_PRESETS.map((preset) => <button type="button" className={avatar === preset.id ? "is-selected" : ""} key={preset.id} onClick={() => chooseAvatar(preset.id)} aria-label={t("avatar.selectPreset", { name: t(preset.labelKey) })}><img src={preset.src} alt="" /></button>)}
                       <label className="owb-hire-avatar-picker__upload"><span>{t("avatar.upload")}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => chooseAvatarFile(event.target.files?.[0])} /></label>
                     </div>
                   </section>

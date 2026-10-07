@@ -61,7 +61,7 @@ export function parseHireProposal(text: string): HireProposal {
   }
   if (Array.isArray(value.skills)) {
     const skills = value.skills.filter((skill): skill is string => typeof skill === "string" && PROPOSAL_SKILLS.has(skill));
-    if (skills.length > 0) proposal.skills = [...new Set(skills)];
+    if (skills.length > 0 || value.skills.length === 0) proposal.skills = [...new Set(skills)];
   }
   if (Array.isArray(value.mcpServers)) {
     const mcpServers: HireMcpGrant[] = [];
@@ -74,7 +74,7 @@ export function parseHireProposal(text: string): HireProposal {
         : [...definition.tools];
       mcpServers.push({ id: definition.id, tools: [...new Set(requestedTools)] });
     }
-    if (mcpServers.length > 0) proposal.mcpServers = mcpServers;
+    if (mcpServers.length > 0 || value.mcpServers.length === 0) proposal.mcpServers = mcpServers;
   }
   return proposal;
 }
