@@ -568,7 +568,7 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
               ) : null}
               <div className="owb-bubble__hover-actions">
                 {turn.output ? <MessageActions raw={turn.output} plain={markdownToPlainText(turn.output)} /> : null}
-                {turn.output && !isProvisional && turn.status === "completed" && window.owb.vault ? <TurnNoteAction turn={turn}
+                {turn.output && !isProvisional && turn.status === "completed" && window.owb?.vault ? <TurnNoteAction turn={turn}
                   onCreated={(uri) => onOpenResource?.(turn.positionId, uri)} /> : null}
                 {turn.approvalRequest === undefined && retryable && onRetry ? (
                   <button
