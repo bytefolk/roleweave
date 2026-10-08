@@ -10,10 +10,12 @@ const test = require("node:test");
 
 const stylesheet = path.join(__dirname, "..", "renderer", "src", "app.css");
 const ast = postcss.parse(fs.readFileSync(stylesheet, "utf8"), { from: stylesheet });
+const graphStylesheet = path.join(__dirname, "..", "renderer", "src", "graph", "RelationshipGraph.css");
+const graphAst = postcss.parse(fs.readFileSync(graphStylesheet, "utf8"), { from: graphStylesheet });
 
-function lastDecl(selector, prop) {
+function lastDecl(selector, prop, sheet = ast) {
   let value = null;
-  ast.walkRules((rule) => {
+  sheet.walkRules((rule) => {
     if (!rule.selectors.map((item) => item.trim()).includes(selector)) return;
     rule.walkDecls(prop, (decl) => { value = decl.value; });
   });
@@ -46,19 +48,35 @@ test("scrollable modules keep scrolling local to their own surface", () => {
   assert.equal(lastDecl(".owb-main > .owb-docs-module", "overflow-y"), "auto");
   assert.equal(lastDecl(".owb-main > .owb-memory-module", "overflow-y"), "auto");
   assert.equal(lastDecl(".owb-main > .owb-settings-module", "overflow-y"), "auto");
-  // The overview tab mounts `section.owb-rgraph` straight into the main column,
-  // so it is the one module whose root is not a `.owb-*-module` block.
-  assert.equal(lastDecl(".owb-main > .owb-rgraph", "overflow-y"), "auto");
   for (const selector of [
     ".owb-main > .owb-approval-queue",
     ".owb-main > .owb-reports",
     ".owb-main > .owb-docs-module",
     ".owb-main > .owb-memory-module",
     ".owb-main > .owb-settings-module",
-    ".owb-main > .owb-rgraph",
   ]) {
     assert.equal(lastDecl(selector, "scrollbar-gutter"), "stable", `${selector} must reserve its scrollbar gutter`);
   }
+});
+
+test("relationship exploration fills the bounded page with independently scrollable panes", () => {
+  const section = ".owb-main > .owb-rgraph";
+  const workspace = `${section} > .owb-rgraph__workspace`;
+  assert.equal(lastDecl(section, "overflow-y"), "hidden", "the graph root must not compete with its panes for scrolling");
+  assert.equal(lastDecl(section, "flex"), "1", "the graph must receive the main column's remaining height");
+  assert.equal(lastDecl(section, "min-height"), "0", "the graph must fit a short window");
+  assert.equal(lastDecl(workspace, "flex"), "1", "the workspace must fill the space below the graph header");
+  assert.equal(lastDecl(workspace, "min-height"), "0", "the workspace must stay inside that available space");
+  assert.equal(lastDecl(".owb-rgraph__workspace", "overflow", graphAst), "hidden", "pane contents must not overflow into the header or app shell");
+
+  for (const pane of [".owb-rgraph__filters", ".owb-rgraph__main", ".owb-rgraph__list"]) {
+    assert.equal(lastDecl(pane, "min-height", graphAst), "0", `${pane} must shrink before its own scroll takes over`);
+    assert.equal(lastDecl(pane, "overflow", graphAst), "auto", `${pane} must make all overflowing content reachable`);
+  }
+  assert.match(lastDecl(".owb-rgraph__results", "flex", graphAst), /^1(?:\s|$)/, "results must use the remaining sidebar height");
+  assert.equal(lastDecl(".owb-rgraph__inspector", "min-height", graphAst), "0", "evidence must remain inside its bounded column or overlay");
+  assert.equal(lastDecl(".owb-rgraph__inspector", "overflow-y", graphAst), "auto", "long evidence must scroll independently");
+  assert.equal(lastDecl(".owb-rgraph__inspector > header", "position", graphAst), "sticky", "scrolling evidence must not lose its close action");
 });
 
 test("every primary module can shrink before its own local scroll surface takes over", () => {
