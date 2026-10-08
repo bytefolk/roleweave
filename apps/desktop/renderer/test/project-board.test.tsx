@@ -11,6 +11,7 @@ import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { OwbBridge } from "../src/owb";
 import { ProjectBoard } from "../src/goals/ProjectBoard";
 import { visibleSelectOptions } from "./select-helper";
+import { enterPickerDate } from "./date-picker-helper";
 
 const task: GoalWorkItem = {
   taskId: "task-one",
@@ -163,12 +164,8 @@ describe("ProjectBoard", () => {
       target: { value: "Make plans visible" },
     });
     chooseOption(drawer.getByLabelText("负责人"), "Engineer");
-    fireEvent.change(drawer.getByLabelText("开始日期"), {
-      target: { value: "2026-09-22" },
-    });
-    fireEvent.change(drawer.getByLabelText("截止日期"), {
-      target: { value: "2026-09-25" },
-    });
+    enterPickerDate(drawer.getByLabelText("开始日期"), "2026-09-22");
+    enterPickerDate(drawer.getByLabelText("截止日期"), "2026-09-25");
     const saveButton = drawer.getByRole("button", { name: "保存任务" });
     fireEvent.click(saveButton);
     fireEvent.click(saveButton);
@@ -240,31 +237,36 @@ describe("ProjectBoard", () => {
     );
   });
 
-  it("rejects inverted dates and omits cleared dates in the edited task", async () => {
+  it("rejects inverted date input and omits cleared dates in the edited task", async () => {
     const context = setup(
       detail([{ ...task, startDate: "2026-09-22", dueDate: "2026-09-25" }]),
     );
     fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
     const drawer = within(screen.getByRole("dialog"));
-    fireEvent.change(drawer.getByLabelText("截止日期"), {
-      target: { value: "2026-09-01" },
-    });
-    expect(drawer.getByRole("button", { name: "保存任务" })).toBeDisabled();
-    expect(drawer.getByRole("alert")).toHaveTextContent(
-      "截止日期不能早于开始日期",
-    );
-    fireEvent.change(drawer.getByLabelText("开始日期"), {
-      target: { value: "" },
-    });
-    fireEvent.change(drawer.getByLabelText("截止日期"), {
-      target: { value: "" },
-    });
+    enterPickerDate(drawer.getByLabelText("截止日期"), "2026-09-01");
+    fireEvent.blur(drawer.getByLabelText("截止日期"));
+    await waitFor(() => expect(drawer.getByLabelText("截止日期")).toHaveValue("2026-09-25"));
+    expect(context.updateGoal).not.toHaveBeenCalled();
+    fireEvent.click(drawer.getByLabelText("开始日期").closest(".ant-picker")!.querySelector(".ant-picker-clear")!);
+    fireEvent.click(drawer.getByLabelText("截止日期").closest(".ant-picker")!.querySelector(".ant-picker-clear")!);
+    expect(drawer.getByLabelText("开始日期")).toHaveValue("");
+    expect(drawer.getByLabelText("截止日期")).toHaveValue("");
     fireEvent.click(drawer.getByRole("button", { name: "保存任务" }));
     await waitFor(() =>
       expect(context.updateGoal).toHaveBeenCalledWith(
         expect.objectContaining({ workItems: [task] }),
       ),
     );
+  });
+
+  it("blocks saving already stored inverted dates until they are corrected", () => {
+    setup(detail([{ ...task, startDate: "2026-09-22", dueDate: "2026-09-01" }]));
+    fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
+    const drawer = within(screen.getByRole("dialog"));
+    expect(drawer.getByRole("button", { name: "保存任务" })).toBeDisabled();
+    expect(drawer.getByRole("alert")).toHaveTextContent("截止日期不能早于开始日期");
+    fireEvent.click(drawer.getByLabelText("截止日期").closest(".ant-picker")!.querySelector(".ant-picker-clear")!);
+    expect(drawer.getByRole("button", { name: "保存任务" })).toBeEnabled();
   });
 
   it("links execution to the goal and task, guards duplicate runs, and preserves acceptance state", async () => {

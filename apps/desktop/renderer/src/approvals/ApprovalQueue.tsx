@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Checkbox, Input, List, Select, Segmented, Space, Tag, Tooltip } from "antd";
 import { ArrowRight, FilePenLine, Globe, RefreshCw, SlidersHorizontal, Terminal, Wrench } from "lucide-react";
-import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
+import { DateField, useOwbLocale, useT, type OwbT } from "@roleweave/ui";
 import {
   approvalExpiryState,
   isActionablePending,
@@ -368,18 +368,16 @@ export function ApprovalQueue({
           className="owb-approval-queue__select"
           data-testid="approval-filter-expiry"
         />
-        <Input
-          type="date"
+        <DateField
           value={fromDate}
-          onChange={(event) => { setSelectedId(null); setFromDate(event.target.value); }}
+          onChange={(value) => { setSelectedId(null); setFromDate(value); }}
           aria-label={t("apr.filterFromAria")}
           className="owb-approval-queue__date"
           data-testid="approval-filter-from"
         />
-        <Input
-          type="date"
+        <DateField
           value={toDate}
-          onChange={(event) => { setSelectedId(null); setToDate(event.target.value); }}
+          onChange={(value) => { setSelectedId(null); setToDate(value); }}
           aria-label={t("apr.filterToAria")}
           className="owb-approval-queue__date"
           data-testid="approval-filter-to"

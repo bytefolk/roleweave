@@ -52,6 +52,7 @@
 :is([data-theme="light"],[data-theme="dark"]) .owb-app .owb-report-tabs button[aria-pressed="true"] { color: var(--inbox-green); box-shadow: inset 0 -2px var(--inbox-green); }
 .owb-inbox-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
 .owb-inbox-filters > .ant-input { width: 160px; }
+.owb-inbox-filters > .ant-picker { width: 160px; }
 .owb-inbox-filters > .ant-select { width: 140px; }
 .owb-inbox-filters .owb-inbox-filters__search { width: 260px; margin-left: auto; }
 .owb-inbox-filters time { font-size: 11px; color: var(--inbox-muted); }

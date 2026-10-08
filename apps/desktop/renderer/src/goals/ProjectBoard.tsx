@@ -11,7 +11,7 @@ import {
   Search,
   UserRound,
 } from "lucide-react";
-import { useOwbLocale, useT } from "@roleweave/ui";
+import { DateField, useOwbLocale, useT } from "@roleweave/ui";
 import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { TurnEngine } from "@roleweave/shared";
 import { useEngineLabel } from "../turns/engine-select";
@@ -1033,25 +1033,27 @@ export function ProjectBoard({
               <div className="owb-project-form__row">
                 <label>
                   <span>{t("project.startDate")}</span>
-                  <input
-                    type="date"
+                  <DateField
+                    aria-label={t("project.startDate")}
                     className="owb-project-select"
                     value={editor.item.startDate ?? ""}
                     max={editor.item.dueDate || undefined}
-                    onChange={(event) =>
-                      patch({ startDate: event.target.value || undefined })
+                    disabled={busy}
+                    onChange={(value) =>
+                      patch({ startDate: value || undefined })
                     }
                   />
                 </label>
                 <label>
                   <span>{t("project.dueDate")}</span>
-                  <input
-                    type="date"
+                  <DateField
+                    aria-label={t("project.dueDate")}
                     className="owb-project-select"
                     value={editor.item.dueDate ?? ""}
                     min={editor.item.startDate || undefined}
-                    onChange={(event) =>
-                      patch({ dueDate: event.target.value || undefined })
+                    disabled={busy}
+                    onChange={(value) =>
+                      patch({ dueDate: value || undefined })
                     }
                   />
                 </label>
