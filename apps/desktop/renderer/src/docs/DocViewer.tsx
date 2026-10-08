@@ -2,6 +2,7 @@ import { useId, type ReactNode } from "react";
 import { Tag } from "antd";
 import { useT } from "@roleweave/ui";
 import { Markdown, markdownHeadings } from "../markdown/Markdown";
+import type { ImageResourceLoader } from "../markdown/Markdown";
 import { splitFrontmatter } from "./frontmatter";
 
 function stripExtension(filename: string): string {
@@ -21,6 +22,7 @@ export interface DocViewerProps {
   editor?: ReactNode;
   showEditor?: boolean;
   onNavigateDoc?: (target: string, kind: "wikilink" | "relative") => void;
+  imageResourceLoader?: ImageResourceLoader;
 }
 const META_LABEL_KEYS: Record<string, string> = {
   name: "docs.metaName",
@@ -37,6 +39,7 @@ export function DocViewer({
   editor,
   showEditor = true,
   onNavigateDoc,
+  imageResourceLoader,
 }: DocViewerProps) {
   const t = useT();
   const headingPrefix = `document-${useId().replaceAll(":", "")}`;
@@ -127,7 +130,7 @@ export function DocViewer({
         )}
         <div className="owb-doc-viewer__body">
           {isMarkdown ? (
-            <Markdown content={body} headingPrefix={headingPrefix} onNavigateDoc={onNavigateDoc} />
+            <Markdown content={body} headingPrefix={headingPrefix} onNavigateDoc={onNavigateDoc} imageResourceLoader={imageResourceLoader} />
           ) : extension === "txt" ? (
             <div className="owb-doc-viewer__text">{source}</div>
           ) : (

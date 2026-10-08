@@ -99,9 +99,9 @@ it("shows runtime, service connections, and updates together without claiming a 
   expect(await screen.findByText("QODER_PERSONAL_ACCESS_TOKEN")).toBeInTheDocument();
   expect(bridge.settings.get).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("region", { name: "文档与记忆服务" })).toBeInTheDocument();
-  expect(await screen.findByRole("form", { name: "Doc 连接" })).toBeInTheDocument();
-  expect(screen.getByRole("form", { name: "Mem 连接" })).toBeInTheDocument();
-  expect(screen.getAllByText("未连接")).toHaveLength(2);
+  expect(await screen.findByRole("form", { name: "Mem 连接" })).toBeInTheDocument();
+  expect(screen.queryByRole("form", { name: "Doc 连接" })).not.toBeInTheDocument();
+  expect(screen.getAllByText("未连接")).toHaveLength(1);
   expect(screen.queryByText("服务 API 可访问，授权有效")).not.toBeInTheDocument();
   expect(screen.getByRole("region", { name: "应用更新" })).toBeInTheDocument();
   expect(await screen.findByText("0.1.0")).toBeInTheDocument();
@@ -112,8 +112,8 @@ it("keeps service connections and updates available when runtime status cannot b
   const { bridge } = installBridge(windowsSigned);
   bridge.status.mockRejectedValue(new Error("runtime unavailable"));
   render(<SettingsModule />);
-  expect(await screen.findByRole("form", { name: "Doc 连接" })).toBeInTheDocument();
-  expect(screen.getByRole("form", { name: "Mem 连接" })).toBeInTheDocument();
+  expect(await screen.findByRole("form", { name: "Mem 连接" })).toBeInTheDocument();
+  expect(screen.queryByRole("form", { name: "Doc 连接" })).not.toBeInTheDocument();
   expect(await screen.findByText("0.1.0")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /检查更新/ })).toBeEnabled();
   expect(screen.queryByRole("region", { name: "项目与 Agent 运行环境" })).not.toBeInTheDocument();

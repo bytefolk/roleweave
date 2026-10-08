@@ -106,7 +106,9 @@ test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishe
     assert.equal(turnDriver.calls.length, 1);
     assert.equal(turnDriver.calls[0]!.engine, "qoder");
     assert.equal(turnDriver.calls[0]!.envelope.positionId, "repo-owner");
-    assert.equal(turnDriver.calls[0]!.envelope.input, "What should we do?");
+    assert.match(turnDriver.calls[0]!.envelope.input, /^Vault context \(vault-context\.v1\): .*untrusted reference material/);
+    assert.ok(turnDriver.calls[0]!.envelope.input.endsWith("Current user request:\nWhat should we do?"));
+    assert.equal(record.input, "What should we do?");
     assert.equal(turnDriver.calls[0]!.envelope.envelopeDigest, record.envelopeDigest);
 
     const started = await sse.waitForEvent("turn.started");

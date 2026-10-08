@@ -204,6 +204,7 @@ export interface OwbBridge {
     upload(filePath: string): Promise<OwbApiResponse<DriveUploadResponse>>;
     pickAndUpload(): Promise<OwbApiResponse<DriveUploadResponse> | { canceled: true }>;
   };
+  vault: import('./vault/bridge').VaultBridge;
   sseStatus(): Promise<"connecting" | "connected">;
   services: {
     list(): Promise<OwbApiResponse<ServicesResponse>>;

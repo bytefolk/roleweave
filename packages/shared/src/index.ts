@@ -22,6 +22,8 @@ export * from "./model-selection.js";
 export * from "./sessions.js";
 export * from "./groups.js";
 export * from "./docs.js";
+export * from "./vault.js";
+export * from "./vault-sync.js";
 export * from "./drive.js";
 export * from "./drive-provider.js";
 export * from "./context-sources.js";
