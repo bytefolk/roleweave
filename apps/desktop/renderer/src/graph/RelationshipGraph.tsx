@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Checkbox, Empty, Input, Spin, Tag } from "antd";
-import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, ChevronRight, FileSearch, Info, Network, RefreshCw, Search, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, ChevronRight, FileSearch, Info, Network, Orbit, RefreshCw, Search, X } from "lucide-react";
 import { relationshipNodeKinds, type RelationshipEdge, type RelationshipGraphResponse, type RelationshipKind, type RelationshipNode, type RelationshipNodeKind } from "@roleweave/shared/relationship-graph";
 import { useT, type OwbT } from "@roleweave/ui";
 import { RelationshipSpatialScene, type RelationshipSpatialLayout, type RelationshipSpatialTheme } from "./RelationshipSpatialScene";
@@ -114,6 +114,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
   const [showKnowledgeRelationships, setShowKnowledgeRelationships] = useState(initial.current?.showKnowledgeRelationships ?? true);
   const [listMode, setListMode] = useState<"nodes" | "edges">("nodes");
   const results = useRef<HTMLDivElement>(null);
+  const scopeDetails = useRef<HTMLDetailsElement>(null);
   const inspector = useRef<HTMLElement>(null);
   const trailNavigation = useRef<HTMLElement>(null);
   const latest = useRef({ data, onOpenAgent, onOpenResource });
@@ -193,17 +194,26 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
     {!view.nodes.length && data?.nodes.length ? <p className="owb-rgraph__bounded">{t("graph.filteredEmpty")}</p> : null}
   </div>;
 
-  return <section className="owb-rgraph" tabIndex={0} aria-label={t("graph.title")} onKeyDown={event => { if (event.key === "Escape" && selection) closeDetails(); }}>
+  return <section className="owb-rgraph" tabIndex={0} aria-label={t("graph.title")} onKeyDown={event => {
+    if (event.key !== "Escape") return;
+    if (scopeDetails.current?.open) {
+      scopeDetails.current.open = false;
+      scopeDetails.current.querySelector("summary")?.focus();
+      event.stopPropagation();
+    } else if (selection) closeDetails();
+  }}>
     <header className="owb-rgraph__header"><div><h1><Network size={19} aria-hidden="true" />{t("graph.title")}</h1><p>{copy.subtitle}</p></div><div className="owb-rgraph__header-actions"><Button type="text" icon={<BookOpen size={14} />} aria-expanded={guideOpen} onClick={() => setGuideOpen(current => !current)}>{copy.guideTitle}</Button><Button icon={<RefreshCw size={14} />} onClick={onReload} loading={loading}>{t("graph.reload")}</Button></div></header>
     {guideOpen ? <div className="owb-rgraph__guide" role="region" aria-label={copy.guideTitle}><div><strong>{copy.guideObject}</strong><p>{copy.objectStep}</p></div><div><strong>{copy.guideRelation}</strong><p>{copy.relationStep}</p></div><div><strong>{copy.guideEvidence}</strong><p>{copy.evidenceStep}</p></div><p>{copy.scopeHelp}</p></div> : null}
     {error ? <Alert type="error" title={t("graph.loadFailure")} showIcon action={<Button size="small" onClick={onReload}>{t("graph.reload")}</Button>} /> : null}
-    {partial ? <Alert type="warning" title={t("graph.partial")} showIcon /> : null}
+    <div className="owb-rgraph__meta">
     <ol className="owb-rgraph__workflow" aria-label={copy.guideTitle}><li className={!focusId ? "is-current" : ""}><span>1</span>{copy.findObject}</li><li className={focusId && !selectedEdge ? "is-current" : ""}><span>2</span>{copy.followRelations}</li><li className={selectedEdge ? "is-current" : ""}><span>3</span>{copy.verifyEvidence}</li></ol>
-    {data ? <details className="owb-rgraph__scope"><summary><Info size={14} aria-hidden="true" /><span>{copy.scopeTitle}</span><small>{t("graph.counts", { nodes: data.nodes.length, edges: data.edges.length })}</small></summary><p>{copy.scopeHelp}</p><div className="owb-rgraph__scope-coverage">{data.coverage.map((item, index) => <div key={`${item.source}:${index}`}><span>{item.source}</span><Tag color={item.state === "error" || item.state === "partial" ? "warning" : "default"}>{t(`graph.coverage.${item.state}`)}</Tag>{item.count !== undefined ? <small>{item.count}</small> : null}</div>)}</div></details> : null}
+    {data ? <details ref={scopeDetails} className="owb-rgraph__scope"><summary><Info size={14} aria-hidden="true" /><span>{copy.scopeTitle}</span><small>{t("graph.counts", { nodes: data.nodes.length, edges: data.edges.length })}</small></summary><div className="owb-rgraph__scope-panel"><p>{copy.scopeHelp}</p><div className="owb-rgraph__scope-coverage">{data.coverage.map((item, index) => <div key={`${item.source}:${index}`}><span>{item.source}</span><Tag color={item.state === "error" || item.state === "partial" ? "warning" : "default"}>{t(`graph.coverage.${item.state}`)}</Tag>{item.count !== undefined ? <small>{item.count}</small> : null}</div>)}</div></div></details> : null}
+    </div>
+    {partial ? <div className="owb-rgraph__notice" role="status"><Info size={14} aria-hidden="true" /><span>{t("graph.partial")}</span></div> : null}
     <div className={`owb-rgraph__workspace owb-rgraph__workspace--${renderer}${selection ? " has-selection" : ""}`}>
       <aside className="owb-rgraph__filters" aria-label={t("graph.filters")}>
         <Input prefix={<Search size={14} aria-hidden="true" />} aria-label={t("graph.search")} placeholder={t("graph.search")} value={query} allowClear onChange={event => { setQuery(event.target.value); setNeighborhood(null); }} />
-        {renderer === "context" ? objectResults : null}
+        {objectResults}
         <details className="owb-rgraph__advanced"><summary>{copy.filters}</summary>
         <fieldset><legend>{t("graph.entities")}</legend><div className="owb-rgraph__filter-actions"><button onClick={() => setKinds([...relationshipNodeKinds])}>{t("graph.all")}</button><button onClick={() => setKinds([])}>{t("graph.none")}</button></div>
           {relationshipNodeKinds.map(kind => <Checkbox key={kind} checked={kinds.includes(kind)} onChange={event => setKinds(current => event.target.checked ? [...current, kind] : current.filter(value => value !== kind))}><i className="owb-rgraph__kind-dot" style={{ background: nodeColors[kind] }} />{t(`graph.kind.${kind}`)}<span className="owb-rgraph__count">{data?.nodes.filter(node => node.kind === kind).length ?? 0}</span></Checkbox>)}
@@ -214,7 +224,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
       </aside>
       <div className="owb-rgraph__main">
         <div className="owb-rgraph__toolbar" role="toolbar" aria-label={t("graph.canvas")}>
-          <div className="owb-rgraph__renderer" role="group" aria-label={t("graph.renderer")}><Button size="small" aria-pressed={renderer === "context"} onClick={() => { setRenderer("context"); if (selectedNode && selectedNode.id !== focusId) selectNode(selectedNode.id); }}>{copy.contextView}</Button><Button size="small" aria-pressed={renderer === "minimal"} onClick={() => setRenderer("minimal")}>{t("graph.rendererMinimal")}</Button><Button size="small" aria-pressed={renderer === "galaxy"} onClick={() => setRenderer("galaxy")}>{t("graph.rendererGalaxy")}</Button></div>
+          <div className="owb-rgraph__renderer" role="group" aria-label={t("graph.renderer")}><Button size="small" icon={<FileSearch size={14} aria-hidden="true" />} aria-pressed={renderer === "context"} onClick={() => { setRenderer("context"); if (selectedNode && selectedNode.id !== focusId) selectNode(selectedNode.id); }}>{copy.contextView}</Button><Button size="small" icon={<Network size={14} aria-hidden="true" />} aria-pressed={renderer === "minimal"} onClick={() => setRenderer("minimal")}>{t("graph.rendererMinimal")}</Button><Button size="small" icon={<Orbit size={14} aria-hidden="true" />} aria-pressed={renderer === "galaxy"} onClick={() => setRenderer("galaxy")}>{t("graph.rendererGalaxy")}</Button></div>
           {renderer !== "context" ? <div><Button size="small" disabled={!selectedNode} aria-pressed={neighborhood?.hops === 1} onClick={() => exploreNeighborhood(1)}>{t("graph.oneHop")}</Button><Button size="small" disabled={!selectedNode} aria-pressed={neighborhood?.hops === 2} onClick={() => exploreNeighborhood(2)}>{t("graph.twoHop")}</Button><Button size="small" onClick={() => setNeighborhood(null)}>{t("graph.overview")}</Button></div> : null}
         </div>
         {renderer === "context" ? <>
@@ -234,7 +244,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
             layout={spatialLayout}
             theme={spatialTheme}
             showKnowledgeRelationships={showKnowledgeRelationships}
-            selectedId={selection?.type === "node" ? selection.id : undefined}
+            selectedId={selection?.id}
             visible={visible}
             onLayoutChange={setSpatialLayout}
             onThemeChange={setSpatialTheme}
@@ -245,11 +255,10 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
           {loading && data ? <span className="owb-rgraph__refreshing" role="status">{t("graph.refreshing")}</span> : null}
         </div>
         <div className="owb-rgraph__caption"><span>{t("graph.legend")}</span><span>{t("graph.spatialGesture")}</span></div>
-        {objectResults}
         </>}
         {data ? <footer className="owb-rgraph__timestamp">{t("graph.updated", { time: data.generatedAt })}</footer> : null}
       </div>
-      <aside ref={inspector} tabIndex={-1} className="owb-rgraph__inspector" aria-label={t("graph.inspector")}>
+      <aside ref={inspector} tabIndex={-1} hidden={!selection} className="owb-rgraph__inspector" aria-label={t("graph.inspector")}>
         <header><h2>{t("graph.inspector")}</h2>{selection ? <Button type="text" size="small" aria-label={t("graph.close")} icon={<X size={15} />} onClick={closeDetails} /> : null}</header>
         {!selection ? <div className="owb-rgraph__inspect-empty"><FileSearch size={30} aria-hidden="true" /><h3>{copy.verifyEvidence}</h3><p>{copy.evidenceStep}</p><p>{copy.scopeHelp}</p></div> : !selectedNode && !selectedEdge ? <p role="status">{t("graph.deletedSelection")}</p> : <>
           {!selectedVisible ? <p className="owb-rgraph__bounded">{t("graph.filteredSelection")}</p> : null}
