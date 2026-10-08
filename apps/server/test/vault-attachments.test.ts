@@ -9,6 +9,7 @@ import test from "node:test";
 import type { OpenWorkspace } from "../src/workspace-state.js";
 import type { ServiceConnection } from "../src/services/connections.js";
 import { attachMemAsset, prepareVaultAttachments, hydrateVaultAttachments, referencedVaultAssetPaths, normalizeVaultAssetReferences } from "../src/vault/attachments.js";
+import { readVaultFile } from "../src/vault/file-read.js";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=", "base64");
 const FILE = "00000000-0000-4000-8000-000000000011";
@@ -316,7 +317,9 @@ test("NFC aliases for the same physical image upload once and preserve original 
     assert.equal(assets.length, 2);
     for (const asset of assets) { assert.equal(asset.path, canonical); assert.equal(asset.sha256, hash(PNG)); }
     assert.equal(value.uploads, 1, "equivalent references reuse one captured original");
-    assert.deepEqual(await fs.readFile(first), PNG); assert.deepEqual(await fs.readFile(second), PNG);
+    const originalBytes = (file: string) => readVaultFile(workspace.dir, file, PNG.length,
+      { unsafe: () => new Error("unsafe image fixture"), changed: () => new Error("changed image fixture"), limit: () => new Error("oversized image fixture") });
+    assert.deepEqual(await originalBytes(first), PNG); assert.deepEqual(await originalBytes(second), PNG);
     assert.deepEqual(await fs.readFile(path.join(workspace.dir, "notes", canonical)), PNG);
   } finally { await upstream.close(); await cleanup(workspace); }
 });
