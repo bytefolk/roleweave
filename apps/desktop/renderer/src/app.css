@@ -9023,16 +9023,9 @@ body,
 
 .owb-org-module[hidden] { display: none; }
 
-/* The overview tab renders RelationshipGraph directly under `.owb-main` (its
-   wrapper uses `display: contents`, see App.tsx), so `section.owb-rgraph` is
-   the flex item that has to own the page scroll. These selectors used to name
-   `.owb-org-chart--overview`, a class the relationship-graph refactor stopped
-   emitting: the section was left unsized, `.owb-main`'s `overflow: hidden`
-   clipped everything below the fold, and no scroll surface existed anywhere on
-   the page — the wheel only ever reached the canvas.
-   `scrollbar-gutter: stable` keeps the inline size (and therefore the
-   container query that swaps the inspector to an overlay) from flipping when
-   the scrollbar appears. */
+/* RelationshipGraph fills the space below the organization tabs. Its search,
+   canvas and evidence columns own their scroll, keeping the canvas visible
+   while an operator reads a long result list or opens evidence. */
 .owb-main > .owb-rgraph {
   flex: 1;
   min-height: 0;
@@ -9040,17 +9033,13 @@ body,
   width: 100%;
   box-sizing: border-box;
   overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  overflow-y: hidden;
   overscroll-behavior: contain;
 }
 
-/* The canvas column keeps its intrinsic height. It is `overflow: hidden`, so
-   its automatic minimum size is 0: an ordinary flex item would be squashed
-   into whatever height is left over (with the canvas silently clipped) instead
-   of overflowing the section and producing the scrollbar above. */
 .owb-main > .owb-rgraph > .owb-rgraph__workspace {
-  flex: none;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Credential values stay in native password controls, outside React state. */

@@ -4,8 +4,10 @@ import type {
   BufferGeometry,
   Group,
   Line,
+  LineDashedMaterial,
   Material,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
@@ -17,6 +19,7 @@ import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js
 import type { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import type { RelationshipEdge, RelationshipNode, RelationshipNodeKind } from "@roleweave/shared/relationship-graph";
 import { useT } from "@roleweave/ui";
+import { isSpatialLabelClick, layoutScreenLabels, spatialLabelPriority, validSpatialFocus, type ScreenLabelCandidate, type ScreenRectangle } from "./spatial-label-layout";
 
 export type RelationshipSpatialMode = "minimal" | "galaxy";
 export type RelationshipSpatialLayout = "topology" | "orbit";
@@ -181,14 +184,18 @@ interface NodeView {
   material: MeshStandardMaterial;
   shellMaterial: MeshStandardMaterial;
   label: HTMLButtonElement;
+  labelObject: CSS2DObject;
+  kind: RelationshipNodeKind;
+  lastLabelPriority: number;
   size: number;
 }
 
 interface EdgeView {
+  relationship: RelationshipEdge;
   line: Line;
   geometry: BufferGeometry;
-  material: Material;
-  arrowMaterial: Material;
+  material: LineDashedMaterial;
+  arrowMaterial: MeshBasicMaterial;
 }
 
 interface SceneState {
@@ -205,6 +212,11 @@ interface SceneState {
   raycaster: Raycaster;
   views: Map<string, NodeView>;
   edges: EdgeView[];
+  hoveredId?: string;
+  hoveredLabelId?: string;
+  hoveredLabelPriority?: number;
+  focusedId?: string;
+  labelObserver?: ResizeObserver;
   frame: number | null;
   disposed: boolean;
   requestRender: () => void;
@@ -219,6 +231,7 @@ function disposeObject(object: Object3D) {
 
 function clearWorld(state: SceneState) {
   for (const view of state.views.values()) {
+    state.labelObserver?.unobserve(view.label);
     view.label.remove();
     view.material.dispose();
     view.shellMaterial.dispose();
@@ -231,6 +244,70 @@ function clearWorld(state: SceneState) {
   state.views.clear();
   state.edges = [];
   state.world.clear();
+  state.hoveredId = undefined;
+  state.hoveredLabelId = undefined;
+  state.hoveredLabelPriority = undefined;
+}
+
+function updateSpatialLabels(state: SceneState, selectedId?: string) {
+  const host = state.renderer.domElement.parentElement;
+  if (!host) return;
+  const bounds = host.getBoundingClientRect();
+  const width = host.clientWidth, height = host.clientHeight;
+  if (width <= 0 || height <= 0) return;
+  const neighbors = new Set<string>();
+  for (const { relationship } of state.edges) {
+    if (relationship.id === selectedId) { neighbors.add(relationship.source); neighbors.add(relationship.target); }
+    else if (relationship.source === selectedId) neighbors.add(relationship.target);
+    else if (relationship.target === selectedId) neighbors.add(relationship.source);
+  }
+  const reserved: ScreenRectangle[] = [];
+  const chrome = [host.parentElement?.querySelector(".owb-rgraph__spatial-controls"), host.parentElement?.querySelector(".owb-rgraph__object-navigation"), host.closest(".owb-rgraph__workspace")?.querySelector(".owb-rgraph__inspector")];
+  for (const element of chrome) {
+    const rect = element?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+    const clipped = { left: Math.max(0, rect.left - bounds.left), top: Math.max(0, rect.top - bounds.top), right: Math.min(width, rect.right - bounds.left), bottom: Math.min(height, rect.bottom - bounds.top) };
+    if (clipped.right > clipped.left && clipped.bottom > clipped.top) reserved.push(clipped);
+  }
+  const candidates: ScreenLabelCandidate[] = [];
+  const point = new state.THREE.Vector3();
+  for (const [id, view] of state.views) {
+    const selected = id === selectedId;
+    const hovered = id === state.hoveredId;
+    const focused = id === state.focusedId;
+    const neighbor = neighbors.has(id);
+    view.label.classList.toggle("is-selected", selected);
+    view.label.classList.toggle("is-neighbor", neighbor);
+    view.label.classList.toggle("is-hovered", id === state.hoveredLabelId || (!state.hoveredLabelId && hovered) || focused);
+    const priority = spatialLabelPriority({ selected, meshHovered: hovered, focused, neighbor, primary: view.kind === "workspace" || view.kind === "agent" || view.kind === "source", labelHoverPriority: id === state.hoveredLabelId ? state.hoveredLabelPriority : undefined });
+    view.lastLabelPriority = priority;
+    view.labelObject.getWorldPosition(point).project(state.camera);
+    if (priority === 0 || ![point.x, point.y, point.z].every(Number.isFinite) || Math.abs(point.x) > 1 || Math.abs(point.y) > 1 || point.z < -1 || point.z > 1) continue;
+    candidates.push({ id, x: (point.x + 1) * width / 2, y: (1 - point.y) * height / 2, width: view.label.offsetWidth || 140, height: view.label.offsetHeight || 26, priority, required: selected });
+  }
+  const placed = layoutScreenLabels(candidates, { width, height }, reserved);
+  for (const [id, view] of state.views) {
+    const placement = placed.get(id);
+    view.label.dataset.labelVisible = String(!!placement);
+    view.label.style.visibility = placement ? "visible" : "hidden";
+    view.label.style.opacity = placement ? "1" : "0";
+    view.label.style.pointerEvents = placement ? "auto" : "none";
+    view.label.style.translate = placement ? `${placement.offsetX}px ${placement.offsetY}px` : "0px 0px";
+  }
+}
+
+function updateSpatialEdges(state: SceneState, mode: RelationshipSpatialMode, theme: RelationshipSpatialTheme, selectedId?: string) {
+  const focus = validSpatialFocus([selectedId, state.hoveredLabelId, state.hoveredId, state.focusedId], new Set(state.views.keys()), new Set(state.edges.map((view) => view.relationship.id)));
+  const light = mode === "minimal" && theme === "light";
+  for (const view of state.edges) {
+    const edge = view.relationship;
+    const related = !!focus && (edge.id === focus || edge.source === focus || edge.target === focus);
+    const declared = edge.evidence.basis === "declared";
+    view.material.color.setHex(related ? light ? 0x315f9a : 0xb9d4f2 : light ? 0x77818f : 0x71839b);
+    view.material.opacity = related ? declared ? 0.78 : 0.96 : focus ? declared ? 0.05 : 0.08 : declared ? 0.19 : 0.32;
+    view.arrowMaterial.color.copy(view.material.color);
+    view.arrowMaterial.opacity = related ? 0.94 : focus ? 0.06 : 0.28;
+  }
 }
 
 function resetCamera(state: SceneState, mode: RelationshipSpatialMode) {
@@ -257,8 +334,10 @@ export function RelationshipSpatialScene({
   const t = useT();
   const stage = useRef<HTMLDivElement>(null);
   const scene = useRef<SceneState | null>(null);
-  const latest = useRef({ onSelect, visible });
-  latest.current = { onSelect, visible };
+  const latest = useRef({ onSelect, visible, selectedId, mode, theme });
+  latest.current = { onSelect, visible, selectedId, mode, theme };
+  const setHovered = useCallback((id?: string) => { const state = scene.current; if (state && state.hoveredId !== id) { state.hoveredId = id; state.requestRender(); } }, []);
+  const setFocused = useCallback((id?: string) => { const state = scene.current; if (state && state.focusedId !== id) { state.focusedId = id; state.requestRender(); } }, []);
   const [ready, setReady] = useState(0);
   const [webglFailed, setWebglFailed] = useState(false);
   const objects = useRef<HTMLUListElement>(null);
@@ -356,8 +435,10 @@ export function RelationshipSpatialScene({
           state.frame = null;
           if (state.disposed || !latest.current.visible) return;
           const moving = state.controls.update();
+          updateSpatialEdges(state, latest.current.mode, latest.current.theme, latest.current.selectedId);
           state.renderer.render(state.scene, state.camera);
           state.labelRenderer.render(state.scene, state.camera);
+          updateSpatialLabels(state, latest.current.selectedId);
           if (moving) state.requestRender();
         };
         state.requestRender = () => {
@@ -365,26 +446,40 @@ export function RelationshipSpatialScene({
           state.frame = requestAnimationFrame(renderFrame);
         };
         const requestRender = () => state.requestRender();
+        state.labelObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(requestRender);
+        document.fonts?.addEventListener("loadingdone", requestRender);
         controls.addEventListener("change", requestRender);
         let pointerStart: { x: number; y: number } | null = null;
-        const pick = (event: PointerEvent) => {
+        const hitId = (event: PointerEvent) => {
           const rect = renderer.domElement.getBoundingClientRect();
-          if (!rect.width || !rect.height) return;
+          if (!rect.width || !rect.height) return undefined;
           state.raycaster.setFromCamera(
             new THREE.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1),
             camera,
           );
           const hit = state.raycaster.intersectObjects([...state.views.values()].map(view => view.mesh), false)[0];
           const id = hit?.object.userData.relationshipId;
-          if (typeof id === "string") latest.current.onSelect(id);
+          return typeof id === "string" ? id : undefined;
         };
         const onPointerDown = (event: PointerEvent) => { pointerStart = { x: event.clientX, y: event.clientY }; };
         const onPointerUp = (event: PointerEvent) => {
-          if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) <= 4) pick(event);
+          if (pointerStart && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) <= 4) { const id = hitId(event); if (id) latest.current.onSelect(id); }
           pointerStart = null;
+        };
+        const onPointerMove = (event: PointerEvent) => {
+          if (pointerStart) { if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4) setHovered(undefined); return; }
+          setHovered(hitId(event));
+        };
+        const onPointerLeave = (event: PointerEvent) => {
+          // Crossing into a currently visible label preserves the layout tiers
+          // that put that label under the pointer; only its emphasis changes.
+          if (event.relatedTarget instanceof Node && state.labelRenderer.domElement.contains(event.relatedTarget)) return;
+          setHovered(undefined);
         };
         renderer.domElement.addEventListener("pointerdown", onPointerDown);
         renderer.domElement.addEventListener("pointerup", onPointerUp);
+        renderer.domElement.addEventListener("pointermove", onPointerMove);
+        renderer.domElement.addEventListener("pointerleave", onPointerLeave);
         const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => {
           const nextWidth = host.clientWidth;
           const nextHeight = host.clientHeight;
@@ -405,8 +500,12 @@ export function RelationshipSpatialScene({
           if (state.frame !== null) cancelAnimationFrame(state.frame);
           observer?.disconnect();
           controls.removeEventListener("change", requestRender);
+          state.labelObserver?.disconnect();
+          document.fonts?.removeEventListener("loadingdone", requestRender);
           renderer.domElement.removeEventListener("pointerdown", onPointerDown);
           renderer.domElement.removeEventListener("pointerup", onPointerUp);
+          renderer.domElement.removeEventListener("pointermove", onPointerMove);
+          renderer.domElement.removeEventListener("pointerleave", onPointerLeave);
           renderer.domElement.removeEventListener("wheel", onWheel, true);
           controls.dispose();
           clearWorld(state);
@@ -463,6 +562,7 @@ export function RelationshipSpatialScene({
       const material = new state.THREE.LineDashedMaterial({
         color: mode === "galaxy" ? 0x7b91ad : minimalLight ? 0x52525b : 0xa1a1aa,
         transparent: true,
+        depthWrite: false,
         opacity: edge.evidence.basis === "declared" ? 0.48 : 0.78,
         dashSize: edge.evidence.basis === "declared" ? 0.8 : 1000,
         gapSize: edge.evidence.basis === "declared" ? 0.55 : 0,
@@ -475,7 +575,7 @@ export function RelationshipSpatialScene({
       arrow.position.set(target.x, target.y, target.z).addScaledVector(direction, -(target.size + 0.7));
       arrow.quaternion.setFromUnitVectors(new state.THREE.Vector3(0, 1, 0), direction);
       state.world.add(line, arrow);
-      state.edges.push({ line, geometry, material, arrowMaterial });
+      state.edges.push({ relationship: edge, line, geometry, material, arrowMaterial });
     }
     const colors = mode === "galaxy" ? galaxyColors : minimalLight ? minimalLightColors : minimalDarkColors;
     for (const node of nodes) {
@@ -504,12 +604,30 @@ export function RelationshipSpatialScene({
       label.setAttribute("aria-hidden", "true");
       label.className = `owb-rgraph__spatial-label owb-rgraph__spatial-label--${mode}`;
       label.textContent = node.label;
-      label.addEventListener("click", () => latest.current.onSelect(node.id));
+      let labelPointerStart: { x: number; y: number } | null = null;
+      let labelPointerCancelled = false;
+      label.addEventListener("pointerdown", (event) => { labelPointerStart = { x: event.clientX, y: event.clientY }; labelPointerCancelled = false; });
+      label.addEventListener("pointercancel", () => { labelPointerCancelled = true; });
+      label.addEventListener("click", (event) => {
+        if ((event.detail === 0 || !labelPointerCancelled) && isSpatialLabelClick(event.detail, labelPointerStart, { x: event.clientX, y: event.clientY })) latest.current.onSelect(node.id);
+        labelPointerStart = null; labelPointerCancelled = false;
+      });
+      label.addEventListener("pointerenter", () => {
+        const view = state.views.get(node.id);
+        if (!view) return;
+        state.hoveredLabelId = node.id; state.hoveredLabelPriority = view.lastLabelPriority; state.requestRender();
+      });
+      label.addEventListener("pointerleave", () => {
+        if (state.hoveredLabelId === node.id) { state.hoveredLabelId = undefined; state.hoveredLabelPriority = undefined; }
+        setHovered(undefined); state.requestRender();
+      });
       const labelObject = new state.CSS2DObject(label);
-      labelObject.position.set(0, point.size + 0.8, 0);
+      // The label offset is in local coordinates; mesh scale already carries size.
+      labelObject.position.set(0, (point.size + 0.8) / point.size, 0);
       mesh.add(labelObject);
       state.world.add(mesh);
-      state.views.set(node.id, { mesh, shell, material, shellMaterial, label, size: point.size });
+      state.views.set(node.id, { mesh, shell, material, shellMaterial, label, labelObject, kind: node.kind, lastLabelPriority: 0, size: point.size });
+      state.labelObserver?.observe(label);
     }
     state.requestRender();
     return () => clearWorld(state);
@@ -526,7 +644,7 @@ export function RelationshipSpatialScene({
       view.label.classList.toggle("is-selected", selected);
     }
     state.requestRender();
-  }, [mode, selectedId, ready]);
+  }, [edges, mode, nodes, points, ready, selectedId, showKnowledgeRelationships, theme]);
 
   useEffect(() => {
     if (!visible) return;
@@ -570,7 +688,7 @@ export function RelationshipSpatialScene({
     <div className="owb-rgraph__object-navigation">
       <button type="button" className="owb-rgraph__object-page" aria-label={t("graph.objectsPrevious")} disabled={!objectScroll.previous} onClick={() => pageObjects(-1)}><ChevronLeft size={16} aria-hidden="true" /></button>
       <ul ref={objects} className="owb-rgraph__spatial-objects" aria-label={objectsLabel}>
-        {nodes.map(node => <li key={node.id}><button type="button" aria-label={`${t(`graph.kind.${node.kind}`)} · ${node.label}`} aria-pressed={selectedId === node.id} onClick={() => onSelect(node.id)}><span>{t(`graph.kind.${node.kind}`)}</span><strong>{node.label}</strong></button></li>)}
+        {nodes.map(node => <li key={node.id}><button type="button" aria-label={`${t(`graph.kind.${node.kind}`)} · ${node.label}`} aria-pressed={selectedId === node.id} onClick={() => onSelect(node.id)} onMouseEnter={() => setHovered(node.id)} onMouseLeave={() => setHovered(undefined)} onFocus={() => setFocused(node.id)} onBlur={() => setFocused(undefined)}><span>{t(`graph.kind.${node.kind}`)}</span><strong>{node.label}</strong></button></li>)}
       </ul>
       <button type="button" className="owb-rgraph__object-page" aria-label={t("graph.objectsNext")} disabled={!objectScroll.next} onClick={() => pageObjects(1)}><ChevronRight size={16} aria-hidden="true" /></button>
     </div>
