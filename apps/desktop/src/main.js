@@ -110,6 +110,7 @@ const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker,
 const { runtimeDescription, workspaceDialogOptions } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
+const { registerVaultIpc } = require("./vault-ipc.cjs");
 const { createCredentialStore, registerSettingsIpc, forwardCredentialSafeStderr } = require("./credential-settings.cjs");
 const { createConfigurationStore } = require("./configuration.cjs");
 const { registerConfigurationIpc, registerExternalUrlIpc } = require("./configuration-ipc.cjs");
@@ -910,6 +911,8 @@ ipcMain.handle("owb:drive:list", async (_event, query) => {
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
+
+registerVaultIpc({ ipcMain, getMainWindow: () => mainWindow, getTrustedRendererUrl: () => trustedRendererUrl, apiRequest });
 
 ipcMain.handle("owb:drive:detail", async (_event, id) => {
   const validated = validateDriveDetailRequest(id);

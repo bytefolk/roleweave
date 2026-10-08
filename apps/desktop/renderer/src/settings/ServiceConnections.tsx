@@ -176,7 +176,7 @@ export function ServiceConnections({ kind, operationsOnly = false, actionsDisabl
   if (renderConnection) return <>
     {error ? <Alert showIcon type="error" title={t(error)} /> : null}
     <div className="owb-config-services-grid">
-      {(["doc", "mem"] as const).map(serviceKind => <Fragment key={serviceKind}>
+      {(["mem"] as const).map(serviceKind => <Fragment key={serviceKind}>
         {renderConnection(serviceKind, window.owb.services ? <>
           {connections === null && !error ? <Spin size="small" /> : null}
           <ConnectionForm operationsOnly actionsDisabled={actionsDisabled || connections === null}
@@ -192,7 +192,7 @@ export function ServiceConnections({ kind, operationsOnly = false, actionsDisabl
     <header className="owb-settings-module__pane-header"><h2>{t("services.title")}</h2></header>
     <p className="owb-settings-module__hint">{t("services.description")}</p>
     {error ? <Alert showIcon type="error" title={t(error)} /> : connections === null ? <Spin /> :
-      (kind ? [kind] : ["doc", "mem"] as const).map((serviceKind) =>
+      (kind ? [kind] : ["mem"] as const).map((serviceKind) =>
         <ConnectionForm key={serviceKind} operationsOnly={operationsOnly} connection={connections.find((view) => view.kind === serviceKind) ?? emptyConnection(serviceKind)}
           onChange={(view) => setConnections((current) => [...(current ?? []).filter((entry) => entry.kind !== view.kind), view])} />)}
   </section>;

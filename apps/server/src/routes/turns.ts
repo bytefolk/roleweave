@@ -28,6 +28,8 @@ import { readAttachmentMetas, attachmentFilePath } from "../attachments/store.js
 import { assertAttachmentBatch, assertAttachmentId } from "../attachments/validate.js";
 import type { TurnAttachment } from "@roleweave/shared";
 import { ATTACHMENT_MAX_COUNT } from "@roleweave/shared";
+import { assembleVaultContext } from "../vault/context.js";
+import { recordVaultUsage } from "../vault/receipts.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -383,6 +385,8 @@ export async function executeTurn(
       assertAttachmentBatch(resolvedAttachments);
       augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, body.input);
     }
+    const vaultContext = await assembleVaultContext(workspace, body.positionId, augmentedInput);
+    augmentedInput = vaultContext.input;
     const context = materializeThreadContext({
       input: augmentedInput,
       enabled: group !== undefined || (session !== undefined && session.threadContextEnabled !== false),
@@ -430,6 +434,7 @@ export async function executeTurn(
     const running = session === undefined
       ? await ctx.turnStore.begin(beginInput)
       : await ctx.turnStore.beginSession({ ...beginInput, sessionId: session.sessionId });
+    await recordVaultUsage(workspace, body.positionId, turnId, vaultContext.notes).catch(() => {});
     tracker.reportStepFinish(turnId, 1);
     tracker.reportStepStart(turnId, 2);
 

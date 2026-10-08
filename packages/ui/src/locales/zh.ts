@@ -3,7 +3,9 @@
  * 档案、tree.* 组织树、grp.* 群聊、docs.* 文档、rep.* 上报、apr.* 审批、
  * dlg.* 弹窗、hire.* 招聘、win.* 窗口控制、org.* 组织变更反馈、misc.* 其他。
  * 插值用 {var}。 */
+import { zhVaultCatalog } from "./vault";
 export const zhCatalog: Record<string, string> = {
+  ...zhVaultCatalog,
   "project.legacyResult": "旧版执行结果",
   "project.legacyResultReadOnly": "该执行没有真实会话关联，仅可查看。请重新执行任务，再验收新会话中的交付结果。",
   "project.acceptance.title": "验收交付：{title}",

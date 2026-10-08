@@ -20,6 +20,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/wsl-bootstrap.cjs",
   "src/docs-ipc.cjs",
   "src/drive-ipc.cjs",
+  "src/vault-ipc.cjs",
   "src/experiments-ipc.cjs",
   "src/goal-ipc.cjs",
   "src/group-ipc.cjs",
