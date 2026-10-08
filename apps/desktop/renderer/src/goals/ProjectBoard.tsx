@@ -414,7 +414,11 @@ export function ProjectBoard({
           <CalendarDays size={13} aria-hidden="true" />
           {item.startDate || item.dueDate ? (
             <span>
-              {item.startDate ?? "…"} → {item.dueDate ?? "…"}
+              {item.startDate && item.dueDate
+                ? `${item.startDate} → ${item.dueDate}`
+                : item.startDate
+                  ? t("project.startOnly", { date: item.startDate })
+                  : t("project.dueOnly", { date: item.dueDate! })}
             </span>
           ) : (
             t("project.unscheduled")
@@ -498,13 +502,13 @@ export function ProjectBoard({
       <div className="owb-project-summary">
         <div className="owb-project-summary__progress">
           <strong>
-            {t("project.completion", { done, total: items.length })}
+            {items.length ? t("project.completion", { done, total: items.length }) : t("project.noTasks")}
           </strong>
-          <progress
+          {items.length > 0 && <progress
             aria-label={t("project.progress")}
             value={done}
             max={Math.max(items.length, 1)}
-          />
+          />}
           <span>{t("project.manualProgress")}</span>
         </div>
         <button
@@ -542,78 +546,82 @@ export function ProjectBoard({
         </button>
       </div>
       <div className="owb-project-toolbar">
-        <div
-          className="owb-project-view-switch"
-          role="group"
-          aria-label={t("project.views")}
-        >
-          <Button
-            type={view === "board" ? "primary" : "default"}
-            aria-pressed={view === "board"}
-            icon={<Columns3 size={14} aria-hidden="true" />}
-            onClick={() => setView("board")}
+        <div className="owb-project-toolbar__primary">
+          <div
+            className="owb-project-view-switch"
+            role="group"
+            aria-label={t("project.views")}
           >
-            {t("project.board")}
-          </Button>
+            <Button
+              type={view === "board" ? "primary" : "default"}
+              aria-pressed={view === "board"}
+              icon={<Columns3 size={14} aria-hidden="true" />}
+              onClick={() => setView("board")}
+            >
+              {t("project.board")}
+            </Button>
+            <Button
+              type={view === "schedule" ? "primary" : "default"}
+              aria-pressed={view === "schedule"}
+              icon={<CalendarDays size={14} aria-hidden="true" />}
+              onClick={() => setView("schedule")}
+            >
+              {t("project.schedule")}
+            </Button>
+          </div>
           <Button
-            type={view === "schedule" ? "primary" : "default"}
-            aria-pressed={view === "schedule"}
-            icon={<CalendarDays size={14} aria-hidden="true" />}
-            onClick={() => setView("schedule")}
+            type="primary"
+            icon={<Plus size={14} aria-hidden="true" />}
+            disabled={busy || items.length >= MAX_ITEMS}
+            title={items.length >= MAX_ITEMS ? t("project.maxItemsReached") : undefined}
+            onClick={() => edit()}
           >
-            {t("project.schedule")}
+            {t("project.create")}
           </Button>
         </div>
-        <Input
-          className="owb-project-search"
-          prefix={<Search size={14} aria-hidden="true" />}
-          aria-label={t("project.search")}
-          placeholder={t("project.search")}
-          value={query}
-          allowClear
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <Select<string>
-          className="owb-project-select owb-project-owner-filter"
-          aria-label={t("project.filterOwner")}
-          value={owner}
-          options={[
-            { value: "all", label: t("project.allOwners") },
-            { value: "unassigned", label: t("project.unassigned") },
-            ...ownerIds.map((id) => ({ value: `position:${id}`, label: own(positionNames, id) ?? id })),
-          ]}
-          onChange={setOwner}
-        />
-        <Select<string>
-          className="owb-project-select owb-project-status-filter"
-          aria-label={t("project.filterStatus")}
-          value={statusFilter}
-          options={[
-            { value: "all", label: t("project.allStatuses") },
-            ...STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) })),
-            { value: "overdue", label: t("project.overdue") },
-          ]}
-          onChange={setStatusFilter}
-        />
-        <Select<string>
-          className="owb-project-select owb-project-priority-filter"
-          aria-label={t("project.filterPriority")}
-          value={priorityFilter}
-          options={[
-            { value: "all", label: t("project.allPriorities") },
-            ...PRIORITIES.map((priority) => ({ value: priority, label: t(`project.priority.${priority}`) })),
-          ]}
-          onChange={setPriorityFilter}
-        />
-        <Button
-          type="primary"
-          icon={<Plus size={14} aria-hidden="true" />}
-          disabled={busy || items.length >= MAX_ITEMS}
-          title={items.length >= MAX_ITEMS ? t("project.maxItemsReached") : undefined}
-          onClick={() => edit()}
-        >
-          {t("project.create")}
-        </Button>
+        <div className="owb-project-filters">
+          <Input
+            className="owb-project-search"
+            prefix={<Search size={14} aria-hidden="true" />}
+            aria-label={t("project.search")}
+            placeholder={t("project.search")}
+            value={query}
+            allowClear
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <Select<string>
+            className="owb-project-select owb-project-owner-filter"
+            aria-label={t("project.filterOwner")}
+            value={owner}
+            options={[
+              { value: "all", label: t("project.allOwners") },
+              { value: "unassigned", label: t("project.unassigned") },
+              ...ownerIds.map((id) => ({ value: `position:${id}`, label: own(positionNames, id) ?? id })),
+            ]}
+            onChange={setOwner}
+          />
+          <Select<string>
+            className="owb-project-select owb-project-status-filter"
+            aria-label={t("project.filterStatus")}
+            value={statusFilter}
+            options={[
+              { value: "all", label: t("project.allStatuses") },
+              ...STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) })),
+              { value: "overdue", label: t("project.overdue") },
+            ]}
+            onChange={setStatusFilter}
+          />
+          <Select<string>
+            className="owb-project-select owb-project-priority-filter"
+            aria-label={t("project.filterPriority")}
+            value={priorityFilter}
+            options={[
+              { value: "all", label: t("project.allPriorities") },
+              ...PRIORITIES.map((priority) => ({ value: priority, label: t(`project.priority.${priority}`) })),
+            ]}
+            onChange={setPriorityFilter}
+          />
+        </div>
         {items.length >= MAX_ITEMS && (
           <span className="owb-project-limit-notice" role="status">
             {t("project.maxItemsReached")}
@@ -636,8 +644,14 @@ export function ProjectBoard({
       <p className="owb-project-caption">{t("project.executionNote")}</p>
       {items.length === 0 && (
         <div className="owb-project-empty">
+          <Columns3 size={30} aria-hidden="true" />
           <strong>{t("project.empty")}</strong>
           <p>{t("project.emptyHint")}</p>
+          <ol className="owb-project-empty__steps">
+            <li>{t("project.emptyStep.plan")}</li>
+            <li>{t("project.emptyStep.assign")}</li>
+            <li>{t("project.emptyStep.deliver")}</li>
+          </ol>
         </div>
       )}
       {items.length > 0 && filtered.length === 0 && (
@@ -655,7 +669,7 @@ export function ProjectBoard({
           </Button>
         </div>
       )}
-      {view === "board" ? (
+      {items.length > 0 && filtered.length > 0 && (view === "board" ? (
         <div className="owb-project-columns">
           {STATUSES.map((status) => (
             <section
@@ -673,6 +687,7 @@ export function ProjectBoard({
               </header>
               <div className="owb-project-column__cards">
                 {filtered.filter((item) => item.status === status).map(card)}
+                {!filtered.some((item) => item.status === status) && <p className="owb-project-column__empty">{t("project.emptyColumn")}</p>}
               </div>
             </section>
           ))}
@@ -812,7 +827,7 @@ export function ProjectBoard({
             <div>{unscheduled.map(card)}</div>
           </div>
         </div>
-      )}
+      ))}
       <Drawer
         title={editor?.isNew ? t("project.create") : t("project.edit")}
         open={!!editor}
