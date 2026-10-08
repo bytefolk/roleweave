@@ -5,6 +5,7 @@ import { OrgApiError, errorCodes, isPositionId } from "@roleweave/shared";
 import type { VaultUsageNote, VaultUsageResponse } from "@roleweave/shared";
 import type { OpenWorkspace } from "../workspace-state.js";
 import { validateVaultPath } from "./store.js";
+import { readVaultFile } from "./file-read.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA = /^sha256:[0-9a-f]{64}$/;
@@ -36,18 +37,11 @@ async function receiptRoot(workspace: OpenWorkspace, create: boolean) {
   }
   return current;
 }
-async function read(file: string): Promise<Receipt> {
-  const before = await fs.lstat(file); if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_BYTES) throw failed();
-  const handle = await fs.open(file, "r");
-  try {
-    const opened = await handle.stat(); if (opened.ino !== before.ino || opened.dev !== before.dev || !opened.isFile()) throw failed();
-    const bytes = Buffer.allocUnsafe(before.size + 1); let length = 0;
-    while (length < bytes.length) { const chunk = await handle.read(bytes, length, bytes.length - length, length); if (!chunk.bytesRead) break; length += chunk.bytesRead; }
-    const after = await fs.lstat(file); if (after.isSymbolicLink() || after.ino !== before.ino || after.dev !== before.dev || after.size !== length || before.size !== length || before.mtimeMs !== after.mtimeMs) throw failed();
-    let value: Receipt; try { value = JSON.parse(bytes.subarray(0, length).toString("utf8")); } catch { throw failed(); }
-    if (value.schemaVersion !== "vault-usage.v1" || !isPositionId(value.positionId) || !UUID.test(value.turnId) || !Number.isFinite(Date.parse(value.capturedAt)) || !validNotes(value.notes)) throw failed();
-    return value;
-  } finally { await handle.close(); }
+async function read(root: string, file: string): Promise<Receipt> {
+  const bytes = await readVaultFile(root, file, MAX_BYTES, { unsafe: failed, changed: failed, limit: failed });
+  let value: Receipt; try { value = JSON.parse(bytes.toString("utf8")); } catch { throw failed(); }
+  if (value.schemaVersion !== "vault-usage.v1" || !isPositionId(value.positionId) || !UUID.test(value.turnId) || !Number.isFinite(Date.parse(value.capturedAt)) || !validNotes(value.notes)) throw failed();
+  return value;
 }
 
 /** Receipt evidence lives alongside turns; the frozen TurnRecord stays intact. */
@@ -60,14 +54,14 @@ export async function recordVaultUsage(workspace: OpenWorkspace, positionId: str
     await fs.writeFile(temp, JSON.stringify(value), { flag: "wx", mode: 0o600 });
     try { await fs.link(temp, file); } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw failed();
-      const existing = await read(file); if (existing.positionId !== positionId || existing.turnId !== turnId || JSON.stringify(existing.notes) !== JSON.stringify(notes)) throw failed();
+      const existing = await read(workspace.dir, file); if (existing.positionId !== positionId || existing.turnId !== turnId || JSON.stringify(existing.notes) !== JSON.stringify(notes)) throw failed();
     }
   } finally { await fs.unlink(temp).catch(() => {}); }
 }
 export async function readVaultUsage(workspace: OpenWorkspace, positionId: string, turnId: string): Promise<VaultUsageResponse> {
   identity(positionId, turnId);
   let value: Receipt;
-  try { value = await read(path.join(await receiptRoot(workspace, false), turnId + ".json")); }
+  try { value = await read(workspace.dir, path.join(await receiptRoot(workspace, false), turnId + ".json")); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") throw missing(); throw error; }
   // This identity was captured only after begin persisted this position's turn.
   // Session turns do not have a duplicate position-history record to query.

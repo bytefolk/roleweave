@@ -95,8 +95,8 @@ test("archived apply journal recovers its post-image but retains later external 
     const indexFile = path.join(f.dir, ".roleweave/vault/index.json"); const oldIndex = JSON.parse(await fs.readFile(indexFile, "utf8"));
     const relative = ".roleweave/vault/archive/" + created.note.noteId + ".md"; const archive = path.join(f.dir, relative); const journal = path.join(f.dir, ".roleweave/vault/apply-journal.json");
     await fs.writeFile(archive, "partial remote apply"); await fs.writeFile(journal, JSON.stringify({ phase: "writing", index: oldIndex, files: [{ path: relative, content: "original archive", afterHash: contentVersion("partial remote apply") }] }));
-    assert.equal((await readVaultNote(f.workspace, created.note.noteId)).content, "original archive"); await assert.rejects(fs.stat(journal), { code: "ENOENT" });
-    await fs.writeFile(archive, "later Obsidian edit"); await fs.writeFile(journal, JSON.stringify({ phase: "writing", index: oldIndex, files: [{ path: relative, content: "original archive", afterHash: contentVersion("partial remote apply") }] }));
+    assert.equal((await readVaultNote(f.workspace, created.note.noteId)).content, "original archive"); assert.equal((await fs.readdir(path.dirname(journal))).includes("apply-journal.json"), false);
+    await fs.writeFile(archive, "later Obsidian edit", { flag: "w" }); await fs.writeFile(journal, JSON.stringify({ phase: "writing", index: oldIndex, files: [{ path: relative, content: "original archive", afterHash: contentVersion("partial remote apply") }] }), { flag: "wx" });
     assert.equal((await readVaultNote(f.workspace, created.note.noteId)).content, "later Obsidian edit");
   } finally { await f.close(); }
 });

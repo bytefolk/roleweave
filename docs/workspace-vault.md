@@ -30,6 +30,13 @@ metadata and immutable turn-use receipts. Local history is limited to 32
 versions per note and 64 MiB per workspace; reads return at most 20 versions
 and 8 MiB. Restore uses the latest content hash and refuses stale writes.
 
+Notebook files, history, usage receipts and sync state are read through one
+bounded file descriptor. POSIX opens reject a final symbolic link in the
+kernel; every platform also verifies regular files, root/parent paths and
+descriptor identity before reading and before returning bytes. Windows has no
+`O_NOFOLLOW` equivalent in Node, so it relies on those path/identity checks.
+File replacement or growth during a read fails without returning partial data.
+
 Existing `knowledge/` files are referenced in place and are initially read-only
 in the notebook. Explicit migration moves one file into `notes/` and preserves
 the old reference alias. Position package configuration, tools and permissions
@@ -48,6 +55,11 @@ client connected to the same authorized Mem service and workspace. Select the
 same named remote Vault on the second client and synchronize to pull its notes.
 Local autosave does not imply a completed remote synchronization. Unsaved
 drafts and in-flight editor writes block synchronization.
+
+Only the configured Mem origin receives notebook requests. Requests use the
+known Vault routes and reconstruct remote identities as canonical UUIDs;
+persisted state cannot add arbitrary URL/query parameters. Redirects fail
+without forwarding the connection credential.
 
 Mem's Vault API provides independent logical note identities, immutable
 revision history, tombstones and whole-Vault compare-and-swap commits. It is

@@ -9,12 +9,20 @@ import { normalizeServiceUrl, resolveServiceConnection, type ServiceConnection }
 import { applyLocalVaultSnapshot, exportLocalVaultSnapshot, validateVaultPath } from './store.js';
 import { entryValue, planVaultSync } from './sync-plan.js';
 import { prepareVaultAttachments, hydrateVaultAttachments, normalizeVaultAssetReferences } from './attachments.js';
+import { readVaultFile } from './file-read.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_WIRE = 40 * 1024 * 1024;
 const active = new Map<string, Promise<VaultSyncReceipt>>();
 interface State { schemaVersion: 'vault-sync-state.v1'; connection: string; remoteVaultId: string; snapshot: VaultRemoteSnapshot; pending?: boolean }
 function failure(code: string, status = 502): never { throw new OrgApiError(code, status, 'Notebook synchronization did not complete; local notes are retained', true); }
+function canonicalVaultId(value: unknown, code: string = errorCodes.vault_request_invalid, status = 400): string {
+  if (typeof value !== 'string' || !UUID.test(value)) failure(code, status);
+  // Decode the identity, then serialize its 16 bytes. Persisted state never
+  // supplies arbitrary URL/query bytes or an opaque object to the request.
+  const hex = Buffer.from(value.replaceAll('-', ''), 'hex').toString('hex');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
 function withoutBindings(entries: readonly VaultSyncEntry[]): VaultSyncEntry[] { return entries.map(entry => { const properties = { ...(entry.properties ?? {}) }; delete properties.positionIds; return { ...entry, properties }; }); }
 async function privateDirectory(workspace: OpenWorkspace): Promise<string> {
   let current = path.resolve(workspace.dir);
@@ -28,11 +36,14 @@ async function privateDirectory(workspace: OpenWorkspace): Promise<string> {
 async function loadState(workspace: OpenWorkspace): Promise<State | null> {
   const file = path.join(await privateDirectory(workspace), 'sync-state.json');
   try {
-    const stat = await fs.lstat(file); if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_WIRE) failure(errorCodes.vault_storage_failed, 500);
-    const value = JSON.parse(await fs.readFile(file, 'utf8')) as State;
-    if (value.schemaVersion !== 'vault-sync-state.v1' || !UUID.test(value.remoteVaultId) || typeof value.connection !== 'string') failure(errorCodes.vault_storage_failed, 500);
+    const failed = () => new OrgApiError(errorCodes.vault_storage_failed, 500, 'Notebook synchronization state could not be verified');
+    const value = JSON.parse((await readVaultFile(workspace.dir, file, MAX_WIRE, {unsafe: failed, changed: failed, limit: failed})).toString('utf8')) as State;
+    if (!value || value.schemaVersion !== 'vault-sync-state.v1' || typeof value.connection !== 'string') failure(errorCodes.vault_storage_failed, 500);
+    const remoteVaultId = canonicalVaultId(value.remoteVaultId, errorCodes.vault_storage_failed, 500);
+    // Keep the previous snapshot's original identity casing for validation;
+    // network requests use only the reconstructed canonical UUID.
     snapshot(value.snapshot, value.remoteVaultId);
-    return value;
+    return { schemaVersion: 'vault-sync-state.v1', connection: value.connection, remoteVaultId, snapshot: value.snapshot, ...(value.pending === true ? {pending: true} : {}) };
   } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
 }
 async function saveState(workspace: OpenWorkspace, state: State): Promise<void> {
@@ -55,6 +66,8 @@ function snapshot(value: unknown, vaultId: string): VaultRemoteSnapshot {
   return result;
 }
 export async function requestVaultRemote(connection: ServiceConnection, endpoint: string, body?: unknown): Promise<{status:number;body:unknown}> {
+  if (endpoint.startsWith('/v1/vault/snapshot?vaultId=')) endpoint = '/v1/vault/snapshot?vaultId=' + canonicalVaultId(endpoint.slice('/v1/vault/snapshot?vaultId='.length));
+  else if (endpoint !== '/v1/vault/list' && endpoint !== '/v1/vault/commit') failure(errorCodes.vault_request_invalid,400);
   const base = normalizeServiceUrl(connection.apiUrl), target = new URL(base + endpoint);
   if (!endpoint.startsWith('/v1/vault/') || target.origin !== new URL(base).origin) failure(errorCodes.vault_request_invalid,400);
   const text = body === undefined ? undefined : JSON.stringify(body);
@@ -86,9 +99,9 @@ export function syncWorkspaceVault(ctx:ControlPlaneContext,request:{vaultId?:str
 }
 async function sync(ctx:ControlPlaneContext,workspace:OpenWorkspace,request:{vaultId?:string}):Promise<VaultSyncReceipt> {
   const connection=resolveServiceConnection(ctx,'mem');if(!connection)failure(errorCodes.drive_not_configured,503);
-  if(request.vaultId!==undefined&&!UUID.test(request.vaultId))failure(errorCodes.vault_request_invalid,400);
+  if(request.vaultId!==undefined)canonicalVaultId(request.vaultId);
   const saved=await loadState(workspace), local=await exportLocalVaultSnapshot(workspace);
-  const vaultId=request.vaultId??saved?.remoteVaultId??local.vaultId;
+  const vaultId=canonicalVaultId(request.vaultId??saved?.remoteVaultId??local.vaultId);
   const fingerprint=crypto.createHash('sha256').update(connection.apiUrl+'\0'+(connection.workspaceId??'')+'\0'+vaultId).digest('hex');
   const base=saved?.connection===fingerprint?withoutBindings(normalizeVaultAssetReferences(saved.snapshot.entries)):[];
   const here=withoutBindings(await prepareVaultAttachments(workspace,local.entries,connection,vaultId));

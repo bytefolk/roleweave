@@ -8,6 +8,7 @@ import type { OpenWorkspace } from "../workspace-state.js";
 import { resolvePositionPackageDir } from "../context-sources.js";
 import { validateRaster } from "../services/drive-preview.js";
 import { history, recordNoteVersion } from "./history.js";
+import { readVaultFile } from "./file-read.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH = /^sha256:[a-f0-9]{64}$/;
@@ -85,18 +86,7 @@ async function regularChain(root: string, file: string): Promise<void> {
   }
 }
 async function readBytes(root: string, file: string, maxBytes: number): Promise<Buffer> {
-  await regularChain(root, file); const before = await fs.lstat(file); if (before.size > maxBytes) throw limit();
-  const handle = await fs.open(file, "r");
-  try {
-    const opened = await handle.stat(); if (opened.ino !== before.ino || opened.dev !== before.dev || !opened.isFile()) throw conflict();
-    const buffer = Buffer.allocUnsafe(Math.min(maxBytes + 1, before.size + 1)); let bytes = 0;
-    while (bytes < buffer.length) { const chunk = await handle.read(buffer, bytes, buffer.length - bytes, bytes); if (!chunk.bytesRead) break; bytes += chunk.bytesRead; }
-    if (bytes > maxBytes) throw limit();
-    const after = await fs.lstat(file); const final = await handle.stat();
-    if (after.size > maxBytes || final.size > maxBytes) throw limit();
-    if (after.isSymbolicLink() || after.ino !== opened.ino || after.dev !== opened.dev || after.size !== bytes || final.size !== bytes || after.mtimeMs !== before.mtimeMs) throw conflict();
-    return Buffer.from(buffer.subarray(0, bytes));
-  } finally { await handle.close(); }
+  return readVaultFile(root, file, maxBytes, { unsafe: forbidden, changed: conflict, limit });
 }
 async function readText(root: string, file: string): Promise<string> { try { return decoder.decode(await readBytes(root, file, VAULT_MAX_NOTE_BYTES)); } catch (error) { if (error instanceof TypeError) throw storage(); throw error; } }
 async function atomicJson(file: string, value: unknown, maxBytes = INDEX_LIMIT): Promise<void> {

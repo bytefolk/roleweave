@@ -7,6 +7,7 @@ import type { ServiceConnection } from "../services/connections.js";
 import { normalizeServiceUrl } from "../services/connections.js";
 import { previewMime, validateRaster } from "../services/drive-preview.js";
 import { validateVaultPath } from "./store.js";
+import { readVaultFile } from "./file-read.js";
 
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_BATCH_BYTES = 128 * 1024 * 1024;
@@ -116,26 +117,9 @@ async function ensureDirectory(root: string, relative: string): Promise<void> {
   }
 }
 async function safeLocalRead(workspace: OpenWorkspace, relative: string, maximum = MAX_FILE_BYTES): Promise<Buffer | null> {
-  const root = path.resolve(workspace.dir); const file = path.join(root, relative); const rel = path.relative(root, file);
-  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) throw unsafe();
-  let current = root; const rootInfo = await fs.lstat(root); if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw unsafe();
-  const pieces = rel.split(path.sep);
-  for (let i = 0; i < pieces.length; i++) {
-    current = path.join(current, pieces[i]!); const info = await stat(current);
-    if (!info) return null;
-    if (info.isSymbolicLink() || (i === pieces.length - 1 ? !info.isFile() : !info.isDirectory())) throw unsafe();
-  }
-  const before = await fs.lstat(file); if (before.size > maximum) throw limit();
-  const handle = await fs.open(file, "r");
-  try {
-    const opened = await handle.stat(); if (!opened.isFile() || before.dev !== opened.dev || before.ino !== opened.ino) throw conflict();
-    const bytes = Buffer.allocUnsafe(before.size + 1); let length = 0;
-    while (length < bytes.length) { const chunk = await handle.read(bytes, length, bytes.length - length, length); if (!chunk.bytesRead) break; length += chunk.bytesRead; }
-    const after = await fs.lstat(file); const final = await handle.stat();
-    if (length !== before.size || after.isSymbolicLink() || after.ino !== before.ino || after.dev !== before.dev ||
-        final.size !== before.size || after.mtimeMs !== before.mtimeMs || final.mtimeMs !== before.mtimeMs) throw conflict();
-    return Buffer.from(bytes.subarray(0, length));
-  } finally { await handle.close(); }
+  const root = path.resolve(workspace.dir);
+  try { return await readVaultFile(root, path.join(root, relative), maximum, { unsafe, changed: conflict, limit }); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
 }
 
 async function loadLedger(workspace: OpenWorkspace): Promise<Ledger> {

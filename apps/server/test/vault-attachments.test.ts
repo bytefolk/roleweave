@@ -29,7 +29,8 @@ async function fixture(state: State) {
     if (req.method === "POST" && route === "/v1/files") {
       const parts: Buffer[] = []; for await (const chunk of req) parts.push(Buffer.from(chunk));
       const body = Buffer.concat(parts); state.uploads++; state.uploadBody = body;
-      const boundary = /boundary=(.+)$/i.exec(req.headers["content-type"] ?? "")?.[1];
+      const boundaryParameter = (req.headers["content-type"] ?? "").split(";").map(part => part.trim()).find(part => part.toLowerCase().startsWith("boundary="));
+      const boundary = boundaryParameter?.slice("boundary=".length);
       assert.ok(boundary);
       const headerEnd = body.indexOf("\r\n\r\n"); const end = body.indexOf("\r\n--" + boundary, headerEnd + 4);
       const data = body.subarray(headerEnd + 4, end); const header = body.subarray(0, headerEnd).toString("utf8");

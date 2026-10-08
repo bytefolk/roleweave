@@ -155,6 +155,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/vault/attachments.js",
   "dist/src/vault/context.js",
   "dist/src/vault/extensions.js",
+  "dist/src/vault/file-read.js",
   "dist/src/vault/from-turn.js",
   "dist/src/vault/history.js",
   "dist/src/vault/receipts.js",

@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { OrgApiError, errorCodes, VAULT_MAX_NOTE_BYTES } from "@roleweave/shared";
 import type { VaultHistoryVersion } from "@roleweave/shared";
 import type { OpenWorkspace } from "../workspace-state.js";
+import { readVaultFile } from "./file-read.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VERSION_FILE = /^[a-f0-9]{64}\.json$/;
@@ -67,12 +68,9 @@ export async function history(workspace: OpenWorkspace, noteId: string): Promise
   let responseBytes = Buffer.byteLength(JSON.stringify({ schemaVersion: "vault-history.v1", noteId, versions: [] }));
   for (const entry of found) {
     if (versions.length >= 20 || responseBytes + entry.bytes + 1 > MAX_RESPONSE) break;
-    const before = await fs.lstat(entry.file); if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_RECORD) throw failure();
     let value: VaultHistoryVersion;
-    try { value = JSON.parse(await fs.readFile(entry.file, "utf8")); } catch { throw failure(); }
-    const after = await fs.lstat(entry.file);
-    if (after.isSymbolicLink() || before.ino !== after.ino || before.dev !== after.dev || before.size !== after.size || before.mtimeMs !== after.mtimeMs ||
-        typeof value.content !== "string" || Buffer.byteLength(value.content) > VAULT_MAX_NOTE_BYTES || value.version !== entry.version || hash(value.content) !== value.version ||
+    try { value = JSON.parse((await readVaultFile(workspace.dir, entry.file, MAX_RECORD, { unsafe: failure, changed: failure, limit: failure })).toString("utf8")); } catch { throw failure(); }
+    if (typeof value.content !== "string" || Buffer.byteLength(value.content) > VAULT_MAX_NOTE_BYTES || value.version !== entry.version || hash(value.content) !== value.version ||
         typeof value.path !== "string" || value.path.length > 1024 || typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt))) throw failure();
     const record = { version: value.version, path: value.path, createdAt: value.createdAt, content: value.content };
     responseBytes += Buffer.byteLength(JSON.stringify(record)) + 1; if (responseBytes > MAX_RESPONSE) break;
