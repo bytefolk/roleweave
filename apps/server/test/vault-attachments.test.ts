@@ -252,7 +252,7 @@ test("asset references ignore external URLs and reject traversal or hidden paths
   }
 });
 
-test("case and NFC aliases with different images conflict before rewrites or uploads", async () => {
+test("case and NFC declarations with different images conflict before rewrites or uploads", async () => {
   const upstream = await fixture(state()); const workspace = await localWorkspace();
   try {
     for (const [first, second] of [["assets/Logo.png", "assets/logo.png"], ["assets/caf\u00e9.png", "assets/cafe\u0301.png"]]) {
@@ -265,15 +265,58 @@ test("case and NFC aliases with different images conflict before rewrites or upl
       await assert.rejects(prepareVaultAttachments(workspace, [entry], upstream.connection, VAULT), /existing files were preserved/);
       assert.equal(JSON.stringify(entry), before);
     }
+    assert.equal(upstream.requests.length, 0);
+    await assert.rejects(fs.stat(path.join(workspace.dir, ".roleweave", "vault", "assets.json")), { code: "ENOENT" });
+  } finally { await upstream.close(); await cleanup(workspace); }
+});
+
+test("distinct local NFC aliases with different images conflict without changing either original", async t => {
+  const upstream = await fixture(state()); const workspace = await localWorkspace();
+  try {
     await fs.mkdir(path.join(workspace.dir, "notes", "assets"), { recursive: true });
     const first = path.join(workspace.dir, "notes", "assets", "caf\u00e9.png");
     const second = path.join(workspace.dir, "notes", "assets", "cafe\u0301.png");
-    const other = pixelPNG(0, 255, 0); await fs.writeFile(first, PNG); await fs.writeFile(second, other);
+    const other = pixelPNG(0, 255, 0); await fs.writeFile(first, PNG, { flag: "wx" });
+    try { await fs.writeFile(second, other, { flag: "wx" }); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      assert.deepEqual(await fs.readFile(first), PNG, "probing an equivalent filename must not overwrite the original");
+      assert.deepEqual(await fs.readFile(second), PNG);
+      assert.equal(upstream.requests.length, 0);
+      await assert.rejects(fs.stat(path.join(workspace.dir, ".roleweave", "vault", "assets.json")), { code: "ENOENT" });
+      t.skip("this filesystem cannot create two distinct NFC-equivalent image files"); return;
+    }
     const entry = { path: "note.md", content: "![[assets/caf\u00e9.png]]\n![[assets/cafe\u0301.png]]" };
     await assert.rejects(prepareVaultAttachments(workspace, [entry], upstream.connection, VAULT), /existing files were preserved/);
     assert.deepEqual(await fs.readFile(first), PNG); assert.deepEqual(await fs.readFile(second), other);
     assert.equal(upstream.requests.length, 0);
     await assert.rejects(fs.stat(path.join(workspace.dir, ".roleweave", "vault", "assets.json")), { code: "ENOENT" });
+  } finally { await upstream.close(); await cleanup(workspace); }
+});
+
+test("NFC aliases for the same physical image upload once and preserve original bytes", async () => {
+  const value = state(); const upstream = await fixture(value); const workspace = await localWorkspace();
+  try {
+    await fs.mkdir(path.join(workspace.dir, "notes", "assets"), { recursive: true });
+    const first = path.join(workspace.dir, "notes", "assets", "caf\u00e9.png");
+    const second = path.join(workspace.dir, "notes", "assets", "cafe\u0301.png");
+    await fs.writeFile(first, PNG, { flag: "wx" });
+    // Filesystems that distinguish Unicode spellings use a real hard link to
+    // exercise the same physical-file behavior as native normalization aliases.
+    try { await fs.link(first, second); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+    const firstStat = await fs.stat(first); const secondStat = await fs.stat(second);
+    assert.equal(firstStat.dev, secondStat.dev); assert.equal(firstStat.ino, secondStat.ino);
+    const entry = { path: "note.md", content: "![[assets/caf\u00e9.png]]\n![[assets/cafe\u0301.png]]" };
+    const prepared = await prepareVaultAttachments(workspace, [entry], upstream.connection, VAULT);
+    const canonical = `assets/${hash(PNG)}.png`;
+    assert.equal(prepared[0]!.content, `![[${canonical}]]\n![[${canonical}]]`);
+    const assets = prepared[0]!.properties!.assets as Array<{ path: string; sha256: string }>;
+    assert.equal(assets.length, 2);
+    for (const asset of assets) { assert.equal(asset.path, canonical); assert.equal(asset.sha256, hash(PNG)); }
+    assert.equal(value.uploads, 1, "equivalent references reuse one captured original");
+    assert.deepEqual(await fs.readFile(first), PNG); assert.deepEqual(await fs.readFile(second), PNG);
+    assert.deepEqual(await fs.readFile(path.join(workspace.dir, "notes", canonical)), PNG);
   } finally { await upstream.close(); await cleanup(workspace); }
 });
 
