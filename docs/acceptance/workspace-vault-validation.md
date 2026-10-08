@@ -16,6 +16,7 @@ backup, host path or runtime artifact is part of this patch.
 | Vault/editor and App targeted regressions | PASS: 92 tests in the publishing worktree |
 | Backend/context/drive/turn targeted regressions | PASS: 107 tests; Windows symlink-privilege case explicitly skipped |
 | Archive/index recovery fault tests | PASS; injected index persistence failure preserves identity, binding and content; independent source review passed |
+| Runtime packaging inventory and import closure | Initial GitHub check caught omitted Vault server/shared modules; fixed by explicitly listing all 12 generated runtime modules, preserving packaging safety boundaries. PASS: 19 packaging/IPC tests; 2 Windows-only filesystem fixture skips |
 | Notebook usage receipts | PASS: actual injected references, versions and redacted excerpts; position mismatch and missing boot auth rejected |
 | Scope and source scan | PASS: no local maintenance path, username, secret or live-test Vault identity in release scope |
 | Diff checks | PASS |
