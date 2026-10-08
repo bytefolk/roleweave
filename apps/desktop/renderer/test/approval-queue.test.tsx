@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { enterPickerDate } from "./date-picker-helper";
 import { describe, expect, it, vi } from "vitest";
 import { ApprovalQueue } from "../src/approvals/ApprovalQueue";
 import type { ApprovalQueueItem } from "../src/approvals/types";
@@ -355,9 +356,17 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
 
     fireEvent.change(screen.getByTestId("approval-filter-keyword"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "更多筛选" }));
-    fireEvent.change(screen.getByTestId("approval-filter-from"), { target: { value: "2026-09-18" } });
+    enterPickerDate(screen.getByTestId("approval-filter-from"), "2026-09-18");
     expect(screen.getByTestId("approval-card-appr-write")).toBeInTheDocument();
     expect(screen.queryByTestId("approval-card-appr-exec")).toBeNull();
+    expect(screen.getByTestId("approval-filter-from")).toHaveValue("2026-09-18");
+    fireEvent.click(within(screen.getByTestId("approval-filter-from").closest(".ant-picker")! as HTMLElement).getByRole("button", { name: "清除" }));
+    expect(screen.getByTestId("approval-card-appr-exec")).toBeInTheDocument();
+    enterPickerDate(screen.getByTestId("approval-filter-to"), "2026-09-17");
+    expect(screen.queryByTestId("approval-card-appr-write")).toBeNull();
+    expect(screen.getByTestId("approval-card-appr-exec")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId("approval-filter-to").closest(".ant-picker")! as HTMLElement).getByRole("button", { name: "清除" }));
+    expect(screen.getByTestId("approval-card-appr-write")).toBeInTheDocument();
   });
 
   it("filters decision history by the separate recovery execution phase", () => {
@@ -729,17 +738,9 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "更多筛选" }));
-    const dateInputs = screen.getAllByDisplayValue("");
-    const fromInput = dateInputs.find(input => input.getAttribute("type") === "date");
-    const toInput = dateInputs.filter(input => input.getAttribute("type") === "date")[1];
-    if (fromInput) {
-      fireEvent.change(fromInput, { target: { value: localDayStr } });
-      expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
-    }
-    if (toInput) {
-      fireEvent.change(toInput, { target: { value: localDayStr } });
-      expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
-    }
+    enterPickerDate(screen.getByTestId("approval-filter-from"), localDayStr);
+    enterPickerDate(screen.getByTestId("approval-filter-to"), localDayStr);
+    expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
   });
 
   it("keeps reason textarea editable when byte length exceeds limit while disabling submit buttons", async () => {

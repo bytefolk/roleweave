@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Alert, Button, Input, Select, Table, Tag } from "antd";
-import { useOwbLocale, useT } from "@roleweave/ui";
+import { DateField, useOwbLocale, useT } from "@roleweave/ui";
 import type { AuditEntry, EvidenceEntry, EscalationEntry, ReportsResponse } from "@roleweave/shared";
 import type { AuditTimelineEvent } from "./AuditTimeline";
 import type { ReportsCenterProps } from "./ReportsCenter";
@@ -26,7 +26,7 @@ export function ReportFilters({ value, onChange, positionNames, reports, updated
   const roles = [...new Set([...reports.budgets.map(b => b.positionId), ...reports.streams.evidence.map(e => e.positionId), ...reports.streams.escalations.map(e => e.positionId)])];
   const statuses = tab === "budgets" ? ["within", "exceeded", "unobserved"] : tab === "audits" ? ["granted", "denied", "completed", "failed", "indeterminate"] : ["completed", "running", "failed", "indeterminate"];
   return <div className="owb-inbox-filters" role="group" aria-label={t("inbox.reportFilters")}>
-    {tab !== "budgets" ? <Input type="date" aria-label={t("inbox.dateFilter")} value={value.date} onChange={e => onChange({ ...value, date: e.target.value })} /> : null}
+    {tab !== "budgets" ? <DateField aria-label={t("inbox.dateFilter")} value={value.date} onChange={date => onChange({ ...value, date })} /> : null}
     <Select allowClear value={value.position || undefined} aria-label={t("inbox.roleFilter")} placeholder={t("apr.filterPosition")} options={roles.map(id => ({ value: id, label: positionNames?.[id] ?? id }))} onChange={position => onChange({ ...value, position: position ?? "" })} />
     <Select allowClear value={value.status || undefined} aria-label={t("rep.executionStatus")} placeholder={t("rep.allStatuses")} options={statuses.map(status => ({ value: status, label: tab === "budgets" ? t(`rep.state${status === "within" ? "Within" : status === "exceeded" ? "Exceeded" : "Unobserved"}`) : status === "granted" || status === "denied" ? t(`apr.status.${status}`) : t(`inbox.status.${status}`) }))} onChange={status => onChange({ ...value, status: status ?? "" })} />
     <Input allowClear className="owb-inbox-filters__search" aria-label={t("inbox.searchReports")} placeholder={t("inbox.searchReports")} value={value.query} onChange={e => onChange({ ...value, query: e.target.value })} />

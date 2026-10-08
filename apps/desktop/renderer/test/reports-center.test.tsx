@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { OwbI18nProvider } from "@roleweave/ui";
 import { ReportsCenter } from "../src/reports/ReportsCenter";
 import type { ReportsResponse } from "@roleweave/shared";
+import { enterPickerDate } from "./date-picker-helper";
 
 const report: ReportsResponse = {
   schemaVersion: "reports.v1",
@@ -24,6 +25,23 @@ const audit = {
 };
 
 describe("consolidated reports", () => {
+  it("filters execution records by the shared calendar and restores them after clearing", () => {
+    const future = { ...report.streams.evidence[1]!, createdAt: "2026-09-15T08:00:00Z", updatedAt: "2026-09-15T08:01:00Z" };
+    render(<ReportsCenter reports={{ ...report, streams: { ...report.streams, evidence: [report.streams.evidence[0]!, future] } }} loading={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
+    const input = screen.getByLabelText("按日期过滤");
+    expect(input.closest(".ant-picker")).not.toBeNull();
+    const date = new Date(report.streams.evidence[0]!.createdAt);
+    const localDay = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    enterPickerDate(input, localDay);
+    expect(input).toHaveValue(localDay);
+    expect(screen.getByRole("complementary", { name: "执行证据" })).toHaveTextContent("failed-1");
+    expect(screen.queryByText("running-1")).toBeNull();
+    fireEvent.click(within(input.closest(".ant-picker")! as HTMLElement).getByRole("button", { name: "清除" }));
+    expect(input).toHaveValue("");
+    expect(screen.getByRole("complementary", { name: "执行证据" })).toHaveTextContent("running-1");
+  });
+
   it("shows evidence-only failures as exceptions and preserves the exact source link", () => {
     const onOpenTurn = vi.fn();
     const failedOnly = { ...report, streams: { ...report.streams, escalations: [] } };

@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import dayjs from "dayjs";
+import { enterPickerDate } from "./date-picker-helper";
 import {
   AuditTimeline,
   buildCostDashboardHref,
@@ -32,6 +34,45 @@ const sample: AuditTimelineEvent[] = [
 ];
 
 describe("P0 Turn / 审计时间线（AuditTimeline）", () => {
+  it("reflects external time bounds and clears them without dropping the other filters", () => {
+    const onFiltersChange = vi.fn();
+    const from = "2026-08-27T09:00:00.000Z";
+    const to = "2026-08-27T10:00:00.000Z";
+    const { rerender } = render(<AuditTimeline events={sample} filters={{ from, to, classes: ["turn"] }} onFiltersChange={onFiltersChange} />);
+    const picker = screen.getAllByTestId("timeline-filter-range")[0]!.closest(".ant-picker")! as HTMLElement;
+    const inputs = picker.querySelectorAll("input");
+    expect(inputs[0]).toHaveValue(dayjs(from).format("YYYY-MM-DD HH:mm:ss"));
+    expect(inputs[1]).toHaveValue(dayjs(to).format("YYYY-MM-DD HH:mm:ss"));
+    rerender(<AuditTimeline events={sample} filters={{ from, classes: ["turn"] }} onFiltersChange={onFiltersChange} />);
+    expect(inputs[0]).toHaveValue(dayjs(from).format("YYYY-MM-DD HH:mm:ss"));
+    expect(inputs[1]).toHaveValue("");
+    fireEvent.click(within(picker).getByRole("button", { name: "清除" }));
+    expect(onFiltersChange).toHaveBeenCalledWith({ classes: ["turn"], from: undefined, to: undefined });
+  });
+
+  it("filters events by confirmed local date-time input and keeps the selection visible", () => {
+    const morning = dayjs("2026-08-27 09:30:00").toISOString();
+    const evening = dayjs("2026-08-27 18:00:00").toISOString();
+    render(<AuditTimeline events={[
+      makeEvent({ id: "morning", runId: "morning", at: morning }),
+      makeEvent({ id: "evening", runId: "evening", at: evening }),
+    ]} />);
+    const picker = screen.getAllByTestId("timeline-filter-range")[0]!.closest(".ant-picker")! as HTMLElement;
+    const inputs = picker.querySelectorAll("input");
+    fireEvent.click(inputs[0]!);
+    enterPickerDate(inputs[0]!, "2026-08-27 09:00:00");
+    fireEvent.click(inputs[1]!);
+    enterPickerDate(inputs[1]!, "2026-08-27 10:00:00");
+    expect(inputs[0]).toHaveValue("2026-08-27 09:00:00");
+    expect(inputs[1]).toHaveValue("2026-08-27 10:00:00");
+    expect(screen.getByTestId("timeline-dot-morning")).toBeInTheDocument();
+    expect(screen.queryByTestId("timeline-dot-evening")).toBeNull();
+    fireEvent.click(within(picker).getByRole("button", { name: "清除" }));
+    expect(screen.getByTestId("timeline-dot-evening")).toBeInTheDocument();
+    expect(inputs[0]).toHaveValue("");
+    expect(inputs[1]).toHaveValue("");
+  });
+
   it("按 runId 分组：同 runId 的事件收成一个可展开卡片，组头显示岗位/引擎", () => {
     const { container } = render(<AuditTimeline events={sample} />);
     // 4 个组：run-A / run-B / run-C / audit-1（model.delta 被过滤，不构成新组）
@@ -148,6 +189,15 @@ describe("P0 Turn / 审计时间线（AuditTimeline）", () => {
 });
 
 describe("预算/分类/深链 纯函数（导出以便策略层测试）", () => {
+  it("compares date-time bounds as instants across equivalent timezone offsets", () => {
+    const event = makeEvent({ at: "2026-09-22T09:30:00+08:00" });
+    expect(isEventVisible(event, { from: "2026-09-22T01:00:00.000Z", to: "2026-09-22T02:00:00.000Z" })).toBe(true);
+    expect(isEventVisible(event, { from: "2026-09-22T10:00:00+08:00" })).toBe(false);
+    expect(isEventVisible(event, { to: "2026-09-22T01:00:00.000Z" })).toBe(false);
+    expect(isEventVisible(event, { from: "2026-09-22T01:30:00.000Z", to: "2026-09-22T01:30:00.000Z" })).toBe(true);
+    expect(isEventVisible(makeEvent({ at: "invalid" }), { from: "2026-09-22T01:00:00.000Z" })).toBe(false);
+  });
+
   it("classifyAuditEvent 覆盖四类事件", () => {
     expect(classifyAuditEvent(makeEvent({ type: "run.started" }))).toBe("turn");
     expect(classifyAuditEvent(makeEvent({ type: "run.failed" }))).toBe("turn");
