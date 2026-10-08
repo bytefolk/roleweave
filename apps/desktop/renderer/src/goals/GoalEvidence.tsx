@@ -34,7 +34,7 @@ export function GoalEvidence({ branches, positionNames, onOpenBoundSession }: {
             <span>{branch.positionId ? (positionNames[branch.positionId] ?? branch.positionId) : t("goals.unassigned")}</span>
           </div>
           <span>{t(`goals.status.${branch.status}`)}</span>
-          {branch.positionId && onOpenBoundSession ? <Button type="link" onClick={() => onOpenBoundSession(branch.positionId!, branch.sessionId)}>{t("goals.openSession")}</Button> : null}
+          {branch.positionId && branch.sessionId && onOpenBoundSession ? <Button type="link" onClick={() => onOpenBoundSession(branch.positionId!, branch.sessionId)}>{t("goals.openSession")}</Button> : null}
         </li>;
       })}
     </ul> : <p className="owb-goal-evidence__hint">{t("goals.noBranches")}</p>}
