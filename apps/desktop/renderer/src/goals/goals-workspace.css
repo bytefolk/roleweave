@@ -25,6 +25,7 @@
   color: var(--ui-foreground); min-width: 0;
 }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary button:hover { border-color: var(--ui-primary); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary button[aria-pressed="true"] { border-color: var(--ui-primary); background: var(--ui-primary-soft); box-shadow: inset 0 -2px var(--ui-primary); }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary button:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary span, :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary small { color: var(--ui-foreground-muted); font-size: 11px; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-goals-module.owb-goals-module--overview .owb-goals-summary strong { font-size: 22px; line-height: 1.2; font-weight: 650; }

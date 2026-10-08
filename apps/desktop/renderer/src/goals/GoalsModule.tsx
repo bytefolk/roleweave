@@ -396,17 +396,17 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
           )}
           {!projectMode && !loading && goals.length > 0 && (
             <div className="owb-goals-summary" aria-label={t("goals.summary")}>
-              <button type="button" onClick={() => { setStatusFilter("all"); setQuery(""); setMobileDetail(false); }}>
+              <button type="button" aria-pressed={statusFilter === "all"} onClick={() => { setStatusFilter("all"); setQuery(""); setMobileDetail(false); }}>
                 <span>{t("goals.summary.total")}</span>
                 <strong>{goals.length}</strong>
                 <small>{t("goals.summary.totalHint")}</small>
               </button>
-              <button type="button" onClick={() => { setStatusFilter("in_progress"); setQuery(""); setMobileDetail(false); }}>
+              <button type="button" aria-pressed={statusFilter === "in_progress"} onClick={() => { setStatusFilter("in_progress"); setQuery(""); setMobileDetail(false); }}>
                 <span>{t("goals.summary.active")}</span>
                 <strong>{goals.filter((goal) => goal.status === "in_progress").length}</strong>
                 <small>{t("goals.summary.activeHint")}</small>
               </button>
-              <button type="button" onClick={() => { setStatusFilter("completed"); setQuery(""); setMobileDetail(false); }}>
+              <button type="button" aria-pressed={statusFilter === "completed"} onClick={() => { setStatusFilter("completed"); setQuery(""); setMobileDetail(false); }}>
                 <span>{t("goals.summary.completed")}</span>
                 <strong>{goals.filter((goal) => goal.status === "completed").length}</strong>
                 <small>{t("goals.summary.completedHint")}</small>
