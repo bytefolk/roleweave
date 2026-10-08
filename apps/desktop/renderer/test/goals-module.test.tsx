@@ -58,6 +58,55 @@ function installBridge(overrides: Partial<OwbBridge> = {}) {
 }
 
 describe("GoalsModule", () => {
+  it("keeps the selected view and rendered content aligned when switching tabs", async () => {
+    installBridge({ tasks: vi.fn().mockResolvedValue({ status: 200, body: { tasks: [] } }) } as Partial<OwbBridge>);
+    render(<GoalsModule workspaceOpen />);
+    const goals = screen.getByRole("tab", { name: "目标列表" });
+    const board = screen.getByRole("tab", { name: "Agent 看板" });
+    await screen.findByRole("option", { name: /Ship v1.0/ });
+    expect(goals).toHaveAttribute("aria-selected", "true");
+    expect(board).toHaveAttribute("aria-selected", "false");
+    fireEvent.click(board);
+    expect(board).toHaveAttribute("aria-selected", "true");
+    expect(goals).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByText("待处理")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Ship v1.0/ })).not.toBeInTheDocument();
+    fireEvent.click(goals);
+    expect(goals).toHaveAttribute("aria-selected", "true");
+    expect(board).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("option", { name: /Ship v1.0/ })).toBeInTheDocument();
+  });
+
+  it("marks only the active overview filter and keeps it in sync with the dropdown", async () => {
+    const summaries = [
+      goalSummary,
+      { ...goalSummary, goalId: "active", title: "Active goal", status: "in_progress" as const },
+      { ...goalSummary, goalId: "done", title: "Done goal", status: "completed" as const },
+    ];
+    installBridge({ goals: vi.fn().mockResolvedValue({ status: 200, body: { goals: summaries } }) });
+    render(<GoalsModule workspaceOpen />);
+    const all = await screen.findByRole("button", { name: /全部目标/ });
+    const active = screen.getByRole("button", { name: /进行中的目标/ });
+    const completed = screen.getByRole("button", { name: /已完成目标/ });
+    expect(all).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(active);
+    expect(active).toHaveAttribute("aria-pressed", "true");
+    expect(all).toHaveAttribute("aria-pressed", "false");
+    expect(completed).toHaveAttribute("aria-pressed", "false");
+    expect(within(screen.getByRole("listbox", { name: "目标列表" })).getAllByRole("option")).toHaveLength(1);
+    expect(screen.getByRole("option", { name: /Active goal/ })).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "筛选目标状态" }));
+    const option = Array.from(document.querySelectorAll<HTMLElement>(".ant-select-item-option")).find((item) => item.textContent === "已完成");
+    expect(option).toBeDefined();
+    fireEvent.click(option!);
+    expect(completed).toHaveAttribute("aria-pressed", "true");
+    expect(active).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("option", { name: /Done goal/ })).toBeInTheDocument();
+    fireEvent.click(all);
+    expect(all).toHaveAttribute("aria-pressed", "true");
+    expect(within(screen.getByRole("listbox", { name: "目标列表" })).getAllByRole("option")).toHaveLength(3);
+  });
+
   it("shows empty state when no goals exist", async () => {
     installBridge({
       goals: vi.fn().mockResolvedValue({ status: 200, body: { goals: [] } }),
