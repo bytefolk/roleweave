@@ -72,6 +72,23 @@
   justify-content: flex-end;
 }
 
+/* The disabled hire control carries its own reason instead of a tooltip: the
+   reason has to survive keyboard and screen-reader use, and it is the only
+   place the fixture-only limitation is explained inside the drawer. */
+.owb-shelf__action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.owb-shelf__reason {
+  max-width: 460px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
+}
+
 .owb-shelf-drawer .ant-descriptions-item-label {
   white-space: nowrap;
 }

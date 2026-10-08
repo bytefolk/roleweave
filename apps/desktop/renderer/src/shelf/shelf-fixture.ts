@@ -10,6 +10,11 @@
  * Until the platform exposes a buyer-facing HTTP surface
  * (`digital-employee-platform#21`), the shelf renders these fixtures. When that
  * endpoint lands, only `loadShelfListings()` below has to change.
+ *
+ * `SHELF_SOURCE_IS_FIXTURE` is the second half of that seam: while it is true,
+ * nothing downstream may treat a rendered row as a real published listing, so
+ * `ShelfModule` keeps hiring disabled. Swap this constant together with
+ * `loadShelfListings()` — they describe the same fact.
  */
 
 /** `digital-employee-platform` `catalog-listing.v1`. */
@@ -116,6 +121,13 @@ export const SHELF_FIXTURE: readonly ShelfListing[] = [
     recordDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000022",
   },
 ];
+
+/**
+ * True while `loadShelfListings()` returns these fixtures (see the file header).
+ * Typed as `boolean`, not `true`, because the whole point of the flag is that it
+ * flips when the platform read lands.
+ */
+export const SHELF_SOURCE_IS_FIXTURE: boolean = true;
 
 /**
  * Single read seam. Replace the body with the platform's buyer-facing read

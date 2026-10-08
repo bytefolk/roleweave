@@ -14,6 +14,7 @@ const experiment: ExperimentsResponse = {
   workspaceSession: "00000000-0000-4000-8000-000000000001",
   revision: 2,
   enabled: true,
+  marketplaceShelf: false,
   availability: "ready",
   provider: {
     name: "Laya · local",

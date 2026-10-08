@@ -80,6 +80,8 @@ import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
 import { ReportsCenter } from "./reports/ReportsCenter";
+import { ShelfModule } from "./shelf/ShelfModule";
+import { useWorkspaceExperiments } from "./experiments/useWorkspaceExperiments";
 import { ApprovalQueue, isActionablePending, type ApprovalQueueItem } from "./approvals";
 import { useApprovals } from "./approvals/useApprovals";
 import { decodeEscapedUnicode } from "./display-text";
@@ -138,7 +140,7 @@ function AppInner({
 }) {
   const themeContext = useTheme();
   const [activeModule, setActiveModuleRaw] = useState<
-    "conversation" | "profile" | "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress"
+    "conversation" | "profile" | "org" | "groups" | "reports" | "approvals" | "docs" | "goals" | "projects" | "settings" | "progress" | "shelf"
   >("conversation");
   const [settingsInitialCategory, setSettingsInitialCategory] = useState<ConfigurationCategory | undefined>();
   const [contactsOpen, setContactsOpen] = useState(false);
@@ -426,6 +428,18 @@ function AppInner({
   const groupWorkspaceScope = useMemo(() => Symbol("group-workspace"), [workspaceInfo?.path, workspaceInfo?.open]);
   const latestGroupWorkspaceScope = useRef(groupWorkspaceScope);
   latestGroupWorkspaceScope.current = groupWorkspaceScope;
+  /** Buyer-side shelf preview (#535). Workspace-scoped and off by default, and
+   *  read from its own field on the experiments contract: `enabled` is Laya's
+   *  consent to send disclosed metadata, not a general preview switch. */
+  const shelfPreview = useWorkspaceExperiments({
+    workspacePath: workspaceInfo?.open ? workspaceInfo.path : undefined,
+    workspaceScope: groupWorkspaceScope,
+  }).snapshot?.marketplaceShelf === true;
+  /** Closing the project (or turning the preview off) must not strand the user
+   *  on a module whose entry no longer exists. */
+  useEffect(() => {
+    if (!shelfPreview && activeModule === "shelf") setActiveModuleRaw("org");
+  }, [shelfPreview, activeModule]);
   const [groupDraftSeed, setGroupDraftSeed] = useState<{ members: string[]; nonce: number; scope: symbol } | null>(null);
   /** 亮/暗跟随 <html data-theme>，antd cssinjs 与 --ui-* skin 同步切换。 */
   const themeMode = useThemeMode();
@@ -2137,11 +2151,12 @@ function AppInner({
             </nav>
             <div className="owb-conversation-header-host" ref={setConversationHeaderHost} hidden={activeModule !== "conversation"} />
           </>}
-        </div> : activeModule === "org" ? <div className="owb-context-header">
+        </div> : (activeModule === "org" || activeModule === "shelf") ? <div className="owb-context-header">
           <strong>{t("rail.org")}</strong>
           <nav className="owb-context-tabs" aria-label={t("nav.organization")}>
-            <AntButton type={orgView === "structure" ? "primary" : "text"} aria-pressed={orgView === "structure"} onClick={() => setOrgView("structure")}>{t("nav.structure")}</AntButton>
-            <AntButton type={orgView === "overview" ? "primary" : "text"} aria-pressed={orgView === "overview"} onClick={() => setOrgView("overview")}>{t("nav.graph")}</AntButton>
+            <AntButton type={activeModule === "org" && orgView === "structure" ? "primary" : "text"} aria-pressed={activeModule === "org" && orgView === "structure"} onClick={() => { setOrgView("structure"); setActiveModule("org"); }}>{t("nav.structure")}</AntButton>
+            <AntButton type={activeModule === "org" && orgView === "overview" ? "primary" : "text"} aria-pressed={activeModule === "org" && orgView === "overview"} onClick={() => { setOrgView("overview"); setActiveModule("org"); }}>{t("nav.graph")}</AntButton>
+            {shelfPreview ? <AntButton type={activeModule === "shelf" ? "primary" : "text"} aria-pressed={activeModule === "shelf"} onClick={() => setActiveModule("shelf")}>{t("rail.shelf")}</AntButton> : null}
           </nav>
         </div> : projectsActive ? <div className="owb-context-header">
           <strong>{t("rail.projects")}</strong>
@@ -2189,6 +2204,13 @@ function AppInner({
           <Suspense fallback={<div className="owb-progress" aria-hidden="true"><Skeleton /></div>}>
             <ProgressBoard key={workspaceInfo?.path} workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
           </Suspense>
+        ) : activeModule === "shelf" && shelfPreview ? (
+          /* The listing reaches this callback, but ShelfModule keeps the hire
+             control disabled while its read seam is fixture-only, so no example
+             row can open the local create-from-scratch drawer. Carrying
+             listingId / packageDigest downstream needs the buyer-facing HTTP
+             surface in digital-employee-platform#21; #544 tracks it. */
+          <ShelfModule onHire={(_listing) => setTreeHireParent(snapshot?.owner ?? null)} />
         ) : activeModule === "reports" ? (
           <ReportsCenter
             key={workspaceInfo?.path}

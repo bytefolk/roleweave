@@ -5,7 +5,18 @@ export interface ExperimentsResponse {
   /** Identifies this opening of a workspace, including A -> B -> A switches. */
   workspaceSession: string;
   revision: number;
+  /**
+   * Laya collaboration suggestions. This flag carries the consent to send the
+   * disclosed metadata to the local provider, so it is *not* a general
+   * "preview features" switch: every other preview owns its own field.
+   */
   enabled: boolean;
+  /**
+   * Buyer-side shelf preview. Workspace-scoped and off by default, and it never
+   * authorizes an outbound request, so it is deliberately separate from
+   * `enabled` and from `provider` / `availability`, which stay Laya-only.
+   */
+  marketplaceShelf: boolean;
   availability: "disabled" | "not_configured" | "ready" | "storage_error";
   provider: {
     name: "Laya · local";
@@ -26,7 +37,10 @@ export interface ReportsAdviceRequest {
 }
 
 export interface ExperimentsUpdateRequest extends ReportsAdviceRequest {
+  /** Laya collaboration suggestions; consent to the disclosed metadata. */
   enabled: boolean;
+  /** Buyer-side shelf preview; independent of the Laya consent switch. */
+  marketplaceShelf: boolean;
 }
 
 export const reportAdviceSuggestions = [

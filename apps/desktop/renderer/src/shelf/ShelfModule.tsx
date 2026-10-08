@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { Button, Descriptions, Drawer, Empty, Typography } from "antd";
 import { useT } from "@roleweave/ui";
-import { loadShelfListings, type ShelfListing } from "./shelf-fixture";
+import { loadShelfListings, SHELF_SOURCE_IS_FIXTURE, type ShelfListing } from "./shelf-fixture";
 import "./shelf.css";
 
 export interface ShelfModuleProps {
-  /** The shelf is read-only browsing; hiring still needs an open workspace. */
-  workspaceOpen: boolean;
-  /** Funnels into the existing hire flow instead of a second creation path. */
+  /** Funnels into the existing hire flow instead of a second creation path.
+   *  Wired, but unreachable while the read seam is fixture-only: a fixture row
+   *  carries a seller tenant, `packageDigest` and a RateCard snapshot that no
+   *  server here can accept yet, so hiring stays disabled (#544). */
   onHire: (listing: ShelfListing) => void;
 }
 
@@ -29,17 +30,22 @@ function listingTitle(listing: ShelfListing): string {
 }
 
 /**
- * Buyer-side shelf entry: list published listings, open one, hand it to the
- * existing hire flow.
+ * Buyer-side shelf entry: list published listings and open one.
  *
  * Read-only by design. The listing contract belongs to the marketplace
  * control plane and the fields rendered here mirror it verbatim
  * (`shelf-fixture.ts` documents the source); this module never authors a
  * listing field of its own.
+ *
+ * Hiring is unavailable while `SHELF_SOURCE_IS_FIXTURE` holds. Opening the
+ * local create-from-scratch hire drawer from an example row would hire a
+ * look-alike local employee instead of the listing, so the control is disabled
+ * and says so rather than opening a path it cannot honour.
  */
-export function ShelfModule({ workspaceOpen, onHire }: ShelfModuleProps) {
+export function ShelfModule({ onHire }: ShelfModuleProps) {
   const t = useT();
   const listings = loadShelfListings();
+  const hireAvailable = !SHELF_SOURCE_IS_FIXTURE;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = listings.find((listing) => listing.listingId === selectedId) ?? null;
 
@@ -87,9 +93,16 @@ export function ShelfModule({ workspaceOpen, onHire }: ShelfModuleProps) {
         footer={
           selected ? (
             <div className="owb-shelf__actions">
-              <Button type="primary" disabled={!workspaceOpen} onClick={() => onHire(selected)}>
-                {workspaceOpen ? t("shelf.hire") : t("shelf.hireNeedsWorkspace")}
-              </Button>
+              <div className="owb-shelf__action">
+                <Button type="primary" disabled={!hireAvailable} onClick={() => onHire(selected)}>
+                  {t("shelf.hire")}
+                </Button>
+                {hireAvailable ? null : (
+                  <Text type="secondary" className="owb-shelf__reason">
+                    {t("shelf.hireUnavailable")}
+                  </Text>
+                )}
+              </div>
             </div>
           ) : null
         }

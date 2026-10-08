@@ -33,12 +33,12 @@ export function parseExperimentsRequest(raw: unknown, update: false): ReportsAdv
 export function parseExperimentsRequest(raw: unknown, update: boolean): ExperimentsUpdateRequest | ReportsAdviceRequest {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalid();
   const body = raw as Record<string, unknown>;
-  const fields = ["workspacePath", "workspaceSession", "revision", ...(update ? ["enabled"] : [])];
+  const fields = ["workspacePath", "workspaceSession", "revision", ...(update ? ["enabled", "marketplaceShelf"] : [])];
   if (Object.keys(body).some(key => !fields.includes(key)) ||
     typeof body.workspacePath !== "string" || body.workspacePath.length === 0 || body.workspacePath.length > 8_192 ||
     typeof body.workspaceSession !== "string" || !/^[a-f0-9-]{36}$/.test(body.workspaceSession) ||
     !Number.isSafeInteger(body.revision) || (body.revision as number) < 0 ||
-    (update && typeof body.enabled !== "boolean")) throw invalid();
+    (update && (typeof body.enabled !== "boolean" || typeof body.marketplaceShelf !== "boolean"))) throw invalid();
   return body as unknown as ExperimentsUpdateRequest;
 }
 
@@ -112,7 +112,7 @@ export class ExperimentsService {
     if (!stored.valid || stored.settings.revision < state.revisionHighWater) {
       // Repair must not reuse a revision seen by this workspace opening. A
       // rolled-back valid file cannot silently restore an earlier opt-in either.
-      stored = { valid: false, settings: { schemaVersion: "experiments.v1", enabled: false, revision: state.revisionHighWater } };
+      stored = { valid: false, settings: { schemaVersion: "experiments.v1", enabled: false, marketplaceShelf: false, revision: state.revisionHighWater } };
     } else {
       state.revisionHighWater = stored.settings.revision;
     }
@@ -127,6 +127,9 @@ export class ExperimentsService {
     return {
       schemaVersion: "experiments.v1", workspacePath: state.workspace.dir, workspaceSession: state.session,
       revision: stored.settings.revision, enabled,
+      // A preview surface only: it authorizes nothing outbound, so it neither
+      // reads nor reports Laya's availability.
+      marketplaceShelf: stored.valid && !state.inhibited && stored.settings.marketplaceShelf,
       availability: !stored.valid || state.inhibited ? "storage_error" : !enabled ? "disabled" : configured ? "ready" : "not_configured",
       provider: { name: "Laya · local", endpointHost: "127.0.0.1", endpointUrl: this.ctx.config.layaUrl || LAYA_ENDPOINT, configured },
       sending: ["status", "errorCode", "budgetRelated"],
@@ -145,12 +148,12 @@ export class ExperimentsService {
       this.assertCurrent(state, request);
       const stored = await this.refresh(state);
       if (stored.settings.revision !== request.revision) throw conflict();
-      if (!stored.valid && request.enabled) throw new OrgApiError(errorCodes.experiments_storage_failed, 409, "reset the invalid experimental setting to disabled before enabling it");
+      if (!stored.valid && (request.enabled || request.marketplaceShelf)) throw new OrgApiError(errorCodes.experiments_storage_failed, 409, "reset the invalid experimental setting to off before enabling a preview");
       if (stored.settings.revision === Number.MAX_SAFE_INTEGER) throw conflict();
       // Revoke requests before disk I/O. Failed persistence remains inhibited until a successful save.
       this.invalidate(state);
       state.inhibited = true;
-      const next = { schemaVersion: "experiments.v1" as const, enabled: request.enabled, revision: stored.settings.revision + 1 };
+      const next = { schemaVersion: "experiments.v1" as const, enabled: request.enabled, marketplaceShelf: request.marketplaceShelf, revision: stored.settings.revision + 1 };
       await writeExperiments(workspace.dir, next, () => this.assertCurrent(state, request));
       this.assertCurrent(state, request);
       state.stored = { settings: next, valid: true };
