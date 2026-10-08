@@ -126,7 +126,7 @@ test("employee model selection persists, reaches the driver, and preserves the s
       assert.equal((await call("/positions/repo-owner/model", "PATCH", body)).status, 400);
     }
     const release = server.ctx.runningTurns.reserve(workspace, "repo-owner", "inflight");
-    try { assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "auto" })).status, 409); }
+    try { assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "auto" })).status, 200); }
     finally { release.release(); }
     assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "custom/研发 小模型 (BYOK)" })).status, 200);
     assert.equal((await call(`/sessions/${session.sessionId}/context`, "PATCH", { enabled: false })).status, 200);
@@ -138,6 +138,60 @@ test("employee model selection persists, reaches the driver, and preserves the s
     const customHistory = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, { token: server.token });
     assert.equal((customHistory.body as { turns: TurnRecord[] }).turns.at(-1)?.model, "custom/研发 小模型 (BYOK)");
   } finally {
+    await server.ctx.contextExporter.waitForIdle();
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("changing the model during execution affects the next turn and preserves the in-flight receipt", async () => {
+  const seen: TurnRunRequest[] = [];
+  let notifyStarted!: () => void;
+  let finishFirst!: () => void;
+  const started = new Promise<void>((resolve) => { notifyStarted = resolve; });
+  const held = new Promise<void>((resolve) => { finishFirst = resolve; });
+  const server = await startTestServer(undefined, { async turnRun(request) {
+    seen.push(request);
+    if (seen.length === 1) {
+      notifyStarted();
+      await held;
+    }
+    const timestamp = new Date().toISOString();
+    return { status: "trusted", diagnostic: "", events: [
+      { type: "run.started", runId: request.envelope.turnId, timestamp },
+      { type: "run.completed", runId: request.envelope.turnId, timestamp, output: "Completed", terminalReason: "goal_met" },
+    ] };
+  } });
+  const workspace = await copyExampleWorkspace();
+  server.ctx.config.bundledElectronEngine = true;
+  const call = (url: string, method: string, body: unknown) => api(server.baseUrl, url, { method, body, token: server.token });
+  let firstRequest: ReturnType<typeof call> | undefined;
+  try {
+    assert.equal((await call("/workspace/open", "POST", { path: workspace })).status, 200);
+    assert.equal((await call("/positions/repo-owner/model", "PATCH", { model: "efficient", engine: "qoder" })).status, 200);
+    const session = (await call("/sessions", "POST", { positionId: "repo-owner" })).body as WorkbenchSession;
+    firstRequest = call(`/sessions/${session.sessionId}/turns`, "POST", { engine: "qoder", input: "First task" });
+    await started;
+    const selected = await call("/positions/repo-owner/model", "PATCH", { model: "performance" });
+    assert.equal(selected.status, 200);
+    assert.equal(seen[0]?.model, "efficient");
+    assert.equal(server.ctx.runningTurns.isRunning(workspace, "repo-owner", seen[0]!.envelope.turnId), true);
+    // Changing a preference must not release the execution/session guard.
+    assert.equal((await call(`/sessions/${session.sessionId}/context`, "PATCH", { enabled: false })).status, 409);
+    assert.equal((await readPositionAgentBinding(server.ctx.workspace.requireOpen(), "repo-owner"))?.model, "performance");
+    finishFirst();
+    const first = await firstRequest;
+    assert.equal(first.status, 200);
+    assert.equal((first.body as TurnRecord).model, "efficient");
+    const second = await call(`/sessions/${session.sessionId}/turns`, "POST", { engine: "qoder", input: "Next task" });
+    assert.equal(second.status, 200);
+    assert.equal((second.body as TurnRecord).model, "performance");
+    assert.equal(seen[1]?.model, "performance");
+    const history = await api(server.baseUrl, `/sessions/${session.sessionId}/turns`, { token: server.token });
+    assert.deepEqual((history.body as { turns: TurnRecord[] }).turns.map((turn) => turn.model), ["efficient", "performance"]);
+  } finally {
+    finishFirst();
+    await firstRequest;
     await server.ctx.contextExporter.waitForIdle();
     await server.close();
     await fs.rm(workspace, { recursive: true, force: true });

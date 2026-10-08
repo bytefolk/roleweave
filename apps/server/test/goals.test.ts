@@ -444,6 +444,50 @@ test("HTTP task execution preserves goal and task binding and never marks the hu
   }
 });
 
+test("HTTP project execution retains its exact session and completed output after rotation and restart", async () => {
+  let server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const { goalId } = await createGoal(server.baseUrl, server.token);
+    const initial = await server.ctx.goalStore.get(workspace, goalId);
+    await server.ctx.goalStore.update(workspace, goalId, { workItems: [plannedTask], expectedUpdatedAt: initial.updatedAt });
+    const session = await api(server.baseUrl, "/sessions", { method: "POST", token: server.token, body: { positionId: "repo-owner" } });
+    assert.equal(session.status, 201);
+    const { sessionId } = session.body as { sessionId: string };
+    const executed = await api(server.baseUrl, `/sessions/${sessionId}/turns`, {
+      method: "POST", token: server.token,
+      body: { input: "Produce the board deliverable", engine: "qoder", goalId, branchId: plannedTask.taskId },
+    });
+    assert.equal(executed.status, 200);
+    const record = executed.body as TurnRecord;
+    assert.equal(record.conversationRef, sessionId);
+    assert.equal(record.output, "fake turn output");
+    const rotated = await api(server.baseUrl, `/sessions/${sessionId}/rotate`, { method: "POST", token: server.token, body: {} });
+    assert.equal(rotated.status, 201);
+    const nextSessionId = (rotated.body as { sessionId: string }).sessionId;
+    assert.notEqual(nextSessionId, sessionId);
+
+    await server.close();
+    server = await startTestServer();
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const detail = (await api(server.baseUrl, `${routes.goals}/${goalId}`, { token: server.token })).body as GoalDetail;
+    const source = detail.taskExecutions?.[plannedTask.taskId];
+    assert.equal(source?.sessionId, sessionId);
+    assert.equal(source?.turnId, record.turnId);
+    const sourceHistory = await api(server.baseUrl, `/sessions/${source!.sessionId}/turns`, { token: server.token });
+    assert.equal(sourceHistory.status, 200);
+    const turns = (sourceHistory.body as { turns: TurnRecord[] }).turns;
+    assert.equal(turns.find((turn) => turn.turnId === source!.turnId)?.output, "fake turn output");
+    const currentHistory = await api(server.baseUrl, `/sessions/${nextSessionId}/turns`, { token: server.token });
+    assert.deepEqual((currentHistory.body as { turns: TurnRecord[] }).turns, []);
+    assert.equal(detail.goal.workItems?.[0]?.status, "todo");
+  } finally {
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
 test("execution projection picks the latest matching attempt and excludes other goals, tasks and assignees", () => {
   const now = "2026-09-22T00:00:00.000Z";
   const goal: Goal = { schemaVersion: "goal.v1", goalId: "goal-1", title: "Project", description: "Plan", status: "open", health: "unknown", acceptanceCriteria: [], branches: [], workItems: [plannedTask], createdAt: now, updatedAt: now };

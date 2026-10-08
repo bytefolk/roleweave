@@ -22,7 +22,7 @@ const shortcuts = ["enter", "mod-enter"] as const;
 const modifiers = [{ ctrlKey: true }, { metaKey: true }];
 
 describe("conversation send shortcuts", () => {
-  it("sends on Enter by default and leaves Shift+Enter to native multiline editing", () => {
+  it("sends on Enter by default and leaves Shift+Enter to native multiline editing", async () => {
     const send = vi.fn();
     render(<Composer onSend={send} />);
     const textarea = input();
@@ -30,7 +30,11 @@ describe("conversation send shortcuts", () => {
     expect(send).not.toHaveBeenCalled();
     expect(enter(textarea).defaultPrevented).toBe(true);
     expect(send).toHaveBeenCalledExactlyOnceWith();
-    expect(screen.getByText(/Ctrl\/⌘ \+ Enter/)).toBeVisible();
+    expect(screen.queryByText(/Ctrl\/⌘ \+ Enter/)).not.toBeInTheDocument();
+    const sendButton = screen.getByRole("button", { name: "发送任务" });
+    expect(sendButton).not.toHaveAttribute("title");
+    fireEvent.mouseEnter(sendButton.parentElement!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Ctrl/⌘ + Enter");
   });
 
   describe.each(modifiers)("newline with %j in Enter mode", modifier => {

@@ -1,6 +1,6 @@
 .owb-conversation-options.owb-model-connection {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
   min-width: 0;
@@ -13,16 +13,20 @@
   min-width: 0;
 }
 
+.owb-model-picker__trigger { display: inline-flex; min-width: 0; border-radius: 8px; }
+.owb-model-picker__trigger:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+
 .owb-conversation-options.owb-model-connection .owb-model-picker {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: none;
+  width: 132px;
+  max-width: 156px;
 }
 
 .owb-conversation-options__tools {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 2px;
   min-width: 0;
 }
@@ -30,32 +34,31 @@
 .owb-conversation-options__tools > .ant-btn { min-width: 0; }
 
 .owb-conversation-options.owb-model-connection .owb-model-picker__state {
-  grid-column: 1 / -1;
+  flex-basis: 100%;
   overflow-wrap: anywhere;
 }
 
 @container owb-composer (max-width: 340px) {
-  .owb-conversation-options.owb-model-connection { grid-template-columns: minmax(0, 1fr); }
-  .owb-conversation-options__tools {
-    justify-self: end;
-    max-width: 100%;
-    flex-wrap: wrap;
-  }
+  .owb-conversation-options.owb-model-connection .owb-model-picker { width: 132px; }
 }
 
 .owb-conversation-options .owb-model-connection__model .owb-model-picker {
-  min-height: 28px;
+  height: 32px;
+  min-height: 32px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 8px;
+  font-size: 12px;
 }
 
 .owb-conversation-options .owb-model-picker:not(.ant-select-disabled):is(:hover, .ant-select-open) {
-  border-color: var(--ui-border);
-  background: var(--ui-surface-inset);
+  border-color: transparent;
+  background: color-mix(in srgb, var(--ui-foreground) 6%, transparent);
 }
 
 .owb-conversation-options .owb-model-picker.ant-select-focused:not(.ant-select-disabled) {
-  box-shadow: 0 0 0 2px var(--ui-focus);
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 .owb-model-select-popup {
@@ -67,8 +70,9 @@
 
 .owb-model-select-popup .owb-model-choice { min-width: 0; padding: 0; }
 .owb-model-select-popup .owb-model-choice > span { flex-wrap: wrap; white-space: normal; overflow-wrap: anywhere; }
-.owb-model-select-popup .owb-model-choice p { line-height: 1.5; }
+.owb-model-select-popup .owb-model-choice p { line-height: 1.5; font-size: 11px; color: var(--ui-foreground-muted); }
 .owb-model-select-popup .ant-select-item-option-state { color: var(--ui-brand); }
+.owb-model-select-popup .ant-select-item-option { min-height: 34px; padding: 7px 10px; border-radius: 6px; }
 
 /* rc-trigger briefly moves a popup to measure it. A reduced-motion duration
  * applied to every element otherwise animates that position from offscreen,
@@ -79,9 +83,9 @@
 }
 
 .owb-conversation-options.owb-model-connection .owb-model-connection__summary {
-  flex: 0 0 26px;
-  width: 26px;
-  height: 28px;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
   padding: 0;
 }
 
@@ -104,7 +108,7 @@
 
 .owb-model-menu__heading strong { font-size: 12px; }
 
-.owb-model-menu__heading .owb-model-menu__refresh { flex: none; }
+.owb-model-menu__heading .owb-model-menu__refresh { flex: none; width: 32px; height: 32px; padding: 0; border-radius: 8px; }
 
 .owb-model-menu__connection,
 .owb-model-menu .owb-model-menu__catalog-status {
@@ -192,10 +196,12 @@
   flex-direction: column;
   max-height: calc(100dvh - var(--ui-space-8));
   border: 1px solid var(--ui-border);
+  border-radius: 12px;
   padding: var(--ui-space-4);
+  box-shadow: var(--ui-shadow-md);
 }
 
-.owb-conversation-popover .ant-popover-title { flex: none; margin-bottom: var(--ui-space-3); }
+.owb-conversation-popover .ant-popover-title { flex: none; margin-bottom: var(--ui-space-3); font-size: 13px; font-weight: 600; }
 
 .owb-conversation-popover .ant-popover-content {
   min-height: 0;
@@ -206,7 +212,7 @@
 .owb-conversation-popover :is(.owb-context-details, .owb-model-connection__details, .owb-model-custom-form) {
   width: min(20rem, calc(100vw - var(--ui-space-8) * 2));
   max-width: 100%;
-  font-size: var(--ui-text-sm);
+  font-size: 13px;
   line-height: var(--ui-leading-normal);
   overflow-wrap: anywhere;
 }
@@ -217,8 +223,14 @@
 }
 
 .owb-conversation-popover .owb-context-details p { margin: 0; }
+.owb-conversation-popover :is(.owb-context-details, .owb-budget-advice):focus { outline: none; }
 
 .owb-conversation-popover .owb-context-details__stat { color: var(--ui-foreground); }
+.owb-conversation-popover .owb-context-details__toggle { display: flex; align-items: center; justify-content: space-between; gap: 20px; color: var(--ui-foreground); font-weight: 500; }
+.owb-conversation-popover .owb-conversation-popover__label { font-size: 11px; color: var(--ui-foreground-subtle); }
+.owb-conversation-popover .owb-conversation-popover__help { color: var(--ui-foreground-muted); font-size: 12px; line-height: 1.6; }
+.owb-conversation-popover .owb-context-details__usage { font-size: 22px; line-height: 1.3; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -0.3px; }
+.owb-conversation-popover .owb-context-details__warning { color: var(--ui-warning-strong); }
 
 .owb-conversation-popover__section + .owb-conversation-popover__section {
   border-top: 1px solid var(--ui-border);

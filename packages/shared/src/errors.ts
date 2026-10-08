@@ -130,6 +130,18 @@ export const errorCodes = {
   drive_upstream_unavailable: "drive_upstream_unavailable",
   /** The upstream mem service returned a non-2xx status for a proxied request. */
   drive_upstream_failed: "drive_upstream_failed",
+  /** The requested drive provider name is not a known kind (drive-provider.v1). */
+  drive_provider_invalid: "drive_provider_invalid",
+  /** The selected drive provider's upstream authorization has expired; re-authentication is required. */
+  drive_auth_expired: "drive_auth_expired",
+  /** The selected drive provider cannot serve this drive action at all (e.g. detail by id). */
+  drive_action_unsupported: "drive_action_unsupported",
+  /** A drive object is not an allowlisted raster image. */
+  drive_preview_unsupported: "drive_preview_unsupported",
+  /** Raster preview exceeds the byte or canvas budget. */
+  drive_preview_too_large: "drive_preview_too_large",
+  /** MIME, image signature or immutable file size does not agree. */
+  drive_preview_invalid: "drive_preview_invalid",
   /** Goal request shape is invalid (#222). */
   goal_request_invalid: "goal_request_invalid",
   /** A requested goal does not exist in the open workspace (#222). */

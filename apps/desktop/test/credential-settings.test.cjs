@@ -193,6 +193,7 @@ test("trusted, enumerated IPC and preload expose write-only values and redacted 
   assert.equal(snapshot.credentials.length, KEYS.length);
   let bridge;
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src/preload.js"), "utf8"), {
+    process: { platform: "win32" },
     require: (id) => {
       assert.equal(id, "electron");
       return { contextBridge: { exposeInMainWorld: (_name, value) => { bridge = value; } },

@@ -33,7 +33,7 @@ describe("conversation activity line (Qoder-style)", () => {
     // A running tool is the live element; no extra thinking row beside it.
     expect(screen.queryByText("继续推理…")).not.toBeInTheDocument();
     fireEvent.click(disclosure());
-    expect(disclosure()).toHaveTextContent("正在调用 Glob");
+    expect(disclosure()).toHaveTextContent("正在调用 查找文件");
     act(() => vi.advanceTimersByTime(2000));
     expect(screen.getByRole("timer")).toHaveTextContent("· 10s");
   });
@@ -60,11 +60,11 @@ describe("conversation activity line (Qoder-style)", () => {
     const items = document.querySelectorAll(".owb-activity-trace__item, .owb-activity-trace__agent");
     expect(items).toHaveLength(4);
     expect(items[0]).toHaveClass("is-thought");
-    expect(items[0]).toHaveTextContent("已思考");
+    expect(items[0]).toHaveTextContent("进展说明");
     expect(items[0]).toHaveTextContent("先读这份表，然后查群和人。");
-    expect(items[1]).toHaveTextContent("已执行");
+    expect(items[1]).toHaveTextContent("已完成");
     expect(items[3]).toHaveClass("is-failed");
-    expect(items[3]).toHaveTextContent("运行失败");
+    expect(items[3]).toHaveTextContent("失败");
   });
 
   it("names a running turn's open narration as the live element instead of a second thinking row", () => {
@@ -90,7 +90,7 @@ describe("conversation activity line (Qoder-style)", () => {
     expect(disclosure()).toHaveTextContent("正在执行中");
     fireEvent.click(disclosure());
     expect(disclosure()).toHaveTextContent("思考中");
-    expect(disclosure()).not.toHaveTextContent("正在调用 Glob");
+    expect(disclosure()).not.toHaveTextContent("正在调用 查找文件");
     const thought = document.querySelector(".owb-activity-trace__item.is-thought.is-running");
     expect(thought).not.toBeNull();
     expect(thought).toHaveTextContent("思考中");

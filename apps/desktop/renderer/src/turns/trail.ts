@@ -60,7 +60,11 @@ export function putTrailItem(
   const index = trail.findIndex((entry) => entry.activityId === item.activityId);
   const next = index === -1
     ? trail.concat(item)
-    : trail.map((entry, at) => (at === index ? item : entry));
+    : trail.map((entry, at) => (at === index ? {
+      ...entry, ...item,
+      // Completion events may omit parameters; keep the known call details.
+      ...(item.detail !== undefined || entry.detail !== undefined ? { detail: item.detail ?? entry.detail } : {}),
+    } : entry));
   return next.length > TRAIL_MAX_ITEMS ? next.slice(next.length - TRAIL_MAX_ITEMS) : next;
 }
 
@@ -112,4 +116,16 @@ export function closeNarration(trail: TurnTraceActivity[]): TurnTraceActivity[] 
  */
 export function dropOpenNarration(trail: TurnTraceActivity[]): TurnTraceActivity[] {
   return openThought(trail) === undefined ? trail : trail.slice(0, -1);
+}
+
+/** The reply is always kept in full. Omit only narration excerpts already
+ * visible there, so streamed text does not appear twice beside the tools. */
+export function visibleTrail(trail: TurnTraceActivity[], output: string | undefined): TurnTraceActivity[] {
+  if (!output) return trail;
+  const reply = output.replace(/\s+/g, " ").trim();
+  return trail.filter((item) => {
+    if (item.kind !== "thought" || !item.text) return true;
+    const excerpt = item.text.replace(/…$/, "").replace(/\s+/g, " ").trim();
+    return !excerpt || !reply.includes(excerpt);
+  });
 }

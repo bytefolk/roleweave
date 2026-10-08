@@ -120,13 +120,13 @@ describe("#146 i18n gates", () => {
     }
     const zh = render(<OwbI18nProvider locale="zh-CN"><ContextLabels /></OwbI18nProvider>);
     expect(groups.map(keys => zh.getByTestId(keys[0]!).textContent)).toEqual([
-      "协作方式 / 单聊 / 群聊", "员工视图 / 对话 / 记忆 / 档案 / 文档", "组织视图 / 组织架构 / 关系图谱",
+      "协作方式 / 单聊 / 群聊", "员工视图 / 对话 / 资料与记忆 / 档案 / 文档", "组织视图 / 组织架构 / 关系图谱",
       "项目视图 / 项目管理 / 目标 / 进度", "收件箱视图 / 审批 / 上报",
     ]);
     zh.unmount();
     const en = render(<OwbI18nProvider locale="en"><ContextLabels /></OwbI18nProvider>);
     expect(groups.map(keys => en.getByTestId(keys[0]!).textContent)).toEqual([
-      "Collaboration mode / Direct / Groups", "Employee views / Conversation / Memory / Profile / Docs", "Organization views / Organization structure / Relationships",
+      "Collaboration mode / Direct / Groups", "Employee views / Conversation / Resources & memory / Profile / Docs", "Organization views / Organization structure / Relationships",
       "Project views / Project management / Goals / Progress", "Inbox views / Approvals / Reports",
     ]);
     en.unmount();

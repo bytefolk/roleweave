@@ -71,6 +71,8 @@ For environment-based provider, document or memory connections, keep each endpoi
 
 Choose an Agent when creating a project or hiring an employee. Each employee keeps its own saved runtime binding across restarts and health changes; conversations do not share a global Host selector. Claude Code and Codex prefer an available local configuration for new bindings. A ready status does not prove model entitlement or a successful model request. Settings shows which environment supplies the project and Agents alongside the document and memory service connections. Closing the desktop also closes its WSL backend.
 
+For interactive or scripted operator work inside the distribution — a native Linux shell with `ssh`, `scp`, and `rsync` instead of per-command `wsl.exe` calls — set up passwordless SSH with `node scripts/setup-wsl-ssh.mjs`. See [driving a WSL workspace over SSH](docs/development/wsl-ssh.md). This is an optional developer convenience; the application keeps using `wsl.exe`.
+
 ## How workspaces work
 
 A **workspace** is a local project folder. A **role** is an AI employee's position, with its own instructions and budget. A **session** groups local conversation turns for that role.
@@ -160,7 +162,7 @@ git clone https://github.com/bytefolk/design-system.git
 git clone https://github.com/bytefolk/roleweave.git
 
 cd design-system
-git checkout 910456901dda74da4d5b0320cd03d36ad18650b0
+git checkout 4a82fce41f89f1a55b6b02cdb54f7a4e9ce9d84d
 npm ci
 npm run build:package
 

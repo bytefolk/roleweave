@@ -48,6 +48,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/updater.cjs",
   "src/update-ipc.cjs",
   "src/window-ipc.cjs",
+  "src/window-chrome.cjs",
   "dist/renderer/**/*",
 ];
 
@@ -136,6 +137,8 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/server.js",
   "dist/src/services/connections.js",
   "dist/src/services/doc-contract.js",
+  "dist/src/services/drive-preview.js",
+  "dist/src/services/drive-providers.js",
   "dist/src/services/mem-contract.js",
   "dist/src/services/probes.js",
   "dist/src/sessions/store.js",
@@ -160,6 +163,7 @@ const SHARED_RUNTIME_FILES = [
   "pending-approval.cjs",
   "position-id.cjs",
   "turn-engines.cjs",
+  "dist/acceptance.js",
   "dist/agent-binding.js",
   "dist/api.js",
   "dist/approval-preview.js",
@@ -172,6 +176,7 @@ const SHARED_RUNTIME_FILES = [
   "dist/change-manifest.js",
   "dist/context-sources.js",
   "dist/docs.js",
+  "dist/drive-provider.js",
   "dist/drive.js",
   "dist/errors.js",
   "dist/experiments.js",

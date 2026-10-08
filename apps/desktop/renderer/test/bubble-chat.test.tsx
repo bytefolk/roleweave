@@ -71,7 +71,10 @@ describe("TurnThread evidence timeline (#73)", () => {
     expect(card?.querySelector(".owb-activity-trace__list")).toHaveTextContent("gate.md");
     expect(card?.querySelector(".owb-tc__out")).toHaveTextContent("第二段结论，不应该被两行省略。");
     expect(card?.querySelector(".owb-tc__out")?.className).not.toContain("owb-clamp-2");
-    expect(card?.querySelector(".owb-tc__out")?.getAttribute("title")).toContain("第二段结论");
+    expect(card?.querySelector(".owb-tc__out")).toBeVisible();
+    // Full conclusions are read inline; a native tooltip must not duplicate
+    // the entire body or display raw Markdown over the rendered message.
+    expect(card?.querySelector(".owb-tc__out")).not.toHaveAttribute("title");
   });
 
   it("renders the conclusion as compact structured markdown", () => {
@@ -86,7 +89,9 @@ describe("TurnThread evidence timeline (#73)", () => {
     expect(output?.querySelector("strong")?.textContent).toBe("读写代码");
     expect(output?.querySelector("ul")).not.toBeNull();
     expect(output?.querySelector("code")?.textContent).toBe("README.md");
-    expect(output?.getAttribute("title")).toContain("**读写代码**");
+    expect(output).toBeVisible();
+    expect(output).toHaveTextContent("结论摘要");
+    expect(output).not.toHaveAttribute("title");
   });
 
   it("marks running and indeterminate turns with distinct timeline states", () => {

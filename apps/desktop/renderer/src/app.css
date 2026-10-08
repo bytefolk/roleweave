@@ -2175,10 +2175,10 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-lg, 14px);
+  border: 0;
+  border-radius: 0;
   background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-sm);
+  box-shadow: none;
 }
 
 .owb-docs-panel > .ant-empty {
@@ -2189,9 +2189,8 @@
   padding: 20px 16px;
 }
 
-/* 未选岗位时面板只装一个空态：改成虚线轻提示，别用一个实心重卡片框出一块空白。 */
+/* Keep the unselected state on the same open document surface. */
 .owb-docs-panel:has(> .ant-empty) {
-  border-style: dashed;
   background: transparent;
   box-shadow: none;
 }
@@ -2209,8 +2208,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid var(--ui-border);
-  background: var(--ui-surface);
+  min-width: 0;
+  background: transparent;
   padding: 8px 10px;
 }
 
@@ -2221,9 +2220,8 @@
 }
 
 .owb-docs-panel__scope {
-  border-bottom: 1px solid var(--ui-border);
-  background: var(--ui-surface);
-  padding: 4px 10px 8px;
+  background: transparent;
+  padding: 0 10px 6px;
 }
 
 .owb-docs-panel__scope .ant-segmented {
@@ -2235,7 +2233,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid var(--ui-border);
+  border: 0;
   padding: 10px 16px;
   color: var(--ui-foreground-muted);
   font-size: 11px;
@@ -2255,7 +2253,8 @@
 }
 
 .owb-docs-panel__list {
-  background: var(--ui-surface);
+  background: transparent;
+  padding: 4px 6px 8px;
 }
 
 .owb-docs-panel__list .ant-list-items {
@@ -2267,8 +2266,8 @@
   align-items: center;
   min-height: 0;
   margin: 0;
-  border-block-end: 1px solid var(--ui-border) !important;
-  padding: 3px 8px;
+  border-block-end: 0 !important;
+  padding: 2px 0;
   transition: background var(--owb-duration-fast, 120ms) var(--owb-ease-out, ease);
 }
 
@@ -2277,7 +2276,7 @@
 }
 
 .owb-docs-panel__list .ant-list-item:hover {
-  background: color-mix(in srgb, var(--ui-primary-soft) 32%, var(--ui-surface));
+  background: transparent;
 }
 
 .owb-docs-panel__file {
@@ -2322,7 +2321,23 @@
 }
 
 .owb-docs-panel__file-name {
-  font-weight: 600;
+  font-weight: 500;
+}
+
+.owb-docs-panel__file[aria-pressed="true"] .owb-docs-panel__file-name { font-weight: 600; }
+
+.owb-docs-panel__file-icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--ui-foreground-muted);
+}
+
+.owb-docs-panel__file-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .owb-docs-panel__copy-ref:hover,
@@ -2364,8 +2379,7 @@
 }
 
 .owb-docs-panel__reading {
-  border-top: 1px solid var(--ui-border);
-  border-bottom: 0;
+  border: 0;
 }
 
 .owb-docs-panel__error {
@@ -2381,7 +2395,7 @@
 
 .owb-doc-viewer .ant-card-head {
   min-height: 48px;
-  border-bottom-color: var(--ui-border);
+  border-bottom: 0;
   padding-inline: 14px;
 }
 
@@ -2403,8 +2417,8 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border-right: 1px solid var(--ui-border);
-  background: color-mix(in srgb, var(--ui-surface) 86%, var(--ui-surface-inset));
+  border: 0;
+  background: color-mix(in srgb, var(--ui-foreground) 2%, var(--ui-surface));
   scrollbar-gutter: stable;
 }
 
@@ -2415,9 +2429,7 @@
   min-height: 0;
   flex-direction: column;
   overflow: auto;
-  background:
-    radial-gradient(circle at 70% 0%, color-mix(in srgb, var(--ui-primary-soft) 16%, transparent), transparent 42%),
-    var(--ui-surface-raised);
+  background: var(--ui-surface);
   scrollbar-gutter: stable;
 }
 
@@ -2464,17 +2476,17 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-lg, 14px);
+  border: 0;
+  border-radius: 0;
   background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-sm);
+  box-shadow: none;
 }
 
 .owb-doc-plane__toolbar {
   display: grid;
   gap: 10px;
-  border-bottom: 1px solid var(--ui-border);
-  background: var(--ui-surface-raised);
+  border: 0;
+  background: transparent;
   padding: 14px;
 }
 
@@ -2491,17 +2503,20 @@
 }
 
 .owb-doc-plane__list .ant-list-item {
-  min-height: 52px;
-  border-block-end: 1px solid var(--ui-border) !important;
-  padding: 10px 12px;
+  min-height: 40px;
+  border-block-end: 0 !important;
+  padding: 2px 6px;
 }
 
 .owb-doc-plane__list .ant-list-item:hover {
-  background: color-mix(in srgb, var(--ui-primary-soft) 30%, transparent);
+  background: transparent;
 }
 
 .owb-doc-plane__entry {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
   min-width: 0;
   overflow: hidden;
   border: 1px solid transparent;
@@ -2516,6 +2531,9 @@
   white-space: nowrap;
   cursor: pointer;
 }
+
+.owb-doc-plane__entry-icon { display: flex; flex: none; color: var(--ui-foreground-muted); }
+.owb-doc-plane__entry-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .owb-doc-plane__entry:hover,
 .owb-doc-plane__entry:focus-visible,
@@ -2721,8 +2739,7 @@
   .owb-doc-plane__list-pane {
     max-height: 300px;
     flex: 0 0 auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--ui-border);
+    border: 0;
   }
 
   .owb-docs-panel__reader-pane,
@@ -3557,6 +3574,26 @@ body,
   -webkit-app-region: no-drag;
 }
 
+.owb-wintitle__content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+
+.owb-wintitle--native-windows { padding: 0; }
+.owb-wintitle--native-windows .owb-wintitle__content {
+  margin-left: env(titlebar-area-x, 0px);
+  width: env(titlebar-area-width, calc(100% - 138px));
+  height: env(titlebar-area-height, 40px);
+  padding: 0 14px;
+  box-sizing: border-box;
+}
+.owb-wintitle--standard { padding-right: 0; }
+.owb-wintitle__controls--standard { gap: 0; margin-left: 0; height: 100%; }
+
 /* #248 小 UI 单②：三个窗口钮改为常显彩色圆底 + 内 glyph（close 红底 X、
    min 琥珀底 −、fullscreen 绿底斜杠），不再是灰点 hover 才显形。
    语义色走 --ui-danger/--ui-warning/--ui-success，随 [data-theme] 在
@@ -3586,36 +3623,36 @@ body,
 }
 
 /* 常显语义底色（light + dark 经 var 切换）。 */
-.owb-wctl--close {
+.owb-wintitle--mac .owb-wctl--close {
   background: var(--ui-danger);
   border-color: var(--ui-danger);
 }
 
-.owb-wctl--min {
+.owb-wintitle--mac .owb-wctl--min {
   background: var(--ui-warning);
   border-color: var(--ui-warning);
 }
 
-.owb-wctl--max {
+.owb-wintitle--mac .owb-wctl--max {
   background: var(--ui-success);
   border-color: var(--ui-success);
 }
 
 /* hover/focus 加深一档，给出可点反馈。 */
-.owb-wintitle:hover .owb-wctl--close,
-.owb-wctl--close:focus-visible {
+.owb-wintitle--mac:hover .owb-wctl--close,
+.owb-wintitle--mac .owb-wctl--close:focus-visible {
   background: var(--ui-danger-strong);
   border-color: var(--ui-danger-strong);
 }
 
-.owb-wintitle:hover .owb-wctl--min,
-.owb-wctl--min:focus-visible {
+.owb-wintitle--mac:hover .owb-wctl--min,
+.owb-wintitle--mac .owb-wctl--min:focus-visible {
   background: var(--ui-warning-strong);
   border-color: var(--ui-warning-strong);
 }
 
-.owb-wintitle:hover .owb-wctl--max,
-.owb-wctl--max:focus-visible {
+.owb-wintitle--mac:hover .owb-wctl--max,
+.owb-wintitle--mac .owb-wctl--max:focus-visible {
   background: var(--ui-success-strong);
   border-color: var(--ui-success-strong);
 }
@@ -3624,6 +3661,20 @@ body,
   outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
+
+/* Browser/older-shell fallback uses neutral caption actions, never Mac discs. */
+.owb-wintitle__controls--standard .owb-wctl {
+  width: 46px;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-foreground);
+}
+.owb-wintitle__controls--standard .owb-wctl > svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 1; stroke-linecap: square; }
+.owb-wintitle__controls--standard .owb-wctl:hover { background: var(--ui-navigation-hover); }
+.owb-wintitle__controls--standard .owb-wctl--close:hover { background: var(--ui-danger); color: var(--ui-danger-foreground); }
+.owb-wintitle__controls--standard .owb-wctl:focus-visible { outline-offset: -3px; }
 
 @media (prefers-reduced-motion: reduce) {
   .owb-wctl,
@@ -4271,6 +4322,7 @@ body,
 
 .owb-app .ui-topbar {
   background: var(--ui-surface-raised);
+  border-bottom: 0;
 }
 
 .owb-topbar-context {
@@ -4332,6 +4384,7 @@ body,
   min-width: 0;
   max-width: min(42vw, 460px);
   gap: 6px;
+  min-height: 32px;
   color: var(--ui-foreground-subtle);
   /* The location is a button: clicking it reveals the workspace directory in
      the OS file manager, so it needs the reset and the hover affordance. */
@@ -4378,8 +4431,9 @@ body,
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 10px;
-  border: 1px solid var(--ui-border);
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 0;
   border-radius: 999px;
   background: var(--ui-surface-inset);
 }
@@ -8901,22 +8955,27 @@ body,
 .owb-theme-contrast-warnings__item { font-size: var(--ui-text-xs); color: var(--ui-warning-strong); }
 .owb-theme-contrast-warnings ul { margin: 0; padding-inline-start: 18px; }
 
-.owb-project-location { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.owb-project-location > .owb-project-switcher { flex: none; width: auto; margin: 0; }
-.owb-project-location .owb-tree-more { opacity: 1; margin-left: 0; }
-.owb-project-location .owb-project-switcher__trigger { padding: 3px 6px; min-height: 32px; }
+.owb-project-location { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.owb-project-location > .owb-project-switcher { flex: 0 1 auto; width: auto; max-width: min(280px, 36vw); margin: 0; }
+.owb-project-location > .owb-topbar-context { flex: 1; min-width: 0; overflow: hidden; }
+.owb-project-location .owb-tree-more { opacity: 1; margin-left: 0; width: 32px; height: 32px; }
+.owb-project-location .owb-project-switcher__trigger { gap: 8px; padding: 4px 8px 4px 4px; min-height: 32px; border-color: transparent; }
 .owb-project-location .owb-project-switcher__icon { width: 24px; height: 24px; }
-.owb-context-header { display: flex; flex: none; align-items: center; gap: 18px; min-height: 36px; min-width: 0; }
-.owb-context-header__name { flex: 0 0 min(112px, 20vw); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.owb-context-header--employee { flex-wrap: wrap; gap: 6px 12px; padding-bottom: 6px; border-bottom: 1px solid var(--ui-border); }
+.owb-project-location .owb-project-switcher__copy strong { font-size: 13px; font-weight: 600; }
+.owb-context-header { display: flex; flex: none; align-items: center; gap: 16px; min-height: 44px; min-width: 0; }
+.owb-context-header__identity { display: flex; flex: 0 1 auto; align-items: center; gap: 8px; max-width: min(240px, 34%); min-width: 0; }
+.owb-context-header__avatar { display: block; flex: none; width: 24px; height: 24px; border-radius: 8px; object-fit: contain; background: var(--ui-surface-inset); }
+.owb-context-header__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.owb-context-header--employee { flex-wrap: wrap; gap: 6px 16px; padding: 4px 0 8px; border-bottom: 0; container: employee-header / inline-size; }
 .owb-context-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
-.owb-context-tabs .ant-btn { height: 30px; padding-inline: 12px; }
+.owb-context-tabs .ant-btn { height: 32px; padding-inline: 12px; }
 .owb-context-tabs--subtle { flex-wrap: nowrap; flex: none; }
 [data-theme] .owb-app .owb-context-tabs--subtle .ant-btn {
-  border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  border: 0; border-radius: 7px;
   background: transparent; color: var(--ui-foreground-muted); box-shadow: none;
+  font-size: 13px;
 }
-[data-theme] .owb-app .owb-context-tabs--subtle .ant-btn[aria-pressed="true"] { border-bottom-color: var(--ui-primary); color: var(--ui-foreground); font-weight: 600; }
+[data-theme] .owb-app .owb-context-tabs--subtle .ant-btn[aria-pressed="true"] { background: var(--ui-surface-inset); color: var(--ui-foreground); font-weight: 600; }
 [data-theme] .owb-app .owb-context-tabs--subtle .ant-btn:hover { color: var(--ui-foreground); background: var(--ui-surface-inset); }
 [data-theme] .owb-app .owb-context-tabs--subtle .ant-btn:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 .owb-collaboration-toolbar { display: flex; align-items: center; gap: 4px; }
@@ -8925,7 +8984,7 @@ body,
 .owb-app .ui-sidebar:has(.owb-collaboration-toolbar) .ui-sidebar__content { padding-top: 4px; }
 .owb-contacts-directory .ui-org-tree__toolbar { gap: 4px; padding-inline: 0; }
 .owb-contacts-directory .ui-org-tree__toolbar-btn { padding-inline: 5px; border-color: transparent; background: transparent; }
-.owb-conversation-header-host { margin-left: auto; min-width: 0; max-width: 100%; }
+.owb-conversation-header-host { flex: 0 1 auto; margin-left: auto; min-width: 0; max-width: 100%; }
 .owb-conversation-header-host[hidden] { display: none; }
 .owb-contacts-toggle, .owb-contacts-close { display: none; }
 .owb-main > .owb-module-pane { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
@@ -8942,9 +9001,17 @@ body,
 @media (max-width: 44rem) {
   .owb-contacts-toggle, .owb-contacts-close { display: inline-flex; }
   .owb-context-header { gap: 8px; flex-wrap: wrap; }
-  .owb-project-location > .owb-breadcrumbs { display: none; }
+  .owb-project-location > .owb-project-switcher { max-width: min(260px, 48vw); }
+  .owb-project-location > .owb-topbar-context { display: none; }
   .owb-app.is-contacts-open .ui-app-shell__sidebar { display: block; position: absolute; z-index: 30; left: var(--ui-rail-width); top: 0; bottom: 0; width: min(300px, calc(100vw - var(--ui-rail-width))); box-shadow: var(--ui-shadow-lg); }
   .owb-app .ui-app-shell { position: relative; }
+}
+
+@container employee-header (max-width: 520px) {
+  .owb-context-header__identity { max-width: 150px; gap: 6px; }
+  .owb-context-header__name { max-width: 110px; }
+  .owb-context-header--employee > .owb-context-tabs { gap: 0; }
+  .owb-context-header--employee > .owb-context-tabs .ant-btn { padding-inline: 8px; }
 }
 
 .owb-org-views {

@@ -45,7 +45,7 @@ const ctx: ControlPlaneContext = {
   sessionStore: new SessionStore(),
   groupStore: new GroupStore(),
   relayStop: new RelayStopCoordinator(),
-  goalStore: new GoalStore(),
+  goalStore: new GoalStore({ readTurns: workspace => ctx.turnStore.reportRecords(workspace) }),
   taskBoardStore: new TaskBoardStore(),
   contextExporter: new ContextExportService(
     new ContextCliAdapterClient(config.contextCliCommand, process.env),

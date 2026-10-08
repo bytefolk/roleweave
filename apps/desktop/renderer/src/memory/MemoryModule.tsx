@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Empty, Select, Tooltip } from "antd";
-import { Maximize2, Minimize2, Info, UserRound } from "lucide-react";
+import { Maximize2, Minimize2, Info, UserRound, BookOpen, Files, MessagesSquare, HardDrive } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type { PositionCardData } from "@roleweave/ui";
 import type { ContextSourceSummary } from "@roleweave/shared";
@@ -14,6 +14,7 @@ import { SERVICES_CHANGED } from "../settings/ServiceConnections";
 export type MemorySource = "docs" | "shared" | "sessions" | "drive";
 
 export interface MemoryModuleProps {
+  workspaceKey?: string;
   onContinue?: (positionId: string, sessionId: string) => void;
   workspaceOpen: boolean;
   positions: PositionMentionOption[];
@@ -25,16 +26,17 @@ export interface MemoryModuleProps {
   resourceRequest?: { positionId: string; path: string; nonce: number } | null;
 }
 
-function sourceKind(source: MemorySource): ContextSourceSummary["kind"] {
-  return source === "docs" ? "workspace_docs" : "mem_drive";
+function sourceTitle(source: MemorySource, t: ReturnType<typeof useT>): string {
+  return t(`resources.${source}.title`);
 }
 
-function sourceTitle(source: MemorySource, t: ReturnType<typeof useT>): string {
-  if (source === "shared") return t("memory.shared");
-  if (source === "sessions") return t("memory.sessions");
-  if (source === "docs") return t("memory.docsTitle");
-  return t("memory.driveTitle");
-}
+const sourceGroups = [
+  { key: "documents", sources: ["docs", "shared"] },
+  { key: "memory", sources: ["sessions"] },
+  { key: "storage", sources: ["drive"] },
+] as const;
+const sourceScopes: Record<MemorySource, string> = { docs: "personal", shared: "team", sessions: "process", drive: "files" };
+const sourceIcons = { docs: BookOpen, shared: Files, sessions: MessagesSquare, drive: HardDrive };
 
 function sourceStatus(source: ContextSourceSummary | undefined, t: ReturnType<typeof useT>): string {
   if (!source) return t("memory.sourceNotLoaded");
@@ -44,14 +46,8 @@ function sourceStatus(source: ContextSourceSummary | undefined, t: ReturnType<ty
   return t("memory.sourceError");
 }
 
-function sourceTabStatus(source: MemorySource, summary: ContextSourceSummary | undefined, t: ReturnType<typeof useT>): string {
-  if (source === "shared") return t("memory.teamScope");
-  if (source === "sessions") return t("memory.sessionScope");
-  if (source === "drive") return t("services.memSource");
-  return sourceStatus(summary, t);
-}
-
 export function MemoryModule({
+  workspaceKey,
   workspaceOpen,
   positions,
   selectedPositionId,
@@ -115,6 +111,14 @@ export function MemoryModule({
     setActiveSource(initialSource);
   }, [initialSource]);
 
+  useEffect(() => {
+    if (!resourceRequest) return;
+    // Resource links are commands, not a default tab preference. A fresh nonce
+    // must reveal the requested role file even if initialSource is still docs.
+    setActiveSource("docs");
+    setPositionId(resourceRequest.positionId);
+  }, [resourceRequest?.nonce, resourceRequest?.positionId, resourceRequest?.path]);
+
   const selectedPosition = positionData?.id === positionId ? positionData : null;
   const contextSources = selectedPosition?.contextSources ?? [];
   const summaries = useMemo(() => {
@@ -134,7 +138,11 @@ export function MemoryModule({
 
   const isDocument = activeSource === "docs" || activeSource === "shared";
   const focused = isDocument && readingFocus;
-  const activeSummary = activeSource === "docs" ? summaries.get(sourceKind(activeSource)) : undefined;
+  const activeSummary = activeSource === "docs" ? summaries.get("workspace_docs") : undefined;
+  const scopeLabel = t(`resources.scope.${sourceScopes[activeSource]}`);
+  const navigationOptions = sourceGroups.map(group => ({ label: t(`resources.group.${group.key}`),
+    options: group.sources.map(source => ({ value: source,
+      label: `${sourceTitle(source, t)} · ${t(`resources.scope.${sourceScopes[source]}`)}` })) }));
   return (
     <section className="owb-memory-module" data-reading-focus={focused} aria-label={t("memory.moduleAria")}>
       {showEmployeePicker ? (
@@ -157,31 +165,40 @@ export function MemoryModule({
       ) : null}
 
       <div className="owb-memory-module__body">
+        <nav className="owb-memory-navigation" aria-label={t("resources.navigation")}>
+          {sourceGroups.map(group => <div key={group.key} className="owb-memory-navigation__group" role="group" aria-label={t(`resources.group.${group.key}`)}>
+            <h3>{t(`resources.group.${group.key}`)}</h3>
+            {group.sources.map(source => {
+              const Icon = sourceIcons[source];
+              return <Button key={source} type="text" className="owb-memory-navigation__source"
+                aria-current={activeSource === source ? "page" : undefined}
+                aria-label={t("resources.openSource", { name: sourceTitle(source, t) })}
+                onClick={() => setActiveSource(source)}>
+                <Icon size={16} aria-hidden="true" /><span><strong>{sourceTitle(source, t)}</strong><small>{t(`resources.scope.${sourceScopes[source]}`)}</small></span>
+              </Button>;
+            })}
+          </div>)}
+        </nav>
         <section className="owb-memory-workspace" aria-label={t("memory.detailAria")}>
+          <div className="owb-memory-navigation__compact">
+            <Select aria-label={t("resources.selectSource")} value={activeSource}
+              options={navigationOptions} onChange={setActiveSource} popupMatchSelectWidth={false} />
+          </div>
           <header className="owb-memory-tabs">
-            <nav className="owb-context-tabs owb-context-tabs--subtle" aria-label={t("memory.sourcesTitle")}>
-              {(["docs", "shared", "sessions", "drive"] as const).map((source) => (
-                <Button key={source} type="text"
-                  aria-pressed={activeSource === source}
-                  aria-label={t("memory.openSource", { name: sourceTitle(source, t) })}
-                  title={`${sourceTitle(source, t)} · ${sourceTabStatus(source, source === "docs" ? summaries.get(sourceKind(source)) : undefined, t)}`}
-                  onClick={() => setActiveSource(source)}>
-                  {sourceTitle(source, t)}
-                </Button>
-              ))}
-            </nav>
+            <div className="owb-memory-workspace__identity"><div><h2>{sourceTitle(activeSource, t)}</h2><span>{scopeLabel}</span></div>
+              <p>{t(`resources.${activeSource}.purpose`)}</p></div>
             <div className="owb-memory-tabs__actions">
               {activeSummary ? <span className="owb-memory-tabs__status">{sourceStatus(activeSummary, t)}</span> : null}
-              {activeSource === "shared" ? <ServiceLaunch kind="doc" /> : activeSource === "drive" ? <ServiceLaunch kind="mem" /> : null}
-              {isDocument ? <Tooltip title={t(focused ? "memory.exitFocus" : "memory.focusReading")}>
+              {isDocument ? <Tooltip trigger={["hover", "focus"]} title={t(focused ? "memory.exitFocus" : "memory.focusReading")}>
                 <Button type="text" size="small" aria-label={t(focused ? "memory.exitFocus" : "memory.focusReading")} aria-pressed={focused}
                   icon={focused ? <Minimize2 size={15} /> : <Maximize2 size={15} />} onClick={() => setReadingFocus(!readingFocus)} />
               </Tooltip> : null}
-              <Tooltip title={`${t(`memory.scope.${activeSource}`)} · ${sourceTabStatus(activeSource, activeSummary, t)}`}>
+              <Tooltip trigger={["hover", "focus"]} title={`${scopeLabel} · ${t(`resources.${activeSource}.purpose`)}${activeSummary ? ` · ${sourceStatus(activeSummary, t)}` : ""}`}>
                 <Button type="text" size="small" aria-label={t("memory.sourceInfo")} icon={<Info size={14} />} />
               </Tooltip>
             </div>
           </header>
+          <div className="owb-memory-workspace__content">
           {activeSource === "docs" || activeSource === "shared" ? (
             <DocsModule
               key={`${activeSource}:${sourceRevision}`}
@@ -191,10 +208,12 @@ export function MemoryModule({
               positions={positions}
               selectedPositionId={positionId}
               resourceRequest={activeSource === "docs" ? resourceRequest : null}
+              sharedServiceAction={activeSource === "shared" ? <ServiceLaunch kind="doc" connectLabel={t("docs.planeDisconnectedAction")} openLabel={t("resources.shared.open")} /> : undefined}
             />
           ) : null}
           {activeSource === "sessions" ? <SessionMemory key={positionId} positionId={positionId} onContinue={onContinue} /> : null}
-          {activeSource === "drive" ? <DriveModule key={sourceRevision} embedded workspaceOpen={workspaceOpen} /> : null}
+          {activeSource === "drive" ? <DriveModule key={sourceRevision} embedded workspaceOpen={workspaceOpen} workspaceKey={workspaceKey} serviceAction={<ServiceLaunch kind="mem" connectLabel={t("resources.drive.connect")} openLabel={t("resources.drive.open")} />} /> : null}
+          </div>
         </section>
       </div>
     </section>

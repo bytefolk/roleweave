@@ -1,0 +1,23 @@
+.owb-project-presets { display: grid; gap: 12px; }
+.owb-project-presets__heading strong { color: var(--ui-foreground); font-size: 13px; }
+.owb-project-presets__heading p { margin: 5px 0 0; color: var(--ui-foreground-muted); font-size: 12px; line-height: 1.6; }
+.owb-project-presets__choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.owb-project-presets__choices button { padding: 13px 12px; display: grid; gap: 7px; text-align: left; border: 1px solid var(--ui-border); border-radius: 9px; background: var(--ui-surface); color: var(--ui-foreground); cursor: pointer; }
+.owb-project-presets__choices button strong { font-size: 12px; font-weight: 600; }
+.owb-project-presets__choices button span { color: var(--ui-foreground-muted); font-size: 11px; line-height: 1.6; }
+.owb-project-presets__choices button[aria-pressed="true"] { border-color: var(--ui-primary); background: color-mix(in srgb, var(--ui-primary) 9%, var(--ui-surface)); }
+.owb-project-presets__choices button:hover:not(:disabled) { border-color: var(--ui-primary); }
+.owb-project-presets__choices button:focus-visible, .owb-project-presets__custom:focus-visible, .owb-project-create-settings summary:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 3px; }
+.owb-project-presets__custom { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--ui-foreground-muted); font-size: 12px; cursor: pointer; }
+.owb-project-presets__custom[aria-pressed="true"] { color: var(--ui-primary); }
+.owb-project-draft-preview { display: grid; gap: 7px; padding: 15px 16px; border: 1px solid var(--ui-border); border-radius: 9px; background: var(--ui-surface-inset); }
+.owb-project-draft-preview strong { color: var(--ui-foreground); font-size: 14px; }
+.owb-project-draft-preview p { margin: 0; color: var(--ui-foreground-muted); font-size: 12px; line-height: 1.7; }
+.owb-project-draft-preview > span { color: var(--ui-foreground-muted); font-size: 11px; }
+.owb-project-create-settings summary { display: flex; align-items: center; gap: 7px; color: var(--ui-foreground-muted); font-size: 12px; cursor: pointer; list-style: none; }
+.owb-project-create-settings summary::-webkit-details-marker { display: none; }
+.owb-project-create-settings summary svg { transition: transform .15s ease; }
+.owb-project-create-settings[open] summary svg { transform: rotate(180deg); }
+.owb-project-create-settings__body { display: grid; gap: 18px; padding-top: 16px; }
+.owb-project-presets button:disabled { cursor: default; opacity: .6; }
+@media (max-width: 420px) { .owb-project-presets__choices { grid-template-columns: 1fr; } .owb-project-presets__choices button { gap: 4px; padding: 10px 12px; } }

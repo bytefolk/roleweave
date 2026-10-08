@@ -12,16 +12,16 @@ import {
   Dropdown,
   Empty,
   Input,
-  List,
   Modal,
   Segmented,
   Spin,
+  Tooltip,
   message,
   type InputRef,
   type MenuProps,
 } from "antd";
 import type { TextAreaRef } from "antd/es/input/TextArea";
-import { Check, FileCode2, FolderOpen, LoaderCircle, MoreHorizontal } from "lucide-react";
+import { Check, FileCode2, FileText, FolderOpen, LoaderCircle, MoreHorizontal, Search } from "lucide-react";
 import { formatDocRefUri } from "@roleweave/shared/docs";
 import { useT } from "@roleweave/ui";
 import type {
@@ -31,6 +31,7 @@ import type {
 } from "@roleweave/shared";
 import { DocViewer } from "./DocViewer";
 import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
+import { DocumentFileTree } from "./DocumentFileTree";
 
 /**
  * Document routing surface (#35 S2/S4, DS-35-001 rev-1 §3/§5): routes a
@@ -169,6 +170,9 @@ export function DocsPanel({
   const renameInputRef = useRef<InputRef>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [documentMenuOpen, setDocumentMenuOpen] = useState(false);
+  const [fileMenuPath, setFileMenuPath] = useState<string | null>(null);
+  const fileButtons = useRef(new Map<string, HTMLButtonElement>());
   const lifecycleEnabled = Boolean(writeDoc || renameDoc || archiveDoc || restoreDoc || deleteDoc);
   const archivedView = fileScope === "archived";
   const readVersion = useRef(0);
@@ -201,11 +205,26 @@ export function DocsPanel({
     setMissingNote(null);
     setRenameOpen(false);
     setDeleteOpen(false);
+    setDocumentMenuOpen(false);
+    setFileMenuPath(null);
     setSaving(false);
     return () => {
       readVersion.current += 1;
     };
   }, [positionId, archivedView]);
+
+  useEffect(() => {
+    if (fileMenuPath === null) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setFileMenuPath(null);
+      fileButtons.current.get(fileMenuPath)?.focus();
+    };
+    window.addEventListener("keydown", escape, true);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, [fileMenuPath]);
 
   useEffect(() => {
     if (positionId === null) {
@@ -242,6 +261,7 @@ export function DocsPanel({
       setEditing(false);
       setExternalConflict(null);
       setCompareOpen(false);
+      setDocumentMenuOpen(false);
       setMissingNote(null);
       setSaving(false);
       setReading(true);
@@ -702,18 +722,12 @@ export function DocsPanel({
   const renderFilePath = (path: string) => {
     const separator = path.lastIndexOf("/");
     const fullName = separator < 0 ? path : path.slice(separator + 1);
-    const displayName = stripExtension(fullName);
-    if (separator < 0)
-      return <span className="owb-docs-panel__file-name">{displayName}</span>;
     return (
-      <>
+      <span className="owb-docs-panel__file-copy">
         <span className="owb-docs-panel__file-name">
-          {displayName}
+          {fullName}
         </span>
-        <span className="owb-docs-panel__file-parent">
-          {path.slice(0, separator)}/
-        </span>
-      </>
+      </span>
     );
   };
 
@@ -752,6 +766,7 @@ export function DocsPanel({
               <header className="owb-docs-panel__header">
                 <Input
                   allowClear
+                  prefix={<Search aria-hidden="true" size={14} />}
                   aria-label={t("memory.search")}
                   placeholder={t("memory.search")}
                   value={query}
@@ -797,13 +812,14 @@ export function DocsPanel({
                   }
                 />
               ) : null}
-              {!listing && listError === null ? (
-                <List
-                  className="owb-docs-panel__list"
-                  size="small"
-                  dataSource={visibleFiles}
-                  locale={{
-                    emptyText: (
+                <DocumentFileTree
+                  key={`${positionId}:${archivedView}`}
+                  files={visibleFiles}
+                  selectedPath={selected}
+                  query={query}
+                  hidden={listing || listError !== null}
+                  onCollapse={() => setFileMenuPath(null)}
+                  empty={(
                       <div className="owb-docs-panel__empty">
                         <span
                           className="owb-docs-panel__empty-icon"
@@ -824,31 +840,46 @@ export function DocsPanel({
                           <span>{t("docs.emptyHint")}</span>
                         )}
                       </div>
-                    ),
-                  }}
-                  renderItem={(entry) => (
-                    <List.Item
-                      key={entry.path}
-                      className="owb-docs-panel__item"
-                    >
-                      <Dropdown trigger={["contextMenu"]} destroyOnHidden menu={{ items: [
-                        { key: "copy-ref", label: t("docs.copyRef"), onClick: () => { void copyRef(entry); } },
-                      ] }}>
-                        <button
-                          type="button"
-                          className="owb-docs-panel__file"
-                          title={`${entry.path} · ${fileTypeLabel(entry.path)} · ${formatSize(entry.size)}`}
-                          aria-label={entry.path}
-                          aria-pressed={selected === entry.path}
-                          onClick={() => openFile(entry.path)}
-                        >
-                          {renderFilePath(entry.path)}
-                        </button>
-                      </Dropdown>
-                    </List.Item>
+                  )}
+                  renderFile={(entry) => (
+                      <Tooltip placement="right" trigger={["hover", "focus"]} open={fileMenuPath === entry.path ? false : undefined}
+                        title={<div className="owb-docs-panel__file-details">
+                          <span>{t(archivedView ? "docs.archivedFileLocation" : "docs.fileLocation", { path: entry.path })}</span>
+                          <span>{fileTypeLabel(entry.path)} · {formatSize(entry.size)}</span>
+                        </div>}>
+                        <Dropdown trigger={["contextMenu"]} autoFocus destroyOnHidden open={fileMenuPath === entry.path}
+                          onOpenChange={(open) => setFileMenuPath(open ? entry.path : null)} menu={{ items: [
+                            { key: "copy-ref", label: t("docs.copyRef"), onClick: () => { setFileMenuPath(null); void copyRef(entry); } },
+                          ] }}>
+                          <button
+                            ref={(node) => {
+                              if (node) fileButtons.current.set(entry.path, node);
+                              else fileButtons.current.delete(entry.path);
+                            }}
+                            type="button"
+                            tabIndex={-1}
+                            className="owb-docs-panel__file"
+                            aria-label={entry.path}
+                            aria-pressed={selected === entry.path}
+                            aria-haspopup="menu"
+                            aria-expanded={fileMenuPath === entry.path}
+                            onClick={() => openFile(entry.path)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+                              event.preventDefault();
+                              const bounds = event.currentTarget.getBoundingClientRect();
+                              event.currentTarget.dispatchEvent(new MouseEvent("contextmenu", {
+                                bubbles: true, cancelable: true, clientX: bounds.left + 12, clientY: bounds.bottom,
+                              }));
+                            }}
+                          >
+                            <FileText className="owb-docs-panel__file-icon" aria-hidden="true" size={15} strokeWidth={1.7} />
+                            {renderFilePath(entry.path)}
+                          </button>
+                        </Dropdown>
+                      </Tooltip>
                   )}
                 />
-              ) : null}
             </div>
             <div
               ref={readerRef}
@@ -937,24 +968,32 @@ export function DocsPanel({
               {doc !== null ? (
                 <header className="owb-doc-viewer__toolbar owb-docs-panel__toolbar" role="toolbar" aria-label={t("docs.toolbarAria")}>
                   <div className="owb-doc-viewer__location">
+                    <FileText className="owb-docs-panel__document-icon" size={16} strokeWidth={1.7} aria-hidden="true" />
                     {mutableSelected && !archivedView && renameDoc ? (
-                      <button type="button" className="owb-docs-panel__title" disabled={!canRename}
-                        title={`${doc.path} · ${t("docs.renameHint")}`} onDoubleClick={beginRename}
-                        onKeyDown={(event) => {
-                          if (!event.metaKey && !event.ctrlKey && !event.altKey && (event.key === "Enter" || event.key === " ")) {
-                            event.preventDefault();
-                            beginRename();
-                          }
-                        }}>
-                        {stripExtension(doc.path.slice(doc.path.lastIndexOf("/") + 1))}
-                      </button>
-                    ) : <strong title={doc.path}>{stripExtension(doc.path.slice(doc.path.lastIndexOf("/") + 1))}</strong>}
+                      <Tooltip title={`${doc.path} · ${t("docs.renameHint")}`} trigger={["hover", "focus"]}>
+                        <button type="button" className="owb-docs-panel__title" disabled={!canRename}
+                          onDoubleClick={beginRename}
+                          onKeyDown={(event) => {
+                            if (!event.metaKey && !event.ctrlKey && !event.altKey && (event.key === "Enter" || event.key === " ")) {
+                              event.preventDefault();
+                              beginRename();
+                            }
+                          }}>
+                          {stripExtension(doc.path.slice(doc.path.lastIndexOf("/") + 1))}
+                        </button>
+                      </Tooltip>
+                    ) : <Tooltip title={doc.path}><strong>{stripExtension(doc.path.slice(doc.path.lastIndexOf("/") + 1))}</strong></Tooltip>}
                   </div>
-                  <span className="owb-docs-panel__save-status" role="status" aria-label={t(documentState)}>{t(documentState)}</span>
-                  <Dropdown trigger={["click"]} destroyOnHidden menu={{ items: documentMenu }}>
-                    <Button type="text" size="small" icon={<MoreHorizontal size={17} aria-hidden="true" />}
-                      aria-label={t("docs.moreActions")} title={t("docs.moreActions")} disabled={reading} />
-                  </Dropdown>
+                  <span className="owb-docs-panel__save-status" role="status" aria-label={t(documentState)}>
+                    {saving ? <LoaderCircle className="owb-docs-panel__saving-icon" size={13} aria-hidden="true" /> : documentState === "docs.saved" ? <Check size={13} aria-hidden="true" /> : null}
+                    {t(documentState)}
+                  </span>
+                  <Tooltip title={t("docs.moreActions")} trigger={["hover", "focus"]} open={documentMenuOpen ? false : undefined}>
+                    <Dropdown trigger={["click"]} destroyOnHidden onOpenChange={setDocumentMenuOpen} menu={{ items: documentMenu }}>
+                      <Button className="owb-docs-panel__more" type="text" size="small" icon={<MoreHorizontal size={17} aria-hidden="true" />}
+                        aria-label={t("docs.moreActions")} disabled={reading} />
+                    </Dropdown>
+                  </Tooltip>
                 </header>
               ) : null}
               {doc !== null && (editing || (liveEditable && editorMode === "source")) ? (

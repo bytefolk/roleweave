@@ -15,15 +15,200 @@ const data: RelationshipGraphResponse = {
   ], coverage: [{ source: "workspace", state: "complete", count: 3 }], truncated: false, limits: { nodes: 500, edges: 1000 },
 };
 let uniqueScope = 0;
-function mount(overrides: Partial<React.ComponentProps<typeof RelationshipGraph>> = {}) {
+function mount(overrides: Partial<React.ComponentProps<typeof RelationshipGraph>> = {}, renderer: "minimal" | "context" = "minimal") {
   const props = { data, loading: false, onReload: vi.fn(), onOpenAgent: vi.fn(), onOpenResource: vi.fn(), workspaceKey: `graph-test-${++uniqueScope}`, ...overrides };
-  return { ...render(<RelationshipGraph {...props} />), props };
+  const result = render(<RelationshipGraph {...props} />);
+  if (renderer === "minimal") fireEvent.click(screen.getByRole("button", { name: "极简关系图" }));
+  return { ...result, props };
 }
 function objectList() { return screen.getByRole("list", { name: "对象" }); }
 function spatialObjects(name: "极简空间对象" | "星系对象" = "极简空间对象") { return screen.getByRole("list", { name }); }
 
 describe("RelationshipGraph", () => {
-  it("defaults to the minimalist renderer and preserves shared graph and spatial state per workspace", () => {
+  it("starts with context exploration and teaches objects, relationships, and evidence before spatial browsing", () => {
+    mount({}, "context");
+
+    expect(screen.getByRole("button", { name: "上下文探索" })).toHaveAttribute("aria-pressed", "true");
+    const context = screen.getByRole("region", { name: "关联上下文" });
+    expect(within(context).getByRole("heading", { name: "把上下文读成一条关系链" })).toBeVisible();
+    expect(within(context).getByText("结构示例 · 不代表当前工作区数据")).toBeVisible();
+    const workflow = screen.getByRole("list", { name: "这张图怎么用" });
+    expect(workflow).toHaveTextContent("找一个对象");
+    expect(workflow).toHaveTextContent("沿关系探索");
+    expect(workflow).toHaveTextContent("查依据，打开原文");
+    expect(within(context).getByRole("button", { name: /这个员工声明了哪些数据源？/ })).toBeEnabled();
+    expect(screen.queryByRole("region", { name: "极简关系空间" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/当前环境不支持 WebGL/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "这张图怎么用" }));
+    const guide = screen.getByRole("region", { name: "这张图怎么用" });
+    expect(within(guide).getByText("对象")).toBeVisible();
+    expect(within(guide).getByText("关系")).toBeVisible();
+    expect(within(guide).getByText("证据")).toBeVisible();
+    expect(within(guide).getByText("这里展示对象、配置关系和来源记录。本次任务实际使用了哪些上下文，请到员工工作台核对。")).toBeVisible();
+  });
+
+  it("follows an employee to its source and resource, checks relationship evidence, and opens only on request", () => {
+    const { props } = mount({}, "context");
+    const context = screen.getByRole("region", { name: "关联上下文" });
+    fireEvent.click(within(context).getByRole("button", { name: /这个员工声明了哪些数据源？/ }));
+    expect(screen.getByRole("heading", { name: "Alice" })).toBeVisible();
+
+    fireEvent.click(within(context).getByRole("button", { name: "探索对象: Project docs" }));
+    expect(screen.getByRole("heading", { name: "Project docs" })).toBeVisible();
+    expect(within(context).getByText("谁关联到它 · 1")).toBeVisible();
+    expect(within(context).getByText("它关联到谁 · 1")).toBeVisible();
+    fireEvent.click(within(context).getByRole("button", { name: /查看依据: Alice → 声明来源 → Project docs/ }));
+    const inspector = screen.getByRole("complementary", { name: "关系详情" });
+    expect(within(inspector).getByText("配置声明，不代表运行时授权")).toBeVisible();
+    expect(within(inspector).getByText("workspace-org.v1")).toBeVisible();
+    expect(props.onOpenAgent).not.toHaveBeenCalled();
+    expect(props.onOpenResource).not.toHaveBeenCalled();
+
+    fireEvent.click(within(context).getByRole("button", { name: "探索对象: brief.md" }));
+    expect(within(inspector).getByRole("heading", { name: "brief.md" })).toBeVisible();
+    expect(within(inspector).getByText("knowledge/brief.md")).toBeVisible();
+    expect(props.onOpenResource).not.toHaveBeenCalled();
+    fireEvent.click(within(inspector).getByRole("button", { name: "打开文档" }));
+    expect(props.onOpenResource).toHaveBeenCalledExactlyOnceWith("alice", "knowledge/brief.md");
+  });
+
+  it("returns through the exploration trail and can restart at the guide", () => {
+    mount({}, "context");
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    const context = screen.getByRole("region", { name: "关联上下文" });
+    fireEvent.click(within(context).getByRole("button", { name: "探索对象: Project docs" }));
+    fireEvent.click(within(context).getByRole("button", { name: "探索对象: brief.md" }));
+    const trail = screen.getByRole("navigation", { name: "探索路径" });
+    expect(within(trail).getByRole("button", { name: "brief.md" })).toHaveAttribute("aria-current", "location");
+
+    fireEvent.click(within(trail).getByRole("button", { name: "回到上一步" }));
+    expect(screen.getByRole("heading", { name: "Project docs" })).toBeVisible();
+    expect(within(trail).queryByRole("button", { name: "brief.md" })).not.toBeInTheDocument();
+    fireEvent.click(within(trail).getByRole("button", { name: "Alice" }));
+    expect(screen.getByRole("heading", { name: "Alice" })).toBeVisible();
+    expect(within(trail).getByRole("button", { name: "回到上一步" })).toBeDisabled();
+    fireEvent.click(within(trail).getByRole("button", { name: "重新开始" }));
+    expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
+    expect(within(context).getByRole("heading", { name: "把上下文读成一条关系链" })).toBeVisible();
+  });
+
+  it("uses a search to find the starting object without hiding differently named neighbors", () => {
+    mount({}, "context");
+    const search = screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" });
+    fireEvent.change(search, { target: { value: "Alice" } });
+    expect(within(objectList()).queryByRole("button", { name: /Project docs/ })).not.toBeInTheDocument();
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    const context = screen.getByRole("region", { name: "关联上下文" });
+    fireEvent.click(within(context).getByRole("button", { name: "探索对象: Project docs" }));
+    expect(within(context).getByRole("button", { name: "探索对象: brief.md" })).toBeVisible();
+    expect(search).toHaveValue("Alice");
+    expect(within(objectList()).queryByRole("button", { name: /Project docs/ })).not.toBeInTheDocument();
+  });
+
+  it("explains selectors as scope rules and never opens one as a discovered file", () => {
+    const selector: RelationshipNode = { ...resource, id: "resource:selector", label: "knowledge/*.md", resourcePath: "knowledge/*.md", evidence, facts: [{ key: "kind", value: "selector" }] };
+    const { props } = mount({ data: { ...data, nodes: [agent, source, selector], edges: [data.edges[0]!, { ...data.edges[1]!, target: selector.id }] } }, "context");
+    const selectorButton = within(objectList()).getByRole("button", { name: /knowledge\/\*\.md/ });
+    fireEvent.click(selectorButton);
+    const context = screen.getByRole("region", { name: "关联上下文" });
+    expect(within(context).getByText("这是资源范围选择器，例如路径匹配规则。它描述选取范围，不是已发现的文件。")).toBeVisible();
+    const inspector = screen.getByRole("complementary", { name: "关系详情" });
+    expect(within(inspector).queryByRole("button", { name: "打开文档" })).not.toBeInTheDocument();
+    fireEvent.doubleClick(selectorButton);
+    expect(props.onOpenResource).not.toHaveBeenCalled();
+  });
+
+  it("isolates the context focus and exploration trail by workspace and restores them on return", () => {
+    const { rerender, props } = mount({}, "context");
+    const search = screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" });
+    fireEvent.change(search, { target: { value: "Alice" } });
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    fireEvent.click(within(screen.getByRole("region", { name: "关联上下文" })).getByRole("button", { name: "探索对象: Project docs" }));
+
+    rerender(<RelationshipGraph {...props} workspaceKey={`context-other-${++uniqueScope}`} data={{ ...data, workspaceId: "other", nodes: [agent], edges: [] }} />);
+    expect(screen.getByRole("button", { name: "上下文探索" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" })).toHaveValue("");
+    expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "把上下文读成一条关系链" })).toBeVisible();
+
+    rerender(<RelationshipGraph {...props} />);
+    expect(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" })).toHaveValue("Alice");
+    expect(screen.getByRole("heading", { name: "Project docs" })).toBeVisible();
+    const trail = screen.getByRole("navigation", { name: "探索路径" });
+    expect(within(trail).getByRole("button", { name: "Alice" })).toBeVisible();
+    expect(within(trail).getByRole("button", { name: "Project docs" })).toHaveAttribute("aria-current", "location");
+  });
+
+  it("discloses the context cap independently of search and can explore a neighbor beyond that cap", () => {
+    const sources = Array.from({ length: 130 }, (_, index) => ({ ...source, id: `source:${index}`, label: `Source ${index}` }));
+    const large = { ...data, nodes: [agent, ...sources], edges: sources.map(node => ({ ...data.edges[0]!, id: `binding:${node.id}`, target: node.id })) };
+    mount({ data: large }, "context");
+    const search = screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" });
+    fireEvent.change(search, { target: { value: "agent:alice" } });
+    expect(within(objectList()).getAllByRole("button")).toHaveLength(1);
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    const context = screen.getByRole("region", { name: "关联上下文" });
+    expect(screen.getByText("显示 120 / 131 个对象。搜索或聚焦邻域可继续探索。")).toBeVisible();
+    expect(within(context).getAllByRole("button", { name: /^探索对象:/ })).toHaveLength(119);
+    expect(within(context).queryByRole("button", { name: "探索对象: Source 129" })).not.toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "Source 129" } });
+    fireEvent.click(within(objectList()).getByRole("button", { name: /Source 129/ }));
+    expect(screen.getByRole("heading", { name: "Source 129" })).toBeVisible();
+    expect(within(context).getByRole("button", { name: "探索对象: Alice" })).toBeVisible();
+    expect(screen.queryByText("显示 120 / 131 个对象。搜索或聚焦邻域可继续探索。")).not.toBeInTheDocument();
+  });
+
+  it("distinguishes a filtered focus from a deleted object even when the updated graph is empty", () => {
+    const { rerender, props } = mount({}, "context");
+    fireEvent.click(within(objectList()).getByRole("button", { name: /brief.md/ }));
+    fireEvent.click(screen.getByText("类型与关系筛选"));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^资源/ }));
+    const context = screen.getByRole("region", { name: "关联上下文" });
+    expect(within(context).getByText("当前选择不在筛选结果中")).toBeVisible();
+    expect(within(context).queryByText("该对象或关系已不在当前数据中")).not.toBeInTheDocument();
+
+    rerender(<RelationshipGraph {...props} data={{ ...data, revision: "deleted", nodes: [], edges: [] }} />);
+    expect(within(context).getByText("该对象或关系已不在当前数据中")).toBeVisible();
+    expect(within(context).queryByText("当前选择不在筛选结果中")).not.toBeInTheDocument();
+    expect(within(context).queryByRole("heading", { name: "把上下文读成一条关系链" })).not.toBeInTheDocument();
+  });
+
+  it("identifies same-named resources by their owning employee and opens the chosen owner", () => {
+    const bob: RelationshipNode = { ...agent, id: "agent:bob", label: "Bob", positionId: "bob" };
+    const bobResource: RelationshipNode = { ...resource, id: "resource:bob-brief", positionId: "bob" };
+    const { props } = mount({ data: { ...data, nodes: [agent, bob, resource, bobResource], edges: [] } }, "context");
+    const aliceButton = within(objectList()).getByRole("button", { name: /brief.md Alice · knowledge\/brief.md/ });
+    const bobButton = within(objectList()).getByRole("button", { name: /brief.md Bob · knowledge\/brief.md/ });
+    expect(aliceButton).toBeVisible();
+    expect(bobButton).toBeVisible();
+    fireEvent.click(bobButton);
+    fireEvent.click(within(screen.getByRole("complementary", { name: "关系详情" })).getByRole("button", { name: "打开文档" }));
+    expect(props.onOpenResource).toHaveBeenCalledExactlyOnceWith("bob", "knowledge/brief.md");
+  });
+
+  it("moves keyboard focus to the inspector when relationship or object evidence is requested", () => {
+    const { props } = mount({}, "context");
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    const context = screen.getByRole("region", { name: "关联上下文" });
+    const evidenceButton = within(context).getByRole("button", { name: /查看依据: Alice → 声明来源 → Project docs/ });
+    evidenceButton.focus();
+    fireEvent.click(evidenceButton);
+    const inspector = screen.getByRole("complementary", { name: "关系详情" });
+    expect(inspector).toHaveFocus();
+    expect(within(inspector).getByRole("heading", { name: "这条关系的依据" })).toBeVisible();
+
+    const objectEvidence = screen.getByRole("button", { name: "对象依据" });
+    objectEvidence.focus();
+    fireEvent.click(objectEvidence);
+    expect(inspector).toHaveFocus();
+    expect(within(inspector).getByRole("heading", { name: "Alice" })).toBeVisible();
+    expect(props.onOpenAgent).not.toHaveBeenCalled();
+    expect(props.onOpenResource).not.toHaveBeenCalled();
+  });
+
+  it("preserves the explicitly selected renderer and shared graph and spatial state per workspace", () => {
     const { rerender, props } = mount({ workspaceKey: "renderer-memory" });
 
     let renderer = screen.getByRole("group", { name: "渲染模式" });
@@ -38,6 +223,8 @@ describe("RelationshipGraph", () => {
     expect(screen.getByRole("heading", { name: "brief.md" })).toBeVisible();
     rerender(<RelationshipGraph {...props} workspaceKey="renderer-memory-other" />);
     expect(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "上下文探索" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "极简关系图" }));
     expect(screen.getByRole("button", { name: "拓扑" })).toHaveAttribute("aria-pressed", "true");
 
     rerender(<RelationshipGraph {...props} workspaceKey="renderer-memory" />);
@@ -50,7 +237,7 @@ describe("RelationshipGraph", () => {
     expect(screen.getByRole("button", { name: "纸张浅色" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("renders the default as a genuine Bindy spatial scene with controls and visible semantic objects", () => {
+  it("renders the explicitly selected minimal view as a Bindy spatial scene with controls and visible semantic objects", () => {
     mount();
 
     const scene = screen.getByRole("region", { name: "极简关系空间" });
@@ -130,12 +317,12 @@ describe("RelationshipGraph", () => {
 
   it("preserves selection and spatial controls on data updates", () => {
     const { rerender, props } = mount();
-    fireEvent.click(within(objectList()).getByRole("button", { name: /Alice/ }));
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
     fireEvent.click(screen.getByRole("button", { name: "轨道" }));
     fireEvent.click(screen.getByRole("button", { name: "纸张浅色" }));
     rerender(<RelationshipGraph {...props} data={{ ...data, revision: "two", nodes: [...data.nodes, { ...agent, id: "agent:bob", positionId: "bob", label: "Bob" }] }} />);
 
-    expect(within(objectList()).getByRole("button", { name: /Alice/ })).toHaveAttribute("aria-pressed", "true");
+    expect(within(objectList()).getByRole("button", { name: /^Alice / })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "轨道" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "纸张浅色" })).toHaveAttribute("aria-pressed", "true");
     expect(within(spatialObjects()).getByRole("button", { name: "员工 · Bob" })).toBeVisible();
@@ -154,7 +341,7 @@ describe("RelationshipGraph", () => {
 
   it("keeps one-hop and two-hop exploration explicit rather than changing the graph on selection", () => {
     mount();
-    fireEvent.click(within(objectList()).getByRole("button", { name: /Alice/ }));
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
     expect(within(spatialObjects()).getAllByRole("button")).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "一跳邻域" }));
     expect(within(spatialObjects()).getAllByRole("button")).toHaveLength(2);
@@ -165,7 +352,7 @@ describe("RelationshipGraph", () => {
   it("expands neighbors with other names after searching for the starting employee", () => {
     mount();
     fireEvent.change(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" }), { target: { value: "Alice" } });
-    fireEvent.click(within(objectList()).getByRole("button", { name: /Alice/ }));
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
     fireEvent.click(screen.getByRole("button", { name: "一跳邻域" }));
     expect(within(spatialObjects()).getByRole("button", { name: "数据源 · Project docs" })).toBeVisible();
   });
@@ -178,7 +365,7 @@ describe("RelationshipGraph", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" }), { target: { value: "no-match" } });
     expect(screen.getAllByText("没有符合筛选的对象").length).toBeGreaterThan(0);
     expect(screen.queryByText("当前工作区还没有关系对象")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+    fireEvent.click(within(screen.getByRole("complementary", { name: "图谱筛选" })).getByRole("button", { name: "清除筛选" }));
     expect(within(objectList()).getAllByRole("button")).toHaveLength(3);
   });
 

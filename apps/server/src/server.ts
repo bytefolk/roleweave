@@ -17,7 +17,7 @@ import {
   handleDocsRestore,
   handleDocsWrite,
 } from "./routes/docs.js";
-import { handleDriveDetail, handleDriveList, handleDriveUpload } from "./routes/drive.js";
+import { handleDriveDetail, handleDriveList, handleDrivePreview, handleDriveProviderStatus, handleDriveUpload } from "./routes/drive.js";
 import { handleEvents } from "./routes/events.js";
 import {
   handleGroupAddMember,
@@ -35,6 +35,7 @@ import {
   handleGoalGet,
   handleGoalList,
   handleGoalUpdate,
+  handleGoalTaskAcceptance,
 } from "./routes/goals.js";
 import { handleHealth } from "./routes/health.js";
 import { handleQoderLoginStart, handleQoderLoginStatus } from "./routes/qoder-login.js";
@@ -371,8 +372,16 @@ async function dispatch(
       await handleDriveDetail(ctx, res, url);
       return;
     }
+    if (pathname === routes.drivePreview && method === "GET") {
+      await handleDrivePreview(ctx, res, url);
+      return;
+    }
     if (pathname === routes.driveUpload && method === "POST") {
       await handleDriveUpload(res);
+      return;
+    }
+    if (pathname === routes.driveProvider && method === "GET") {
+      await handleDriveProviderStatus(ctx, res);
       return;
     }
     if (pathname === routes.goals && method === "POST") {
@@ -396,6 +405,15 @@ async function dispatch(
     }
     if (pathname === routes.goals && method === "GET") {
       await handleGoalList(ctx, res);
+      return;
+    }
+    const goalAcceptanceMatch = pathname.match(/^\/goals\/([a-zA-Z0-9_-]{1,64})\/tasks\/([a-zA-Z0-9_-]{1,64})\/acceptance$/);
+    if (goalAcceptanceMatch) {
+      if (method !== "POST") {
+        sendJson(res, 405, new OrgApiError(errorCodes.method_not_allowed, 405, "task acceptance requires POST").toBody());
+        return;
+      }
+      await handleGoalTaskAcceptance(ctx, req, res, goalAcceptanceMatch[1]!, goalAcceptanceMatch[2]!, actor!);
       return;
     }
     const goalMatch = pathname.match(/^\/goals\/([^/]+)$/);
