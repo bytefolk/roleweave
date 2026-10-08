@@ -71,6 +71,13 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
       upload: vi.fn().mockResolvedValue({ status: 202, body: { stub: true, filePath: "", message: "stub" } }),
       pickAndUpload: vi.fn().mockResolvedValue({ canceled: true }),
     },
+    vault: {
+      list: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "vault-list.v1", notes: [] } }),
+      read: vi.fn(), create: vi.fn(), write: vi.fn(), rename: vi.fn(), archive: vi.fn(), restore: vi.fn(), delete: vi.fn(), migrate: vi.fn(),
+      bindings: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "vault-bindings.v1", bindings: [] } }),
+      bind: vi.fn(), source: vi.fn().mockResolvedValue({ status: 200, body: { vaultId: "fixture-vault" } }), resolve: vi.fn(), image: vi.fn(), attach: vi.fn(), fromTurn: vi.fn(), sync: vi.fn(),
+      targets: vi.fn().mockResolvedValue({ status: 200, body: { vaults: [] } }), context: vi.fn(), history: vi.fn(), used: vi.fn().mockResolvedValue({ status: 200, body: { notes: [] } }),
+    },
     createTurn: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal", message: "unexpected" } }),
     turnHistory: vi.fn().mockResolvedValue({
       status: 200,
@@ -336,7 +343,7 @@ describe("App context navigation", () => {
     const views = within(screen.getByRole("navigation", { name: "员工视图" }));
     const tree = screen.getByRole("tree");
     fireEvent.click(views.getByRole("button", { name: "资料与记忆" }));
-    expect(await screen.findByRole("region", { name: "资料与记忆" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "笔记库" })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
     expect(screen.getByRole("tree")).toBe(tree);
     fireEvent.click(views.getByRole("button", { name: "档案" }));
@@ -387,10 +394,10 @@ describe("App context navigation", () => {
       expect(document.querySelector(".owb-context-header__name")).toHaveTextContent(employee.name);
       const other = employees.find(candidate => candidate.id !== employee.id)!;
       if (subview === "资料与记忆") {
-        const memory = within(screen.getByRole("region", { name: "资料与记忆" }));
-        expect(await memory.findByRole("button", { name: `${employee.id}.md` })).toBeVisible();
-        expect(memory.queryByRole("button", { name: `${other.id}.md` })).not.toBeInTheDocument();
-        expect(positionDocs).toHaveBeenLastCalledWith(employee.id);
+        const memory = within(screen.getByRole("region", { name: "笔记库" }));
+        expect(await memory.findByText("还没有笔记")).toBeVisible();
+        expect(bridge.vault.list).toHaveBeenCalledWith(expect.objectContaining({ includeLegacy: true }));
+        expect(positionDocs).not.toHaveBeenCalled();
         expect(memory.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
       } else {
         const profile = within(screen.getByRole("region", { name: "岗位档案" }));
@@ -1865,14 +1872,9 @@ describe("App employee-memory module wiring", () => {
     expect(await screen.findByText("归档会话回复")).toBeVisible();
     expect(screen.getByRole("textbox", { name: "下达任务" })).toBeDisabled();
 
-    selectEmployeeView("资料与记忆");
-    fireEvent.click(screen.getByRole("button", { name: "打开会话记忆" }));
-    await screen.findByRole("combobox", { name: "选择会话" });
-    pickSelectOption("选择会话", "当前");
-    const memory = screen.getByRole("region", { name: "资料与记忆" });
-    expect(await within(memory).findByRole("heading", { name: "当前会话任务" })).toBeVisible();
     sessionTurnHistory.mockClear();
-    fireEvent.click(within(memory).getByRole("button", { name: "继续对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "会话历史" }));
+    fireEvent.click(await screen.findByRole("button", { name: /11111111.*当前会话/ }));
 
     await waitFor(() => expect(sessionTurnHistory).toHaveBeenLastCalledWith(activeSession.sessionId));
     const conversation = screen.getByRole("region", { name: "岗位对话" });
@@ -1908,8 +1910,8 @@ describe("App employee-memory module wiring", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "资料与记忆" }));
-    expect(await screen.findByRole("region", { name: "资料与记忆" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "打开网盘文件" }));
+    expect(await screen.findByRole("region", { name: "笔记库" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "网盘" }));
     expect(await screen.findByText("会议纪要.md")).toBeInTheDocument();
     expect(list).toHaveBeenCalledWith("");
     expect(screen.queryByText(/Obsidian/)).not.toBeInTheDocument();
@@ -1934,50 +1936,24 @@ describe("App settings module wiring (#134)", () => {
   });
 });
 
-describe("App docs module wiring (#35 S3)", () => {
-  it("activates employee memory and browses that position's documents end-to-end", async () => {
-    const positionDocs = vi.fn().mockResolvedValue({
-      status: 200,
-      body: {
-        schemaVersion: "docs-file-list.v1",
-        positionId: "repo-owner",
-        files: [{ path: "handbook.md", kind: "file", size: 32, modifiedAt: "2026-08-27T00:00:00.000Z" }],
-      },
-    });
-    const positionDocFile = vi.fn().mockResolvedValue({
-      status: 200,
-      body: {
-        schemaVersion: "docs-file.v1",
-        positionId: "repo-owner",
-        path: "handbook.md",
-        content: "# Handbook\n\n正文内容",
-        version: "2026-08-27T00:00:00.000Z",
-        size: 32,
-        modifiedAt: "2026-08-27T00:00:00.000Z",
-      },
-    });
-    openedBridge({ positionDocs, positionDocFile } as Partial<OwbBridge>);
-
+describe("App unified note library wiring", () => {
+  it("opens the workspace vault from an employee and leaves legacy documents untouched", async () => {
+    const entry = { noteId: "note-handbook", path: "手册.md", title: "手册", size: 32, version: "sha256:abc", modifiedAt: "2026-10-07T00:00:00Z", archived: false, readOnly: false, positionIds: [], ref: { uri: "vault://notes/note-handbook", version: "sha256:abc" } };
+    const bridge = openedBridge();
+    vi.mocked(bridge.vault.list).mockResolvedValue({ status: 200, body: { schemaVersion: "vault-list.v1", notes: [entry] } });
+    vi.mocked(bridge.vault.read).mockResolvedValue({ status: 200, body: { schemaVersion: "vault-note.v1", note: entry, content: "# Handbook\n\n正文内容" } });
     render(<App />);
     await selectRepoOwner();
-
-    // Ant Design replaces the button when its variant changes from text to primary.
-    const docsEntry = () => within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "资料与记忆" });
-    expect(docsEntry()).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(docsEntry());
-    expect(docsEntry()).toHaveAttribute("aria-pressed", "true");
-    expect(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "协作" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("region", { name: "资料与记忆" })).toBeInTheDocument();
-    await waitFor(() => expect(positionDocs).toHaveBeenCalledWith("repo-owner"));
-
-    fireEvent.click(await screen.findByRole("button", { name: "handbook.md" }));
-    expect(await screen.findByRole("heading", { name: "Handbook" })).toBeInTheDocument();
-    expect(screen.getByText("正文内容")).toBeInTheDocument();
-    expect(within(screen.getByRole("toolbar", { name: "文档工具栏" })).getByRole("status")).toHaveTextContent("绑定期间只读");
-    expect(positionDocFile).toHaveBeenCalledWith("repo-owner", "handbook.md");
+    selectEmployeeView("资料与记忆");
+    expect(screen.getByRole("region", { name: "笔记库" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Handbook" })).toBeVisible();
+    expect(screen.getByText("正文内容")).toBeVisible();
+    expect(bridge.vault.read).toHaveBeenCalledWith("note-handbook");
+    expect(bridge.vault.list).toHaveBeenCalledWith(expect.objectContaining({ positionId: undefined, includeLegacy: true }));
+    expect(screen.queryByText("共享知识")).not.toBeInTheDocument();
+    expect(screen.queryByText("会话记忆")).not.toBeInTheDocument();
   });
 });
-
 it("runs A/B/C independently and keeps late responses, streams and cancellation in their own sessions", async () => {
   const ids = ["repo-owner", "docs-writer", "release-engineer"];
   const employees = Object.fromEntries(ids.map((id, index) => [id, {

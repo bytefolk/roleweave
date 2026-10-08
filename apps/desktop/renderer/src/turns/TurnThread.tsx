@@ -7,6 +7,7 @@ import { visibleTrail } from "./trail";
 import "./activity-trace.css";
 import type { ConversationViewport } from "./conversation-memory";
 import { MessageActions, OperatorMessage } from "./message-actions";
+import { TurnNoteAction } from "./TurnNoteAction";
 import { EmptyState, useT } from "@roleweave/ui";
 import { Select } from "@fullstack-ai-infra/ui";
 import { useEngineLabel } from "./engine-select";
@@ -567,6 +568,8 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
               ) : null}
               <div className="owb-bubble__hover-actions">
                 {turn.output ? <MessageActions raw={turn.output} plain={markdownToPlainText(turn.output)} /> : null}
+                {turn.output && !isProvisional && turn.status === "completed" && window.owb?.vault ? <TurnNoteAction turn={turn}
+                  onCreated={(uri) => onOpenResource?.(turn.positionId, uri)} /> : null}
                 {turn.approvalRequest === undefined && retryable && onRetry ? (
                   <button
                     type="button"

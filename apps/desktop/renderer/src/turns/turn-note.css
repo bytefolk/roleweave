@@ -1,0 +1,4 @@
+.owb-turn-note-sources { display: grid; gap: 10px; max-width: 380px; max-height: 380px; overflow: auto; }
+.owb-turn-note-sources > p { margin: 0; color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-turn-note-sources article { border-top: 1px solid var(--ui-border); padding-top: 8px; }
+.owb-turn-note-sources pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; }

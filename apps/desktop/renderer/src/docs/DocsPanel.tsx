@@ -32,6 +32,7 @@ import type {
 import { DocViewer } from "./DocViewer";
 import { LiveMarkdownEditor } from "./LiveMarkdownEditor";
 import { DocumentFileTree } from "./DocumentFileTree";
+import type { ImageResourceLoader } from "../markdown/Markdown";
 
 /**
  * Document routing surface (#35 S2/S4, DS-35-001 rev-1 §3/§5): routes a
@@ -41,6 +42,19 @@ import { DocumentFileTree } from "./DocumentFileTree";
  * reference shape stays the frozen doc-ref.v1alpha1.
  */
 export interface DocsPanelProps {
+  /** A workspace vault reuses the editor without treating a position as its owner. */
+  mode?: "position" | "vault";
+  storageScope?: string;
+  searchDocs?(scope: string, query: string, options?: { archived?: boolean }): Promise<DocsFileListResponse>;
+  canMutate?(path: string): boolean;
+  fileReference?(entry: DocsFileEntry): string;
+  documentActions?(path: string): ReactNode;
+  imageResourceLoader?: ImageResourceLoader;
+  onDirtyChange?(dirty: boolean): void;
+  onSelectPath?(path: string): void;
+  onNavigateReference?(uri: string): void;
+  resolveUnlistedNote?(path: string, target: string, kind: "wikilink" | "relative"): Promise<boolean>;
+  insertRequest?: { path: string; text: string; nonce: number } | null;
   knowledgeFirst?: boolean;
   toolbar?: ReactNode;
   positionId: string | null;
@@ -80,6 +94,12 @@ interface NoteSession {
 
 const noteSessions = new Map<string, NoteSession>();
 const noteWriteQueues = new Map<string, Promise<DocsFileResponse>>();
+const DOCUMENT_CACHE_CHANGED = "owb:document-cache-changed";
+export function documentScopeDirty(scope: string): boolean {
+  const prefix = `${scope}\u0000`;
+  return [...noteSessions].some(([key, session]) => key.startsWith(prefix) && session.draft !== session.savedContent)
+    || [...noteWriteQueues.keys()].some((key) => key.startsWith(prefix));
+}
 
 function sessionKey(positionId: string, path: string): string {
   return `${positionId}\u0000${path}`;
@@ -97,12 +117,13 @@ function enqueueNoteWrite(
   noteWriteQueues.set(key, queued);
   const remove = () => {
     if (noteWriteQueues.get(key) === queued) noteWriteQueues.delete(key);
+    window.dispatchEvent(new Event(DOCUMENT_CACHE_CHANGED));
   };
   void queued.then(remove, remove);
   return queued;
 }
 
-function resolveNotePath(currentPath: string, target: string, kind: "wikilink" | "relative"): string | null {
+function resolveNotePath(currentPath: string, target: string, kind: "wikilink" | "relative", vault = false): string | null {
   let decoded: string;
   try {
     decoded = decodeURIComponent(target.split(/[?#]/, 1)[0] ?? "").trim();
@@ -117,19 +138,31 @@ function resolveNotePath(currentPath: string, target: string, kind: "wikilink" |
   for (const segment of candidate.split("/")) {
     if (segment === "." || segment === "") continue;
     if (segment === "..") {
-      if (segments.length <= 1) return null;
+      if (segments.length <= (vault ? 0 : 1)) return null;
       segments.pop();
       continue;
     }
-    if (!/^(?!\.)[A-Za-z0-9._-]+$/.test(segment)) return null;
+    if (vault ? !/^(?!\.)[^<>:"|?*\\\u0000-\u001f]+$/u.test(segment) : !/^(?!\.)[A-Za-z0-9._-]+$/.test(segment)) return null;
     segments.push(segment);
   }
   const resolved = segments.join("/");
-  return resolved.startsWith("knowledge/") && /\.(md|markdown)$/i.test(resolved) ? resolved : null;
+  return (vault || resolved.startsWith("knowledge/")) && /\.(md|markdown)$/i.test(resolved) ? resolved : null;
 }
 
 export function DocsPanel({
-  positionId,
+  positionId: ownerId,
+  mode = "position",
+  storageScope,
+  searchDocs,
+  canMutate,
+  fileReference,
+  documentActions,
+  imageResourceLoader,
+  onDirtyChange,
+  onSelectPath,
+  onNavigateReference,
+  resolveUnlistedNote,
+  insertRequest,
   listDocs,
   readDoc,
   writeDoc,
@@ -143,6 +176,8 @@ export function DocsPanel({
   toolbar,
   requestedPath,
 }: DocsPanelProps) {
+  const positionId = storageScope ?? ownerId;
+  const vault = mode === "vault";
   const t = useT();
   const [messageApi, messageHolder] = message.useMessage();
   const [files, setFiles] = useState<DocsFileEntry[]>([]);
@@ -153,12 +188,12 @@ export function DocsPanel({
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [fileScope, setFileScope] = useState("knowledge");
+  const [fileScope, setFileScope] = useState(vault ? "all" : "knowledge");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [savedContent, setSavedContent] = useState("");
   const [baseVersion, setBaseVersion] = useState("");
-  const [editorMode, setEditorMode] = useState<EditorMode>("live");
+  const [editorMode, setEditorMode] = useState<EditorMode>(vault ? "reading" : "live");
   const [externalConflict, setExternalConflict] = useState<DocsFileResponse | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [missingNote, setMissingNote] = useState<string | null>(null);
@@ -184,12 +219,18 @@ export function DocsPanel({
   const editorRef = useRef<TextAreaRef>(null);
   const visibleFiles = files.filter(
     (file) =>
-      (!knowledgeFirst ||
+      (vault || !knowledgeFirst ||
         fileScope === "all" ||
         /\.(md|markdown|txt)$/i.test(file.path) ||
         file.path.startsWith("knowledge/")) &&
-      file.path.toLowerCase().includes(query.toLowerCase()),
+      (searchDocs || file.path.toLowerCase().includes(query.toLowerCase())),
   );
+  const searchQuery = searchDocs ? query : "";
+  const [searchTerm, setSearchTerm] = useState("");
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearchTerm(searchQuery), 180);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     readVersion.current += 1;
@@ -235,7 +276,9 @@ export function DocsPanel({
     let cancelled = false;
     setListing(true);
     setListError(null);
-    const listed = archivedView ? listDocs(positionId, { archived: true }) : listDocs(positionId);
+    const options = archivedView ? { archived: true } : undefined;
+    const listed = searchDocs && searchTerm.trim() ? searchDocs(positionId, searchTerm.trim(), options)
+      : archivedView ? listDocs(positionId, { archived: true }) : listDocs(positionId);
     listed
       .then((response) => {
         if (!cancelled) setFiles(response.files);
@@ -250,11 +293,12 @@ export function DocsPanel({
     return () => {
       cancelled = true;
     };
-  }, [positionId, listDocs, reloadToken, listRetry, archivedView]);
+  }, [positionId, listDocs, searchDocs, searchTerm, reloadToken, listRetry, archivedView]);
 
   const openFile = useCallback(
     (path: string) => {
       if (positionId === null) return;
+      onSelectPath?.(path);
       setSelected(path);
       setDoc(null);
       setReadError(null);
@@ -281,7 +325,7 @@ export function DocsPanel({
                   draft: response.content,
                   savedContent: response.content,
                   baseVersion: response.version,
-                  mode: cached?.mode ?? "live",
+                  mode: cached?.mode ?? (vault ? "reading" : "live"),
                   selectionStart: cached?.selectionStart ?? 0,
                   selectionEnd: cached?.selectionEnd ?? 0,
                   editorScrollTop: cached?.editorScrollTop ?? 0,
@@ -305,7 +349,7 @@ export function DocsPanel({
           if (version === readVersion.current) setReading(false);
         });
     },
-    [positionId, readDoc, archivedView],
+    [positionId, readDoc, archivedView, vault, onSelectPath],
   );
 
   useLayoutEffect(() => {
@@ -338,11 +382,16 @@ export function DocsPanel({
 
   const refreshList = useCallback(() => setListRetry((value) => value + 1), []);
 
-  const mutableSelected = selected !== null && isKnowledgeFile(selected);
+  const mutableSelected = selected !== null && (canMutate ? canMutate(selected) : vault || isKnowledgeFile(selected));
   const liveEditable = Boolean(
     doc && mutableSelected && !archivedView && writeDoc && isMarkdownFile(doc.path),
   );
   const dirty = liveEditable && (draft !== savedContent || composing);
+  useEffect(() => {
+    const refresh = () => onDirtyChange?.(dirty || editing || saving || Boolean(positionId && documentScopeDirty(positionId)));
+    refresh(); window.addEventListener(DOCUMENT_CACHE_CHANGED, refresh);
+    return () => window.removeEventListener(DOCUMENT_CACHE_CHANGED, refresh);
+  }, [dirty, editing, saving, positionId, onDirtyChange]);
 
   const updateComposition = (active: boolean) => {
     composingRef.current = active;
@@ -355,6 +404,7 @@ export function DocsPanel({
     const key = sessionKey(positionId, selected);
     const session = noteSessions.get(key)!;
     noteSessions.set(key, { ...session, draft: value });
+    window.dispatchEvent(new Event(DOCUMENT_CACHE_CHANGED));
   };
 
   const saveEdit = useCallback(
@@ -425,7 +475,7 @@ export function DocsPanel({
       reading
     ) return;
     const listed = files.find((file) => file.path === selected);
-    if (!listed || listed.modifiedAt <= baseVersion) return;
+    if (!listed || listed.modifiedAt <= (vault ? doc.modifiedAt : baseVersion)) return;
     const checkKey = `${positionId}:${selected}:${listed.modifiedAt}`;
     if (externalCheck.current === checkKey) return;
     externalCheck.current = checkKey;
@@ -453,7 +503,15 @@ export function DocsPanel({
       setSavedContent(response.content);
       setBaseVersion(response.version);
     });
-  }, [archivedView, baseVersion, dirty, doc, editorMode, files, positionId, readDoc, reading, selected]);
+  }, [archivedView, baseVersion, dirty, doc, editorMode, files, positionId, readDoc, reading, selected, vault]);
+
+  const lastInsert = useRef<number>();
+  useEffect(() => {
+    if (!insertRequest || insertRequest.path !== selected || !liveEditable || composing || reading
+      || lastInsert.current === insertRequest.nonce) return;
+    lastInsert.current = insertRequest.nonce;
+    updateDraft(`${draft.replace(/\s+$/, "")}\n\n${insertRequest.text}\n`);
+  }, [insertRequest, selected, liveEditable, composing, reading, draft]);
 
   const keepMine = () => {
     if (externalConflict === null || positionId === null || selected === null) return;
@@ -496,8 +554,9 @@ export function DocsPanel({
       messageApi.error(t("docs.nameRequired"));
       return;
     }
-    const parent = selected.includes("/") ? selected.slice(0, selected.lastIndexOf("/") + 1) : "knowledge/";
-    const nextPath = trimmed.includes("/") ? trimmed : `${parent}${trimmed}`;
+    const parent = selected.includes("/") ? selected.slice(0, selected.lastIndexOf("/") + 1) : vault ? "" : "knowledge/";
+    let nextPath = trimmed.includes("/") ? trimmed : `${parent}${trimmed}`;
+    if (vault && !/\.(md|markdown)$/i.test(nextPath)) nextPath += ".md";
     const epoch = readVersion.current;
     const actingPosition = positionId;
     const actingArchived = archivedView;
@@ -590,10 +649,22 @@ export function DocsPanel({
 
   const navigateDoc = (target: string, kind: "wikilink" | "relative") => {
     if (selected === null) return;
-    const resolved = resolveNotePath(selected, target, kind);
+    if (vault && target.startsWith("vault://notes/")) { onNavigateReference?.(target); return; }
+    let resolved = resolveNotePath(selected, target, kind, vault);
     if (resolved === null) return;
+    if (vault && !files.some((file) => file.path === resolved) && kind === "wikilink") {
+      const name = resolved.slice(resolved.lastIndexOf("/") + 1);
+      const matches = files.filter((file) => file.path === name || file.path.endsWith(`/${name}`));
+      if (matches.length === 1) resolved = matches[0]!.path;
+    }
     if (files.some((file) => file.path === resolved)) openFile(resolved);
-    else setMissingNote(resolved);
+    else if (vault && resolveUnlistedNote) {
+      const epoch = readVersion.current;
+      const missingPath = resolved;
+      void resolveUnlistedNote(resolved, target, kind).then((found) => {
+        if (!found && epoch === readVersion.current) setMissingNote(missingPath);
+      }).catch((failure) => { if (epoch === readVersion.current) messageApi.error(failure instanceof Error ? failure.message : t("docs.readFail")); });
+    } else setMissingNote(resolved);
   };
 
   const createMissingNote = async () => {
@@ -614,7 +685,7 @@ export function DocsPanel({
 
   const copyRef = async (entry: DocsFileEntry) => {
     if (positionId === null) return;
-    const ref = JSON.stringify({
+    const ref = fileReference ? fileReference(entry) : JSON.stringify({
       uri: formatDocRefUri(positionId, entry.path),
       version: entry.modifiedAt,
     });
@@ -664,7 +735,7 @@ export function DocsPanel({
   };
   const modifier = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "⌘" : "Ctrl+";
   const documentState = saving ? "docs.saving" : liveEditable ? dirty ? "docs.unsaved" : "docs.saved"
-    : editing ? "docs.unsaved" : !mutableSelected ? "docs.boundReadOnly" : "reading.preview";
+    : editing ? "docs.unsaved" : !mutableSelected ? vault ? "vault.legacyReadOnly" : "docs.boundReadOnly" : "reading.preview";
   const documentMenu: NonNullable<MenuProps["items"]> = [];
   if (doc) {
     if (liveEditable) {
@@ -713,7 +784,7 @@ export function DocsPanel({
       void copyRef({ path: doc.path, modifiedAt: doc.version, size: doc.size, kind: "file" });
     } });
     documentMenu.push({ type: "divider" }, { key: "shortcuts", label: t("docs.shortcuts"), onClick: () => setShortcutsOpen(true) });
-    if (mutableSelected && deleteDoc) {
+    if (mutableSelected && deleteDoc && (!vault || archivedView)) {
       documentMenu.push({ type: "divider" }, { key: "delete", label: t("docs.delete"), danger: true,
         disabled: operationBlocked, onClick: () => setDeleteOpen(true) });
     }
@@ -755,7 +826,7 @@ export function DocsPanel({
   ];
 
   return (
-    <section className="owb-docs-panel" aria-label={t("docs.panelAria")}>
+    <section className="owb-docs-panel" aria-label={t(vault ? "vault.notes" : "docs.panelAria")}>
       {messageHolder}
       {positionId === null ? (
         <Empty description={t("docs.pickFromTree")} />
@@ -767,8 +838,8 @@ export function DocsPanel({
                 <Input
                   allowClear
                   prefix={<Search aria-hidden="true" size={14} />}
-                  aria-label={t("memory.search")}
-                  placeholder={t("memory.search")}
+                  aria-label={t(vault ? "vault.search" : "memory.search")}
+                  placeholder={t(vault ? "vault.search" : "memory.search")}
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
@@ -783,8 +854,8 @@ export function DocsPanel({
                     value={fileScope}
                     onChange={setFileScope}
                     options={[
-                      { value: "knowledge", label: t("memory.knowledge") },
-                      { value: "all", label: t("memory.allFiles") },
+                      ...(!vault ? [{ value: "knowledge", label: t("memory.knowledge") }] : []),
+                      { value: "all", label: t(vault ? "vault.allNotes" : "memory.allFiles") },
                       ...(lifecycleEnabled
                         ? [{ value: "archived", label: t("docs.archived") }]
                         : []),
@@ -830,14 +901,14 @@ export function DocsPanel({
                         <strong>
                           {query
                             ? t("reading.docs.searchNone", { query })
-                            : t("docs.empty")}
+                            : t(vault ? "vault.empty" : "docs.empty")}
                         </strong>
                         {query ? (
                           <Button onClick={() => setQuery("")}>
                             {t("reading.clearFilters")}
                           </Button>
                         ) : (
-                          <span>{t("docs.emptyHint")}</span>
+                          <span>{t(vault ? "vault.emptyHint" : "docs.emptyHint")}</span>
                         )}
                       </div>
                   )}
@@ -988,6 +1059,7 @@ export function DocsPanel({
                     {saving ? <LoaderCircle className="owb-docs-panel__saving-icon" size={13} aria-hidden="true" /> : documentState === "docs.saved" ? <Check size={13} aria-hidden="true" /> : null}
                     {t(documentState)}
                   </span>
+                  {documentActions?.(doc.path)}
                   <Tooltip title={t("docs.moreActions")} trigger={["hover", "focus"]} open={documentMenuOpen ? false : undefined}>
                     <Dropdown trigger={["click"]} destroyOnHidden onOpenChange={setDocumentMenuOpen} menu={{ items: documentMenu }}>
                       <Button className="owb-docs-panel__more" type="text" size="small" icon={<MoreHorizontal size={17} aria-hidden="true" />}
@@ -1052,6 +1124,7 @@ export function DocsPanel({
                   title={doc.path}
                   path={doc.path}
                   onNavigateDoc={navigateDoc}
+                  imageResourceLoader={imageResourceLoader}
                   showEditor={editorMode !== "reading"}
                   editor={liveEditable && positionId !== null ? (
                     <LiveMarkdownEditor
@@ -1063,6 +1136,7 @@ export function DocsPanel({
                       onSave={(value) => void saveEdit(value, false)}
                       ariaLabel={t("docs.editorAria")}
                       onNavigateDoc={navigateDoc}
+                      restrictImages={vault}
                       onCompositionChange={updateComposition}
                     />
                   ) : undefined}

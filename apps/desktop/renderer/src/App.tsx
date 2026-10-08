@@ -2266,6 +2266,14 @@ function AppInner({
               }
               setActiveModule("conversation");
             }}
+            onOpenSource={(source) => {
+              if (!source.positionId || !source.sessionId) return;
+              const samePosition = selectedIdRef.current === source.positionId;
+              selectedSessions.current[JSON.stringify([workspacePathRef.current, source.positionId])] = source.sessionId;
+              selectPosition(source.positionId);
+              if (samePosition) { selectedSessionIdRef.current = source.sessionId; setSelectedSessionId(source.sessionId); }
+              setSessionFocusTurnId(source.turnId ?? null); setActiveModule("conversation");
+            }}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
             selectedPositionId={selectedId}
@@ -2416,6 +2424,10 @@ function AppInner({
             cancelling={turnCancelling}
             focusTurnId={sessionFocusTurnId}
             onOpenResource={(positionId, path) => {
+              if (path.startsWith("vault://notes/")) {
+                setResourceRequest({ positionId, path, nonce: Date.now() });
+                setMemorySource("docs"); setActiveModule("docs"); return;
+              }
               if (!/^knowledge\//i.test(path) && path !== "SKILL.md") {
                 const workspacePath = workspacePathRef.current;
                 const relativePath = workspaceResourcePath(workspacePath, path);

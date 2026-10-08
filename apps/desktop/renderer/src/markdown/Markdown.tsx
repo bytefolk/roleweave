@@ -1,4 +1,4 @@
-import { Children, isValidElement, useId, useState, type ReactNode } from "react";
+import { Children, isValidElement, useEffect, useId, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check, FileCode2, FileJson2, FileText, Github, Globe2, Mail } from "lucide-react";
@@ -9,6 +9,7 @@ import "./markdown.css";
 export { markdownHeadings, markdownToPlainText } from "./markdown-content";
 
 export function safeMarkdownUrl(value: string): string {
+  if (/^vault:\/\/notes\/[A-Za-z0-9-]{1,128}$/.test(value)) return value;
   if (value.startsWith("#") || value.startsWith("owb-wiki:")) return value;
   const relativePath = value.split(/[?#]/, 1)[0] ?? "";
   if (
@@ -116,11 +117,46 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     </div><pre>{children}</pre>
   </div>;
 }
-function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+export type ImageResourceLoader = (source: string) => Promise<string>;
+
+export function safeRasterDataUrl(value: string): boolean {
+  return /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
+}
+
+function safeImageReference(value: string): boolean {
+  if (safeRasterDataUrl(value)) return true;
+  if (/^mem:\/\/[A-Za-z0-9._/-]+$/.test(value)) return true;
+  return value !== "" && !/^[A-Za-z][A-Za-z\d+.-]*:/.test(value) && !value.startsWith("/")
+    && !/[\\\u0000-\u001f]/.test(value);
+}
+
+function safeVaultNoteReference(value: string): boolean {
+  const path = value.split(/[?#]/, 1)[0] ?? "";
+  return path !== "" && !path.startsWith("/") && !/^[A-Za-z][A-Za-z\d+.-]*:/.test(path)
+    && !/[\\\u0000-\u001f]/.test(path) && /\.(md|markdown)$/i.test(path);
+}
+
+function MarkdownImage({ src, alt, loader }: { src?: string; alt?: string; loader?: ImageResourceLoader }) {
   const copy = useConversationCopy();
+  const t = useT();
   const [failed, setFailed] = useState(false);
-  return failed || !src ? <span className="owb-markdown-image-error" role="img" aria-label={alt || copy.imageFailed}>{copy.imageFailed}{alt ? ` · ${alt}` : ""}</span>
-    : <img src={src} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
+  const [loadedSrc, setLoadedSrc] = useState(loader ? undefined : src);
+  const [loading, setLoading] = useState(Boolean(loader && src));
+  useEffect(() => {
+    if (!loader) { setLoadedSrc(src); setLoading(false); return; }
+    let alive = true;
+    setFailed(false); setLoadedSrc(undefined); setLoading(Boolean(src));
+    if (!src || !safeImageReference(src)) { setLoading(false); setFailed(true); return; }
+    void loader(src).then((dataUrl) => {
+      if (!alive) return;
+      if (!safeRasterDataUrl(dataUrl)) throw new Error("invalid image resource");
+      setLoadedSrc(dataUrl);
+    }).catch(() => { if (alive) setFailed(true); }).finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [src, loader]);
+  if (loading) return <span className="owb-markdown-image-loading" role="status">{t("vault.imageLoading")}</span>;
+  return failed || !loadedSrc ? <span className="owb-markdown-image-error" role="img" aria-label={alt || copy.imageFailed}>{copy.imageFailed}{alt ? ` · ${alt}` : ""}</span>
+    : <img src={loadedSrc} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
 }
 function linkIcon(href: string): ReactNode {
   if (href.startsWith("#")) return null;
@@ -158,8 +194,9 @@ function MarkdownLink({
   noteAria: string;
 }) {
   const wikilink = href.startsWith("owb-wiki:");
+  const vaultNote = href.startsWith("vault://notes/");
   const relative = !wikilink && !href.startsWith("#") && !/^[A-Za-z][A-Za-z\d+.-]*:/.test(href);
-  const internal = wikilink || relative;
+  const internal = wikilink || vaultNote || relative;
   const external = !internal && !href.startsWith("#");
   const target = wikilink ? decodeURIComponent(href.slice("owb-wiki:".length)) : href;
   return <a className={internal || external ? "owb-markdown-link" : undefined} href={href}
@@ -189,20 +226,23 @@ export interface MarkdownProps {
   className?: string;
   headingPrefix?: string;
   onNavigateDoc?: (target: string, kind: "wikilink" | "relative") => void;
+  imageResourceLoader?: ImageResourceLoader;
 }
 
-export function Markdown({ content, className = "", headingPrefix, onNavigateDoc }: MarkdownProps) {
+export function Markdown({ content, className = "", headingPrefix, onNavigateDoc, imageResourceLoader }: MarkdownProps) {
   const copy = useConversationCopy();
   const t = useT();
   const instance = useId();
   const prefix = headingPrefix ?? `rw-${instance.replace(/:/g, "")}-heading`;
   const [linkFailed, setLinkFailed] = useState(false);
   return <div className={`owb-markdown ${className}`}>
-    <ReactMarkdown skipHtml remarkPlugins={[remarkGfm, remarkWikilinks, remarkWorkspaceFilePaths, remarkReadableEmphasis, [remarkHeadingIds, { prefix }]]} urlTransform={safeMarkdownUrl}
+    <ReactMarkdown skipHtml remarkPlugins={[remarkGfm, remarkWikilinks, remarkWorkspaceFilePaths, remarkReadableEmphasis, [remarkHeadingIds, { prefix }]]}
+      urlTransform={(value, key) => key === "src" && imageResourceLoader ? safeImageReference(value) ? value : ""
+        : key === "href" && imageResourceLoader && onNavigateDoc && safeVaultNoteReference(value) ? value : safeMarkdownUrl(value)}
       components={{
         pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
         table: ({ children }) => <div className="owb-markdown-table" tabIndex={0}><table>{children}</table></div>,
-        img: ({ src, alt }) => <MarkdownImage key={src} src={src} alt={alt} />,
+        img: ({ src, alt }) => <MarkdownImage key={src} src={src} alt={alt} loader={imageResourceLoader} />,
         input: ({ checked }) => <input type="checkbox" checked={checked ?? false} readOnly disabled />,
         a: ({ href, children }) => href ? (
           <MarkdownLink

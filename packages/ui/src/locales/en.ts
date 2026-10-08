@@ -1,6 +1,8 @@
 /** #146 en catalog. Key parity with zh.ts is enforced by the i18n parity
  * test; keep the two files in lockstep. */
+import { enVaultCatalog } from "./vault";
 export const enCatalog: Record<string, string> = {
+  ...enVaultCatalog,
   "project.legacyResult": "Legacy execution result",
   "project.legacyResultReadOnly": "This execution has no personal session and is read-only. Run the task again to review and accept a session-bound delivery.",
   "project.acceptance.title": "Review delivery: {title}",

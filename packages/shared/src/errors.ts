@@ -110,6 +110,13 @@ export const errorCodes = {
   docs_exists: "docs_exists",
   /** A document changed after it was read and must not be overwritten (#511). */
   docs_conflict: "docs_conflict",
+  vault_request_invalid: "vault_request_invalid",
+  vault_note_missing: "vault_note_missing",
+  vault_conflict: "vault_conflict",
+  vault_path_forbidden: "vault_path_forbidden",
+  vault_legacy_read_only: "vault_legacy_read_only",
+  vault_limit_exceeded: "vault_limit_exceeded",
+  vault_storage_failed: "vault_storage_failed",
   /** A doc-ref.v1alpha1 value violates the frozen reference shape (#35 S4). */
   doc_ref_invalid: "doc_ref_invalid",
   /** External doc-plane URL is not configured; bridge routes cannot be served (#35 R2). */

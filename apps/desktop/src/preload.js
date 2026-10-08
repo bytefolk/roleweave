@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld("owb", {
     upload: (filePath) => ipcRenderer.invoke("owb:drive:upload", filePath),
     pickAndUpload: () => ipcRenderer.invoke("owb:drive:pick-and-upload"),
   },
+  vault: Object.fromEntries(['list', 'read', 'create', 'write', 'rename', 'archive', 'restore', 'delete', 'migrate', 'bindings', 'bind', 'source', 'resolve', 'image', 'attach', 'fromTurn', 'sync', 'targets', 'context', 'history', 'used'].map(action => [action, value => ipcRenderer.invoke('owb:vault:' + action, value)])),
   sseStatus: () => ipcRenderer.invoke("owb:sse-status:get"),
   services: {
     list: () => ipcRenderer.invoke("owb:services:list"),
