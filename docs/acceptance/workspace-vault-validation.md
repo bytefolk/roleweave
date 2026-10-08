@@ -17,6 +17,7 @@ backup, host path or runtime artifact is part of this patch.
 | Backend/context/drive/turn targeted regressions | PASS: 107 tests; Windows symlink-privilege case explicitly skipped |
 | Archive/index recovery fault tests | PASS; injected index persistence failure preserves identity, binding and content; independent source review passed |
 | Runtime packaging inventory and import closure | Initial GitHub check caught omitted Vault server/shared modules; fixed by explicitly listing all 12 generated runtime modules, preserving packaging safety boundaries. PASS: 19 packaging/IPC tests; 2 Windows-only filesystem fixture skips |
+| Persistent session context process acceptance | Initial POSIX CI caught an obsolete raw-input assertion. Updated the fixture to parse the bounded untrusted Vault JSON, allow only the current role's knowledge path, preserve the exact request and reject personal history/private reasoning. PASS on Node 24 Linux/ext4, including other-role, disabled-history and rotated-session stages |
 | Notebook usage receipts | PASS: actual injected references, versions and redacted excerpts; position mismatch and missing boot auth rejected |
 | Scope and source scan | PASS: no local maintenance path, username, secret or live-test Vault identity in release scope |
 | Diff checks | PASS |
