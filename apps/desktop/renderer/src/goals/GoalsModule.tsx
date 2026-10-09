@@ -17,6 +17,7 @@ import "./goals-project.css";
 import "./goals-workspace.css";
 import { GoalEvidence } from "./GoalEvidence.js";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
+import { GoalCriteriaDialog } from "./GoalCriteriaDialog.js";
 
 interface GoalsModuleProps {
   workspaceOpen: boolean;
@@ -69,6 +70,8 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
   const ActivitySection = projectMode ? "section" : "details";
   const [view, setView] = useState<"goals" | "board">("goals");
   const [tasks, setTasks] = useState<AgentTask[]>([]);
+  const [taskError, setTaskError] = useState<string | null>(null);
+  const [tasksLoading, setTasksLoading] = useState(false);
   const [showTaskCreate, setShowTaskCreate] = useState(false);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskTarget, setTaskTarget] = useState("");
@@ -85,6 +88,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
   const [detailError, setDetailError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [criteriaGoalId, setCriteriaGoalId] = useState<string | null>(null);
   const [mutating, setMutating] = useState(false);
   const mutationLock = useRef(false);
   const [query, setQuery] = useState("");
@@ -93,6 +97,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
   const alive = useRef(true);
   const listVersion = useRef(0);
   const detailVersion = useRef(0);
+  const tasksVersion = useRef(0);
 
   useEffect(() => {
     alive.current = true;
@@ -100,6 +105,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
       alive.current = false;
       listVersion.current += 1;
       detailVersion.current += 1;
+      tasksVersion.current += 1;
     };
   }, []);
 
@@ -110,6 +116,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
         setDetail(null);
         setDetailError(null);
         setActionError(null);
+        setCriteriaGoalId(null);
       }
       selectedRef.current = id;
       setSelectedId(id);
@@ -186,19 +193,31 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
   useEffect(() => {
     void loadGoals();
   }, [loadGoals]);
-  useEffect(() => {
-    if (!workspaceOpen || view !== "board" || typeof window.owb.tasks !== "function") return;
-    let cancelled = false;
-    void window.owb.tasks().then((response) => {
-      if (!cancelled && response.status === 200) setTasks(response.body.tasks);
-    });
-    return () => { cancelled = true; };
-  }, [workspaceOpen, view]);
   const reloadTasks = useCallback(async () => {
-    if (typeof window.owb.tasks !== "function") return;
-    const response = await window.owb.tasks();
-    if (response.status === 200) setTasks(response.body.tasks);
-  }, []);
+    if (!workspaceOpen || typeof window.owb.tasks !== "function") return;
+    const version = ++tasksVersion.current;
+    const isCurrent = () => alive.current && version === tasksVersion.current;
+    setTasksLoading(true);
+    setTaskError(null);
+    try {
+      const response = await window.owb.tasks();
+      if (!isCurrent()) return;
+      if (response.status !== 200) throw new Error(errorMessage(response.body, t("tasks.loadError")));
+      setTasks(response.body.tasks);
+    } catch (cause) {
+      if (isCurrent()) setTaskError(cause instanceof Error ? cause.message : t("tasks.loadError"));
+    } finally {
+      if (isCurrent()) setTasksLoading(false);
+    }
+  }, [workspaceOpen, t]);
+  useEffect(() => {
+    if (view !== "board") return;
+    void reloadTasks();
+    const off = window.owb.onSseStatus?.((state) => {
+      if (state === "connected") void reloadTasks();
+    });
+    return () => { tasksVersion.current += 1; off?.(); };
+  }, [view, reloadTasks]);
   const createTask = useCallback(async () => {
     const owner = ownerPositionId;
     if (!owner || !taskTarget || !taskTitle.trim()) return;
@@ -226,9 +245,10 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
       ) {
         void loadGoals();
         if (selectedRef.current) void loadDetail(selectedRef.current);
+        if (view === "board") void reloadTasks();
       }
     });
-  }, [workspaceOpen, loadGoals, loadDetail]);
+  }, [workspaceOpen, loadGoals, loadDetail, view, reloadTasks]);
 
   // Refresh execution evidence without unmounting an open task editor.
   useEffect(() => {
@@ -318,6 +338,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
     setQuery("");
     setStatusFilter("all");
   };
+  const boundBranch = detail?.goal.branches.find((branch) => branch.positionId && branch.sessionId);
   const empty = !loading && !error && goals.length === 0;
   const createButton = (
     <AntButton
@@ -358,6 +379,8 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
         </div>
       ) : !projectMode && view === "board" ? (
         <div className="owb-task-board" aria-label={t("tasks.boardAria")}>
+          {taskError && <div className="owb-goals-error" role="alert">{taskError}{" "}<AntButton onClick={() => void reloadTasks()}>{t("hire.retry")}</AntButton></div>}
+          {tasksLoading && <p role="status">{t("tasks.loading")}</p>}
           {(["queued", "active", "waiting", "done"] as const).map((column) => (
             <section className="owb-task-column" key={column}>
               <header><strong>{t(`tasks.column.${column}`)}</strong><span>{tasks.filter((task) => column === "done" ? ["done", "declined", "failed"].includes(task.status) : task.status === column).length}</span></header>
@@ -616,18 +639,11 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                     </div>
                     {detail.healthOverlay === "blocked" ? (
                       <div className="owb-goals-health-actions">
-                        {detail.goal.branches.some((branch) => branch.positionId) ? (
+                        {boundBranch && onOpenBoundSession ? (
                           <AntButton
                             data-testid="goals-health-open-turn"
                             onClick={() => {
-                              const branch = detail.goal.branches.find(
-                                (item) => item.positionId,
-                              );
-                              if (branch?.positionId)
-                                onOpenBoundSession?.(
-                                  branch.positionId,
-                                  branch.sessionId,
-                                );
+                              onOpenBoundSession(boundBranch.positionId!, boundBranch.sessionId!);
                             }}
                           >
                             {t("goals.health.openBoundTurn")}
@@ -641,7 +657,7 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                             {t("goals.health.openApprovals")}
                           </AntButton>
                         ) : null}
-                        {!detail.goal.branches.some((branch) => branch.positionId) &&
+                        {!(boundBranch && onOpenBoundSession) &&
                         !onOpenApprovals ? (
                           <p data-testid="goals-health-blocked-empty">
                             {t("goals.health.blockedNoTarget")}
@@ -674,9 +690,9 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                         {detail.goal.description}
                       </p>
                     </section>
-                    {detail.goal.acceptanceCriteria.length > 0 && (
                       <section>
                         <h3>{t(projectMode ? "project.form.criteria" : "goals.criteria")}</h3>
+                        <AntButton size="small" disabled={mutating} onClick={() => setCriteriaGoalId(detail.goal.goalId)}>{t("goals.criteriaEdit")}</AntButton>
                         <ol className={!projectMode ? "owb-goals-criteria" : undefined}>
                           {detail.goal.acceptanceCriteria.map(
                             (criterion, index) => (
@@ -685,7 +701,6 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                           )}
                         </ol>
                       </section>
-                    )}
                     {!projectMode && <GoalEvidence branches={detail.goal.branches} positionNames={positionNames} onOpenBoundSession={onOpenBoundSession} />}
                     {projectMode && detail.goal.branches.length > 0 && (
                       <section>
@@ -739,6 +754,12 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
               void loadGoals(id);
             }}
           />
+          {detail && criteriaGoalId === detail.goal.goalId && <GoalCriteriaDialog
+            key={detail.goal.goalId}
+            goal={detail.goal}
+            onClose={() => setCriteriaGoalId(null)}
+            onSaved={async () => { await Promise.all([loadGoals(), loadDetail(detail.goal.goalId)]); }}
+          />}
         </>
       )}
     </section>

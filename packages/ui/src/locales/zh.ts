@@ -5,6 +5,17 @@
  * 插值用 {var}。 */
 import { zhVaultCatalog } from "./vault";
 export const zhCatalog: Record<string, string> = {
+  "tasks.loadError": "任务看板加载失败，已保留上次成功加载的任务。",
+  "tasks.loading": "正在读取任务…",
+  "goals.criteriaEdit": "编辑验收标准",
+  "goals.criteriaSave": "保存验收标准",
+  "goals.criteriaEditHint": "至少填写一项验收标准，最多 16 项。修改后需按新标准重新核对已有交付。",
+  "goals.criteriaItem": "验收标准 {index}",
+  "goals.criteriaRemoveItem": "移除验收标准 {index}",
+  "goals.criteriaSaveError": "验收标准保存失败，草稿已保留，请重试。",
+  "goals.criteriaConflict": "目标已变化，草稿已保留。请加载最新标准并核对后再保存。",
+  "goals.criteriaReload": "加载最新验收标准",
+  "goals.criteriaReloadHint": "加载最新标准会替换当前编辑草稿。",
   ...zhVaultCatalog,
   "project.legacyResult": "旧版执行结果",
   "project.legacyResultReadOnly": "该执行没有真实会话关联，仅可查看。请重新执行任务，再验收新会话中的交付结果。",
