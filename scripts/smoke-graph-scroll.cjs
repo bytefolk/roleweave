@@ -3,6 +3,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+function javascriptLiteral(value) {
+  const json = JSON.stringify(value);
+  if (json === undefined) throw new TypeError('Expected a JSON-serializable literal');
+  return json.replace(/</g, '\\u003C').replace(/>/g, '\\u003E')
+    .replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+}
+
 if (!process.versions.electron) {
   (async () => {
     const { createServer } = await import('vite');
@@ -20,7 +27,7 @@ if (!process.versions.electron) {
           import 'antd/dist/reset.css';
           import '@fullstack-ai-infra/ui/styles.css';
           import '@roleweave/ui/styles.css';
-          ${['antd-skin', 'app', 'roleweave-theme', 'roleweave-components', 'roleweave-conversation', 'roleweave-data', 'workspace-polish', 'memory/memory-workspace', 'control-legibility'].map(file => `import '/src/${file}.css';`).join('\n')}
+          ${['antd-skin', 'app', 'roleweave-theme', 'roleweave-components', 'roleweave-conversation', 'roleweave-data', 'workspace-polish', 'memory/memory-workspace', 'control-legibility'].map(file => `import ${javascriptLiteral(`/src/${file}.css`)};`).join('\n')}
           import { RelationshipGraph } from '/src/graph/RelationshipGraph.tsx';
           const h = React.createElement;
           const evidence = { source: 'fixture', locator: 'fixture', basis: 'declared', observedAt: '2026-09-26T00:00:00Z' };
@@ -77,18 +84,18 @@ if (!process.versions.electron) {
     win.webContents.debugger.attach('1.3');
     await win.loadURL(process.argv[3]);
     const evaluate = source => win.webContents.executeJavaScript(source);
-    const waitFor = condition => evaluate(`new Promise((resolve, reject) => { const start = performance.now(); const check = () => { if (${condition}) return resolve(true); if (performance.now() - start > 10000) return reject(new Error('Timed out: ' + ${JSON.stringify(condition)})); requestAnimationFrame(check); }; check(); })`);
+    const waitFor = selectors => evaluate(`new Promise((resolve, reject) => { const start = performance.now(); const check = () => { if (${javascriptLiteral(selectors)}.every(selector => document.querySelector(selector))) return resolve(true); if (performance.now() - start > 10000) return reject(new Error('Timed out waiting for graph elements')); requestAnimationFrame(check); }; check(); })`);
     const frames = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-    await waitFor('document.querySelector(".owb-rgraph__renderer button")');
+    await waitFor(['.owb-rgraph__renderer button']);
     await evaluate(`Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === '极简关系图').click()`);
-    await waitFor('document.querySelector(".owb-rgraph__spatial-stage canvas") && document.querySelector(".owb-rgraph__spatial-label")');
+    await waitFor(['.owb-rgraph__spatial-stage canvas', '.owb-rgraph__spatial-label']);
     const failures = [];
     const check = (name, fn) => { try { fn(); } catch (error) { failures.push(`${name}: ${error.message}`); } };
     const wheel = async (selector, scrollSelector, deltaX, deltaY, modifiers = 0) => {
-      await evaluate(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({ block: 'nearest', inline: 'nearest' })`);
+      await evaluate(`document.querySelector(${javascriptLiteral(selector)}).scrollIntoView({ block: 'nearest', inline: 'nearest' })`);
       await frames();
-      const point = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); const pane = document.querySelector(${JSON.stringify(scrollSelector)}).getBoundingClientRect(); const left = Math.max(r.left, pane.left, 0), right = Math.min(r.right, pane.right, innerWidth), top = Math.max(r.top, pane.top, 0), bottom = Math.min(r.bottom, pane.bottom, innerHeight); if (right <= left || bottom <= top) throw new Error('Wheel target is outside its pane'); return { x: (left + right) / 2, y: (top + bottom) / 2 }; })()`);
-      const baseline = await evaluate(`document.querySelector(${JSON.stringify(scrollSelector)}).scrollTop`);
+      const point = await evaluate(`(() => { const r = document.querySelector(${javascriptLiteral(selector)}).getBoundingClientRect(); const pane = document.querySelector(${javascriptLiteral(scrollSelector)}).getBoundingClientRect(); const left = Math.max(r.left, pane.left, 0), right = Math.min(r.right, pane.right, innerWidth), top = Math.max(r.top, pane.top, 0), bottom = Math.min(r.bottom, pane.bottom, innerHeight); if (right <= left || bottom <= top) throw new Error('Wheel target is outside its pane'); return { x: (left + right) / 2, y: (top + bottom) / 2 }; })()`);
+      const baseline = await evaluate(`document.querySelector(${javascriptLiteral(scrollSelector)}).scrollTop`);
       await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseWheel', ...point, deltaX, deltaY, modifiers });
       await frames();
       return baseline;
@@ -105,7 +112,7 @@ if (!process.versions.electron) {
       const shell = await evaluate(`(() => { const shell = document.querySelector('.ui-app-shell').getBoundingClientRect(); const main = document.querySelector('.ui-app-shell__main').getBoundingClientRect(); return { right: shell.right, mainRight: main.right }; })()`);
       check(`${width}x${height}/shell`, () => assert.ok(Math.abs(shell.right - shell.mainRight) <= 1, 'main must fill the space beside the visible navigation without a blank grid track'));
       for (const theme of ['light', 'dark']) {
-        await evaluate(`window.setFixtureTheme(${JSON.stringify(theme)})`);
+        await evaluate(`window.setFixtureTheme(${javascriptLiteral(theme)})`);
         await frames();
         for (const mode of ['minimal', 'galaxy']) {
           await evaluate(mode === 'minimal'
@@ -113,7 +120,7 @@ if (!process.versions.electron) {
             : "Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === '空间关系图').click(); document.querySelector('.owb-rgraph').scrollTop = 0;");
           await frames();
           if (mode === 'minimal') {
-            await evaluate(`document.querySelector('[aria-label="空间主题"] button:nth-child(${theme === 'light' ? 2 : 1})').click()`);
+            await evaluate(`document.querySelector(${javascriptLiteral(`[aria-label="空间主题"] button:nth-child(${theme === 'light' ? 2 : 1})`)}).click()`);
             await frames();
           }
           const label = `${width}x${height}/${theme}/${mode}`;
