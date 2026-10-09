@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  RELATIONSHIP_GRAPH_SCHEMA, OrgApiError, isPositionId, isPositionAgentBinding, validateGoal,
+  RELATIONSHIP_GRAPH_SCHEMA, OrgApiError, isPositionId, isPositionAgentBinding, validateGoal, parseDriveProviderKind,
+  type DriveObject, type DriveProviderKind,
   type AgentTask, type HirePermissions, type OrgRole, type RelationshipBasis,
   type RelationshipCoverage, type RelationshipEdge, type RelationshipEvidence,
   type RelationshipGraphResponse, type RelationshipKind, type RelationshipNode, type RelationshipNodeKind,
@@ -11,7 +12,8 @@ import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
 import { resolvePositionPackageDir } from "../context-sources.js";
 import { decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
-import { resolveServiceConnection } from "../services/connections.js";
+import { resolveServiceConnection, type ServiceConnection } from "../services/connections.js";
+import { resolveDriveProvider, type DriveProvider } from "../services/drive-providers.js";
 import { validatePermissions } from "../org/permissions.js";
 import { validateTaskRecord } from "../tasks/store.js";
 
@@ -21,6 +23,11 @@ const MAX_POSITIONS = 100;
 const MAX_DOCUMENTS = 20;
 const MAX_DIRECTORY_ENTRIES = 512;
 const RECORD_BYTES = 32 * 1024;
+// Match GoalStore.get: work items and acceptance history may exceed a small metadata record.
+const GOAL_RECORD_BYTES = 8 * 1024 * 1024;
+const GOAL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+const MAX_DRIVE_OBJECTS = 200;
+const DRIVE_INVENTORY_TIMEOUT_MS = 12_000;
 const DOCUMENT_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".json", ".yaml", ".yml"]);
 const ordinal = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const hash = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
@@ -53,25 +60,26 @@ class Projection {
   readonly edges = new Map<string, RelationshipEdge>();
   readonly coverage: RelationshipCoverage[] = [];
   truncated = false;
+  graphLimited = false;
   constructor(readonly workspaceId: string, readonly at: string) {}
   id(kind: RelationshipNodeKind, key: string): string { return `${kind}:${hash(`${this.workspaceId}\0${kind}\0${key}`).slice(0, 32)}`; }
   node(kind: RelationshipNodeKind, key: string, value: Omit<RelationshipNode, "id" | "kind">): string {
     const id = this.id(kind, key);
     if (!this.nodes.has(id)) {
-      if (this.nodes.size >= MAX_NODES) this.truncated = true;
+      if (this.nodes.size >= MAX_NODES) { this.truncated = true; this.graphLimited = true; }
       else this.nodes.set(id, { id, kind, ...value });
     }
     return id;
   }
   edge(source: string, target: string, kind: RelationshipKind, proof: RelationshipEvidence, permission: RelationshipEdge["permission"] = "not_applicable"): void {
-    if (!this.nodes.has(source) || !this.nodes.has(target)) { this.truncated = true; return; }
+    if (!this.nodes.has(source) || !this.nodes.has(target)) { this.truncated = true; this.graphLimited = true; return; }
     const id = `edge:${hash(`${source}\0${kind}\0${target}\0${proof.locator}`).slice(0, 32)}`;
     if (this.edges.has(id)) return;
-    if (this.edges.size >= MAX_EDGES) { this.truncated = true; return; }
+    if (this.edges.size >= MAX_EDGES) { this.truncated = true; this.graphLimited = true; return; }
     this.edges.set(id, { id, source, target, kind, evidence: proof, permission });
   }
   finish(): RelationshipGraphResponse {
-    if (this.truncated) this.coverage.push({ source: "projection", state: "partial", reason: "graph_limit" });
+    if (this.graphLimited) this.coverage.push({ source: "projection", state: "partial", reason: "graph_limit" });
     const nodes = [...this.nodes.values()].sort((a, b) => ordinal(a.id, b.id));
     const edges = [...this.edges.values()].sort((a, b) => ordinal(a.id, b.id));
     const coverage = this.coverage.sort((a, b) => ordinal(a.source, b.source));
@@ -294,11 +302,11 @@ async function addGoals(graph: Projection, root: string, workspace: string, know
   try {
     const found = await directoryEntries(root, path.join(root, ".roleweave", "goals"));
     limited = found.truncated;
-    const entries = found.entries.filter((entry) => entry.isDirectory() && /^[a-f0-9-]{36}$/.test(entry.name));
+    const entries = found.entries.filter((entry) => entry.isDirectory() && GOAL_ID_PATTERN.test(entry.name));
     if (entries.length > 64) limited = true;
     for (const entry of entries.slice(0, 64)) {
       try {
-        const parsed = validateGoal(await json(root, path.join(root, ".roleweave", "goals", entry.name, "goal.json")));
+        const parsed = validateGoal(await json(root, path.join(root, ".roleweave", "goals", entry.name, "goal.json"), GOAL_RECORD_BYTES));
         if (!parsed.ok || parsed.value.goalId !== entry.name) throw new Error("invalid goal");
         const goal = parsed.value;
         const proof = evidence("goals", `goal:${goal.goalId}`, "observed", graph.at);
@@ -321,6 +329,121 @@ async function addGoals(graph: Projection, root: string, workspace: string, know
   if (limited) graph.truncated = true;
 }
 
+interface DriveSnapshot {
+  kind: DriveProviderKind | null;
+  connection: ServiceConnection | null;
+  provider: DriveProvider | null;
+  scope: string;
+}
+
+/** Credentials participate only in the private CAS; public IDs scope by source, not auth token. */
+function runtimeFingerprint(ctx: ControlPlaneContext): string {
+  return hash(JSON.stringify({
+    provider: process.env.ORG_WORKBENCH_DRIVE_PROVIDER ?? "",
+    mem: resolveServiceConnection(ctx, "mem"),
+    doc: resolveServiceConnection(ctx, "doc"),
+    bdpanCommand: process.env.ORG_WORKBENCH_BDPAN_BIN?.trim() || "bdpan",
+    contextVault: process.env.CONTEXT_VAULT ?? "",
+    contextToken: process.env.CONTEXT_RUNTIME_TOKEN ?? "",
+  }));
+}
+function captureDrive(ctx: ControlPlaneContext): DriveSnapshot {
+  const kind = parseDriveProviderKind(process.env.ORG_WORKBENCH_DRIVE_PROVIDER);
+  const live = resolveServiceConnection(ctx, "mem");
+  const connection = live === null ? null : { ...live };
+  const scope = hash(JSON.stringify(kind === "bdpan"
+    ? { kind, command: process.env.ORG_WORKBENCH_BDPAN_BIN?.trim() || "bdpan" }
+    : { kind, apiUrl: connection?.apiUrl ?? null, workspaceId: connection?.workspaceId ?? null })).slice(0, 32);
+  return { kind, connection, scope, provider: kind === null ? null : resolveDriveProvider(ctx, { memConnection: connection }) };
+}
+function driveLabel(name: string, token?: string): string {
+  const withoutCredential = token ? name.split(token).join("[redacted]") : name;
+  return label(withoutCredential.replace(/\b(?:mem_pat_|doc_pat_|github_pat_|gh[opusr]_|sk-)[a-z0-9_-]+/gi, "[redacted]")
+    .replace(/[a-z][a-z0-9+.-]*:\/\/[^\s)]+/gi, "[redacted URL]")
+    .replace(/\\\\[^\s]+/g, "[local path]"), "网盘文件");
+}
+function updateDriveSource(graph: Projection, source: string, inventory: string, count: number, state: RelationshipNode["state"]): void {
+  const node = graph.nodes.get(source);
+  if (!node) return;
+  node.state = state;
+  node.facts = [...(node.facts ?? []).filter((fact) => fact.key !== "inventory" && fact.key !== "itemCount"),
+    { key: "inventory", value: inventory }, { key: "itemCount", value: String(count) }];
+}
+async function driveObjects(provider: DriveProvider): Promise<DriveObject[]> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([provider.list(""), new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new OrgApiError("graph_inventory_timeout", 504, "drive inventory read timed out", true)), DRIVE_INVENTORY_TIMEOUT_MS);
+      timer.unref();
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
+async function addDriveInventory(graph: Projection, source: string, drive: DriveSnapshot, assertCurrent: () => void): Promise<void> {
+  if (!drive.provider) {
+    updateDriveSource(graph, source, "error", 0, "error");
+    graph.coverage.push({ source: "mem", state: "error", count: 0, reason: "provider_invalid" });
+    return;
+  }
+  if (drive.kind === "mem" && drive.connection === null) {
+    graph.coverage.push({ source: "mem", state: "not_connected", count: 0, reason: "service_not_configured" });
+    return;
+  }
+  let objects: DriveObject[];
+  try {
+    assertCurrent();
+    objects = await driveObjects(drive.provider);
+    assertCurrent();
+  } catch (error) {
+    // A stale source is never reported as a failure of the original source.
+    assertCurrent();
+    const code = error instanceof OrgApiError ? error.code : "";
+    const reason = code === "graph_inventory_timeout" ? "inventory_timeout"
+      : code === "drive_auth_expired" ? "auth_expired"
+      : code === "drive_upstream_failed" ? "upstream_failed" : "inventory_unavailable";
+    updateDriveSource(graph, source, "error", 0, "error");
+    graph.coverage.push({ source: "mem", state: "error", count: 0, reason });
+    return;
+  }
+  const inventoryLimited = objects.length >= MAX_DRIVE_OBJECTS;
+  if (inventoryLimited) graph.truncated = true;
+  const unique = new Map<string, { item: DriveObject; metadata: string }>();
+  for (const item of objects.slice(0, MAX_DRIVE_OBJECTS)) {
+    const metadata = JSON.stringify([item.name, item.size, item.mime, item.createdAt, item.summary ?? null]);
+    const previous = unique.get(item.id);
+    if (previous && previous.metadata !== metadata) {
+      // An ambiguous upstream identity cannot establish an observed resource.
+      updateDriveSource(graph, source, "error", 0, "error");
+      graph.coverage.push({ source: "mem", state: "error", count: 0, reason: "invalid_or_unresolved_record" });
+      return;
+    }
+    if (!previous) unique.set(item.id, { item, metadata });
+  }
+  let count = 0;
+  let graphLimited = false;
+  // Reserve the local projection first, then add deterministic external metadata.
+  for (const { item } of [...unique.values()].sort((a, b) => ordinal(a.item.id, b.item.id))) {
+    if (!graph.nodes.has(source) || graph.nodes.size >= MAX_NODES || graph.edges.size >= MAX_EDGES) {
+      graph.truncated = true; graph.graphLimited = true; graphLimited = true; break;
+    }
+    const opaque = hash(`${drive.scope}\0${item.id}`).slice(0, 32);
+    const proof = evidence("drive_inventory", `drive:${drive.kind}:${drive.scope}/object:${opaque}`, "observed", graph.at);
+    const mime = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(item.mime) &&
+      !/(?:mem_pat_|doc_pat_|github_pat_|gh[opusr]_|sk-)[a-z0-9_-]+/i.test(item.mime) &&
+      !(drive.connection?.token && item.mime.includes(drive.connection.token)) ? item.mime : "application/octet-stream";
+    const resource = graph.node("resource", `drive\0${drive.scope}\0${item.id}`, {
+      label: driveLabel(item.name, drive.connection?.token), state: "ready", evidence: proof,
+      facts: [{ key: "kind", value: "drive_file" }, { key: "provider", value: drive.kind! },
+        { key: "mime", value: mime }, { key: "sizeBytes", value: String(item.size) }, { key: "createdAt", value: timestamp(item.createdAt) }],
+    });
+    graph.edge(source, resource, "contains_resource", proof, "unknown");
+    count += 1;
+  }
+  const limited = graphLimited || inventoryLimited;
+  updateDriveSource(graph, source, limited ? "partial" : "complete", count, count ? "ready" : "available");
+  graph.coverage.push({ source: "mem", state: limited ? "partial" : "complete", count,
+    ...(limited ? { reason: graphLimited ? "graph_limit" : "inventory_limit" } : {}) });
+}
+
 export async function projectRelationships(ctx: ControlPlaneContext, expectedWorkspacePath?: string): Promise<RelationshipGraphResponse> {
   const opened = ctx.workspace.requireOpen();
   if (expectedWorkspacePath !== undefined && expectedWorkspacePath !== opened.dir) {
@@ -329,7 +452,14 @@ export async function projectRelationships(ctx: ControlPlaneContext, expectedWor
   const version = opened.version.seq;
   const snapshot: OpenWorkspace = { ...opened, organization: structuredClone(opened.organization) };
   const root = path.resolve(snapshot.dir);
-  const memConfigured = resolveServiceConnection(ctx, "mem") !== null;
+  const drive = captureDrive(ctx);
+  const fingerprint = runtimeFingerprint(ctx);
+  const assertCurrent = () => {
+    if (ctx.workspace.active !== opened || opened.version.seq !== version || runtimeFingerprint(ctx) !== fingerprint) {
+      throw new OrgApiError("graph_snapshot_stale", 409, "workspace or source changed while reading the relationship graph", true);
+    }
+  };
+  const memConfigured = drive.kind === "bdpan" || drive.connection !== null;
   const docConfigured = resolveServiceConnection(ctx, "doc") !== null;
   const contextConfigured = Boolean(process.env.CONTEXT_VAULT?.trim() && process.env.CONTEXT_RUNTIME_TOKEN?.trim());
   const identity = await workspaceIdentity(root);
@@ -353,12 +483,15 @@ export async function projectRelationships(ctx: ControlPlaneContext, expectedWor
   for (const role of roles) {
     if (role.reportTo && knownRoles.has(role.reportTo)) graph.edge(graph.id("agent", role.id), graph.id("agent", role.reportTo), "reports_to", { ...orgProof, locator: `position:${role.id}/reportTo` });
   }
+  let driveSource = "";
   for (const [kind, configured] of [["mem", memConfigured], ["doc", docConfigured]] as const) {
     const proof = evidence("service_configuration", `service:${kind}`, "declared", graph.at);
-    const source = graph.node("source", `service\0${kind}`, { label: kind === "mem" ? "统一网盘" : "外部文档", state: configured ? "available" : "not_configured", evidence: proof,
-      facts: [{ key: "kind", value: kind === "mem" ? "mem_drive" : "doc_plane" }, { key: "binding", value: "available" }, { key: "inventory", value: "not_loaded" }] });
+    const source = graph.node("source", kind === "mem" ? `service\0mem\0${drive.scope}` : `service\0${kind}`, { label: kind === "mem" ? "统一网盘" : "外部文档", state: configured ? "available" : "not_configured", evidence: proof,
+      facts: [{ key: "kind", value: kind === "mem" ? "mem_drive" : "doc_plane" }, { key: "binding", value: "available" }, { key: "inventory", value: "not_loaded" },
+        ...(kind === "mem" ? [{ key: "provider", value: drive.kind ?? "unknown" }] : [])] });
     graph.edge(source, workspace, "available_in", proof, "unknown");
-    graph.coverage.push({ source: kind, state: configured ? "partial" : "not_connected", reason: configured ? "external_inventory_not_loaded" : "service_not_configured" });
+    if (kind === "mem") driveSource = source;
+    else graph.coverage.push({ source: kind, state: configured ? "partial" : "not_connected", reason: configured ? "external_inventory_not_loaded" : "service_not_configured" });
   }
   graph.coverage.push({ source: "context", state: contextConfigured ? "partial" : "not_connected", reason: contextConfigured ? "recall_lineage_not_loaded" : "service_not_configured" });
   graph.coverage.push({ source: "mcp_runtime", state: "unsupported", reason: "employee_mcp_unsupported" });
@@ -379,8 +512,7 @@ export async function projectRelationships(ctx: ControlPlaneContext, expectedWor
       graph.edge(source, resource, "contains_resource", proof, "unknown");
     }
   }
-  if (ctx.workspace.active !== opened || opened.version.seq !== version) {
-    throw new OrgApiError("graph_snapshot_stale", 409, "workspace changed while reading the relationship graph", true);
-  }
+  await addDriveInventory(graph, driveSource, drive, assertCurrent);
+  assertCurrent();
   return graph.finish();
 }

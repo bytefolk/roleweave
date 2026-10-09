@@ -2305,6 +2305,7 @@ function AppInner({
             error={graph.error}
             onReload={graph.reload}
             onOpenAgent={openConversation}
+            onOpenDrive={() => { setResourceRequest(null); setMemorySource("drive"); setActiveModule("docs"); }}
             onOpenResource={(positionId, path) => {
               selectPosition(positionId);
               setResourceRequest({ positionId, path, nonce: Date.now() });

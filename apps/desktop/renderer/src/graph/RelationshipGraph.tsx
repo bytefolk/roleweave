@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Checkbox, Empty, Input, Spin, Tag } from "antd";
 import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, ChevronRight, FileSearch, Info, Network, Orbit, RefreshCw, Search, X } from "lucide-react";
-import { relationshipNodeKinds, type RelationshipEdge, type RelationshipGraphResponse, type RelationshipKind, type RelationshipNode, type RelationshipNodeKind } from "@roleweave/shared/relationship-graph";
+import { relationshipNodeKinds, type RelationshipCoverage, type RelationshipEdge, type RelationshipGraphResponse, type RelationshipKind, type RelationshipNode, type RelationshipNodeKind } from "@roleweave/shared/relationship-graph";
 import { useT, type OwbT } from "@roleweave/ui";
 import { RelationshipSpatialScene, type RelationshipSpatialLayout, type RelationshipSpatialTheme } from "./RelationshipSpatialScene";
 import { RelationshipContextExplorer } from "./RelationshipContextExplorer";
 import { useRelationshipContextCopy } from "../locales/relationship-context";
+import { graphCoverageIssues } from "./graph-coverage";
 import "./RelationshipGraph.css";
 
 export interface RelationshipGraphProps {
@@ -17,6 +18,7 @@ export interface RelationshipGraphProps {
   onReload: () => void;
   onOpenAgent: (id: string) => void;
   onOpenResource: (positionId: string, path: string) => void;
+  onOpenDrive?: () => void;
 }
 
 const relationKinds: RelationshipKind[] = ["contains", "reports_to", "bound_to", "declares_source", "available_in", "contains_resource", "declares_allow", "declares_deny", "has_policy", "assigned_to", "requested_by", "budget_owner"];
@@ -95,7 +97,7 @@ export function RelationshipGraph(props: RelationshipGraphProps) {
   return <RelationshipGraphWorkspace key={scope} {...props} scope={scope} />;
 }
 
-function RelationshipGraphWorkspace({ data, loading, error, visible = true, onReload, onOpenAgent, onOpenResource, scope }: RelationshipGraphProps & { scope: string }) {
+function RelationshipGraphWorkspace({ data, loading, error, visible = true, onReload, onOpenAgent, onOpenResource, onOpenDrive, scope }: RelationshipGraphProps & { scope: string }) {
   const t = useT();
   const copy = useRelationshipContextCopy();
   const initial = useRef(rememberedViews.get(scope));
@@ -110,15 +112,15 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
   const [guideOpen, setGuideOpen] = useState(false);
   const [inspectionRequest, setInspectionRequest] = useState(0);
   const [spatialLayout, setSpatialLayout] = useState<RelationshipSpatialLayout>(initial.current?.spatialLayout ?? "topology");
-  const [spatialTheme, setSpatialTheme] = useState<RelationshipSpatialTheme>(initial.current?.spatialTheme ?? "dark");
+  const [spatialTheme, setSpatialTheme] = useState<RelationshipSpatialTheme>(initial.current?.spatialTheme ?? (document.documentElement.dataset.theme === "light" ? "light" : "dark"));
   const [showKnowledgeRelationships, setShowKnowledgeRelationships] = useState(initial.current?.showKnowledgeRelationships ?? true);
   const [listMode, setListMode] = useState<"nodes" | "edges">("nodes");
   const results = useRef<HTMLDivElement>(null);
   const scopeDetails = useRef<HTMLDetailsElement>(null);
   const inspector = useRef<HTMLElement>(null);
   const trailNavigation = useRef<HTMLElement>(null);
-  const latest = useRef({ data, onOpenAgent, onOpenResource });
-  latest.current = { data, onOpenAgent, onOpenResource };
+  const latest = useRef({ data, onOpenAgent, onOpenResource, onOpenDrive });
+  latest.current = { data, onOpenAgent, onOpenResource, onOpenDrive };
   const view = useMemo(() => projectRelationships(data, { query, kinds, relations, neighborhood }), [data, query, kinds, relations, neighborhood]);
   // Search chooses an object. Its context uses all matching types/relations,
   // so searching for an employee doesn't also erase differently named sources.
@@ -131,6 +133,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
   const selectedProjection = renderer === "context" ? contextView : view;
   const selectedVisible = !selection || (selection.type === "node" ? selectedProjection.nodes : selectedProjection.edges).some(item => item.id === selection.id);
   const selectedIsSelector = selectedNode?.facts?.some(fact => fact.key === "kind" && fact.value === "selector");
+  const selectedIsDrive = selectedNode?.facts?.some(fact => fact.key === "kind" && ["drive_file", "mem_drive"].includes(fact.value));
   const stateForCache = useRef<RememberedView>({ query, kinds, relations, selection, neighborhood, renderer, spatialLayout, spatialTheme, showKnowledgeRelationships, focusId, trail });
   stateForCache.current = { query, kinds, relations, selection, neighborhood, renderer, spatialLayout, spatialTheme, showKnowledgeRelationships, focusId, trail };
 
@@ -138,6 +141,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
     const current = latest.current;
     const node = current.data?.nodes.find(item => item.id === id);
     if (node?.kind === "agent" && node.positionId) current.onOpenAgent(node.positionId);
+    if (node?.facts?.some(fact => fact.key === "kind" && ["drive_file", "mem_drive"].includes(fact.value))) current.onOpenDrive?.();
     if (node?.kind === "resource" && node.positionId && node.resourcePath && !node.facts?.some(fact => fact.key === "kind" && fact.value === "selector")) current.onOpenResource(node.positionId, node.resourcePath);
   }, []);
 
@@ -181,7 +185,31 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
     const owner = node.kind !== "agent" && node.positionId ? employeesByPosition.get(node.positionId) : undefined;
     return [owner, selector ? kind : node.resourcePath ?? kind].filter(Boolean).join(" · ");
   };
-  const partial = data?.truncated || data?.coverage.some(item => item.state === "partial" || item.state === "error");
+  const coverageIssues = graphCoverageIssues(data);
+  const coverageName = (item: RelationshipCoverage) => {
+    const labels: Record<string, string> = { organization: copy.sourceOrganization, workspace_identity: copy.sourceIdentity,
+      mem: copy.sourceDrive, doc: copy.sourceDoc, context: copy.sourceContext, tasks: copy.sourceTasks, goals: copy.sourceGoals,
+      mcp_runtime: copy.sourceMcp, execution_lineage: copy.sourceExecution, projection: copy.sourceProjection };
+    const match = /^(documents|permissions|agent_binding):([a-zA-Z0-9_-]+)$/.exec(item.source);
+    if (match) {
+      const category = match[1] === "documents" ? copy.sourceDocuments : match[1] === "permissions" ? copy.sourcePermissions : copy.sourceBinding;
+      return [employeesByPosition.get(match[2]!), category].filter(Boolean).join(" · ");
+    }
+    return labels[item.source] ?? copy.sourceOther;
+  };
+  const coverageReason = (item: RelationshipCoverage) => {
+    const reasons: Record<string, string> = {
+      local_identity_fallback: copy.reasonIdentity, permission_manifest_missing: copy.reasonPermissions,
+      external_inventory_not_loaded: copy.reasonInventory, recall_lineage_not_loaded: copy.reasonContext,
+      service_not_configured: copy.reasonUnconfigured, agent_not_bound: copy.reasonUnbound, package_missing: copy.reasonPackage,
+      invalid_or_unresolved_record: copy.reasonRecord, source_unreadable: copy.reasonUnreadable, identity_unreadable: copy.reasonUnreadable,
+      graph_limit: copy.reasonLimit, document_limit: copy.reasonLimit, position_limit: copy.reasonLimit, record_limit: copy.reasonLimit,
+      inventory_limit: copy.reasonLimit, inventory_timeout: copy.reasonTimeout, inventory_unavailable: copy.reasonUpstream,
+      upstream_failed: copy.reasonUpstream, auth_expired: copy.reasonUpstream, provider_invalid: copy.reasonUpstream,
+      employee_mcp_unsupported: copy.reasonUnsupported, task_run_link_unavailable: copy.reasonUnsupported,
+    };
+    return item.reason ? reasons[item.reason] ?? (item.state === "partial" ? copy.reasonIncomplete : copy.reasonUnreadable) : "";
+  };
 
   const emptyResults = !data || !view.nodes.length ? <div className="owb-rgraph__canvas-message">{loading ? <Spin tip={t("graph.loading")}><div className="owb-rgraph__spinner-space" /></Spin> : <Empty description={data?.nodes.length ? t("graph.filteredEmpty") : data ? t("graph.empty") : t("graph.noData")} image={Empty.PRESENTED_IMAGE_SIMPLE}>{data?.nodes.length ? <Button onClick={clearFilters}>{t("graph.clearFilters")}</Button> : null}</Empty>}</div> : null;
 
@@ -207,9 +235,9 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
     {error ? <Alert type="error" title={t("graph.loadFailure")} showIcon action={<Button size="small" onClick={onReload}>{t("graph.reload")}</Button>} /> : null}
     <div className="owb-rgraph__meta">
     <ol className="owb-rgraph__workflow" aria-label={copy.guideTitle}><li className={!focusId ? "is-current" : ""}><span>1</span>{copy.findObject}</li><li className={focusId && !selectedEdge ? "is-current" : ""}><span>2</span>{copy.followRelations}</li><li className={selectedEdge ? "is-current" : ""}><span>3</span>{copy.verifyEvidence}</li></ol>
-    {data ? <details ref={scopeDetails} className="owb-rgraph__scope"><summary><Info size={14} aria-hidden="true" /><span>{copy.scopeTitle}</span><small>{t("graph.counts", { nodes: data.nodes.length, edges: data.edges.length })}</small></summary><div className="owb-rgraph__scope-panel"><p>{copy.scopeHelp}</p><div className="owb-rgraph__scope-coverage">{data.coverage.map((item, index) => <div key={`${item.source}:${index}`}><span>{item.source}</span><Tag color={item.state === "error" || item.state === "partial" ? "warning" : "default"}>{t(`graph.coverage.${item.state}`)}</Tag>{item.count !== undefined ? <small>{item.count}</small> : null}</div>)}</div></div></details> : null}
+    {data ? <details ref={scopeDetails} className="owb-rgraph__scope"><summary><Info size={14} aria-hidden="true" /><span>{copy.scopeTitle}</span><small>{t("graph.counts", { nodes: data.nodes.length, edges: data.edges.length })}</small></summary><div className="owb-rgraph__scope-panel"><p>{copy.scopeHelp}</p><div className="owb-rgraph__scope-coverage">{data.coverage.map((item, index) => <div key={`${item.source}:${index}`}><span>{coverageName(item)}</span><Tag color={coverageIssues.includes(item) ? "warning" : "default"}>{t(`graph.coverage.${item.state}`)}</Tag>{item.count !== undefined ? <small>{item.count}</small> : null}{item.reason ? <small className="owb-rgraph__coverage-reason">{coverageReason(item)}</small> : null}</div>)}</div></div></details> : null}
     </div>
-    {partial ? <div className="owb-rgraph__notice" role="status"><Info size={14} aria-hidden="true" /><span>{t("graph.partial")}</span></div> : null}
+    {coverageIssues.length || data?.truncated ? <div className="owb-rgraph__notice" role="status"><Info size={14} aria-hidden="true" /><div><strong>{data?.truncated ? copy.boundedScope : copy.sourceIssues}</strong>{coverageIssues.slice(0, 3).map((item, index) => <p key={`${item.source}:${index}`}>{coverageName(item)}：{coverageReason(item) || copy.reasonUnreadable}</p>)}{coverageIssues.length > 3 ? <p>{copy.moreIssues(coverageIssues.length - 3)}</p> : null}</div><Button size="small" onClick={onReload}>{t("graph.reload")}</Button></div> : null}
     <div className={`owb-rgraph__workspace owb-rgraph__workspace--${renderer}${selection ? " has-selection" : ""}`}>
       <aside className="owb-rgraph__filters" aria-label={t("graph.filters")}>
         <Input prefix={<Search size={14} aria-hidden="true" />} aria-label={t("graph.search")} placeholder={t("graph.search")} value={query} allowClear onChange={event => { setQuery(event.target.value); setNeighborhood(null); }} />
@@ -246,6 +274,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
             showKnowledgeRelationships={showKnowledgeRelationships}
             selectedId={selection?.id}
             visible={visible}
+            showObjectNavigation={false}
             onLayoutChange={setSpatialLayout}
             onThemeChange={setSpatialTheme}
             onShowKnowledgeRelationshipsChange={setShowKnowledgeRelationships}
@@ -264,7 +293,8 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
           {!selectedVisible ? <p className="owb-rgraph__bounded">{t("graph.filteredSelection")}</p> : null}
           {selectedNode ? <><Tag color={nodeColors[selectedNode.kind]}>{selectedIsSelector ? copy.selector : t(`graph.kind.${selectedNode.kind}`)}</Tag><h3>{selectedNode.label}</h3><Tag>{t(`graph.state.${selectedNode.state}`)}</Tag><Tag>{t(`graph.${selectedNode.evidence.basis}`)}</Tag>{selectedNode.resourcePath && !selectedIsSelector ? <p className="owb-rgraph__resource-path">{selectedNode.resourcePath}</p> : null}
             {selectedNode.kind === "agent" && selectedNode.positionId ? <Button block icon={<ArrowUpRight size={15} />} onClick={() => openNode(selectedNode.id)}>{t("graph.openAgent")}</Button> : null}
-            {selectedNode.kind === "resource" ? selectedIsSelector ? <p className="owb-rgraph__permission">{copy.selectorHelp}</p> : selectedNode.positionId && selectedNode.resourcePath ? <Button block icon={<ArrowUpRight size={15} />} onClick={() => openNode(selectedNode.id)}>{t("graph.openResource")}</Button> : <p>{t("graph.resourceUnavailable")}</p> : null}
+            {selectedIsDrive && onOpenDrive ? <Button block icon={<ArrowUpRight size={15} />} onClick={() => openNode(selectedNode.id)}>{copy.openDrive}</Button> : null}
+            {selectedNode.kind === "resource" && !selectedIsDrive ? selectedIsSelector ? <p className="owb-rgraph__permission">{copy.selectorHelp}</p> : selectedNode.positionId && selectedNode.resourcePath ? <Button block icon={<ArrowUpRight size={15} />} onClick={() => openNode(selectedNode.id)}>{t("graph.openResource")}</Button> : <p>{t("graph.resourceUnavailable")}</p> : null}
             {selectedNode.kind === "policy" || selectedNode.kind === "capability" ? <Alert type="info" title={t("graph.permission.declaration_only")} /> : null}
             <div className="owb-rgraph__evidence-intro"><h4>{copy.nodeEvidenceTitle}</h4><p>{selectedNode.evidence.basis === "declared" ? copy.declaredHelp : copy.observedHelp}</p></div>
             {evidenceDetails(selectedNode.evidence, t)}

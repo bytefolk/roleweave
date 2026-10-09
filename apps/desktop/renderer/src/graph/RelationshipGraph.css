@@ -30,6 +30,10 @@
 .owb-rgraph__scope-coverage .ant-tag { margin: 0; font-size: 11px; }
 .owb-rgraph__notice { display: flex; align-items: flex-start; gap: 7px; padding: 5px 8px; border-left: 2px solid var(--ui-warning, #b58d4d); color: var(--ui-foreground-muted); background: color-mix(in srgb, var(--ui-warning, #b58d4d) 7%, var(--ui-surface)); font-size: 12px; line-height: 1.5; }
 .owb-rgraph__notice > svg { flex: none; margin-top: 2px; color: var(--ui-warning, #b58d4d); }
+.owb-rgraph__notice > div { flex: 1; min-width: 0; }
+.owb-rgraph__notice p { margin: 3px 0 0; line-height: 1.5; }
+.owb-rgraph__notice > .ant-btn { flex: none; margin-left: auto; }
+.owb-rgraph__scope-coverage .owb-rgraph__coverage-reason { flex-basis: 100%; line-height: 1.5; }
 .owb-rgraph__filters { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; overflow: auto; padding: 12px 10px; border-right: 1px solid var(--ui-border); background: color-mix(in srgb, var(--ui-foreground) 2%, var(--ui-surface)); overscroll-behavior: contain; }
 .owb-rgraph__filters > .ant-input-affix-wrapper { flex: none; height: 32px; font-size: 13px; }
 .owb-rgraph__advanced { flex: none; margin-top: 0; font-size: 12px; color: var(--ui-foreground-muted); }
@@ -114,50 +118,56 @@
 .owb-rgraph__evidence-intro p { margin: 6px 0 0; color: var(--ui-foreground-muted); font-size: 13px; line-height: 1.65; }
 .owb-rgraph__edge-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
 .owb-rgraph__edge-actions button { height: auto; min-height: 28px; white-space: normal; }
-.owb-rgraph__spatial { position: relative; flex: 1; width: 100%; height: 100%; min-height: 300px; overflow: hidden; color: #f4f4f6; background: #0c1118; }
-.owb-rgraph__spatial--galaxy { background: radial-gradient(circle at 50% 36%, #273449 0, #12151c 62%); }
-.owb-rgraph__spatial--minimal.owb-rgraph__spatial--light { color: #18181b; background: #f8f9fa; }
+.owb-rgraph__spatial {
+  --owb-graph-surface: var(--ui-surface, #f8f9fa);
+  --owb-graph-foreground: var(--ui-foreground, #273444);
+  --owb-graph-muted: var(--ui-foreground-muted, #68778a);
+  --owb-graph-border: var(--ui-border, #e0e6ef);
+  position: relative; display: flex; flex: 1; flex-direction: column; width: 100%; height: 100%; min-height: 300px; overflow: hidden;
+  color: var(--owb-graph-foreground); background: var(--owb-graph-surface);
+}
+/* A separately selected canvas theme stays legible inside either shell theme. */
+[data-theme="dark"] .owb-rgraph__spatial--light {
+  --owb-graph-surface: #f8f9fa; --owb-graph-foreground: #273444; --owb-graph-muted: #68778a; --owb-graph-border: #e0e6ef;
+}
+[data-theme="light"] .owb-rgraph__spatial--dark {
+  --owb-graph-surface: #1b2028; --owb-graph-foreground: #e1e7ef; --owb-graph-muted: #98a6b7; --owb-graph-border: #343e4b;
+}
 /* three's CSS2DRenderer writes a z-index onto every label element (zMax - i,
    i.e. 1..N for N visible labels). None of the wrappers between the labels and
    the workspace creates a stacking context, so those indices used to compete
-   page-wide and paint the black name labels over the z-index 3 canvas chrome
-   and the z-index 8 inspector overlay. Giving the stage `z-index: 0` contains
-   them: label indices keep their in-canvas depth order, while the chrome and
-   the inspector stay above the whole layer. */
-.owb-rgraph__spatial-stage { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; }
+   page-wide and paint name labels over the toolbar and evidence overlay.
+   Giving the stage `z-index: 0` contains that depth ordering inside the graph. */
+.owb-rgraph__spatial-stage {
+  position: relative; z-index: 0; flex: 1; min-width: 0; min-height: 0; width: 100%;
+  overflow: hidden; background-color: var(--owb-graph-surface);
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--owb-graph-foreground) 5%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--owb-graph-foreground) 5%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
 .owb-rgraph__spatial-stage canvas, .owb-rgraph__spatial-labels { position: absolute; inset: 0; }
 .owb-rgraph__spatial-labels { pointer-events: none; }
-.owb-rgraph__spatial-label { pointer-events: auto; max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent; border-radius: 4px; padding: 4px 7px; background: #101820d9; color: #e7edf5; cursor: pointer; font: inherit; font-size: 12px; line-height: 1.4; white-space: nowrap; }
-.owb-rgraph__spatial-label--galaxy { background: #111722e6; }
-.owb-rgraph__spatial-label.is-neighbor { border-color: #ffffff30; }
-.owb-rgraph__spatial-label.is-hovered { background: #273449; }
-.owb-rgraph__spatial-label.is-selected { border-color: #d9e5f5; background: #273449; box-shadow: 0 0 0 1px #d9e5f535; font-weight: 600; }
-.owb-rgraph__spatial--light .owb-rgraph__spatial-label { background: #ffffffeb; color: #233043; }
-.owb-rgraph__spatial--light .owb-rgraph__spatial-label.is-neighbor { border-color: #23304330; }
-.owb-rgraph__spatial--light .owb-rgraph__spatial-label.is-hovered,
-.owb-rgraph__spatial--light .owb-rgraph__spatial-label.is-selected { background: #edf2f8; border-color: #506780; box-shadow: none; }
-.owb-rgraph__spatial-controls { position: absolute; z-index: 3; top: 10px; left: 10px; right: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; pointer-events: none; }
-.owb-rgraph__spatial-controls > *, .owb-rgraph__spatial-controls > div > * { pointer-events: auto; }
-.owb-rgraph__spatial-controls > div { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #ffffff20; border-radius: 6px; background: #101820e6; backdrop-filter: blur(10px); }
-.owb-rgraph__spatial-controls button { border: 1px solid transparent; border-radius: 4px; padding: 4px 7px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 12px; line-height: 1.4; }
-.owb-rgraph__spatial-controls button[aria-pressed="true"] { border-color: #ffffff5c; background: #ffffff18; }
-.owb-rgraph__spatial--light .owb-rgraph__spatial-controls > div, .owb-rgraph__spatial--light .owb-rgraph__spatial-controls button { border-color: #18181b26; background: #f8f9fad9; }
-.owb-rgraph__object-navigation { position: absolute; z-index: 3; right: 8px; bottom: 8px; left: 8px; display: flex; align-items: center; gap: 4px; }
-.owb-rgraph__object-page { display: grid; place-items: center; flex: none; width: 24px; height: 38px; padding: 0; border: 1px solid #ffffff20; border-radius: 4px; background: #101820e6; color: inherit; cursor: pointer; }
+.owb-rgraph__spatial-label { pointer-events: auto; max-width: min(240px, calc(100% - 16px)); overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent; border-radius: 4px; padding: 4px 7px; background: color-mix(in srgb, var(--owb-graph-surface) 94%, transparent); color: var(--owb-graph-foreground); cursor: pointer; font: inherit; font-size: 12px; line-height: 1.4; white-space: nowrap; }
+.owb-rgraph__spatial-label.is-neighbor { border-color: var(--owb-graph-border); }
+.owb-rgraph__spatial-label.is-hovered { background: color-mix(in srgb, var(--owb-graph-foreground) 8%, var(--owb-graph-surface)); }
+.owb-rgraph__spatial-label.is-selected { border-color: var(--owb-graph-foreground); background: var(--owb-graph-surface); font-weight: 600; }
+.owb-rgraph__spatial-controls { position: relative; z-index: 3; display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-height: 38px; box-sizing: border-box; padding: 5px 10px; border-bottom: 1px solid var(--owb-graph-border); background: var(--owb-graph-surface); }
+.owb-rgraph__spatial-controls > div { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.owb-rgraph__spatial-controls button { border: 1px solid transparent; border-radius: 4px; padding: 4px 7px; background: transparent; color: var(--owb-graph-muted); cursor: pointer; font: inherit; font-size: 12px; line-height: 1.4; }
+.owb-rgraph__spatial-controls button:hover { color: var(--owb-graph-foreground); background: color-mix(in srgb, var(--owb-graph-foreground) 5%, var(--owb-graph-surface)); }
+.owb-rgraph__spatial-controls button[aria-pressed="true"] { color: var(--owb-graph-foreground); background: color-mix(in srgb, var(--owb-graph-foreground) 8%, var(--owb-graph-surface)); }
+.owb-rgraph__spatial-controls button:focus-visible { outline-color: var(--owb-graph-foreground); outline-offset: -2px; }
+/* Standalone scenes may retain a navigation row; the workbench uses its
+   full searchable sidebar and omits this row through the component prop. */
+.owb-rgraph__object-navigation { position: relative; z-index: 3; display: flex; flex: none; align-items: center; gap: 4px; padding: 4px 8px; border-top: 1px solid var(--owb-graph-border); background: var(--owb-graph-surface); }
+.owb-rgraph__object-page { display: grid; place-items: center; flex: none; width: 24px; height: 38px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
 .owb-rgraph__object-page:disabled { opacity: .35; cursor: default; }
-.owb-rgraph__spatial--light .owb-rgraph__object-page { border-color: #18181b26; background: #f8f9fad9; }
-.owb-rgraph__spatial-objects { display: flex; flex: 1; min-width: 0; gap: 2px; max-height: 64px; overflow-x: auto; overflow-y: hidden; margin: 0; padding: 4px; list-style: none; border-radius: 6px; background: #101820e6; backdrop-filter: blur(10px); }
+.owb-rgraph__spatial-objects { display: flex; flex: 1; min-width: 0; gap: 2px; max-height: 64px; overflow-x: auto; overflow-y: hidden; margin: 0; padding: 4px; list-style: none; }
 .owb-rgraph__spatial-objects li { flex: none; }
 .owb-rgraph__spatial-objects button { display: grid; grid-template-columns: auto; gap: 1px; min-width: 100px; max-width: 180px; border: 1px solid transparent; border-radius: 4px; padding: 4px 6px; text-align: left; background: transparent; color: inherit; cursor: pointer; font: inherit; }
-.owb-rgraph__spatial-objects button span { color: #a6b2c3; font-size: 10px; line-height: 1.4; }
+.owb-rgraph__spatial-objects button span { color: var(--owb-graph-muted); font-size: 10px; line-height: 1.4; }
 .owb-rgraph__spatial-objects button strong { overflow: hidden; font-size: 12px; line-height: 1.4; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-.owb-rgraph__spatial-objects button[aria-pressed="true"] { border-color: #f4f4f6; background: #ffffff1c; }
-.owb-rgraph__spatial--light .owb-rgraph__spatial-objects { background: #f8f9faeb; }
-.owb-rgraph__spatial--light .owb-rgraph__spatial-objects button { background: transparent; }
-.owb-rgraph__spatial--light .owb-rgraph__spatial-objects button span { color: #64748b; }
-.owb-rgraph__spatial--light .owb-rgraph__spatial-objects button[aria-pressed="true"] { border-color: #506780; background: #2330430c; }
-.owb-rgraph__spatial-fallback { position: absolute; z-index: 2; inset: 0; display: grid; place-items: center; margin: 0; padding: 80px 20px 120px; text-align: center; color: inherit; background: radial-gradient(circle at 50% 40%, #27272a 0, #09090b 65%); font-size: 12px; }
-.owb-rgraph__spatial--light .owb-rgraph__spatial-fallback { background: radial-gradient(circle at 50% 40%, #ffffff 0, #e4e4e7 70%); }
+.owb-rgraph__spatial-objects button[aria-pressed="true"] { border-color: var(--owb-graph-border); background: color-mix(in srgb, var(--owb-graph-foreground) 8%, var(--owb-graph-surface)); }
+.owb-rgraph__spatial-fallback { position: absolute; z-index: 2; inset: 0; display: grid; place-items: center; margin: 0; padding: 48px 24px; text-align: center; color: var(--owb-graph-muted); background: transparent; font-size: 13px; line-height: 1.6; }
 .owb-rgraph__canvas-message { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .owb-rgraph__canvas-message button { pointer-events: auto; }
 .owb-rgraph__spinner-space { width: 130px; height: 90px; }
