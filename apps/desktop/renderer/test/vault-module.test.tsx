@@ -191,6 +191,20 @@ describe("统一笔记库", () => {
     expect(screen.queryByText("A 的未保存内容")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "同步笔记库" })).toBeEnabled();
   });
+  it("isolates unsaved drafts across workspace paths even with the same vault, note path and version", async () => {
+    const first = render(<VaultModule workspaceKey="draft-workspace-a" positions={[]} selectedPositionId={null} />);
+    await screen.findByRole("heading", { name: "项目约定" });
+    fireEvent.click(screen.getByRole("button", { name: "更多文档操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /源.*码/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "文档内容" }), { target: { value: "# Workspace A private draft" } });
+    first.unmount();
+    render(<VaultModule workspaceKey="draft-workspace-b" positions={[]} selectedPositionId={null} />);
+    expect(await screen.findByRole("heading", { name: "项目约定" })).toBeVisible();
+    expect(screen.queryByText("Workspace A private draft")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "同步笔记库" })).toBeEnabled();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 650)); });
+    expect(vault.write).not.toHaveBeenCalled();
+  });
   it("reports sync conflicts without overwriting or dismissing the local note", async () => {
     vault.sync.mockResolvedValue(response({ status: "conflict", pushed: 1, pulled: 1, conflicts: [{ path: "项目约定.md", copyPath: "项目约定-conflict.md" }] }));
     render(<VaultModule workspaceKey="sync-workspace" positions={[]} selectedPositionId={null} />);

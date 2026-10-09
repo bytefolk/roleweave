@@ -2,6 +2,17 @@
  * test; keep the two files in lockstep. */
 import { enVaultCatalog } from "./vault";
 export const enCatalog: Record<string, string> = {
+  "tasks.loadError": "The task board could not be loaded. The last successful task snapshot is preserved.",
+  "tasks.loading": "Loading tasks…",
+  "goals.criteriaEdit": "Edit acceptance criteria",
+  "goals.criteriaSave": "Save acceptance criteria",
+  "goals.criteriaEditHint": "Add 1–16 acceptance criteria. After a change, review existing deliveries against the new criteria.",
+  "goals.criteriaItem": "Acceptance criterion {index}",
+  "goals.criteriaRemoveItem": "Remove acceptance criterion {index}",
+  "goals.criteriaSaveError": "Acceptance criteria could not be saved. Your draft is preserved; try again.",
+  "goals.criteriaConflict": "The goal has changed. Your draft is preserved. Load and review the latest criteria before saving.",
+  "goals.criteriaReload": "Load latest acceptance criteria",
+  "goals.criteriaReloadHint": "Loading the latest criteria replaces your current draft.",
   ...enVaultCatalog,
   "project.legacyResult": "Legacy execution result",
   "project.legacyResultReadOnly": "This execution has no personal session and is read-only. Run the task again to review and accept a session-bound delivery.",
