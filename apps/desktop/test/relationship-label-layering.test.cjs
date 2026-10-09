@@ -36,8 +36,8 @@ function zIndex(selector) {
 test("the 3D label stage forms the stacking context that contains three's label z-indices (#517)", () => {
   assert.equal(
     lastDecl(".owb-rgraph__spatial-stage", "position"),
-    "absolute",
-    "z-index only applies to a positioned element, so the stage must stay positioned",
+    "relative",
+    "the normal flex canvas must stay positioned so its z-index contains labels without overlaying the toolbar",
   );
   assert.equal(
     zIndex(".owb-rgraph__spatial-stage"),

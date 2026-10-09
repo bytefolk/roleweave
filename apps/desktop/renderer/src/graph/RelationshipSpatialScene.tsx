@@ -172,6 +172,8 @@ export interface RelationshipSpatialSceneProps {
   showKnowledgeRelationships: boolean;
   selectedId?: string;
   visible?: boolean;
+  /** Embedded workspaces use their searchable sidebar for object navigation. */
+  showObjectNavigation?: boolean;
   onLayoutChange: (layout: RelationshipSpatialLayout) => void;
   onThemeChange: (theme: RelationshipSpatialTheme) => void;
   onShowKnowledgeRelationshipsChange: (visible: boolean) => void;
@@ -298,7 +300,7 @@ function updateSpatialLabels(state: SceneState, selectedId?: string) {
 
 function updateSpatialEdges(state: SceneState, mode: RelationshipSpatialMode, theme: RelationshipSpatialTheme, selectedId?: string) {
   const focus = validSpatialFocus([selectedId, state.hoveredLabelId, state.hoveredId, state.focusedId], new Set(state.views.keys()), new Set(state.edges.map((view) => view.relationship.id)));
-  const light = mode === "minimal" && theme === "light";
+  const light = theme === "light";
   for (const view of state.edges) {
     const edge = view.relationship;
     const related = !!focus && (edge.id === focus || edge.source === focus || edge.target === focus);
@@ -326,6 +328,7 @@ export function RelationshipSpatialScene({
   showKnowledgeRelationships,
   selectedId,
   visible = true,
+  showObjectNavigation = true,
   onLayoutChange,
   onThemeChange,
   onShowKnowledgeRelationshipsChange,
@@ -343,6 +346,11 @@ export function RelationshipSpatialScene({
   const objects = useRef<HTMLUListElement>(null);
   const [objectScroll, setObjectScroll] = useState({ previous: false, next: false });
   useEffect(() => {
+    if (!showObjectNavigation) {
+      setFocused(undefined);
+      setHovered(undefined);
+      return;
+    }
     const list = objects.current;
     if (!list) return;
     const measure = () => setObjectScroll({ previous: list.scrollLeft > 1, next: list.scrollLeft + list.clientWidth < list.scrollWidth - 1 });
@@ -351,7 +359,7 @@ export function RelationshipSpatialScene({
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
     observer?.observe(list);
     return () => { list.removeEventListener("scroll", measure); observer?.disconnect(); };
-  }, [nodes]);
+  }, [nodes, showObjectNavigation, setFocused, setHovered]);
   const pageObjects = (direction: number) => {
     const list = objects.current;
     if (list) list.scrollBy({ left: direction * list.clientWidth * 0.8, behavior: "auto" });
@@ -379,7 +387,8 @@ export function RelationshipSpatialScene({
       try {
         const width = host.clientWidth || 680;
         const height = host.clientHeight || 470;
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+        renderer.setClearColor(0x000000, 0);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.setSize(width, height);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -532,15 +541,8 @@ export function RelationshipSpatialScene({
     if (!state || !ready) return;
     state.decoration.traverse(disposeObject);
     state.decoration.clear();
-    const minimalLight = mode === "minimal" && theme === "light";
-    const background = mode === "galaxy" ? 0x12151c : minimalLight ? 0xf8f9fa : 0x09090b;
-    state.scene.background = new state.THREE.Color(background);
-    state.scene.fog = new state.THREE.Fog(background, mode === "galaxy" ? 44 : 58, mode === "galaxy" ? 150 : 170);
-    const grid = new state.THREE.GridHelper(84, 42, minimalLight ? 0x52525b : mode === "galaxy" ? 0x33415c : 0x71717a, minimalLight ? 0xd4d4d8 : mode === "galaxy" ? 0x1f293b : 0x27272a);
-    grid.position.y = -14;
-    const materials = Array.isArray(grid.material) ? grid.material : [grid.material];
-    materials.forEach(material => { material.transparent = true; material.opacity = mode === "galaxy" ? 0.22 : 0.32; });
-    state.decoration.add(grid);
+    state.scene.background = null;
+    state.scene.fog = null;
     resetCamera(state, mode);
   }, [mode, ready, theme]);
 
@@ -587,8 +589,8 @@ export function RelationshipSpatialScene({
         color,
         emissive: color,
         emissiveIntensity: mode === "galaxy" ? 0.12 : 0.04,
-        roughness: mode === "galaxy" ? 0.3 : 0.72,
-        metalness: mode === "galaxy" ? 0.18 : 0.06,
+        roughness: 0.85,
+        metalness: 0.02,
       });
       const mesh = new state.THREE.Mesh(geometry, material);
       mesh.position.set(point.x, point.y, point.z);
@@ -604,6 +606,7 @@ export function RelationshipSpatialScene({
       label.setAttribute("aria-hidden", "true");
       label.className = `owb-rgraph__spatial-label owb-rgraph__spatial-label--${mode}`;
       label.textContent = node.label;
+      label.title = node.label;
       let labelPointerStart: { x: number; y: number } | null = null;
       let labelPointerCancelled = false;
       label.addEventListener("pointerdown", (event) => { labelPointerStart = { x: event.clientX, y: event.clientY }; labelPointerCancelled = false; });
@@ -668,6 +671,7 @@ export function RelationshipSpatialScene({
     role="region"
     aria-label={canvasLabel}
     data-visual-style={mode === "minimal" ? "bindy-spatial" : "yuanyang-galaxy"}
+    data-navigation={showObjectNavigation ? "visible" : "hidden"}
   >
     <div className="owb-rgraph__spatial-controls">
       {mode === "minimal" ? <>
@@ -683,14 +687,15 @@ export function RelationshipSpatialScene({
       </> : null}
       <button type="button" onClick={reset}>{t("graph.cameraReset")}</button>
     </div>
-    <div ref={stage} className="owb-rgraph__spatial-stage" aria-hidden="true" />
-    {webglFailed ? <p className="owb-rgraph__spatial-fallback" role="status">{t("graph.spatialFallback")}</p> : null}
-    <div className="owb-rgraph__object-navigation">
+    <div ref={stage} className="owb-rgraph__spatial-stage" aria-hidden={webglFailed ? undefined : true}>
+      {webglFailed ? <p className="owb-rgraph__spatial-fallback" role="status">{t("graph.spatialFallback")}</p> : null}
+    </div>
+    {showObjectNavigation ? <div className="owb-rgraph__object-navigation">
       <button type="button" className="owb-rgraph__object-page" aria-label={t("graph.objectsPrevious")} disabled={!objectScroll.previous} onClick={() => pageObjects(-1)}><ChevronLeft size={16} aria-hidden="true" /></button>
       <ul ref={objects} className="owb-rgraph__spatial-objects" aria-label={objectsLabel}>
         {nodes.map(node => <li key={node.id}><button type="button" aria-label={`${t(`graph.kind.${node.kind}`)} · ${node.label}`} aria-pressed={selectedId === node.id} onClick={() => onSelect(node.id)} onMouseEnter={() => setHovered(node.id)} onMouseLeave={() => setHovered(undefined)} onFocus={() => setFocused(node.id)} onBlur={() => setFocused(undefined)}><span>{t(`graph.kind.${node.kind}`)}</span><strong>{node.label}</strong></button></li>)}
       </ul>
       <button type="button" className="owb-rgraph__object-page" aria-label={t("graph.objectsNext")} disabled={!objectScroll.next} onClick={() => pageObjects(1)}><ChevronRight size={16} aria-hidden="true" /></button>
-    </div>
+    </div> : null}
   </div>;
 }

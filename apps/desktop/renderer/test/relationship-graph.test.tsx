@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RelationshipGraphResponse, RelationshipNode } from "@roleweave/shared";
 import { projectRelationships, RelationshipGraph } from "../src/graph/RelationshipGraph";
+import { RelationshipSpatialScene } from "../src/graph/RelationshipSpatialScene";
 
 const evidence = { source: "org config", locator: "workspace-org.v1", basis: "declared" as const, observedAt: "2026-09-22T12:00:00Z" };
 const agent: RelationshipNode = { id: "agent:alice", kind: "agent", label: "Alice", state: "ready", positionId: "alice", evidence };
@@ -22,9 +23,19 @@ function mount(overrides: Partial<React.ComponentProps<typeof RelationshipGraph>
   return { ...result, props };
 }
 function objectList() { return screen.getByRole("list", { name: "对象" }); }
-function spatialObjects(name: "极简空间对象" | "星系对象" = "极简空间对象") { return screen.getByRole("list", { name }); }
 
 describe("RelationshipGraph", () => {
+  it("opens the drive source for discovered external files without treating them as role document paths", () => {
+    const external: RelationshipNode = { ...resource, id: "resource:drive-file", label: "report.md", positionId: undefined, resourcePath: undefined,
+      facts: [{ key: "kind", value: "drive_file" }, { key: "provider", value: "mem" }] };
+    const onOpenDrive = vi.fn();
+    const { props } = mount({ data: { ...data, nodes: [external], edges: [] }, onOpenDrive });
+    fireEvent.click(within(objectList()).getByRole("button", { name: /report.md/ }));
+    expect(onOpenDrive).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("complementary", { name: "关系详情" })).getByRole("button", { name: "在网盘中查看" }));
+    expect(onOpenDrive).toHaveBeenCalledExactlyOnceWith();
+    expect(props.onOpenResource).not.toHaveBeenCalled();
+  });
   it("starts with context exploration and teaches objects, relationships, and evidence before spatial browsing", () => {
     mount({}, "context");
 
@@ -217,9 +228,9 @@ describe("RelationshipGraph", () => {
     fireEvent.click(screen.getByRole("button", { name: "纸张浅色" }));
     fireEvent.change(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" }), { target: { value: "brief" } });
     fireEvent.click(within(objectList()).getByRole("button", { name: /brief.md/ }));
-    fireEvent.click(within(renderer).getByRole("button", { name: "星系关系图" }));
+    fireEvent.click(within(renderer).getByRole("button", { name: "空间关系图" }));
 
-    expect(screen.getByRole("region", { name: "星系关系画布" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "空间关系画布" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "brief.md" })).toBeVisible();
     rerender(<RelationshipGraph {...props} workspaceKey="renderer-memory-other" />);
     expect(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" })).toHaveValue("");
@@ -229,7 +240,7 @@ describe("RelationshipGraph", () => {
 
     rerender(<RelationshipGraph {...props} workspaceKey="renderer-memory" />);
     renderer = screen.getByRole("group", { name: "渲染模式" });
-    expect(within(renderer).getByRole("button", { name: "星系关系图" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(renderer).getByRole("button", { name: "空间关系图" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" })).toHaveValue("brief");
     expect(screen.getByRole("heading", { name: "brief.md" })).toBeVisible();
     fireEvent.click(within(renderer).getByRole("button", { name: "极简关系图" }));
@@ -247,36 +258,42 @@ describe("RelationshipGraph", () => {
     expect(within(layouts).getByRole("button", { name: "轨道" })).toHaveAttribute("aria-pressed", "false");
     expect(within(scene).getByRole("button", { name: "知识关系" })).toHaveAttribute("aria-pressed", "true");
 
-    const objects = within(scene).getByRole("list", { name: "极简空间对象" });
+    const objects = objectList();
     expect(objects).toBeVisible();
-    expect(within(objects).getByRole("button", { name: "员工 · Alice" })).toBeVisible();
-    expect(within(objects).getByRole("button", { name: "资源 · brief.md" })).toBeVisible();
-    expect(within(objects).queryByRole("button", { name: "员工 · brief.md" })).not.toBeInTheDocument();
+    expect(within(objects).getByRole("button", { name: /^Alice / })).toBeVisible();
+    expect(within(objects).getByRole("button", { name: /brief.md Alice · knowledge\/brief.md/ })).toBeVisible();
+    expect(within(objects).getAllByRole("button")).toHaveLength(data.nodes.length);
+    expect(scene).toHaveAttribute("data-navigation", "hidden");
+    expect(within(scene).queryByRole("list")).not.toBeInTheDocument();
   });
 
   it("uses the exact same filtered projection and selection in the galaxy renderer", () => {
     mount();
     fireEvent.change(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" }), { target: { value: "brief" } });
-    fireEvent.click(screen.getByRole("button", { name: "星系关系图" }));
+    fireEvent.click(screen.getByRole("button", { name: "空间关系图" }));
 
-    const scene = screen.getByRole("region", { name: "星系关系画布" });
+    const scene = screen.getByRole("region", { name: "空间关系画布" });
     expect(scene).toHaveAttribute("data-visual-style", "yuanyang-galaxy");
-    const objects = within(scene).getByRole("list", { name: "星系对象" });
+    const objects = objectList();
     expect(within(objects).getAllByRole("button")).toHaveLength(1);
-    expect(within(objects).queryByRole("button", { name: /Alice/ })).not.toBeInTheDocument();
-    fireEvent.click(within(objects).getByRole("button", { name: "资源 · brief.md" }));
+    expect(within(objects).queryByRole("button", { name: /^Alice\s/ })).not.toBeInTheDocument();
+    expect(within(scene).queryByRole("list")).not.toBeInTheDocument();
+    fireEvent.click(within(objects).getByRole("button", { name: /brief.md/ }));
     expect(screen.getByRole("heading", { name: "brief.md" })).toBeVisible();
   });
 
   it("switches visual modes through one shared spatial scene contract", () => {
     mount();
     const minimal = screen.getByRole("region", { name: "极简关系空间" });
-    expect(spatialObjects()).toHaveTextContent("Alice");
-    fireEvent.click(screen.getByRole("button", { name: "星系关系图" }));
-    const galaxy = screen.getByRole("region", { name: "星系关系画布" });
+    const objects = objectList();
+    expect(objects).toHaveTextContent("Alice");
+    fireEvent.click(screen.getByRole("button", { name: "空间关系图" }));
+    const galaxy = screen.getByRole("region", { name: "空间关系画布" });
 
     expect(galaxy).toBe(minimal);
-    expect(spatialObjects("星系对象")).toHaveTextContent("Alice");
+    expect(objectList()).toBe(objects);
+    expect(objects).toHaveTextContent("Alice");
+    expect(within(galaxy).queryByRole("list")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "极简关系空间" })).not.toBeInTheDocument();
   });
 
@@ -292,17 +309,22 @@ describe("RelationshipGraph", () => {
   });
 
   it("uses exactly the same visible filtered collection for the scene and keyboard list", () => {
-    mount();
+    const { props } = mount();
     fireEvent.change(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" }), { target: { value: "brief" } });
 
-    expect(within(spatialObjects()).getAllByRole("button")).toHaveLength(1);
     expect(within(objectList()).getAllByRole("button")).toHaveLength(1);
-    expect(within(spatialObjects()).queryByRole("button", { name: /Alice/ })).not.toBeInTheDocument();
-    const button = within(spatialObjects()).getByRole("button", { name: "资源 · brief.md" });
+    expect(within(objectList()).queryByRole("button", { name: /Alice.*员工/ })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "极简关系空间" })).queryByRole("list")).not.toBeInTheDocument();
+    const button = within(objectList()).getByRole("button", { name: /brief.md/ });
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.tabIndex).toBe(0);
     button.focus();
     expect(button).toHaveFocus();
     fireEvent.click(button);
     expect(screen.getByRole("heading", { name: "brief.md" })).toBeVisible();
+    expect(props.onOpenResource).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("complementary", { name: "关系详情" })).getByRole("button", { name: "打开文档" }));
+    expect(props.onOpenResource).toHaveBeenCalledExactlyOnceWith("alice", "knowledge/brief.md");
   });
 
   it("shows directed relation evidence and never turns a declaration into an authorization", () => {
@@ -325,7 +347,7 @@ describe("RelationshipGraph", () => {
     expect(within(objectList()).getByRole("button", { name: /^Alice / })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "轨道" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "纸张浅色" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(spatialObjects()).getByRole("button", { name: "员工 · Bob" })).toBeVisible();
+    expect(within(objectList()).getByRole("button", { name: /^Bob / })).toBeVisible();
   });
 
   it("retains isolated objects and bounds a large graph while allowing search outside the initial neighborhood", () => {
@@ -342,11 +364,11 @@ describe("RelationshipGraph", () => {
   it("keeps one-hop and two-hop exploration explicit rather than changing the graph on selection", () => {
     mount();
     fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
-    expect(within(spatialObjects()).getAllByRole("button")).toHaveLength(3);
+    expect(within(objectList()).getAllByRole("button")).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "一跳邻域" }));
-    expect(within(spatialObjects()).getAllByRole("button")).toHaveLength(2);
+    expect(within(objectList()).getAllByRole("button")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "两跳邻域" }));
-    expect(within(spatialObjects()).getAllByRole("button")).toHaveLength(3);
+    expect(within(objectList()).getAllByRole("button")).toHaveLength(3);
   });
 
   it("expands neighbors with other names after searching for the starting employee", () => {
@@ -354,14 +376,18 @@ describe("RelationshipGraph", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" }), { target: { value: "Alice" } });
     fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
     fireEvent.click(screen.getByRole("button", { name: "一跳邻域" }));
-    expect(within(spatialObjects()).getByRole("button", { name: "数据源 · Project docs" })).toBeVisible();
+    expect(within(objectList()).getByRole("button", { name: /^Project docs / })).toBeVisible();
   });
 
   it("separates partial failure and filtered-empty from an empty workspace", () => {
-    mount({ error: "Upstream offline", data: { ...data, coverage: [{ source: "mem", state: "error" }] } });
+    const { props } = mount({ error: "Upstream offline", data: { ...data, coverage: [{ source: "mem", state: "error" }] } });
     expect(screen.getByText("关系暂时读取失败，请重试。")).toBeVisible();
     expect(screen.queryByText("Upstream offline")).not.toBeInTheDocument();
-    expect(screen.getByText("当前结果不完整，可用关系仍可浏览。")).toBeVisible();
+    const notice = screen.getByText("部分来源需要处理").closest('[role="status"]') as HTMLElement;
+    expect(notice).toBeVisible();
+    expect(within(notice).getByText("网盘文件：无法读取此来源，可刷新重试。")).toBeVisible();
+    fireEvent.click(within(notice).getByRole("button", { name: "刷新关系" }));
+    expect(props.onReload).toHaveBeenCalledOnce();
     fireEvent.change(screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" }), { target: { value: "no-match" } });
     expect(screen.getAllByText("没有符合筛选的对象").length).toBeGreaterThan(0);
     expect(screen.queryByText("当前工作区还没有关系对象")).not.toBeInTheDocument();
@@ -383,13 +409,32 @@ describe("RelationshipGraph", () => {
 
   it("keeps every object visibly keyboard-accessible when WebGL is unavailable", async () => {
     mount();
-    expect(await screen.findByText("当前环境不支持 WebGL，仍可在下方用键盘浏览同一组关系对象。")).toBeVisible();
-    const objects = spatialObjects();
+    expect(await screen.findByText("当前环境不支持 WebGL，可在对象列表中用键盘浏览同一组关系对象。")).toBeVisible();
+    const objects = objectList();
     expect(objects).toBeVisible();
-    const resourceButton = within(objects).getByRole("button", { name: "资源 · brief.md" });
+    expect(within(objects).getAllByRole("button")).toHaveLength(data.nodes.length);
+    expect(screen.queryByRole("list", { name: "极简空间对象" })).not.toBeInTheDocument();
+    const resourceButton = within(objects).getByRole("button", { name: /brief.md Alice · knowledge\/brief.md/ });
+    expect(resourceButton.tabIndex).toBe(0);
     resourceButton.focus();
     expect(resourceButton).toHaveFocus();
     fireEvent.click(resourceButton);
     expect(screen.getByRole("heading", { name: "brief.md" })).toBeVisible();
+  });
+
+  it("keeps default standalone scene navigation usable without a surrounding Sidebar", async () => {
+    const onSelect = vi.fn();
+    render(<RelationshipSpatialScene nodes={data.nodes} edges={data.edges} mode="minimal" layout="topology" theme="light"
+      showKnowledgeRelationships onLayoutChange={vi.fn()} onThemeChange={vi.fn()} onShowKnowledgeRelationshipsChange={vi.fn()} onSelect={onSelect} />);
+    expect(await screen.findByText(/当前环境不支持 WebGL/)).toBeVisible();
+    const scene = screen.getByRole("region", { name: "极简关系空间" });
+    expect(scene).toHaveAttribute("data-navigation", "visible");
+    const objects = within(scene).getByRole("list", { name: "极简空间对象" });
+    expect(within(objects).getAllByRole("button")).toHaveLength(data.nodes.length);
+    const resourceButton = within(objects).getByRole("button", { name: "资源 · brief.md" });
+    resourceButton.focus();
+    expect(resourceButton).toHaveFocus();
+    fireEvent.click(resourceButton);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(resource.id);
   });
 });
