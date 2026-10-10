@@ -67,6 +67,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/agent-binding.js",
   "dist/src/agent-registry.js",
   "dist/src/approvals/context.js",
+  "dist/src/approvals/delivery.js",
   "dist/src/approvals/policy.js",
   "dist/src/approvals/risk-overlay.js",
   "dist/src/approvals/service.js",
