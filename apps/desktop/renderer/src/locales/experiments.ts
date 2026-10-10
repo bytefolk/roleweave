@@ -59,6 +59,13 @@ const copy = {
   budgetNotAdopted: ["建议未采纳", "Suggestion not adopted"],
   budgetApply: ["应用建议", "Apply suggestion"],
   budgetSelected: ["本地选择", "Local selection"],
+  shelfTitle: ["员工货架（预览）", "Employee shelf (preview)"],
+  shelfDescription: ["在组织上下文中增加“货架”标签，用于浏览已上架的员工清单。与智能协作建议相互独立。", "Adds a Shelf tab to the organization context for browsing published employee listings. Independent of collaboration suggestions."],
+  shelfNoProvider: ["仅读取清单数据，不向任何服务发送内容，也不调用本机模型。", "Reads listing data only. It sends nothing to any service and calls no local model."],
+  shelfReady: ["已开启 · 当前仅展示示例数据，暂不可雇用。", "On · Shows example data only; hiring is not available yet."],
+  shelfOff: ["已关闭 · 组织上下文中不显示货架标签", "Off · The Shelf tab is hidden from the organization context"],
+  shelfEnabledNotice: ["已为当前项目开启货架预览。当前内容为示例数据，暂不可雇用。", "Shelf preview enabled for this project. The content is example data and cannot be hired yet."],
+  shelfDisabledNotice: ["已关闭货架预览。", "Shelf preview turned off."],
 } as const;
 
 export type ExperimentCopyKey = keyof typeof copy;

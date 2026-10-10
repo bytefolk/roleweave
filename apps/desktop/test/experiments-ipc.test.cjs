@@ -12,7 +12,11 @@ test("experiment IPC rejects body uploads, destinations, credentials and malform
     assert.equal((await reportsAdvice(value, api)).status, 400);
     assert.equal((await experimentsUpdate(value && { ...value, enabled: true }, api)).status, 400);
   }
-  assert.equal((await experimentsUpdate({ ...scope, enabled: "true" }, api)).status, 400);
+  assert.equal((await experimentsUpdate({ ...scope, enabled: "true", marketplaceShelf: false }, api)).status, 400);
+  assert.equal((await experimentsUpdate({ ...scope, enabled: true, marketplaceShelf: "true" }, api)).status, 400);
+  // Both preview flags are required: a body that quietly omits one could turn a
+  // preview off (or on) without the renderer saying so.
+  assert.equal((await experimentsUpdate({ ...scope, enabled: true }, api)).status, 400);
   assert.equal(calls, 0);
 });
 
@@ -20,11 +24,11 @@ test("experiment IPC encodes paths and forwards project scope without a generic 
   const calls = [];
   const api = async (...args) => { calls.push(args); return { status: 200 }; };
   await experimentsGet(scope.workspacePath, api);
-  await experimentsUpdate({ ...scope, enabled: false }, api);
+  await experimentsUpdate({ ...scope, enabled: false, marketplaceShelf: true }, api);
   await reportsAdvice(scope, api);
   assert.equal(new URL(calls[0][0], "http://localhost").searchParams.get("workspacePath"), scope.workspacePath);
   assert.deepEqual(calls.slice(1), [
-    ["/experiments", { method: "PATCH", body: { ...scope, enabled: false } }],
+    ["/experiments", { method: "PATCH", body: { ...scope, enabled: false, marketplaceShelf: true } }],
     ["/reports/advice", { method: "POST", body: scope }],
   ]);
 });

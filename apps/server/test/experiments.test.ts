@@ -20,8 +20,8 @@ async function settings(server: TestServer, dir: string): Promise<ExperimentsRes
 function binding(state: ExperimentsResponse): ReportsAdviceRequest {
   return { workspacePath: state.workspacePath, workspaceSession: state.workspaceSession, revision: state.revision };
 }
-async function update(server: TestServer, state: ExperimentsResponse, enabled: boolean) {
-  return api(server.baseUrl, "/experiments", { method: "PATCH", token: server.token, body: { ...binding(state), enabled } });
+async function update(server: TestServer, state: ExperimentsResponse, enabled: boolean, marketplaceShelf = false) {
+  return api(server.baseUrl, "/experiments", { method: "PATCH", token: server.token, body: { ...binding(state), enabled, marketplaceShelf } });
 }
 async function advise(server: TestServer, state: ExperimentsResponse) {
   return api(server.baseUrl, "/reports/advice", { method: "POST", token: server.token, body: binding(state) });
@@ -89,6 +89,49 @@ test("experiments: default off, reads and enabling never call provider; persiste
       assert.notEqual(loaded.workspaceSession, reopened.workspaceSession);
     } finally { await restarted.close(); }
   } finally { await f.close(); await fs.rm(other, { recursive: true, force: true }); }
+});
+
+test("experiments: the shelf preview is its own workspace-scoped flag, off by default", async () => {
+  const provider = fakeProvider();
+  const f = await fixture(provider);
+  try {
+    const initial = await settings(f.server, f.dir);
+    assert.equal(initial.marketplaceShelf, false);
+    // It is a preview surface, not consent: turning it on authorizes nothing,
+    // so it must not read or move Laya's `enabled` either way.
+    const shelfOnly = (await update(f.server, initial, false, true)).body as ExperimentsResponse;
+    assert.equal(shelfOnly.marketplaceShelf, true);
+    assert.equal(shelfOnly.enabled, false);
+    assert.equal(shelfOnly.availability, "disabled");
+    const both = (await update(f.server, shelfOnly, true, true)).body as ExperimentsResponse;
+    assert.equal(both.enabled, true);
+    assert.equal(both.marketplaceShelf, true);
+    assert.equal(both.availability, "ready");
+    const adviceOnly = (await update(f.server, both, true, false)).body as ExperimentsResponse;
+    assert.equal(adviceOnly.enabled, true);
+    assert.equal(adviceOnly.marketplaceShelf, false);
+    assert.equal(provider.calls.length, 0);
+  } finally { await f.close(); }
+});
+
+test("experiments: a settings file written before the shelf preview stays valid, and the shelf stays off", async () => {
+  const f = await fixture();
+  try {
+    await update(f.server, await settings(f.server, f.dir), true);
+    const file = path.join(f.dir, EXPERIMENTS_FILE);
+    // Exactly the bytes the previous version wrote: no marketplaceShelf key.
+    const legacy = JSON.parse(await fs.readFile(file, "utf8")) as Record<string, unknown>;
+    delete legacy.marketplaceShelf;
+    await fs.writeFile(file, JSON.stringify(legacy));
+    const loaded = await settings(f.server, f.dir);
+    // Reading a legacy file must not be mistaken for corruption: that path
+    // denies storage, which would revoke an opt-in the user never withdrew.
+    assert.equal(loaded.availability, "ready");
+    assert.equal(loaded.enabled, true);
+    assert.equal(loaded.marketplaceShelf, false);
+    await update(f.server, loaded, true, true);
+    assert.equal(JSON.parse(await fs.readFile(file, "utf8")).marketplaceShelf, true);
+  } finally { await f.close(); }
 });
 
 test("experiments: requires auth and exact request shape; stale revisions and reopened sessions conflict", async () => {
@@ -324,7 +367,11 @@ test("experiments: invalid settings fail closed and can be explicitly reset; sym
     const broken = await settings(f.server, f.dir);
     assert.equal(broken.availability, "storage_error");
     assert.equal(broken.enabled, false);
+    assert.equal(broken.marketplaceShelf, false);
     assert.equal((await update(f.server, broken, true)).status, 409);
+    // A malformed file must not be able to opt into a preview either, including
+    // the one that authorizes nothing outbound.
+    assert.equal((await update(f.server, broken, false, true)).status, 409);
     assert.equal((await update(f.server, broken, false)).status, 200);
     assert.equal(provider.calls.length, 0);
     if (process.platform !== "win32") {

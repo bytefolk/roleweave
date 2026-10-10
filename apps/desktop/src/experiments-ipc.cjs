@@ -12,8 +12,8 @@ async function experimentsGet(workspacePath, apiRequest) {
 }
 
 async function experimentsUpdate(request, apiRequest) {
-  if (!scopeValid(request) || typeof request.enabled !== "boolean" ||
-      Object.keys(request).some(key => !["workspacePath", "workspaceSession", "revision", "enabled"].includes(key))) return invalid();
+  if (!scopeValid(request) || typeof request.enabled !== "boolean" || typeof request.marketplaceShelf !== "boolean" ||
+      Object.keys(request).some(key => !["workspacePath", "workspaceSession", "revision", "enabled", "marketplaceShelf"].includes(key))) return invalid();
   return apiRequest("/experiments", { method: "PATCH", body: request });
 }
 
