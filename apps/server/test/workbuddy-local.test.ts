@@ -74,6 +74,12 @@ test("WorkBuddy local keeps the client's automatic model; API never reads Codex 
   assert.ok(cards.every((card) => card.connection?.status === "configured"));
   const service = await employeeModelConfig("workbuddy", undefined, true, { CODEX_HOME: root, CODEBUDDY_API_KEY: "service-key", CODEBUDDY_MODEL: "service-model" });
   assert.deepEqual(service.options.map((model) => model.id), ["provider-default", "service-model"]);
+  for (const engine of ["workbuddy", "workbuddy-local"] as const) {
+    const external = await employeeModelConfig(engine, undefined, false, { CODEX_HOME: root, CODEBUDDY_BASE_URL: "not a URL" });
+    assert.equal(external.connection, undefined, "an external adapter never consults local provider configuration");
+    assert.equal(external.editable, false);
+    assert.deepEqual(external.options.map((model) => model.id), ["provider-default"]);
+  }
 });
 
 test("health gates client mode on local transport and bundled ownership", () => {

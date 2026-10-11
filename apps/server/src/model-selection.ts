@@ -71,14 +71,15 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
     source = "default";
     followLocalDefault = true;
     if (engine === "workbuddy-local") {
+      const ownedAdapter = editable;
       editable = false;
       selectedDefault = "auto";
       // Automatic selection is the adapter's fixed contract, not an account
       // catalog. Background employee-card reads must not consume broker slots
       // or turn temporary concurrency pressure into a false login failure.
       // Health probes the desktop client separately; a real turn asserts auth.
-      connection = { source: "official", kind: "official", billing: "unknown", status: workbuddyLocalBridgeConfigured(env) ? "configured" : "invalid" };
-    } else {
+      if (ownedAdapter) connection = { source: "official", kind: "official", billing: "unknown", status: workbuddyLocalBridgeConfigured(env) ? "configured" : "invalid" };
+    } else if (editable) {
       const configuration = workbuddyConfiguration({ ...env, ROLEWEAVE_TURN_MODEL: undefined });
       selectedDefault = configuration.ready ? configuration.model : undefined;
       if (selectedDefault) options = [{ id: selectedDefault, name: selectedDefault, tier: "default", billing: "provider" }];
