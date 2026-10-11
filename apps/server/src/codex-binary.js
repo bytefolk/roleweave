@@ -3,6 +3,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// Share the execution boundary with the local health probe. A CLI that cannot
+// apply any one of these switches must never be reported ready merely because
+// its --version command succeeds.
+export const CODEX_DISABLED_FEATURES = Object.freeze([
+  "shell_tool", "unified_exec", "apps", "plugins", "skill_search",
+  "multi_agent", "view_image", "workspace_dependencies",
+]);
+
 /**
  * Resolve a candidate to its executable regular-file target.
  * Mirrors the Qoder and Claude resolvers: follows symlinks, verifies isFile + X_OK.

@@ -47,6 +47,26 @@ sources and MCP, and limits built-in tools to the employee's explicit grants.
 MCP grant references are currently unsupported by this adapter and fail closed
 instead of loading global MCP servers.
 
+## Codex
+
+Choose Codex's **Local login** connection (`codex-local`) to reuse the CLI's
+existing sign-in in the control-plane environment. A WSL control plane uses
+the WSL installation and account, independently of the Windows desktop app.
+The resolver honors `DIGITAL_EMPLOYEE_CODEX_COMMAND` first, then PATH; the
+configured Node installation can therefore select a different Codex version
+from an interactive shell. Local login does not receive `OPENAI_API_KEY` or
+`OPENAI_BASE_URL` from a service provider.
+
+Each invocation ignores user configuration, uses an ephemeral conversation
+and a read-only sandbox, and disables supported native integrations. Codex
+can expose native tools such as `apply_patch`; the sandbox remains the filesystem boundary.
+The selected CLI must accept all required feature switches, including
+`--disable view_image`; older installations can reject the turn before it
+reaches the provider. Update that installation or explicitly select a
+compatible executable instead of removing the tool restrictions.
+A successful local probe confirms installation; an actual completed turn
+confirms account and model access.
+
 ## WorkBuddy (CodeBuddy Code)
 
 Select **WorkBuddy** in employee hiring, then choose the connection method.

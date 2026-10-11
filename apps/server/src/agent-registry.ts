@@ -125,6 +125,11 @@ const HOST_DEFINITIONS: Readonly<Record<AgentHostId, HostDefinition>> = {
     // The client broker returns a bounded complete response, not token events.
     capabilities: ["turns", "sessions", "groups", "approvals"],
   },
+  "qwen-office-local": {
+    label: "Qwen Office",
+    // The native client owns tool use and approval decisions.
+    capabilities: ["turns", "sessions", "groups", "native-tools", "client-approvals"],
+  },
   gemini: {
     label: "Gemini",
     capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],

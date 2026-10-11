@@ -409,6 +409,8 @@ test("Windows WSL child keeps its stdin lease open and graceful kill closes that
     require: (name) => {
       if (name === "node:child_process") return { spawn: (...args) => { invocation = args; return child; } };
       if (name === "node:path") return path.win32;
+      if (name === "./qwen-office-bridge.cjs") return require("../src/qwen-office-bridge.cjs");
+      if (name === "./qwen-office-client.cjs") return { requestQwenOfficeClient: async () => ({ configured: false, code: "qwen_office.client_unavailable" }) };
       if (name === "./wsl-bootstrap.cjs") return require("../src/wsl-bootstrap.cjs");
       if (name === "./workbuddy-bridge.cjs") return require("../src/workbuddy-bridge.cjs");
       if (name === "./workbuddy-client.cjs") return { requestWorkbuddyClient: () => { throw new Error("Unexpected WorkBuddy request"); } };

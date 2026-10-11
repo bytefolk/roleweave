@@ -3,7 +3,13 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
-const { REQUEST_PREFIX, RESPONSE_PREFIX, MAX_FRAME_BYTES, validId, createPrivateBridge } = require("./workbuddy-bridge.cjs");
+const workbuddyChannel = require("./workbuddy-bridge.cjs");
+const officeChannel = require("./qwen-office-bridge.cjs");
+const { MAX_FRAME_BYTES, validId } = workbuddyChannel;
+const CHANNELS = [
+  { name: "workbuddy", errorPrefix: "workbuddy", environmentPrefix: "ROLEWEAVE_WORKBUDDY", ...workbuddyChannel },
+  { name: "qwen-office", errorPrefix: "qwen_office", environmentPrefix: "ROLEWEAVE_QWEN_OFFICE", ...officeChannel },
+];
 
 const MAX_CONFIG_BYTES = 128 * 1024;
 const BRIDGED_ENV_KEYS = Object.freeze([
@@ -17,6 +23,7 @@ const BRIDGED_ENV_KEYS = Object.freeze([
   "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
   "GEMINI_API_KEY", "GEMINI_MODEL", "GOOGLE_GEMINI_BASE_URL",
   "ROLEWEAVE_WORKBUDDY_BRIDGE_ENABLED",
+  "ROLEWEAVE_QWEN_OFFICE_BRIDGE_ENABLED",
   "ROLEWEAVE_LAYA_ENABLED", "ROLEWEAVE_LAYA_URL", "ROLEWEAVE_LAYA_MODEL", "ROLEWEAVE_LAYA_TIMEOUT_MS",
 ]);
 
@@ -67,6 +74,8 @@ function serverEnvironment(config, source = process.env, nodePath = process.exec
   // either user's shell or sent as a Windows filesystem path into Linux.
   delete environment.ROLEWEAVE_WORKBUDDY_BRIDGE;
   delete environment.ROLEWEAVE_WORKBUDDY_BRIDGE_TOKEN;
+  delete environment.ROLEWEAVE_QWEN_OFFICE_BRIDGE;
+  delete environment.ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN;
   environment.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE = "0";
   const bundled = config.engineCommand === null;
   environment.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE = bundled ? "1" : "0";
@@ -128,7 +137,7 @@ function runSupervisor() {
   let configured = false;
   let stopping = false;
   let exitCode = 0;
-  let bridge;
+  const bridges = new Map();
   const pendingBridgeCalls = new Map();
   const descendants = new Map();
   let monitor;
@@ -147,8 +156,8 @@ function runSupervisor() {
     clearTimeout(startupTimer);
     exitCode = code;
     clearInterval(monitor);
-    bridge?.close();
-    for (const pending of pendingBridgeCalls.values()) pending.reject(Object.assign(new Error("WorkBuddy bridge stopped"), { code: "workbuddy.bridge_closed" }));
+    for (const bridge of bridges.values()) bridge.close();
+    for (const pending of pendingBridgeCalls.values()) pending.reject(Object.assign(new Error("Local client bridge stopped"), { code: `${pending.channel.errorPrefix}.bridge_closed` }));
     pendingBridgeCalls.clear();
     if (!child) { process.exitCode = code; process.stdin.destroy(); return; }
     signalTree("SIGTERM");
@@ -171,29 +180,39 @@ function runSupervisor() {
     if (!configured && Buffer.byteLength(buffer) > MAX_CONFIG_BYTES) { fail("WSL launch input is too large."); return; }
     const newline = buffer.indexOf("\n");
     if (newline < 0) {
-      if (configured && Buffer.byteLength(buffer) > MAX_FRAME_BYTES) fail("WorkBuddy bridge response is too large.");
+      if (configured && Buffer.byteLength(buffer) > MAX_FRAME_BYTES) fail("Local client bridge response is too large.");
       return;
     }
     if (configured) {
-      if (!bridge) { fail("Unexpected data after WSL launch configuration."); return; }
+      if (!bridges.size) { fail("Unexpected data after WSL launch configuration."); return; }
       let index;
       while ((index = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
         try {
           if (Buffer.byteLength(line) + 1 > MAX_FRAME_BYTES) throw Error();
-          if (!line.startsWith(RESPONSE_PREFIX)) throw Error();
-          const value = JSON.parse(line.slice(RESPONSE_PREFIX.length));
-          if (!validId(value?.id) || Object.keys(value).sort().join(",") !== (value.error === undefined ? "id,result" : "error,id") ||
-              (value.error !== undefined && (typeof value.error !== "string" || !/^workbuddy\.[a-z_]{1,64}$/.test(value.error)))) throw Error();
-          const pending = pendingBridgeCalls.get(value.id);
+          const channel = CHANNELS.find((entry) => bridges.has(entry.name) && line.startsWith(entry.RESPONSE_PREFIX));
+          if (!channel) throw Error();
+          const value = JSON.parse(line.slice(channel.RESPONSE_PREFIX.length));
+          const expectedKeys = value.event !== undefined ? "event,id" : value.error === undefined ? "id,result" : "error,id";
+          if (!validId(value?.id) || Object.keys(value).sort().join(",") !== expectedKeys ||
+              (value.error !== undefined && (typeof value.error !== "string" || !new RegExp(`^${channel.errorPrefix}\\.[a-z_]{1,64}$`).test(value.error)))) throw Error();
+          const key = `${channel.name}:${value.id}`;
+          const pending = pendingBridgeCalls.get(key);
           if (!pending) continue; // A cancelled request may already be in flight.
-          pendingBridgeCalls.delete(value.id);
-          if (value.error !== undefined) pending.reject(Object.assign(new Error("WorkBuddy local request failed"), { code: value.error }));
+          if (value.event !== undefined) {
+            if (channel.name !== "qwen-office" || !value.event || Object.keys(value.event).join(",") !== "status" ||
+                !["running", "waiting_for_input"].includes(value.event.status)) throw Error();
+            pending.onProgress?.(value.event);
+            continue;
+          }
+          pendingBridgeCalls.delete(key);
+          pending.detach();
+          if (value.error !== undefined) pending.reject(Object.assign(new Error("Local client request failed"), { code: value.error }));
           else pending.resolve(value.result);
-        } catch { fail("WorkBuddy bridge response is invalid."); return; }
+        } catch { fail("Local client bridge response is invalid."); return; }
       }
-      if (Buffer.byteLength(buffer) > MAX_FRAME_BYTES) fail("WorkBuddy bridge response is too large.");
+      if (Buffer.byteLength(buffer) > MAX_FRAME_BYTES) fail("Local client bridge response is too large.");
       return;
     }
     clearTimeout(startupTimer);
@@ -205,7 +224,13 @@ function runSupervisor() {
       const environment = serverEnvironment(config);
       const launch = () => {
         if (stopping) return;
-        if (bridge) Object.assign(environment, { ROLEWEAVE_WORKBUDDY_BRIDGE: bridge.endpoint, ROLEWEAVE_WORKBUDDY_BRIDGE_TOKEN: bridge.token });
+        for (const channel of CHANNELS) {
+          const bridge = bridges.get(channel.name);
+          if (bridge) {
+            environment[`${channel.environmentPrefix}_BRIDGE`] = bridge.endpoint;
+            environment[`${channel.environmentPrefix}_BRIDGE_TOKEN`] = bridge.token;
+          }
+        }
         child = spawn(process.execPath, [config.serverEntry], {
           env: environment,
           stdio: ["ignore", "inherit", "inherit"],
@@ -220,20 +245,24 @@ function runSupervisor() {
           rememberDescendants(child.pid, descendants);
         }, 100);
       };
-      if (config.environment.ROLEWEAVE_WORKBUDDY_BRIDGE_ENABLED === "1" && config.engineCommand === null) {
-        bridge = createPrivateBridge((request, signal) => new Promise((resolve, reject) => {
-          pendingBridgeCalls.set(request.id, { resolve, reject });
+      for (const channel of CHANNELS) {
+        if (config.environment[`${channel.environmentPrefix}_BRIDGE_ENABLED`] !== "1" || config.engineCommand !== null) continue;
+        const bridge = channel.createPrivateBridge((request, signal, onProgress) => new Promise((resolve, reject) => {
+          const key = `${channel.name}:${request.id}`;
           const cancel = () => {
-            if (!pendingBridgeCalls.delete(request.id)) return;
-            process.stdout.write(`${REQUEST_PREFIX}${JSON.stringify({ id: request.id, cancel: true })}\n`);
-            reject(Object.assign(new Error("WorkBuddy request cancelled"), { code: "workbuddy.cancelled" }));
+            if (!pendingBridgeCalls.delete(key)) return;
+            process.stdout.write(`${channel.REQUEST_PREFIX}${JSON.stringify({ id: request.id, cancel: true })}\n`);
+            reject(Object.assign(new Error("Local client request cancelled"), { code: `${channel.errorPrefix}.cancelled` }));
           };
+          pendingBridgeCalls.set(key, { resolve, reject, onProgress, channel, detach: () => signal.removeEventListener("abort", cancel) });
           if (signal.aborted) { cancel(); return; }
           signal.addEventListener("abort", cancel, { once: true });
-          process.stdout.write(`${REQUEST_PREFIX}${JSON.stringify(request)}\n`);
+          process.stdout.write(`${channel.REQUEST_PREFIX}${JSON.stringify(request)}\n`);
         }));
-        bridge.ready.then(launch, () => fail("WorkBuddy bridge could not start."));
-      } else launch();
+        bridges.set(channel.name, bridge);
+      }
+      if (bridges.size) Promise.all([...bridges.values()].map((bridge) => bridge.ready)).then(launch, () => fail("Local client bridge could not start."));
+      else launch();
     } catch {
       fail("WSL launch configuration is invalid.");
     }

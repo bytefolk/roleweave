@@ -4,7 +4,7 @@ import { Check, CircleHelp, Gauge, Layers3, RefreshCw, RotateCw } from "lucide-r
 import { useT } from "@roleweave/ui";
 import { isModelId, isQoderModelId } from "@roleweave/shared/model-selection";
 import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption, WorkbenchSession } from "@roleweave/shared";
-import type { TurnRecord } from "./types";
+import type { TurnEngine, TurnRecord } from "./types";
 import { useConversationCopy } from "../locales/conversation";
 import "./model-connection.css";
 
@@ -83,7 +83,8 @@ function CustomModelEntry({ strict = false }: { strict?: boolean }) {
   </div>;
 }
 
-export function ConversationOptions({ config, saving, disabled, loading = false, running = false, error, onReload, session, turns, onModel, onContext, onRotate }: {
+export function ConversationOptions({ config, engine, saving, disabled, loading = false, running = false, error, onReload, session, turns, onModel, onContext, onRotate }: {
+  engine?: TurnEngine;
   config?: EmployeeModelConfig; saving: boolean; disabled: boolean;
   loading?: boolean; running?: boolean; error?: string; notice?: string; onReload?: () => void;
   session: WorkbenchSession | null; turns: TurnRecord[];
@@ -95,6 +96,7 @@ export function ConversationOptions({ config, saving, disabled, loading = false,
 }) {
   const t = useT();
   const copy = useConversationCopy();
+  const clientManaged = engine === "qwen-office-local";
   const [openTool, setOpenTool] = useState<"connection" | "context" | "usage" | "restart" | null>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const toolTrigger = useRef<HTMLElement | null>(null);
@@ -117,7 +119,7 @@ export function ConversationOptions({ config, saving, disabled, loading = false,
     // Suppress Select's generated native label tooltip; Tooltip owns the hint.
     title: "",
     label: model.id === "provider-default"
-      ? t(followsLocalConfig ? "model.localConfigDefault" : "model.agentDefault")
+      ? t(clientManaged ? "office.currentModel" : followsLocalConfig ? "model.localConfigDefault" : "model.agentDefault")
       : model.name,
     search: [model.name, model.id, model.resolvedModel].filter(Boolean).join(" "),
     model,
@@ -154,11 +156,11 @@ export function ConversationOptions({ config, saving, disabled, loading = false,
     return details;
   };
   const unavailable = loading ? copy.modelLoading : saving ? copy.modelSaving
-    : error ? error : !config ? copy.modelMissing : connectionInvalid ? t("model.connection.invalid") : !config.editable || !onModel ? copy.modelReadonly : undefined;
+    : error ? error : !config ? copy.modelMissing : connectionInvalid ? t("model.connection.invalid") : clientManaged ? t("office.modelReadonly") : !config.editable || !onModel ? copy.modelReadonly : undefined;
   // Model selection updates the employee's preference for the next dispatch.
   // The running turn owns its immutable model snapshot; context and rotation
   // still need an idle conversation because they alter the active session.
-  const modelDisabled = disabled || saving || loading || Boolean(error) || connectionInvalid || !config?.editable || !onModel;
+  const modelDisabled = clientManaged || disabled || saving || loading || Boolean(error) || connectionInvalid || !config?.editable || !onModel;
   const sessionDisabled = disabled || running;
   const contextDisabled = sessionDisabled || !session || session.status !== "active" || !onContext;
   const restartDisabled = sessionDisabled || session?.status !== "active";
@@ -269,6 +271,7 @@ export function ConversationOptions({ config, saving, disabled, loading = false,
         <div className="owb-conversation-popover__section">
           {completed.at(-1)?.model ? <p>{t("model.lastModel", { model: completed.at(-1)!.model! })}</p> : null}
           <p className="owb-conversation-popover__help">{t("model.usageHint")}</p>
+          {clientManaged ? <p className="owb-conversation-popover__help">{t("office.budgetManaged")}</p> : null}
         </div>
       </section>
     }>

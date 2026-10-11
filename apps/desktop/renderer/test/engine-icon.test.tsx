@@ -4,6 +4,11 @@ import { EngineIcon } from "../src/turns/engine-icon";
 import type { TurnEngine } from "../src/turns";
 
 describe("EngineIcon (#57)", () => {
+  it("uses a neutral office glyph rather than another Agent's brand for Qwen Office", () => {
+    const { container } = render(<EngineIcon engine="qwen-office-local" />);
+    expect(container.querySelector("svg.owb-engine-icon--qwen-office-local")).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelector("img")).toBeNull();
+  });
   const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "workbuddy-local", "gemini", "openai-compatible"];
 
   it.each(engines)("renders a normalized brand mark for %s", (engine) => {
