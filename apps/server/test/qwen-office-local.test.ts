@@ -84,11 +84,13 @@ test("a Unix Office channel rejects public modes and symlink endpoints", { skip:
   assert.equal(qwenOfficeLocalBridgeConfigured(f.env), false);
 });
 
-for (const reflection of ["text", "base64", "model"] as const) test(`Office ${reflection} cannot reflect the private relay capability into public output`, async (t) => {
+for (const reflection of ["text", "upper", "base64", "base64url", "model"] as const) test(`Office ${reflection} cannot reflect the private relay capability into public output`, async (t) => {
   const f = await rawBridge(t, (request, socket) => {
     const ticket = request.token!;
-    reply(request, socket, reflection === "model" ? { text: "Task complete", model: ticket }
-      : { text: reflection === "base64" ? Buffer.from(ticket).toString("base64") : `Bearer ${ticket}` });
+    const text = reflection === "base64" ? Buffer.from(ticket).toString("base64")
+      : reflection === "base64url" ? Buffer.from(ticket).toString("base64url")
+      : reflection === "upper" ? ticket.toUpperCase() : `Bearer ${ticket}`;
+    reply(request, socket, reflection === "model" ? { text: "Task complete", model: ticket } : { text });
   });
   await assert.rejects(requestQwenOfficeLocal(f.env, "complete", { input: "hello" }), { code: "qwen_office.credential_reflection" });
 });
