@@ -8,6 +8,7 @@ const { TextDecoder } = require("node:util");
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_RESPONSE_BYTES = 640 * 1024;
 const MAX_INPUT_BYTES = 256 * 1024;
+const MAX_DESCRIPTOR_BYTES = 8192;
 const DEADLINE_MS = 50_000;
 const AUTO_MODEL = "auto";
 const record = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -34,21 +35,44 @@ function validateRequest(request) {
 function readDescriptor(configDir, fileSystem) {
   const directory = path.join(configDir, "wbipc");
   const file = path.join(directory, "endpoint.json");
+  const sameSnapshot = (left, right) => left.dev === right.dev && left.ino === right.ino && left.size === right.size
+    && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+  const regularFile = stat => stat.isFile() && !stat.isSymbolicLink()
+    && typeof stat.size === "bigint" && stat.size >= 0n && stat.size <= BigInt(MAX_DESCRIPTOR_BYTES);
+  const directorySnapshot = dir => {
+    const stat = fileSystem.lstatSync(dir, { bigint: true });
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw fail("endpoint_invalid");
+    return { dir, stat, realPath: fileSystem.realpathSync(dir) };
+  };
   let handle;
   try {
-    for (const dir of [configDir, directory]) {
-      const stat = fileSystem.lstatSync(dir);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw fail("endpoint_invalid");
+    // Open first: the descriptor, not a previously checked pathname, owns the
+    // file identity. NONBLOCK also prevents a substituted POSIX FIFO from
+    // blocking before fstat can reject it as a non-regular file.
+    const nonBlocking = process.platform === "win32" ? 0 : (fs.constants.O_NONBLOCK ?? 0);
+    handle = fileSystem.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | nonBlocking);
+    const before = fileSystem.fstatSync(handle, { bigint: true });
+    if (!regularFile(before)) throw fail("endpoint_invalid");
+    const parents = [configDir, directory].map(directorySnapshot);
+    const named = fileSystem.lstatSync(file, { bigint: true });
+    if (!regularFile(named) || !sameSnapshot(before, named)) throw fail("endpoint_invalid");
+    const buffer = Buffer.alloc(MAX_DESCRIPTOR_BYTES + 1);
+    let bytes = 0;
+    while (bytes < buffer.length) {
+      const count = fileSystem.readSync(handle, buffer, bytes, buffer.length - bytes, bytes);
+      if (!Number.isSafeInteger(count) || count < 0 || count > buffer.length - bytes) throw fail("endpoint_invalid");
+      if (count === 0) break;
+      bytes += count;
     }
-    const named = fileSystem.lstatSync(file);
-    if (!named.isFile() || named.isSymbolicLink() || named.size > 8192) throw fail("endpoint_invalid");
-    handle = fileSystem.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-    const before = fileSystem.fstatSync(handle);
-    if (!before.isFile() || before.size > 8192 || before.ino !== named.ino || before.dev !== named.dev) throw fail("endpoint_invalid");
-    const raw = fileSystem.readFileSync(handle);
-    const after = fileSystem.fstatSync(handle), latest = fileSystem.lstatSync(file);
-    if (raw.length > 8192 || raw.length !== after.size || before.mtimeMs !== after.mtimeMs || before.size !== after.size
-        || latest.isSymbolicLink() || latest.ino !== before.ino || latest.dev !== before.dev || latest.mtimeMs !== after.mtimeMs) throw fail("endpoint_invalid");
+    if (bytes > MAX_DESCRIPTOR_BYTES) throw fail("endpoint_invalid");
+    const after = fileSystem.fstatSync(handle, { bigint: true }), latest = fileSystem.lstatSync(file, { bigint: true });
+    if (!regularFile(after) || !regularFile(latest) || !sameSnapshot(before, after) || !sameSnapshot(before, latest)
+        || BigInt(bytes) !== before.size) throw fail("endpoint_invalid");
+    for (const parent of parents) {
+      const latestParent = directorySnapshot(parent.dir);
+      if (!sameSnapshot(parent.stat, latestParent.stat) || parent.realPath !== latestParent.realPath) throw fail("endpoint_invalid");
+    }
+    const raw = buffer.subarray(0, bytes);
     const descriptor = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw));
     if (!exact(descriptor, ["endpoint", "ticket"]) || typeof descriptor.endpoint !== "string"
         || !/^\\\\\.\\pipe\\wbipc-[a-f0-9]{16}$/i.test(descriptor.endpoint)

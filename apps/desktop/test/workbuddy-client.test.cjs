@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
+const { constants: fsConstants } = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
 const { createWorkbuddyClient } = require("../src/workbuddy-client.cjs");
@@ -25,20 +26,55 @@ function serverProof(label, clientNonce, serverNonce) {
 
 function memoryFilesystem(options = {}) {
   const bytes = options.raw ?? Buffer.from(JSON.stringify(options.descriptor ?? { endpoint: ENDPOINT, ticket: TICKET }));
-  const state = { reads: 0, opened: 0, closed: 0 };
-  const fileStat = { ino: 23, dev: 5, size: bytes.length, mtimeMs: 10,
-    isFile: () => true, isDirectory: () => false, isSymbolicLink: () => !!options.symlinkFile };
-  const directoryStat = { isFile: () => false, isDirectory: () => true, isSymbolicLink: () => !!options.symlinkDirectory };
+  const directory = path.join(CONFIG_DIR, "wbipc");
+  const metadata = (ino, size) => ({ ino, dev: 5n, size, mtimeNs: 10n, ctimeNs: 11n });
+  const state = { reads: 0, readCalls: 0, bytesRead: 0, readRequests: [], calls: [], opened: 0, closed: 0, bytes,
+    fd: metadata(23n, BigInt(bytes.length)), named: metadata(23n, BigInt(bytes.length)),
+    directories: { [CONFIG_DIR]: metadata(101n, 0n), [directory]: metadata(102n, 0n) },
+    realpaths: { [CONFIG_DIR]: CONFIG_DIR, [directory]: directory } };
+  options.initialize?.(state);
+  const fileStat = value => ({ ...value, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => !!options.symlinkFile });
+  const directoryStat = value => ({ ...value, isFile: () => false, isDirectory: () => true, isSymbolicLink: () => !!options.symlinkDirectory });
   return { state, api: {
-    lstatSync(filename) {
+    lstatSync(filename, statOptions) {
+      assert.deepEqual(statOptions, { bigint: true });
+      state.calls.push({ operation: "lstat", filename });
       state.reads++;
-      if (options.missing) throw Object.assign(new Error("synthetic missing descriptor"), { code: "ENOENT" });
-      return filename.endsWith("endpoint.json") ? fileStat : directoryStat;
+      return filename.endsWith("endpoint.json") ? fileStat(state.named) : directoryStat(state.directories[filename]);
     },
-    openSync() { state.opened++; return 17; },
-    fstatSync() { return fileStat; },
-    readFileSync(handle) { assert.equal(handle, 17); return bytes; },
-    closeSync(handle) { assert.equal(handle, 17); state.closed++; },
+    realpathSync(filename) {
+      state.calls.push({ operation: "realpath", filename });
+      return state.realpaths[filename];
+    },
+    openSync(filename, flags) {
+      state.calls.push({ operation: "open", filename, flags });
+      if (options.missing) throw Object.assign(new Error("synthetic missing descriptor"), { code: "ENOENT" });
+      state.opened++;
+      return 17;
+    },
+    fstatSync(handle, statOptions) {
+      assert.equal(handle, 17); assert.deepEqual(statOptions, { bigint: true });
+      state.calls.push({ operation: "fstat" });
+      return fileStat(state.fd);
+    },
+    readSync(handle, buffer, offset, length, position) {
+      assert.equal(handle, 17);
+      assert.equal(Buffer.isBuffer(buffer), true);
+      assert.ok(Number.isInteger(position) && position >= 0);
+      state.calls.push({ operation: "read", position, length });
+      state.reads++; state.readCalls++;
+      state.readRequests.push(length);
+      options.onRead?.(state);
+      const count = Math.min(length, options.readChunkSize ?? length, Math.max(0, state.bytes.length - position));
+      state.bytes.copy(buffer, offset, position, position + count);
+      state.bytesRead += count;
+      return count;
+    },
+    closeSync(handle) {
+      assert.equal(handle, 17);
+      state.calls.push({ operation: "close" });
+      state.closed++;
+    },
   } };
 }
 
@@ -254,6 +290,72 @@ test("account-change pipe revocation rejects held fetch and ignores late success
   assert.deepEqual(outcome, { status: "rejected", code: "workbuddy.session_revoked" });
   assert.equal(fixture.state.fetches.length, 1);
   assert.equal(fixture.state.sockets[0].destroyed, true);
+});
+
+test("descriptor is opened first and stable short FD reads authenticate successfully", async () => {
+  const fixture = brokerFixture({ fs: { readChunkSize: 7 }, fragment: true });
+  assert.deepEqual(await fixture.client({ operation: "probe" }), { configured: true, code: "workbuddy.ready" });
+  const filesystem = fixture.filesystem.state;
+  assert.equal(filesystem.calls[0].operation, "open");
+  assert.equal(filesystem.calls[0].filename, path.join(CONFIG_DIR, "wbipc", "endpoint.json"));
+  const flags = filesystem.calls[0].flags;
+  assert.equal(flags & (fsConstants.O_WRONLY | fsConstants.O_RDWR), 0);
+  if (fsConstants.O_NOFOLLOW) assert.equal(flags & fsConstants.O_NOFOLLOW, fsConstants.O_NOFOLLOW);
+  if (process.platform !== "win32" && fsConstants.O_NONBLOCK) assert.equal(flags & fsConstants.O_NONBLOCK, fsConstants.O_NONBLOCK);
+  assert.ok(filesystem.readCalls > 1);
+  assert.equal(filesystem.bytesRead, filesystem.bytes.length);
+  assert.ok(filesystem.readRequests.every(length => length <= 8193));
+  assert.equal(filesystem.opened, 1); assert.equal(filesystem.closed, 1);
+});
+
+test("FD and named-file identity mismatch is rejected without reading data", async () => {
+  const fixture = brokerFixture({ fs: { initialize: state => { state.named.ino = 24n; } } });
+  await assert.rejects(fixture.client(complete("synthetic fixture")), errorCode("endpoint_invalid"));
+  assert.equal(fixture.filesystem.state.calls[0].operation, "open");
+  assert.equal(fixture.filesystem.state.bytesRead, 0);
+  assert.equal(fixture.state.connected, 0);
+  assert.equal(fixture.filesystem.state.opened, 1); assert.equal(fixture.filesystem.state.closed, 1);
+});
+
+test("a descriptor growing during reads cannot consume more than 8193 bytes", async () => {
+  const fixture = brokerFixture({ fs: { onRead: state => {
+    if (state.readCalls !== 1) return;
+    state.bytes = Buffer.alloc(32 * 1024, 120);
+    state.fd.size = state.named.size = BigInt(state.bytes.length);
+    state.fd.ctimeNs++; state.named.ctimeNs++;
+  } } });
+  await assert.rejects(fixture.client(complete("synthetic fixture")), errorCode("endpoint_invalid"));
+  assert.ok(fixture.filesystem.state.bytesRead > 0);
+  assert.ok(fixture.filesystem.state.bytesRead <= 8193);
+  assert.ok(fixture.filesystem.state.readRequests.every(length => length <= 8193));
+  assert.equal(fixture.state.connected, 0);
+  assert.equal(fixture.filesystem.state.opened, 1); assert.equal(fixture.filesystem.state.closed, 1);
+});
+
+test("file and parent-directory changes during FD reads prevent connection", async t => {
+  const directory = path.join(CONFIG_DIR, "wbipc");
+  const races = [
+    ["same inode with changed size", state => { state.fd.size++; state.named.size++; }],
+    ["same inode with changed mtime", state => { state.fd.mtimeNs++; state.named.mtimeNs++; }],
+    ["same inode with changed ctime", state => { state.fd.ctimeNs++; state.named.ctimeNs++; }],
+    ["named path replaced", state => { state.named.ino = 24n; }],
+    ["config directory replaced", state => { state.directories[CONFIG_DIR].ino = 201n; }],
+    ["wbipc directory replaced", state => { state.directories[directory].ino = 202n; }],
+    ["parent swapped and restored", state => {
+      const previous = state.directories[CONFIG_DIR];
+      state.directories[CONFIG_DIR] = { ...previous, ino: 201n };
+      // Restoring the original inode and contents still advances its ctime.
+      state.directories[CONFIG_DIR] = { ...previous, ctimeNs: previous.ctimeNs + 1n };
+    }],
+    ["parent realpath changed", state => { state.realpaths[CONFIG_DIR] = path.join(CONFIG_DIR, "replacement"); }],
+    ["wbipc realpath changed", state => { state.realpaths[directory] = path.join(CONFIG_DIR, "replacement-wbipc"); }],
+  ];
+  for (const [name, mutate] of races) await t.test(name, async () => {
+    const fixture = brokerFixture({ fs: { readChunkSize: 7, onRead: state => { if (state.readCalls === 1) mutate(state); } } });
+    await assert.rejects(fixture.client(complete("synthetic fixture")), errorCode("endpoint_invalid"));
+    assert.equal(fixture.state.connected, 0);
+    assert.equal(fixture.filesystem.state.opened, 1); assert.equal(fixture.filesystem.state.closed, 1);
+  });
 });
 
 test("descriptor and response bounds are enforced without leaking source data", async t => {
