@@ -3,6 +3,72 @@ import { describe, expect, it, vi } from "vitest";
 import { Markdown, markdownHeadings, markdownToPlainText, safeMarkdownUrl } from "../src/markdown/Markdown";
 
 describe("shared Markdown reading contract", () => {
+  it("links bare and inline-code URLs without swallowing Chinese punctuation or indexing URL paths as files", () => {
+    const navigate = vi.fn();
+    const { container } = render(<Markdown conversation onNavigateDoc={navigate} content={"参考 https://example.com/a.ts。然后访问 www.example.org，查看说明。\n\n`https://github.com/bytefolk/roleweave` 和 `https://example.com/a.ts`\n\n```sh\ncurl https://example.com/a.ts\n```"} />);
+    const links = screen.getAllByRole("link");
+    expect(links.map(link => link.getAttribute("href"))).toEqual([
+      "https://example.com/a.ts", "https://www.example.org", "https://github.com/bytefolk/roleweave", "https://example.com/a.ts",
+    ]);
+    expect(links[0]).toHaveTextContent("https://example.com/a.ts");
+    expect(links[1]).toHaveTextContent("www.example.org");
+    expect(links[3]?.querySelector("code")).toHaveTextContent("https://example.com/a.ts");
+    expect(container).toHaveTextContent("。然后访问");
+    expect(container).toHaveTextContent("，查看说明。");
+    expect(container.querySelector("pre a")).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("opens actual link destinations through the desktop bridge and reports failures", async () => {
+    const original = window.owb;
+    const openExternalUrl = vi.fn().mockResolvedValue({ ok: true });
+    window.owb = { openExternalUrl } as unknown as typeof window.owb;
+    try {
+      render(<Markdown content="[文档](https://example.com/docs?q=1#install) `https://example.com/status`" />);
+      expect(fireEvent.click(screen.getByRole("link", { name: "文档" }))).toBe(false);
+      await waitFor(() => expect(openExternalUrl).toHaveBeenCalledWith("https://example.com/docs?q=1#install"));
+      openExternalUrl.mockResolvedValueOnce({ ok: false });
+      fireEvent.click(screen.getByRole("link", { name: "https://example.com/status" }));
+      await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+      openExternalUrl.mockRejectedValueOnce(new Error("offline"));
+      fireEvent.click(screen.getByRole("link", { name: "文档" }));
+      await waitFor(() => expect(openExternalUrl).toHaveBeenCalledTimes(3));
+      await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("link", { name: "文档" }));
+      await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    } finally { window.owb = original; }
+  });
+
+  it("keeps browser fallback links accessible and avoids inert internal links when navigation is unavailable", () => {
+    const original = window.owb;
+    window.owb = undefined as unknown as typeof window.owb;
+    try {
+      render(<Markdown content="https://example.com [文档](docs/guide.md) [[Roadmap]] `apps/main.ts`" />);
+      expect(screen.getAllByRole("link")).toHaveLength(1);
+      expect(screen.getByRole("link")).toHaveAttribute("target", "_blank");
+      expect(screen.getByText("文档")).toBeInTheDocument();
+      expect(screen.getByText("Roadmap")).toBeInTheDocument();
+      expect(screen.getByText("apps/main.ts").tagName).toBe("CODE");
+    } finally { window.owb = original; }
+  });
+
+  it("retains balanced URL parentheses, query strings and explicit destinations containing Chinese punctuation", () => {
+    render(<Markdown content="https://example.com/a(b)?one=1&two=2#part。 [原链接](https://example.com/中文，目录)" />);
+    const links = screen.getAllByRole("link");
+    expect(links[0]).toHaveAttribute("href", "https://example.com/a(b)?one=1&two=2#part");
+    expect(decodeURI(links[1]!.getAttribute("href")!)).toBe("https://example.com/中文，目录");
+  });
+
+  it("preserves terse reply lines and emphasizes field labels without rewriting document prose or code", () => {
+    const raw = "岗位：Codex 产品研发\n汇报对象：Claude\n状态：**连接正常**\n\n```txt\n状态：原样复制\n```";
+    const { container, rerender } = render(<Markdown conversation content={raw} />);
+    expect([...container.querySelectorAll("strong")].map(node => node.textContent)).toEqual(["岗位：", "汇报对象：", "状态：", "连接正常"]);
+    expect(container.querySelectorAll("br")).toHaveLength(2);
+    expect(container.querySelector("pre strong")).toBeNull();
+    rerender(<Markdown content={raw} />);
+    expect(container.querySelectorAll("br")).toHaveLength(0);
+    expect(container.querySelectorAll("strong")).toHaveLength(1);
+  });
   it("renders the reported CJK emphasis safely while preserving escaped and code source", () => {
     const raw = "一个**仓库负责人（Repo Owner） **角色\n\n一个**仓库负责人（Repo Owner）**角色\n\n`**代码内容 **`\n\n\\*\\*转义内容 \\*\\*\n\n```md\n**代码内容 **\n```";
     const { container } = render(<Markdown content={raw} />);
@@ -30,6 +96,18 @@ describe("shared Markdown reading contract", () => {
     writeText.mockRejectedValueOnce(new Error("unavailable"));
     fireEvent.click(screen.getByRole("button", { name: "复制" }));
     await waitFor(() => expect(screen.getByText("复制失败")).toBeInTheDocument());
+  });
+
+  it("resets code-copy feedback when streaming changes the code and copies the latest contents", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const { rerender } = render(<Markdown content={"```js\nconst value = 1;\n```"} />);
+    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+    await waitFor(() => expect(screen.getByText("已复制")).toBeInTheDocument());
+    rerender(<Markdown content={"```js\nconst value = 2;\n```"} />);
+    expect(screen.queryByText("已复制")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("const value = 2;"));
   });
   it("renders safe deterministic icons before final-answer links without remote favicon requests", () => {
     const { container } = render(<Markdown content={'[GitHub](https://github.com/bytefolk/roleweave) [Docs](https://docs.google.com/document/d/1) [Site](https://example.com) [Mail](mailto:team@example.com) [Section](#rw-heading-1)'} />);
@@ -83,6 +161,10 @@ describe("shared Markdown reading contract", () => {
     expect(container.querySelector("script,img")).toBeNull();
     expect(safeMarkdownUrl("https://user:secret@example.com")).toBe("");
     expect(safeMarkdownUrl("data:text/html,hi")).toBe("");
+    expect(safeMarkdownUrl("javascript:bad.ts")).toBe("");
+    expect(safeMarkdownUrl("file:secret.md")).toBe("");
+    expect(safeMarkdownUrl("https://user:secret@example.com/a.ts")).toBe("");
+    expect(safeMarkdownUrl("https://example.com/\nfile.ts")).toBe("");
     expect(safeMarkdownUrl("#rw-heading-1")).toBe("#rw-heading-1");
   });
   it("recovers when an image fails and reparses a finished streaming block independently", () => {

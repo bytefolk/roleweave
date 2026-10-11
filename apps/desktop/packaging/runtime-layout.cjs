@@ -152,6 +152,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/turns/delta-forwarder.js",
   "dist/src/turns/envelope.js",
   "dist/src/turns/progress.js",
+  "dist/src/turns/response-format.js",
   "dist/src/turns/running.js",
   "dist/src/turns/store.js",
   "dist/src/turns/thread-context.js",

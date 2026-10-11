@@ -8982,8 +8982,7 @@ body,
 .owb-collaboration-toolbar > nav { margin-right: auto; }
 .owb-app .ui-sidebar__header:has(.owb-collaboration-toolbar) { padding: 8px 12px 4px; }
 .owb-app .ui-sidebar:has(.owb-collaboration-toolbar) .ui-sidebar__content { padding-top: 4px; }
-.owb-contacts-directory .ui-org-tree__toolbar { gap: 4px; padding-inline: 0; }
-.owb-contacts-directory .ui-org-tree__toolbar-btn { padding-inline: 5px; border-color: transparent; background: transparent; }
+.owb-contacts-directory .ui-org-tree__toolbar { gap: 4px; padding: 8px 8px 12px; }
 .owb-conversation-header-host { flex: 0 1 auto; margin-left: auto; min-width: 0; max-width: 100%; }
 .owb-conversation-header-host[hidden] { display: none; }
 .owb-contacts-toggle, .owb-contacts-close { display: none; }
