@@ -169,7 +169,7 @@ export function EditEmployeeDrawer({
                 />
               </div> : null}
             </section>
-            {clientManaged ? <p className="owb-profile-empty">{t("office.clientManaged")} {t("office.clientSettings")}</p> : <>
+            {clientManaged ? <p className="owb-profile-empty">{t("office.clientManaged")} {t("office.clientSettings")} {t("office.accountManaged")}</p> : <>
             <CapabilityPicker variant="compact" permissions={permissions} onChange={setPermissions} />
             <section className="owb-profile-advanced">
               <button

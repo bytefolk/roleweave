@@ -205,6 +205,7 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
   let officeRoot: string | undefined;
   let officeBridge: net.Server | undefined;
   let officeConnections = 0;
+  const originalBundledEngine = server.ctx.config.bundledElectronEngine;
   process.env.OPENAI_API_KEY = "fixture-provider-key";
   process.env.OPENAI_BASE_URL = "https://relay.example.com/v1";
   process.env.OPENAI_MODEL = "provider/model-1";
@@ -231,6 +232,7 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
       try {
         await openWorkspace(server.baseUrl, server.token, freshWorkspace);
         if (engine === "qwen-office-local") {
+          server.ctx.config.bundledElectronEngine = true;
           delete process.env.ROLEWEAVE_QWEN_OFFICE_BRIDGE;
           delete process.env.ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN;
           const callsBefore: number = turnDriver.calls.length;
@@ -271,6 +273,7 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
         assert.equal((readback.body as { turns: Array<{ engine: TurnEngine }> }).turns[0]?.engine, engine);
         assert.equal((await api(server.baseUrl, "/reports", { token: server.token })).status, 200);
       } finally {
+        server.ctx.config.bundledElectronEngine = originalBundledEngine;
         await fs.rm(freshWorkspace, { recursive: true, force: true });
       }
     }
