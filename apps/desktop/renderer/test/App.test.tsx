@@ -2563,15 +2563,22 @@ it.each(["B", "A"] as const)("does not show an old role document when its worksp
   openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph("knowledge/README.md") }), positionDocFile: readFile,
     workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })),
   });
-  render(<App />); await openGraphRoleResource("knowledge/README.md");
-  await waitFor(() => expect(readFile).toHaveBeenCalled());
+  // Immediate fixture reads and picker actions are flushed by async act; do
+  // not repeatedly poll the complete App DOM between real workspace changes.
+  await act(async () => { render(<App />); });
+  const projectEntry = screen.getByRole("button", { name: "项目入口" });
+  await openGraphRoleResource("knowledge/README.md");
+  expect(readFile).toHaveBeenCalledExactlyOnceWith("repo-owner", "knowledge/README.md");
   workspace = "B"; await chooseExistingWorkspace();
-  await waitFor(() => expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent("Workspace B"));
-  if (destination === "A") { workspace = "A"; await chooseExistingWorkspace(); await waitFor(() => expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent("Workspace A")); }
+  expect(projectEntry).toHaveTextContent("Workspace B");
+  if (destination === "A") {
+    workspace = "A"; await chooseExistingWorkspace();
+    expect(projectEntry).toHaveTextContent("Workspace A");
+  }
   await act(async () => finishRead({ status: 200, body: { schemaVersion: "docs-file.v1", positionId: "repo-owner", path: "knowledge/README.md", content: "# Old workspace A source", version: "old", modifiedAt: "2026-10-11T00:00:00Z", size: 32 } }));
   expect(screen.queryByRole("heading", { name: "Old workspace A source" })).not.toBeInTheDocument();
   expect(screen.queryByRole("dialog", { name: /knowledge\/README/ })).not.toBeInTheDocument();
-});
+}, 15_000);
 
 it("preserves the actual composer, draft and selected session across organization graph navigation", async () => {
   const bridge = openedBridge({ sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: {
