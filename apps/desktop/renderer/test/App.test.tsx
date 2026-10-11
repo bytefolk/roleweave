@@ -357,6 +357,72 @@ describe("App context navigation", () => {
     expect(rail.getByRole("button", { name: "协作" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("keeps context labels separate from choices and marks only the actual current view selected", async () => {
+    const group = { schemaVersion: "conversation-group.v1" as const,
+      conversationRef: "33333333-3333-4333-8333-333333333333", sessionId: "44444444-4444-4444-8444-444444444444",
+      members: ["repo-owner"], createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" };
+    openedBridge({
+      groups: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "conversation-group-list.v1", groups: [group] } }),
+      groupTimeline: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "group-timeline.v1", conversationRef: group.conversationRef, items: [] } }),
+    });
+    render(<App />);
+    await selectRepoOwner();
+    const expectChoice = (groupName: string, selectedName: string) => {
+      const navigation = screen.getByRole("navigation", { name: groupName });
+      const choices = within(navigation).getAllByRole("button");
+      const selected = within(navigation).getByRole("button", { name: selectedName });
+      expect(choices.filter(button => button.getAttribute("aria-pressed") === "true")).toEqual([selected]);
+      for (const button of choices.filter(button => button !== selected)) expect(button).toHaveAttribute("aria-pressed", "false");
+      return navigation;
+    };
+    const expectLabel = (navigation: HTMLElement, text: string) => {
+      const header = navigation.closest(".owb-context-header")!;
+      const label = header.querySelector<HTMLElement>(".owb-context-label")!;
+      expect(label).toHaveTextContent(text);
+      expect(label.closest("button")).toBeNull();
+      expect(label.closest("nav")).toBeNull();
+      expect(label).not.toHaveAttribute("aria-pressed");
+      expect(label).not.toHaveAttribute("tabindex");
+      expect(label.querySelector("button")).toBeNull();
+    };
+    const clickChoice = async (navigation: HTMLElement, name: string) => {
+      await act(async () => { fireEvent.click(within(navigation).getByRole("button", { name })); });
+    };
+    expectChoice("协作方式", "单聊");
+    expectLabel(expectChoice("员工视图", "对话"), "代码库负责人");
+    for (const [name, region] of [["资料与记忆", "笔记库"], ["档案", "岗位档案"], ["对话", "岗位对话"]] as const) {
+      await clickChoice(screen.getByRole("navigation", { name: "员工视图" }), name);
+      expect(await screen.findByRole("region", { name: region })).toBeVisible();
+      expectLabel(expectChoice("员工视图", name), "代码库负责人");
+      expectChoice("协作方式", "单聊");
+    }
+    await clickChoice(screen.getByRole("navigation", { name: "协作方式" }), "群聊");
+    expect(await screen.findByLabelText("群聊消息")).toBeVisible();
+    expectChoice("协作方式", "群聊");
+    await clickChoice(screen.getByRole("navigation", { name: "协作方式" }), "单聊");
+    expect(await screen.findByRole("region", { name: "岗位对话" })).toBeVisible();
+    expectChoice("协作方式", "单聊");
+    const rail = screen.getByRole("navigation", { name: "模块" });
+    await clickChoice(rail, "组织");
+    for (const name of ["组织架构", "关系图谱", "组织架构"]) {
+      await clickChoice(screen.getByRole("navigation", { name: "组织视图" }), name);
+      expect(await screen.findByRole("region", { name })).toBeVisible();
+      expectLabel(expectChoice("组织视图", name), "组织");
+    }
+    await clickChoice(rail, "项目");
+    for (const [name, region] of [["目标", "目标"], ["进度", "任务实时进度"], ["项目管理", "项目管理"]] as const) {
+      await clickChoice(screen.getByRole("navigation", { name: "项目视图" }), name);
+      expect(await screen.findByRole("region", { name: region })).toBeVisible();
+      expectLabel(expectChoice("项目视图", name), "项目");
+    }
+    await clickChoice(rail, "收件箱");
+    for (const [name, region] of [["审批", "审批中心"], ["上报", "执行上报"], ["审批", "审批中心"]] as const) {
+      await clickChoice(screen.getByRole("navigation", { name: "收件箱视图" }), name);
+      expect(await screen.findByRole("region", { name: region })).toBeVisible();
+      expectLabel(expectChoice("收件箱视图", name), "收件箱");
+    }
+  }, 15_000);
+
   it("keeps Agent selection and the conversation draft across memory and profile", async () => {
     openedBridge();
     render(<App />);

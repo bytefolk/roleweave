@@ -2096,7 +2096,7 @@ function AppInner({
       sidebar={collaborationActive ?
         <Sidebar label={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")}
           header={<div className="owb-collaboration-toolbar">
-            <nav className="owb-context-tabs owb-context-tabs--subtle" aria-label={t("nav.collaboration")}>
+            <nav className="owb-context-tabs owb-context-tabs--subtle owb-view-switch" aria-label={t("nav.collaboration")}>
               <AntButton type="text" aria-pressed={activeModule !== "groups"} onClick={() => setActiveModule("conversation")}>{t("nav.direct")}</AntButton>
               <AntButton type="text" aria-pressed={activeModule === "groups"} onClick={() => setActiveModule("groups")}>{t("rail.groups")}</AntButton>
             </nav>
@@ -2178,14 +2178,14 @@ function AppInner({
           <Tooltip title={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")} trigger={["hover", "focus"]}>
             <AntButton className="owb-contacts-toggle" type="text" aria-label={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")} icon={<PanelLeft size={15} />} aria-expanded={contactsOpen} onClick={() => setContactsOpen(!contactsOpen)} />
           </Tooltip>
-          {activeModule === "groups" ? <strong>{t("rail.groups")}</strong> : <>
-            <div className="owb-context-header__identity">
+          {activeModule === "groups" ? <strong className="owb-context-label">{t("rail.groups")}</strong> : <>
+            <div className="owb-context-header__identity owb-context-label">
               {selectedId ? <img className="owb-context-header__avatar" src={avatarUrls[selectedId] ?? avatarSrcFor(selectedId)} alt="" /> : null}
               <Tooltip title={selectedId ? positionNames[selectedId] ?? selectedId : t("nav.selectEmployee")}>
                 <strong className="owb-context-header__name">{selectedId ? positionNames[selectedId] ?? selectedId : t("nav.selectEmployee")}</strong>
               </Tooltip>
             </div>
-            <nav className="owb-context-tabs owb-context-tabs--subtle" aria-label={t("nav.employee")}>
+            <nav className="owb-context-tabs owb-context-tabs--subtle owb-view-switch" aria-label={t("nav.employee")}>
               <AntButton type="text" aria-pressed={activeModule === "conversation"} onClick={() => setActiveModule("conversation")}>{t("nav.conversation")}</AntButton>
               <AntButton type="text" aria-pressed={activeModule === "docs"} onClick={() => { setMemorySource("docs"); setActiveModule("docs"); }}>{t("rail.memory")}</AntButton>
               <AntButton type="text" aria-pressed={activeModule === "profile"} onClick={() => setActiveModule("profile")}>{t("nav.profile")}</AntButton>
@@ -2193,23 +2193,23 @@ function AppInner({
             <div className="owb-conversation-header-host" ref={setConversationHeaderHost} hidden={activeModule !== "conversation"} />
           </>}
         </div> : activeModule === "org" ? <div className="owb-context-header">
-          <strong>{t("rail.org")}</strong>
-          <nav className="owb-context-tabs" aria-label={t("nav.organization")}>
-            <AntButton type={orgView === "structure" ? "primary" : "text"} aria-pressed={orgView === "structure"} onClick={() => setOrgView("structure")}>{t("nav.structure")}</AntButton>
-            <AntButton type={orgView === "overview" ? "primary" : "text"} aria-pressed={orgView === "overview"} onClick={() => setOrgView("overview")}>{t("nav.graph")}</AntButton>
+          <strong className="owb-context-label">{t("rail.org")}</strong>
+          <nav className="owb-context-tabs owb-view-switch" aria-label={t("nav.organization")}>
+            <AntButton type="text" aria-pressed={orgView === "structure"} onClick={() => setOrgView("structure")}>{t("nav.structure")}</AntButton>
+            <AntButton type="text" aria-pressed={orgView === "overview"} onClick={() => setOrgView("overview")}>{t("nav.graph")}</AntButton>
           </nav>
         </div> : projectsActive ? <div className="owb-context-header">
-          <strong>{t("rail.projects")}</strong>
-          <nav className="owb-context-tabs" aria-label={t("nav.projects")}>
-            <AntButton type={activeModule === "projects" ? "primary" : "text"} aria-pressed={activeModule === "projects"} onClick={() => setActiveModule("projects")}>{t("project.moduleTitle")}</AntButton>
-            <AntButton type={activeModule === "goals" ? "primary" : "text"} aria-pressed={activeModule === "goals"} onClick={() => setActiveModule("goals")}>{t("rail.goals")}</AntButton>
-            <AntButton type={activeModule === "progress" ? "primary" : "text"} aria-pressed={activeModule === "progress"} onClick={() => setActiveModule("progress")}>{t("rail.progress")}</AntButton>
+          <strong className="owb-context-label">{t("rail.projects")}</strong>
+          <nav className="owb-context-tabs owb-view-switch" aria-label={t("nav.projects")}>
+            <AntButton type="text" aria-pressed={activeModule === "projects"} onClick={() => setActiveModule("projects")}>{t("project.moduleTitle")}</AntButton>
+            <AntButton type="text" aria-pressed={activeModule === "goals"} onClick={() => setActiveModule("goals")}>{t("rail.goals")}</AntButton>
+            <AntButton type="text" aria-pressed={activeModule === "progress"} onClick={() => setActiveModule("progress")}>{t("rail.progress")}</AntButton>
           </nav>
         </div> : inboxActive ? <div className="owb-context-header owb-context-header--inbox">
-          <strong>{t("rail.inbox")}</strong>
-          <nav className="owb-context-tabs" aria-label={t("nav.inbox")}>
-            <AntButton type={activeModule === "approvals" ? "primary" : "text"} aria-label={t("rail.approvals")} aria-pressed={activeModule === "approvals"} onClick={() => { setActiveModule("approvals"); void approvalState.refresh(); }}>{t("rail.approvals")}<Badge count={pendingApprovals} size="small" /></AntButton>
-            <AntButton type={activeModule === "reports" ? "primary" : "text"} aria-pressed={activeModule === "reports"} onClick={() => { setReportsFocusTurnId(null); setActiveModule("reports"); void loadReports(); }}>{t("rail.reports")}</AntButton>
+          <strong className="owb-context-label">{t("rail.inbox")}</strong>
+          <nav className="owb-context-tabs owb-view-switch" aria-label={t("nav.inbox")}>
+            <AntButton type="text" aria-label={t("rail.approvals")} aria-pressed={activeModule === "approvals"} onClick={() => { setActiveModule("approvals"); void approvalState.refresh(); }}>{t("rail.approvals")}<Badge count={pendingApprovals} size="small" /></AntButton>
+            <AntButton type="text" aria-pressed={activeModule === "reports"} onClick={() => { setReportsFocusTurnId(null); setActiveModule("reports"); void loadReports(); }}>{t("rail.reports")}</AntButton>
           </nav>
         </div> : null}
         {startupError ? (

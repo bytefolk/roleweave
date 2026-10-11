@@ -29,9 +29,9 @@ export function ThemePicker() {
 
   return (
     <div className="owb-theme-picker">
-      <div className="owb-theme-picker__mode-switch">
-        <button type="button" className={editMode === "light" ? "active" : ""} onClick={() => setEditMode("light")}>{t("theme.picker.lightMode")}</button>
-        <button type="button" className={editMode === "dark" ? "active" : ""} onClick={() => setEditMode("dark")}>{t("theme.picker.darkMode")}</button>
+      <div className="owb-theme-picker__mode-switch" role="group" aria-label={t("theme.settings.tabCustom")}>
+        <button type="button" className={editMode === "light" ? "active" : ""} aria-pressed={editMode === "light"} onClick={() => setEditMode("light")}>{t("theme.picker.lightMode")}</button>
+        <button type="button" className={editMode === "dark" ? "active" : ""} aria-pressed={editMode === "dark"} onClick={() => setEditMode("dark")}>{t("theme.picker.darkMode")}</button>
       </div>
       {COLOR_GROUPS.map((group) => (
         <div key={group.label} className="owb-theme-picker__group">
