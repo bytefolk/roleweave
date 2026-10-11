@@ -219,6 +219,7 @@ function openedBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
           codex: { configured: true, ready: true },
           "codex-local": { configured: true, ready: true },
           workbuddy: { configured: true, ready: true, modelPinnable: true, model: "fixture-model" },
+          "workbuddy-local": { configured: true, ready: true, modelPinnable: true, model: "fixture-model" },
         },
         workspace: { open: true, path: "/fixture/workspace" },
       },
@@ -1243,7 +1244,7 @@ describe("App runtime bridge", () => {
     expect(screen.queryByTitle("Agent：Qoder")).not.toBeInTheDocument();
   });
 
-  it.each(["qoder", "claude-code", "codex-local", "workbuddy"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
+  it.each(["qoder", "claude-code", "codex-local", "workbuddy", "workbuddy-local"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
     window.localStorage.setItem("owb-turn-engine", "codex-local");
     try {
       for (let mount = 0; mount < 2; mount += 1) {
@@ -1280,6 +1281,33 @@ describe("App runtime bridge", () => {
       window.localStorage.removeItem("owb-turn-engine");
     }
   });
+
+  it("keeps a bound local WorkBuddy employee unavailable until its own health recovers, even when the API host is ready", async () => {
+    const bridge = openedBridge({
+      position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine: "workbuddy-local", agentLocked: true } }),
+      createSessionTurn: vi.fn().mockResolvedValue({ status: 200, body: apiTurn({ engine: "workbuddy-local", input: "使用客户端登录" }) }),
+    });
+    const ready = await bridge.status();
+    vi.mocked(bridge.status).mockResolvedValue({
+      ...ready, health: { ...ready.health!, hosts: { ...ready.health!.hosts!,
+        "workbuddy-local": { configured: false, ready: false, nextStep: "RAW_ACCOUNT_OR_PATH" },
+      } },
+    });
+    await act(async () => { render(<App />); });
+    await selectRepoOwner();
+    expect(await screen.findByText("WorkBuddy 暂时无法使用。")).toBeVisible();
+    expect(screen.getByLabelText("下达任务")).toBeDisabled();
+    expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
+    expect(document.body.innerHTML).not.toContain("RAW_ACCOUNT_OR_PATH");
+    expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+
+    vi.mocked(bridge.status).mockResolvedValue(ready);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新检查" })));
+    await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "使用客户端登录" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+    await waitFor(() => expect(bridge.createSessionTurn).toHaveBeenCalledWith({ sessionId: activeSession.sessionId, engine: "workbuddy-local", input: "使用客户端登录" }));
+  }, 15_000);
 
   it("opens a workspace, selects an employee in the tree, loads local history, sends, and reads persisted history back", async () => {
     const existing = apiTurn();
@@ -1660,7 +1688,7 @@ describe("App runtime bridge", () => {
   // Full-App render with the hire drawer round-trip; a macOS runner timeout
   // was observed at the 5s default (#529). 15s matches the other full-App
   // tests in this file.
-  it.each(["codex", "codex-local"] as const)("binds the ready %s runtime in HireDrawer and sends it through POST /hire", async (agentEngine) => {
+  it.each(["codex", "codex-local", "workbuddy", "workbuddy-local"] as const)("binds the selected %s connection in HireDrawer and sends it through POST /hire", async (agentEngine) => {
     const hire = vi.fn().mockResolvedValue({
       status: 200,
       body: { status: "hired", positionId: "docs-writer", agentEngine, version: { seq: 6, updatedAt: "2026-08-26T00:00:00.000Z" } },
@@ -1677,6 +1705,8 @@ describe("App runtime bridge", () => {
           ...status.health.hosts,
           codex: { configured: true, ready: agentEngine === "codex" },
           "codex-local": { configured: true, ready: agentEngine === "codex-local" },
+          workbuddy: { configured: true, ready: agentEngine === "workbuddy" },
+          "workbuddy-local": { configured: true, ready: agentEngine === "workbuddy-local" },
         },
       },
     });
@@ -1685,7 +1715,11 @@ describe("App runtime bridge", () => {
     contactAction("创建员工");
     expect(await screen.findByRole("button", { name: "开始创建" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
-    fireEvent.click(screen.getByRole("option", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("option", { name: agentEngine.startsWith("codex") ? "Codex" : "WorkBuddy" }));
+    if (!agentEngine.endsWith("-local")) {
+      fireEvent.click(screen.getByRole("button", { name: /接入方式/ }));
+      fireEvent.click(screen.getByRole("option", { name: "API 接入" }));
+    }
     fireEvent.change(screen.getByPlaceholderText("员工姓名（≤24 字）"), { target: { value: "文档负责人" } });
     fireEvent.change(screen.getByPlaceholderText("≤500 字"), { target: { value: "维护文档" } });
     const taskTokens = screen.getByLabelText("每任务 token 上限*");

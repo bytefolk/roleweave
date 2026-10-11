@@ -68,14 +68,20 @@ test("the rejection message names the contracted engines", () => {
   assert.equal(turnEngineMessage(["a", "b", "c"]), "a, b, or c");
 });
 
-test("WorkBuddy is accepted by project, hiring, and per-employee group bindings", () => {
-  assert.ok(TURN_ENGINE_IDS.includes("workbuddy"));
-  assert.equal(validateWorkspaceCreateRequest({ projectId: "workbuddy-team", business: "Research", description: "", agentEngine: "workbuddy" }).ok, true);
-  assert.equal(validateHireRequest({ positionId: "researcher", name: "Researcher", description: "Research", reportTo: null, mode: "read_only", budget: {}, agentEngine: "workbuddy" }).ok, true);
-  const group = validateGroupTurnRequest({ conversationRef: "team-answer", input: "ship", engine: "workbuddy", engines: { "repo-owner": "workbuddy" }, mentions: ["repo-owner"] });
-  assert.equal(group.ok, true);
-  assert.equal(group.request.engines["repo-owner"], "workbuddy");
-  for (const engine of ["codebuddy", "workbuddy-local"]) {
+test("both WorkBuddy identities are preserved by project, hiring, and per-employee group bindings", () => {
+  for (const engine of ["workbuddy", "workbuddy-local"]) {
+    assert.ok(TURN_ENGINE_IDS.includes(engine));
+    const workspace = validateWorkspaceCreateRequest({ projectId: "workbuddy-team", business: "Research", description: "", agentEngine: engine });
+    assert.equal(workspace.ok, true);
+    assert.equal(workspace.request.agentEngine, engine);
+    const hire = validateHireRequest({ positionId: "researcher", name: "Researcher", description: "Research", reportTo: null, mode: "read_only", budget: {}, agentEngine: engine });
+    assert.equal(hire.ok, true);
+    assert.equal(hire.request.agentEngine, engine);
+    const group = validateGroupTurnRequest({ conversationRef: "team-answer", input: "ship", engine, engines: { "repo-owner": engine }, mentions: ["repo-owner"] });
+    assert.equal(group.ok, true);
+    assert.equal(group.request.engines["repo-owner"], engine);
+  }
+  for (const engine of ["codebuddy", "workbuddy-local "]) {
     assert.equal(validateWorkspaceCreateRequest({ projectId: "test", business: "Research", description: "", agentEngine: engine }).ok, false);
   }
 });

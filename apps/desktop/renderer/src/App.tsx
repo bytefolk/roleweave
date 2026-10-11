@@ -1820,6 +1820,14 @@ function AppInner({
       modelPinnable: health?.hosts?.workbuddy?.modelPinnable,
       model: health?.hosts?.workbuddy?.model,
     },
+    "workbuddy-local": {
+      configured: health?.hosts?.["workbuddy-local"]?.configured === true,
+      ready: health?.hosts?.["workbuddy-local"]?.ready === true,
+      reason: health?.hosts?.["workbuddy-local"]?.nextStep ?? t("misc.workbuddyHostUnknown"),
+      modelPinnable: health?.hosts?.["workbuddy-local"]?.modelPinnable,
+      model: health?.hosts?.["workbuddy-local"]?.model,
+      connection: health?.hosts?.["workbuddy-local"]?.connection,
+    },
     gemini: {
       configured: health?.hosts?.gemini?.configured === true,
       ready: health?.hosts?.gemini?.ready === true,

@@ -19,6 +19,7 @@ function health(overrides: Record<string, unknown> = {}) {
       codex: { configured: true, ready: true },
       "codex-local": { configured: true, ready: true },
       workbuddy: { configured: true, ready: true },
+      "workbuddy-local": { configured: true, ready: true, version: "2.156.0" },
       gemini: { configured: true, ready: true },
       "openai-compatible": { configured: true, ready: true },
     },
@@ -47,26 +48,26 @@ test("Host order is derived from the exhaustive catalog, not a handwritten subse
   const hosts = listRegisteredAgentHosts(health());
   assert.deepEqual(
     hosts.map((host) => host.id).sort(),
-    ["claude-code", "claude-local", "codex", "codex-local", "gemini", "openai-compatible", "qoder", "workbuddy"],
+    ["claude-code", "claude-local", "codex", "codex-local", "gemini", "openai-compatible", "qoder", "workbuddy", "workbuddy-local"],
   );
 });
 
 test("registers every contracted Host from a health snapshot", () => {
   const hosts = listRegisteredAgentHosts(health());
 
-  assert.deepEqual(hosts.map((host) => host.id), ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini", "openai-compatible"]);
-  assert.deepEqual(hosts.map((host) => host.label), ["Qoder", "Claude Code", "Claude Code（本地登录）", "Codex", "Codex（本地登录）", "WorkBuddy", "Gemini", "OpenAI Compatible"]);
+  assert.deepEqual(hosts.map((host) => host.id), ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "workbuddy-local", "gemini", "openai-compatible"]);
+  assert.deepEqual(hosts.map((host) => host.label), ["Qoder", "Claude Code", "Claude Code（本地登录）", "Codex", "Codex（本地登录）", "WorkBuddy", "WorkBuddy（本地登录）", "Gemini", "OpenAI Compatible"]);
   for (const host of hosts) {
     assert.equal(host.engine, host.id);
     assert.equal(host.availability.status, "available");
-    assert.equal(host.availability.localProbe, "ready");
+    assert.equal(host.availability.localProbe, host.id === "workbuddy-local" ? "unknown" : "ready");
     assert.equal(host.availability.configured, true);
     assert.equal(host.availability.ready, true);
     assert.equal(host.reason, null);
     assert.ok(host.capabilities.includes("turns"));
-    assert.ok(host.capabilities.includes("streaming"));
+    assert.equal(host.capabilities.includes("streaming"), host.id !== "workbuddy-local");
   }
-  assert.deepEqual(hosts.map((host) => host.version), ["1.1.31", "2.1.223", "2.1.223", "2.1.223", "2.1.223", "2.137.1", "0.1.0", "0.0.0"]);
+  assert.deepEqual(hosts.map((host) => host.version), ["1.1.31", "2.1.223", "2.1.223", "2.1.223", "2.1.223", "2.137.1", "2.156.0", "0.1.0", "0.0.0"]);
 });
 
 test("fails closed for missing or malformed health input", () => {
@@ -114,6 +115,7 @@ test("keeps unavailable hosts visible but never marks them selectable", () => {
         ready: false,
         nextStep: "设置 CODEBUDDY_API_KEY 后重启工作台",
       },
+      "workbuddy-local": { configured: false, ready: false, nextStep: "启动 WorkBuddy 客户端并登录" },
       gemini: { configured: true, ready: false, nextStep: "设置 GEMINI_API_KEY 后重启工作台" },
       "openai-compatible": { configured: true, ready: false, nextStep: "设置 OPENAI_API_KEY 和 OPENAI_BASE_URL 后重启工作台" },
     },
@@ -129,7 +131,7 @@ test("keeps unavailable hosts visible but never marks them selectable", () => {
     },
   }));
 
-  assert.equal(hosts.length, 8);
+  assert.equal(hosts.length, 9);
   assert.equal(hosts[0]?.availability.status, "unavailable");
   assert.equal(hosts[0]?.availability.configured, false);
   assert.equal(hosts[0]?.availability.ready, false);
@@ -151,6 +153,7 @@ test("engine availability is only a pipeline gate, not provider entitlement", ()
       codex: { configured: true, ready: true },
       "codex-local": { configured: true, ready: true },
       workbuddy: { configured: true, ready: true },
+      "workbuddy-local": { configured: true, ready: true },
       gemini: { configured: true, ready: true },
       "openai-compatible": { configured: true, ready: true },
     },
@@ -204,6 +207,7 @@ test("redacts paths, credentials, and raw probe output from version and reason",
         version: "stderr /tmp/codebuddy 2.137.1 private-key=secret",
         nextStep: "codebuddy binary at /tmp/codebuddy private-key=secret",
       },
+      "workbuddy-local": { configured: true, ready: false, version: "WorkBuddy 2.156.0 credential=local-secret", nextStep: "credential=local-secret" },
       gemini: { configured: true, ready: false, version: "Gemini 0.1.0 secret", nextStep: "gemini at /tmp/gemini secret" },
       "openai-compatible": { configured: true, ready: false, version: "OpenAI 0.0.0 secret", nextStep: "openai at /tmp/openai secret" },
     },
@@ -220,8 +224,8 @@ test("redacts paths, credentials, and raw probe output from version and reason",
   }));
   const serialized = JSON.stringify(hosts);
 
-  assert.deepEqual(hosts.map((host) => host.version), ["1.2.0", "2.2.0", "2.2.0", "2.2.0", "2.2.0", "2.137.1", "0.1.0", "0.0.0"]);
-  assert.doesNotMatch(serialized, /Users\/alice|\/tmp\/claude|\/tmp\/codebuddy|qoder-secret|anthropic-secret|private-key|apiKey/iu);
+  assert.deepEqual(hosts.map((host) => host.version), ["1.2.0", "2.2.0", "2.2.0", "2.2.0", "2.2.0", "2.137.1", "2.156.0", "0.1.0", "0.0.0"]);
+  assert.doesNotMatch(serialized, /Users\/alice|\/tmp\/claude|\/tmp\/codebuddy|qoder-secret|anthropic-secret|local-secret|private-key|apiKey/iu);
   assert.equal(hosts[0]?.reason, "本地主机版本不受支持");
   assert.equal(hosts[1]?.reason, "本地主机版本不受支持");
   assert.equal(hosts[2]?.reason, "本地主机版本不受支持");
@@ -236,6 +240,7 @@ test("selects only a ready host and exposes stable error codes", () => {
       codex: { configured: true, ready: false },
       "codex-local": { configured: true, ready: false },
       workbuddy: { configured: true, ready: false },
+      "workbuddy-local": { configured: true, ready: false },
       gemini: { configured: true, ready: false },
       "openai-compatible": { configured: true, ready: false },
     },
@@ -270,6 +275,25 @@ test("capability summaries are frozen, serializable, and independent of host mut
   assert.deepEqual(getAgentHostCapabilities({ id: "qoder", engine: "claude-code" }), []);
 });
 
+test("WorkBuddy local selection follows its own client health and does not borrow API readiness", () => {
+  for (const localReady of [false, true]) {
+    const input = health();
+    input.hosts.workbuddy = { configured: true, ready: !localReady };
+    input.hosts["workbuddy-local"] = { configured: true, ready: localReady, version: "2.156.0" };
+    const hosts = listRegisteredAgentHosts(input);
+    if (localReady) {
+      const local = selectAgentHost(hosts, "workbuddy-local");
+      assert.equal(local.engine, "workbuddy-local");
+      assert.deepEqual(local.capabilities, ["turns", "sessions", "groups", "approvals"]);
+      assert.equal(local.availability.localProbe, "unknown");
+    } else {
+      assert.equal(selectAgentHost(hosts, "workbuddy").engine, "workbuddy");
+      assert.throws(() => selectAgentHost(hosts, "workbuddy-local"), (error: unknown) =>
+        error instanceof AgentHostRegistryError && error.code === "agent_host_unavailable" && error.hostId === "workbuddy-local");
+    }
+  }
+});
+
 test("does not mutate the input health snapshot", () => {
   const input = health();
   const before = JSON.stringify(input);
@@ -289,6 +313,7 @@ test("maps timeout and unsupported local probes without probing again", () => {
       codex: { configured: true, ready: false },
       "codex-local": { configured: true, ready: false },
       workbuddy: { configured: true, ready: false },
+      "workbuddy-local": { configured: true, ready: false },
       gemini: { configured: true, ready: false },
       "openai-compatible": { configured: true, ready: false },
     },
@@ -304,8 +329,8 @@ test("maps timeout and unsupported local probes without probing again", () => {
     },
   }));
 
-  assert.deepEqual(hosts.map((host) => host.availability.localProbe), ["timed_out", "unsupported_version", "unavailable", "unavailable", "unavailable", "unavailable", "unavailable", "unavailable"]);
-  assert.deepEqual(hosts.map((host) => host.reason), ["本地版本探测超时", "本地主机版本不受支持", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机"]);
+  assert.deepEqual(hosts.map((host) => host.availability.localProbe), ["timed_out", "unsupported_version", "unavailable", "unavailable", "unavailable", "unavailable", "unknown", "unavailable", "unavailable"]);
+  assert.deepEqual(hosts.map((host) => host.reason), ["本地版本探测超时", "本地主机版本不受支持", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机", "未检测到可用的本地主机", "主机尚未就绪", "未检测到可用的本地主机", "未检测到可用的本地主机"]);
 });
 
 test("fails closed when an explicitly supplied local probe is malformed", () => {
@@ -333,7 +358,7 @@ test("fails closed when an explicitly supplied local probe is malformed", () => 
 test("employee-MCP capability gate answers from the registry, not a list copy", () => {
   // No bundled Host declares "mcp" today, so every per-host answer is false
   // and the aggregate is false — the hire/profile gates reject on this.
-  for (const id of ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "openai-compatible"]) {
+  for (const id of ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "workbuddy-local", "gemini", "openai-compatible"]) {
     assert.equal(agentHostSupportsEmployeeMcp(id), false);
   }
   assert.equal(anyAgentHostSupportsEmployeeMcp(), false);

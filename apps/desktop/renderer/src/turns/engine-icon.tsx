@@ -13,6 +13,7 @@ const ENGINE_ICON_SRC: Record<TurnEngine, string> = {
   codex: codexIcon,
   "codex-local": codexIcon,
   workbuddy: workbuddyIcon,
+  "workbuddy-local": workbuddyIcon,
   gemini: geminiIcon,
   "openai-compatible": openaiCompatibleIcon,
 };
