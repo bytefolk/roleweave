@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { TurnRecord, WorkbenchSession } from "@roleweave/shared";
 import { DigitalEmployeeCliDriver } from "../src/engine/driver-cli.js";
 import { computeEnvelopeDigest } from "../src/turns/envelope.js";
+import { withResponsePresentation } from "../src/turns/response-format.js";
 import { api, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
 
 const ADAPTER = fileURLToPath(new URL("../../bin/qoder-engine.mjs", import.meta.url));
@@ -20,7 +21,8 @@ function assertIsolatedRoleInput(hostInput: string, request: string, positionId:
   const notes = JSON.parse(hostInput.slice(prefix.length, boundary)) as Array<{ path: string }>;
   assert.ok(Array.isArray(notes), "the role reference frame contains a JSON array");
   assert.deepEqual(notes.map(note => note.path), [`positions/${positionId}/knowledge/README.md`], "only this role's associated knowledge may enter the isolated request");
-  assert.equal(hostInput.slice(boundary + suffix.length), request, "the original request follows the reference frame without personal history");
+  assert.equal(hostInput.slice(boundary + suffix.length), withResponsePresentation(request), "only presentation guidance and the original request follow the reference frame without personal history");
+  assert.ok(hostInput.endsWith(`Current user request:\n${request}`), "presentation guidance preserves the exact current request");
   assert.doesNotMatch(hostInput, /Project Orion|Revise the previous draft|Continue after restarting the application|Orion first draft|privatecredential|private-chain/, "personal history and private reasoning cannot enter another role, a disabled session, or a rotated session");
 }
 
