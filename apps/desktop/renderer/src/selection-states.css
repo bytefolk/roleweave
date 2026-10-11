@@ -1,10 +1,10 @@
-/* Choice controls share four distinct states. Neutral hover never acquires
- * the selected marker; keyboard focus has its own outline. Scope explicit
- * choice groups so document rows, actions and status badges keep their roles. */
+/* Navigation uses a quiet neutral surface for the current view. Hover is
+ * lighter, keyboard focus has its own outline, and static labels stay outside
+ * the choice groups. Scope choices so actions and document rows keep their roles. */
 [data-theme] {
-  --owb-choice-selected: color-mix(in srgb, var(--ui-primary) 14%, var(--ui-surface));
-  --owb-choice-hover: var(--ui-surface-inset);
-  --owb-choice-marker: var(--ui-primary);
+  --owb-choice-selected: color-mix(in srgb, var(--ui-foreground) 12%, var(--ui-surface));
+  --owb-choice-hover: color-mix(in srgb, var(--ui-foreground) 5%, var(--ui-surface));
+  --owb-choice-focus: color-mix(in srgb, var(--ui-foreground) 60%, transparent);
 }
 
 [data-ui-theme][data-theme] .owb-app .owb-context-label {
@@ -12,9 +12,9 @@
   margin: 0;
   padding-inline-end: 14px;
   border-inline-end: 1px solid var(--ui-border);
-  color: var(--ui-foreground);
-  font-size: 14px;
-  font-weight: 600;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  font-weight: 500;
   line-height: 24px;
   cursor: default;
 }
@@ -31,10 +31,9 @@
   max-width: 100%;
   min-width: 0;
   gap: 4px;
-  padding: 3px;
-  border: 1px solid var(--ui-border);
-  border-radius: 8px;
-  background: var(--ui-surface-inset);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 /* Header groups must wrap with their title rather than forcing a wide pane. */
@@ -51,10 +50,10 @@
   .owb-rgraph__renderer) > button {
   position: relative;
   min-height: 30px;
-  border: 1px solid var(--ui-border);
-  border-radius: 5px;
-  background: var(--ui-surface);
-  color: var(--ui-foreground);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
   box-shadow: none;
   font-weight: 400;
   cursor: pointer;
@@ -68,7 +67,6 @@
   .owb-config-tabs, .owb-drive-browser__views,
   .owb-drive-browser__filters, .owb-knowledge-graph__filters,
   .owb-rgraph__renderer) > button:not(:disabled):not([aria-disabled="true"]):not([aria-pressed="true"]):not([aria-selected="true"]):not(.active):hover {
-  border-color: var(--ui-border-strong);
   background: var(--owb-choice-hover);
   color: var(--ui-foreground);
 }
@@ -79,15 +77,13 @@
   .owb-config-tabs, .owb-drive-browser__views,
   .owb-drive-browser__filters, .owb-knowledge-graph__filters,
   .owb-rgraph__renderer) > button:is([aria-pressed="true"], [aria-selected="true"], .active):not(:disabled):not([aria-disabled="true"]) {
-  border-color: var(--owb-choice-marker);
   background: var(--owb-choice-selected);
   color: var(--ui-foreground);
-  box-shadow: inset 0 -3px 0 var(--owb-choice-marker);
-  font-weight: 600;
+  box-shadow: none;
+  font-weight: 500;
 }
 
-/* Older report tabs used a second underline outside the button. The shared
- * inner marker avoids clipping that cue in wrapped or scrolling groups. */
+/* The selected surface replaces decorative underlines. */
 [data-ui-theme][data-theme] .owb-app .owb-report-tabs > button[aria-pressed="true"]::after {
   content: none;
 }
@@ -101,8 +97,8 @@
 [data-ui-theme][data-theme] :is(.owb-project-presets__choices > button,
   .owb-project-presets__custom, .owb-hire-preset,
   .owb-goal-create-presets__choice, .owb-theme-settings__preset):focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--owb-choice-focus);
+  outline-offset: 2px;
 }
 
 /* Preset cards keep their existing geometry, copy alignment and icons. */
@@ -130,10 +126,10 @@
 [data-ui-theme][data-theme] :is(.owb-project-presets__choices > button,
   .owb-project-presets__custom, .owb-hire-preset,
   .owb-goal-create-presets__choice, .owb-theme-settings__preset):is([aria-pressed="true"], .active):not(:disabled):not([aria-disabled="true"]) {
-  border-color: var(--owb-choice-marker);
+  border-color: var(--ui-foreground-muted);
   background: var(--owb-choice-selected);
   color: var(--ui-foreground);
-  box-shadow: inset 0 -3px 0 var(--owb-choice-marker);
+  box-shadow: none;
 }
 
 [data-ui-theme][data-theme] :is(.owb-app, .owb-theme-settings) :is(.owb-view-switch,
@@ -146,20 +142,19 @@
   .owb-project-presets__custom, .owb-hire-preset,
   .owb-goal-create-presets__choice, .owb-theme-settings__preset):is(:disabled, [aria-disabled="true"]) {
   border-color: var(--ui-border);
-  border-style: dashed;
-  background: var(--ui-surface-inset);
-  color: var(--ui-foreground-muted);
+  border-style: solid;
+  background: transparent;
+  color: var(--ui-foreground);
   box-shadow: none;
-  opacity: 1;
+  opacity: .45;
   cursor: not-allowed;
 }
 
 /* Ant choices use label elements and tab roles rather than pressed buttons. */
 [data-ui-theme][data-theme] .owb-app .ant-segmented {
-  padding: 3px;
-  border: 1px solid var(--ui-border);
-  border-radius: 8px;
-  background: var(--ui-surface-inset);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-segmented-group { gap: 4px; }
@@ -168,69 +163,65 @@
   box-shadow: none;
 }
 [data-ui-theme][data-theme] .owb-app .ant-segmented-item {
-  border: 1px solid var(--ui-border);
-  border-radius: 5px;
-  background: var(--ui-surface);
-  color: var(--ui-foreground);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
   box-shadow: none;
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-segmented-item:not(.ant-segmented-item-selected):not(.ant-segmented-item-disabled):hover {
-  border-color: var(--ui-border-strong);
   background: var(--owb-choice-hover);
   color: var(--ui-foreground);
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-segmented-item-selected:not(.ant-segmented-item-disabled) {
-  border-color: var(--owb-choice-marker);
   background: var(--owb-choice-selected);
   color: var(--ui-foreground);
-  box-shadow: inset 0 -3px 0 var(--owb-choice-marker);
-  font-weight: 600;
+  box-shadow: none;
+  font-weight: 500;
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-segmented-item:has(input:focus-visible) {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--owb-choice-focus);
+  outline-offset: 2px;
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-segmented-item-disabled {
-  border-style: dashed;
-  background: var(--ui-surface-inset);
-  color: var(--ui-foreground-muted);
+  background: transparent;
+  color: var(--ui-foreground);
   box-shadow: none;
+  opacity: .45;
   cursor: not-allowed;
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-tabs-tab {
   padding: 7px 12px;
-  border: 1px solid var(--ui-border);
-  border-radius: 5px;
-  background: var(--ui-surface);
-  color: var(--ui-foreground);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-tabs-tab:not(.ant-tabs-tab-active):not(.ant-tabs-tab-disabled):hover {
-  border-color: var(--ui-border-strong);
   background: var(--owb-choice-hover);
   color: var(--ui-foreground);
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-tabs-tab-active:not(.ant-tabs-tab-disabled) {
-  border-color: var(--owb-choice-marker);
   background: var(--owb-choice-selected);
-  box-shadow: inset 0 -3px 0 var(--owb-choice-marker);
+  box-shadow: none;
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-tabs-tab-active:not(.ant-tabs-tab-disabled) .ant-tabs-tab-btn {
   color: var(--ui-foreground);
-  font-weight: 600;
+  font-weight: 500;
   text-shadow: none;
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-tabs-tab:has(.ant-tabs-tab-btn:focus-visible) {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--owb-choice-focus);
+  outline-offset: 2px;
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-tabs-tab-btn:focus-visible {
@@ -239,54 +230,53 @@
 
 [data-ui-theme][data-theme] .owb-app .ant-tabs-ink-bar { background: transparent; }
 
-/* Vertical destinations use a leading marker; their headings stay plain. */
-[data-ui-theme][data-theme] .owb-app .owb-config-tabs > button[aria-selected="true"]:not(:disabled):not([aria-disabled="true"]) {
-  box-shadow: inset 3px 0 0 var(--owb-choice-marker);
+/* Selection icons follow their label rather than adding another accent. */
+[data-ui-theme][data-theme] .owb-app .owb-config-tabs > button > svg {
+  color: inherit;
 }
 
 [data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
   .owb-memory-navigation__source) {
-  border: 1px solid var(--ui-border);
-  background: var(--ui-surface);
-  color: var(--ui-foreground);
+  border: 0;
+  background: transparent;
+  color: var(--ui-foreground-muted);
   box-shadow: none;
 }
 
 [data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
   .owb-memory-navigation__source):not(.is-active):not([aria-current="page"]):not(:disabled):not([aria-disabled="true"]):hover {
-  border-color: var(--ui-border-strong);
   background: var(--owb-choice-hover);
   color: var(--ui-foreground);
 }
 
 [data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
   .owb-memory-navigation__source):is(.is-active, [aria-current="page"]):not(:disabled):not([aria-disabled="true"]) {
-  border-color: var(--owb-choice-marker);
   background: var(--owb-choice-selected);
   color: var(--ui-foreground);
-  box-shadow: inset 3px 0 0 var(--owb-choice-marker);
+  box-shadow: none;
+  font-weight: 500;
 }
 
 [data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
   .owb-memory-navigation__source):focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 3px;
+  outline: 2px solid var(--owb-choice-focus);
+  outline-offset: 2px;
 }
 
 [data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
   .owb-memory-navigation__source):is(:disabled, [aria-disabled="true"]) {
-  border-style: dashed;
-  background: var(--ui-surface-inset);
-  color: var(--ui-foreground-muted);
+  background: transparent;
+  color: var(--ui-foreground);
   box-shadow: none;
+  opacity: .45;
   cursor: not-allowed;
 }
 
 [data-ui-theme][data-theme] .owb-app .ant-tabs-tab-disabled {
-  border-style: dashed;
-  background: var(--ui-surface-inset);
-  color: var(--ui-foreground-muted);
+  background: transparent;
+  color: var(--ui-foreground);
   box-shadow: none;
+  opacity: .45;
   cursor: not-allowed;
 }
 
