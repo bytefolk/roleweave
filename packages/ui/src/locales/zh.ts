@@ -5,6 +5,14 @@
  * 插值用 {var}。 */
 import { zhVaultCatalog } from "./vault";
 export const zhCatalog: Record<string, string> = {
+  "office.brand": "千问办公",
+  "office.clientManaged": "工具与审批由千问办公管理。",
+  "office.budgetManaged": "预算与用量由千问办公计算。这里的预算是 RoleWeave 记录，不会限制客户端每项任务的 Token；客户端未返回用量时显示未知。",
+  "office.clientSettings": "请在千问办公客户端中设置工具与审批；RoleWeave 的工具许可和岗位模式不限制客户端工具。",
+  "office.currentModel": "千问办公当前模型",
+  "office.modelReadonly": "跟随千问办公当前模型，请在客户端中切换。",
+  "office.nativeMode": "原生客户端",
+  "office.connectionUnavailable": "启动千问办公客户端并完成本地连接。",
   "tasks.loadError": "任务看板加载失败，已保留上次成功加载的任务。",
   "tasks.loading": "正在读取任务…",
   "goals.criteriaEdit": "编辑验收标准",

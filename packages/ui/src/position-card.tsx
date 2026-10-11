@@ -21,6 +21,9 @@ export interface PositionCardProps {
    * the card header's right cluster instead of floating outside the card. */
   actions?: ReactNode;
   className?: string;
+  /** Native clients own their tool boundary; stored RoleWeave grants are not
+   * advertised as restrictions on those clients. */
+  nativeToolOwner?: string;
 }
 
 /**
@@ -46,6 +49,7 @@ export function PositionCard({
   running = false,
   actions,
   className,
+  nativeToolOwner,
 }: PositionCardProps) {
   const t = useT();
   // #413: keep the previous record on screen while the next employee loads.
@@ -129,7 +133,7 @@ export function PositionCard({
           {actions}
           <span className={cn("owb-badge", readOnly ? "owb-badge--read" : "owb-badge--approval")}>
             <Zap aria-hidden="true" size={11} />
-            {readOnly ? t("pos.readOnly") : t("pos.approval")}
+            {nativeToolOwner ? t("office.nativeMode") : readOnly ? t("pos.readOnly") : t("pos.approval")}
           </span>
           <span
             className={cn("owb-led", running && "owb-led--running")}
@@ -155,9 +159,10 @@ export function PositionCard({
                 : null
             }
           />
+          {nativeToolOwner ? <p>{t("office.budgetManaged")}</p> : null}
         </section>
 
-        {capabilities.skills.length > 0 || capabilities.mcpServers.length > 0 ? (
+        {!nativeToolOwner && (capabilities.skills.length > 0 || capabilities.mcpServers.length > 0) ? (
           <section className="owb-pos-section">
             <h3><Sparkles aria-hidden="true" size={13} />{t("pos.capabilities")}</h3>
             <div className="owb-tagrow">
@@ -172,7 +177,7 @@ export function PositionCard({
             <ShieldCheck aria-hidden="true" size={13} />
             {t("pos.perms")}
           </h3>
-          <div className="owb-tagrow">
+          {nativeToolOwner ? <p>{t("office.clientManaged")} {t("office.clientSettings")}</p> : <div className="owb-tagrow">
             {position.permissions.toolAllow.length === 0 ? (
               <span className="owb-tag owb-tag--muted">{t("pos.noAllow")}</span>
             ) : (
@@ -187,7 +192,7 @@ export function PositionCard({
                 deny {tool}
               </span>
             ))}
-          </div>
+          </div>}
         </section>
 
         <section className="owb-pos-section">

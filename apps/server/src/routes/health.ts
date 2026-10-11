@@ -1,4 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { performance } from "node:perf_hooks";
 import type { ServerResponse } from "node:http";
 import type { HealthResponse } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
@@ -6,14 +10,16 @@ import { probeEngine } from "../engine/probe.js";
 import { runtimeExecutableEnvironment } from "../engine/process-environment.js";
 import { sendJson } from "../http.js";
 import { resolveClaudeExecutable } from "../claude-binary.js";
-import { openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../codex-binary.js";
+import { CODEX_DISABLED_FEATURES, openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../codex-binary.js";
 import { resolveGeminiClient, validatedGeminiModel } from "../gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../workbuddy-binary.js";
 import { probeWorkbuddyExecutable, workbuddyConfiguration, workbuddyVersionProfile } from "../workbuddy-runtime.js";
 import { probeWorkbuddyLocal } from "../workbuddy-local.js";
+import { probeQwenOfficeLocal } from "../qwen-office-local.js";
 import { createLauncherSpawnSpec } from "../windows-launcher.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 import { LocalProviderConfigError, resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../local-provider-config.js";
+import { stopQoderCatalogProbe } from "../qoder-model-catalog.js";
 
 /** Mirrors digital-employee's claude-local model port (#184): >= 2.1.214, < 2.2.0. */
 const CLAUDE_VERSION_MIN = [2, 1, 214] as const;
@@ -30,6 +36,8 @@ export interface ClaudeLocalBinaryState {
 export interface CodexBinaryState {
   installed: boolean;
   version: string | null;
+  supported: boolean;
+  failure?: "codex.binary_unavailable" | "codex.probe_timed_out" | "codex.unsupported_cli" | "codex.probe_output_limit";
 }
 
 export interface GeminiBinaryState {
@@ -64,6 +72,8 @@ interface VersionProbeResult {
   stderr: string;
   error?: NodeJS.ErrnoException;
   timedOut?: boolean;
+  outputLimit?: boolean;
+  detachedStreams?: boolean;
 }
 
 function killVersionProbe(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
@@ -105,6 +115,7 @@ function runQoderProbe(
   env: NodeJS.ProcessEnv,
   timeoutMs: number,
   platform: NodeJS.Platform,
+  options: { cwd?: string; cleanupTree?: boolean } = {},
 ): Promise<VersionProbeResult> {
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>;
@@ -115,6 +126,7 @@ function runQoderProbe(
         stdio: ["ignore", "pipe", "pipe"],
         detached: process.platform !== "win32",
         windowsHide: true,
+        ...(options.cwd ? { cwd: options.cwd } : {}),
       });
     } catch (error) {
       resolve({ status: null, stdout: "", stderr: "", error: error as NodeJS.ErrnoException });
@@ -125,8 +137,21 @@ function runQoderProbe(
     let stderr = "";
     let settled = false;
     let timedOut = false;
+    let outputBytes = 0;
+    let outputLimit = false;
+    let cleanupPromise: Promise<void> | undefined;
+    let exitedCode: number | null | undefined;
+    const startedAt = performance.now();
     let timer: ReturnType<typeof setTimeout>;
     let reapTimer: ReturnType<typeof setTimeout> | undefined;
+    const stop = (): Promise<void> => {
+      if (options.cleanupTree) {
+        cleanupPromise ??= stopQoderCatalogProbe(child, { platform });
+        return cleanupPromise;
+      }
+      killVersionProbe(child, "SIGKILL");
+      return Promise.resolve();
+    };
     const finish = (result: VersionProbeResult): void => {
       if (settled) return;
       settled = true;
@@ -139,6 +164,10 @@ function runQoderProbe(
     };
     timer = setTimeout(() => {
       timedOut = true;
+      if (options.cleanupTree) {
+        void stop().finally(() => finish({ status: null, stdout: "", stderr: "", timedOut: true }));
+        return;
+      }
       killVersionProbe(child, "SIGKILL");
       // Normally the exit event arrives immediately after SIGKILL. Keep a
       // short fallback so a broken platform launcher cannot extend the probe
@@ -147,12 +176,20 @@ function runQoderProbe(
         finish({ status: null, stdout: "", stderr: "", timedOut: true });
       }, 100);
     }, timeoutMs);
-    child.stdout?.on("data", (chunk: Buffer | string) => {
-      stdout = boundedAppend(stdout, chunk);
-    });
-    child.stderr?.on("data", (chunk: Buffer | string) => {
-      stderr = boundedAppend(stderr, chunk);
-    });
+    const collect = (chunk: Buffer | string, isStdout: boolean) => {
+      if (settled || outputLimit) return;
+      outputBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk, "utf8");
+      if (options.cleanupTree && outputBytes > QODER_VERSION_PROBE_MAX_OUTPUT) {
+        outputLimit = true;
+        clearTimeout(timer);
+        void stop().finally(() => finish({ status: null, stdout: "", stderr: "", outputLimit: true }));
+        return;
+      }
+      if (isStdout) stdout = boundedAppend(stdout, chunk);
+      else stderr = boundedAppend(stderr, chunk);
+    };
+    child.stdout?.on("data", (chunk: Buffer | string) => collect(chunk, true));
+    child.stderr?.on("data", (chunk: Buffer | string) => collect(chunk, false));
     child.once("error", (error) => {
       finish({
         status: null,
@@ -165,8 +202,23 @@ function runQoderProbe(
     // `exit` is intentionally the completion signal. `close` also waits for
     // every inherited stdio descriptor in the descendant tree to disappear.
     child.once("exit", (code) => {
+      if (options.cleanupTree) {
+        if (platform === "win32" && !timedOut && !outputLimit) {
+          // An exited Windows PID is no longer an owned tree root. Require
+          // closed stdio before success; a surviving helper must not look ready.
+          exitedCode = code;
+          clearTimeout(timer);
+          reapTimer = setTimeout(() => finish({ status: null, stdout: "", stderr: "", detachedStreams: true }), Math.min(100, Math.max(1, timeoutMs - (performance.now() - startedAt))));
+          return;
+        }
+        void stop().finally(() => finish({ status: timedOut || outputLimit ? null : code, stdout: "", stderr: "", ...(timedOut ? { timedOut: true } : {}), ...(outputLimit ? { outputLimit: true } : {}) }));
+        return;
+      }
       killVersionProbe(child, "SIGKILL");
       finish({ status: timedOut ? null : code, stdout: "", stderr: "", ...(timedOut ? { timedOut: true } : {}) });
+    });
+    child.once("close", () => {
+      if (options.cleanupTree && platform === "win32" && exitedCode !== undefined && !timedOut && !outputLimit) finish({ status: exitedCode, stdout: "", stderr: "" });
     });
   });
 }
@@ -183,6 +235,7 @@ export interface HostHealthInput {
   gemini?: GeminiBinaryState;
   workbuddy?: WorkbuddyBinaryState;
   workbuddyLocal?: { configured: boolean; code: string; version?: string };
+  qwenOfficeLocal?: { configured: boolean; code: string; version?: string };
   platform?: NodeJS.Platform;
 }
 
@@ -351,55 +404,80 @@ export function probeClaudeLocalBinary(
 /**
  * Bounded, local-only preflight for the Codex CLI used by the bundled engine.
  *
- * Unlike the Claude and Qoder probes there is no supported-version window to
- * check: the Codex engine (#206) deliberately makes no tier-1 qualification
- * claim, because its model-visible tool set cannot be emptied. Pinning a range
- * here would imply a qualification that was never performed, so the probe
- * reports installation and the announced version only.
+ * Checks the resolved executable's actual isolation flags and complete
+ * feature-disable contract, without reading login stores or sending a prompt.
+ * This is CLI compatibility, not a model/account or empty-tool-table claim.
  */
-export function probeCodexBinary(
+export async function probeCodexBinary(
   env: NodeJS.ProcessEnv,
   timeoutMs = 3000,
   platform: NodeJS.Platform = process.platform,
-): CodexBinaryState {
+): Promise<CodexBinaryState> {
   const command = resolveCodexExecutable(env, platform);
   if (command === null) {
-    return { installed: false, version: null };
+    return { installed: false, version: null, supported: false, failure: "codex.binary_unavailable" };
   }
-  let probe: ReturnType<typeof spawnSync>;
-  // #221 review B4: this probe used to pass `shell: true` for a Windows
-  // launcher, on a path that comes from DIGITAL_EMPLOYEE_CODEX_COMMAND.
-  // resolveCodexExecutable proves the target is an executable regular file but
-  // not that the path is free of cmd metacharacters, so it goes through the
-  // same escaped, shell-free cmd.exe construction #125 established for the turn
-  // paths — the shared module, not a second copy of it.
-  const spec = createLauncherSpawnSpec(
-    command,
-    ["--version"],
-    runtimeExecutableEnvironment(env),
-    platform,
-  );
+  let temporaryRoot: string | undefined;
+  let version: string | null = null;
+  const deadline = performance.now() + Math.max(timeoutMs, 1);
+  const failed = (failure: NonNullable<CodexBinaryState["failure"]>): CodexBinaryState => ({ installed: true, version, supported: false, failure });
   try {
-    probe = spawnSync(spec.command, spec.args, {
-      ...spec.options,
-      encoding: "utf8",
-      killSignal: "SIGKILL",
-      timeout: timeoutMs,
-      windowsHide: true,
-    });
+    temporaryRoot = mkdtempSync(path.join(os.tmpdir(), "roleweave-codex-probe-"));
+    chmodSync(temporaryRoot, 0o700);
+    const probeEnv = runtimeExecutableEnvironment(env);
+    for (const [name, keys] of [
+      ["home", ["HOME", "USERPROFILE"]], ["codex", ["CODEX_HOME"]],
+      ["config", ["XDG_CONFIG_HOME"]], ["cache", ["XDG_CACHE_HOME"]],
+      ["data", ["XDG_DATA_HOME"]], ["state", ["XDG_STATE_HOME"]],
+      ["runtime", ["XDG_RUNTIME_DIR"]], ["tmp", ["TMPDIR", "TMP", "TEMP"]],
+      ["appdata", ["APPDATA"]], ["local-appdata", ["LOCALAPPDATA"]],
+    ] as const) {
+      const directory = path.join(temporaryRoot, name);
+      mkdirSync(directory, { mode: 0o700 });
+      for (const key of keys) probeEnv[key] = directory;
+    }
+    const probe = async (args: string[]) => {
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) return { status: null, stdout: "", stderr: "", timedOut: true } as VersionProbeResult;
+      return runQoderProbe(command, args, probeEnv, remaining, platform, { cwd: temporaryRoot, cleanupTree: true });
+    };
+    const check = (result: VersionProbeResult): CodexBinaryState | undefined => {
+      if (result.timedOut) return failed("codex.probe_timed_out");
+      if (result.outputLimit) return failed("codex.probe_output_limit");
+      if (result.detachedStreams) return failed("codex.unsupported_cli");
+      if (Buffer.byteLength(result.stdout, "utf8") >= QODER_VERSION_PROBE_MAX_OUTPUT || Buffer.byteLength(result.stderr, "utf8") >= QODER_VERSION_PROBE_MAX_OUTPUT) return failed("codex.probe_output_limit");
+      if (result.error !== undefined || result.status !== 0) return failed("codex.unsupported_cli");
+      if (/unknown (?:feature(?: flag)?|configuration (?:field|key))/i.test(`${result.stdout}\n${result.stderr}`)) return failed("codex.unsupported_cli");
+      return undefined;
+    };
+    const announced = await probe(["--version"]);
+    const versionFailure = check(announced);
+    if (versionFailure) return versionFailure;
+    version = /(\d+\.\d+\.\d+)/.exec(announced.stdout || announced.stderr)?.[1] ?? null;
+    const featureArgs = CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]);
+    const help = await probe(["exec", "--strict-config", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--json", ...featureArgs, "--help"]);
+    const helpFailure = check(help);
+    if (helpFailure) return helpFailure;
+    if (!["--strict-config", "--ignore-user-config", "--ephemeral", "--skip-git-repo-check", "--sandbox", "--json"].every((flag) => new RegExp(`(?:^|[ \\t\\r\\n,])${flag}(?=[ \\t\\r\\n,=]|$)`).test(help.stdout))) return failed("codex.unsupported_cli");
+    // --help can exit before feature names are validated. Execute only the
+    // local feature-list command with the same complete disable switches.
+    // This checks accepted names, not an effective tool table: some CLIs
+    // report derived features (such as unified_exec) as true even when their
+    // tool family is disabled by shell_tool. Keep every adapter switch.
+    const features = await probe([...featureArgs, "features", "list"]);
+    const featureFailure = check(features);
+    if (featureFailure) return featureFailure;
+    const rows = features.stdout.split(/\r?\n/).map((line) => line.trim().split(/[ \t]+/));
+    if (!CODEX_DISABLED_FEATURES.every((feature) => {
+      const matches = rows.filter((row) => row[0] === feature);
+      return matches.length === 1 && matches[0]!.length >= 3 && /^(?:true|false)$/.test(matches[0]!.at(-1)!);
+    })) return failed("codex.unsupported_cli");
+    return { installed: true, version, supported: true };
   } catch {
-    return { installed: false, version: null };
+    return failed("codex.binary_unavailable");
+  } finally {
+    if (temporaryRoot) { try { rmSync(temporaryRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 25 }); } catch { /* owned disposable probe only */ } }
   }
-  if (probe.error !== undefined || probe.status !== 0) {
-    return { installed: false, version: null };
-  }
-  const announced = typeof probe.stdout === "string" && probe.stdout.trim().length > 0
-    ? probe.stdout
-    : typeof probe.stderr === "string"
-      ? probe.stderr
-      : "";
-  const match = /(\d+\.\d+\.\d+)/.exec(announced);
-  return { installed: true, version: match ? match[1]! : null };
 }
 
 /** Gemini uses the same bounded, no-shell local version preflight as Codex. */
@@ -499,10 +577,11 @@ export function hostHealth({
   env,
   qoderLocal = { installed: false, version: null, supported: false, failure: "unavailable" },
   claudeLocal = { installed: false, version: null, supported: false },
-  codex = { installed: false, version: null },
+  codex = { installed: false, version: null, supported: false },
   gemini = { installed: false, version: null },
   workbuddy = { installed: false, version: null, supported: false },
   workbuddyLocal = { configured: false, code: "workbuddy.client_unavailable" },
+  qwenOfficeLocal = { configured: false, code: "qwen_office.client_unavailable" },
   platform = process.platform,
 }: HostHealthInput): HealthResponse["hosts"] {
   const bundledQoder = isBundledQoderEngine(engineVersion);
@@ -541,8 +620,11 @@ export function hostHealth({
     ...(typeof codexModel === "string" ? { model: codexModel } : {}),
   };
   const codexModelNextStep = "OPENAI_MODEL 不是合法的模型标识（首字符为字母或数字，其余限 A-Z a-z 0-9 . _ : / -，长度 ≤ 256）；请更正或清空后重启工作台";
-  const codexConfigured = codex.installed && codexProviderConfigured && codexModelUsable;
-  const codexLocalConfigured = codex.installed && codexModelUsable;
+  const codexConfigured = codex.installed && codex.supported && codexProviderConfigured && codexModelUsable;
+  const codexLocalConfigured = codex.installed && codex.supported && codexModelUsable;
+  const codexCliNextStep = codex.failure === "codex.probe_timed_out"
+    ? "Codex CLI 本地能力检查超时，请检查安装后重新刷新。"
+    : "当前 Codex CLI 不支持 RoleWeave 需要的功能开关，请升级 CLI 或通过 DIGITAL_EMPLOYEE_CODEX_COMMAND 明确指定兼容安装。";
   const geminiModel = validatedGeminiModel(env.GEMINI_MODEL);
   const geminiModelUsable = geminiModel !== null;
   // Both supported Google clients can reuse a cached local account in
@@ -617,6 +699,8 @@ export function hostHealth({
         ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
         : !codex.installed
           ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
+          : !codex.supported
+            ? { nextStep: codexCliNextStep }
           : !codexProviderConfigured
             ? { nextStep: "设置 OPENAI_API_KEY（如需自建或中转端点，另设 OPENAI_BASE_URL）后重启工作台；若要用 Codex 订阅登录，请改选 Codex（本地登录）" }
             : !codexModelUsable
@@ -633,6 +717,8 @@ export function hostHealth({
         ? { nextStep: "Codex 仅支持 RoleWeave 内置 bundled qoder-engine；当前外部引擎无法执行 Codex 回合" }
         : !codex.installed
           ? { nextStep: "安装 Codex CLI 并确保 codex 在 PATH 上（或用 DIGITAL_EMPLOYEE_CODEX_COMMAND 指定二进制路径）" }
+          : !codex.supported
+            ? { nextStep: codexCliNextStep }
           : !codexModelUsable
             ? { nextStep: codexModelNextStep }
             : !engineAvailable
@@ -648,6 +734,17 @@ export function hostHealth({
       ...(!bundledElectronEngine || !engineAvailable
         ? { nextStep: "WorkBuddy 本地登录需要 RoleWeave 内置引擎，请恢复内置引擎后重试。" }
         : !workbuddyLocal.configured ? { nextStep: "打开 WorkBuddy 客户端并完成登录，再刷新连接。" } : {}),
+    },
+    "qwen-office-local": {
+      configured: qwenOfficeLocal.configured,
+      ready: bundledElectronEngine && engineAvailable && qwenOfficeLocal.configured,
+      modelPinnable: false,
+      localProbe: { installed: qwenOfficeLocal.configured, supported: qwenOfficeLocal.configured, version: qwenOfficeLocal.version ?? null,
+        ...(!qwenOfficeLocal.configured ? { failure: qwenOfficeLocal.code } : {}) },
+      connection: { source: "official", kind: "official", billing: "unknown", status: qwenOfficeLocal.configured ? "configured" : "invalid" },
+      ...(!bundledElectronEngine || !engineAvailable
+        ? { nextStep: "千问办公需要 RoleWeave 内置引擎，请恢复内置引擎后重试。" }
+        : !qwenOfficeLocal.configured ? { nextStep: "打开并登录千问办公，启用客户端本地控制接口后刷新。工具和审批由千问办公管理。" } : {}),
     },
     workbuddy: (() => {
       // Health describes local configuration, not authentication, model quota,
@@ -751,10 +848,11 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
     bundledElectronEngine: ctx.config.bundledElectronEngine,
   });
   const claudeLocal = probeClaudeLocalBinary(process.env);
-  const codex = probeCodexBinary(process.env);
+  const codex = await probeCodexBinary(process.env);
   const gemini = probeGeminiBinary(process.env);
   const workbuddy = probeWorkbuddyBinary(process.env);
   const workbuddyLocal = ctx.config.bundledElectronEngine ? await probeWorkbuddyLocal(process.env) : undefined;
+  const qwenOfficeLocal = ctx.config.bundledElectronEngine ? await probeQwenOfficeLocal(process.env) : undefined;
   const qoderLocal = isBundledQoderEngine(probe.version)
     ? await probeQoderLocalBinary(process.env)
     : undefined;
@@ -770,6 +868,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
     gemini,
     workbuddy,
     ...(workbuddyLocal ? { workbuddyLocal } : {}),
+    ...(qwenOfficeLocal ? { qwenOfficeLocal } : {}),
   });
   const body: HealthResponse = {
     status: "ok",

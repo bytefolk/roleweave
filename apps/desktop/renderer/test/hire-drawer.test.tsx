@@ -22,6 +22,8 @@ const AVAILABILITY: Record<TurnEngine, TurnEngineAvailability> = {
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
   "workbuddy-local": { configured: true, ready: true },
+  "qwen-office-local": { configured: true, ready: true },
+
   gemini: { configured: false, ready: false },
   "openai-compatible": { configured: false, ready: false },
 };
@@ -143,6 +145,32 @@ const reviewedMcpGrant = { id: "repository", tools: ["search", "read"] };
 
 describe("selection-first employee creation", () => {
   afterEach(() => vi.useRealTimers());
+  it("does not promise RoleWeave tool restrictions when Office is drafting a candidate", () => {
+    renderCreateDrawer({ ...generationProps(), conversationEngine: "qwen-office-local" });
+    fireEvent.click(screen.getByText("让 Agent 帮我生成草案"));
+    const drafting = screen.getByLabelText("岗位创建对话");
+    expect(within(drafting).getByText("工具与审批由千问办公管理。")).toBeInTheDocument();
+    expect(drafting.querySelector(".owb-hire-conversation__meta")).toHaveTextContent("工具与审批由千问办公管理。");
+  });
+  it("binds Office to its native client and drops unrelated grants when changing Hosts", async () => {
+    const bridge = fixtureBridge();
+    renderCreateDrawer({ ...generationProps() });
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    await configureReviewedCapabilities();
+    fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
+    fireEvent.click(screen.getByRole("option", { name: "千问办公" }));
+    expect(screen.getByRole("button", { name: /员工 Agent/ })).toHaveTextContent("千问办公");
+    expect(screen.queryByRole("button", { name: /连接方式/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/工具与审批由千问办公管理/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("高级配置"));
+    expect(screen.queryByRole("button", { name: "Write" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("附加能力与授权")).not.toBeInTheDocument();
+    expect(screen.getByText(/请在千问办公客户端中设置工具与审批/)).toBeInTheDocument();
+    expect(screen.getByText(/这里的预算是 RoleWeave 记录/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledOnce());
+    expect(bridge.hire.mock.calls[0]?.[0]).toMatchObject({ agentEngine: "qwen-office-local", mode: "read_only", permissions: { tools: ["Read"], rules: [], skills: [], mcpServers: [] } });
+  });
   it("fills a useful template in one click and creates without manual input or broader defaults", async () => {
     const bridge = fixtureBridge();
     const onHired = vi.fn();

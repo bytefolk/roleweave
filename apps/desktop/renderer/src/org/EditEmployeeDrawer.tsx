@@ -19,6 +19,7 @@ import { useT } from "@roleweave/ui";
 import type { HirePermissions, PositionProfilePatch, PositionProfileResult } from "@roleweave/shared";
 import type { PositionCardData } from "@roleweave/ui";
 import { CapabilityPicker, PermissionPolicyEditor } from "./PermissionsEditor";
+import type { TurnEngine } from "../turns/types";
 
 const MAX_NAME_BYTES = 128;
 
@@ -37,6 +38,7 @@ function byteLength(value: string): number {
 export function EditEmployeeDrawer({
   open,
   position,
+  engine,
   busy,
   onClose,
   onSave,
@@ -44,11 +46,13 @@ export function EditEmployeeDrawer({
   open: boolean;
   /** The selected position record; null while the card is still loading. */
   position: PositionCardData | null;
+  engine?: TurnEngine;
   busy: boolean;
   onClose: () => void;
   onSave: (patch: PositionProfilePatch) => Promise<{ ok: true; name: string } | { ok: false; code: string }>;
 }) {
   const t = useT();
+  const clientManaged = engine === "qwen-office-local";
   const [name, setName] = useState("");
   const [mode, setMode] = useState<PositionCardData["mode"]>("read_only");
   const [permissions, setPermissions] = useState<HirePermissions>({ tools: [], rules: [] });
@@ -74,8 +78,8 @@ export function EditEmployeeDrawer({
   const nameValid = trimmedName.length > 0 && byteLength(trimmedName) <= MAX_NAME_BYTES;
   const changed = position !== null && (
     trimmedName !== position.name
-    || mode !== position.mode
-    || (initial !== null && permissions !== initial)
+    || (!clientManaged && mode !== position.mode)
+    || (!clientManaged && initial !== null && permissions !== initial)
   );
   const canSave = position !== null && nameValid && changed && !saving && !busy;
 
@@ -85,8 +89,8 @@ export function EditEmployeeDrawer({
     // permission grant this drawer did not intend to touch stays byte-identical.
     const patch: PositionProfilePatch = {};
     if (trimmedName !== position.name) patch.name = trimmedName;
-    if (mode !== position.mode) patch.mode = mode;
-    if (initial !== null && permissions !== initial) patch.permissions = permissions;
+    if (!clientManaged && mode !== position.mode) patch.mode = mode;
+    if (!clientManaged && initial !== null && permissions !== initial) patch.permissions = permissions;
     setSaving(true);
     setError(null);
     const outcome = await onSave(patch);
@@ -98,7 +102,7 @@ export function EditEmployeeDrawer({
     }
     const copyKey = FAILURE_COPY_KEYS[outcome.code];
     setError(copyKey !== undefined ? t(copyKey) : t("profile.failUnknown", { code: outcome.code }));
-  }, [canSave, initial, messageApi, mode, onClose, onSave, permissions, position, t, trimmedName]);
+  }, [canSave, clientManaged, initial, messageApi, mode, onClose, onSave, permissions, position, t, trimmedName]);
 
   return (
     <Drawer
@@ -130,7 +134,7 @@ export function EditEmployeeDrawer({
                   aria-invalid={!nameValid}
                 />
               </label>
-              <label>
+              {!clientManaged ? <label>
                 <span>{t("profile.mode")}</span>
                 <Select
                   value={mode}
@@ -140,14 +144,16 @@ export function EditEmployeeDrawer({
                     { value: "approval_required", label: t("profile.modeApproval") },
                   ]}
                 />
-              </label>
+              </label> : null}
             </div>
             {nameValid ? null : <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{t("profile.nameTooLong")}</p>}
             {position !== null ? <p className="owb-hire-capability-note">{t("profile.idNote", { id: position.id })}</p> : null}
 
-            <PermissionPolicyEditor permissions={permissions} onChange={setPermissions} />
-            <p className="owb-hire-capability-note">{t("profile.permissionsNote")}</p>
-            <CapabilityPicker permissions={permissions} onChange={setPermissions} />
+            {clientManaged ? <p className="owb-hire-capability-note">{t("office.clientManaged")} {t("office.clientSettings")}</p> : <>
+              <PermissionPolicyEditor permissions={permissions} onChange={setPermissions} />
+              <p className="owb-hire-capability-note">{t("profile.permissionsNote")}</p>
+              <CapabilityPicker permissions={permissions} onChange={setPermissions} />
+            </>}
           </div>
         </div>
         <footer className="owb-modal__footer owb-hire-footer">

@@ -451,13 +451,17 @@ function AppInner({
     setEditPosition(null);
     void window.owb.position(editTargetId).then((res) => {
       if (!alive) return;
-      const body = res.body as { position?: PositionCardData; code?: string };
+      const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown };
       if (res.status !== 200 || !body.position) {
         setEditTargetId(undefined);
         setOrgFeedback({ tone: "warn", text: t("org.stalePosition") });
         return;
       }
       setEditPosition(normalizePositionForDisplay(body.position, locale));
+      if (isTurnEngine(body.agentEngine)) {
+        const targetEngine = body.agentEngine;
+        setPositionEngines(current => ({ ...current, [body.position!.id]: targetEngine }));
+      }
     }).catch(() => {
       if (alive) setEditTargetId(undefined);
     });
@@ -1828,6 +1832,13 @@ function AppInner({
       model: health?.hosts?.["workbuddy-local"]?.model,
       connection: health?.hosts?.["workbuddy-local"]?.connection,
     },
+    "qwen-office-local": {
+      configured: health?.hosts?.["qwen-office-local"]?.configured === true,
+      ready: health?.hosts?.["qwen-office-local"]?.ready === true,
+      reason: health?.hosts?.["qwen-office-local"]?.nextStep ?? t("office.connectionUnavailable"),
+      modelPinnable: false,
+      connection: health?.hosts?.["qwen-office-local"]?.connection,
+    },
     gemini: {
       configured: health?.hosts?.gemini?.configured === true,
       ready: health?.hosts?.gemini?.ready === true,
@@ -2160,6 +2171,7 @@ function AppInner({
             <EditEmployeeDrawer
               open={editTargetId !== undefined && editPosition !== null}
               position={editPosition}
+              engine={editPosition ? engineForPosition(editPosition.id) : undefined}
               busy={orgBusy}
               onClose={() => setEditTargetId(undefined)}
               onSave={(patch) => saveEmployeeProfile(patch, editTargetId)}
@@ -2397,6 +2409,7 @@ function AppInner({
               <div className="owb-position-column">
                 <PositionCard
                   position={card.data}
+                  nativeToolOwner={card.data && engineForPosition(card.data.id) === "qwen-office-local" ? engineLabel("qwen-office-local") : undefined}
                   loading={card.loading}
                   notFound={card.notFound}
                   running={selectedId !== null && runningPositionIds.has(selectedId)}

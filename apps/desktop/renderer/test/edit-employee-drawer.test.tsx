@@ -46,6 +46,17 @@ function renderDrawer(overrides: {
 }
 
 describe("EditEmployeeDrawer", () => {
+  it("keeps Office tools and modes in the client while allowing a name-only edit", async () => {
+    const onSave = vi.fn().mockResolvedValue({ ok: true, name: "Office reviewer" });
+    render(<EditEmployeeDrawer open position={POSITION} engine="qwen-office-local" busy={false} onClose={vi.fn()} onSave={onSave} />);
+    expect(screen.getByText(/工具与审批由千问办公管理/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Write" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue("./knowledge/**")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByDisplayValue("Docs Writer"), { target: { value: "Office reviewer" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存改动" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ name: "Office reviewer" }));
+  });
   it("prefills the record and keeps saving disabled until something changes", () => {
     const { onSave } = renderDrawer();
     expect(screen.getByDisplayValue("Docs Writer")).toBeInTheDocument();

@@ -263,6 +263,7 @@ test("the WSL supervisor accepts coalesced bounded responses and rejects an over
     if (name === "node:fs") return { readFileSync: () => { throw new Error("no fixture process descendants"); } };
     if (name === "node:path") return path;
     if (name === "node:child_process") return { spawn: () => server };
+    if (name === "./qwen-office-bridge.cjs") return require("../src/qwen-office-bridge.cjs");
     if (name === "./workbuddy-bridge.cjs") return {
       ...require("../src/workbuddy-bridge.cjs"),
       createPrivateBridge: (handler) => {

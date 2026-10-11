@@ -2,6 +2,14 @@
  * test; keep the two files in lockstep. */
 import { enVaultCatalog } from "./vault";
 export const enCatalog: Record<string, string> = {
+  "office.brand": "Qwen Office",
+  "office.clientManaged": "Qwen Office manages tools and approvals.",
+  "office.budgetManaged": "Qwen Office calculates budgets and usage. These RoleWeave budget records do not impose a per-task token cap on the client. Usage remains unknown when the client does not report it.",
+  "office.clientSettings": "Configure tools and approvals in the Qwen Office client. RoleWeave tool permissions and position modes do not restrict client tools.",
+  "office.currentModel": "Current Qwen Office model",
+  "office.modelReadonly": "Uses the current Qwen Office model. Change it in the client.",
+  "office.nativeMode": "Native client",
+  "office.connectionUnavailable": "Start Qwen Office and complete the local connection.",
   "tasks.loadError": "The task board could not be loaded. The last successful task snapshot is preserved.",
   "tasks.loading": "Loading tasks…",
   "goals.criteriaEdit": "Edit acceptance criteria",

@@ -47,6 +47,16 @@ const POSITION: PositionCardData = {
 };
 
 describe("PositionCard (D1 spec §3)", () => {
+  it("does not present stored RoleWeave grants or read-only mode as an Office client boundary", () => {
+    render(<PositionCard position={POSITION} nativeToolOwner="千问办公" />);
+    expect(screen.getByText("原生客户端")).toBeInTheDocument();
+    expect(screen.getByText(/工具与审批由千问办公管理/)).toBeInTheDocument();
+    expect(screen.getByText(/这里的预算是 RoleWeave 记录/)).toBeInTheDocument();
+    expect(screen.queryByText("只读模式")).not.toBeInTheDocument();
+    expect(screen.queryByText("Read")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Repo Owner" })).toBeInTheDocument();
+    expect(screen.getByText("岗位知识库")).toBeInTheDocument();
+  });
   it("shows empty guidance when no position selected", () => {
     render(<PositionCard position={null} />);
     expect(screen.getByRole("heading", { name: "了解员工与职责" })).toBeInTheDocument();
