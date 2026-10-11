@@ -6,6 +6,13 @@ import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 import { readPositionAgentBinding, resolvePositionAgentEngine } from "../src/agent-binding.js";
 import type { SessionStore } from "../src/sessions/store.js";
 import type { TurnStore } from "../src/turns/store.js";
+import { qoderModelCatalog } from "../src/qoder-model-catalog.js";
+
+// Routing assertions use a fake turn driver and must also isolate catalog
+// discovery. An operator's PATH may resolve `qoder` to a desktop IDE launcher.
+function isolateCatalog(t: test.TestContext) {
+  t.mock.method(qoderModelCatalog, "read", async () => ({ status: "unavailable", options: [] }));
+}
 
 test("legacy engine migration ignores failed history and keeps the requested engine", async () => {
   const server = await startTestServer();
@@ -56,7 +63,8 @@ test("operator can bind an imported employee to Codex before its first task", as
   }
 });
 
-test("operator can choose an imported employee model before its first task", async () => {
+test("operator can choose an imported employee model before its first task", async (t) => {
+  isolateCatalog(t);
   const server = await startTestServer();
   const workspace = await copyExampleWorkspace();
   server.ctx.config.bundledElectronEngine = true;
@@ -87,7 +95,8 @@ test("operator can choose an imported employee model before its first task", asy
   }
 });
 
-test("employee model selection persists, reaches the driver, and preserves the same session context", async () => {
+test("employee model selection persists, reaches the driver, and preserves the same session context", async (t) => {
+  isolateCatalog(t);
   const seen: TurnRunRequest[] = [];
   const server = await startTestServer(undefined, { async turnRun(request) {
     seen.push(request);
@@ -144,7 +153,8 @@ test("employee model selection persists, reaches the driver, and preserves the s
   }
 });
 
-test("changing the model during execution affects the next turn and preserves the in-flight receipt", async () => {
+test("changing the model during execution affects the next turn and preserves the in-flight receipt", async (t) => {
+  isolateCatalog(t);
   const seen: TurnRunRequest[] = [];
   let notifyStarted!: () => void;
   let finishFirst!: () => void;
