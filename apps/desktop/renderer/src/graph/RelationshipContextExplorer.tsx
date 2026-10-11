@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { ArrowRight, FileSearch, Layers3, Network, ShieldCheck, UserRound } from "lucide-react";
+import { useMemo, type ReactNode } from "react";
+import { ArrowRight, FileSearch, Network, UserRound } from "lucide-react";
 import type { RelationshipEdge, RelationshipKind, RelationshipNode, RelationshipNodeKind } from "@roleweave/shared/relationship-graph";
 import { useT } from "@roleweave/ui";
 import { useRelationshipContextCopy } from "../locales/relationship-context";
@@ -9,6 +9,8 @@ export interface RelationshipContextExplorerProps {
   edges: RelationshipEdge[];
   focusId?: string;
   focusMissing?: boolean;
+  guideActive?: boolean;
+  actions?: ReactNode;
   onFocus: (id: string) => void;
   onSelectEdge: (id: string) => void;
 }
@@ -19,8 +21,14 @@ function isSelector(node: RelationshipNode) {
   return node.facts?.some(fact => fact.key === "kind" && fact.value === "selector") ?? false;
 }
 
+export function isRelationshipConfiguration(node: RelationshipNode): boolean {
+  return isSelector(node)
+    || ["capability", "policy", "host", "workspace"].includes(node.kind)
+    || (node.kind === "source" && (node.facts?.some(fact => fact.key === "kind" && fact.value === "context_provider") ?? false));
+}
+
 /** A bounded, readable view of the same projection used by the graph and list. */
-export function RelationshipContextExplorer({ nodes, edges, focusId, focusMissing = false, onFocus, onSelectEdge }: RelationshipContextExplorerProps) {
+export function RelationshipContextExplorer({ nodes, edges, focusId, focusMissing = false, actions, onFocus, onSelectEdge }: RelationshipContextExplorerProps) {
   const t = useT();
   const copy = useRelationshipContextCopy();
   const nodesById = useMemo(() => new Map(nodes.map(node => [node.id, node])), [nodes]);
@@ -47,51 +55,47 @@ export function RelationshipContextExplorer({ nodes, edges, focusId, focusMissin
     const employee = nodes.find(node => node.kind === "agent" && edges.some(edge => edge.kind === "declares_source" && edge.source === node.id)) ?? nodes.find(node => node.kind === "agent");
     const resource = nodes.find(node => node.kind === "resource" && !isSelector(node) && edges.some(edge => edge.kind === "contains_resource" && edge.target === node.id))
       ?? nodes.find(node => node.kind === "resource" && !isSelector(node)) ?? nodes.find(node => node.kind === "source");
-    const permission = nodes.find(node => node.kind === "policy") ?? nodes.find(node => node.kind === "capability")
-      ?? nodes.find(node => node.kind === "agent" && edges.some(edge => edge.source === node.id && ["declares_allow", "declares_deny", "has_policy"].includes(edge.kind)));
     const starters = [
-      { icon: UserRound, title: copy.employeeQuestion, help: copy.employeeQuestionHelp, node: employee },
-      { icon: FileSearch, title: copy.sourceQuestion, help: copy.sourceQuestionHelp, node: resource },
-      { icon: ShieldCheck, title: copy.permissionQuestion, help: copy.permissionQuestionHelp, node: permission },
+      { icon: UserRound, title: copy.employeeQuestion, action: copy.employeeShortcut, node: employee },
+      { icon: FileSearch, title: copy.sourceQuestion, action: copy.sourceShortcut, node: resource },
     ];
     return <section className="owb-rgraph__context owb-rgraph__welcome" aria-label={copy.contextTitle}>
-      <div className="owb-rgraph__welcome-intro"><span className="owb-rgraph__focus-eyebrow"><Layers3 size={16} aria-hidden="true" />{copy.guideTitle}</span><h2>{copy.welcomeTitle}</h2><p>{copy.welcomeIntro}</p></div>
-      <div className="owb-rgraph__schema-example"><small>{copy.example}</small><div className="owb-rgraph__schema-chain">
-        <span className="owb-rgraph__schema-node"><UserRound size={16} aria-hidden="true" />{copy.exampleEmployee}</span>
-        <span className="owb-rgraph__schema-relation">{t("graph.relation.declares_source")}<ArrowRight size={16} aria-hidden="true" /></span>
-        <span className="owb-rgraph__schema-node">{copy.exampleSource}</span>
-        <span className="owb-rgraph__schema-relation">{t("graph.relation.contains_resource")}<ArrowRight size={16} aria-hidden="true" /></span>
-        <span className="owb-rgraph__schema-node">{copy.exampleResource}</span>
-      </div></div>
-      <div className="owb-rgraph__question-starters"><h2>{copy.startersTitle}</h2>{starters.map(({ icon: Icon, title, help, node }) => <button className="owb-rgraph__question-starter" key={title} type="button" disabled={!node} onClick={() => node && onFocus(node.id)}>
-        <Icon size={19} aria-hidden="true" /><span><strong>{title}</strong><small>{help}</small><em>{node?.label ?? copy.starterUnavailable}</em></span><ArrowRight size={16} aria-hidden="true" />
+      <div className="owb-rgraph__welcome-intro"><p>{copy.browseObject}</p></div>
+      <div className="owb-rgraph__question-starters">{starters.map(({ icon: Icon, title, action, node }) => <button className="owb-rgraph__question-starter" key={title} type="button" aria-label={`${title} ${action}: ${node?.label ?? copy.starterUnavailable}`} disabled={!node} onClick={() => node && onFocus(node.id)}>
+        <Icon size={19} aria-hidden="true" /><span><strong>{action}</strong><small>{node ? `${copy.guideTryEmployee} ${node.label}` : copy.starterUnavailable}</small></span><ArrowRight size={16} aria-hidden="true" />
       </button>)}</div>
       {!nodes.length ? <p className="owb-rgraph__context-empty" role="status">{copy.emptyObjects}</p> : null}
     </section>;
   }
 
   const nodeType = (node: RelationshipNode) => isSelector(node) ? copy.selector : t(`graph.kind.${node.kind}`);
-  const endpoint = (node: RelationshipNode) => node.id === focus.id
-    ? <span className="owb-rgraph__relation-endpoint is-focus"><strong>{node.label}</strong><small>{nodeType(node)}</small></span>
-    : <button type="button" className="owb-rgraph__neighbor-button" aria-label={`${copy.exploreObject}: ${node.label}`} onClick={() => onFocus(node.id)}><strong>{node.label}</strong><small>{nodeType(node)}</small></button>;
+  const rows = groups.flatMap(group => group.edges.map(edge => ({
+    edge,
+    neighbor: nodesById.get(edge.source === focus.id ? edge.target : edge.source)!,
+    relationship: group.direction === "outgoing" ? copy.outgoingRelations[edge.kind] : copy.incomingRelations[edge.kind],
+  })));
+  const primaryRows = rows.filter(row => !isRelationshipConfiguration(row.neighbor));
+  const configurationRows = rows.filter(row => isRelationshipConfiguration(row.neighbor));
+  const renderRows = (items: typeof rows, label: string) => <ul className="owb-rgraph__relation-cards" aria-label={label}>{items.map(({ edge, neighbor, relationship }) => <li className="owb-rgraph__relation-card" key={edge.id}>
+    <div className="owb-rgraph__relation-row">
+      <button type="button" className="owb-rgraph__neighbor-button" aria-label={`${copy.exploreObject}: ${neighbor.label}`} onClick={() => onFocus(neighbor.id)}><strong>{neighbor.label}</strong><small>{nodeType(neighbor)}</small></button>
+      <span className="owb-rgraph__relation-label">{relationship}</span>
+      <button type="button" className="owb-rgraph__evidence-button" aria-label={`${copy.evidenceButton}: ${nodesById.get(edge.source)!.label} → ${t(`graph.relation.${edge.kind}`)} → ${nodesById.get(edge.target)!.label}`} onClick={() => onSelectEdge(edge.id)}><FileSearch size={14} aria-hidden="true" />{copy.evidenceButton}</button>
+    </div>
+  </li>)}</ul>;
 
   return <section className="owb-rgraph__context" aria-label={copy.contextTitle}>
     <div className="owb-rgraph__focus-card">
-      <span className="owb-rgraph__focus-eyebrow"><Network size={15} aria-hidden="true" />{copy.focusLabel}</span>
-      <div className="owb-rgraph__focus-identity"><strong>{focus.label}</strong><span>{nodeType(focus)}</span><span>{t(`graph.state.${focus.state}`)}</span></div>
-      {focus.resourcePath && !isSelector(focus) ? <p className="owb-rgraph__resource-path">{focus.resourcePath}</p> : null}
+      <header className="owb-rgraph__focus-header"><h2>{focus.label}</h2>{actions}</header>
       <p className="owb-rgraph__focus-help">{isSelector(focus) ? copy.selectorHelp : focus.kind === "source" && focus.facts?.some(fact => fact.key === "kind" && fact.value === "context_provider") ? copy.contextProviderHelp : typeHelp[focus.kind]}</p>
-      <div className="owb-rgraph__context-metrics"><span><strong>{directEdges.length}</strong> {copy.relatedCount}</span><span title={focus.evidence.basis === "declared" ? copy.declaredHelp : copy.observedHelp}>{t(`graph.${focus.evidence.basis}`)}</span></div>
     </div>
-    {groups.length ? <>
-      <p className="owb-rgraph__context-hint"><ArrowRight size={14} aria-hidden="true" />{copy.continueExploring}</p>
-      <div className="owb-rgraph__relation-groups">{groups.map(group => <section className="owb-rgraph__relation-group" key={`${group.direction}:${group.kind}`}>
-        <header className="owb-rgraph__relation-group-header"><h3>{t(`graph.relation.${group.kind}`)}</h3><span>{group.direction === "outgoing" ? copy.outgoing : copy.incoming} · {group.edges.length}</span></header>
-        <ul className="owb-rgraph__relation-cards">{group.edges.map(edge => <li className="owb-rgraph__relation-card" key={edge.id}>
-          <div className="owb-rgraph__relation-statement">{endpoint(nodesById.get(edge.source)!)}<span className="owb-rgraph__relation-arrow" aria-hidden="true">→</span><span className="owb-rgraph__relation-label">{t(`graph.relation.${edge.kind}`)}</span><span className="owb-rgraph__relation-arrow" aria-hidden="true">→</span>{endpoint(nodesById.get(edge.target)!)}</div>
-          <div className="owb-rgraph__relation-evidence"><span title={edge.evidence.basis === "declared" ? copy.declaredHelp : copy.observedHelp}><span>{t(`graph.${edge.evidence.basis}`)}</span><small>{edge.evidence.source}</small></span><button type="button" className="owb-rgraph__evidence-button" aria-label={`${copy.evidenceButton}: ${nodesById.get(edge.source)!.label} → ${t(`graph.relation.${edge.kind}`)} → ${nodesById.get(edge.target)!.label}`} onClick={() => onSelectEdge(edge.id)}><FileSearch size={14} aria-hidden="true" />{copy.evidenceButton}</button></div>
-        </li>)}</ul>
-      </section>)}</div>
-    </> : <p className="owb-rgraph__context-empty" role="status">{copy.noDirectRelations}</p>}
+    {primaryRows.length ? <>
+      <header className="owb-rgraph__relation-group-header"><h3>{copy.relatedObjects}</h3></header>
+      {renderRows(primaryRows, copy.relatedObjects)}
+    </> : !configurationRows.length ? <p className="owb-rgraph__context-empty" role="status">{copy.noDirectRelations}</p> : null}
+    {configurationRows.length ? <details key={focus.id} className="owb-rgraph__configuration">
+      <summary>{copy.capabilitiesConfiguration}<span>{configurationRows.length}</span></summary>
+      {renderRows(configurationRows, copy.capabilitiesConfiguration)}
+    </details> : null}
   </section>;
 }
