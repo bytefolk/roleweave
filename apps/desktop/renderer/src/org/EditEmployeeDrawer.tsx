@@ -12,13 +12,14 @@
  * carries only the fields that actually changed, so an untouched section can
  * never be rewritten by a save.
  */
-import { useCallback, useEffect, useState } from "react";
-import { Button as AntButton, Drawer, Input, Select, message } from "antd";
-import { AlertTriangle, LoaderCircle, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useId, useState } from "react";
+import { Button as AntButton, Drawer, Input, Select, Spin, message } from "antd";
+import { AlertTriangle, ChevronDown } from "lucide-react";
 import { useT } from "@roleweave/ui";
-import type { HirePermissions, PositionProfilePatch, PositionProfileResult } from "@roleweave/shared";
+import type { HirePermissions, PositionProfilePatch } from "@roleweave/shared";
 import type { PositionCardData } from "@roleweave/ui";
 import { CapabilityPicker, PermissionPolicyEditor } from "./PermissionsEditor";
+import "./edit-employee.css";
 
 const MAX_NAME_BYTES = 128;
 
@@ -32,6 +33,17 @@ const FAILURE_COPY_KEYS: Record<string, string> = {
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
+}
+
+function permissionFingerprint(policy: HirePermissions): string {
+  return JSON.stringify({
+    tools: [...policy.tools].sort(),
+    rules: policy.rules.map((rule) => ({ ...rule, actions: [...rule.actions].sort() })),
+    skills: [...(policy.skills ?? [])].sort((left, right) => left.id.localeCompare(right.id)),
+    mcpServers: (policy.mcpServers ?? [])
+      .map((server) => ({ ...server, tools: [...server.tools].sort() }))
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  });
 }
 
 export function EditEmployeeDrawer({
@@ -55,7 +67,9 @@ export function EditEmployeeDrawer({
   const [initial, setInitial] = useState<HirePermissions | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [permissionsExpanded, setPermissionsExpanded] = useState(false);
   const [messageApi, contextHolder] = message.useMessage();
+  const permissionsPanelId = useId();
 
   // Seed from the record each time it opens, so a previous edit never leaks into
   // another employee (or into the same employee after an external change).
@@ -68,14 +82,16 @@ export function EditEmployeeDrawer({
     setInitial(policy);
     setSaving(false);
     setError(null);
+    setPermissionsExpanded(false);
   }, [open, position]);
 
   const trimmedName = name.trim();
   const nameValid = trimmedName.length > 0 && byteLength(trimmedName) <= MAX_NAME_BYTES;
+  const permissionsChanged = initial !== null && permissionFingerprint(permissions) !== permissionFingerprint(initial);
   const changed = position !== null && (
     trimmedName !== position.name
     || mode !== position.mode
-    || (initial !== null && permissions !== initial)
+    || permissionsChanged
   );
   const canSave = position !== null && nameValid && changed && !saving && !busy;
 
@@ -86,7 +102,7 @@ export function EditEmployeeDrawer({
     const patch: PositionProfilePatch = {};
     if (trimmedName !== position.name) patch.name = trimmedName;
     if (mode !== position.mode) patch.mode = mode;
-    if (initial !== null && permissions !== initial) patch.permissions = permissions;
+    if (permissionsChanged) patch.permissions = permissions;
     setSaving(true);
     setError(null);
     const outcome = await onSave(patch);
@@ -98,72 +114,90 @@ export function EditEmployeeDrawer({
     }
     const copyKey = FAILURE_COPY_KEYS[outcome.code];
     setError(copyKey !== undefined ? t(copyKey) : t("profile.failUnknown", { code: outcome.code }));
-  }, [canSave, initial, messageApi, mode, onClose, onSave, permissions, position, t, trimmedName]);
+  }, [canSave, messageApi, mode, onClose, onSave, permissions, permissionsChanged, position, t, trimmedName]);
 
   return (
     <Drawer
-      className="owb-hire-drawer-shell"
+      className="owb-hire-drawer-shell owb-profile-drawer"
       title={t("profile.editHeading")}
-      width="min(760px, calc(100vw - 24px))"
+      width="min(600px, 100vw)"
       open={open}
-      onClose={onClose}
+      onClose={saving ? undefined : onClose}
+      closable={!saving}
+      keyboard={!saving}
+      maskClosable={!saving}
       destroyOnHidden
     >
       {contextHolder}
-      <div className="owb-hire-shell">
-        <div className="owb-hire-shell__scroll">
-          <div className="owb-hire-drawer">
-            <section className="owb-hire-section-head">
-              <div>
-                <h4><ShieldCheck aria-hidden="true" size={15} />{t("profile.identity")}</h4>
-                <p>{t("profile.editDescription")}</p>
+      <div className="owb-hire-shell owb-profile-shell">
+        <div className="owb-hire-shell__scroll owb-profile-scroll">
+          {position === null ? <div className="owb-profile-loading"><Spin /></div> : (
+          <fieldset className="owb-profile-form" disabled={saving || busy}>
+            <section className="owb-profile-section owb-profile-basics">
+              <div className="owb-profile-section__head">
+                <h4>{t("profile.basicSettings")}</h4>
+                <span className="owb-profile-id" title={t("profile.idNote", { id: position.id })}>{position.id}</span>
               </div>
-            </section>
-            <div className="owb-hire-basic-grid">
-              <label>
-                <span>{t("profile.name")}</span>
+              <div className="owb-profile-setting">
+                <label htmlFor={`${permissionsPanelId}-name`}>{t("profile.name")}</label>
                 <Input
+                  id={`${permissionsPanelId}-name`}
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   placeholder={t("profile.namePh")}
                   status={nameValid ? undefined : "error"}
                   aria-invalid={!nameValid}
+                  aria-describedby={!nameValid ? `${permissionsPanelId}-name-error` : undefined}
                 />
-              </label>
-              <label>
-                <span>{t("profile.mode")}</span>
+              </div>
+              {nameValid ? null : <p id={`${permissionsPanelId}-name-error`} className="owb-profile-error" role="alert">{t(trimmedName.length === 0 ? "profile.nameRequired" : "profile.nameTooLong")}</p>}
+              <div className="owb-profile-setting">
+                <label htmlFor={`${permissionsPanelId}-mode`}>{t("profile.mode")}</label>
                 <Select
+                  id={`${permissionsPanelId}-mode`}
                   value={mode}
+                  disabled={saving || busy}
                   onChange={(value: PositionCardData["mode"]) => setMode(value)}
                   options={[
                     { value: "read_only", label: t("profile.modeReadOnly") },
                     { value: "approval_required", label: t("profile.modeApproval") },
                   ]}
                 />
-              </label>
-            </div>
-            {nameValid ? null : <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{t("profile.nameTooLong")}</p>}
-            {position !== null ? <p className="owb-hire-capability-note">{t("profile.idNote", { id: position.id })}</p> : null}
-
-            <PermissionPolicyEditor permissions={permissions} onChange={setPermissions} />
-            <p className="owb-hire-capability-note">{t("profile.permissionsNote")}</p>
-            <CapabilityPicker permissions={permissions} onChange={setPermissions} />
-          </div>
+              </div>
+            </section>
+            <CapabilityPicker variant="compact" permissions={permissions} onChange={setPermissions} />
+            <section className="owb-profile-advanced">
+              <button
+                type="button"
+                className="owb-profile-advanced__summary"
+                aria-expanded={permissionsExpanded}
+                aria-controls={permissionsPanelId}
+                onClick={() => setPermissionsExpanded((expanded) => !expanded)}
+              >
+                <span>{t("profile.advancedPermissions")}</span>
+                <small>{t("profile.rulesSummary", { tools: permissions.tools.length, rules: permissions.rules.length })}</small>
+                <ChevronDown aria-hidden="true" size={16} />
+              </button>
+              {permissionsExpanded ? (
+                <div className="owb-profile-advanced__body" id={permissionsPanelId}>
+                  <PermissionPolicyEditor variant="compact" disabled={saving || busy} permissions={permissions} onChange={setPermissions} />
+                </div>
+              ) : null}
+            </section>
+          </fieldset>
+          )}
         </div>
-        <footer className="owb-modal__footer owb-hire-footer">
+        <footer className="owb-profile-footer">
           {error !== null ? (
-            <span className="owb-hire-drawer__hint owb-hire-drawer__hint--error" role="alert">
+            <span className="owb-profile-error" role="alert">
               <AlertTriangle aria-hidden="true" size={13} />{error}
             </span>
-          ) : !changed && position !== null ? (
-            <span>{t("profile.noChanges")}</span>
           ) : <span />}
           <AntButton onClick={onClose} disabled={saving}>{t("dlg.cancel")}</AntButton>
           <AntButton
             type="primary"
             disabled={!canSave}
             loading={saving}
-            icon={saving ? <LoaderCircle aria-hidden="true" size={14} /> : undefined}
             onClick={() => void submit()}
           >
             {saving ? t("profile.saving") : t("profile.save")}

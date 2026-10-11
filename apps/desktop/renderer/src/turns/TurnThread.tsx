@@ -557,11 +557,11 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
                   <div className="owb-turn-conclusion-label">{isProvisional ? t("turn.liveOutput") : turn.status === "completed" ? t("turn.finalConclusion") : t("turn.unconfirmedOutput")}</div>
                   {isProvisional ? (
                     <div className="owb-tc__out owb-tc__out--markdown owb-tc__out--provisional">
-                      <Markdown content={turn.output} onNavigateDoc={onOpenResource ? (path) => onOpenResource(turn.positionId, path) : undefined} />
+                      <Markdown conversation content={turn.output} onNavigateDoc={onOpenResource ? (path) => onOpenResource(turn.positionId, path) : undefined} />
                     </div>
                   ) : (
                     <div className="owb-tc__out owb-tc__out--markdown">
-                      <Markdown content={turn.output} onNavigateDoc={onOpenResource ? (path) => onOpenResource(turn.positionId, path) : undefined} />
+                      <Markdown conversation content={turn.output} onNavigateDoc={onOpenResource ? (path) => onOpenResource(turn.positionId, path) : undefined} />
                     </div>
                   )}
                 </section>

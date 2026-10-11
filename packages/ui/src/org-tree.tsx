@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, FolderOpen, Plus, UsersRound } from "lucide-react";
+import { ChevronRight, ChevronsDownUp, ChevronsUpDown, Folder, FolderOpen, Plus, Search, UsersRound, X } from "lucide-react";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@fullstack-ai-infra/ui";
 import { useT } from "./i18n";
@@ -733,19 +733,36 @@ export function OrgTree({
   return (
     <div className="ui-org-tree-shell">
     <div className="ui-org-tree__toolbar">
-      <input
-        type="search"
-        className="ui-org-tree__search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder={t("tree.search")}
-        aria-label={t("tree.search")}
-      />
-      <button type="button" className="ui-org-tree__toolbar-btn" onClick={() => setExpanded(new Set(allParentIds))}>
-        {t("tree.expandAll")}
+      <div className="ui-org-tree__search-field">
+        <Search aria-hidden="true" size={14} />
+        <input
+          type="search"
+          className="ui-org-tree__search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("tree.search")}
+          aria-label={t("tree.search")}
+        />
+        {query ? (
+          <button
+            type="button"
+            className="ui-org-tree__search-clear"
+            aria-label={t("tree.clearSearch")}
+            title={t("tree.clearSearch")}
+            onClick={(event) => {
+              setQuery("");
+              event.currentTarget.parentElement?.querySelector("input")?.focus();
+            }}
+          >
+            <X aria-hidden="true" size={13} />
+          </button>
+        ) : null}
+      </div>
+      <button type="button" className="ui-org-tree__toolbar-btn" aria-label={t("tree.expandAll")} title={t("tree.expandAll")} onClick={() => setExpanded(new Set(allParentIds))}>
+        <ChevronsUpDown aria-hidden="true" size={16} />
       </button>
-      <button type="button" className="ui-org-tree__toolbar-btn" onClick={() => setExpanded(new Set())}>
-        {t("tree.collapseAll")}
+      <button type="button" className="ui-org-tree__toolbar-btn" aria-label={t("tree.collapseAll")} title={t("tree.collapseAll")} onClick={() => setExpanded(new Set())}>
+        <ChevronsDownUp aria-hidden="true" size={16} />
       </button>
     </div>
     <div

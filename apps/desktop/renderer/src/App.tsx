@@ -2388,6 +2388,7 @@ function AppInner({
             liveRuns={turnStream.runs}
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
+            onOpenResource={(positionId, path) => { void openResource(positionId, path, "workspace"); }}
             listHost={groupListHost}
             onSelectGroup={() => setContactsOpen(false)}
           />

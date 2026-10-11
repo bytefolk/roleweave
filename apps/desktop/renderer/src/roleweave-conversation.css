@@ -471,7 +471,7 @@
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-tc__out--markdown :is(h1, h2, h3, h4, h5, h6, strong) {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-tc__out--markdown code {

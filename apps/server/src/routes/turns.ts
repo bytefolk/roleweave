@@ -19,6 +19,7 @@ import type { OpenWorkspace } from "../workspace-state.js";
 import type { RunningTurnReservation } from "../turns/running.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { createTurnEnvelope } from "../turns/envelope.js";
+import { withResponsePresentation } from "../turns/response-format.js";
 import { DeltaForwarder } from "../turns/delta-forwarder.js";
 import { assertPositionId, compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 import { compactThreadContextHistory, materializeThreadContext, type SupplementalContext, type ThreadContextSource } from "../turns/thread-context.js";
@@ -369,7 +370,7 @@ export async function executeTurn(
     }
     // Additive #306: resolve attachment manifests and build engine context.
     let resolvedAttachments: TurnAttachment[] | undefined;
-    let augmentedInput = body.input;
+    let augmentedInput = withResponsePresentation(body.input);
     if (body.attachmentIds !== undefined) {
       if (session === undefined) {
         throw new OrgApiError(
@@ -383,7 +384,7 @@ export async function executeTurn(
         throw new OrgApiError(errorCodes.attachment_missing, 400, "one or more attachment ids were not found in this session");
       }
       assertAttachmentBatch(resolvedAttachments);
-      augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, body.input);
+      augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, augmentedInput);
     }
     const vaultContext = await assembleVaultContext(workspace, body.positionId, augmentedInput);
     augmentedInput = vaultContext.input;
