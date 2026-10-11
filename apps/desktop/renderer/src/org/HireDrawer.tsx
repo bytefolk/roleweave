@@ -491,7 +491,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
                   <small>{t(localConnection ? "hire.connectionLocalHint" : "hire.connectionApiHint")}</small>
                 </div> : null}
                 {!agentReady ? <p role="status" className="owb-hire-drawer__hint">{selectedHost?.reason ?? t("hire.connectionUnavailable")}</p> : null}
-                {clientManaged ? <p className="owb-hire-capability-note">{t("office.clientManaged")} {t("office.modelReadonly")}</p> : null}
+                {clientManaged ? <p className="owb-hire-capability-note">{t("office.clientManaged")} {t("office.modelReadonly")}<span> {t("office.accountManaged")}</span></p> : null}
               </div>
             </section>
             <details className="owb-hire-assist" open={designAssistOpen} onToggle={(event) => setDesignAssistOpen(event.currentTarget.open)}>

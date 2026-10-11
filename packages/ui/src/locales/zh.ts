@@ -7,6 +7,7 @@ import { zhVaultCatalog } from "./vault";
 export const zhCatalog: Record<string, string> = {
   "office.brand": "千问办公",
   "office.clientManaged": "工具与审批由千问办公管理。",
+  "office.accountManaged": "使用千问办公当前账号和组织；任务完成前请保持不变。",
   "office.budgetManaged": "预算与用量由千问办公计算。这里的预算是 RoleWeave 记录，不会限制客户端每项任务的 Token；客户端未返回用量时显示未知。",
   "office.clientSettings": "请在千问办公客户端中设置工具与审批；RoleWeave 的工具许可和岗位模式不限制客户端工具。",
   "office.currentModel": "千问办公当前模型",

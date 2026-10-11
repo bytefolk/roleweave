@@ -30,3 +30,24 @@ read-only employee grants constrain the client's native tools.
 No client credentials were exported, no vault was read, and no task was
 submitted during this inspection. Qwen Code and Qoder are separate clients
 and are not substitutes for this desktop login.
+
+## Native acceptance — 2026-10-12
+
+The user selected native assistant execution with confirmations in Qwen Office.
+After enabling the normal local control service and restarting the idle client,
+the actual Windows preflight reported `qwen_office.ready`, version `1.3.0`.
+A minimal request prohibiting tools and file changes returned exactly
+`千问办公连接正常` through both the direct Windows client and the complete
+Windows → WSL supervisor → private socket → Office path. Public running status
+crossed the WSL channel, and the owned supervisor closed with exit code `0`.
+No usage receipt was supplied, so it was not invented.
+
+Both installed builds' control contracts capture `[user, organization, team]`
+inside each RPC and guard an existing task's owner and host turn. Public status
+only exposes the user identifier, and session creation/submission has no
+expected-identity or epoch field. This integration uses the client's current
+account/organization; it does not claim an atomic initial-tenant lock across
+RPCs. The UI and connection guide ask users to keep them unchanged while a
+task runs. Account checks before submission/cancellation, late-response aborts,
+known-ticket reflection rejection, and bounded quit-time cancellation are
+covered by offline regression tests.

@@ -425,7 +425,7 @@ export function TurnPanel({
         focusTurnId={focusTurnId}
         onOpenResource={onOpenResource}
       />
-      {selectedPosition && engine === "qwen-office-local" ? <p className="owb-hire-capability-note">{t("office.clientManaged")}</p> : null}
+      {selectedPosition && engine === "qwen-office-local" ? <p className="owb-hire-capability-note">{t("office.clientManaged")}<span> {t("office.accountManaged")}</span></p> : null}
 
       {sendErrors[draftKey] ? <p role="alert" className="owb-conversation-error">{sendErrors[draftKey]}</p> : null}
       {selectedPosition ? <TurnComposer
