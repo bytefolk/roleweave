@@ -341,6 +341,49 @@ describe("RelationshipGraph", () => {
     expect(within(context()).getByRole("heading", { name: "Employee 159" })).toBeVisible();
   });
 
+  it("keeps chosen employees in a large diagram after clearing search or changing employees and preserves filters", () => {
+    const employees = Array.from({ length: 160 }, (_, index) => ({ ...agent, id: `agent:${index}`, positionId: String(index), label: `Employee ${index}` }));
+    const last = employees.at(-1)!;
+    mount({ data: { ...data, nodes: [...employees, source, resource], edges: [{ ...data.edges[0]!, source: last.id }, data.edges[1]!] } });
+    openMore();
+    fireEvent.click(screen.getByText("类型与关系筛选", { selector: "summary" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^资源/ }));
+    const search = screen.getByRole("textbox", { name: "搜索名称、路径或员工 ID" });
+    fireEvent.change(search, { target: { value: "Employee 159" } });
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Employee 159 / }));
+    fireEvent.change(search, { target: { value: "" } });
+    expect(within(context()).getByRole("heading", { name: "Employee 159" })).toBeVisible();
+    expect(within(objectList()).queryByRole("button", { name: /^Employee 159 / })).not.toBeInTheDocument();
+    selectView("图形总览");
+    expect(screen.getByRole("region", { name: "空间关系画布" })).toBeVisible();
+    showAllObjects();
+    expect(within(objectList()).getAllByRole("button")).toHaveLength(2);
+    expect(within(objectList()).getByRole("button", { name: /^Employee 159 / })).toHaveAttribute("aria-pressed", "true");
+    expect(within(objectList()).getByRole("button", { name: /Project docs/ })).toBeVisible();
+    expect(within(objectList()).queryByRole("button", { name: /^Employee 0 / })).not.toBeInTheDocument();
+    expect(search).toHaveValue("");
+    openMore();
+    expect(screen.getByRole("checkbox", { name: /^资源/ })).not.toBeChecked();
+    fireEvent.keyDown(screen.getByText("更多选项", { selector: "summary" }), { key: "Escape" });
+    inspectObject();
+    const inspector = screen.getByRole("complementary", { name: "关系详情" });
+    expect(within(inspector).getByRole("heading", { name: "Employee 159" })).toBeVisible();
+    expect(within(inspector).queryByText("当前选择不在筛选结果中")).not.toBeInTheDocument();
+    fireEvent.click(within(inspector).getByRole("button", { name: "关闭详情" }));
+    fireEvent.click(within(openMore()).getByRole("checkbox", { name: "显示全部对象" }));
+    fireEvent.keyDown(screen.getByText("更多选项", { selector: "summary" }), { key: "Escape" });
+    expect(within(objectList()).getAllByRole("button")).toHaveLength(120);
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Employee 100 / }));
+    showAllObjects();
+    expect(within(objectList()).getAllByRole("button")).toHaveLength(1);
+    expect(within(objectList()).getByRole("button", { name: /^Employee 100 / })).toHaveAttribute("aria-pressed", "true");
+    expect(within(objectList()).queryByRole("button", { name: /^Employee 159 / })).not.toBeInTheDocument();
+    expect(search).toHaveValue("");
+    inspectObject();
+    expect(within(inspector).getByRole("heading", { name: "Employee 100" })).toBeVisible();
+    expect(within(inspector).queryByText("当前选择不在筛选结果中")).not.toBeInTheDocument();
+  });
+
   it("distinguishes filtered focus from deleted objects even when an updated graph is empty", () => {
     const { rerender, props } = mount();
     showAllObjects();
@@ -460,6 +503,20 @@ describe("RelationshipGraph", () => {
     fireEvent.click(screen.getByRole("button", { name: "沿关系探索" }));
     expect(within(context()).getByRole("heading", { name: "brief.md" })).toBeVisible();
     expect(hiddenInspector()).not.toBeVisible();
+  });
+
+  it("returns keyboard focus to related context when leaving the diagram toolbar", () => {
+    mount({}, "galaxy");
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    const follow = screen.getByRole("button", { name: "沿关系探索" });
+    follow.focus();
+    expect(follow).toHaveFocus();
+    fireEvent.click(follow);
+    expect(screen.queryByRole("region", { name: "空间关系画布" })).not.toBeInTheDocument();
+    expect(within(context()).getByRole("heading", { name: "Alice" })).toBeVisible();
+    expect(screen.getByLabelText("关联上下文", { selector: "div.owb-rgraph__main" })).toHaveFocus();
+    expect(hiddenInspector()).not.toBeVisible();
+    expect(within(objectList()).getByRole("button", { name: /^Alice / })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps Sidebar buttons focusable and opens exact resources only after an explicit action", () => {

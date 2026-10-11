@@ -181,6 +181,8 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
 
   const clearFilters = () => { setQuery(""); setKinds([...relationshipNodeKinds]); setRelations([...relationKinds]); setNeighborhood(null); };
   const selectNode = (id: string, continueTrail = false) => {
+    const node = nodesById.get(id);
+    if (renderer === "galaxy" && node && kinds.includes(node.kind) && !query.trim() && !view.nodes.some(item => item.id === id)) setNeighborhood({ id, hops: 1 });
     if (inspector.current?.contains(document.activeElement)) setContextFocusRequest(current => current + 1);
     setSelection({ type: "node", id });
     setInspectorOpen(false);
@@ -212,9 +214,11 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
     else results.current?.focus({ preventScroll: true });
   };
   const changeRenderer = (next: RendererMode) => {
+    if (next === "galaxy" && focusedNode && kinds.includes(focusedNode.kind) && !query.trim() && !view.nodes.some(node => node.id === focusedNode.id)) setNeighborhood({ id: focusedNode.id, hops: 1 });
     setRenderer(next);
     setInspectorOpen(false);
     if (moreOptions.current?.open) { moreOptions.current.open = false; moreOptions.current.querySelector("summary")?.focus(); }
+    else if (mainPane.current?.contains(document.activeElement)) setContextFocusRequest(current => current + 1);
   };
   const restart = () => { setFocusId(undefined); setSelection(null); setInspectorOpen(false); setTrail([]); setNeighborhood(null); };
   const relationText = (edge: RelationshipEdge) => `${nodesById.get(edge.source)?.label ?? edge.source} → ${t(`graph.relation.${edge.kind}`)} → ${nodesById.get(edge.target)?.label ?? edge.target}`;
@@ -225,6 +229,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
     return [owner, selector ? kind : node.resourcePath ?? kind].filter(Boolean).join(" · ");
   };
   const coverageIssues = graphCoverageIssues(data);
+  const disclosedCoverage = [...(data?.coverage ?? [])].sort((left, right) => Number(coverageIssues.includes(right)) - Number(coverageIssues.includes(left)));
   const coverageName = (item: RelationshipCoverage) => {
     const labels: Record<string, string> = { organization: copy.sourceOrganization, workspace_identity: copy.sourceIdentity,
       mem: copy.sourceDrive, doc: copy.sourceDoc, context: copy.sourceContext, tasks: copy.sourceTasks, goals: copy.sourceGoals,
@@ -306,7 +311,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
           <fieldset><legend>{t("graph.relations")}</legend>{relationKinds.filter(kind => data?.edges.some(edge => edge.kind === kind)).map(kind => <Checkbox key={kind} checked={relations.includes(kind)} onChange={event => setRelations(current => event.target.checked ? [...current, kind] : current.filter(value => value !== kind))}>{t(`graph.relation.${kind}`)}</Checkbox>)}</fieldset>
           <Button size="small" block onClick={clearFilters}>{t("graph.clearFilters")}</Button>
         </details>
-        {data ? <details ref={scopeDetails} className="owb-rgraph__scope"><summary><Info size={14} aria-hidden="true" /><span>{copy.sourceDetails}</span></summary><div className="owb-rgraph__scope-panel"><p>{t("graph.counts", { nodes: data.nodes.length, edges: data.edges.length })}</p><p>{copy.scopeHelp}</p><div className="owb-rgraph__scope-coverage">{data.coverage.map((item, index) => <div key={`${item.source}:${index}`}><span>{coverageName(item)}</span><Tag color={coverageIssues.includes(item) ? "warning" : "default"}>{t(`graph.coverage.${item.state}`)}</Tag>{item.count !== undefined ? <small>{item.count}</small> : null}{item.reason ? <small className="owb-rgraph__coverage-reason">{coverageReason(item)}</small> : null}</div>)}</div><small>{t("graph.updated", { time: data.generatedAt })}</small></div></details> : null}
+        {data ? <details ref={scopeDetails} className="owb-rgraph__scope"><summary><Info size={14} aria-hidden="true" /><span>{copy.sourceDetails}</span></summary><div className="owb-rgraph__scope-panel"><p>{t("graph.counts", { nodes: data.nodes.length, edges: data.edges.length })}</p><p>{copy.scopeHelp}</p><div className="owb-rgraph__scope-coverage">{disclosedCoverage.map((item, index) => <div key={`${item.source}:${index}`}><span>{coverageName(item)}</span><Tag color={coverageIssues.includes(item) ? "warning" : "default"}>{t(`graph.coverage.${item.state}`)}</Tag>{item.count !== undefined ? <small>{item.count}</small> : null}{item.reason ? <small className="owb-rgraph__coverage-reason">{coverageReason(item)}</small> : null}</div>)}</div><small>{t("graph.updated", { time: data.generatedAt })}</small></div></details> : null}
       </div></details><Button icon={<RefreshCw size={14} />} onClick={onReload} loading={loading}>{t("graph.reload")}</Button></div></header>
     {guideOpen ? <div className="owb-rgraph__guide" role="region" aria-label={copy.guideTitle}><ol className="owb-rgraph__learn-steps" aria-label={copy.guideTitle}>{[copy.guideChoose, copy.guideRead, copy.guideOpen].map((step, index) => <li key={step} className={guideStep === index + 1 ? "is-current" : ""}><span>{index + 1}</span>{step}</li>)}</ol><div className="owb-rgraph__guide-action"><p>{guideStep === 1 ? copy.objectStep : guideStep === 2 ? guideEdge ? copy.relationStep : copy.noDirectRelations : copy.evidenceStep}</p>{guideStep === 1 && guideSeed ? <Button type="primary" size="small" onClick={() => { changeRenderer("context"); selectNode(guideSeed.id); }}>{copy.guideTryEmployee}{guideSeed.label}</Button> : guideStep === 2 && guideEdge ? <Button type="primary" size="small" onClick={() => inspectSelection({ type: "edge", id: guideEdge.id })}>{copy.guideInspect}</Button> : <Button size="small" onClick={() => setGuideOpen(false)}>{copy.guideDone}</Button>}</div></div> : null}
     {error ? <Alert type="error" title={t("graph.loadFailure")} showIcon action={<Button size="small" onClick={onReload}>{t("graph.reload")}</Button>} /> : null}
