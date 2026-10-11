@@ -46,7 +46,7 @@ test("Office follows its native client's current model and ignores foreign catal
       assert.deepEqual(config.options.map(option => option.id), ["provider-default"]);
       assert.equal(config.options[0]?.resolvedModel, undefined);
       assert.equal(config.allowCustomModel, undefined);
-      assert.deepEqual(config.connection, { source: "official", kind: "official", billing: "unknown", status: "invalid" });
+      assert.deepEqual(config.connection, editable ? { source: "official", kind: "official", billing: "unknown", status: "invalid" } : undefined);
       assert.doesNotMatch(JSON.stringify(config), /foreign|old-pinned|secret/);
     }
   } finally { await fs.rm(root, { recursive: true, force: true }); }

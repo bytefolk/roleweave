@@ -18,10 +18,13 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
   if (engine === "qwen-office-local") {
     // The native Office client owns its model. Ignore stale saved selectors,
     // never read another Host's account cache, and never mutate client config.
+    const connection: EmployeeModelConnection | undefined = editable
+      ? { source: "official", kind: "official", billing: "unknown", status: qwenOfficeLocalBridgeConfigured(env) ? "configured" : "invalid" }
+      : undefined;
     return {
       selected: "provider-default", recommended: "provider-default", source: "default", editable: false,
       options: [{ id: "provider-default", name: "Current Qwen Office model", tier: "default", billing: "unknown" }],
-      connection: { source: "official", kind: "official", billing: "unknown", status: qwenOfficeLocalBridgeConfigured(env) ? "configured" : "invalid" },
+      ...(connection ? { connection } : {}),
     };
   }
   let source: EmployeeModelConfig["source"] = "provider-tiers";
