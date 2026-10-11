@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RelationshipGraphResponse, RelationshipNode } from "@roleweave/shared";
 import { projectRelationships, RelationshipGraph } from "../src/graph/RelationshipGraph";
 import { RelationshipSpatialScene } from "../src/graph/RelationshipSpatialScene";
+import { normalizeRelationshipTrail } from "../src/graph/relationship-trail";
 
 const evidence = { source: "org config", locator: "workspace-org.v1", basis: "declared" as const, observedAt: "2026-09-22T12:00:00Z" };
 const agent: RelationshipNode = { id: "agent:alice", kind: "agent", label: "Alice", state: "ready", positionId: "alice", evidence };
@@ -38,6 +39,10 @@ function showAllObjects() {
   const checkbox = within(more).getByRole("checkbox", { name: "显示全部对象" });
   if (!(checkbox as HTMLInputElement).checked) fireEvent.click(checkbox);
   fireEvent.keyDown(more, { key: "Escape" });
+}
+function trailLabels() {
+  return within(screen.getByRole("navigation", { name: "探索路径" })).getAllByRole("listitem")
+    .map(item => item.textContent);
 }
 
 describe("RelationshipGraph", () => {
@@ -172,7 +177,8 @@ describe("RelationshipGraph", () => {
     fireEvent.click(within(context()).getByRole("button", { name: "探索对象: Project docs" }));
     fireEvent.click(within(context()).getByRole("button", { name: "探索对象: brief.md" }));
     const trail = screen.getByRole("navigation", { name: "探索路径" });
-    expect(within(trail).getByRole("button", { name: "brief.md" })).toHaveAttribute("aria-current", "location");
+    expect(within(trail).getByText("brief.md", { selector: "span" })).toHaveAttribute("aria-current", "location");
+    expect(within(trail).queryByRole("button", { name: "brief.md" })).not.toBeInTheDocument();
     fireEvent.click(within(trail).getByRole("button", { name: "回到上一步" }));
     expect(within(context()).getByRole("heading", { name: "Project docs" })).toBeVisible();
     expect(within(trail).queryByRole("button", { name: "brief.md" })).not.toBeInTheDocument();
@@ -184,6 +190,180 @@ describe("RelationshipGraph", () => {
     fireEvent.click(within(screen.getByRole("navigation", { name: "探索路径" })).getByRole("button", { name: "重新开始" }));
     expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
     expect(within(context()).getByText("选一名员工看关联，或从资料查来源。")).toBeVisible();
+  });
+
+  it("returns to an already visited object instead of accumulating a repeated exploration cycle", () => {
+    const { props } = mount();
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: Project docs" }));
+    for (let visit = 0; visit < 4; visit++) {
+      fireEvent.click(within(context()).getByRole("button", { name: "探索对象: brief.md" }));
+      expect(trailLabels()).toEqual(["Alice", "Project docs", "brief.md"]);
+      fireEvent.click(within(context()).getByRole("button", { name: "探索对象: Project docs" }));
+      expect(trailLabels()).toEqual(["Alice", "Project docs"]);
+      expect(within(context()).getByRole("heading", { name: "Project docs" })).toBeVisible();
+    }
+    fireEvent.click(within(context()).getByRole("button", { name: "查看依据: Project docs → 包含资源 → brief.md" }));
+    fireEvent.click(within(screen.getByRole("complementary", { name: "关系详情" })).getByRole("button", { name: "Project docs" }));
+    expect(trailLabels()).toEqual(["Alice", "Project docs"]);
+    expect(hiddenInspector()).not.toBeVisible();
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: Alice" }));
+    expect(within(context()).getByRole("heading", { name: "Alice" })).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: Project docs" }));
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: brief.md" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "探索路径" })).getByRole("button", { name: "回到上一步" }));
+    expect(trailLabels()).toEqual(["Alice", "Project docs"]);
+    fireEvent.click(within(screen.getByRole("navigation", { name: "探索路径" })).getByRole("button", { name: "Alice" }));
+    expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
+    expect(within(context()).getByRole("heading", { name: "Alice" })).toBeVisible();
+    expect(props.onOpenAgent).not.toHaveBeenCalled();
+    expect(props.onOpenResource).not.toHaveBeenCalled();
+  });
+
+  it("keeps distinct same-named objects in the trail and returns to the exact earlier object", () => {
+    const otherSource: RelationshipNode = { ...source, id: "source:other-docs", evidence: { ...evidence, locator: "other-docs-binding" } };
+    mount({ data: { ...data, nodes: [...data.nodes, otherSource], edges: [...data.edges, { ...data.edges[1]!, id: "other-contains", source: otherSource.id }] } });
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: Project docs" }));
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: brief.md" }));
+    fireEvent.click(within(context()).getAllByRole("button", { name: "探索对象: Project docs" })[1]!);
+    expect(trailLabels()).toEqual(["Alice", "Project docs", "brief.md", "Project docs"]);
+    const trail = screen.getByRole("navigation", { name: "探索路径" });
+    const earlierSameNameCrumb = within(trail).getByRole("button", { name: "Project docs" });
+    expect(earlierSameNameCrumb).not.toHaveAttribute("aria-current");
+    expect(within(trail).getByText("Project docs", { selector: 'span[aria-current="location"]' })).toBeVisible();
+    inspectObject();
+    const inspector = screen.getByRole("complementary", { name: "关系详情" });
+    expect(within(inspector).getByText("other-docs-binding")).toBeVisible();
+    fireEvent.click(within(inspector).getByRole("button", { name: "关闭详情" }));
+    fireEvent.click(earlierSameNameCrumb);
+    expect(trailLabels()).toEqual(["Alice", "Project docs"]);
+    inspectObject();
+    expect(within(inspector).getByText("workspace-org.v1")).toBeVisible();
+    expect(within(inspector).queryByText("other-docs-binding")).not.toBeInTheDocument();
+  });
+
+  it("restores the shortened trail and keeps another workspace's current object isolated", () => {
+    const { rerender, props } = mount();
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: Project docs" }));
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: brief.md" }));
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: Project docs" }));
+    expect(trailLabels()).toEqual(["Alice", "Project docs"]);
+    const otherScope = `cycle-other-${++uniqueScope}`;
+    const otherData = { ...data, workspaceId: otherScope, nodes: [agent], edges: [] };
+    rerender(<RelationshipGraph {...props} workspaceKey={otherScope} data={otherData} />);
+    expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
+    expect(within(context()).getByText("选一名员工看关联，或从资料查来源。")).toBeVisible();
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    rerender(<RelationshipGraph {...props} />);
+    expect(trailLabels()).toEqual(["Alice", "Project docs"]);
+    expect(within(context()).getByRole("heading", { name: "Project docs" })).toBeVisible();
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: brief.md" }));
+    expect(trailLabels()).toEqual(["Alice", "Project docs", "brief.md"]);
+    rerender(<RelationshipGraph {...props} workspaceKey={otherScope} data={otherData} />);
+    expect(within(context()).getByRole("heading", { name: "Alice" })).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
+  });
+
+  it("bounds a path of new objects to sixteen entries and keeps back navigation usable", () => {
+    const nodes: RelationshipNode[] = [agent, ...Array.from({ length: 18 }, (_, index) => {
+      const number = index + 1;
+      return number % 2
+        ? { ...source, id: `source:chain-${number}`, label: `Source ${number}` }
+        : { ...resource, id: `resource:chain-${number}`, label: `Document ${number}`, resourcePath: `knowledge/document-${number}.md` };
+    })];
+    const edges = nodes.slice(1).map((next, index) => {
+      const previous = nodes[index]!;
+      return index === 0
+        ? { ...data.edges[0]!, id: `chain:${index}`, source: previous.id, target: next.id }
+        : { ...data.edges[1]!, id: `chain:${index}`, source: previous.kind === "source" ? previous.id : next.id, target: previous.kind === "resource" ? previous.id : next.id };
+    });
+    mount({ data: { ...data, nodes, edges, coverage: [{ source: "workspace", state: "complete", count: nodes.length }] } });
+    fireEvent.click(within(objectList()).getByRole("button", { name: /^Alice / }));
+    for (const node of nodes.slice(1)) {
+      fireEvent.click(within(context()).getByRole("button", { name: `探索对象: ${node.label}` }));
+      expect(trailLabels().length).toBeLessThanOrEqual(16);
+      expect(within(context()).getByRole("heading", { name: node.label })).toBeVisible();
+    }
+    expect(trailLabels()).toEqual(nodes.slice(-16).map(node => node.label));
+    fireEvent.click(within(context()).getByRole("button", { name: "探索对象: Source 17" }));
+    expect(trailLabels()).toEqual(nodes.slice(3, -1).map(node => node.label));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "探索路径" })).getByRole("button", { name: "回到上一步" }));
+    expect(within(context()).getByRole("heading", { name: "Document 16" })).toBeVisible();
+    expect(trailLabels()).toEqual(nodes.slice(3, -2).map(node => node.label));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "探索路径" })).getByRole("button", { name: "Source 3" }));
+    expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
+    expect(within(context()).getByRole("heading", { name: "Source 3" })).toBeVisible();
+  });
+
+  it("normalizes a legacy cached click log without mutating the remembered input", () => {
+    const legacy = Object.freeze([agent.id, source.id, resource.id, source.id, agent.id, source.id, source.id]);
+    expect(normalizeRelationshipTrail(legacy)).toEqual([agent.id, source.id]);
+    expect(legacy).toEqual([agent.id, source.id, resource.id, source.id, agent.id, source.id, source.id]);
+  });
+
+  it("starts each visited object's context at the top and preserves keyboard focus across returns", () => {
+    const { props } = mount();
+    const employee = within(objectList()).getByRole("button", { name: /^Alice / });
+    employee.focus();
+    fireEvent.click(employee);
+    const pane = screen.getByLabelText("关联上下文", { selector: "div.owb-rgraph__main" });
+    expect(employee).toHaveFocus();
+    const visit = (label: string) => {
+      pane.scrollTop = 400;
+      const next = within(context()).getByRole("button", { name: `探索对象: ${label}` });
+      next.focus();
+      fireEvent.click(next);
+      expect(pane.scrollTop).toBe(0);
+      expect(pane).toHaveFocus();
+      expect(within(context()).getByRole("heading", { name: label })).toBeVisible();
+    };
+    visit("Project docs");
+    visit("brief.md");
+    visit("Project docs");
+    expect(trailLabels()).toEqual(["Alice", "Project docs"]);
+    const evidenceButton = within(context()).getByRole("button", { name: "查看依据: Project docs → 包含资源 → brief.md" });
+    evidenceButton.focus();
+    fireEvent.click(evidenceButton);
+    const inspector = screen.getByRole("complementary", { name: "关系详情" });
+    expect(inspector).toHaveFocus();
+    pane.scrollTop = 400;
+    const docEndpoint = within(inspector).getByRole("button", { name: "brief.md" });
+    docEndpoint.focus();
+    fireEvent.click(docEndpoint);
+    expect(inspector).not.toBeVisible();
+    expect(pane.scrollTop).toBe(0);
+    expect(pane).toHaveFocus();
+    expect(trailLabels()).toEqual(["Alice", "Project docs", "brief.md"]);
+    pane.scrollTop = 400;
+    const ancestor = within(screen.getByRole("navigation", { name: "探索路径" })).getByRole("button", { name: "Project docs" });
+    ancestor.focus();
+    fireEvent.click(ancestor);
+    expect(pane.scrollTop).toBe(0);
+    expect(pane).toHaveFocus();
+    expect(trailLabels()).toEqual(["Alice", "Project docs"]);
+    pane.scrollTop = 400;
+    const back = within(screen.getByRole("navigation", { name: "探索路径" })).getByRole("button", { name: "回到上一步" });
+    back.focus();
+    fireEvent.click(back);
+    expect(pane.scrollTop).toBe(0);
+    expect(pane).toHaveFocus();
+    expect(within(context()).getByRole("heading", { name: "Alice" })).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
+    visit("Project docs");
+    visit("brief.md");
+    pane.scrollTop = 400;
+    const restart = within(screen.getByRole("navigation", { name: "探索路径" })).getByRole("button", { name: "重新开始" });
+    restart.focus();
+    fireEvent.click(restart);
+    expect(within(context()).getByText("选一名员工看关联，或从资料查来源。")).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: "探索路径" })).not.toBeInTheDocument();
+    expect(pane.scrollTop).toBe(0);
+    expect(pane).toHaveFocus();
+    expect(props.onOpenAgent).not.toHaveBeenCalled();
+    expect(props.onOpenResource).not.toHaveBeenCalled();
   });
 
   it("searches for a starting object without hiding differently named neighbors", () => {
@@ -291,7 +471,8 @@ describe("RelationshipGraph", () => {
     expect(within(context()).getByRole("heading", { name: "Project docs" })).toBeVisible();
     const trail = screen.getByRole("navigation", { name: "探索路径" });
     expect(within(trail).getByRole("button", { name: "Alice" })).toBeVisible();
-    expect(within(trail).getByRole("button", { name: "Project docs" })).toHaveAttribute("aria-current", "location");
+    expect(within(trail).getByText("Project docs", { selector: "span" })).toHaveAttribute("aria-current", "location");
+    expect(within(trail).queryByRole("button", { name: "Project docs" })).not.toBeInTheDocument();
     expect(hiddenInspector()).not.toBeVisible();
   });
 
