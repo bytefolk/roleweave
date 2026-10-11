@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
@@ -423,6 +423,9 @@ export async function probeCodexBinary(
   const failed = (failure: NonNullable<CodexBinaryState["failure"]>): CodexBinaryState => ({ installed: true, version, supported: false, failure });
   try {
     temporaryRoot = mkdtempSync(path.join(os.tmpdir(), "roleweave-codex-probe-"));
+    // macOS exposes /var through /private/var. Use the same physical root for
+    // cwd and every disposable environment directory.
+    temporaryRoot = realpathSync(temporaryRoot);
     chmodSync(temporaryRoot, 0o700);
     const probeEnv = runtimeExecutableEnvironment(env);
     for (const [name, keys] of [
