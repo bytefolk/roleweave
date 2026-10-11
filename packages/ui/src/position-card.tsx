@@ -177,7 +177,7 @@ export function PositionCard({
             <ShieldCheck aria-hidden="true" size={13} />
             {t("pos.perms")}
           </h3>
-          {nativeToolOwner ? <p>{t("office.clientManaged")} {t("office.clientSettings")}</p> : <div className="owb-tagrow">
+          {nativeToolOwner ? <p>{t("office.clientManaged")} {t("office.clientSettings")}<span> {t("office.accountManaged")}</span></p> : <div className="owb-tagrow">
             {position.permissions.toolAllow.length === 0 ? (
               <span className="owb-tag owb-tag--muted">{t("pos.noAllow")}</span>
             ) : (

@@ -63,7 +63,8 @@ export function requestQwenOfficeLocal(env, operation, payload = {}, { signal, t
           // into model text, history or a displayed model name.
           const capability = /** @type {string} */ (env.ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN);
           const publicFrame = JSON.stringify(value);
-          if (publicFrame.includes(capability) || publicFrame.includes(Buffer.from(capability).toString("base64"))) {
+          const encodedCapability = Buffer.from(capability).toString("base64").replace(/=+$/, "");
+          if (publicFrame.toLowerCase().includes(capability) || publicFrame.includes(encodedCapability)) {
             finish(failure("qwen_office.credential_reflection")); return;
           }
           if (value.event !== undefined) {

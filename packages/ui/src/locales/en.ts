@@ -4,6 +4,7 @@ import { enVaultCatalog } from "./vault";
 export const enCatalog: Record<string, string> = {
   "office.brand": "Qwen Office",
   "office.clientManaged": "Qwen Office manages tools and approvals.",
+  "office.accountManaged": "Uses the current Qwen Office account and organization. Keep them unchanged until the task finishes.",
   "office.budgetManaged": "Qwen Office calculates budgets and usage. These RoleWeave budget records do not impose a per-task token cap on the client. Usage remains unknown when the client does not report it.",
   "office.clientSettings": "Configure tools and approvals in the Qwen Office client. RoleWeave tool permissions and position modes do not restrict client tools.",
   "office.currentModel": "Current Qwen Office model",
