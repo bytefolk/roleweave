@@ -11,6 +11,8 @@ function availability(): Record<TurnEngine, TurnEngineAvailability> {
     "codex-local": { configured: false, ready: false },
     workbuddy: { configured: false, ready: false },
     "workbuddy-local": { configured: false, ready: false },
+    "qwen-office-local": { configured: true, ready: true },
+
     gemini: { configured: false, ready: false },
     "openai-compatible": { configured: false, ready: false },
   };
@@ -61,4 +63,14 @@ it("keeps an invalid WorkBuddy local identity visible instead of selecting a ser
     connection: { source: "official", kind: "official", billing: "unknown", status: "invalid" },
   };
   expect(resolveAgentEngine("workbuddy", engines)).toBe("workbuddy-local");
+});
+
+it("keeps Qwen Office on its only native runtime even when other hosts are ready", () => {
+  const engines = availability();
+  engines["qwen-office-local"] = { configured: false, ready: false };
+  engines.codex = engines["codex-local"] = engines.workbuddy = { configured: true, ready: true };
+  expect(agentHostForEngine("qwen-office-local")).toBe("qwen-office-local");
+  expect(agentEnginesForHost("qwen-office-local")).toEqual(["qwen-office-local"]);
+  expect(resolveAgentEngine("qwen-office-local", engines)).toBe("qwen-office-local");
+  expect(visibleAgentHosts(["qwen-office-local"])).toEqual(["qwen-office-local"]);
 });

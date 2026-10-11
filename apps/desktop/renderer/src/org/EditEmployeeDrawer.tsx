@@ -19,6 +19,7 @@ import { useT } from "@roleweave/ui";
 import type { HirePermissions, PositionProfilePatch } from "@roleweave/shared";
 import type { PositionCardData } from "@roleweave/ui";
 import { CapabilityPicker, PermissionPolicyEditor } from "./PermissionsEditor";
+import type { TurnEngine } from "../turns/types";
 import "./edit-employee.css";
 
 const MAX_NAME_BYTES = 128;
@@ -49,6 +50,7 @@ function permissionFingerprint(policy: HirePermissions): string {
 export function EditEmployeeDrawer({
   open,
   position,
+  engine,
   busy,
   onClose,
   onSave,
@@ -56,11 +58,13 @@ export function EditEmployeeDrawer({
   open: boolean;
   /** The selected position record; null while the card is still loading. */
   position: PositionCardData | null;
+  engine?: TurnEngine;
   busy: boolean;
   onClose: () => void;
   onSave: (patch: PositionProfilePatch) => Promise<{ ok: true; name: string } | { ok: false; code: string }>;
 }) {
   const t = useT();
+  const clientManaged = engine === "qwen-office-local";
   const [name, setName] = useState("");
   const [mode, setMode] = useState<PositionCardData["mode"]>("read_only");
   const [permissions, setPermissions] = useState<HirePermissions>({ tools: [], rules: [] });
@@ -90,8 +94,8 @@ export function EditEmployeeDrawer({
   const permissionsChanged = initial !== null && permissionFingerprint(permissions) !== permissionFingerprint(initial);
   const changed = position !== null && (
     trimmedName !== position.name
-    || mode !== position.mode
-    || permissionsChanged
+    || (!clientManaged && mode !== position.mode)
+    || (!clientManaged && permissionsChanged)
   );
   const canSave = position !== null && nameValid && changed && !saving && !busy;
 
@@ -101,8 +105,8 @@ export function EditEmployeeDrawer({
     // permission grant this drawer did not intend to touch stays byte-identical.
     const patch: PositionProfilePatch = {};
     if (trimmedName !== position.name) patch.name = trimmedName;
-    if (mode !== position.mode) patch.mode = mode;
-    if (permissionsChanged) patch.permissions = permissions;
+    if (!clientManaged && mode !== position.mode) patch.mode = mode;
+    if (!clientManaged && permissionsChanged) patch.permissions = permissions;
     setSaving(true);
     setError(null);
     const outcome = await onSave(patch);
@@ -114,7 +118,7 @@ export function EditEmployeeDrawer({
     }
     const copyKey = FAILURE_COPY_KEYS[outcome.code];
     setError(copyKey !== undefined ? t(copyKey) : t("profile.failUnknown", { code: outcome.code }));
-  }, [canSave, messageApi, mode, onClose, onSave, permissions, permissionsChanged, position, t, trimmedName]);
+  }, [canSave, clientManaged, messageApi, mode, onClose, onSave, permissions, permissionsChanged, position, t, trimmedName]);
 
   return (
     <Drawer
@@ -151,7 +155,7 @@ export function EditEmployeeDrawer({
                 />
               </div>
               {nameValid ? null : <p id={`${permissionsPanelId}-name-error`} className="owb-profile-error" role="alert">{t(trimmedName.length === 0 ? "profile.nameRequired" : "profile.nameTooLong")}</p>}
-              <div className="owb-profile-setting">
+              {!clientManaged ? <div className="owb-profile-setting">
                 <label htmlFor={`${permissionsPanelId}-mode`}>{t("profile.mode")}</label>
                 <Select
                   id={`${permissionsPanelId}-mode`}
@@ -163,8 +167,9 @@ export function EditEmployeeDrawer({
                     { value: "approval_required", label: t("profile.modeApproval") },
                   ]}
                 />
-              </div>
+              </div> : null}
             </section>
+            {clientManaged ? <p className="owb-profile-empty">{t("office.clientManaged")} {t("office.clientSettings")} {t("office.accountManaged")}</p> : <>
             <CapabilityPicker variant="compact" permissions={permissions} onChange={setPermissions} />
             <section className="owb-profile-advanced">
               <button
@@ -184,6 +189,7 @@ export function EditEmployeeDrawer({
                 </div>
               ) : null}
             </section>
+            </>}
           </fieldset>
           )}
         </div>

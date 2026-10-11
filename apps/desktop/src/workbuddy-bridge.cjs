@@ -7,14 +7,24 @@ const { StringDecoder } = require("node:string_decoder");
 
 // This private, desktop-owned channel carries model requests, never provider
 // credentials. It exposes three operations, not an arbitrary HTTP proxy.
-const REQUEST_PREFIX = "roleweave-workbuddy-request ";
-const RESPONSE_PREFIX = "roleweave-workbuddy-response ";
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_IN_FLIGHT = 8;
-const REQUEST_TIMEOUT_MS = 60_000;
 const OPERATIONS = new Set(["probe", "catalog", "complete"]);
 const validId = (value) => typeof value === "string" && /^[a-f0-9-]{36}$/.test(value);
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+
+// Each provider has a separate ticket, socket, pipe prefix and error namespace.
+// Native Office tasks can publish bounded public status while the user confirms
+// actions in that client. The original WorkBuddy channel retains its contract.
+function createBridgeChannel({ name = "workbuddy", errorPrefix = "workbuddy", timeoutMs = 60_000, progress = false } = {}) {
+  if (!/^[a-z-]{1,32}$/.test(name) || !/^[a-z_]{1,32}$/.test(errorPrefix) ||
+      !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180_000) throw new Error("Invalid private bridge configuration");
+  const REQUEST_PREFIX = `roleweave-${name}-request `;
+  const RESPONSE_PREFIX = `roleweave-${name}-response `;
+  const REQUEST_TIMEOUT_MS = timeoutMs;
+  const errorCode = (suffix) => `${errorPrefix}.${suffix}`;
+  const validProgress = (value) => progress && record(value) && Object.keys(value).join(",") === "status"
+    && ["running", "waiting_for_input"].includes(value.status);
 
 function validRequest(value) {
   return record(value) && Object.keys(value).sort().join(",") === "id,operation,payload,token"
@@ -22,16 +32,16 @@ function validRequest(value) {
     && typeof value.token === "string" && /^[a-f0-9]{64}$/.test(value.token);
 }
 function safeError(error) {
-  return typeof error?.code === "string" && /^workbuddy\.[a-z_]{1,64}$/.test(error.code)
-    ? error.code : "workbuddy.client_unavailable";
+  return typeof error?.code === "string" && new RegExp(`^${errorPrefix}\\.[a-z_]{1,64}$`).test(error.code)
+    ? error.code : errorCode("client_unavailable");
 }
-function invokeOwned(invoke, request, signal) {
+function invokeOwned(invoke, request, signal, onProgress) {
   let abort;
   const cancelled = new Promise((_resolve, reject) => {
-    abort = () => reject(Object.assign(new Error("WorkBuddy request cancelled"), { code: "workbuddy.cancelled" }));
+    abort = () => reject(Object.assign(new Error("Local client request cancelled"), { code: errorCode("cancelled") }));
     if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true });
   });
-  return Promise.race([Promise.resolve().then(() => { if (signal.aborted) throw Object.assign(new Error("WorkBuddy request cancelled"), { code: "workbuddy.cancelled" }); return invoke(request, signal); }), cancelled])
+  return Promise.race([Promise.resolve().then(() => { if (signal.aborted) throw Object.assign(new Error("Local client request cancelled"), { code: errorCode("cancelled") }); return invoke(request, signal, onProgress); }), cancelled])
     .finally(() => signal.removeEventListener("abort", abort));
 }
 
@@ -39,19 +49,19 @@ function invokeOwned(invoke, request, signal) {
 // its upstream work; stopping the owning desktop/supervisor drops every call.
 function createPrivateBridge(invoke, { platform = process.platform, root = os.tmpdir() } = {}) {
   const token = crypto.randomBytes(32).toString("hex");
-  const directory = platform === "win32" ? null : fs.mkdtempSync(path.join(root, "rw-workbuddy-"));
+  const directory = platform === "win32" ? null : fs.mkdtempSync(path.join(root, `rw-${name}-`));
   if (directory) fs.chmodSync(directory, 0o700);
-  const endpoint = platform === "win32" ? `\\\\.\\pipe\\roleweave-workbuddy-${crypto.randomUUID()}` : path.join(directory, "bridge.sock");
+  const endpoint = platform === "win32" ? `\\\\.\\pipe\\roleweave-${name}-${crypto.randomUUID()}` : path.join(directory, "bridge.sock");
   const calls = new Map();
   const sockets = new Set();
   const server = net.createServer((socket) => {
     sockets.add(socket);
-    let buffer = Buffer.alloc(0), started = false, controller;
+    let buffer = Buffer.alloc(0), started = false, controller, progressCount = 0;
     const timer = setTimeout(() => socket.destroy(), REQUEST_TIMEOUT_MS);
     const send = (value) => {
       if (socket.destroyed) return;
       const frame = JSON.stringify(value);
-      socket.end(`${Buffer.byteLength(frame) + 1 > MAX_FRAME_BYTES ? JSON.stringify({ id: value.id, error: "workbuddy.output_limit" }) : frame}\n`);
+      socket.end(`${Buffer.byteLength(frame) + 1 > MAX_FRAME_BYTES ? JSON.stringify({ id: value.id, error: errorCode("output_limit") }) : frame}\n`);
     };
     socket.on("data", (chunk) => {
       if (started || buffer.length + chunk.length > MAX_FRAME_BYTES) { socket.destroy(); return; }
@@ -65,7 +75,12 @@ function createPrivateBridge(invoke, { platform = process.platform, root = os.tm
       if (buffer.length || !validRequest(request) || request.token !== token || calls.size >= MAX_IN_FLIGHT || calls.has(request.id)) { socket.destroy(); return; }
       controller = new AbortController();
       calls.set(request.id, controller);
-      invokeOwned(invoke, { id: request.id, operation: request.operation, payload: request.payload }, controller.signal)
+      const onProgress = (event) => {
+        if (request.operation !== "complete" || !validProgress(event) || controller.signal.aborted || socket.destroyed) return;
+        if (++progressCount > 64) { controller.abort(); socket.destroy(); return; }
+        socket.write(`${JSON.stringify({ id: request.id, event })}\n`);
+      };
+      invokeOwned(invoke, { id: request.id, operation: request.operation, payload: request.payload }, controller.signal, onProgress)
         .then((result) => send({ id: request.id, result }), (error) => send({ id: request.id, error: safeError(error) }))
         .finally(() => calls.delete(request.id));
     });
@@ -100,7 +115,7 @@ function attachWslBridge(child, invoke) {
   const respond = (value) => {
     if (closed || child.stdin.destroyed || child.stdin.writableEnded) return;
     let frame = `${RESPONSE_PREFIX}${JSON.stringify(value)}\n`;
-    if (Buffer.byteLength(frame) > MAX_FRAME_BYTES) frame = `${RESPONSE_PREFIX}${JSON.stringify({ id: value.id, error: "workbuddy.output_limit" })}\n`;
+    if (Buffer.byteLength(frame) > MAX_FRAME_BYTES) frame = `${RESPONSE_PREFIX}${JSON.stringify({ id: value.id, error: errorCode("output_limit") })}\n`;
     child.stdin.write(frame);
   };
   const onData = (chunk) => {
@@ -118,11 +133,17 @@ function attachWslBridge(child, invoke) {
         active.get(request.id)?.controller.abort(); continue;
       }
       if (Object.keys(request).sort().join(",") !== "id,operation,payload" || !OPERATIONS.has(request.operation) || !record(request.payload) || active.has(request.id)) continue;
-      if (active.size >= MAX_IN_FLIGHT) { respond({ id: request.id, error: "workbuddy.busy" }); continue; }
+      if (active.size >= MAX_IN_FLIGHT) { respond({ id: request.id, error: errorCode("busy") }); continue; }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      active.set(request.id, { controller, timer });
-      invokeOwned(invoke, request, controller.signal)
+      const owned = { controller, timer, progressCount: 0 };
+      active.set(request.id, owned);
+      const onProgress = (event) => {
+        if (request.operation !== "complete" || !validProgress(event) || controller.signal.aborted || active.get(request.id) !== owned) return;
+        if (++owned.progressCount > 64) { controller.abort(); return; }
+        respond({ id: request.id, event });
+      };
+      invokeOwned(invoke, request, controller.signal, onProgress)
         .then((result) => respond({ id: request.id, result }), (error) => respond({ id: request.id, error: safeError(error) }))
         .finally(() => { clearTimeout(timer); active.delete(request.id); });
     }
@@ -143,4 +164,7 @@ function attachWslBridge(child, invoke) {
   return { close };
 }
 
-module.exports = { REQUEST_PREFIX, RESPONSE_PREFIX, MAX_FRAME_BYTES, REQUEST_TIMEOUT_MS, MAX_IN_FLIGHT, validId, createPrivateBridge, attachWslBridge };
+return { REQUEST_PREFIX, RESPONSE_PREFIX, REQUEST_TIMEOUT_MS, createPrivateBridge, attachWslBridge };
+}
+
+module.exports = { ...createBridgeChannel(), MAX_FRAME_BYTES, MAX_IN_FLIGHT, validId, createBridgeChannel };

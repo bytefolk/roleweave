@@ -22,20 +22,20 @@ Its organizing principle is simple: **the file tree is the org chart.** Roles li
 
 For example, an open-source maintenance team can have a repository owner with three supporting roles: an issue researcher, a community operator, and a release engineer. The repository includes an [example workspace](examples/oss-maintainer) with this structure and role budgets.
 
-The v0.4.0 source adds a persistent approval center, project execution with human acceptance, goal and progress workspaces, connected drive browsing, a workspace Markdown vault with manual Mem synchronization, and relationship/organization graph views. Conversations gain image/PDF attachments, a visible thought/tool activity trail, and a Gemini CLI host; Windows can download and install updates after explicit confirmation. See the [release notes](docs/releases/v0.4.0.md) for compatibility changes and [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.3.0 installers do not include these changes.
+The v0.5.0 source adds local WorkBuddy and Qwen Office client connections, improves Agent readiness checks, and refines employee settings, organization search, project layouts and rich conversation replies. See the [v0.5.0 notes](docs/releases/v0.5.0.md) for the local candidate and [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits.
 
 Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior ships with v0.2.0.
 
 ## Download
 
-RoleWeave is an **early preview**. This source targets **v0.4.0**. The versioned downloads below become available when the release is published; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
+RoleWeave is an **early preview**. This source targets **v0.5.0**, currently a local Windows candidate. The downloads below point to the published v0.4.0 installers; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) for public packages.
 
 | Platform | Download |
 | --- | --- |
 | macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.4.0/roleweave-0.4.0-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.4.0/roleweave-0.4.0-arm64.zip) |
 | Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.4.0/roleweave-0.4.0-x64.exe) |
 
-See the [v0.4.0 release notes](docs/releases/v0.4.0.md) for this candidate's changes and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
+See the [v0.5.0 notes](docs/releases/v0.5.0.md) for current source changes, the [v0.4.0 release notes](docs/releases/v0.4.0.md) for the published installers and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
 
 **Installation notes:** macOS packages are not Apple Developer ID-signed or notarized, and the Windows installer is not Authenticode-signed. Your operating system may show a security prompt on installation or first launch. The macOS update manifest has a separate cryptographic signature; this does not provide Apple code-signing trust. Windows updates use the HTTPS release feed and the installer's SHA-512 checksum, without publisher verification. Users of older Org Workbench development builds need to install RoleWeave manually once. Existing unsigned Windows builds that disable in-app installation also need one manual upgrade to a build containing this update change.
 
