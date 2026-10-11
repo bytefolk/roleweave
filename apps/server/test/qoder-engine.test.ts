@@ -1162,6 +1162,14 @@ setInterval(() => {}, 1000);
   assert.equal(exit.code, 143);
   assert.equal(exit.signal, null);
   await assert.rejects(fs.access(temporaryRoot), { code: "ENOENT" });
+  // SIGKILL delivery and OS reaping are asynchronous even after the adapter's
+  // own stdio closes. Keep the same no-survivor assertion with a bounded wait.
+  const reapDeadline = performance.now() + 2000;
+  while (performance.now() < reapDeadline) {
+    try { process.kill(childState.pid, 0); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") break; throw error; }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
   assert.throws(() => process.kill(childState.pid, 0), { code: "ESRCH" });
 });
 
