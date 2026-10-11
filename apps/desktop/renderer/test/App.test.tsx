@@ -8,6 +8,29 @@ import { HireDrawer } from "../src/org/HireDrawer";
 import type { OwbBridge } from "../src/owb";
 import type { ApprovalView, GoalDetail, ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession, WorkspaceInfoResponse } from "@roleweave/shared";
 
+function roleResourceGraph(path: string) {
+  const evidence = { source: "workspace_documents", locator: `position:repo-owner/${path}`, basis: "observed" as const, observedAt: "2026-10-11T00:00:00Z" };
+  return { schemaVersion: "relationship-graph.v1" as const, workspaceId: "resource-navigation-fixture", revision: "resource-1", generatedAt: evidence.observedAt,
+    nodes: [
+      { id: "agent:repo-owner", kind: "agent" as const, label: "Reader Owner", state: "ready" as const, positionId: "repo-owner", evidence },
+      { id: "source:role-docs", kind: "source" as const, label: "Role docs", state: "ready" as const, evidence },
+      { id: "resource:role-file", kind: "resource" as const, label: path, state: "ready" as const, positionId: "repo-owner", resourcePath: path, evidence },
+    ], edges: [
+      { id: "edge:source", source: "agent:repo-owner", target: "source:role-docs", kind: "declares_source" as const, evidence, permission: "unknown" as const },
+      { id: "edge:file", source: "source:role-docs", target: "resource:role-file", kind: "contains_resource" as const, evidence, permission: "unknown" as const },
+    ], coverage: [], truncated: false, limits: { nodes: 400, edges: 800 } };
+}
+
+async function openGraphRoleResource(path: string) {
+  await openOrganizationStructure();
+  fireEvent.click(within(screen.getByRole("navigation", { name: "组织视图" })).getByRole("button", { name: "关系图谱" }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Reader Owner / }));
+  const context = within(screen.getByRole("region", { name: "关联上下文" }));
+  fireEvent.click(context.getByRole("button", { name: "探索对象: Role docs" }));
+  fireEvent.click(context.getByRole("button", { name: `探索对象: ${path}` }));
+  fireEvent.click(context.getByRole("button", { name: "打开文档" }));
+}
+
 const activeSession: WorkbenchSession = {
   schemaVersion: "workbench-session.v1",
   sessionId: "11111111-1111-4111-8111-111111111111",
@@ -2420,6 +2443,143 @@ it.each(["history", "sessions"])("ignores A %s rejection after opening B with th
   expect(screen.queryByText(kind === "history" ? "本地历史读取失败：本地服务不可用" : "会话列表读取失败：本地服务不可用")).not.toBeInTheDocument();
 });
 
+it.each(["knowledge/README.md", "SKILL.md", "schemas/task.json"])("opens the exact graph role file %s without depending on the vault's asynchronous list", async (path) => {
+  const content = path.endsWith(".json") ? '{"originalRoleSource":"schemas/task.json"}' : `# Original role file\n\nOriginal role source: ${path}`;
+  const readFile = vi.fn().mockResolvedValue({ status: 200, body: {
+    schemaVersion: "docs-file.v1", positionId: "repo-owner", path, content,
+    version: "2026-10-11T00:00:00Z", modifiedAt: "2026-10-11T00:00:00Z", size: content.length,
+  } });
+  const bridge = openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph(path) }), positionDocFile: readFile });
+  vi.mocked(bridge.vault.list).mockImplementation(() => new Promise(() => {}));
+  render(<App />);
+  await openGraphRoleResource(path);
+  const reader = await screen.findByRole("dialog", { name: new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
+  await waitFor(() => expect(readFile).toHaveBeenCalledExactlyOnceWith("repo-owner", path));
+  await waitFor(() => expect(reader.querySelector(".owb-doc-viewer__body")).toHaveTextContent(path.endsWith(".json") ? content : `Original role source: ${path}`));
+  expect(bridge.vault.source).not.toHaveBeenCalled();
+  expect(bridge.vault.resolve).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+  expect(bridge.vault.list).not.toHaveBeenCalled();
+  expect(screen.queryByText("未找到该篇笔记")).not.toBeInTheDocument();
+  expect(within(reader).queryByRole("textbox")).not.toBeInTheDocument();
+});
+
+it("keeps an ordinary turn path as a confined workspace artifact despite its employee identity", async () => {
+  const openFile = vi.fn().mockResolvedValue({ opened: true });
+  const readFile = vi.fn();
+  const bridge = openedBridge({ openWorkspaceFile: openFile, positionDocFile: readFile, sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: {
+    ...history([apiTurn({ conversationId: activeSession.sessionId, output: "[Open workspace artifact](src/README.md)" })]), conversationId: activeSession.sessionId,
+  } }) });
+  render(<App />); await selectRepoOwner();
+  fireEvent.click(await screen.findByRole("link", { name: /Open workspace artifact/ }));
+  await waitFor(() => expect(openFile).toHaveBeenCalledExactlyOnceWith("src/README.md", "/fixture/workspace"));
+  expect(readFile).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+  expect(bridge.vault.resolve).not.toHaveBeenCalled();
+});
+
+it.each(["knowledge/README.md", "SKILL.md"])("preserves the legacy turn role-document link %s", async (path) => {
+  const readFile = vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "docs-file.v1", positionId: "repo-owner", path,
+    content: "# Legacy role source\n\nRead directly from this employee package.", version: "original", modifiedAt: "2026-10-11T00:00:00Z", size: 64 } });
+  const bridge = openedBridge({ positionDocFile: readFile, openWorkspaceFile: vi.fn(), sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: {
+    ...history([apiTurn({ conversationId: activeSession.sessionId, output: `[Open role document](${path})` })]), conversationId: activeSession.sessionId,
+  } }) });
+  render(<App />); await selectRepoOwner();
+  fireEvent.click(await screen.findByRole("link", { name: /Open role document/ }));
+  await waitFor(() => expect(readFile).toHaveBeenCalledExactlyOnceWith("repo-owner", path));
+  const reader = await screen.findByRole("dialog");
+  expect(reader.querySelector(".ant-modal-title")).toHaveTextContent(path);
+  await waitFor(() => expect(within(reader).getByRole("heading", { name: "Legacy role source" })).toBeVisible());
+  expect(readFile).toHaveBeenCalledExactlyOnceWith("repo-owner", path);
+  expect(bridge.openWorkspaceFile).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+});
+
+it("opens an explicit turn vault reference by note identity even while its list is pending", async () => {
+  const note = { noteId: "note-original", path: "项目记录.md", title: "项目记录", size: 44, version: "sha256:fixture", modifiedAt: "2026-10-11T00:00:00Z", archived: false, readOnly: false, positionIds: [], ref: { uri: "vault://notes/note-original", version: "sha256:fixture" } };
+  const bridge = openedBridge({ positionDocFile: vi.fn(), sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: {
+    ...history([apiTurn({ conversationId: activeSession.sessionId, output: "[Open exact note](vault://notes/note-original)" })]), conversationId: activeSession.sessionId,
+  } }) });
+  vi.mocked(bridge.vault.list).mockImplementation(() => new Promise(() => {}));
+  vi.mocked(bridge.vault.resolve).mockResolvedValue({ status: 200, body: { schemaVersion: "vault-note.v1", note, content: "# Authoritative note identity\n\nExact notebook source." } });
+  vi.mocked(bridge.vault.read).mockResolvedValue({ status: 200, body: { schemaVersion: "vault-note.v1", note, content: "# Authoritative note identity\n\nExact notebook source." } });
+  render(<App />); await selectRepoOwner();
+  fireEvent.click(await screen.findByRole("link", { name: /Open exact note/ }));
+  expect(await screen.findByRole("heading", { name: "Authoritative note identity" })).toBeVisible();
+  expect(bridge.vault.resolve).toHaveBeenCalledWith({ uri: "vault://notes/note-original" });
+  expect(bridge.vault.read).toHaveBeenCalledWith("note-original");
+  expect(bridge.positionDocFile).not.toHaveBeenCalled();
+  expect(screen.queryByText("未找到该篇笔记")).not.toBeInTheDocument();
+});
+
+it("rejects a role reader response for a different owner despite the same file name", async () => {
+  const path = "knowledge/README.md";
+  openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph(path) }), positionDocFile: vi.fn().mockResolvedValue({ status: 200, body: {
+    schemaVersion: "docs-file.v1", positionId: "different-employee", path, content: "# Different owner's source", version: "other", modifiedAt: "2026-10-11T00:00:00Z", size: 32,
+  } }) });
+  render(<App />); await openGraphRoleResource(path);
+  const reader = await screen.findByRole("dialog", { name: /knowledge\/README/ });
+  await waitFor(() => expect(within(reader).getByText("文档读取失败")).toBeVisible());
+  expect(within(reader).queryByRole("heading", { name: "Different owner's source" })).not.toBeInTheDocument();
+});
+
+it("opens an explicit document URI at its exact employee and role-relative path", async () => {
+  const uri = "owb-doc://release-engineer/schemas/task.json";
+  const readFile = vi.fn().mockResolvedValue({ status: 200, body: {
+    schemaVersion: "docs-file.v1", positionId: "release-engineer", path: "schemas/task.json", content: '{"source":"release-engineer-original"}',
+    version: "original", modifiedAt: "2026-10-11T00:00:00Z", size: 38,
+  } });
+  const bridge = openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph(uri) }), positionDocFile: readFile, openWorkspaceFile: vi.fn() });
+  render(<App />); await openGraphRoleResource(uri);
+  await waitFor(() => expect(readFile).toHaveBeenCalledExactlyOnceWith("release-engineer", "schemas/task.json"));
+  const reader = await screen.findByRole("dialog");
+  await waitFor(() => expect(reader.querySelector(".owb-doc-viewer__body")).toHaveTextContent('"source":"release-engineer-original"'));
+  expect(bridge.vault.resolve).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+  expect(bridge.openWorkspaceFile).not.toHaveBeenCalled();
+});
+
+it.each([
+  "owb-doc://Invalid_Employee/knowledge/README.md",
+  "owb-doc://repo-owner/knowledge/../SKILL.md",
+  "owb-doc://repo-owner/knowledge/%2e%2e/SKILL.md",
+  "knowledge/../SKILL.md",
+])("rejects an unsafe role document locator before reading any source: %s", async (path) => {
+  const warning = vi.spyOn(message, "warning");
+  const bridge = openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph(path) }), positionDocFile: vi.fn(), openWorkspaceFile: vi.fn() });
+  render(<App />); await openGraphRoleResource(path);
+  await waitFor(() => expect(warning).toHaveBeenCalledWith("此资源暂无文档打开入口"));
+  expect(bridge.positionDocFile).not.toHaveBeenCalled();
+  expect(bridge.openWorkspaceFile).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+  expect(bridge.vault.resolve).not.toHaveBeenCalled();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it.each(["B", "A"] as const)("does not show an old role document when its workspace changes and ends at %s", async (destination) => {
+  let workspace = "A";
+  let finishRead!: (value: unknown) => void;
+  const readFile = vi.fn(() => new Promise(resolve => { finishRead = resolve; }));
+  openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph("knowledge/README.md") }), positionDocFile: readFile,
+    workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })),
+  });
+  // Immediate fixture reads and picker actions are flushed by async act; do
+  // not repeatedly poll the complete App DOM between real workspace changes.
+  await act(async () => { render(<App />); });
+  const projectEntry = screen.getByRole("button", { name: "项目入口" });
+  await openGraphRoleResource("knowledge/README.md");
+  expect(readFile).toHaveBeenCalledExactlyOnceWith("repo-owner", "knowledge/README.md");
+  workspace = "B"; await chooseExistingWorkspace();
+  expect(projectEntry).toHaveTextContent("Workspace B");
+  if (destination === "A") {
+    workspace = "A"; await chooseExistingWorkspace();
+    expect(projectEntry).toHaveTextContent("Workspace A");
+  }
+  await act(async () => finishRead({ status: 200, body: { schemaVersion: "docs-file.v1", positionId: "repo-owner", path: "knowledge/README.md", content: "# Old workspace A source", version: "old", modifiedAt: "2026-10-11T00:00:00Z", size: 32 } }));
+  expect(screen.queryByRole("heading", { name: "Old workspace A source" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: /knowledge\/README/ })).not.toBeInTheDocument();
+}, 15_000);
+
 it("preserves the actual composer, draft and selected session across organization graph navigation", async () => {
   const bridge = openedBridge({ sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: {
     ...history([apiTurn({ conversationId: activeSession.sessionId })]), conversationId: activeSession.sessionId,
@@ -2468,7 +2628,7 @@ it("preserves the actual composer, draft and selected session across organizatio
   openGraph();
   fireEvent.click(await within(screen.getByRole("list", { name: "对象" })).findByRole("button", { name: /Repo Owner/ }));
   expect(input).not.toBeVisible();
-  fireEvent.click(within(screen.getByRole("complementary", { name: "关系详情" })).getByRole("button", { name: "打开员工工作台" }));
+  fireEvent.click(within(screen.getByRole("region", { name: "关联上下文" })).getByRole("button", { name: "打开员工工作台" }));
   await waitFor(expectConversation);
   expect(bridge.createSessionTurn).not.toHaveBeenCalled();
   expect(bridge.createSession).not.toHaveBeenCalled();

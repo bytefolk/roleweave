@@ -83,14 +83,24 @@ if (!process.versions.electron) {
     win.webContents.on('console-message', event => { if (event.level === 'error') { errors.push(event.message); console.error(event.message); } });
     win.webContents.debugger.attach('1.3');
     await win.loadURL(process.argv[3]);
-    const evaluate = source => win.webContents.executeJavaScript(source);
+    const evaluate = source => win.webContents.executeJavaScript(source).catch(error => {
+      throw new Error(`Graph smoke evaluation failed (${source.slice(0, 220)}): ${error.message}`, { cause: error });
+    });
     const waitFor = selectors => evaluate(`new Promise((resolve, reject) => { const start = performance.now(); const check = () => { if (${javascriptLiteral(selectors)}.every(selector => document.querySelector(selector))) return resolve(true); if (performance.now() - start > 10000) return reject(new Error('Timed out waiting for graph elements')); requestAnimationFrame(check); }; check(); })`);
     const frames = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-    await waitFor(['.owb-rgraph__renderer button']);
-    await evaluate(`Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === '极简关系图').click()`);
-    await waitFor(['.owb-rgraph__spatial-stage canvas', '.owb-rgraph__spatial-label']);
+    await waitFor(['.owb-rgraph__context', '.owb-rgraph__list button']);
     const failures = [];
     const check = (name, fn) => { try { fn(); } catch (error) { failures.push(`${name}: ${error.message}`); } };
+    const initial = await evaluate(`(() => { const list = document.querySelector('.owb-rgraph__list'); return { objects: list.querySelectorAll('button').length, resourceVisible: list.textContent.includes('brief.md'), guideVisible: !!document.querySelector('.owb-rgraph__welcome-steps'), moreOpen: document.querySelector('.owb-rgraph__more').open, inspectorOpen: !document.querySelector('.owb-rgraph__inspector').hidden }; })()`);
+    check('simplified default', () => {
+      assert.equal(initial.objects, 24, 'the default list should contain employees');
+      assert.equal(initial.resourceVisible, false, 'technical and resource objects should not crowd the initial employee list');
+      assert.equal(initial.guideVisible, false, 'the initial page should not repeat the optional guide steps');
+      assert.equal(initial.moreOpen, false);
+      assert.equal(initial.inspectorOpen, false);
+    });
+    await evaluate(`(() => { const more = document.querySelector('.owb-rgraph__more'); more.open = true; const label = Array.from(more.querySelectorAll('label')).find(item => item.textContent === '显示全部对象'); label.querySelector('input').click(); more.open = false; })()`);
+    await frames();
     const wheel = async (selector, scrollSelector, deltaX, deltaY, modifiers = 0) => {
       await evaluate(`document.querySelector(${javascriptLiteral(selector)}).scrollIntoView({ block: 'nearest', inline: 'nearest' })`);
       await frames();
@@ -102,7 +112,7 @@ if (!process.versions.electron) {
     };
     const pressEnter = async () => {
       const key = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
-      await win.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', ...key });
+      await win.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', ...key, text: '\r', unmodifiedText: '\r' });
       await win.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', ...key });
       await frames();
     };
@@ -114,18 +124,17 @@ if (!process.versions.electron) {
       for (const theme of ['light', 'dark']) {
         await evaluate(`window.setFixtureTheme(${javascriptLiteral(theme)})`);
         await frames();
-        for (const mode of ['minimal', 'galaxy']) {
-          await evaluate(mode === 'minimal'
-            ? "Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === '极简关系图').click(); document.querySelector('.owb-rgraph').scrollTop = 0;"
-            : "Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === '空间关系图').click(); document.querySelector('.owb-rgraph').scrollTop = 0;");
+        for (const mode of ['context', 'galaxy']) {
+          await evaluate(`document.querySelector('.owb-rgraph__more').open = true; Array.from(document.querySelectorAll('.owb-rgraph__renderer button')).find(button => button.textContent === ${javascriptLiteral(mode === 'context' ? '关联列表' : '图形总览')}).click(); document.querySelector('.owb-rgraph').scrollTop = 0;`);
           await frames();
-          if (mode === 'minimal') {
-            await evaluate(`document.querySelector(${javascriptLiteral(`[aria-label="空间主题"] button:nth-child(${theme === 'light' ? 2 : 1})`)}).click()`);
+          if (mode === 'context') {
+            await evaluate(`Array.from(document.querySelectorAll('.owb-rgraph__list button')).find(button => button.textContent.startsWith('Employee 0')).click()`);
             await frames();
           }
+          if (mode === 'galaxy') await waitFor(['.owb-rgraph__spatial-stage canvas', '.owb-rgraph__spatial-label']);
           const label = `${width}x${height}/${theme}/${mode}`;
-          const activeTheme = await evaluate(`({ shell: document.documentElement.dataset.theme, spatial: document.querySelector('.owb-rgraph__spatial').classList.contains('owb-rgraph__spatial--light') ? 'light' : 'dark' })`);
-          check(label, () => { assert.equal(activeTheme.shell, theme); if (mode === 'minimal') assert.equal(activeTheme.spatial, theme); });
+          const activeTheme = await evaluate(`({ shell: document.documentElement.dataset.theme, spatial: document.querySelector('.owb-rgraph__spatial')?.classList.contains('owb-rgraph__spatial--light') ? 'light' : 'dark', moreOpen: document.querySelector('.owb-rgraph__more').open })`);
+          check(label, () => { assert.equal(activeTheme.shell, theme); if (mode === 'galaxy') assert.equal(activeTheme.spatial, theme); assert.equal(activeTheme.moreOpen, false, 'choosing a view must close the advanced menu'); });
           const layout = await evaluate(`(() => { const graph = document.querySelector('.owb-rgraph'); const shell = document.querySelector('.owb-main'); const workspace = document.querySelector('.owb-rgraph__workspace'); const main = document.querySelector('.owb-rgraph__main'); const list = document.querySelector('.owb-rgraph__list'); const navigation = document.querySelector('.owb-rgraph__object-navigation'); return { width: graph.clientWidth, client: graph.clientHeight, scroll: graph.scrollHeight, bottom: graph.getBoundingClientRect().bottom, mainBottom: shell.getBoundingClientRect().bottom, workspaceBottom: workspace.getBoundingClientRect().bottom, overflow: getComputedStyle(graph).overflowY, paneOverflow: getComputedStyle(main).overflowY, paneClient: main.clientHeight, paneScroll: main.scrollHeight, listClient: list.clientHeight, listScroll: list.scrollHeight, objectCount: list.querySelectorAll('button').length, stripPresent: !!navigation }; })()`);
           check(label, () => {
             assert.equal(layout.width > 940, width === 1728, 'cover both inspector layout breakpoints');
@@ -134,35 +143,46 @@ if (!process.versions.electron) {
             assert.ok(layout.scroll <= layout.client + 2, 'columns must own overflow instead of growing a page below the shell');
             assert.equal(layout.overflow, 'hidden');
             assert.match(layout.paneOverflow, /auto|scroll/);
+            if (mode === 'context') assert.ok(layout.paneScroll > layout.paneClient, 'the relationship fixture must actually overflow the center pane');
             assert.equal(layout.stripPresent, false, 'formal graph must not render duplicate filmstrip navigation');
-            assert.equal(layout.objectCount, 25, 'the unique Sidebar must retain every projected fixture object');
+            assert.equal(layout.objectCount, 25, 'the explicitly expanded Sidebar must retain every projected fixture object');
             assert.ok(layout.listClient > 0 && layout.listScroll > layout.listClient, 'a long Sidebar must have reachable list overflow');
           });
           await evaluate("document.querySelector('.owb-rgraph__list').scrollTop = 0; document.querySelector('.owb-rgraph__main').scrollTop = 0");
           const beforeListWheel = await wheel('.owb-rgraph__list', '.owb-rgraph__list', 0, 180);
           const listScrollTop = await evaluate('document.querySelector(".owb-rgraph__list").scrollTop');
           check(label, () => assert.ok(listScrollTop > beforeListWheel, 'ordinary wheel must scroll the Sidebar list'));
-          const beforeWheel = await wheel('.owb-rgraph__spatial-stage canvas', '.owb-rgraph__main', 0, 180);
+          const beforeWheel = await wheel(mode === 'galaxy' ? '.owb-rgraph__spatial-stage canvas' : '.owb-rgraph__context', '.owb-rgraph__main', 0, 180);
           const paneScrollTop = await evaluate('document.querySelector(".owb-rgraph__main").scrollTop');
-          check(label, () => { if (layout.paneScroll > layout.paneClient + 1) assert.ok(paneScrollTop > beforeWheel, 'wheel over an overflowing canvas must scroll its center pane'); });
+          check(label, () => { if (layout.paneScroll > layout.paneClient + 1) assert.ok(paneScrollTop > beforeWheel, 'ordinary wheel must scroll overflowing center content'); });
           await evaluate('document.querySelector(".owb-rgraph__main").scrollTop = 0');
-          const input = await evaluate(`(() => { const canvas = document.querySelector('.owb-rgraph__spatial-stage canvas'); return [new WheelEvent('wheel', { deltaX: 120, bubbles: true, cancelable: true }), new WheelEvent('wheel', { deltaY: -30, ctrlKey: true, bubbles: true, cancelable: true })].map(event => { canvas.dispatchEvent(event); return event.defaultPrevented; }); })()`);
-          check(label, () => { assert.equal(input[0], false, 'horizontal wheel must not be swallowed'); assert.equal(input[1], true, 'Ctrl+wheel must retain camera zoom'); });
-          const reached = await evaluate(`(() => { const pane = document.querySelector('.owb-rgraph__main'); pane.scrollTop = pane.scrollHeight; const footer = document.querySelector('.owb-rgraph__timestamp').getBoundingClientRect(); const bounds = pane.getBoundingClientRect(); return footer.top >= bounds.top - 1 && footer.bottom <= bounds.bottom + 1; })()`);
-          check(label, () => assert.ok(reached, 'center-pane footer must remain reachable'));
+          if (mode === 'galaxy') {
+            const input = await evaluate(`(() => { const canvas = document.querySelector('.owb-rgraph__spatial-stage canvas'); return [new WheelEvent('wheel', { deltaX: 120, bubbles: true, cancelable: true }), new WheelEvent('wheel', { deltaY: -30, ctrlKey: true, bubbles: true, cancelable: true })].map(event => { canvas.dispatchEvent(event); return event.defaultPrevented; }); })()`);
+            check(label, () => { assert.equal(input[0], false, 'horizontal wheel must not be swallowed'); assert.equal(input[1], true, 'Ctrl+wheel must retain camera zoom'); });
+          }
+          const reached = await evaluate(`(() => { const pane = document.querySelector('.owb-rgraph__main'); pane.scrollTop = pane.scrollHeight; const content = document.querySelector('.owb-rgraph__context') || document.querySelector('.owb-rgraph__canvas-wrap'); const end = content.getBoundingClientRect(), bounds = pane.getBoundingClientRect(); return end.bottom >= bounds.top - 1 && end.bottom <= bounds.bottom + 1; })()`);
+          check(label, () => assert.ok(reached, 'the end of the center content must remain reachable'));
           const keyboardReachable = await evaluate(`(() => { const list = document.querySelector('.owb-rgraph__list'); const button = [...list.querySelectorAll('button')].find(button => button.textContent.includes('brief.md')); window.openedResources = []; button.focus(); button.scrollIntoView({ block: 'nearest', inline: 'nearest' }); const row = button.getBoundingClientRect(), bounds = list.getBoundingClientRect(); return document.activeElement === button && row.top >= bounds.top - 1 && row.bottom <= bounds.bottom + 1; })()`);
           check(label, () => assert.ok(keyboardReachable, 'the last resource must be reachable and focusable in the Sidebar'));
           await pressEnter();
           const openedBeforeAction = await evaluate('window.openedResources');
           check(label, () => assert.deepEqual(openedBeforeAction, [], 'keyboard selection must inspect without opening a resource'));
+          const evidenceClosed = await evaluate('document.querySelector(".owb-rgraph__inspector").hidden');
+          check(label, () => assert.equal(evidenceClosed, true, 'choosing an object must leave the evidence pane closed'));
+          const keyboardSelection = await evaluate(`({ selected: document.querySelector('.owb-rgraph__list button[aria-pressed="true"]')?.textContent, focus: document.activeElement?.textContent, actions: Array.from(document.querySelectorAll('.owb-rgraph__main button')).map(button => button.textContent) })`);
+          assert.ok(keyboardSelection.selected?.includes('brief.md'), `${label}: Enter must select the focused resource; ${JSON.stringify(keyboardSelection)}`);
+          await evaluate(`(() => { const button = Array.from(document.querySelectorAll('.owb-rgraph__main button')).find(button => button.textContent === '对象依据'); button.focus(); button.click(); })()`);
           await evaluate(`Array.from(document.querySelectorAll('.owb-rgraph__inspector button')).find(button => button.textContent === '打开文档').click()`);
           const opened = await evaluate('window.openedResources');
           check(label, () => assert.deepEqual(opened, [['0', 'knowledge/brief.md']], 'resource action must preserve exact owner and path'));
+          await evaluate('document.querySelector(".owb-rgraph__inspector header button").click()');
           await evaluate(`Array.from(document.querySelectorAll('.owb-rgraph__list button')).find(button => button.textContent.startsWith('Employee 23')).focus()`);
           await pressEnter();
+          await evaluate(`(() => { const button = Array.from(document.querySelectorAll('.owb-rgraph__main button')).find(button => button.textContent === '对象依据'); button.focus(); button.click(); })()`);
           await frames();
           const detailsVisible = await evaluate(`(() => { const graph = document.querySelector('.owb-rgraph').getBoundingClientRect(); const header = document.querySelector('.owb-rgraph__inspector header').getBoundingClientRect(); return header.top >= graph.top && header.bottom <= graph.bottom; })()`);
           check(label, () => assert.ok(detailsVisible, 'selecting a lower result must keep the details header reachable'));
+          await evaluate('document.querySelector(".owb-rgraph__technical summary").click()');
           await evaluate('document.querySelector(".owb-rgraph__inspector").scrollTop = 0');
           const beforeDetailsWheel = await wheel('.owb-rgraph__inspector', '.owb-rgraph__inspector', 0, 180);
           const detailScrollTop = await evaluate('document.querySelector(".owb-rgraph__inspector").scrollTop');
@@ -171,8 +191,8 @@ if (!process.versions.electron) {
           check(label, () => assert.equal(coveredDetails, false, 'canvas labels must not cover the details panel'));
           await evaluate('document.querySelector(".owb-rgraph__inspector header button").click()');
           await frames();
-          const focusReturned = await evaluate('document.activeElement === document.querySelector(".owb-rgraph__results") && document.querySelector(".owb-rgraph__inspector").hidden');
-          check(label, () => assert.ok(focusReturned, 'closing evidence must return focus to the visible Sidebar results'));
+          const focusReturned = await evaluate(`document.activeElement?.textContent === '对象依据' && document.querySelector('.owb-rgraph__inspector').hidden && Array.from(document.querySelectorAll('.owb-rgraph__list button')).some(button => button.textContent.startsWith('Employee 23') && button.getAttribute('aria-pressed') === 'true')`);
+          check(label, () => assert.ok(focusReturned, 'closing evidence must return focus to its visible action and keep the selected object'));
           console.log(JSON.stringify({ label, layout, listScrollTop, paneScrollTop, reached, detailsVisible, detailScrollTop, opened, focusReturned }));
         }
       }
