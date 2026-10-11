@@ -7,6 +7,7 @@ import { RelationshipSpatialScene, type RelationshipSpatialLayout, type Relation
 import { isRelationshipConfiguration, RelationshipContextExplorer } from "./RelationshipContextExplorer";
 import { useRelationshipContextCopy } from "../locales/relationship-context";
 import { graphCoverageIssues } from "./graph-coverage";
+import { normalizeRelationshipTrail } from "./relationship-trail";
 import "./RelationshipGraph.css";
 
 export interface RelationshipGraphProps {
@@ -109,7 +110,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
   const [neighborhood, setNeighborhood] = useState<Neighborhood>(initial.current?.neighborhood ?? null);
   const [renderer, setRenderer] = useState<RendererMode>(initial.current?.renderer ?? "context");
   const [focusId, setFocusId] = useState<string | undefined>(initial.current?.focusId);
-  const [trail, setTrail] = useState<string[]>(initial.current?.trail ?? []);
+  const [trail, setTrail] = useState<string[]>(() => normalizeRelationshipTrail(initial.current?.trail ?? []));
   const [guideOpen, setGuideOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspectionRequest, setInspectionRequest] = useState(0);
@@ -125,7 +126,6 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
   const inspector = useRef<HTMLElement>(null);
   const mainPane = useRef<HTMLDivElement>(null);
   const inspectionOrigin = useRef<HTMLElement | null>(null);
-  const trailNavigation = useRef<HTMLElement>(null);
   const latest = useRef({ data, onOpenAgent, onOpenResource, onOpenDrive });
   latest.current = { data, onOpenAgent, onOpenResource, onOpenDrive };
   const view = useMemo(() => projectRelationships(data, { query, kinds, relations, neighborhood }), [data, query, kinds, relations, neighborhood]);
@@ -176,22 +176,23 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
     if (contextFocusRequest) mainPane.current?.focus({ preventScroll: true });
   }, [contextFocusRequest]);
   useEffect(() => {
-    if (renderer === "context" && focusId) trailNavigation.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    if (renderer === "context" && mainPane.current) mainPane.current.scrollTop = 0;
   }, [focusId, renderer]);
 
   const clearFilters = () => { setQuery(""); setKinds([...relationshipNodeKinds]); setRelations([...relationKinds]); setNeighborhood(null); };
   const selectNode = (id: string, continueTrail = false) => {
     const node = nodesById.get(id);
     if (renderer === "galaxy" && node && kinds.includes(node.kind) && !query.trim() && !view.nodes.some(item => item.id === id)) setNeighborhood({ id, hops: 1 });
-    if (inspector.current?.contains(document.activeElement)) setContextFocusRequest(current => current + 1);
+    if (inspector.current?.contains(document.activeElement) || mainPane.current?.contains(document.activeElement)) setContextFocusRequest(current => current + 1);
     setSelection({ type: "node", id });
     setInspectorOpen(false);
     setFocusId(id);
-    setTrail(current => continueTrail ? current.at(-1) === id ? current : [...current, id].slice(-16) : [id]);
+    setTrail(current => continueTrail ? normalizeRelationshipTrail([...current, id]) : [id]);
   };
   const returnTo = (index: number) => {
     const id = trail[index];
     if (!id) return;
+    if (mainPane.current?.contains(document.activeElement)) setContextFocusRequest(current => current + 1);
     setFocusId(id);
     setSelection({ type: "node", id });
     setInspectorOpen(false);
@@ -220,7 +221,10 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
     if (moreOptions.current?.open) { moreOptions.current.open = false; moreOptions.current.querySelector("summary")?.focus(); }
     else if (mainPane.current?.contains(document.activeElement)) setContextFocusRequest(current => current + 1);
   };
-  const restart = () => { setFocusId(undefined); setSelection(null); setInspectorOpen(false); setTrail([]); setNeighborhood(null); };
+  const restart = () => {
+    if (mainPane.current?.contains(document.activeElement)) setContextFocusRequest(current => current + 1);
+    setFocusId(undefined); setSelection(null); setInspectorOpen(false); setTrail([]); setNeighborhood(null);
+  };
   const relationText = (edge: RelationshipEdge) => `${nodesById.get(edge.source)?.label ?? edge.source} → ${t(`graph.relation.${edge.kind}`)} → ${nodesById.get(edge.target)?.label ?? edge.target}`;
   const objectHint = (node: RelationshipNode) => {
     const selector = node.facts?.some(fact => fact.key === "kind" && fact.value === "selector");
@@ -322,7 +326,7 @@ function RelationshipGraphWorkspace({ data, loading, error, visible = true, onRe
       </aside>
       <div ref={mainPane} tabIndex={-1} className="owb-rgraph__main" aria-label={copy.contextTitle}>
         {renderer === "context" ? <>
-          {trail.length > 1 ? <nav ref={trailNavigation} className="owb-rgraph__trail" aria-label={copy.trail}><button type="button" aria-label={copy.back} onClick={() => returnTo(trail.length - 2)}><ArrowLeft size={14} /></button><ol>{trail.map((id, index) => <li key={`${id}:${index}`}>{index > 0 ? <ChevronRight size={12} aria-hidden="true" /> : null}<button type="button" aria-current={index === trail.length - 1 ? "location" : undefined} onClick={() => returnTo(index)}>{nodesById.get(id)?.label ?? t("graph.deletedSelection")}</button></li>)}</ol><button type="button" onClick={restart}>{copy.resetTrail}</button></nav> : null}
+          {trail.length > 1 ? <nav className="owb-rgraph__trail" aria-label={copy.trail}><button type="button" aria-label={copy.back} onClick={() => returnTo(trail.length - 2)}><ArrowLeft size={14} /></button><ol>{trail.map((id, index) => <li key={id}>{index > 0 ? <ChevronRight size={12} aria-hidden="true" /> : null}{index === trail.length - 1 ? <span aria-current="location" title={nodesById.has(id) ? objectHint(nodesById.get(id)!) : undefined}>{nodesById.get(id)?.label ?? t("graph.deletedSelection")}</span> : <button type="button" title={nodesById.has(id) ? objectHint(nodesById.get(id)!) : undefined} onClick={() => returnTo(index)}>{nodesById.get(id)?.label ?? t("graph.deletedSelection")}</button>}</li>)}</ol><button type="button" onClick={restart}>{copy.resetTrail}</button></nav> : null}
           <div className="owb-rgraph__context-wrap">
             {contextView.limited ? <p className="owb-rgraph__bounded" role="status">{t("graph.bounded", { visible: contextView.nodes.length, total: contextView.matched })}</p> : null}
             {data?.nodes.length || focusId ? <RelationshipContextExplorer nodes={contextView.nodes} edges={contextView.edges} focusId={focusId} guideActive={guideOpen} actions={contextActions} focusMissing={Boolean(focusId && !nodesById.has(focusId))} onFocus={id => selectNode(id, true)} onSelectEdge={id => inspectSelection({ type: "edge", id })} /> : emptyResults}
