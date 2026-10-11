@@ -11,6 +11,21 @@ it("sums separately reported input/output usage and does not turn missing usage 
   expect(adaptTurnRecord({ ...record, events: [] }, "Employee").totalTokens).toBeUndefined();
 });
 
+it("keeps unreported Office usage unknown and explains that recorded budgets are not native hard caps", async () => {
+  const record = { turnId: "office-turn", positionId: "p", engine: "qwen-office-local", input: "Review a document", output: "Done", status: "completed",
+    createdAt: "2026-10-12T00:00:00Z", updatedAt: "2026-10-12T00:00:01Z", events: [] } as unknown as ApiTurnRecord;
+  const turn = adaptTurnRecord(record, "Office employee");
+  expect(turn.totalTokens).toBeUndefined();
+  render(<ConversationOptions engine="qwen-office-local" saving={false} disabled={false} session={null} turns={[turn]}
+    config={{ selected: "provider-default", recommended: "provider-default", editable: false, source: "default",
+      options: [{ id: "provider-default", name: "Current Qwen Office model", tier: "default" }] }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Token 用量" }));
+  const details = await screen.findByRole("region", { name: "Token 用量" });
+  expect(within(details).getByText("用量待回报")).toBeInTheDocument();
+  expect(within(details).getByText(/这里的预算是 RoleWeave 记录/)).toBeInTheDocument();
+  expect(details.querySelector(".owb-context-details__usage")).not.toHaveTextContent("0 tokens");
+});
+
 it("switches the employee model from the composer and exposes context and honest usage details", async () => {
   const change = vi.fn();
   render(<ConversationOptions saving={false} disabled={false} session={null} turns={[]} onModel={change}

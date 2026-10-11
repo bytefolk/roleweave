@@ -18,11 +18,12 @@ import { TextDecoder } from "node:util";
 import { redactApprovalSecrets } from "@roleweave/shared/approval-redaction";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
-import { openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
+import { CODEX_DISABLED_FEATURES, openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
 import { resolveGeminiClient, validatedGeminiModel } from "../src/gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../src/workbuddy-binary.js";
 import { workbuddyConfiguration, workbuddyEnvironment, workbuddyVersionProfile, probeWorkbuddyExecutable, workbuddyTurnArgs, createWorkbuddyParser } from "../src/workbuddy-runtime.js";
 import { requestWorkbuddyLocal } from "../src/workbuddy-local.js";
+import { requestQwenOfficeLocal } from "../src/qwen-office-local.js";
 import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
 import { resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../src/local-provider-config.js";
 
@@ -768,6 +769,8 @@ function turnRun(workspaceDir, positionId) {
         return turnRunWorkbuddy(workspaceDir, positionId, input);
       case "workbuddy-local":
         return turnRunWorkbuddyLocal(input);
+      case "qwen-office-local":
+        return turnRunQwenOfficeLocal(workspaceDir, positionId, input);
       case "gemini":
         return turnRunGemini(workspaceDir, positionId, input);
       case "openai-compatible":
@@ -805,6 +808,59 @@ async function turnRunWorkbuddyLocal(input) {
     finish({ type: "run.completed", runId, timestamp: now(), output: result.text, terminalReason: "goal_met" });
   } catch (error) {
     fail(typeof error?.code === "string" && /^workbuddy\.[a-z_]{1,64}$/.test(error.code) ? error.code : "workbuddy.protocol_invalid");
+  }
+}
+
+async function turnRunQwenOfficeLocal(workspaceDir, positionId, input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+  const controller = new AbortController();
+  let terminal = false;
+  const finish = (event) => {
+    if (terminal) return;
+    terminal = true;
+    clearTimeout(timer);
+    controller.abort();
+    process.stdout.write(`${JSON.stringify(event)}\n`, () => process.exit(0));
+  };
+  const fail = (code, terminalReason = "engine_internal_error") => finish({
+    type: "run.failed", runId, timestamp: now(), error: {
+      code, message: `千问办公任务未完成（${code}）。请在客户端查看连接或审批状态。`,
+      retryable: false, terminalReason,
+    },
+  });
+  const timer = setTimeout(() => fail("qwen_office.deadline_exceeded", "deadline_exceeded"), 180_000);
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.once(signal, () => fail("qwen_office.cancelled", "cancelled"));
+  try {
+    // Native Office context never crosses RoleWeave employees/conversations or
+    // bypasses the context toggle: each turn owns a fresh client session.
+    const resolvedWorkspace = await fs.realpath(workspaceDir);
+    const sessionKey = createHash("sha256").update(JSON.stringify([resolvedWorkspace, positionId, runId])).digest("hex");
+    const position = (await scanPositions(resolvedWorkspace)).find((entry) => entry.id === positionId);
+    if (!position) { fail("qwen_office.employee_unavailable"); return; }
+    const declaration = await readJson(path.join(resolvedWorkspace, "organization.v1alpha1.json"));
+    const role = Array.isArray(declaration.roles) ? declaration.roles.find((entry) => entry?.id === positionId) : undefined;
+    const employeeLabel = typeof role?.name === "string" ? role.name.slice(0, 80).replace(/[\x00-\x1f\x7f]/g, " ") : positionId;
+    const model = process.env.ROLEWEAVE_TURN_MODEL;
+    if (model && model !== "provider-default") { fail("qwen_office.model_unavailable"); return; }
+    const result = await requestQwenOfficeLocal(process.env, "complete", {
+      sessionKey, employeeLabel,
+      input: `[RoleWeave employee: ${positionId}]\n[Native tools and confirmations are managed by Qwen Office. RoleWeave supplied the context below.]\n\n${input || "请根据已提供的岗位上下文完成本次任务。"}`,
+    }, {
+      signal: controller.signal,
+      onProgress: ({ status }) => {
+        if (terminal) return;
+        emit({ type: "trace.activity", runId, timestamp: now(), activityId: "qwen-office-native-task", kind: "agent", status: "running",
+          title: status === "waiting_for_input" ? "请在千问办公确认审批或补充信息" : "千问办公正在执行任务" });
+      },
+    });
+    if (terminal) return;
+    emit({ type: "trace.activity", runId, timestamp: now(), activityId: "qwen-office-native-task", kind: "agent", status: "completed", title: "千问办公任务已完成" });
+    emit({ type: "model.delta", runId, timestamp: now(), text: result.text });
+    if (result.usage && Object.keys(result.usage).length) emit({ type: "usage", runId, timestamp: now(), ...result.usage });
+    finish({ type: "run.completed", runId, timestamp: now(), output: result.text, terminalReason: "goal_met" });
+  } catch (error) {
+    fail(typeof error?.code === "string" && /^qwen_office\.[a-z_]{1,64}$/.test(error.code) ? error.code : "qwen_office.protocol_invalid");
   }
 }
 
@@ -1683,14 +1739,7 @@ export function codexTurnArgs(model, baseUrl) {
     // implement a Responses feature rejects the whole request rather than
     // ignoring it. A relay answered `RESPONSES_FEATURE_NOT_SUPPORTED:
     // web_search` until web_search was disabled here.
-    "--disable", "shell_tool",
-    "--disable", "unified_exec",
-    "--disable", "apps",
-    "--disable", "plugins",
-    "--disable", "skill_search",
-    "--disable", "multi_agent",
-    "--disable", "view_image",
-    "--disable", "workspace_dependencies",
+    ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
   ];
   if (model !== undefined && model.length > 0) args.push("--model", model);
   if (baseUrl !== undefined) {

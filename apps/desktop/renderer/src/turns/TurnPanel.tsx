@@ -425,6 +425,7 @@ export function TurnPanel({
         focusTurnId={focusTurnId}
         onOpenResource={onOpenResource}
       />
+      {selectedPosition && engine === "qwen-office-local" ? <p className="owb-hire-capability-note">{t("office.clientManaged")}<span> {t("office.accountManaged")}</span></p> : null}
 
       {sendErrors[draftKey] ? <p role="alert" className="owb-conversation-error">{sendErrors[draftKey]}</p> : null}
       {selectedPosition ? <TurnComposer
@@ -433,7 +434,7 @@ export function TurnPanel({
           : undefined}
         sendShortcut={sendShortcut}
         options={active ? <ConversationOptions
-          config={modelConfig} saving={modelSaving} disabled={modelDispatchPending || sessionBusy || ((busy || sending) && !runningTurn && !employeeBusy)}
+          config={modelConfig} engine={engine} saving={modelSaving} disabled={modelDispatchPending || sessionBusy || ((busy || sending) && !runningTurn && !employeeBusy)}
           loading={modelLoading} error={modelError} notice={modelNotice} onReload={onReloadModel} running={runningTurn || employeeBusy}
           session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
           onRotate={onRotateSession}

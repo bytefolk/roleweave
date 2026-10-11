@@ -11,7 +11,8 @@ export { TURN_ENGINES } from "./engine-contract";
 /** Engine brand names are product names. Local sign-in is a transport detail,
  * not a second agent choice an operator needs to reason about. */
 export function useEngineLabel(): (engine: TurnEngine) => string {
-  return useCallback(engineLabel, []);
+  const t = useT();
+  return useCallback((engine: TurnEngine) => engine === "qwen-office-local" ? t("office.brand") : engineLabel(engine), [t]);
 }
 
 function engineSelectOptions(

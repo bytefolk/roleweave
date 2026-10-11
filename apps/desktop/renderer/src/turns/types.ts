@@ -1,6 +1,6 @@
 import type { EmployeeModelConnection, TurnRecord as ApiTurnRecord, TurnAttachment } from "@roleweave/shared";
 export type { TurnAttachment } from "@roleweave/shared";
-export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "workbuddy-local" | "gemini" | "openai-compatible";
+export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "workbuddy-local" | "qwen-office-local" | "gemini" | "openai-compatible";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
 

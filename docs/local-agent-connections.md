@@ -47,6 +47,56 @@ sources and MCP, and limits built-in tools to the employee's explicit grants.
 MCP grant references are currently unsupported by this adapter and fail closed
 instead of loading global MCP servers.
 
+## Codex
+
+Choose Codex's **Local login** connection (`codex-local`) to reuse the CLI's
+existing sign-in in the control-plane environment. A WSL control plane uses
+the WSL installation and account, independently of the Windows desktop app.
+The resolver honors `DIGITAL_EMPLOYEE_CODEX_COMMAND` first, then PATH; the
+configured Node installation can therefore select a different Codex version
+from an interactive shell. Local login does not receive `OPENAI_API_KEY` or
+`OPENAI_BASE_URL` from a service provider.
+
+Each invocation ignores user configuration, uses an ephemeral conversation
+and a read-only sandbox, and disables supported native integrations. Codex
+can expose native tools such as `apply_patch`; the sandbox remains the filesystem boundary.
+The selected CLI must accept all required feature switches, including
+`--disable view_image`; older installations can reject the turn before it
+reaches the provider. Update that installation or explicitly select a
+compatible executable instead of removing the tool restrictions.
+A successful local probe confirms CLI compatibility; an actual completed turn
+confirms account and model access.
+
+## Qwen Office desktop (`qwen-office-local`)
+
+Choose **Qwen Office** when hiring an employee and keep the signed-in Windows
+client open. Its local control service must be enabled at startup: set
+`QWENWORK_DESKTOP_CONTROL_ENABLED=true` in `~/.qwenworkcn/.env`, then restart
+the idle client. RoleWeave uses its authenticated loopback control protocol;
+WSL employees use a separate desktop-owned private channel.
+
+Each RoleWeave turn creates a fresh Office session and supplies the assembled
+employee context. Previous Office conversations are not imported when a
+RoleWeave conversation or its context setting changes. The client uses its
+own current model, account, organization, workspace and native tool policy.
+Tools and pending confirmations are managed in Qwen Office; RoleWeave never
+approves a native action or changes global client permissions. Office-generated
+files remain in the client's workspace and task history.
+
+Keep the client account and organization unchanged until the turn finishes.
+The public protocol lets RoleWeave detect visible user changes, while Office
+checks identity inside each request and binds existing tasks to their native
+owner and host turn. It does not offer an identity-epoch/CAS parameter or expose
+organization/team identity in status, so the session-create/submission sequence
+cannot promise an atomic lock to the initial tenant.
+
+Tasks have a three-minute deadline. Cancellation and application exit attempt
+to cancel only the submitted native task, with bounded confirmation before
+the owning broker exits. If the client disconnects, signs out or changes
+organization, verify the original task's state in Qwen Office. RoleWeave's
+recorded budgets are not native per-task token caps; unreported usage stays
+unknown. Known control tickets are blocked from public results and histories.
+
 ## WorkBuddy (CodeBuddy Code)
 
 Select **WorkBuddy** in employee hiring, then choose the connection method.

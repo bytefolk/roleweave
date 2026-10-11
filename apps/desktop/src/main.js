@@ -23,6 +23,7 @@ const {
   engineRuntimeEnvironment,
 } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
+const { closeQwenOfficeClient, hasPendingQwenOfficeTasks } = require("./qwen-office-client.cjs");
 const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -1341,10 +1342,14 @@ app.on("before-quit", (event) => {
   // app as part of this normal quit. The service's installing guard prevents a
   // manual "Install and restart" click from spawning a second helper.
   void updaterService?.installOnQuit?.();
-  if (quitSequenceStarted || !controlPlane || !isControlPlaneAlive(controlPlane.child)) return;
+  if (quitSequenceStarted) return;
+  const hasLiveControlPlane = controlPlane && isControlPlaneAlive(controlPlane.child);
+  if (!hasLiveControlPlane && !hasPendingQwenOfficeTasks()) return;
   event.preventDefault();
   quitSequenceStarted = true;
-  void stopControlPlane().then(() => app.quit()).catch(() => {
+  // Office owns an external task, beyond the Linux process tree. Let its
+  // bounded cancellation RPC finish before Electron drops the broker owner.
+  void Promise.all([hasLiveControlPlane ? stopControlPlane() : Promise.resolve(), closeQwenOfficeClient()]).then(() => app.quit()).catch(() => {
     // Keep the window alive and leave the control-plane handle inspectable if
     // even the bounded SIGKILL/exit wait failed. A quit must not orphan it.
     quitSequenceStarted = false;
