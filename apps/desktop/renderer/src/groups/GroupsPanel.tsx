@@ -710,6 +710,7 @@ export function GroupsPanel({
             <button
               type="button"
               className={group.conversationRef === selectedRef ? "is-active" : undefined}
+              aria-pressed={group.conversationRef === selectedRef}
               onClick={() => {
                 setSelectedRef(group.conversationRef);
                 onSelectGroup?.();
