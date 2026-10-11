@@ -51,3 +51,8 @@ RPCs. The UI and connection guide ask users to keep them unchanged while a
 task runs. Account checks before submission/cancellation, late-response aborts,
 known-ticket reflection rejection, and bounded quit-time cancellation are
 covered by offline regression tests.
+
+The normal RoleWeave hire endpoint created an Office employee with a locked
+`qwen-office-local` binding. Its actual persisted turn completed with
+`千问办公员工连接正常。`, and no usage was reported. This exercised the packaged
+server, native desktop broker and WSL adapter without manual package edits.
