@@ -49,10 +49,29 @@ instead of loading global MCP servers.
 
 ## WorkBuddy (CodeBuddy Code)
 
-Select **WorkBuddy** in project creation or employee hiring. Its durable engine
-id is `workbuddy`; an existing employee keeps that binding when the app
-reopens. When it is the only ready Host, it is also the default for a new
-binding. There is one service-credential variant.
+Select **WorkBuddy** in employee hiring, then choose the connection method.
+Hiring retains that concrete binding when the app reopens or availability
+changes; a failed local connection never switches an employee to service API.
+
+### Windows desktop login (`workbuddy-local`)
+
+Choose **Local login** while hiring, and keep the signed-in WorkBuddy Windows
+client open. RoleWeave connects to its authenticated WBIPC v1 `wb.request`
+broker; provider credentials remain in WorkBuddy. WSL control planes use the
+desktop-owned stdin/stdout lease and a private user-owned Unix socket. There
+is no public network listener and no Windows CLI launched from Linux.
+
+This connection currently uses the client's **automatic model** (`auto`).
+The account model-list endpoint is not compatible with the broker's allowed
+headers, so RoleWeave does not offer guessed model choices. Requests contain
+no native tools, and returned tool/function calls, refusals, truncated outputs,
+invalid UTF-8, missing SSE completion, and oversized responses fail closed.
+The client broker buffers responses; this Host does not advertise token
+streaming. Cancellation, client sign-out, desktop exit, and WSL lease closure
+close owned requests. Local health is a transport preflight; only a real turn
+proves provider authentication and entitlement.
+
+### Service API (`workbuddy`)
 
 Set both `CODEBUDDY_API_KEY` and `CODEBUDDY_MODEL` in the control-plane process
 environment, then restart RoleWeave. A personal WorkBuddy login is not reused.

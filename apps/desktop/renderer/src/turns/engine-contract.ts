@@ -9,6 +9,7 @@ const ENGINE_LABEL: Record<TurnEngine, string> = {
   codex: "Codex",
   "codex-local": "Codex",
   workbuddy: "WorkBuddy",
+  "workbuddy-local": "WorkBuddy",
   gemini: "Gemini",
   "openai-compatible": "OpenAI Compatible",
 };

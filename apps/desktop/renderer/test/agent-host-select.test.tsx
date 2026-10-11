@@ -15,11 +15,12 @@ const availability: Record<TurnEngine, TurnEngineAvailability> = {
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
+  "workbuddy-local": { configured: true, ready: true },
   gemini: { configured: true, ready: true },
   "openai-compatible": { configured: true, ready: true },
 };
 
-const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini", "openai-compatible"];
+const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "workbuddy-local", "gemini", "openai-compatible"];
 
 function Picker({ initial }: { initial: TurnEngine }) {
   const [engine, setEngine] = useState<TurnEngine>(initial);
@@ -47,6 +48,13 @@ describe("Agent Host picker (#94)", () => {
     expect(triggerText()).toBe("Claude Code");
     expect(triggerText()).not.toContain("Idle");
     expect(triggerText()).not.toContain("本地登录");
+  });
+
+  it("shows the local WorkBuddy runtime as the same single brand choice", () => {
+    render(<Picker initial="workbuddy-local" />);
+    expect(triggerText()).toBe("WorkBuddy");
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
+    expect(visibleSelectOptions().filter((option) => option.textContent === "WorkBuddy")).toHaveLength(1);
   });
 
   it("shows one option for each agent product without transport status", () => {

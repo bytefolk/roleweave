@@ -1,7 +1,7 @@
 import type { TurnEngine, TurnEngineAvailability } from "./types";
 
 /**
- * The five products operators choose between. The seven `TurnEngine` values
+ * The products operators choose between. Concrete `TurnEngine` values
  * remain an implementation detail because a local configuration can use an
  * official sign-in or a gateway, and the variants have different credential
  * and process-isolation requirements.
@@ -25,7 +25,7 @@ const RUNTIME_CANDIDATES: Record<AgentHost, readonly TurnEngine[]> = {
   // the product choice remains "Claude Code".
   "claude-code": ["claude-local", "claude-code"],
   codex: ["codex-local", "codex"],
-  workbuddy: ["workbuddy"],
+  workbuddy: ["workbuddy-local", "workbuddy"],
   gemini: ["gemini"],
   "openai-compatible": ["openai-compatible"],
 };
@@ -34,10 +34,16 @@ export function isAgentHost(value: unknown): value is AgentHost {
   return typeof value === "string" && (AGENT_HOSTS as readonly string[]).includes(value);
 }
 
+/** New brand choices start with local sign-in; an explicit API choice keeps
+ * its concrete engine regardless of later health changes. */
+export function agentEnginesForHost(agent: AgentHost): readonly TurnEngine[] {
+  return RUNTIME_CANDIDATES[agent];
+}
+
 export function agentHostForEngine(engine: TurnEngine): AgentHost {
   if (engine === "claude-code" || engine === "claude-local") return "claude-code";
   if (engine === "codex" || engine === "codex-local") return "codex";
-  if (engine === "workbuddy") return "workbuddy";
+  if (engine === "workbuddy" || engine === "workbuddy-local") return "workbuddy";
   if (engine === "gemini") return "gemini";
   if (engine === "openai-compatible") return "openai-compatible";
   return "qoder";
@@ -54,6 +60,9 @@ export function resolveAgentEngine(
   // falling through to a separately authenticated Claude Code installation.
   if (agent === "claude-code" && availability["claude-local"].connection?.status === "invalid") {
     return "claude-local";
+  }
+  if (agent === "workbuddy" && availability["workbuddy-local"]?.connection?.status === "invalid") {
+    return "workbuddy-local";
   }
   const candidates = RUNTIME_CANDIDATES[agent];
   return candidates.find((candidate) => availability[candidate]?.ready)

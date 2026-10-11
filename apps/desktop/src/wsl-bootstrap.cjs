@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { REQUEST_PREFIX, RESPONSE_PREFIX, MAX_FRAME_BYTES, validId, createPrivateBridge } = require("./workbuddy-bridge.cjs");
 
 const MAX_CONFIG_BYTES = 128 * 1024;
 const BRIDGED_ENV_KEYS = Object.freeze([
@@ -15,6 +16,7 @@ const BRIDGED_ENV_KEYS = Object.freeze([
   "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL",
   "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
   "GEMINI_API_KEY", "GEMINI_MODEL", "GOOGLE_GEMINI_BASE_URL",
+  "ROLEWEAVE_WORKBUDDY_BRIDGE_ENABLED",
   "ROLEWEAVE_LAYA_ENABLED", "ROLEWEAVE_LAYA_URL", "ROLEWEAVE_LAYA_MODEL", "ROLEWEAVE_LAYA_TIMEOUT_MS",
 ]);
 
@@ -61,6 +63,10 @@ function serverEnvironment(config, source = process.env, nodePath = process.exec
     if (upper.startsWith("ORG_WORKBENCH_PACKAGED_SMOKE_") || upper.startsWith("ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_")) delete environment[key];
   }
   delete environment.ELECTRON_RUN_AS_NODE;
+  // A bridge endpoint is allocated by this supervisor, never inherited from
+  // either user's shell or sent as a Windows filesystem path into Linux.
+  delete environment.ROLEWEAVE_WORKBUDDY_BRIDGE;
+  delete environment.ROLEWEAVE_WORKBUDDY_BRIDGE_TOKEN;
   environment.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE = "0";
   const bundled = config.engineCommand === null;
   environment.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE = bundled ? "1" : "0";
@@ -122,6 +128,8 @@ function runSupervisor() {
   let configured = false;
   let stopping = false;
   let exitCode = 0;
+  let bridge;
+  const pendingBridgeCalls = new Map();
   const descendants = new Map();
   let monitor;
   const signalTree = (signal) => {
@@ -139,6 +147,9 @@ function runSupervisor() {
     clearTimeout(startupTimer);
     exitCode = code;
     clearInterval(monitor);
+    bridge?.close();
+    for (const pending of pendingBridgeCalls.values()) pending.reject(Object.assign(new Error("WorkBuddy bridge stopped"), { code: "workbuddy.bridge_closed" }));
+    pendingBridgeCalls.clear();
     if (!child) { process.exitCode = code; process.stdin.destroy(); return; }
     signalTree("SIGTERM");
     // Detached Host groups (including Codex) remain tracked by pid/start time.
@@ -156,30 +167,73 @@ function runSupervisor() {
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (chunk) => {
     if (stopping) return;
-    if (configured) { fail("Unexpected data after WSL launch configuration."); return; }
     buffer += chunk;
-    if (Buffer.byteLength(buffer) > MAX_CONFIG_BYTES) { fail("WSL launch configuration is too large."); return; }
+    if (!configured && Buffer.byteLength(buffer) > MAX_CONFIG_BYTES) { fail("WSL launch input is too large."); return; }
     const newline = buffer.indexOf("\n");
-    if (newline < 0) return;
+    if (newline < 0) {
+      if (configured && Buffer.byteLength(buffer) > MAX_FRAME_BYTES) fail("WorkBuddy bridge response is too large.");
+      return;
+    }
+    if (configured) {
+      if (!bridge) { fail("Unexpected data after WSL launch configuration."); return; }
+      let index;
+      while ((index = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        try {
+          if (Buffer.byteLength(line) + 1 > MAX_FRAME_BYTES) throw Error();
+          if (!line.startsWith(RESPONSE_PREFIX)) throw Error();
+          const value = JSON.parse(line.slice(RESPONSE_PREFIX.length));
+          if (!validId(value?.id) || Object.keys(value).sort().join(",") !== (value.error === undefined ? "id,result" : "error,id") ||
+              (value.error !== undefined && (typeof value.error !== "string" || !/^workbuddy\.[a-z_]{1,64}$/.test(value.error)))) throw Error();
+          const pending = pendingBridgeCalls.get(value.id);
+          if (!pending) continue; // A cancelled request may already be in flight.
+          pendingBridgeCalls.delete(value.id);
+          if (value.error !== undefined) pending.reject(Object.assign(new Error("WorkBuddy local request failed"), { code: value.error }));
+          else pending.resolve(value.result);
+        } catch { fail("WorkBuddy bridge response is invalid."); return; }
+      }
+      if (Buffer.byteLength(buffer) > MAX_FRAME_BYTES) fail("WorkBuddy bridge response is too large.");
+      return;
+    }
     clearTimeout(startupTimer);
     try {
       if (buffer.slice(newline + 1).length !== 0) throw new Error("WSL launch configuration contains trailing data");
       const config = parseConfiguration(buffer.slice(0, newline));
       configured = true;
       buffer = "";
-      child = spawn(process.execPath, [config.serverEntry], {
-        env: serverEnvironment(config),
-        stdio: ["ignore", "inherit", "inherit"],
-        detached: true,
-      });
-      child.once("error", () => fail("WSL control plane could not start."));
-      child.once("exit", (code) => stop(code ?? 1));
-      monitor = setInterval(() => {
-        for (const [pid, identity] of descendants) {
-          if (processIdentity(pid) !== identity) descendants.delete(pid);
-        }
-        rememberDescendants(child.pid, descendants);
-      }, 100);
+      const environment = serverEnvironment(config);
+      const launch = () => {
+        if (stopping) return;
+        if (bridge) Object.assign(environment, { ROLEWEAVE_WORKBUDDY_BRIDGE: bridge.endpoint, ROLEWEAVE_WORKBUDDY_BRIDGE_TOKEN: bridge.token });
+        child = spawn(process.execPath, [config.serverEntry], {
+          env: environment,
+          stdio: ["ignore", "inherit", "inherit"],
+          detached: true,
+        });
+        child.once("error", () => fail("WSL control plane could not start."));
+        child.once("exit", (code) => stop(code ?? 1));
+        monitor = setInterval(() => {
+          for (const [pid, identity] of descendants) {
+            if (processIdentity(pid) !== identity) descendants.delete(pid);
+          }
+          rememberDescendants(child.pid, descendants);
+        }, 100);
+      };
+      if (config.environment.ROLEWEAVE_WORKBUDDY_BRIDGE_ENABLED === "1" && config.engineCommand === null) {
+        bridge = createPrivateBridge((request, signal) => new Promise((resolve, reject) => {
+          pendingBridgeCalls.set(request.id, { resolve, reject });
+          const cancel = () => {
+            if (!pendingBridgeCalls.delete(request.id)) return;
+            process.stdout.write(`${REQUEST_PREFIX}${JSON.stringify({ id: request.id, cancel: true })}\n`);
+            reject(Object.assign(new Error("WorkBuddy request cancelled"), { code: "workbuddy.cancelled" }));
+          };
+          if (signal.aborted) { cancel(); return; }
+          signal.addEventListener("abort", cancel, { once: true });
+          process.stdout.write(`${REQUEST_PREFIX}${JSON.stringify(request)}\n`);
+        }));
+        bridge.ready.then(launch, () => fail("WorkBuddy bridge could not start."));
+      } else launch();
     } catch {
       fail("WSL launch configuration is invalid.");
     }

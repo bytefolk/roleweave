@@ -14,7 +14,7 @@ import { Input as OwbInput } from "@fullstack-ai-infra/ui";
 import { useT, type OwbT } from "@roleweave/ui";
 import { hireSkillCatalog } from "@roleweave/shared/capabilities";
 import type { HireMemorySource, HireMcpGrant, HirePermissions } from "@roleweave/shared";
-import { AGENT_HOST_LABEL, AGENT_HOSTS, agentHostForEngine, resolveAgentEngine, type AgentHost } from "../turns/agent-host";
+import { AGENT_HOST_LABEL, AGENT_HOSTS, agentEnginesForHost, agentHostForEngine, type AgentHost } from "../turns/agent-host";
 import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
 import { CapabilityPicker, PermissionPolicyEditor, replaceCapabilityRules } from "./PermissionsEditor";
 import { createHireDraft, initialHireFlow, parseHireProposal, reduceHireFlow, toHirePositionRequest } from "./hire-flow";
@@ -160,7 +160,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [reportTo, setReportTo] = useState<string | null>(presetReportTo);
   const [mode, setMode] = useState<HireDraft["mode"]>("approval_required");
-  const [agentHost, setAgentHost] = useState<AgentHost>(() => agentHostForEngine(conversationEngine ?? engine));
+  const [agentEngine, setAgentEngine] = useState<TurnEngine>(conversationEngine ?? engine);
   const [taskTokens, setTaskTokens] = useState("20000");
   const [taskIterations, setTaskIterations] = useState("8");
   const [dayTokens, setDayTokens] = useState("200000");
@@ -219,7 +219,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
     dispatch({ type: "reset", draft: createHireDraft() });
     setName(""); setDescription(""); setAvatar(undefined); setAvatarGenerating(false); setAvatarError(null); setReportTo(presetReportTo);
     setMode("approval_required"); setTaskTokens("20000"); setTaskIterations("8"); setDayTokens("200000"); setDayIterations("64");
-    setAgentHost(agentHostForEngine(conversationEngine ?? engine));
+    setAgentEngine(conversationEngine ?? engine);
     setPrompt(defaultBrief(t)); setMessages([]); setConversationBusy(false); setConversationError(null); setDesignAssistOpen(false); setAdvancedOpen(false);
     setSelectedPreset(null); setAppliedPreset(null); setCandidateProposal(null);
     setPermissions({ tools: ["Read", "Grep", "Glob"], rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }], skills: [], mcpServers: [] });
@@ -257,7 +257,11 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
 
   const generatedId = useMemo(() => nextGeneratedId(name, positions), [name, positions]);
   const positionId = generatedId;
-  const agentEngine = useMemo(() => resolveAgentEngine(agentHost, engineAvailability), [agentHost, engineAvailability]);
+  const agentHost = agentHostForEngine(agentEngine);
+  const agentEngines = agentEnginesForHost(agentHost);
+  const localConnection = agentEngine.endsWith("-local");
+  const selectedHost = engineAvailability[agentEngine];
+  const agentReady = selectedHost?.ready === true;
   const designEngine = conversationEngine ?? engine;
   const nameValid = name.trim().length > 0 && name.trim().length <= 24;
   const descriptionValid = description.trim().length > 0;
@@ -267,7 +271,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const parsedDayTokens = Number(dayTokens);
   const capsValid = (value: string, required: boolean) => value.trim() === "" ? !required : Number.isSafeInteger(Number(value)) && Number(value) > 0 && Number(value) <= 1_000_000_000;
   const budgetValid = capsValid(taskTokens, true) && capsValid(dayTokens, true) && capsValid(taskIterations, false) && capsValid(dayIterations, false) && parsedTaskTokens <= parsedDayTokens && parsedDayTokens <= remainingPool;
-  const formValid = nameValid && descriptionValid && budgetValid && permissions.tools.length > 0;
+  const formValid = nameValid && descriptionValid && budgetValid && permissions.tools.length > 0 && agentReady;
 
   const buildDraft = useCallback((): HireDraft => createHireDraft({ id: positionId, name: name.trim(), description: description.trim(), reportTo: reportTo || null, mode, budget: { perTask: { tokens: Number(taskTokens), ...(taskIterations.trim() ? { iterations: Number(taskIterations) } : {}) }, perDay: { tokens: Number(dayTokens), ...(dayIterations.trim() ? { iterations: Number(dayIterations) } : {}) } }, permissions, prompt: prompt.trim(), memorySources, agentEngine }), [agentEngine, dayIterations, dayTokens, description, memorySources, mode, name, permissions, positionId, prompt, reportTo, taskIterations, taskTokens]);
 
@@ -462,16 +466,30 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
                 <h3>{t("hire.agentTitle")}</h3>
                 <p>{t("hire.agentDescription")}</p>
               </div>
-              <div className="owb-hire-agent-binding">
-                <span>{t("hire.agentBinding")}</span>
-                <HireChoiceSelect
-                  ariaLabel={t("hire.agentBinding")}
-                  value={agentHost}
-                  options={AGENT_HOSTS.map((host) => ({ value: host, label: AGENT_HOST_LABEL[host] }))}
-                  onChange={(value) => setAgentHost(value as AgentHost)}
-                  t={t}
-                />
-                <small>{t("hire.agentBindingHint")}</small>
+              <div className="owb-hire-agent-connections">
+                <div className="owb-hire-agent-binding">
+                  <span>{t("hire.agentBinding")}</span>
+                  <HireChoiceSelect
+                    ariaLabel={t("hire.agentBinding")}
+                    value={agentHost}
+                    options={AGENT_HOSTS.map((host) => ({ value: host, label: AGENT_HOST_LABEL[host] }))}
+                    onChange={(value) => { if (value !== agentHost) setAgentEngine(agentEnginesForHost(value as AgentHost)[0]!); }}
+                    t={t}
+                  />
+                  <small>{t("hire.agentBindingHint")}</small>
+                </div>
+                {agentEngines.length > 1 ? <div className="owb-hire-agent-binding">
+                  <span>{t("hire.agentConnection")}</span>
+                  <HireChoiceSelect
+                    ariaLabel={t("hire.agentConnection")}
+                    value={agentEngine}
+                    options={agentEngines.map((runtime) => ({ value: runtime, label: t(runtime.endsWith("-local") ? "hire.connectionLocal" : "hire.connectionApi") }))}
+                    onChange={(value) => setAgentEngine(value as TurnEngine)}
+                    t={t}
+                  />
+                  <small>{t(localConnection ? "hire.connectionLocalHint" : "hire.connectionApiHint")}</small>
+                </div> : null}
+                {!agentReady ? <p role="status" className="owb-hire-drawer__hint">{selectedHost?.reason ?? t("hire.connectionUnavailable")}</p> : null}
               </div>
             </section>
             <details className="owb-hire-assist" open={designAssistOpen} onToggle={(event) => setDesignAssistOpen(event.currentTarget.open)}>

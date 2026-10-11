@@ -10,6 +10,7 @@ import { openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexMo
 import { resolveGeminiClient, validatedGeminiModel } from "../gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../workbuddy-binary.js";
 import { probeWorkbuddyExecutable, workbuddyConfiguration, workbuddyVersionProfile } from "../workbuddy-runtime.js";
+import { probeWorkbuddyLocal } from "../workbuddy-local.js";
 import { createLauncherSpawnSpec } from "../windows-launcher.js";
 import { resolveQoderExecutable } from "../qoder-binary.js";
 import { LocalProviderConfigError, resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../local-provider-config.js";
@@ -181,6 +182,7 @@ export interface HostHealthInput {
   codex?: CodexBinaryState;
   gemini?: GeminiBinaryState;
   workbuddy?: WorkbuddyBinaryState;
+  workbuddyLocal?: { configured: boolean; code: string; version?: string };
   platform?: NodeJS.Platform;
 }
 
@@ -500,6 +502,7 @@ export function hostHealth({
   codex = { installed: false, version: null },
   gemini = { installed: false, version: null },
   workbuddy = { installed: false, version: null, supported: false },
+  workbuddyLocal = { configured: false, code: "workbuddy.client_unavailable" },
   platform = process.platform,
 }: HostHealthInput): HealthResponse["hosts"] {
   const bundledQoder = isBundledQoderEngine(engineVersion);
@@ -636,6 +639,16 @@ export function hostHealth({
               ? { nextStep: "先修复 bundled qoder-engine 的本地启动配置" }
               : {}),
     },
+    "workbuddy-local": {
+      configured: workbuddyLocal.configured,
+      ready: bundledElectronEngine && engineAvailable && workbuddyLocal.configured,
+      modelPinnable: false,
+      localProbe: { installed: workbuddyLocal.configured, supported: workbuddyLocal.configured, version: workbuddyLocal.version ?? null, ...(!workbuddyLocal.configured ? { failure: workbuddyLocal.code } : {}) },
+      connection: { source: "official", kind: "official", billing: "unknown", status: workbuddyLocal.configured ? "configured" : "invalid" },
+      ...(!bundledElectronEngine || !engineAvailable
+        ? { nextStep: "WorkBuddy 本地登录需要 RoleWeave 内置引擎，请恢复内置引擎后重试。" }
+        : !workbuddyLocal.configured ? { nextStep: "打开 WorkBuddy 客户端并完成登录，再刷新连接。" } : {}),
+    },
     workbuddy: (() => {
       // Health describes local configuration, not authentication, model quota,
       // or a completed turn. Per-turn model overrides are not server defaults.
@@ -741,6 +754,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
   const codex = probeCodexBinary(process.env);
   const gemini = probeGeminiBinary(process.env);
   const workbuddy = probeWorkbuddyBinary(process.env);
+  const workbuddyLocal = ctx.config.bundledElectronEngine ? await probeWorkbuddyLocal(process.env) : undefined;
   const qoderLocal = isBundledQoderEngine(probe.version)
     ? await probeQoderLocalBinary(process.env)
     : undefined;
@@ -755,6 +769,7 @@ export async function handleHealth(ctx: ControlPlaneContext, res: ServerResponse
     codex,
     gemini,
     workbuddy,
+    ...(workbuddyLocal ? { workbuddyLocal } : {}),
   });
   const body: HealthResponse = {
     status: "ok",

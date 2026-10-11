@@ -120,6 +120,11 @@ const HOST_DEFINITIONS: Readonly<Record<AgentHostId, HostDefinition>> = {
     label: "WorkBuddy",
     capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],
   },
+  "workbuddy-local": {
+    label: "WorkBuddy（本地登录）",
+    // The client broker returns a bounded complete response, not token events.
+    capabilities: ["turns", "sessions", "groups", "approvals"],
+  },
   gemini: {
     label: "Gemini",
     capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],

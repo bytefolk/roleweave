@@ -22,6 +22,7 @@ import { openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexMo
 import { resolveGeminiClient, validatedGeminiModel } from "../src/gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../src/workbuddy-binary.js";
 import { workbuddyConfiguration, workbuddyEnvironment, workbuddyVersionProfile, probeWorkbuddyExecutable, workbuddyTurnArgs, createWorkbuddyParser } from "../src/workbuddy-runtime.js";
+import { requestWorkbuddyLocal } from "../src/workbuddy-local.js";
 import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
 import { resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../src/local-provider-config.js";
 
@@ -765,6 +766,8 @@ function turnRun(workspaceDir, positionId) {
         return turnRunCodex(workspaceDir, positionId, input, engineModel);
       case "workbuddy":
         return turnRunWorkbuddy(workspaceDir, positionId, input);
+      case "workbuddy-local":
+        return turnRunWorkbuddyLocal(input);
       case "gemini":
         return turnRunGemini(workspaceDir, positionId, input);
       case "openai-compatible":
@@ -773,6 +776,36 @@ function turnRun(workspaceDir, positionId) {
         return turnRunQoder(workspaceDir, positionId, input);
     }
   });
+}
+
+async function turnRunWorkbuddyLocal(input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+  const controller = new AbortController();
+  let terminal = false;
+  const finish = (event) => {
+    if (terminal) return;
+    terminal = true;
+    clearTimeout(timer);
+    controller.abort();
+    process.stdout.write(`${JSON.stringify(event)}\n`, () => process.exit(0));
+  };
+  const fail = (code, terminalReason = "engine_internal_error") => finish({
+    type: "run.failed", runId, timestamp: now(),
+    error: { code, message: `WorkBuddy 本地连接失败（${code}），请确认客户端已打开并登录。`, retryable: false, terminalReason },
+  });
+  const timer = setTimeout(() => fail("workbuddy.deadline_exceeded", "deadline_exceeded"), 60_000);
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.once(signal, () => fail("workbuddy.cancelled", "cancelled"));
+  try {
+    const model = process.env.ROLEWEAVE_TURN_MODEL;
+    const result = await requestWorkbuddyLocal(process.env, "complete", { input, ...(model && model !== "provider-default" ? { model } : {}) }, { signal: controller.signal });
+    if (terminal) return;
+    emit({ type: "model.delta", runId, timestamp: now(), text: result.text });
+    if (Object.keys(result.usage).length) emit({ type: "usage", runId, timestamp: now(), ...result.usage });
+    finish({ type: "run.completed", runId, timestamp: now(), output: result.text, terminalReason: "goal_met" });
+  } catch (error) {
+    fail(typeof error?.code === "string" && /^workbuddy\.[a-z_]{1,64}$/.test(error.code) ? error.code : "workbuddy.protocol_invalid");
+  }
 }
 
 async function turnRunOpenAICompatible(workspaceDir, positionId, input) {
