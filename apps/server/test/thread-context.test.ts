@@ -22,6 +22,15 @@ test("thread context carries trusted background and draft, leaving the current r
   assert.equal(result.metadata.contextBytes, Buffer.byteLength(result.input) - Buffer.byteLength(current));
 });
 
+test("legacy tool text is not passed to a new task as evidence that work happened", () => {
+  const result = materializeThreadContext({ input: "继续完成实际检查", enabled: true, turns: [turn("legacy", "检查发布配置", "我先检查。<tool_call>find /workspace -type f")] });
+  assert.match(result.input, /检查发布配置/);
+  assert.match(result.input, /not evidence of completed work/);
+  assert.doesNotMatch(result.input, /<tool_call>|find \/workspace/);
+  const example = materializeThreadContext({ input: "解释示例", enabled: true, turns: [turn("docs", "写示例", "`<tool_call>find x`")] });
+  assert.match(example.input, /<tool_call>/);
+});
+
 test("disabled and empty context do not change model input; unsafe results are excluded", () => {
   const turns = [turn("one", "background", "draft")];
   assert.equal(materializeThreadContext({ input: "next", enabled: false, turns }).input, "next");
