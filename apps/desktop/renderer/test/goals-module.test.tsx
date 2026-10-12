@@ -214,6 +214,25 @@ const secondSummary = { ...goalSummary, goalId: "goal-two", title: "Second goal"
 const secondDetail = { goal: { ...goalDetail.goal, ...secondSummary, branches: [] }, activity: [] };
 
 describe("Pencil goal evidence (#556)", () => {
+  it.each([undefined, ""])("does not offer a session jump for a role-only branch with sessionId=%s", async (sessionId) => {
+    const branch = {
+      branchId: "unbound",
+      title: "Unbound delivery",
+      status: "in_progress" as const,
+      positionId: "engineer",
+      sessionId,
+      createdAt: goalSummary.createdAt,
+      updatedAt: goalSummary.updatedAt,
+    };
+    installBridge({ goal: vi.fn().mockResolvedValue({ status: 200, body: { ...goalDetail, goal: { ...goalDetail.goal, branches: [branch] } } }) });
+    const open = vi.fn();
+    render(<GoalsModule workspaceOpen positionNames={{ engineer: "工程师" }} onOpenBoundSession={open} />);
+    await screen.findByText("Unbound delivery");
+    expect(screen.getByText("工程师")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开会话" })).not.toBeInTheDocument();
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it("uses completed/all branches and navigates the branch's exact role/session", async () => {
     const branches = [
       { branchId: "verified", title: "Installer validation", status: "completed" as const, positionId: "engineer", sessionId: "bound-session", createdAt: goalSummary.createdAt, updatedAt: goalSummary.updatedAt },

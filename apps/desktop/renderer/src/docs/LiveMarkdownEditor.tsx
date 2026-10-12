@@ -14,6 +14,8 @@ export interface LiveMarkdownEditorProps {
   active?: boolean;
   onNavigateDoc?: (target: string, kind: "wikilink" | "relative") => void;
   onCompositionChange?: (active: boolean) => void;
+  /** Vault images are resolved by the reading surface, never fetched from editable markup. */
+  restrictImages?: boolean;
 }
 
 type Point = { path: number[]; offset: number; textOffset: number };
@@ -104,13 +106,17 @@ function destroyEditor(editor: Vditor) {
   editor.destroy();
 }
 
-function withoutHtmlPreview(html: string): string {
+function withoutHtmlPreview(html: string, restrictImages = false): string {
   // Inert templates prevent preview frames loading before removal; keep their Markdown source.
   const template = document.createElement("template");
   template.innerHTML = html;
   template.content.querySelectorAll('[data-type="html-block"]').forEach((block) => {
     block.querySelectorAll(".vditor-ir__preview").forEach((preview) => preview.remove());
     block.querySelectorAll(".vditor-ir__marker--pre").forEach((source) => source.classList.remove("vditor-ir__marker"));
+  });
+  if (restrictImages) template.content.querySelectorAll("img").forEach((image) => {
+    image.removeAttribute("src");
+    image.removeAttribute("srcset");
   });
   return template.innerHTML;
 }
@@ -327,7 +333,7 @@ export function LiveMarkdownEditor(props: LiveMarkdownEditorProps) {
         // Lute's HTML preview flag misses SpinVditorIRDOM; filter every DOM insertion boundary.
         for (const method of ["Md2VditorIRDOM", "SpinVditorIRDOM", "HTML2VditorIRDOM"] as const) {
           const convert = lute[method].bind(lute);
-          lute[method] = (source: string) => withoutHtmlPreview(convert(source));
+          lute[method] = (source: string) => withoutHtmlPreview(convert(source), session.props.restrictImages);
         }
         editor.setValue(session.props.value, false);
         // Seed undo before the first keystroke can cancel Vditor's delayed initial snapshot.

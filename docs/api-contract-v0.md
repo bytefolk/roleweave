@@ -52,6 +52,7 @@
     "codex": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 OPENAI_API_KEY…" },
     "codex-local": { "configured": true, "ready": true, "modelPinnable": true, "model": "gpt-5.6-sol" },
     "workbuddy": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 CODEBUDDY_API_KEY 和 CODEBUDDY_MODEL…" },
+    "workbuddy-local": { "configured": false, "ready": false, "modelPinnable": false, "nextStep": "打开 WorkBuddy 客户端并完成登录，再刷新连接。" },
     "gemini": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "安装 Gemini CLI（gemini）或 Antigravity CLI（agy）…" }
   },
   "workspace": { "open": false }
@@ -62,7 +63,9 @@
 
 WorkBuddy 的 `workbuddy` Host 使用服务凭据 `CODEBUDDY_API_KEY` 和显式 `CODEBUDDY_MODEL`。本地预检与回合共用 executable resolver、环境过滤和精确版本配置，只接受审计后的 2.106.4 / 2.137.1；原生 Windows 当前以 `workbuddy.platform_not_verified` 保持 not-ready。`ready` 只代表本地前置满足；真实 provider 成功回合和原生打包验收分别记录。所有提示保持非敏感，不包含凭据、绝对 CLI 路径或原始输出。详见 [本地连接说明](local-agent-connections.md#workbuddy-codebuddy-code)。
 
-可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，Codex、WorkBuddy 与 Gemini Host 传 `true`，其余不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
+`workbuddy-local` 使用 Windows 客户端的 WBIPC v1 本地接口，WSL 通过桌面拥有的私有通道转发请求。凭据留在 WorkBuddy；不运行原生 CLI，不开启 WorkBuddy 工具。该方式仅支持客户端自动模型，`modelPinnable` 为 false，模型配置不可编辑；本地预检仅证明接口可达。缓冲响应后发送单个模型结果，不宣称逐 token 流。失效保持同一引擎，不切换到服务 API。
+
+可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，Codex、WorkBuddy 服务 API 与 Gemini Host 传 `true`，WorkBuddy 本地登录传 `false`，其余不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
 
 可选的 `hosts[].model` 表示控制面会为该 Host 固定的 LLM 模型，Codex、WorkBuddy 与 Gemini Host 有这个旋钮，取值分别来自 `OPENAI_MODEL`、`CODEBUDDY_MODEL` 与 `GEMINI_MODEL`。只有 `modelPinnable` 为 `true` 时该字段才有意义：在无旋钮的 Host 上，`model` 缺失代表能力不存在，而不是未设置偏好。Codex 与 Gemini 字段缺失即控制面不固定模型：引擎不会传 `--model`，由 Host 自己的 CLI 决定。WorkBuddy 要求显式 `CODEBUDDY_MODEL`；缺失时 `configured` / `ready` 均为 false，不能回退到本地登录或默认模型。Codex 回合一律带 `--ignore-user-config`，操作员 `~/.codex/config.toml` 里的 `model` 不参与决策，不能据此展示。`OPENAI_MODEL`、`CODEBUDDY_MODEL` 或 `GEMINI_MODEL` 若不是合法模型标识（首字符为字母或数字，其余限 `A-Z a-z 0-9 . _ : / -`，长度 ≤ 256），引擎会在 spawn 前失败，故这些 Host 一律 fail closed（`configured` 与 `ready` 均为 false 并给出 `nextStep`），且该值绝不回显为 `model`。
 
@@ -328,7 +331,7 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 { "positionId": "repo-owner", "input": "Summarize the open issues.", "engine": "qoder" }
 ```
 
-- `engine` 只允许 `qoder` / `claude-code` / `claude-local` / `codex` / `codex-local` / `workbuddy`；不接受凭据字段，凭据只从控制面进程环境的对应变量传给子进程。
+- `engine` 只允许 `qoder` / `claude-code` / `claude-local` / `codex` / `codex-local` / `workbuddy` / `workbuddy-local` / `gemini` / `openai-compatible`；不接受凭据字段。WorkBuddy 本地凭据留在客户端，其余凭据按对应引擎契约传递。
 - 控制面构造 `turn-envelope.v1`，其 `envelopeDigest` 与 digital-employee canonical JSON + SHA-256 算法逐字节一致。
 - 唯一调用形态：`digital-employee turn run <workspace> --position <id> --stdin`；信封从 stdin 输入，凭据和用户输入均不进 argv。
 - stdout 必须是严格、同 runId、以 `run.started` 开始且恰有一个末尾终态的 `engine.v1` NDJSON；UTF-8 按流解码，模型文本边界镜像上游 1,048,576 字符；未知字段、超界行、多个终态或终态后事件均产生 `indeterminate`。
@@ -401,7 +404,7 @@ POST /sessions                         {"positionId":"repo-owner"}
 GET  /sessions?positionId=repo-owner
 GET  /sessions/:sessionId
 POST /sessions/:sessionId/rotate       {}
-POST /sessions/:sessionId/turns        {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy"}
+POST /sessions/:sessionId/turns        {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy|workbuddy-local|gemini|openai-compatible"}
 GET  /sessions/:sessionId/turns
 ```
 
@@ -485,7 +488,7 @@ GET  /groups
 GET  /groups/:conversationRef
 DELETE /groups/:conversationRef
 POST /groups/:conversationRef/members         {"positionId":"issue-researcher"}
-POST /groups/:conversationRef/turns           {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy","mentions":["repo-owner"]}
+POST /groups/:conversationRef/turns           {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy|workbuddy-local|gemini|openai-compatible","mentions":["repo-owner"]}
 GET  /groups/:conversationRef/turns
 ```
 

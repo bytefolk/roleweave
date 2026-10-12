@@ -23,6 +23,7 @@ import "./memory/session-memory.css";
 import "./docs/document-file-tree.css";
 import "./control-legibility.css";
 import "./inbox/inbox-workspace.css";
+import "./selection-states.css";
 import { App } from "./App";
 import { initThemeMode } from "./theme-mode";
 

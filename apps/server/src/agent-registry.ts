@@ -120,6 +120,16 @@ const HOST_DEFINITIONS: Readonly<Record<AgentHostId, HostDefinition>> = {
     label: "WorkBuddy",
     capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],
   },
+  "workbuddy-local": {
+    label: "WorkBuddy（本地登录）",
+    // The client broker returns a bounded complete response, not token events.
+    capabilities: ["turns", "sessions", "groups", "approvals"],
+  },
+  "qwen-office-local": {
+    label: "Qwen Office",
+    // The native client owns tool use and approval decisions.
+    capabilities: ["turns", "sessions", "groups", "native-tools", "client-approvals"],
+  },
   gemini: {
     label: "Gemini",
     capabilities: ["turns", "streaming", "sessions", "groups", "approvals"],

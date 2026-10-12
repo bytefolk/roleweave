@@ -40,7 +40,7 @@ export interface DriveProvider {
   probe(): Promise<DriveProviderStatus>;
 }
 
-export function resolveDriveProvider(ctx: ControlPlaneContext): DriveProvider {
+export function resolveDriveProvider(ctx: ControlPlaneContext, snapshot?: { memConnection: ServiceConnection | null }): DriveProvider {
   const kind = parseDriveProviderKind(process.env.ORG_WORKBENCH_DRIVE_PROVIDER);
   if (kind === null) {
     throw new OrgApiError(
@@ -49,7 +49,7 @@ export function resolveDriveProvider(ctx: ControlPlaneContext): DriveProvider {
       "ORG_WORKBENCH_DRIVE_PROVIDER must be one of: mem, bdpan",
     );
   }
-  return kind === "bdpan" ? new BdpanDriveProvider() : new MemDriveProvider(ctx);
+  return kind === "bdpan" ? new BdpanDriveProvider() : new MemDriveProvider(ctx, snapshot?.memConnection);
 }
 
 /* ------------------------------------------------------------------ */
@@ -59,7 +59,15 @@ export function resolveDriveProvider(ctx: ControlPlaneContext): DriveProvider {
 export class MemDriveProvider implements DriveProvider {
   readonly kind = "mem" as const;
 
-  constructor(private readonly ctx: ControlPlaneContext) {}
+  private readonly connectionSnapshot: ServiceConnection | null | undefined;
+  constructor(private readonly ctx: ControlPlaneContext, connectionSnapshot?: ServiceConnection | null) {
+    this.connectionSnapshot = connectionSnapshot === undefined || connectionSnapshot === null
+      ? connectionSnapshot : { ...connectionSnapshot };
+  }
+
+  private connection(): ServiceConnection | null {
+    return this.connectionSnapshot === undefined ? resolveServiceConnection(this.ctx, "mem") : this.connectionSnapshot;
+  }
 
   async list(query: string): Promise<DriveObject[]> {
     const raw = await this.fetchMem("/v1/files?limit=200&page=1");
@@ -81,7 +89,7 @@ export class MemDriveProvider implements DriveProvider {
   }
 
   async preview(id: string): Promise<DriveObjectPreview> {
-    const connection = resolveServiceConnection(this.ctx, "mem");
+    const connection = this.connection();
     const deadline = Date.now() + SERVICE_TIMEOUT_MS;
     const object = requireMemFile(await this.fetchMem(`/v1/files/${encodeURIComponent(id)}`, connection));
     if (object.id !== id) throw invalidMemResponse();
@@ -90,11 +98,11 @@ export class MemDriveProvider implements DriveProvider {
   }
 
   async probe(): Promise<DriveProviderStatus> {
-    const connection = resolveServiceConnection(this.ctx, "mem");
+    const connection = this.connection();
     return providerStatus("mem", connection === null ? "not_connected" : "ready");
   }
 
-  private async fetchMem(pathname: string, connection: ServiceConnection | null = resolveServiceConnection(this.ctx, "mem")): Promise<unknown> {
+  private async fetchMem(pathname: string, connection: ServiceConnection | null = this.connection()): Promise<unknown> {
     if (connection === null) {
       throw new OrgApiError(
         errorCodes.drive_not_configured,

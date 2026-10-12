@@ -28,17 +28,17 @@ export function ThemeSettings({ onClose }: { onClose?: () => void }) {
         <h2>{t("theme.settings.title")}</h2>
         {onClose ? <button type="button" onClick={handleCancel} className="owb-theme-settings__close">{t("dlg.close")}</button> : null}
       </header>
-      <nav className="owb-theme-settings__tabs">
-        <button type="button" className={activeTab === "preset" ? "active" : ""} onClick={() => setActiveTab("preset")}>{t("theme.settings.tabPreset")}</button>
-        <button type="button" className={activeTab === "custom" ? "active" : ""} onClick={() => setActiveTab("custom")}>{t("theme.settings.tabCustom")}</button>
+      <nav className="owb-theme-settings__tabs" aria-label={t("theme.settings.title")}>
+        <button type="button" className={activeTab === "preset" ? "active" : ""} aria-pressed={activeTab === "preset"} onClick={() => setActiveTab("preset")}>{t("theme.settings.tabPreset")}</button>
+        <button type="button" className={activeTab === "custom" ? "active" : ""} aria-pressed={activeTab === "custom"} onClick={() => setActiveTab("custom")}>{t("theme.settings.tabCustom")}</button>
       </nav>
       <div className="owb-theme-settings__content">
         {activeTab === "preset" && (
           <div className="owb-theme-settings__presets">
             <p className="owb-theme-settings__hint">{t("theme.settings.presetHint")}</p>
-            <div className="owb-theme-settings__preset-list">
+            <div className="owb-theme-settings__preset-list" role="group" aria-label={t("theme.settings.tabPreset")}>
               {BUILT_IN_PRESETS.map((preset) => (
-                <button key={preset.id} type="button" className={`owb-theme-settings__preset ${presetId === preset.id ? "active" : ""}`} onClick={() => handlePresetSelect(preset.id)}>
+                <button key={preset.id} type="button" className={`owb-theme-settings__preset ${presetId === preset.id ? "active" : ""}`} aria-pressed={presetId === preset.id} onClick={() => handlePresetSelect(preset.id)}>
                   <span className="owb-theme-settings__preset-name">{t(preset.nameKey)}</span>
                   <span className="owb-theme-settings__preset-desc">{t(preset.descriptionKey)}</span>
                 </button>

@@ -16,6 +16,19 @@ function props(overrides: Partial<TurnPanelProps> = {}): TurnPanelProps {
 }
 
 describe("conversation interaction refinements without a frame redesign", () => {
+  it("keeps completed conversations readable without a preload bridge and hides unavailable note actions", () => {
+    const bridge = Object.getOwnPropertyDescriptor(window, "owb");
+    Object.defineProperty(window, "owb", { configurable: true, value: undefined });
+    try {
+      render(<TurnPanel {...props()} />);
+      expect(screen.getByText("Original task")).toBeInTheDocument();
+      expect(screen.getByText("Done")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "沉淀为笔记" })).not.toBeInTheDocument();
+    } finally {
+      if (bridge) Object.defineProperty(window, "owb", bridge);
+      else Reflect.deleteProperty(window, "owb");
+    }
+  });
   it.each([true, undefined])("shows a noninteractive branded Agent for engineLocked=%s without changing the employee or draft", (engineLocked) => {
     const selectEngine = vi.fn();
     const { container } = render(<TurnPanel {...props({ engineLocked, onSelectEngine: selectEngine })} />);

@@ -99,10 +99,28 @@ test("WorkBuddy external engine is refused before any process starts", async (t)
   const marker = path.join(dir, "spawned");
   const cli = path.join(dir, "external.mjs");
   await fs.writeFile(cli, `import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(marker)},'spawned');\n`);
-  const result = await new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(cli)}`, 1000, false).turnRun({ workspace: "/workspace", positionId: "owner", engine: "workbuddy", envelope });
-  assert.equal(result.status, "indeterminate");
-  assert.equal(result.code, "turn_engine_unavailable");
+  for (const engine of ["workbuddy", "workbuddy-local"] as const) {
+    const result = await new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(cli)}`, 1000, false).turnRun({ workspace: "/workspace", positionId: "owner", engine, envelope });
+    assert.equal(result.status, "indeterminate");
+    assert.equal(result.code, "turn_engine_unavailable");
+  }
   await assert.rejects(fs.access(marker));
+});
+
+test("WorkBuddy local driver forwards only its owned bridge, not API or other local credentials", async (t) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "workbuddy-local-driver-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const cli = path.join(dir, "bundled.mjs"), capture = path.join(dir, "env.json");
+  await fs.writeFile(cli, `import fs from 'node:fs';for await (const chunk of process.stdin) {}fs.writeFileSync(${JSON.stringify(capture)},JSON.stringify(process.env));const b={runId:'local',timestamp:'2026-10-11T00:00:00.000Z'};console.log(JSON.stringify({...b,type:'run.started'}));console.log(JSON.stringify({...b,type:'run.completed',output:'ok',terminalReason:'goal_met'}));`);
+  const injected = { ROLEWEAVE_WORKBUDDY_BRIDGE: "/owned/bridge.sock", ROLEWEAVE_WORKBUDDY_BRIDGE_TOKEN: "b".repeat(64), CODEBUDDY_API_KEY: "foreign-api", CODEBUDDY_AUTH_TOKEN: "foreign-login", CODEBUDDY_BASE_URL: "https://foreign.example", CODEBUDDY_MODEL: "foreign-model", WORKBUDDY_CONFIG_DIR: "/private", OPENAI_API_KEY: "foreign-openai", ANTHROPIC_AUTH_TOKEN: "foreign-anthropic", CLAUDE_CONFIG_DIR: "/private-claude" };
+  const saved = Object.fromEntries(Object.keys(injected).map((key) => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, injected);
+    const result = await new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(cli)}`, 5000, true).turnRun({ workspace: "/workspace", positionId: "owner", engine: "workbuddy-local", envelope });
+    assert.equal(result.status, "trusted", result.diagnostic);
+    const env = JSON.parse(await fs.readFile(capture, "utf8"));
+    for (const key of Object.keys(injected)) assert.equal(env[key], key.startsWith("ROLEWEAVE_WORKBUDDY_BRIDGE") ? injected[key as keyof typeof injected] : undefined, key);
+  } finally { for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } }
 });
 
 test("WorkBuddy driver preserves installation discovery only across its bundled boundary", async (t) => {
@@ -111,14 +129,17 @@ test("WorkBuddy driver preserves installation discovery only across its bundled 
   const cli = path.join(dir, "bundled.mjs");
   const capture = path.join(dir, "child-env.json");
   await fs.writeFile(cli, `import fs from 'node:fs';for await (const chunk of process.stdin) {}fs.writeFileSync(${JSON.stringify(capture)},JSON.stringify(process.env));const base={runId:'run-workbuddy',timestamp:'2026-09-15T00:00:00.000Z'};console.log(JSON.stringify({...base,type:'run.started'}));console.log(JSON.stringify({...base,type:'run.completed',output:'ok',terminalReason:'goal_met'}));\n`);
-  const injected: NodeJS.ProcessEnv = { ...provider, CODEBUDDY_BASE_URL: "https://api.example", CODEBUDDY_INTERNET_ENVIRONMENT: "internal", DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND: "/fixture/codebuddy", ProgramFiles: "/fixture/program-files", PROGRAMFILES: "/fixture/program-files-upper", LOCALAPPDATA: "/fixture/local-appdata", PATHEXT: ".EXE;.CMD", SystemRoot: "/fixture/windows", WINDIR: "/fixture/windows", CODEBUDDY_CONFIG_DIR: "/private/login", WORKBUDDY_CONFIG_DIR: "/private/login", CODEBUDDY_AUTH_TOKEN: "local-account-token", OPENAI_API_KEY: "foreign-openai", ANTHROPIC_API_KEY: "foreign-anthropic", QODER_PERSONAL_ACCESS_TOKEN: "foreign-qoder", ORG_WORKBENCH_BOOT_TOKEN: "boot-token", NODE_OPTIONS: "--require=/private/untrusted.cjs" };
+  const injected: NodeJS.ProcessEnv = { ...provider, CODEBUDDY_BASE_URL: "https://api.example", CODEBUDDY_INTERNET_ENVIRONMENT: "internal", DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND: "/fixture/codebuddy", ProgramFiles: "/fixture/program-files", PROGRAMFILES: "/fixture/program-files-upper", LOCALAPPDATA: "/fixture/local-appdata", PATHEXT: ".EXE;.CMD", SystemRoot: process.platform === "win32" ? process.env.SystemRoot : "/fixture/windows", WINDIR: process.platform === "win32" ? process.env.WINDIR : "/fixture/windows", CODEBUDDY_CONFIG_DIR: "/private/login", WORKBUDDY_CONFIG_DIR: "/private/login", CODEBUDDY_AUTH_TOKEN: "local-account-token", OPENAI_API_KEY: "foreign-openai", ANTHROPIC_API_KEY: "foreign-anthropic", QODER_PERSONAL_ACCESS_TOKEN: "foreign-qoder", ORG_WORKBENCH_BOOT_TOKEN: "boot-token", NODE_OPTIONS: "--require=/private/untrusted.cjs" };
   const saved = Object.fromEntries(Object.keys(injected).map(key => [key, process.env[key]]));
   try {
     Object.assign(process.env, injected);
     const result = await new DigitalEmployeeCliDriver(`${JSON.stringify(process.execPath)} ${JSON.stringify(cli)}`, 5000, true).turnRun({ workspace: "/workspace", positionId: "owner", engine: "workbuddy", envelope });
     assert.equal(result.status, "trusted", result.diagnostic);
     const environment = JSON.parse(await fs.readFile(capture, "utf8")) as Record<string, string>;
-    for (const key of ["CODEBUDDY_API_KEY", "CODEBUDDY_MODEL", "CODEBUDDY_BASE_URL", "CODEBUDDY_INTERNET_ENVIRONMENT", "DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND", "ProgramFiles", "PROGRAMFILES", "LOCALAPPDATA", "PATHEXT", "SystemRoot", "WINDIR"]) assert.equal(environment[key], injected[key], key);
+    const received = (key: string) => process.platform === "win32" ? Object.entries(environment).find(([name]) => name.toUpperCase() === key.toUpperCase())?.[1] : environment[key];
+    // Windows treats ProgramFiles/PROGRAMFILES and SystemRoot/SYSTEMROOT as
+    // one variable; compare the effective source, not two impossible aliases.
+    for (const key of ["CODEBUDDY_API_KEY", "CODEBUDDY_MODEL", "CODEBUDDY_BASE_URL", "CODEBUDDY_INTERNET_ENVIRONMENT", "DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND", "ProgramFiles", "PROGRAMFILES", "LOCALAPPDATA", "PATHEXT", "SystemRoot", "WINDIR"]) assert.equal(received(key), process.env[key], key);
     for (const key of ["CODEBUDDY_CONFIG_DIR", "WORKBUDDY_CONFIG_DIR", "CODEBUDDY_AUTH_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "QODER_PERSONAL_ACCESS_TOKEN", "ORG_WORKBENCH_BOOT_TOKEN", "NODE_OPTIONS"]) assert.equal(environment[key], undefined, key);
   } finally {
     for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }

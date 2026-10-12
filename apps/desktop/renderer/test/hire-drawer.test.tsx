@@ -21,6 +21,9 @@ const AVAILABILITY: Record<TurnEngine, TurnEngineAvailability> = {
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
+  "workbuddy-local": { configured: true, ready: true },
+  "qwen-office-local": { configured: true, ready: true },
+
   gemini: { configured: false, ready: false },
   "openai-compatible": { configured: false, ready: false },
 };
@@ -142,6 +145,32 @@ const reviewedMcpGrant = { id: "repository", tools: ["search", "read"] };
 
 describe("selection-first employee creation", () => {
   afterEach(() => vi.useRealTimers());
+  it("does not promise RoleWeave tool restrictions when Office is drafting a candidate", () => {
+    renderCreateDrawer({ ...generationProps(), conversationEngine: "qwen-office-local" });
+    fireEvent.click(screen.getByText("让 Agent 帮我生成草案"));
+    const drafting = screen.getByLabelText("岗位创建对话");
+    expect(within(drafting).getByText("工具与审批由千问办公管理。")).toBeInTheDocument();
+    expect(drafting.querySelector(".owb-hire-conversation__meta")).toHaveTextContent("工具与审批由千问办公管理。");
+  });
+  it("binds Office to its native client and drops unrelated grants when changing Hosts", async () => {
+    const bridge = fixtureBridge();
+    renderCreateDrawer({ ...generationProps() });
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    await configureReviewedCapabilities();
+    fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
+    fireEvent.click(screen.getByRole("option", { name: "千问办公" }));
+    expect(screen.getByRole("button", { name: /员工 Agent/ })).toHaveTextContent("千问办公");
+    expect(screen.queryByRole("button", { name: /连接方式/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/工具与审批由千问办公管理/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("高级配置"));
+    expect(screen.queryByRole("button", { name: "Write" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("附加能力与授权")).not.toBeInTheDocument();
+    expect(screen.getByText(/请在千问办公客户端中设置工具与审批/)).toBeInTheDocument();
+    expect(screen.getByText(/这里的预算是 RoleWeave 记录/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledOnce());
+    expect(bridge.hire.mock.calls[0]?.[0]).toMatchObject({ agentEngine: "qwen-office-local", mode: "read_only", permissions: { tools: ["Read"], rules: [], skills: [], mcpServers: [] } });
+  });
   it("fills a useful template in one click and creates without manual input or broader defaults", async () => {
     const bridge = fixtureBridge();
     const onHired = vi.fn();
@@ -161,6 +190,74 @@ describe("selection-first employee creation", () => {
       memorySources: [{ kind: "position_docs", locator: "./knowledge/**" }],
     }));
     expect(bridge.createTurn).not.toHaveBeenCalled();
+  });
+
+  it("keeps a WorkBuddy local selection through health changes and requires it to be ready before creation", async () => {
+    const bridge = fixtureBridge();
+    const props = { ...generationProps(), engine: "qoder" as const, onClose: vi.fn(), onHired: vi.fn() };
+    const engines = { ...AVAILABILITY, "workbuddy-local": { configured: false, ready: false, reason: "WorkBuddy 客户端尚未连接" } };
+    const context = renderCreateDrawer({ ...props, engineAvailability: engines });
+    fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
+    fireEvent.click(screen.getByRole("option", { name: "WorkBuddy" }));
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    expect(screen.getByRole("button", { name: /接入方式/ })).toHaveTextContent("本地登录");
+    expect(screen.getByText("WorkBuddy 客户端尚未连接")).toBeVisible();
+    expect(screen.getByRole("button", { name: "开始创建" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    expect(bridge.hire).not.toHaveBeenCalled();
+
+    context.rerender(<HireDrawer open {...props} engineAvailability={AVAILABILITY} />);
+    expect(screen.getByRole("button", { name: /接入方式/ })).toHaveTextContent("本地登录");
+    expect(screen.getByRole("button", { name: "研发工程师 · 模板" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({ agentEngine: "workbuddy-local" })));
+    expect(bridge.createTurn).not.toHaveBeenCalled();
+  });
+
+  it("changes an unavailable local WorkBuddy binding to API only after the operator explicitly selects API", async () => {
+    const bridge = fixtureBridge();
+    const props = { ...generationProps(), conversationEngine: "workbuddy-local" as const, engine: "qoder" as const, onClose: vi.fn(), onHired: vi.fn() };
+    const context = renderCreateDrawer(props);
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    const engines = { ...AVAILABILITY, "workbuddy-local": { configured: true, ready: false, reason: "请重新连接 WorkBuddy 客户端" } };
+    context.rerender(<HireDrawer open {...props} engineAvailability={engines} />);
+    expect(screen.getByRole("button", { name: /接入方式/ })).toHaveTextContent("本地登录");
+    expect(screen.getByRole("button", { name: "开始创建" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /接入方式/ }));
+    fireEvent.click(screen.getByRole("option", { name: "API 接入" }));
+    expect(screen.getByRole("button", { name: "开始创建" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({ agentEngine: "workbuddy" })));
+  });
+
+  it.each(["workbuddy", "claude-code", "codex"] as const)("preserves the manager's concrete %s API binding when local sign-in is also ready", async (conversationEngine) => {
+    const bridge = fixtureBridge();
+    renderCreateDrawer({ ...generationProps(), conversationEngine });
+    expect(screen.getByRole("button", { name: /接入方式/ })).toHaveTextContent("API 接入");
+    fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
+    fireEvent.click(screen.getByRole("option", { name: conversationEngine === "workbuddy" ? "WorkBuddy" : conversationEngine === "codex" ? "Codex" : "Claude Code" }));
+    expect(screen.getByRole("button", { name: /接入方式/ })).toHaveTextContent("API 接入");
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({ agentEngine: conversationEngine })));
+  });
+
+  it.each([
+    ["Claude Code", "claude-local", "claude-code"],
+    ["Codex", "codex-local", "codex"],
+  ] as const)("starts a new %s brand choice with local sign-in and can explicitly select its API binding", async (brand, localEngine, apiEngine) => {
+    const bridge = fixtureBridge();
+    renderCreateDrawer();
+    fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
+    fireEvent.click(screen.getByRole("option", { name: brand }));
+    expect(screen.getByRole("button", { name: /接入方式/ })).toHaveTextContent("本地登录");
+    fireEvent.click(screen.getByRole("button", { name: /接入方式/ }));
+    expect(screen.getByRole("option", { name: "本地登录" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("option", { name: "API 接入" }));
+    fireEvent.click(screen.getByRole("button", { name: "研发工程师 · 模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
+    await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({ agentEngine: apiEngine })));
+    expect(bridge.hire).not.toHaveBeenCalledWith(expect.objectContaining({ agentEngine: localEngine }));
   });
 
   it("switches pristine templates directly but requires explicit application after user edits", () => {

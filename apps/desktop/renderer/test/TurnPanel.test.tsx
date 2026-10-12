@@ -16,9 +16,26 @@ const availability: TurnPanelProps["engineAvailability"] = {
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
+  "qwen-office-local": { configured: true, ready: true },
+
   gemini: { configured: true, ready: true },
   "openai-compatible": { configured: true, ready: true },
 };
+
+it("shows Office's native tool boundary and a read-only client model while preserving its turn engine", async () => {
+  const createTurn = vi.fn();
+  const selectModel = vi.fn();
+  render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner" engine="qwen-office-local" engineLocked
+    engineAvailability={availability} turns={[]} onCreateTurn={createTurn} onSelectModel={selectModel}
+    modelConfig={{ selected: "provider-default", recommended: "provider-default", editable: false, source: "default", options: [{ id: "provider-default", name: "Current Qwen Office model", tier: "default" }] }} />);
+  expect(screen.getByText("工具与审批由千问办公管理。")).toBeInTheDocument();
+  expect(screen.getByText("千问办公当前模型")).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "员工模型" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "Review this document" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+  await waitFor(() => expect(createTurn).toHaveBeenCalledWith({ positionId: "repo-owner", engine: "qwen-office-local", input: "Review this document" }));
+  expect(selectModel).not.toHaveBeenCalled();
+});
 
 function ControlledPanel({ onCreateTurn }: { onCreateTurn: (request: CreateTurnRequest) => void }) {
   return (
@@ -911,6 +928,7 @@ describe("TurnThread #234 — preserve conversation viewport on employee switch"
 it.each([
   ["qoder", "Qoder"], ["claude-code", "Claude Code"], ["claude-local", "Claude Code"],
   ["codex", "Codex"], ["codex-local", "Codex"], ["workbuddy", "WorkBuddy"],
+  ["qwen-office-local", "千问办公"],
   ["gemini", "Gemini"],
   ["openai-compatible", "OpenAI Compatible"],
 ] as const)("never renders %s diagnostics without weakening send guards", async (engine, label) => {

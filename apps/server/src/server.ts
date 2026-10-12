@@ -18,6 +18,8 @@ import {
   handleDocsWrite,
 } from "./routes/docs.js";
 import { handleDriveDetail, handleDriveList, handleDrivePreview, handleDriveProviderStatus, handleDriveUpload } from "./routes/drive.js";
+import { handleVault } from "./vault/routes.js";
+import { handleVaultExtensions } from "./vault/extensions.js";
 import { handleEvents } from "./routes/events.js";
 import {
   handleGroupAddMember,
@@ -105,6 +107,8 @@ async function dispatch(
     }
 
     if (await handleServices(ctx, req, res, url)) return;
+    if (await handleVaultExtensions(ctx, req, res, url)) return;
+    if (await handleVault(ctx, req, res, url)) return;
     if (await handleApprovals(ctx, req, res, url, actor)) return;
 
     if (pathname === routes.health && method === "GET") {

@@ -14,7 +14,7 @@ import { Input as OwbInput } from "@fullstack-ai-infra/ui";
 import { useT, type OwbT } from "@roleweave/ui";
 import { hireSkillCatalog } from "@roleweave/shared/capabilities";
 import type { HireMemorySource, HireMcpGrant, HirePermissions } from "@roleweave/shared";
-import { AGENT_HOST_LABEL, AGENT_HOSTS, agentHostForEngine, resolveAgentEngine, type AgentHost } from "../turns/agent-host";
+import { AGENT_HOST_LABEL, AGENT_HOSTS, agentEnginesForHost, agentHostForEngine, type AgentHost } from "../turns/agent-host";
 import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
 import { CapabilityPicker, PermissionPolicyEditor, replaceCapabilityRules } from "./PermissionsEditor";
 import { createHireDraft, initialHireFlow, parseHireProposal, reduceHireFlow, toHirePositionRequest } from "./hire-flow";
@@ -160,7 +160,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [reportTo, setReportTo] = useState<string | null>(presetReportTo);
   const [mode, setMode] = useState<HireDraft["mode"]>("approval_required");
-  const [agentHost, setAgentHost] = useState<AgentHost>(() => agentHostForEngine(conversationEngine ?? engine));
+  const [agentEngine, setAgentEngine] = useState<TurnEngine>(conversationEngine ?? engine);
   const [taskTokens, setTaskTokens] = useState("20000");
   const [taskIterations, setTaskIterations] = useState("8");
   const [dayTokens, setDayTokens] = useState("200000");
@@ -219,7 +219,7 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
     dispatch({ type: "reset", draft: createHireDraft() });
     setName(""); setDescription(""); setAvatar(undefined); setAvatarGenerating(false); setAvatarError(null); setReportTo(presetReportTo);
     setMode("approval_required"); setTaskTokens("20000"); setTaskIterations("8"); setDayTokens("200000"); setDayIterations("64");
-    setAgentHost(agentHostForEngine(conversationEngine ?? engine));
+    setAgentEngine(conversationEngine ?? engine);
     setPrompt(defaultBrief(t)); setMessages([]); setConversationBusy(false); setConversationError(null); setDesignAssistOpen(false); setAdvancedOpen(false);
     setSelectedPreset(null); setAppliedPreset(null); setCandidateProposal(null);
     setPermissions({ tools: ["Read", "Grep", "Glob"], rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }], skills: [], mcpServers: [] });
@@ -257,7 +257,12 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
 
   const generatedId = useMemo(() => nextGeneratedId(name, positions), [name, positions]);
   const positionId = generatedId;
-  const agentEngine = useMemo(() => resolveAgentEngine(agentHost, engineAvailability), [agentHost, engineAvailability]);
+  const agentHost = agentHostForEngine(agentEngine);
+  const agentEngines = agentEnginesForHost(agentHost);
+  const localConnection = agentEngine.endsWith("-local");
+  const clientManaged = agentEngine === "qwen-office-local";
+  const selectedHost = engineAvailability[agentEngine];
+  const agentReady = selectedHost?.ready === true;
   const designEngine = conversationEngine ?? engine;
   const nameValid = name.trim().length > 0 && name.trim().length <= 24;
   const descriptionValid = description.trim().length > 0;
@@ -267,9 +272,9 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const parsedDayTokens = Number(dayTokens);
   const capsValid = (value: string, required: boolean) => value.trim() === "" ? !required : Number.isSafeInteger(Number(value)) && Number(value) > 0 && Number(value) <= 1_000_000_000;
   const budgetValid = capsValid(taskTokens, true) && capsValid(dayTokens, true) && capsValid(taskIterations, false) && capsValid(dayIterations, false) && parsedTaskTokens <= parsedDayTokens && parsedDayTokens <= remainingPool;
-  const formValid = nameValid && descriptionValid && budgetValid && permissions.tools.length > 0;
+  const formValid = nameValid && descriptionValid && budgetValid && (clientManaged || permissions.tools.length > 0) && agentReady;
 
-  const buildDraft = useCallback((): HireDraft => createHireDraft({ id: positionId, name: name.trim(), description: description.trim(), reportTo: reportTo || null, mode, budget: { perTask: { tokens: Number(taskTokens), ...(taskIterations.trim() ? { iterations: Number(taskIterations) } : {}) }, perDay: { tokens: Number(dayTokens), ...(dayIterations.trim() ? { iterations: Number(dayIterations) } : {}) } }, permissions, prompt: prompt.trim(), memorySources, agentEngine }), [agentEngine, dayIterations, dayTokens, description, memorySources, mode, name, permissions, positionId, prompt, reportTo, taskIterations, taskTokens]);
+  const buildDraft = useCallback((): HireDraft => createHireDraft({ id: positionId, name: name.trim(), description: description.trim(), reportTo: reportTo || null, mode: clientManaged ? "read_only" : mode, budget: { perTask: { tokens: Number(taskTokens), ...(taskIterations.trim() ? { iterations: Number(taskIterations) } : {}) }, perDay: { tokens: Number(dayTokens), ...(dayIterations.trim() ? { iterations: Number(dayIterations) } : {}) } }, permissions: clientManaged ? { tools: ["Read"], rules: [], skills: [], mcpServers: [] } : permissions, prompt: prompt.trim(), memorySources, agentEngine }), [agentEngine, clientManaged, dayIterations, dayTokens, description, memorySources, mode, name, permissions, positionId, prompt, reportTo, taskIterations, taskTokens]);
 
   const applyPreset = (preset: HireRolePreset) => {
     const values = { id: preset.id, name: t(preset.nameKey).slice(0, 24), description: t(preset.descriptionKey).slice(0, 1_024) };
@@ -462,21 +467,36 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
                 <h3>{t("hire.agentTitle")}</h3>
                 <p>{t("hire.agentDescription")}</p>
               </div>
-              <div className="owb-hire-agent-binding">
-                <span>{t("hire.agentBinding")}</span>
-                <HireChoiceSelect
-                  ariaLabel={t("hire.agentBinding")}
-                  value={agentHost}
-                  options={AGENT_HOSTS.map((host) => ({ value: host, label: AGENT_HOST_LABEL[host] }))}
-                  onChange={(value) => setAgentHost(value as AgentHost)}
-                  t={t}
-                />
-                <small>{t("hire.agentBindingHint")}</small>
+              <div className="owb-hire-agent-connections">
+                <div className="owb-hire-agent-binding">
+                  <span>{t("hire.agentBinding")}</span>
+                  <HireChoiceSelect
+                    ariaLabel={t("hire.agentBinding")}
+                    value={agentHost}
+                    options={AGENT_HOSTS.map((host) => ({ value: host, label: host === "qwen-office-local" ? t("office.brand") : AGENT_HOST_LABEL[host] }))}
+                    onChange={(value) => { if (value !== agentHost) setAgentEngine(agentEnginesForHost(value as AgentHost)[0]!); }}
+                    t={t}
+                  />
+                  <small>{t("hire.agentBindingHint")}</small>
+                </div>
+                {agentEngines.length > 1 ? <div className="owb-hire-agent-binding">
+                  <span>{t("hire.agentConnection")}</span>
+                  <HireChoiceSelect
+                    ariaLabel={t("hire.agentConnection")}
+                    value={agentEngine}
+                    options={agentEngines.map((runtime) => ({ value: runtime, label: t(runtime.endsWith("-local") ? "hire.connectionLocal" : "hire.connectionApi") }))}
+                    onChange={(value) => setAgentEngine(value as TurnEngine)}
+                    t={t}
+                  />
+                  <small>{t(localConnection ? "hire.connectionLocalHint" : "hire.connectionApiHint")}</small>
+                </div> : null}
+                {!agentReady ? <p role="status" className="owb-hire-drawer__hint">{selectedHost?.reason ?? t("hire.connectionUnavailable")}</p> : null}
+                {clientManaged ? <p className="owb-hire-capability-note">{t("office.clientManaged")} {t("office.modelReadonly")}<span> {t("office.accountManaged")}</span></p> : null}
               </div>
             </section>
             <details className="owb-hire-assist" open={designAssistOpen} onToggle={(event) => setDesignAssistOpen(event.currentTarget.open)}>
               <summary><Sparkles aria-hidden="true" size={15} />{t("hire.assistTitle")}<span>{t("hire.assistHint")}</span></summary>
-              <section className="owb-hire-conversation" aria-label={t("hire.agentConversationAria")}><div className="owb-hire-conversation__meta"><span className="owb-hire-conversation__host"><span className="owb-led owb-led--running" />{conversationHostName ?? t("hire.agentWorkspaceContext")}</span><span>{t("hire.agentNoWrite")}</span></div>{messages.length === 0 ? <div className="owb-hire-conversation__empty"><Sparkles aria-hidden="true" size={20} /><span>{t("hire.agentEmpty")}</span></div> : <div className="owb-hire-conversation__messages">{messages.map((entry, index) => <div className={`owb-hire-message is-${entry.role}`} key={`${entry.role}-${index}`}><span>{entry.role === "user" ? t("hire.you") : t("hire.agent")}</span><p>{entry.text}</p></div>)}</div>}<div className="owb-hire-prompt"><div className="owb-hire-prompt__heading"><label htmlFor="owb-hire-prompt-input">{t("hire.promptLabel")}</label><button type="button" onClick={() => setPrompt(defaultBrief(t))}><RotateCcw aria-hidden="true" size={12} /><span>{t("hire.resetPrompt")}</span></button></div><Input.TextArea id="owb-hire-prompt-input" value={prompt} rows={4} onChange={(event) => setPrompt(event.target.value)} placeholder={t("hire.promptPh")} /><div className="owb-hire-prompt__footer"><span>{t("hire.promptEditable")}</span><AntButton type="primary" loading={conversationBusy} disabled={!engineAvailability[designEngine]?.ready || (!conversationHostId && positions.length === 0) || prompt.trim().length === 0} onClick={() => void askAgent()} icon={<Sparkles aria-hidden="true" size={14} />}>{conversationBusy ? t("hire.askingAgent") : t("hire.askAgent")}</AntButton></div>{conversationError ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{conversationError}</p> : null}</div></section>
+              <section className="owb-hire-conversation" aria-label={t("hire.agentConversationAria")}><div className="owb-hire-conversation__meta"><span className="owb-hire-conversation__host"><span className="owb-led owb-led--running" />{conversationHostName ?? t("hire.agentWorkspaceContext")}</span><span>{t(designEngine === "qwen-office-local" ? "office.clientManaged" : "hire.agentNoWrite")}</span></div>{messages.length === 0 ? <div className="owb-hire-conversation__empty"><Sparkles aria-hidden="true" size={20} /><span>{t("hire.agentEmpty")}</span></div> : <div className="owb-hire-conversation__messages">{messages.map((entry, index) => <div className={`owb-hire-message is-${entry.role}`} key={`${entry.role}-${index}`}><span>{entry.role === "user" ? t("hire.you") : t("hire.agent")}</span><p>{entry.text}</p></div>)}</div>}<div className="owb-hire-prompt"><div className="owb-hire-prompt__heading"><label htmlFor="owb-hire-prompt-input">{t("hire.promptLabel")}</label><button type="button" onClick={() => setPrompt(defaultBrief(t))}><RotateCcw aria-hidden="true" size={12} /><span>{t("hire.resetPrompt")}</span></button></div><Input.TextArea id="owb-hire-prompt-input" value={prompt} rows={4} onChange={(event) => setPrompt(event.target.value)} placeholder={t("hire.promptPh")} /><div className="owb-hire-prompt__footer"><span>{t("hire.promptEditable")}</span><AntButton type="primary" loading={conversationBusy} disabled={!engineAvailability[designEngine]?.ready || (!conversationHostId && positions.length === 0) || prompt.trim().length === 0} onClick={() => void askAgent()} icon={<Sparkles aria-hidden="true" size={14} />}>{conversationBusy ? t("hire.askingAgent") : t("hire.askAgent")}</AntButton></div>{conversationError ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{conversationError}</p> : null}</div></section>
             </details>
             {candidateProposal && parsedCandidate ? <section className="owb-hire-generated-preview" aria-label={t("hire.generatedProposalTitle")}>
               <strong>{t("hire.generatedProposalTitle")}</strong><p>{parsedCandidate.name ?? t("hire.proposalPendingName")}</p>
@@ -511,13 +531,13 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
                       <label className="owb-hire-avatar-picker__upload"><span>{t("avatar.upload")}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => chooseAvatarFile(event.target.files?.[0])} /></label>
                     </div>
                   </section>
-                  <PermissionPolicyEditor permissions={permissions} onChange={setPermissions} />
+                  {clientManaged ? <p className="owb-hire-capability-note">{t("office.clientSettings")}</p> : <PermissionPolicyEditor permissions={permissions} onChange={setPermissions} />}
                   <div className="owb-hire-section-head"><div><h4>{t("hire.memoryTitle")}</h4><p>{t("hire.memoryHint")}</p></div></div>
                   <div className="owb-hire-memory-chips">{MEMORY_OPTIONS.map((option) => <label key={option.kind} className={memorySources.some((source) => source.kind === option.kind) ? "is-selected" : ""}><Checkbox checked={memorySources.some((source) => source.kind === option.kind)} onChange={() => toggleMemory(option.kind)} />{t(option.labelKey)}</label>)}</div>
                   <div className="owb-hire-divider" />
-                  <div className="owb-hire-two-col"><label><span>{t("hire.mode")}</span><HireChoiceSelect t={t} ariaLabel={t("hire.mode")} value={mode} onChange={(value) => setMode(value as HireDraft["mode"])} options={[{ value: "read_only", label: t("hire.modeReadOnly") }, { value: "approval_required", label: t("hire.modeApproval") }]} /></label></div>
+                  {!clientManaged ? <div className="owb-hire-two-col"><label><span>{t("hire.mode")}</span><HireChoiceSelect t={t} ariaLabel={t("hire.mode")} value={mode} onChange={(value) => setMode(value as HireDraft["mode"])} options={[{ value: "read_only", label: t("hire.modeReadOnly") }, { value: "approval_required", label: t("hire.modeApproval") }]} /></label></div> : null}
                   <fieldset className="owb-hire-budget"><legend>{t("hire.budgetTitle")}</legend><div className="owb-hire-budget__bar"><span style={{ width: `${poolPercent}%` }} /><small>{t("hire.poolAllocated", { allocated: allocated.toLocaleString(), total: budgetPoolTokens.toLocaleString() })}</small></div><div className="owb-hire-two-col"><label><span>{t("hire.taskTokens")}</span><OwbInput value={taskTokens} inputMode="numeric" onChange={(event) => setTaskTokens(event.target.value)} /></label><label><span>{t("hire.dayTokens")}</span><OwbInput value={dayTokens} inputMode="numeric" onChange={(event) => setDayTokens(event.target.value)} /></label><label><span>{t("hire.taskIters")}</span><OwbInput value={taskIterations} inputMode="numeric" onChange={(event) => setTaskIterations(event.target.value)} placeholder={t("hire.optional")} /></label><label><span>{t("hire.dayIters")}</span><OwbInput value={dayIterations} inputMode="numeric" onChange={(event) => setDayIterations(event.target.value)} placeholder={t("hire.optional")} /></label></div>{parsedDayTokens > remainingPool ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{t("hire.budgetExceeded", { remaining: remainingPool.toLocaleString() })}</p> : parsedTaskTokens > parsedDayTokens ? <p className="owb-hire-drawer__hint owb-hire-drawer__hint--error">{t("hire.taskBudgetExceeded")}</p> : null}</fieldset>
-                  <CapabilityPicker permissions={permissions} onChange={setPermissions} />
+                  {clientManaged ? <p className="owb-hire-capability-note">{t("office.budgetManaged")}</p> : <CapabilityPicker permissions={permissions} onChange={setPermissions} />}
                 </div>
               </details>
             </section>
