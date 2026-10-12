@@ -1,4 +1,13 @@
-# examples/oss-maintainer
+# Reference workspaces
+
+- [CXO 公司](cxo-company/README.md)：25 种参考职能、三个岗位的入门公司和九个职能的 AI 产品公司；使用现有群组并行与接力能力。
+- [开源维护组织](#examplesoss-maintainer)：仓库负责人、问题研究、发布工程和社区运营。
+- [GitHub 运维](github-ops/README.md)：GitHub 工作场景。
+- [关系图](relationship-graph/README.md)：关系视图示例。
+
+案例是通用岗位和工作区能力的使用方法，不是专用产品类型。运行前复制需要的工作区到仓库外，避免把本地运行状态写回示例源文件。
+
+## examples/oss-maintainer
 
 示例工作区：开源维护者组织（1 owner + 3 岗位），与 #163 展示同源形状。
 
