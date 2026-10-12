@@ -626,7 +626,7 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getByText("正在执行中")).toBeInTheDocument();
+    expect(screen.getByText("正在执行")).toBeInTheDocument();
     expect(screen.getByText("已处理")).toBeInTheDocument();
     expect(screen.getByText("失败")).toBeInTheDocument();
     expect(screen.getByText("状态未知")).toBeInTheDocument();
@@ -840,7 +840,7 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("停止当前任务（⌘/Ctrl+.）");
     fireEvent.mouseLeave(stop.parentElement!);
     expect(screen.queryByRole("button", { name: "发送任务" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("正在执行中").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("正在执行").length).toBeGreaterThan(0);
     expect(screen.getAllByText("已处理").length).toBeGreaterThan(0);
     expect(screen.queryByText("1,280 tokens")).not.toBeInTheDocument();
     expect(screen.queryByText("999 tokens")).not.toBeInTheDocument();

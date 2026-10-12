@@ -1819,7 +1819,7 @@ describe("App runtime bridge", () => {
       listener!({ seq: 3, type: "turn.model.delta", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
     });
     expect(await screen.findByText("正在分析…核对完成")).toBeInTheDocument();
-    expect(screen.getByText("正在执行中")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "执行进展" })).toHaveTextContent("思考中");
 
     act(() => {
       listener!({ seq: 3, type: "turn.model.delta", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });

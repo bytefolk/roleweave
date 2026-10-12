@@ -148,6 +148,7 @@ export function expectedResourceManifest(sourceRoot = projectRoot) {
   const sourceMetadata = JSON.parse(fs.readFileSync(path.join(sourceRoot, "package.json"), "utf8"));
   const manifest = new Map([
     ["LICENSE", { kind: "byte-exact", source: path.join(sourceRoot, "LICENSE") }],
+    ["branding/roleweave/platform-icons/roleweave.png", { kind: "byte-exact", source: path.join(sourceRoot, "branding/roleweave/platform-icons/roleweave.png") }],
     ["package.json", { kind: "root-package", expected: expectedRootMetadata(sourceMetadata) }],
   ]);
   addSourceEntries(

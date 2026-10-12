@@ -9,7 +9,8 @@
 // Shell-service split (ADR-0001): main spawns apps/server as a child process
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
-const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage, Tray, Menu, nativeImage } = require("electron");
+const { createStatusTray } = require("./status-tray.cjs");
 const { TURN_ENGINE_IDS } = require("@roleweave/shared/turn-engines");
 // Keep the development window and the packaged bundle aligned on the public
 // product name. The old IPC/package identifiers below remain compatibility
@@ -135,6 +136,7 @@ let controlPlaneStopPromise = null;
 let updaterService = null;
 let controlPlaneError = null;
 let mainWindow = null;
+let statusTray = null;
 let mainWindowUsesNativeControls = false;
 /** file:// URL of the packaged renderer entry loaded into mainWindow — the
  * one and only URL a trusted window IPC call may be sent from (#77 review). */
@@ -279,7 +281,7 @@ function stopControlPlane() {
   return controlPlaneStopPromise;
 }
 
-function apiRequest(pathname, { method = "GET", withAuth = true, body = null } = {}) {
+function apiRequest(pathname, { method = "GET", withAuth = true, body = null, timeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     if (!controlPlane) {
       reject(new Error("control plane is not running"));
@@ -316,6 +318,7 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null } =
       },
     );
     req.on("error", reject);
+    if (timeoutMs !== undefined) req.setTimeout(timeoutMs, () => req.destroy(new Error("status request timed out")));
     if (payload !== null) req.write(payload);
     req.end();
   });
@@ -348,9 +351,11 @@ function startEventStream() {
           const dataLine = raw
             .split("\n")
             .find((line) => line.startsWith("data: "));
-          if (dataLine && mainWindow && !mainWindow.isDestroyed()) {
+          if (dataLine) {
             try {
-              mainWindow.webContents.send("owb:event", JSON.parse(dataLine.slice(6)));
+              const event = JSON.parse(dataLine.slice(6));
+              statusTray?.onEvent(event);
+              if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("owb:event", event);
             } catch {
               // Non-JSON frame; ignore.
             }
@@ -375,6 +380,7 @@ function startEventStream() {
 
 function broadcastSseStatus(state) {
   currentSseStatus = state;
+  statusTray?.setConnection(state === "connected" ? "ready" : "offline");
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("owb:sse-status", state);
   }
@@ -1278,6 +1284,25 @@ function publishUpdateState(event) {
 }
 
 app.whenReady().then(async () => {
+  // OS tray is a main-process surface: it works while the renderer is
+  // minimized and only receives counts from the authenticated local server.
+  try {
+    statusTray = createStatusTray({
+      Tray, Menu, nativeImage, iconPath: ROLEWEAVE_DEV_ICON, platform: process.platform,
+      locale: app.getLocale(),
+      requestStatus: () => apiRequest("/desktop/status", { timeoutMs: 3000 }),
+      onOpen: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      },
+      onQuit: () => app.quit(),
+    });
+  } catch (error) {
+    // A desktop without a system-tray host must still open its main window.
+    process.stderr.write(`RoleWeave tray unavailable: ${error.message}\n`);
+  }
   // Finder/LaunchServices does not inherit the user's command search path.
   // Recover only a bounded login-shell PATH before the control plane (and in
   // turn Qoder/MCP children) is spawned; all other inherited env is unchanged.
@@ -1299,6 +1324,7 @@ app.whenReady().then(async () => {
   } catch (err) {
     controlPlaneError = err;
     controlPlaneState = "failed";
+    statusTray?.setConnection("offline");
   }
   // The vendored bundle is loaded through the service so a missing or unloadable
   // one degrades to an explained refusal. This used to be a bare require on the
@@ -1357,6 +1383,7 @@ app.on("before-quit", (event) => {
 });
 
 app.on("quit", () => {
+  statusTray?.dispose();
   if (updateCheckTimer !== null) clearInterval(updateCheckTimer);
   if (eventStreamRequest) eventStreamRequest.destroy();
   void stopControlPlane();

@@ -19,16 +19,17 @@ function disclosure() {
 }
 afterEach(() => vi.useRealTimers());
 
-describe("conversation activity line (Qoder-style)", () => {
-  it("runs expanded on the generic running copy and names the live tool once folded", () => {
+describe("conversation activity status", () => {
+  it("names the live tool consistently when details are expanded or folded", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-10T06:00:08.000Z"));
     render(<TurnThread turns={[turn()]} />);
     expect(disclosure()).toHaveAttribute("aria-expanded", "true");
-    expect(disclosure()).toHaveTextContent("正在执行中");
+    expect(disclosure()).toHaveTextContent("正在调用 查找文件");
     expect(screen.getByRole("timer")).toHaveTextContent("· 8s");
     const row = screen.getByText("Glob").closest("li");
-    expect(row?.querySelector(".owb-turn-progress__spinner")).not.toBeNull();
+    expect(row?.querySelector(".owb-activity-trace__running-dot")).not.toBeNull();
+    expect(document.querySelector(".owb-turn-progress__spinner")).toBeNull();
     expect(row?.querySelector(".owb-activity-trace__status")?.className).toContain("is-running");
     // A running tool is the live element; no extra thinking row beside it.
     expect(screen.queryByText("继续推理…")).not.toBeInTheDocument();
@@ -38,13 +39,12 @@ describe("conversation activity line (Qoder-style)", () => {
     expect(screen.getByRole("timer")).toHaveTextContent("· 10s");
   });
 
-  it("falls back to the generic running copy and a thinking row without a live tool", () => {
+  it("uses one running line without fabricating a second thinking row", () => {
     render(<TurnThread turns={[turn({ trace: [
       { activityId: "t1", kind: "tool", status: "completed", title: "Read", detail: "src/App.tsx", at: started },
     ] })]} />);
-    expect(disclosure()).toHaveTextContent("正在执行中");
-    const thinking = screen.getByText("继续推理…").closest("li");
-    expect(thinking).toHaveAttribute("aria-current", "step");
+    expect(disclosure()).toHaveTextContent("正在执行");
+    expect(screen.queryByText("继续推理…")).not.toBeInTheDocument();
     expect(screen.getByText("Read").closest("li")?.querySelector(".owb-activity-trace__status")?.className).toContain("is-completed");
   });
 
@@ -84,10 +84,8 @@ describe("conversation activity line (Qoder-style)", () => {
       { activityId: "t1", kind: "tool", status: "running", title: "Glob", detail: "src/**", at: started },
       { activityId: "thought-1", kind: "thought", status: "running", text: "等待匹配期间先整理分组", at: "2026-09-10T06:00:05.000Z" },
     ] })]} />);
-    // While expanded the title is the generic running copy; folding reveals
-    // the live element — and the running thought is the trail tail, so it
-    // names the title, not the still-running tool.
-    expect(disclosure()).toHaveTextContent("正在执行中");
+    // The current narration stays the status regardless of disclosure choice.
+    expect(disclosure()).toHaveTextContent("思考中");
     fireEvent.click(disclosure());
     expect(disclosure()).toHaveTextContent("思考中");
     expect(disclosure()).not.toHaveTextContent("正在调用 查找文件");
@@ -164,7 +162,7 @@ describe("conversation activity line (Qoder-style)", () => {
     const { rerender } = render(<TurnThread turns={[turn()]} />);
     const progress = screen.getByRole("group", { name: "执行进展" });
     expect(progress).toHaveAttribute("data-motion", "live");
-    expect(progress.querySelector(".owb-turn-progress__header .owb-turn-progress__activity")).toBeInTheDocument();
+    expect(progress.querySelector(".owb-turn-progress__summary > .owb-turn-progress__activity")).toBeInTheDocument();
     rerender(<TurnThread turns={[turn({ status: "completed", completedAt: ended, output: "done", trace: [] })]} />);
     expect(progress).not.toHaveAttribute("data-motion");
     expect(document.querySelector(".owb-turn-progress__activity")).toBeNull();
@@ -172,10 +170,24 @@ describe("conversation activity line (Qoder-style)", () => {
 
   it("ships state-driven motion with a complete reduced-motion fallback", () => {
     const css = readFileSync(join(process.cwd(), "apps/desktop/renderer/src/roleweave-conversation.css"), "utf8");
-    expect(css).toContain("@keyframes owb-progress-spin");
-    expect(css).toContain("@keyframes owb-progress-activity");
-    expect(css).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.owb-turn-progress__spinner,[\s\S]*\.owb-turn-progress__activity-orbit[\s\S]*animation:\s*none/);
-    expect(css).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.owb-activity-trace__continuing svg \{ animation: none; \}/);
+    expect(css).toContain("@keyframes owb-progress-breathe");
+    expect(css).not.toContain("@keyframes owb-progress-spin");
+    expect(css).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.owb-turn-progress__activity \{ animation: none; \}/);
+  });
+
+  it("shows one status line without tools and one animation even with multiple live details", () => {
+    const { rerender } = render(<TurnThread turns={[turn({ trace: [], output: "" })]} />);
+    const progress = screen.getByRole("group", { name: "执行进展" });
+    expect(progress).toHaveTextContent("正在执行");
+    expect(within(progress).queryByRole("button")).toBeNull();
+    expect(progress.querySelectorAll(".owb-turn-progress__activity")).toHaveLength(1);
+    expect(screen.queryByText("继续推理…")).not.toBeInTheDocument();
+    rerender(<TurnThread turns={[turn({ trace: [
+      { activityId: "t1", kind: "tool", status: "running", title: "Glob", at: started },
+      { activityId: "thought-1", kind: "thought", status: "running", text: "整理结果", at: started },
+    ] })]} />);
+    expect(progress.querySelectorAll(".owb-turn-progress__activity")).toHaveLength(1);
+    expect(progress.querySelectorAll(".owb-turn-progress__spinner, .owb-turn-progress__activity-orbit")).toHaveLength(0);
   });
 
   it("does not animate a running record that is waiting for approval", () => {
@@ -194,7 +206,7 @@ describe("conversation activity line (Qoder-style)", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-10T06:00:08.000Z"));
     const { rerender } = render(<TurnThread turns={[turn()]} />);
-    expect(document.querySelector(".owb-turn-progress__spinner")).not.toBeNull();
+    expect(document.querySelector(".owb-turn-progress__activity")).not.toBeNull();
     rerender(<TurnThread turns={[turn({ status, completedAt: ended, error: "执行未完成", trace: [] })]} onRetry={vi.fn()} />);
     expect(screen.getByRole("group", { name: "执行进展" }).textContent).toContain(summary);
     expect(document.querySelector('[aria-current="step"]')).toBeNull();

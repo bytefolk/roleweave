@@ -174,6 +174,7 @@ const liveOwner: LiveRunState = {
   input: "@Repo Owner 检查",
   text: "working",
   startedAt: "2026-09-01T00:00:01.000Z",
+  trace: [{ activityId: "read-progress", kind: "tool", status: "running", title: "Read", at: "2026-09-01T00:00:01.000Z" }],
   totalTokens: null,
 };
 
@@ -602,7 +603,9 @@ describe("GroupsPanel collaboration visuals (#53)", () => {
     await waitFor(() => expect(screen.getByText("1 运行中")).toBeInTheDocument());
     expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1);
     expect(screen.getAllByRole("group", { name: "执行进展" })).toHaveLength(1);
-    expect(within(screen.getByRole("group", { name: "执行进展" })).getByRole("button")).toHaveAttribute("aria-expanded", "true");
+    // No trace means no empty disclosure; the running state remains visible.
+    expect(within(screen.getByRole("group", { name: "执行进展" })).queryByRole("button")).toBeNull();
+    expect(screen.getByRole("group", { name: "执行进展" })).toHaveTextContent("正在执行");
   });
 
   it("keeps an expanded group message open across live→persisted relocation (#237)", async () => {
