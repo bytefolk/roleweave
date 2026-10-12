@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { AlertTriangle, Bot, ChevronRight, CircleCheck, CircleX, FileCode2, LoaderCircle, MessagesSquare, RotateCcw, ShieldAlert, ShieldQuestion, Terminal, Wrench } from "lucide-react";
+import { AlertTriangle, Bot, ChevronRight, CircleCheck, CircleX, FileCode2, MessagesSquare, RotateCcw, ShieldAlert, ShieldQuestion, Terminal, Wrench } from "lucide-react";
 import { Markdown, markdownToPlainText } from "../markdown/Markdown";
 import { useConversationCopy } from "../locales/conversation";
 import { activityAction, useActivityCopy } from "../locales/activity";
@@ -61,7 +61,7 @@ function formatElapsed(seconds: number): string {
 }
 
 function ActivityStatusIcon({ status }: { status: "running" | "completed" | "failed" }) {
-  if (status === "running") return <LoaderCircle size={12} className="owb-turn-progress__spinner" aria-hidden="true" />;
+  if (status === "running") return <span className="owb-activity-trace__running-dot" aria-hidden="true" />;
   if (status === "failed") return <CircleX size={12} aria-hidden="true" />;
   return <CircleCheck size={12} aria-hidden="true" />;
 }
@@ -125,10 +125,9 @@ function ElapsedTime({ turn, now }: { turn: TurnRecord; now: number }) {
     role="timer" aria-live="off" aria-label={text}>{text}</time>;
 }
 
-/** One collapsible activity line per turn, mirroring the Qoder client: while
- * running it names the live tool (or the generic running copy) and stays
- * expanded; once settled it folds into its tool-count summary and collapses,
- * keeping any explicit disclosure choice made for that phase. */
+/** One live status line per turn. The real trace can be disclosed; an empty
+ * trace never fabricates a second thinking row. Settled traces collapse into
+ * a tool-count summary, retaining explicit choices made for that phase. */
 export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }: { turn: TurnRecord; approvalDecided?: boolean; onOpenResource?: TurnThreadProps["onOpenResource"] }) {
   const t = useT();
   const copy = useConversationCopy();
@@ -164,9 +163,7 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
     : turn.errorCode === "turn_cancelled"
       ? copy.cancelled
       : running
-        ? open
-          ? t("turn.activityRunningExpanded")
-          : runningThought
+        ? runningThought
             ? t("turn.thoughtRunning")
             : runningActivity
               ? t("turn.activityRunningTool", { tool: activityAction(runningActivity.title, activityCopy) })
@@ -180,23 +177,17 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
               : failedTools > 0
                 ? t("turn.toolsExecutedWithFailures", { count: tools.length, failedCount: failedTools })
                 : t("turn.toolsExecuted", { count: tools.length });
-  const thinking = running && !runningActivity && !runningThought;
-  const hasBody = displayedTrail.length > 0 || thinking;
+  const hasBody = displayedTrail.length > 0;
   return (
     <div className={`owb-turn-progress is-${state}`} role="group" aria-label={t("turn.progressAria")}
       data-motion={running ? "live" : undefined}>
       <div className="owb-turn-progress__summary">
+        {running ? <span className="owb-turn-progress__activity" aria-hidden="true" /> : null}
         {hasBody ? (
           <button type="button" className="owb-turn-progress__header"
             aria-label={`${t("turn.progressDetails")} · ${label}`} aria-expanded={open} aria-controls={bodyId}
             onClick={() => setChoice({ phase, open: !open })}>
             <span className="owb-turn-progress__toggle"><ChevronRight className="owb-turn-progress__chevron" aria-hidden="true" size={11} /></span>
-            {running ? (
-              <span className="owb-turn-progress__activity" aria-hidden="true">
-                <span className="owb-turn-progress__activity-orbit" />
-                <LoaderCircle className="owb-turn-progress__spinner" size={12} />
-              </span>
-            ) : null}
             <span className="owb-turn-progress__title">{label}</span>
           </button>
         ) : (
@@ -244,11 +235,6 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
                 </li>
               );
             })}
-            {thinking ? (
-              <li className="owb-activity-trace__continuing" aria-current="step">
-                <LoaderCircle size={13} aria-hidden="true" />{t("turn.continueReasoning")}
-              </li>
-            ) : null}
           </ol>
         </div>
       ) : null}

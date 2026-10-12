@@ -111,6 +111,15 @@ async function dispatch(
     if (await handleVault(ctx, req, res, url)) return;
     if (await handleApprovals(ctx, req, res, url, actor)) return;
 
+    // Authenticated, count-only shell status. No task text, file paths or
+    // credentials enter the OS tray; reservations cover all open workspaces.
+    if (pathname === "/desktop/status" && method === "GET") {
+      const workspace = ctx.workspace.active;
+      const pending = workspace ? (await approvals(ctx).list(workspace)).filter(item => item.status === "pending").length : 0;
+      sendJson(res, 200, { runningTurns: ctx.runningTurns.activeCount, pendingApprovals: pending });
+      return;
+    }
+
     if (pathname === routes.health && method === "GET") {
       await handleHealth(ctx, res);
       return;

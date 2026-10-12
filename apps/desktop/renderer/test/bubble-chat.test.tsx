@@ -126,9 +126,10 @@ describe("TurnThread evidence timeline (#73)", () => {
   it("shows the live activity line while the employee turn is running", () => {
     const { container } = render(<TurnThread turns={[turn({ id: "run-1", status: "running", output: undefined })]} />);
     const group = container.querySelector(".owb-turn-progress");
-    expect(group?.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
-    expect(group?.textContent).toContain("正在执行");
-    expect(container.querySelector(".owb-activity-trace__continuing")?.getAttribute("aria-current")).toBe("step");
+    expect(group?.querySelector("button")).toBeNull();
+    expect(group).toHaveTextContent("正在执行");
+    expect(group?.querySelectorAll(".owb-turn-progress__activity")).toHaveLength(1);
+    expect(container.querySelector(".owb-activity-trace__continuing")).toBeNull();
   });
 
   it("keeps internal evidence ids out of the ordinary conversation", () => {

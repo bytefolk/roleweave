@@ -121,8 +121,10 @@ describe("conversation readability", () => {
     const { container } = render(<TurnThread turns={[running]} />);
     const group = container.querySelector(".owb-turn-progress");
     expect(group?.getAttribute("aria-label")).toBe("执行进展");
-    expect(group?.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
-    expect(container.querySelector(".owb-activity-trace__continuing")?.getAttribute("aria-current")).toBe("step");
+    expect(group?.querySelector("button")).toBeNull();
+    expect(group).toHaveTextContent("正在执行");
+    expect(group?.querySelectorAll(".owb-turn-progress__activity")).toHaveLength(1);
+    expect(container.querySelector(".owb-activity-trace__continuing")).toBeNull();
   });
 
   it("exposes the full error text through title on failed turns", () => {

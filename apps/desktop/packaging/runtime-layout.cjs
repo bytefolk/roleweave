@@ -38,6 +38,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/runtime-paths.cjs",
   "src/runtime-settings.cjs",
   "src/service-connections.cjs",
+  "src/status-tray.cjs",
   "src/credential-settings.cjs",
   "src/configuration.cjs",
   "src/configuration-ipc.cjs",
@@ -260,7 +261,7 @@ const EXAMPLE_RUNTIME_FILES = [
 ];
 
 const RUNTIME_FILE_SETS = [
-  { from: ".", to: ".", filter: ["package.json", "LICENSE"] },
+  { from: ".", to: ".", filter: ["package.json", "LICENSE", "branding/roleweave/platform-icons/roleweave.png"] },
   {
     from: "apps/desktop",
     to: "apps/desktop",
@@ -286,6 +287,7 @@ const RUNTIME_FILE_SETS = [
 const APP_RESOURCE_REQUIRED_ENTRIES = [
   "package.json",
   "LICENSE",
+  "branding/roleweave/platform-icons/roleweave.png",
   ...DESKTOP_RUNTIME_FILES
     .filter((entry) => !entry.includes("*"))
     .map((entry) => `apps/desktop/${entry}`),
