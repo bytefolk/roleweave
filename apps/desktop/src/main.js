@@ -23,6 +23,7 @@ const {
   engineRuntimeEnvironment,
 } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
+const { closeQwenOfficeClient, hasPendingQwenOfficeTasks } = require("./qwen-office-client.cjs");
 const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -54,6 +55,7 @@ const {
   stopControlPlaneProcess,
 } = require("./control-plane-lifecycle.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
+const { windowChromeInfo, windowChromeOptions, setWindowChromeColors } = require("./window-chrome.cjs");
 const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
   validateAssetsCreateRequest,
@@ -74,6 +76,8 @@ const {
 const {
   validateDriveListRequest,
   validateDriveDetailRequest,
+  validateDrivePreviewRequest,
+  authorizeDriveReadSender,
   validateDriveUploadRequest,
 } = require("./drive-ipc.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
@@ -100,11 +104,14 @@ const {
   goalPath,
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
+  authorizeGoalIpcSender,
+  validateGoalTaskAcceptanceRequest,
 } = require("./goal-ipc.cjs");
 const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, openWorkspaceFile, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
 const { runtimeDescription, workspaceDialogOptions } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
+const { registerVaultIpc } = require("./vault-ipc.cjs");
 const { createCredentialStore, registerSettingsIpc, forwardCredentialSafeStderr } = require("./credential-settings.cjs");
 const { createConfigurationStore } = require("./configuration.cjs");
 const { registerConfigurationIpc, registerExternalUrlIpc } = require("./configuration-ipc.cjs");
@@ -128,6 +135,7 @@ let controlPlaneStopPromise = null;
 let updaterService = null;
 let controlPlaneError = null;
 let mainWindow = null;
+let mainWindowUsesNativeControls = false;
 /** file:// URL of the packaged renderer entry loaded into mainWindow — the
  * one and only URL a trusted window IPC call may be sent from (#77 review). */
 let trustedRendererUrl = null;
@@ -455,9 +463,9 @@ ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
 ipcMain.handle("owb:workspace:reveal", async () => revealWorkspaceInFileManager({
   apiRequest, env: desktopEnv, openPath: (target) => shell.openPath(target),
 }));
-ipcMain.handle("owb:workspace:file-open", async (event, relativePath) => {
+ipcMain.handle("owb:workspace:file-open", async (event, relativePath, expectedWorkspacePath) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { opened: false, reason: "untrusted_sender" };
-  return openWorkspaceFile({ apiRequest, env: desktopEnv, relativePath, openPath: (target) => shell.openPath(target) });
+  return openWorkspaceFile({ apiRequest, env: desktopEnv, relativePath, expectedWorkspacePath, openPath: (target) => shell.openPath(target) });
 });
 
 ipcMain.handle("owb:org:tree", async () => apiRequest("/org/tree"));
@@ -585,26 +593,34 @@ ipcMain.handle("owb:position:profile", async (event, request) => {
 });
 
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.
-ipcMain.handle("owb:position:docs:list", async (_event, positionId, options) => {
+ipcMain.handle("owb:position:docs:list", async (event, positionId, options) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsListRequest(positionId, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
 
-ipcMain.handle("owb:position:docs:read", async (_event, positionId, filePath, options) => {
+ipcMain.handle("owb:position:docs:read", async (event, positionId, filePath, options) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsReadRequest(positionId, filePath, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
 
 // Minimal doc creation + doc-ref resolution (#35 S4): whitelisted, enumerated.
-ipcMain.handle("owb:position:docs:create", async (_event, request) => {
+ipcMain.handle("owb:position:docs:create", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsCreateRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/create", { method: "POST", body: validated.request });
 });
 
-ipcMain.handle("owb:docs:resolve", async (_event, request) => {
+ipcMain.handle("owb:docs:resolve", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsResolveRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/resolve", { method: "POST", body: validated.request });
@@ -831,7 +847,9 @@ ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {
 });
 
 // Additive #222: workspace-local goal surface.
-ipcMain.handle("owb:goal:create", async (_event, request) => {
+ipcMain.handle("owb:goal:create", async (event, request) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateGoalCreateRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/goals", { method: "POST", body: validated.request });
@@ -852,7 +870,9 @@ ipcMain.handle("owb:goal:get", async (_event, goalId) => {
   return apiRequest(pathname);
 });
 
-ipcMain.handle("owb:goal:update", async (_event, request) => {
+ipcMain.handle("owb:goal:update", async (event, request) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   if (request === null || typeof request !== "object" || Array.isArray(request)) {
     return { status: 400, body: { code: "goal_request_invalid", message: "goal update requires an object", retryable: false } };
   }
@@ -866,7 +886,17 @@ ipcMain.handle("owb:goal:update", async (_event, request) => {
   return apiRequest(pathname, { method: "PATCH", body: validated.request });
 });
 
-ipcMain.handle("owb:goal:delete", async (_event, goalId) => {
+ipcMain.handle("owb:goal:task-acceptance", async (event, request) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = await validateGoalTaskAcceptanceRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname, { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:goal:delete", async (event, goalId) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const pathname = goalPath(goalId);
   if (pathname === null) {
     return { status: 400, body: { code: "goal_request_invalid", message: "goalId is invalid", retryable: false } };
@@ -883,10 +913,26 @@ ipcMain.handle("owb:drive:list", async (_event, query) => {
   return apiRequest(validated.pathname);
 });
 
+registerVaultIpc({ ipcMain, getMainWindow: () => mainWindow, getTrustedRendererUrl: () => trustedRendererUrl, apiRequest });
+
 ipcMain.handle("owb:drive:detail", async (_event, id) => {
   const validated = validateDriveDetailRequest(id);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
+});
+
+ipcMain.handle("owb:drive:preview", async (event, id) => {
+  const authorized = authorizeDriveReadSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDrivePreviewRequest(id);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname);
+});
+
+ipcMain.handle("owb:drive:provider", async (event) => {
+  const authorized = authorizeDriveReadSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  return apiRequest("/drive/provider");
 });
 
 ipcMain.handle("owb:drive:upload", async (_event, filePath) => {
@@ -951,7 +997,7 @@ function createWindow() {
     minWidth: 640,
     minHeight: 680,
     title: "RoleWeave",
-    frame: false,
+    ...windowChromeOptions(process.platform, nativeTheme.shouldUseDarkColors),
     resizable: true,
     icon: fs.existsSync(ROLEWEAVE_DEV_ICON) ? ROLEWEAVE_DEV_ICON : undefined,
     // Native window paint color before any CSS loads (avoids a white flash);
@@ -972,6 +1018,7 @@ function createWindow() {
         backgroundThrottling: smokeRequest !== null || behaviorSmokeRequest !== null || layoutReportPath !== null,
       },
   });
+  mainWindowUsesNativeControls = windowChromeInfo(process.platform).nativeControls;
   mainWindow.setMenuBarVisibility(false);
   // Lane A staging harness: static, opt-in, packaged-only, and confined to the
   // caller's freshly created OS-temp root. Source-tree dev behavior is not
@@ -1103,6 +1150,7 @@ function createWindow() {
   mainWindow.on("close", (event) => { requestConfigurationClose(event); });
   mainWindow.on("closed", () => {
     mainWindow = null;
+    mainWindowUsesNativeControls = false;
     trustedRendererUrl = null;
   });
 }
@@ -1112,6 +1160,11 @@ function createWindow() {
 // gated on isTrustedWindowSender (#77 review item 2: ipcMain.handle() is not
 // scoped to a window on its own). Rejection returns { ok: false } rather than
 // throwing, matching this bridge's existing response shape.
+ipcMain.handle("owb:window:chrome-colors", (event, request) => setWindowChromeColors({
+  event, request, browserWindow: mainWindow, trustedRendererUrl,
+  platform: process.platform, nativeControls: mainWindowUsesNativeControls,
+}));
+
 ipcMain.handle("owb:window:minimize", (event) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { ok: false };
   mainWindow?.minimize();
@@ -1289,10 +1342,14 @@ app.on("before-quit", (event) => {
   // app as part of this normal quit. The service's installing guard prevents a
   // manual "Install and restart" click from spawning a second helper.
   void updaterService?.installOnQuit?.();
-  if (quitSequenceStarted || !controlPlane || !isControlPlaneAlive(controlPlane.child)) return;
+  if (quitSequenceStarted) return;
+  const hasLiveControlPlane = controlPlane && isControlPlaneAlive(controlPlane.child);
+  if (!hasLiveControlPlane && !hasPendingQwenOfficeTasks()) return;
   event.preventDefault();
   quitSequenceStarted = true;
-  void stopControlPlane().then(() => app.quit()).catch(() => {
+  // Office owns an external task, beyond the Linux process tree. Let its
+  // bounded cancellation RPC finish before Electron drops the broker owner.
+  void Promise.all([hasLiveControlPlane ? stopControlPlane() : Promise.resolve(), closeQwenOfficeClient()]).then(() => app.quit()).catch(() => {
     // Keep the window alive and leave the control-plane handle inspectable if
     // even the bounded SIGKILL/exit wait failed. A quit must not orphan it.
     quitSequenceStarted = false;

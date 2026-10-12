@@ -13,9 +13,9 @@
 }
 
 /* Window symbols follow the foreground paired with each semantic disc. */
-:is([data-theme="light"], [data-theme="dark"]) .owb-wctl--close > svg { stroke: var(--ui-danger-foreground); }
-:is([data-theme="light"], [data-theme="dark"]) .owb-wctl--min > svg { stroke: var(--ui-warning-foreground); }
-:is([data-theme="light"], [data-theme="dark"]) .owb-wctl--max > svg { stroke: var(--ui-success-foreground); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-wintitle--mac .owb-wctl--close > svg { stroke: var(--ui-danger-foreground); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-wintitle--mac .owb-wctl--min > svg { stroke: var(--ui-warning-foreground); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-wintitle--mac .owb-wctl--max > svg { stroke: var(--ui-success-foreground); }
 
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .ui-module-rail {
   border-right-color: transparent;

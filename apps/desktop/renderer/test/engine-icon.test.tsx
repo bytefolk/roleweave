@@ -4,7 +4,12 @@ import { EngineIcon } from "../src/turns/engine-icon";
 import type { TurnEngine } from "../src/turns";
 
 describe("EngineIcon (#57)", () => {
-  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini", "openai-compatible"];
+  it("uses a neutral office glyph rather than another Agent's brand for Qwen Office", () => {
+    const { container } = render(<EngineIcon engine="qwen-office-local" />);
+    expect(container.querySelector("svg.owb-engine-icon--qwen-office-local")).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelector("img")).toBeNull();
+  });
+  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "workbuddy-local", "gemini", "openai-compatible"];
 
   it.each(engines)("renders a normalized brand mark for %s", (engine) => {
     const { container } = render(<EngineIcon engine={engine} />);
@@ -33,6 +38,7 @@ describe("EngineIcon (#57)", () => {
     // The two Codex Hosts share one mark, exactly as the two Claude ones do.
     expect(src("codex-local")).toBe(src("codex"));
     expect(src("workbuddy")).toMatch(/workbuddy/);
+    expect(src("workbuddy-local")).toBe(src("workbuddy"));
     expect(src("workbuddy")).not.toBe(src("codex"));
     expect(src("gemini")).toContain("%234285f4");
     expect(src("gemini")).not.toBe(src("workbuddy"));

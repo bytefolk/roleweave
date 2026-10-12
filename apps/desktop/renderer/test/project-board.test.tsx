@@ -11,6 +11,7 @@ import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { OwbBridge } from "../src/owb";
 import { ProjectBoard } from "../src/goals/ProjectBoard";
 import { visibleSelectOptions } from "./select-helper";
+import { enterPickerDate } from "./date-picker-helper";
 
 const task: GoalWorkItem = {
   taskId: "task-one",
@@ -20,6 +21,7 @@ const task: GoalWorkItem = {
   priority: "high",
   assigneePositionId: "engineer",
 };
+const activeSessionId = "11111111-1111-4111-8111-111111111111";
 function detail(items: GoalWorkItem[] = [task]): GoalDetail {
   return {
     goal: {
@@ -57,7 +59,10 @@ function setup(
   const updateGoal = vi
     .fn()
     .mockResolvedValue({ status: 200, body: { goalId: "goal-one" } });
-  const createTurn = vi
+  const createTurn = vi.fn();
+  const sessions = vi.fn().mockResolvedValue({ status: 200, body: { positionId: "engineer", activeSessionId, sessions: [] } });
+  const createSession = vi.fn();
+  const createSessionTurn = vi
     .fn()
     .mockResolvedValue({
       status: 200,
@@ -68,7 +73,7 @@ function setup(
         createdAt: "2026-09-22T00:00:00.000Z",
       },
     });
-  window.owb = { updateGoal, createTurn, ...overrides } as unknown as OwbBridge;
+  window.owb = { updateGoal, createTurn, sessions, createSession, createSessionTurn, ...overrides } as unknown as OwbBridge;
   const onRefresh = vi.fn().mockResolvedValue(undefined);
   const onOpenBoundSession = vi.fn();
   const props = {
@@ -82,6 +87,9 @@ function setup(
   return {
     updateGoal,
     createTurn,
+    sessions,
+    createSession,
+    createSessionTurn,
     onRefresh,
     onOpenBoundSession,
     props,
@@ -111,6 +119,38 @@ describe("ProjectBoard", () => {
     vi.useRealTimers();
   });
 
+  it("shows creation guidance without empty board columns or a zero-total progress meter", () => {
+    const { container } = setup(detail([]));
+    expect(screen.getByText("把项目拆成可跟进的任务")).toBeInTheDocument();
+    expect(screen.getByText("分配责任岗位")).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(container.querySelector(".owb-project-columns")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+    expect(container.querySelector(".owb-project-schedule")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("replaces filtered-out tasks with a recoverable empty state in both views", () => {
+    const { container } = setup();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索任务" }), { target: { value: "missing" } });
+    expect(container.querySelector(".owb-project-columns")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+    expect(container.querySelector(".owb-project-schedule")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+    expect(screen.getByRole("button", { name: "Ship board" })).toBeInTheDocument();
+    expect(container.querySelector(".owb-project-schedule")).not.toBeNull();
+  });
+
+  it("names the missing date for a task with only a start or due date", () => {
+    setup(detail([
+      { ...task, taskId: "start-only", startDate: "2026-10-08" },
+      { ...task, taskId: "due-only", dueDate: "2026-10-09" },
+    ]));
+    expect(screen.getByText("开始：2026-10-08 · 截止未定")).toBeInTheDocument();
+    expect(screen.getByText("截止：2026-10-09 · 开始未定")).toBeInTheDocument();
+  });
+
   it("creates an assigned task with dates and guards duplicate submission until refresh", async () => {
     const saved = defer<{ status: number; body: { goalId: string } }>();
     const updateGoal = vi.fn().mockReturnValue(saved.promise);
@@ -124,12 +164,8 @@ describe("ProjectBoard", () => {
       target: { value: "Make plans visible" },
     });
     chooseOption(drawer.getByLabelText("负责人"), "Engineer");
-    fireEvent.change(drawer.getByLabelText("开始日期"), {
-      target: { value: "2026-09-22" },
-    });
-    fireEvent.change(drawer.getByLabelText("截止日期"), {
-      target: { value: "2026-09-25" },
-    });
+    enterPickerDate(drawer.getByLabelText("开始日期"), "2026-09-22");
+    enterPickerDate(drawer.getByLabelText("截止日期"), "2026-09-25");
     const saveButton = drawer.getByRole("button", { name: "保存任务" });
     fireEvent.click(saveButton);
     fireEvent.click(saveButton);
@@ -201,25 +237,20 @@ describe("ProjectBoard", () => {
     );
   });
 
-  it("rejects inverted dates and omits cleared dates in the edited task", async () => {
+  it("rejects inverted date input and omits cleared dates in the edited task", async () => {
     const context = setup(
       detail([{ ...task, startDate: "2026-09-22", dueDate: "2026-09-25" }]),
     );
     fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
     const drawer = within(screen.getByRole("dialog"));
-    fireEvent.change(drawer.getByLabelText("截止日期"), {
-      target: { value: "2026-09-01" },
-    });
-    expect(drawer.getByRole("button", { name: "保存任务" })).toBeDisabled();
-    expect(drawer.getByRole("alert")).toHaveTextContent(
-      "截止日期不能早于开始日期",
-    );
-    fireEvent.change(drawer.getByLabelText("开始日期"), {
-      target: { value: "" },
-    });
-    fireEvent.change(drawer.getByLabelText("截止日期"), {
-      target: { value: "" },
-    });
+    enterPickerDate(drawer.getByLabelText("截止日期"), "2026-09-01");
+    fireEvent.blur(drawer.getByLabelText("截止日期"));
+    await waitFor(() => expect(drawer.getByLabelText("截止日期")).toHaveValue("2026-09-25"));
+    expect(context.updateGoal).not.toHaveBeenCalled();
+    fireEvent.click(drawer.getByLabelText("开始日期").closest(".ant-picker")!.querySelector(".ant-picker-clear")!);
+    fireEvent.click(drawer.getByLabelText("截止日期").closest(".ant-picker")!.querySelector(".ant-picker-clear")!);
+    expect(drawer.getByLabelText("开始日期")).toHaveValue("");
+    expect(drawer.getByLabelText("截止日期")).toHaveValue("");
     fireEvent.click(drawer.getByRole("button", { name: "保存任务" }));
     await waitFor(() =>
       expect(context.updateGoal).toHaveBeenCalledWith(
@@ -228,24 +259,36 @@ describe("ProjectBoard", () => {
     );
   });
 
+  it("blocks saving already stored inverted dates until they are corrected", () => {
+    setup(detail([{ ...task, startDate: "2026-09-22", dueDate: "2026-09-01" }]));
+    fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
+    const drawer = within(screen.getByRole("dialog"));
+    expect(drawer.getByRole("button", { name: "保存任务" })).toBeDisabled();
+    expect(drawer.getByRole("alert")).toHaveTextContent("截止日期不能早于开始日期");
+    fireEvent.click(drawer.getByLabelText("截止日期").closest(".ant-picker")!.querySelector(".ant-picker-clear")!);
+    expect(drawer.getByRole("button", { name: "保存任务" })).toBeEnabled();
+  });
+
   it("links execution to the goal and task, guards duplicate runs, and preserves acceptance state", async () => {
     const pending = defer<{
       status: number;
       body: { turnId: string; status: string };
     }>();
-    const createTurn = vi.fn().mockReturnValue(pending.promise);
-    const context = setup(detail(), { createTurn });
+    const createSessionTurn = vi.fn().mockReturnValue(pending.promise);
+    const context = setup(detail(), { createSessionTurn });
     const run = screen.getByRole("button", { name: "执行任务：Ship board" });
     fireEvent.click(run);
     fireEvent.click(run);
-    expect(createTurn).toHaveBeenCalledTimes(1);
-    expect(createTurn).toHaveBeenCalledWith({
-      positionId: "engineer",
+    await waitFor(() => expect(createSessionTurn).toHaveBeenCalledTimes(1));
+    expect(createSessionTurn).toHaveBeenCalledWith({
+      sessionId: activeSessionId,
       engine: "codex",
       input: "Ship board\n\nBuild a working board",
       goalId: "goal-one",
       branchId: "task-one",
     });
+    expect(context.createTurn).not.toHaveBeenCalled();
+    expect(context.createSession).not.toHaveBeenCalled();
     await act(async () =>
       pending.resolve({
         status: 200,
@@ -253,6 +296,8 @@ describe("ProjectBoard", () => {
       }),
     );
     expect(run).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "查看任务执行：Ship board" }));
+    expect(context.onOpenBoundSession).toHaveBeenCalledWith("engineer", activeSessionId, "turn-one");
     const complete = {
       ...detail(),
       taskExecutions: {
@@ -271,6 +316,54 @@ describe("ProjectBoard", () => {
         .closest(".ant-select"),
     ).toHaveTextContent("待办");
     expect(context.updateGoal).not.toHaveBeenCalled();
+  });
+
+  it("starts work in the newly created session when the assignee has no conversation", async () => {
+    const sessions = vi.fn().mockResolvedValue({ status: 200, body: { activeSessionId: null, sessions: [] } });
+    const createSession = vi.fn().mockResolvedValue({ status: 201, body: { sessionId: activeSessionId } });
+    const context = setup(detail(), { sessions, createSession });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    await waitFor(() => expect(context.createSessionTurn).toHaveBeenCalledOnce());
+    expect(createSession).toHaveBeenCalledOnce();
+    expect(context.createSessionTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: activeSessionId, goalId: "goal-one", branchId: "task-one" }));
+  });
+
+  it("creates only a missing session and reuses a concurrently opened conversation", async () => {
+    const sessions = vi.fn()
+      .mockResolvedValueOnce({ status: 200, body: { activeSessionId: null, sessions: [] } })
+      .mockResolvedValueOnce({ status: 200, body: { activeSessionId, sessions: [] } });
+    const createSession = vi.fn().mockResolvedValue({ status: 409, body: { message: "position already has an active session" } });
+    const context = setup(detail(), { sessions, createSession });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    await waitFor(() => expect(context.createSessionTurn).toHaveBeenCalledOnce());
+    expect(createSession).toHaveBeenCalledWith({ positionId: "engineer" });
+    expect(context.createSessionTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: activeSessionId }));
+    expect(context.createTurn).not.toHaveBeenCalled();
+  });
+
+  it("does not dispatch after a workspace switch while resolving the session", async () => {
+    const pending = defer<Awaited<ReturnType<OwbBridge["sessions"]>>>();
+    const sessions = vi.fn().mockReturnValue(pending.promise);
+    const context = setup(detail(), { sessions }, { workspaceKey: "workspace-a" });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    context.rerender(<ProjectBoard {...context.props} workspaceKey="workspace-b" />);
+    await act(async () => pending.resolve({ status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId: "engineer", activeSessionId, sessions: [] } }));
+    expect(context.createSessionTurn).not.toHaveBeenCalled();
+    expect(context.createSession).not.toHaveBeenCalled();
+    expect(screen.getByText("Agent 未执行")).toBeInTheDocument();
+  });
+
+  it("discards a previous workspace's completed run without changing its new task", async () => {
+    const pending = defer<Awaited<ReturnType<OwbBridge["createSessionTurn"]>>>();
+    const createSessionTurn = vi.fn().mockReturnValue(pending.promise);
+    const context = setup(detail(), { createSessionTurn }, { workspaceKey: "workspace-a" });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    await waitFor(() => expect(createSessionTurn).toHaveBeenCalledOnce());
+    context.rerender(<ProjectBoard {...context.props} workspaceKey="workspace-b" />);
+    await act(async () => pending.resolve({ status: 200, body: { turnId: "old-turn", status: "completed" } as Awaited<ReturnType<OwbBridge["createSessionTurn"]>>["body"] }));
+    expect(context.onRefresh).not.toHaveBeenCalled();
+    expect(screen.queryByText("Agent 执行完成")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "执行任务：Ship board" })).toBeEnabled();
   });
 
   it("does not present unavailable execution evidence as idle, or run an unconfigured owner", () => {

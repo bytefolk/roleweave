@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { OwbI18nProvider } from "@roleweave/ui";
 import { DocsPanel } from "../src/docs/DocsPanel";
 import type { DocsFileListResponse, DocsFileResponse } from "@roleweave/shared";
 
@@ -23,6 +24,133 @@ const DOC: DocsFileResponse = {
 };
 
 describe("DocsPanel (#35 S2 file routing surface)", () => {
+  it.each([
+    { locale: "zh-CN" as const, tree: "文档目录", location: "文件位置：schemas/input.schema.json" },
+    { locale: "en" as const, tree: "Document explorer", location: "File location: schemas/input.schema.json" },
+  ])("shows actual directories, complete filenames and locations in $locale", async ({ locale, tree, location }) => {
+    const schemaPath = "schemas/input.schema.json";
+    const list = { ...LIST, files: [...LIST.files,
+      { ...LIST.files[0]!, path: schemaPath, size: 19 },
+      { ...LIST.files[0]!, path: "attachments/reference.txt" },
+    ] };
+    const readDoc = vi.fn().mockResolvedValue({ ...DOC, path: schemaPath });
+    render(<OwbI18nProvider locale={locale}><DocsPanel positionId="repo-owner" listDocs={vi.fn().mockResolvedValue(list)} readDoc={readDoc} /></OwbI18nProvider>);
+    const knowledgeFile = await screen.findByRole("button", { name: "knowledge/README.md" });
+    expect(screen.getByRole("tree", { name: tree })).toBeInTheDocument();
+    expect(screen.getByRole("treeitem", { name: "knowledge", exact: true })).toHaveAttribute("aria-expanded", "true");
+    expect(within(knowledgeFile).getByText("README.md")).toBeInTheDocument();
+    expect(knowledgeFile.querySelector(".owb-docs-panel__file-parent")).toBeNull();
+    expect(screen.getByRole("button", { name: "SKILL.md" }).querySelector(".owb-docs-panel__file-parent")).toBeNull();
+    expect(screen.getByRole("treeitem", { name: "attachments", exact: true })).toHaveAttribute("aria-expanded", "true");
+    const schemaFile = screen.getByRole("button", { name: schemaPath });
+    expect(within(schemaFile).getByText("input.schema.json")).toBeInTheDocument();
+    expect(schemaFile.querySelector(".owb-docs-panel__file-parent")).toBeNull();
+    act(() => schemaFile.focus());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(location);
+    fireEvent.click(schemaFile);
+    await waitFor(() => expect(readDoc).toHaveBeenCalledWith("repo-owner", schemaPath));
+  });
+
+  it("preserves the original directory and archive location when reading archived files", async () => {
+    const listDocs = vi.fn().mockResolvedValueOnce(LIST).mockResolvedValue({ ...LIST, files: [LIST.files[1]] });
+    const readDoc = vi.fn().mockResolvedValue({ ...DOC, path: "knowledge/README.md" });
+    render(<DocsPanel positionId="repo-owner" listDocs={listDocs} readDoc={readDoc} restoreDoc={vi.fn()} />);
+    await screen.findByRole("button", { name: "knowledge/README.md" });
+    fireEvent.click(screen.getByText("归档"));
+    await waitFor(() => expect(listDocs).toHaveBeenLastCalledWith("repo-owner", { archived: true }));
+    const archivedFile = await screen.findByRole("button", { name: "knowledge/README.md" });
+    expect(screen.getByRole("treeitem", { name: "knowledge", exact: true })).toBeInTheDocument();
+    expect(archivedFile.querySelector(".owb-docs-panel__file-parent")).toBeNull();
+    act(() => archivedFile.focus());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("归档位置：knowledge/README.md");
+    fireEvent.click(archivedFile);
+    await waitFor(() => expect(readDoc).toHaveBeenCalledWith("repo-owner", "knowledge/README.md", { archived: true }));
+  });
+
+  it("temporarily reveals search matches and preserves collapsed folders through clearing and list refresh", async () => {
+    const listDocs = vi.fn().mockResolvedValue(LIST);
+    const props = { positionId: "repo-owner", listDocs, readDoc: vi.fn().mockResolvedValue(DOC) };
+    const view = render(<DocsPanel {...props} />);
+    await screen.findByRole("button", { name: "knowledge/README.md" });
+    fireEvent.click(screen.getByRole("button", { name: "knowledge", exact: true }));
+    expect(screen.queryByRole("button", { name: "knowledge/README.md" })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索文件" }), { target: { value: "README" } });
+    expect(await screen.findByRole("button", { name: "knowledge/README.md" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "SKILL.md" })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索文件" }), { target: { value: "" } });
+    expect(screen.queryByRole("button", { name: "knowledge/README.md" })).toBeNull();
+    view.rerender(<DocsPanel {...props} reloadToken={1} />);
+    await waitFor(() => expect(listDocs).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("treeitem", { name: "knowledge", exact: true })).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "knowledge", exact: true }));
+    expect(screen.getByRole("button", { name: "knowledge/README.md" })).toBeInTheDocument();
+  });
+
+  it("navigates nested folders with arrows and opens the exact file and its keyboard context menu", async () => {
+    const nestedPath = "knowledge/guides/README.md";
+    const listDocs = vi.fn().mockResolvedValue({ ...LIST, files: [...LIST.files, { ...LIST.files[0]!, path: nestedPath }] });
+    const readDoc = vi.fn().mockResolvedValue({ ...DOC, path: nestedPath });
+    render(<DocsPanel positionId="repo-owner" listDocs={listDocs} readDoc={readDoc} />);
+    const knowledge = await screen.findByRole("treeitem", { name: "knowledge", exact: true });
+    act(() => knowledge.focus());
+    fireEvent.keyDown(knowledge, { key: "ArrowRight" });
+    const guides = screen.getByRole("treeitem", { name: "knowledge/guides", exact: true });
+    expect(document.activeElement).toBe(guides);
+    fireEvent.keyDown(guides, { key: "ArrowRight" });
+    const file = screen.getByRole("treeitem", { name: nestedPath, exact: true });
+    expect(document.activeElement).toBe(file);
+    expect(file).toHaveAttribute("tabindex", "0");
+    expect(knowledge).toHaveAttribute("tabindex", "-1");
+    fireEvent.keyDown(file, { key: "Enter" });
+    await waitFor(() => expect(readDoc).toHaveBeenCalledWith("repo-owner", nestedPath));
+    fireEvent.keyDown(file, { key: "F10", shiftKey: true });
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "复制引用" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape", keyCode: 27 });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    fireEvent.keyDown(screen.getByRole("button", { name: nestedPath }), { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(guides);
+    fireEvent.keyDown(guides, { key: "ArrowLeft" });
+    expect(guides).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: nestedPath })).toBeNull();
+    fireEvent.keyDown(guides, { key: "End" });
+    expect(document.activeElement).toBe(screen.getByRole("treeitem", { name: "SKILL.md", exact: true }));
+  });
+
+  it("suppresses the more-actions tooltip while its menu is open", async () => {
+    render(<DocsPanel positionId="repo-owner" listDocs={vi.fn().mockResolvedValue(LIST)} readDoc={vi.fn().mockResolvedValue(DOC)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "SKILL.md" }));
+    const moreActions = await screen.findByRole("button", { name: "更多文档操作" });
+    act(() => moreActions.focus());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("更多文档操作");
+    fireEvent.click(moreActions);
+    await screen.findByRole("menu");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+    fireEvent.keyDown(window, { key: "Escape", keyCode: 27 });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(document.activeElement).toBe(moreActions);
+  });
+
+  it.each([
+    { key: "F10", shiftKey: true },
+    { key: "ContextMenu" },
+  ])("opens a file context menu from $key and returns focus after Escape", async (keyboardEvent) => {
+    render(<DocsPanel positionId="repo-owner" listDocs={vi.fn().mockResolvedValue(LIST)} readDoc={vi.fn()} />);
+    const file = await screen.findByRole("button", { name: "knowledge/README.md" });
+    act(() => file.focus());
+    fireEvent.keyDown(file, keyboardEvent);
+    const menu = await screen.findByRole("menu");
+    const copyReference = within(menu).getByRole("menuitem", { name: "复制引用" });
+    act(() => copyReference.focus());
+    expect(document.activeElement).toBe(copyReference);
+    // Menu items may consume Escape before the dropdown's bubbling handler.
+    copyReference.addEventListener("keydown", (event) => event.stopPropagation(), { once: true });
+    fireEvent.keyDown(copyReference, { key: "Escape", keyCode: 27 });
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(document.activeElement).toBe(file);
+    expect(file).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("asks for a position before routing anything", () => {
     const listDocs = vi.fn();
     render(<DocsPanel positionId={null} listDocs={listDocs} readDoc={vi.fn()} />);
@@ -56,6 +184,7 @@ describe("DocsPanel (#35 S2 file routing surface)", () => {
     fireEvent.click(screen.getByRole("button", { name: "更多文档操作" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "复制引用" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(JSON.stringify({ uri: "owb-doc://repo-owner/SKILL.md", version })));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "更多文档操作" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "快捷键" }));
     const shortcutsDialog = await screen.findByRole("dialog", { name: "快捷键" });

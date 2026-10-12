@@ -15,16 +15,62 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
+import { redactApprovalSecrets } from "@roleweave/shared/approval-redaction";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
-import { openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
+import { CODEX_DISABLED_FEATURES, openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
 import { resolveGeminiClient, validatedGeminiModel } from "../src/gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../src/workbuddy-binary.js";
 import { workbuddyConfiguration, workbuddyEnvironment, workbuddyVersionProfile, probeWorkbuddyExecutable, workbuddyTurnArgs, createWorkbuddyParser } from "../src/workbuddy-runtime.js";
+import { requestWorkbuddyLocal } from "../src/workbuddy-local.js";
+import { requestQwenOfficeLocal } from "../src/qwen-office-local.js";
 import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
 import { resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../src/local-provider-config.js";
 
 const VERSION = "0.2.0";
+
+function activityText(value, maxBytes) {
+  let result = "";
+  let bytes = 0;
+  for (const character of value) {
+    bytes += Buffer.byteLength(character, "utf8");
+    if (bytes > maxBytes) break;
+    result += character;
+  }
+  return result;
+}
+
+/** Allowlisted file selectors and search patterns, with credential redaction.
+ * Never serialize arbitrary input, commands, queries, URLs or tool results. */
+export function publicQoderActivityDetail(block, redactConfiguredSecrets = value => value) {
+  const input = block?.input;
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const details = [];
+  for (const key of ["path", "file_path", "paths", "files", "file_paths"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) details.push(value.trim());
+    else if (Array.isArray(value)) details.push(...value.filter(item => typeof item === "string" && item.trim()).map(item => item.trim()));
+  }
+  const name = typeof block.name === "string" ? block.name.toLowerCase().replace(/[\s_.-]/g, "") : "";
+  const firstString = (keys) => keys.map(key => input[key]).find(value => typeof value === "string" && value.trim());
+  if (/^(glob|globsearch|findfiles|grep|searchfiles|searchcontents)$/.test(name)) {
+    const pattern = firstString(name.startsWith("glob") || name === "findfiles" ? ["pattern", "glob_pattern", "glob"] : ["pattern"]);
+    if (pattern) details.unshift(`pattern: ${pattern.trim()}`);
+    if (/^(grep|searchfiles|searchcontents)$/.test(name)) {
+      const glob = firstString(["glob", "include"]);
+      if (glob) details.push(`files: ${glob.trim()}`);
+    }
+  }
+  if (/^(read|readfile|readfiles)$/.test(name)) {
+    for (const key of ["offset", "limit"]) {
+      if (Number.isSafeInteger(input[key]) && input[key] >= 0) details.push(`${key}: ${input[key]}`);
+    }
+  }
+  // Redact before truncation so a secret crossing the byte boundary cannot
+  // survive as a partial value in the durable public trace.
+  return details.length > 0 ? activityText(redactApprovalSecrets(redactConfiguredSecrets([...new Set(details)].join(" · "))), 2048) : undefined;
+}
+
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const QODER_PERMISSION_MODES = new Set([
   "default",
@@ -721,6 +767,10 @@ function turnRun(workspaceDir, positionId) {
         return turnRunCodex(workspaceDir, positionId, input, engineModel);
       case "workbuddy":
         return turnRunWorkbuddy(workspaceDir, positionId, input);
+      case "workbuddy-local":
+        return turnRunWorkbuddyLocal(input);
+      case "qwen-office-local":
+        return turnRunQwenOfficeLocal(workspaceDir, positionId, input);
       case "gemini":
         return turnRunGemini(workspaceDir, positionId, input);
       case "openai-compatible":
@@ -729,6 +779,89 @@ function turnRun(workspaceDir, positionId) {
         return turnRunQoder(workspaceDir, positionId, input);
     }
   });
+}
+
+async function turnRunWorkbuddyLocal(input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+  const controller = new AbortController();
+  let terminal = false;
+  const finish = (event) => {
+    if (terminal) return;
+    terminal = true;
+    clearTimeout(timer);
+    controller.abort();
+    process.stdout.write(`${JSON.stringify(event)}\n`, () => process.exit(0));
+  };
+  const fail = (code, terminalReason = "engine_internal_error") => finish({
+    type: "run.failed", runId, timestamp: now(),
+    error: { code, message: `WorkBuddy 本地连接失败（${code}），请确认客户端已打开并登录。`, retryable: false, terminalReason },
+  });
+  const timer = setTimeout(() => fail("workbuddy.deadline_exceeded", "deadline_exceeded"), 60_000);
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.once(signal, () => fail("workbuddy.cancelled", "cancelled"));
+  try {
+    const model = process.env.ROLEWEAVE_TURN_MODEL;
+    const result = await requestWorkbuddyLocal(process.env, "complete", { input, ...(model && model !== "provider-default" ? { model } : {}) }, { signal: controller.signal });
+    if (terminal) return;
+    emit({ type: "model.delta", runId, timestamp: now(), text: result.text });
+    if (Object.keys(result.usage).length) emit({ type: "usage", runId, timestamp: now(), ...result.usage });
+    finish({ type: "run.completed", runId, timestamp: now(), output: result.text, terminalReason: "goal_met" });
+  } catch (error) {
+    fail(typeof error?.code === "string" && /^workbuddy\.[a-z_]{1,64}$/.test(error.code) ? error.code : "workbuddy.protocol_invalid");
+  }
+}
+
+async function turnRunQwenOfficeLocal(workspaceDir, positionId, input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+  const controller = new AbortController();
+  let terminal = false;
+  const finish = (event) => {
+    if (terminal) return;
+    terminal = true;
+    clearTimeout(timer);
+    controller.abort();
+    process.stdout.write(`${JSON.stringify(event)}\n`, () => process.exit(0));
+  };
+  const fail = (code, terminalReason = "engine_internal_error") => finish({
+    type: "run.failed", runId, timestamp: now(), error: {
+      code, message: `千问办公任务未完成（${code}）。请在客户端查看连接或审批状态。`,
+      retryable: false, terminalReason,
+    },
+  });
+  const timer = setTimeout(() => fail("qwen_office.deadline_exceeded", "deadline_exceeded"), 180_000);
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.once(signal, () => fail("qwen_office.cancelled", "cancelled"));
+  try {
+    // Native Office context never crosses RoleWeave employees/conversations or
+    // bypasses the context toggle: each turn owns a fresh client session.
+    const resolvedWorkspace = await fs.realpath(workspaceDir);
+    const sessionKey = createHash("sha256").update(JSON.stringify([resolvedWorkspace, positionId, runId])).digest("hex");
+    const position = (await scanPositions(resolvedWorkspace)).find((entry) => entry.id === positionId);
+    if (!position) { fail("qwen_office.employee_unavailable"); return; }
+    const declaration = await readJson(path.join(resolvedWorkspace, "organization.v1alpha1.json"));
+    const role = Array.isArray(declaration.roles) ? declaration.roles.find((entry) => entry?.id === positionId) : undefined;
+    const employeeLabel = typeof role?.name === "string" ? role.name.slice(0, 80).replace(/[\x00-\x1f\x7f]/g, " ") : positionId;
+    const model = process.env.ROLEWEAVE_TURN_MODEL;
+    if (model && model !== "provider-default") { fail("qwen_office.model_unavailable"); return; }
+    const result = await requestQwenOfficeLocal(process.env, "complete", {
+      sessionKey, employeeLabel,
+      input: `[RoleWeave employee: ${positionId}]\n[Native tools and confirmations are managed by Qwen Office. RoleWeave supplied the context below.]\n\n${input || "请根据已提供的岗位上下文完成本次任务。"}`,
+    }, {
+      signal: controller.signal,
+      onProgress: ({ status }) => {
+        if (terminal) return;
+        emit({ type: "trace.activity", runId, timestamp: now(), activityId: "qwen-office-native-task", kind: "agent", status: "running",
+          title: status === "waiting_for_input" ? "请在千问办公确认审批或补充信息" : "千问办公正在执行任务" });
+      },
+    });
+    if (terminal) return;
+    emit({ type: "trace.activity", runId, timestamp: now(), activityId: "qwen-office-native-task", kind: "agent", status: "completed", title: "千问办公任务已完成" });
+    emit({ type: "model.delta", runId, timestamp: now(), text: result.text });
+    if (result.usage && Object.keys(result.usage).length) emit({ type: "usage", runId, timestamp: now(), ...result.usage });
+    finish({ type: "run.completed", runId, timestamp: now(), output: result.text, terminalReason: "goal_met" });
+  } catch (error) {
+    fail(typeof error?.code === "string" && /^qwen_office\.[a-z_]{1,64}$/.test(error.code) ? error.code : "qwen_office.protocol_invalid");
+  }
 }
 
 async function turnRunOpenAICompatible(workspaceDir, positionId, input) {
@@ -1166,28 +1299,7 @@ async function turnRunQoder(workspaceDir, positionId, input) {
     }
 
     let buffer = "";
-    const toolNames = new Map();
-    const activityText = (value, maxBytes) => {
-      let result = "";
-      let bytes = 0;
-      for (const character of value) {
-        bytes += Buffer.byteLength(character, "utf8");
-        if (bytes > maxBytes) break;
-        result += character;
-      }
-      return result;
-    };
-    const publicDetail = (block) => {
-      const input = block?.input;
-      if (!input || typeof input !== "object") return undefined;
-      const details = [];
-      for (const key of ["path", "file_path", "paths", "files", "file_paths"]) {
-        const value = input[key];
-        if (typeof value === "string" && value.trim()) details.push(value.trim());
-        else if (Array.isArray(value)) details.push(...value.filter(item => typeof item === "string" && item.trim()).map(item => item.trim()));
-      }
-      return details.length > 0 ? activityText([...new Set(details)].join(" · "), 2048) : undefined;
-    };
+    const toolActivities = new Map();
     child.stdout.on("data", (chunk) => {
       buffer += String(chunk);
       let newline = buffer.indexOf("\n");
@@ -1215,10 +1327,11 @@ async function turnRunQoder(workspaceDir, positionId, input) {
           if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
             emit({ type: "model.delta", runId, timestamp: now(), text: block.text });
           } else if (block?.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
-            toolNames.set(block.id, activityText(block.name, 256));
-            const detail = publicDetail(block);
+            const title = activityText(block.name, 256);
+            const detail = publicQoderActivityDetail(block, redactDiagnostic);
+            toolActivities.set(block.id, { title, ...(detail ? { detail } : {}) });
             emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.id, 256), kind: "tool",
-              status: "running", title: toolNames.get(block.id), ...(detail ? { detail } : {}) });
+              status: "running", ...toolActivities.get(block.id) });
           }
         }
       }
@@ -1226,7 +1339,7 @@ async function turnRunQoder(workspaceDir, positionId, input) {
         for (const block of event.message.content) {
           if (block?.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
           emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.tool_use_id, 256), kind: "tool",
-            status: block.is_error === true ? "failed" : "completed", title: toolNames.get(block.tool_use_id) ?? "Tool" });
+            status: block.is_error === true ? "failed" : "completed", ...(toolActivities.get(block.tool_use_id) ?? { title: "Tool" }) });
         }
       }
       if (event?.type === "result") {
@@ -1626,14 +1739,7 @@ export function codexTurnArgs(model, baseUrl) {
     // implement a Responses feature rejects the whole request rather than
     // ignoring it. A relay answered `RESPONSES_FEATURE_NOT_SUPPORTED:
     // web_search` until web_search was disabled here.
-    "--disable", "shell_tool",
-    "--disable", "unified_exec",
-    "--disable", "apps",
-    "--disable", "plugins",
-    "--disable", "skill_search",
-    "--disable", "multi_agent",
-    "--disable", "view_image",
-    "--disable", "workspace_dependencies",
+    ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
   ];
   if (model !== undefined && model.length > 0) args.push("--model", model);
   if (baseUrl !== undefined) {

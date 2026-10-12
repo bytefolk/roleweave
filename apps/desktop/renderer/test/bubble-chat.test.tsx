@@ -71,7 +71,10 @@ describe("TurnThread evidence timeline (#73)", () => {
     expect(card?.querySelector(".owb-activity-trace__list")).toHaveTextContent("gate.md");
     expect(card?.querySelector(".owb-tc__out")).toHaveTextContent("第二段结论，不应该被两行省略。");
     expect(card?.querySelector(".owb-tc__out")?.className).not.toContain("owb-clamp-2");
-    expect(card?.querySelector(".owb-tc__out")?.getAttribute("title")).toContain("第二段结论");
+    expect(card?.querySelector(".owb-tc__out")).toBeVisible();
+    // Full conclusions are read inline; a native tooltip must not duplicate
+    // the entire body or display raw Markdown over the rendered message.
+    expect(card?.querySelector(".owb-tc__out")).not.toHaveAttribute("title");
   });
 
   it("renders the conclusion as compact structured markdown", () => {
@@ -86,7 +89,21 @@ describe("TurnThread evidence timeline (#73)", () => {
     expect(output?.querySelector("strong")?.textContent).toBe("读写代码");
     expect(output?.querySelector("ul")).not.toBeNull();
     expect(output?.querySelector("code")?.textContent).toBe("README.md");
-    expect(output?.getAttribute("title")).toContain("**读写代码**");
+    expect(output).toBeVisible();
+    expect(output).toHaveTextContent("结论摘要");
+    expect(output).not.toHaveAttribute("title");
+  });
+
+  it("keeps links and emphasis interactive in both streaming and completed replies", () => {
+    const record = turn({ status: "running", output: "状态：**正在检查**\n参考 `https://example.com`" });
+    const { container, rerender } = render(<TurnThread turns={[record]} />);
+    expect(screen.getByRole("link", { name: "https://example.com" })).toHaveAttribute("href", "https://example.com");
+    expect(container.querySelector("strong")).toHaveTextContent("状态：");
+    expect(container.querySelector("br")).not.toBeNull();
+    rerender(<TurnThread turns={[{ ...record, status: "completed", output: "状态：**已完成**\n参考 https://example.com。" }]} />);
+    expect(screen.getByRole("link", { name: "https://example.com" })).toHaveAttribute("href", "https://example.com");
+    expect(container.querySelector(".owb-turn__conclusion strong")).toHaveTextContent("状态：");
+    expect(container.querySelector(".owb-turn__conclusion")).toHaveTextContent("已完成");
   });
 
   it("marks running and indeterminate turns with distinct timeline states", () => {
@@ -169,7 +186,7 @@ describe("group chat bubbles with member identity (#61)", () => {
       createdAt: "2026-08-26T04:10:00.000Z",
       updatedAt: "2026-08-26T04:11:00.000Z",
       events: [],
-      output: "发布已检查。",
+      output: "**发布已检查。** 参考 https://example.com。详见 `docs/release.md`。",
     };
     const bridge = {
       groups: vi.fn().mockResolvedValue({
@@ -199,6 +216,7 @@ describe("group chat bubbles with member identity (#61)", () => {
     };
     window.owb = bridge as unknown as OwbBridge;
 
+    const openResource = vi.fn();
     const availability: TurnEngineAvailability = { configured: true, ready: true };
     const { container } = render(
       <GroupsPanel
@@ -221,6 +239,7 @@ describe("group chat bubbles with member identity (#61)", () => {
         onSelectEngine={() => {}}
         onSpawnRuns={() => {}}
         onReconcileTimeline={() => {}}
+        onOpenResource={openResource}
         draftSeed={null}
       />,
     );
@@ -233,6 +252,10 @@ describe("group chat bubbles with member identity (#61)", () => {
     expect(memberRow?.querySelector(".owb-bubble__avatar")).not.toHaveAttribute("style");
     expect(memberRow?.querySelector(".owb-bubble__name")?.textContent).toBe("@Release Engineer");
     expect(memberRow?.textContent).toContain("发布已检查。");
+    expect(memberRow?.querySelector("strong")).toHaveTextContent("发布已检查。");
+    expect(screen.getByRole("link", { name: "https://example.com" })).toHaveAttribute("href", "https://example.com");
+    fireEvent.click(screen.getByRole("link", { name: "文档链接：docs/release.md" }));
+    expect(openResource).toHaveBeenCalledWith("release-engineer", "docs/release.md");
     const operatorRow = container.querySelector(".owb-bubble-row--operator .owb-bubble--operator");
     expect(operatorRow?.textContent).toContain("各位同步进度");
     // Operator identity stays visible; routing details stay in the member selector.

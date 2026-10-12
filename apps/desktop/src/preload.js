@@ -2,6 +2,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("owb", {
+  // The Electron shell's platform remains win32 when its backend runs in WSL.
+  windowChrome: {
+    platform: ["win32", "darwin", "linux"].includes(process.platform) ? process.platform : "other",
+    nativeControls: process.platform === "win32",
+  },
+  setWindowChromeColors: (colors) => ipcRenderer.invoke("owb:window:chrome-colors", colors),
   configuration: {
     get: () => ipcRenderer.invoke("owb:configuration:get"),
     getPreferences: () => ipcRenderer.invoke("owb:configuration:get-preferences"),
@@ -34,7 +40,7 @@ contextBridge.exposeInMainWorld("owb", {
   createWorkspace: (request) => ipcRenderer.invoke("owb:workspace:create", request),
   workspace: () => ipcRenderer.invoke("owb:workspace:get"),
   revealWorkspace: () => ipcRenderer.invoke("owb:workspace:reveal"),
-  openWorkspaceFile: (relativePath) => ipcRenderer.invoke("owb:workspace:file-open", relativePath),
+  openWorkspaceFile: (relativePath, expectedWorkspacePath) => ipcRenderer.invoke("owb:workspace:file-open", relativePath, expectedWorkspacePath),
   orgTree: () => ipcRenderer.invoke("owb:org:tree"),
   orgApply: (manifest) => ipcRenderer.invoke("owb:org:apply", manifest),
   orgBackups: () => ipcRenderer.invoke("owb:org:backups"),
@@ -101,13 +107,17 @@ contextBridge.exposeInMainWorld("owb", {
   updateTaskStatus: (request) => ipcRenderer.invoke("owb:task:status", request),
   goal: (goalId) => ipcRenderer.invoke("owb:goal:get", goalId),
   updateGoal: (request) => ipcRenderer.invoke("owb:goal:update", request),
+  createGoalTaskAcceptance: (request) => ipcRenderer.invoke("owb:goal:task-acceptance", request),
   deleteGoal: (goalId) => ipcRenderer.invoke("owb:goal:delete", goalId),
   drive: {
     list: (q) => ipcRenderer.invoke("owb:drive:list", q),
     detail: (id) => ipcRenderer.invoke("owb:drive:detail", id),
+    preview: (id) => ipcRenderer.invoke("owb:drive:preview", id),
+    provider: () => ipcRenderer.invoke("owb:drive:provider"),
     upload: (filePath) => ipcRenderer.invoke("owb:drive:upload", filePath),
     pickAndUpload: () => ipcRenderer.invoke("owb:drive:pick-and-upload"),
   },
+  vault: Object.fromEntries(['list', 'read', 'create', 'write', 'rename', 'archive', 'restore', 'delete', 'migrate', 'bindings', 'bind', 'source', 'resolve', 'image', 'attach', 'fromTurn', 'sync', 'targets', 'context', 'history', 'used'].map(action => [action, value => ipcRenderer.invoke('owb:vault:' + action, value)])),
   sseStatus: () => ipcRenderer.invoke("owb:sse-status:get"),
   services: {
     list: () => ipcRenderer.invoke("owb:services:list"),

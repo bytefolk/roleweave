@@ -15,6 +15,21 @@
 
 export const DRIVE_OBJECT_LIST_SCHEMA_VERSION = "drive-object-list.v1" as const;
 export const DRIVE_OBJECT_SCHEMA_VERSION = "drive-object.v1" as const;
+export const DRIVE_OBJECT_PREVIEW_SCHEMA_VERSION = "drive-object-preview.v1" as const;
+export const DRIVE_PREVIEW_MAX_BYTES = 8 * 1024 * 1024;
+export const DRIVE_PREVIEW_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+export type DrivePreviewMime = (typeof DRIVE_PREVIEW_MIME_TYPES)[number];
+
+/** Authenticated, bounded raster bytes; no upstream URL or credential. */
+export interface DriveObjectPreview {
+  objectId: string;
+  mime: DrivePreviewMime;
+  dataUrl: string;
+}
+export interface DriveObjectPreviewResponse {
+  schemaVersion: typeof DRIVE_OBJECT_PREVIEW_SCHEMA_VERSION;
+  preview: DriveObjectPreview;
+}
 
 /** One listed object in the mem drive. */
 export interface DriveObject {

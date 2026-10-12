@@ -20,7 +20,7 @@ import type { PositionMentionOption, TurnEngine, TurnEngineAvailability } from "
  *  in Testing Library. (#237) */
 function GroupBubbleExpand({ summaryClassName, summaryTitle, summaryChildren, bodyChildren, "aria-label": ariaLabel }: {
   summaryClassName: string;
-  summaryTitle: string;
+  summaryTitle?: string;
   summaryChildren: React.ReactNode;
   bodyChildren: React.ReactNode;
   "aria-label"?: string;
@@ -47,6 +47,7 @@ export interface GroupsPanelProps {
   listHost?: HTMLElement | null;
   /** Explicit row selection or successful creation only, never background refresh. */
   onSelectGroup?: () => void;
+  onOpenResource?: (positionId: string, path: string) => void;
   positions: PositionMentionOption[];
   positionNames: Record<string, string>;
   /** Avatar background colors keyed by position id (metadata.color); positions
@@ -161,6 +162,7 @@ export function GroupsPanel({
   workspaceOpen,
   listHost,
   onSelectGroup,
+  onOpenResource,
   positions,
   positionNames,
   positionColors,
@@ -710,6 +712,7 @@ export function GroupsPanel({
             <button
               type="button"
               className={group.conversationRef === selectedRef ? "is-active" : undefined}
+              aria-pressed={group.conversationRef === selectedRef}
               onClick={() => {
                 setSelectedRef(group.conversationRef);
                 onSelectGroup?.();
@@ -942,14 +945,13 @@ export function GroupsPanel({
                           </time>
                         )}
                       </header>
-                      {isLive || !["group_relay_blocked", "group_relay_stopped"].includes(turn.errorCode ?? "") ? <ProgressTrail turn={turn} /> : null}
+                      {isLive || !["group_relay_blocked", "group_relay_stopped"].includes(turn.errorCode ?? "") ? <ProgressTrail turn={turn} onOpenResource={onOpenResource} /> : null}
                       {turn.output ? (
                         <GroupBubbleExpand
                           summaryClassName="owb-turn__output owb-clamp-2"
-                          summaryTitle={turn.output}
-                          summaryChildren={turn.output}
+                          summaryChildren={<Markdown conversation content={turn.output} onNavigateDoc={onOpenResource ? path => onOpenResource(turn.positionId, path) : undefined} />}
                           aria-label={t("grp.expandOutput")}
-                          bodyChildren={<Markdown content={turn.output} />}
+                          bodyChildren={<Markdown conversation content={turn.output} onNavigateDoc={onOpenResource ? path => onOpenResource(turn.positionId, path) : undefined} />}
                         />
                       ) : null}
                       {!isLive && (turn.status === "failed" || turn.status === "indeterminate") && turn.error ? (

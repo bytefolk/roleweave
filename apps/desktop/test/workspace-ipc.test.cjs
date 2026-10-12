@@ -285,6 +285,17 @@ test("workspace file opening is bounded to the open workspace and rejects traver
   }
 });
 
+test("workspace source opening refuses a workspace changed after the source was selected", async () => {
+  const changed = revealFixture({ body: { open: true, path: "/tmp/projects/another-team" } });
+  assert.deepEqual(await openWorkspaceFile({ ...changed, relativePath: "src/index.ts", expectedWorkspacePath: "/tmp/projects/local-team" }), {
+    opened: false, reason: "workspace_changed",
+  });
+  assert.deepEqual(changed.opened, []);
+  const original = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });
+  assert.equal((await openWorkspaceFile({ ...original, relativePath: "src/index.ts", expectedWorkspacePath: "/tmp/projects/local-team" })).opened, true);
+  assert.deepEqual(original.opened, ["/tmp/projects/local-team/src/index.ts"]);
+});
+
 test("reveal opens the native workspace path without any renderer-supplied argument", async () => {
   const f = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });
   const result = await revealWorkspaceInFileManager(f);

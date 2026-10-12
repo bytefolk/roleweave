@@ -121,7 +121,29 @@ describe("DocsPanel knowledge lifecycle (#347)", () => {
     expect(deleteDoc).not.toHaveBeenCalled();
   });
 
-  it("edits knowledge files, confirms delete, and keeps SKILL.md bound read-only", async () => {
+  it("shows knowledge file metadata on focus and keeps SKILL.md bound read-only", async () => {
+    render(<DocsPanel knowledgeFirst positionId="lifecycle-metadata"
+      listDocs={vi.fn().mockResolvedValue(LIST)}
+      readDoc={vi.fn(async (_id, path) => path === "SKILL.md" ? SKILL : KNOWLEDGE)}
+      writeDoc={vi.fn()} renameDoc={vi.fn()} archiveDoc={vi.fn()} deleteDoc={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "knowledge/README.md" }));
+    await screen.findByRole("heading", { name: /Knowledge$/ });
+    const fileRow = screen.getByRole("button", { name: "knowledge/README.md" });
+    fireEvent.focus(fileRow);
+    const fileDetails = await screen.findByRole("tooltip");
+    expect(fileDetails).toHaveTextContent("knowledge/README.md");
+    expect(fileDetails).toHaveTextContent("Markdown 文档");
+    expect(fileDetails).toHaveTextContent("7 字节");
+    fireEvent.blur(fileRow);
+    expect(screen.getByRole("button", { name: "README", exact: true })).toBeTruthy();
+    expect(within(fileRow).getByText("README.md")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "SKILL.md" }));
+    await screen.findByRole("heading", { name: "Repo Owner" });
+    expect(screen.getByText("绑定期间只读")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /编\s?辑/ })).toBeNull();
+  });
+
+  it("autosaves knowledge edits against the read version before renaming the file", async () => {
     const listDocs = vi.fn().mockResolvedValue(LIST);
     const readDoc = vi.fn().mockImplementation((_id: string, path: string) =>
       Promise.resolve(path === "SKILL.md" ? SKILL : KNOWLEDGE),
@@ -134,7 +156,7 @@ describe("DocsPanel knowledge lifecycle (#347)", () => {
     render(
       <DocsPanel
         knowledgeFirst
-        positionId="repo-owner"
+        positionId="lifecycle-edit"
         listDocs={listDocs}
         readDoc={readDoc}
         writeDoc={writeDoc}
@@ -146,17 +168,11 @@ describe("DocsPanel knowledge lifecycle (#347)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "knowledge/README.md" }));
     await screen.findByRole("heading", { name: /Knowledge$/ });
-    const fileRow = screen.getByRole("button", { name: "knowledge/README.md" });
-    expect(fileRow).toHaveAttribute("title", expect.stringContaining("Markdown 文档"));
-    expect(fileRow).toHaveAttribute("title", expect.stringContaining("7 字节"));
-    expect(screen.getByRole("button", { name: "README", exact: true })).toBeTruthy();
-    expect(screen.queryByText("README.md")).toBeNull();
-
     const editor = await sourceEditor();
     fireEvent.change(editor, { target: { value: "# Edited\n" } });
     await waitFor(() =>
       expect(writeDoc).toHaveBeenCalledWith(
-        "repo-owner",
+        "lifecycle-edit",
         "knowledge/README.md",
         "# Edited\n",
         "2026-08-27T00:00:01.000Z",
@@ -169,21 +185,25 @@ describe("DocsPanel knowledge lifecycle (#347)", () => {
     fireEvent.change(renameInput, { target: { value: "handbook.md" } });
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /重\s?命\s?名/ }));
     await waitFor(() =>
-      expect(renameDoc).toHaveBeenCalledWith("repo-owner", "knowledge/README.md", "knowledge/handbook.md"),
+      expect(renameDoc).toHaveBeenCalledWith("lifecycle-edit", "knowledge/README.md", "knowledge/handbook.md"),
     );
+    expect(archiveDoc).not.toHaveBeenCalled();
+    expect(deleteDoc).not.toHaveBeenCalled();
+  });
 
-    fireEvent.click(await screen.findByRole("button", { name: "SKILL.md" }));
-    await screen.findByRole("heading", { name: "Repo Owner" });
-    expect(screen.getByText("绑定期间只读")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /编\s?辑/ })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "knowledge/README.md" }));
+  it("deletes a knowledge file only after explicit confirmation", async () => {
+    const deleteDoc = vi.fn().mockResolvedValue(undefined);
+    render(<DocsPanel knowledgeFirst positionId="lifecycle-delete"
+      listDocs={vi.fn().mockResolvedValue(LIST)} readDoc={vi.fn().mockResolvedValue(KNOWLEDGE)}
+      writeDoc={vi.fn()} deleteDoc={deleteDoc} />);
+    fireEvent.click(await screen.findByRole("button", { name: "knowledge/README.md" }));
     await screen.findByRole("heading", { name: /Knowledge$/ });
     await documentAction(/删\s?除/);
     expect(await screen.findByText(/确定永久删除/)).toBeTruthy();
+    expect(deleteDoc).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /永久删除/ }));
     await waitFor(() =>
-      expect(deleteDoc).toHaveBeenCalledWith("repo-owner", "knowledge/README.md"),
+      expect(deleteDoc).toHaveBeenCalledWith("lifecycle-delete", "knowledge/README.md"),
     );
   });
 

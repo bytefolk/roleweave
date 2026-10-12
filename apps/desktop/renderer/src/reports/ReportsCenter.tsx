@@ -1,11 +1,14 @@
+import type { ApprovalQueueItem } from "../approvals/types";
 import { useMemo, useState } from "react";
-import { Alert, Button, Input, Select, Skeleton, Table, Tag } from "antd";
+import { Alert, Button, Skeleton, Table, Tag } from "antd";
 import { useOwbLocale, useT, type OwbT } from "@roleweave/ui";
-import type { AuditEntry, EvidenceEntry, EscalationEntry, ReportsResponse } from "@roleweave/shared";
-import { AlertOctagon, ClipboardList, RefreshCw } from "lucide-react";
+import type { EvidenceEntry, ReportsResponse } from "@roleweave/shared";
+import { RefreshCw } from "lucide-react";
 import { BudgetDashboard } from "./BudgetDashboard";
-import { useReportAdvice, ReportAdviceControls, ReportAdviceChip, reportAdviceKey } from "./ReportAdvice";
+import { useReportAdvice, ReportAdviceControls } from "./ReportAdvice";
 import type { ExperimentScope } from "../experiments/useWorkspaceExperiments";
+import { RunInspector, ExceptionWorkbench, ReportFilters, AuditRecords, RunSummary, evidenceKey } from "./InboxReports";
+import "../inbox/inbox-workspace.css";
 import { AuditTimeline, type AuditTimelineEvent } from "./AuditTimeline";
 
 type Tab = "budgets" | "escalations" | "audits" | "evidence" | "timeline";
@@ -13,6 +16,11 @@ type Tab = "budgets" | "escalations" | "audits" | "evidence" | "timeline";
 export interface ReportsCenterProps extends ExperimentScope {
   onOpenExperiments?: () => void;
   onRefresh?: () => void;
+  onNavigateToOrg?: () => void;
+  errorMessage?: string;
+  updatedAt?: string;
+  approvals?: ApprovalQueueItem[];
+  onOpenApproval?: (id: string) => void;
   reports: ReportsResponse | null;
   loading: boolean;
   positionNames?: Record<string, string>;
@@ -22,7 +30,7 @@ export interface ReportsCenterProps extends ExperimentScope {
   focusTurnId?: string;
 }
 
-export function ReportsCenter({ reports, loading, positionNames, positionColors, focusTurnId, onOpenTimeline, onOpenTurn, onRefresh, workspacePath, workspaceScope, onOpenExperiments }: ReportsCenterProps) {
+export function ReportsCenter({ reports, loading, positionNames, positionColors, focusTurnId, onOpenTimeline, onOpenTurn, onRefresh, workspacePath, workspaceScope, onOpenExperiments, errorMessage, updatedAt, onNavigateToOrg, approvals, onOpenApproval }: ReportsCenterProps) {
   const t = useT();
   const advice = useReportAdvice({ workspacePath, workspaceScope }, reports?.streams.escalations ?? []);
   const timelineEvents = useMemo<AuditTimelineEvent[]>(
@@ -32,68 +40,89 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
   // Prefer a stream with real facts on first open. Landing on an empty
   // escalation tab made a healthy workspace look broken and hid the evidence
   // that explains what this module is for.
+  const [filters, setFilters] = useState({ query: "", position: "", status: "", date: "" });
+  const filteredReports = useMemo(() => {
+    if (!reports) return null;
+    const evidence = new Map(reports.streams.evidence.map(e => [evidenceKey(e), e]));
+    const matches = (position: string, at?: string, status?: string, extra = "") =>
+      (!filters.position || filters.position === position) &&
+      (!filters.date || at !== undefined && recordedDate(at) === filters.date) &&
+      (!filters.status || status === filters.status) &&
+      `${positionNames?.[position] ?? position} ${extra}`.toLowerCase().includes(filters.query.trim().toLowerCase());
+    return { ...reports, budgets: reports.budgets.filter(b => matches(b.positionId, undefined, b.state)), streams: {
+      evidence: reports.streams.evidence.filter(e => matches(e.positionId, e.updatedAt, e.status, `${e.turnId} ${e.runId ?? ""} ${e.engine}`)),
+      escalations: reports.streams.escalations.filter(e => matches(e.positionId, e.at, e.status, `${e.turnId} ${e.code} ${evidence.get(evidenceKey(e))?.runId ?? ""} ${evidence.get(evidenceKey(e))?.engine ?? ""}`)),
+      audits: reports.streams.audits.filter(a => (!filters.date || recordedDate(a.at) === filters.date) && (!filters.position || [...a.changes.hired.map(r => r.id), ...a.changes.moved.map(r => r.id), ...a.changes.dismissed.map(r => r.id), ...a.changes.budgetUpdated].includes(filters.position)) && (!filters.status || filters.status === "completed") && `${a.actor} ${a.workspace}`.toLowerCase().includes(filters.query.trim().toLowerCase())),
+    } };
+  }, [reports, filters, positionNames]);
   const [tabOverride, setTabOverride] = useState<Tab | null>(null);
   const [timelinePosition, setTimelinePosition] = useState<string | null>(null);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
+  const selectTab = (next: Tab) => { setTabOverride(next); setFilters(current => ({ ...current, status: "", date: next === "budgets" ? "" : current.date })); };
   if (loading && !reports) return <section className="owb-reports" aria-label={t("rep.loading")}><Skeleton active paragraph={{ rows: 6 }} /></section>;
-  if (!reports) return <section className="owb-reports"><p className="owb-muted">{t("rep.unavailable")}</p>{onRefresh ? <Button onClick={onRefresh}>{t("rep.refresh")}</Button> : null}</section>;
+  if (!reports || !filteredReports) return <section className="owb-reports owb-inbox-state"><h1>{t("inbox.loadFailed")}</h1><p>{errorMessage ?? t("rep.unavailable")}</p>{onRefresh ? <Button onClick={onRefresh}>{t("rep.refresh")}</Button> : null}</section>;
   const tab = tabOverride ?? (focusTurnId ? "evidence" : firstReportTab(reports, timelineEvents.length));
   const total = reports.budgets.reduce((sum, budget) => sum + budget.recorded.totalTokens, 0);
-  const exceptions = new Set([...reports.streams.escalations.map((item) => item.turnId), ...reports.streams.evidence.filter((item) => item.status === "failed" || item.status === "indeterminate").map((item) => item.turnId)]).size;
+  const exceptions = new Set([...reports.streams.escalations.map(evidenceKey), ...reports.streams.evidence.filter((item) => item.status === "failed" || item.status === "indeterminate").map(evidenceKey)]).size;
   const completed = reports.streams.evidence.filter((item) => item.status === "completed").length;
   const hasObservedUsage = reports.budgets.some((budget) => budget.latestTurn !== null);
-  const evidenceByTurn = new Map(reports.streams.evidence.map((entry) => [entry.turnId, entry]));
-  const filteredTimeline = timelineEvents.filter((event) =>
+  const evidenceByTurn = new Map(reports.streams.evidence.map((entry) => [evidenceKey(entry), entry]));
+  const visibleTimeline = buildTimelineEventsFromReports(filteredReports, t);
+  const filteredTimeline = visibleTimeline.filter((event) =>
     (timelinePosition === null || event.positionId === timelinePosition) &&
     (timelineRunId === null || event.runId === timelineRunId),
   );
   const openTimeline = (positionId: string, turnId?: string) => {
     setTimelinePosition(positionId);
-    setTimelineRunId(turnId ? reports.streams.evidence.find((entry) => entry.turnId === turnId)?.runId ?? turnId : null);
+    setTimelineRunId(turnId ? reports.streams.evidence.find((entry) => entry.positionId === positionId && entry.turnId === turnId)?.runId ?? turnId : null);
     setTabOverride("timeline");
   };
   return (
-    <section className="owb-reports" aria-label={t("rep.center")}>
+    <section className="owb-reports" aria-label={t("inbox.reportsTitle")}>
       <header className="owb-reports__hero">
         <div className="owb-reports__hero-copy">
-          <h1>{t("rep.center")}</h1>
+          <h1>{t("inbox.reportsTitle")}</h1>
           <p>{t("rep.lede")}</p>
         </div>
         {onRefresh ? <Button icon={<RefreshCw size={14} />} loading={loading} onClick={onRefresh}>{t("rep.refresh")}</Button> : null}
       </header>
+      {errorMessage ? <Alert type="warning" showIcon title={t("inbox.cachedSnapshot")} description={errorMessage} action={onRefresh ? <Button onClick={onRefresh}>{t("inbox.retry")}</Button> : undefined} /> : null}
       <div className="owb-report-overview" role="group" aria-label={t("rep.overview")}>
-        <SummaryMetric active={tab === "budgets"} label={t("rep.recordedTokenTotal")} value={hasObservedUsage ? total.toLocaleString() : "—"} detail={t("rep.usageScope")} onClick={() => setTabOverride("budgets")} />
-        <SummaryMetric active={tab === "evidence"} label={t("rep.runCount")} value={reports.streams.evidence.length.toLocaleString()} detail={t("rep.completedCount", { count: completed })} onClick={() => setTabOverride("evidence")} />
-        <SummaryMetric active={tab === "escalations"} label={t("rep.exceptionCount")} value={exceptions.toLocaleString()} detail={t("rep.exceptionHint")} warning={exceptions > 0} onClick={() => setTabOverride("escalations")} />
-        <SummaryMetric active={tab === "budgets"} label={t("rep.employeeCount")} value={reports.budgets.length.toLocaleString()} detail={t("rep.observedCount", { count: reports.budgets.filter((budget) => budget.latestTurn !== null).length })} onClick={() => setTabOverride("budgets")} />
+        <SummaryMetric active={tab === "budgets"} label={t("rep.recordedTokenTotal")} value={hasObservedUsage ? total.toLocaleString() : "—"} detail={t("rep.usageScope")} onClick={() => selectTab("budgets")} />
+        <SummaryMetric active={tab === "evidence"} label={t("rep.runCount")} value={reports.streams.evidence.length.toLocaleString()} detail={t("rep.completedCount", { count: completed })} onClick={() => selectTab("evidence")} />
+        <SummaryMetric active={tab === "escalations"} label={t("rep.exceptionCount")} value={exceptions.toLocaleString()} detail={t("rep.exceptionHint")} warning={exceptions > 0} onClick={() => selectTab("escalations")} />
+        <SummaryMetric active={tab === "budgets"} label={t("rep.employeeCount")} value={reports.budgets.length.toLocaleString()} detail={t("rep.observedCount", { count: reports.budgets.filter((budget) => budget.latestTurn !== null).length })} onClick={() => selectTab("budgets")} />
       </div>
       <p className="owb-report-scope">{t("rep.scopeHint")}{reports.page.hasMore ? ` ${t("rep.partialSnapshot")}` : ""}</p>
       {/* #394：单层视图切换。旧的两层 tab（治理父 tab 再套三个子 tab）把时间线这种
           全量流塞进"异常"分组里，用户找不到也记不住；拍平后 KPI 卡与视图一一对应。 */}
       <nav className="owb-report-tabs" aria-label={t("rep.streamsAria")}>
-        <TabButton active={tab === "budgets"} onClick={() => setTabOverride("budgets")} label={t("rep.tabBudgets")} count={reports.budgets.length} />
-        <TabButton active={tab === "evidence"} onClick={() => setTabOverride("evidence")} label={t("rep.tabEvidence")} count={reports.streams.evidence.length} />
-        <TabButton active={tab === "escalations"} onClick={() => setTabOverride("escalations")} label={t("rep.tabEscalations")} count={reports.streams.escalations.length} />
-        <TabButton active={tab === "audits"} onClick={() => setTabOverride("audits")} label={t("rep.tabAudits")} count={reports.streams.audits.length} />
-        <TabButton active={tab === "timeline"} onClick={() => { setTimelinePosition(null); setTimelineRunId(null); setTabOverride("timeline"); }} label={t("rep.tabTimeline")} count={timelineEvents.length} />
+        <TabButton active={tab === "budgets"} onClick={() => selectTab("budgets")} label={t("rep.tabBudgets")} count={reports.budgets.length} />
+        <TabButton active={tab === "evidence"} onClick={() => selectTab("evidence")} label={t("rep.tabEvidence")} count={reports.streams.evidence.length} />
+        <TabButton active={tab === "escalations"} onClick={() => selectTab("escalations")} label={t("rep.tabEscalations")} count={exceptions} />
+        <TabButton active={tab === "audits"} onClick={() => selectTab("audits")} label={t("rep.tabAudits")} count={reports.streams.audits.length + reports.streams.evidence.filter(e => e.status !== "running").length + (approvals?.filter(a => (a.decision.kind === "granted" || a.decision.kind === "denied") && a.decision.decidedAt).length ?? 0)} />
+        <TabButton active={tab === "timeline"} onClick={() => { setTimelinePosition(null); setTimelineRunId(null); selectTab("timeline"); }} label={t("rep.tabTimeline")} count={timelineEvents.length} />
       </nav>
+      <ReportFilters value={filters} onChange={setFilters} positionNames={positionNames} reports={reports} updatedAt={updatedAt} tab={tab} />
+      {Object.values(filters).some(Boolean) ? <Button type="link" onClick={() => setFilters({ query: "", position: "", status: "", date: "" })}>{t("apr.clearFilters")}</Button> : null}
+      {reports.streams.evidence.length + reports.streams.escalations.length + reports.streams.audits.length + reports.budgets.length === 0 ? <section className="owb-inbox-state"><h2>{t("inbox.noReports")}</h2><p>{t("inbox.noReportsHint")}</p>{onNavigateToOrg ? <Button onClick={onNavigateToOrg}>{t("inbox.openCollaboration")}</Button> : null}</section> : null}
       <div className="owb-report-stream" role="tabpanel" aria-label={t("rep.streamTabpanelAria", { tab: tabLabel(tab, t) })}>
         {tab === "budgets" ? (
           <BudgetDashboard
             compact
-            budgets={reports.budgets}
+            budgets={filteredReports.budgets}
             escalations={reports.streams.escalations}
             positionNames={positionNames}
             positionColors={positionColors}
             onOpenTimeline={openTimeline}
           />
         ) : null}
-        {tab === "escalations" ? <>{workspacePath ? <ReportAdviceControls controller={advice} onOpenSettings={onOpenExperiments} /> : null}<Escalations entries={reports.streams.escalations} evidenceByTurn={evidenceByTurn} positionNames={positionNames} onOpenTimeline={openTimeline} onOpenTurn={onOpenTurn} advice={advice.items} /></> : null}
-        {tab === "audits" ? <Audits entries={reports.streams.audits} positionNames={positionNames} /> : null}
-        {tab === "evidence" ? <Evidence entries={reports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} onOpenTurn={onOpenTurn} /> : null}
-        {tab === "timeline" && timelinePosition ? <div className="owb-report-filter-note"><span>{positionNames?.[timelinePosition] ?? timelinePosition}</span><Button type="link" onClick={() => { setTimelinePosition(null); setTimelineRunId(null); }}>{t("rep.clearScope")}</Button></div> : null}
+        {tab === "escalations" ? <>{workspacePath ? <ReportAdviceControls controller={advice} onOpenSettings={onOpenExperiments} /> : null}<ExceptionWorkbench entries={filteredReports.streams.escalations} evidence={filteredReports.streams.evidence} evidenceByTurn={evidenceByTurn} positionNames={positionNames} onOpenTimeline={openTimeline} onOpenTurn={onOpenTurn} advice={advice.items} /></> : null}
+        {tab === "audits" ? <AuditRecords entries={filteredReports.streams.audits} evidence={filteredReports.streams.evidence} approvals={approvals?.filter(a => (!filters.position || a.positionId === filters.position) && (!filters.query || `${a.description} ${a.approvalId}`.toLowerCase().includes(filters.query.toLowerCase())) && (!filters.date || (a.decision.kind === "granted" || a.decision.kind === "denied") && a.decision.decidedAt !== undefined && recordedDate(a.decision.decidedAt) === filters.date) && (!filters.status || filters.status === a.decision.kind))} onOpenApproval={onOpenApproval} onOpenTimeline={openTimeline} positionNames={positionNames} /> : null}
+        {tab === "evidence" ? <Evidence entries={filteredReports.streams.evidence} positionNames={positionNames} focusTurnId={focusTurnId} onOpenTimeline={openTimeline} onOpenTurn={onOpenTurn} /> : null}
+        {tab === "timeline" && timelinePosition ? <div className="owb-report-filter-note"><span>{positionNames?.[timelinePosition] ?? timelinePosition}</span><Button type="link" onClick={() => { setTimelinePosition(null); setTimelineRunId(null); setFilters({ query: "", position: "", status: "", date: "" }); }}>{t("rep.clearScope")}</Button></div> : null}
         {tab === "timeline" ? (
-          <AuditTimeline
+          <div className="owb-inbox-report-split owb-inbox-timeline"><AuditTimeline
             events={filteredTimeline}
             positionNames={positionNames}
             page={{
@@ -101,7 +130,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
               hasMore: reports.page.hasMore,
               total: filteredTimeline.length,
             }}
-          />
+          /><RunSummary evidence={reports.streams.evidence.find(e => timelinePosition === e.positionId && timelineRunId === (e.runId ?? e.turnId))} events={filteredTimeline} onOpenTurn={onOpenTurn} onOpenEvidence={(positionId, turnId) => { setTabOverride("evidence"); setFilters({ query: turnId, position: positionId, status: "", date: "" }); }} /></div>
         ) : null}
       </div>
     </section>
@@ -109,7 +138,7 @@ export function ReportsCenter({ reports, loading, positionNames, positionColors,
 }
 
 function firstReportTab(reports: ReportsResponse, timelineCount: number): Tab {
-  if (reports.streams.escalations.length > 0) return "escalations";
+  if (reports.streams.escalations.length > 0 || reports.streams.evidence.some(e => e.status === "failed" || e.status === "indeterminate")) return "escalations";
   if (reports.streams.evidence.length > 0) return "evidence";
   if (reports.streams.audits.length > 0) return "audits";
   if (timelineCount > 0) return "timeline";
@@ -143,12 +172,12 @@ function buildTimelineEventsFromReports(reports: ReportsResponse, t: OwbT): Audi
   const evidenceByTurn = new Map<string, EvidenceEntry>();
   for (const evidence of reports.streams.evidence) {
     if (evidence.runId) evidenceByRun.set(evidence.runId, evidence);
-    evidenceByTurn.set(evidence.turnId, evidence);
+    evidenceByTurn.set(evidenceKey(evidence), evidence);
   }
   for (const evidence of reports.streams.evidence) {
     const runId = evidence.runId ?? evidence.turnId;
     events.push({
-      id: `evidence:started:${evidence.turnId}`,
+      id: `evidence:started:${evidenceKey(evidence)}`,
       at: evidence.createdAt,
       runId,
       positionId: evidence.positionId,
@@ -165,7 +194,7 @@ function buildTimelineEventsFromReports(reports: ReportsResponse, t: OwbT): Audi
             ? "turn.indeterminate"
             : "run.started";
     if (evidence.status !== "running") events.push({
-      id: `evidence:terminal:${evidence.turnId}`,
+      id: `evidence:terminal:${evidenceKey(evidence)}`,
       at: evidence.updatedAt,
       runId,
       positionId: evidence.positionId,
@@ -178,9 +207,9 @@ function buildTimelineEventsFromReports(reports: ReportsResponse, t: OwbT): Audi
     });
   }
   for (const escalation of reports.streams.escalations) {
-    const runId = evidenceByTurn.get(escalation.turnId)?.runId ?? escalation.turnId;
+    const runId = evidenceByTurn.get(evidenceKey(escalation))?.runId ?? escalation.turnId;
     events.push({
-      id: `escalation:${escalation.turnId}:${escalation.at}`,
+      id: `escalation:${evidenceKey(escalation)}:${escalation.at}`,
       at: escalation.at,
       runId,
       positionId: escalation.positionId,
@@ -207,7 +236,7 @@ function buildTimelineEventsFromReports(reports: ReportsResponse, t: OwbT): Audi
       }),
     });
   });
-  events.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  events.sort((a, b) => a.at.localeCompare(b.at));
   return events;
 }
 
@@ -217,110 +246,26 @@ function TabButton({ active, onClick, label, count }: { active: boolean; onClick
 
 function Empty({ text }: { text: string }) { return <p className="owb-report-empty">{text}</p>; }
 
-function Escalations({ entries, evidenceByTurn, positionNames, onOpenTimeline, onOpenTurn, advice }: { entries: EscalationEntry[]; evidenceByTurn: Map<string, EvidenceEntry>; positionNames?: Record<string, string>; onOpenTimeline: (id: string, turnId?: string) => void; onOpenTurn?: ReportsCenterProps["onOpenTurn"]; advice: ReturnType<typeof useReportAdvice>["items"] }) {
-  const t = useT();
-  const localeTag = useLocaleTag();
-  if (entries.length === 0) return <Empty text={t("rep.noEscalations")} />;
-  return <ol>{entries.map((entry) => {
-    const summary = entry.budgetRelated ? t("rep.budgetRelated") : t("rep.eventEscalation");
-    const evidence = evidenceByTurn.get(entry.turnId);
-    return <li className="owb-report-card is-escalation" key={entry.turnId}><AlertOctagon aria-hidden="true" size={16} /><div><header><strong>{positionNames?.[entry.positionId] ?? t("rep.unknownPosition")}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header><p className="owb-clamp-2" title={summary}>{summary}</p><div className="owb-report-chain">{entry.reportingChain.map((position, index) => <span key={position} style={{ borderLeftWidth: Math.min(index + 1, 4) }}>{positionNames?.[position] ?? t("rep.unknownPosition")}</span>)}</div><ReportAdviceChip advice={advice.get(reportAdviceKey(entry))} />
-      {onOpenTurn ? evidence ? <Button type="link" size="small" aria-label={t("rep.openTurnNamed", { turnId: entry.turnId })} onClick={() => onOpenTurn({ positionId: evidence.positionId, conversationId: evidence.conversationId, turnId: evidence.turnId })}>{t("rep.openTurn")}</Button> : <span className="owb-muted">{t("rep.turnUnavailable")}</span> : null}
-      <Button type="link" size="small" className="owb-report-trace" onClick={() => onOpenTimeline(entry.positionId, entry.turnId)}>{t("rep.traceRun")}</Button></div></li>;
-  })}</ol>;
-}
-
-/**
- * #394：审计行从"只报数字"升级为可展开明细。旧行只写"调岗 27"，用户没法回答
- * "谁调去了哪"，追溯承诺落空；展开后按 招聘/调岗/裁撤/预算 四组列具体岗位，
- * 调岗带 从→到。零值组不渲染，全零显示"无实质变更"。
- */
-function Audits({ entries, positionNames }: { entries: AuditEntry[]; positionNames?: Record<string, string> }) {
-  const t = useT();
-  const localeTag = useLocaleTag();
-  if (entries.length === 0) return <Empty text={t("rep.noAudits")} />;
-  return <ol>{entries.map((entry, index) => <AuditRow key={`${entry.at}-${index}`} entry={entry} positionNames={positionNames} localeTag={localeTag} />)}</ol>;
-}
-
-function AuditRow({ entry, positionNames, localeTag }: { entry: AuditEntry; positionNames?: Record<string, string>; localeTag: string }) {
-  const t = useT();
-  const [open, setOpen] = useState(false);
-  const nameOf = (id: string) => positionNames?.[id] ?? id;
-  const parentOf = (id: string | null) => (id === null ? t("rep.noParent") : nameOf(id));
-  const groups = [
-    { key: "hired", label: t("rep.changeHired"), count: entry.changes.hired.length },
-    { key: "moved", label: t("rep.changeMoved"), count: entry.changes.moved.length },
-    { key: "dismissed", label: t("rep.changeDismissed"), count: entry.changes.dismissed.length },
-    { key: "budget", label: t("rep.changeBudget"), count: entry.changes.budgetUpdated.length },
-  ];
-  const live = groups.filter((group) => group.count > 0);
-  const summary = t("rep.auditSummary", {
-    hired: entry.changes.hired.length,
-    moved: entry.changes.moved.length,
-    dismissed: entry.changes.dismissed.length,
-    budget: entry.changes.budgetUpdated.length,
-  });
-  return (
-    <li className={`owb-report-card owb-report-card--expandable${open ? " is-open" : ""}`}>
-      <ClipboardList aria-hidden="true" size={16} />
-      <div>
-        <header><strong>{entry.actor}</strong><time title={formatTime(entry.at, localeTag)}>{formatRelativeTime(entry.at, localeTag, t)}</time></header>
-        <div className="owb-report-chips" title={summary}>
-          {live.length === 0
-            ? <span className="owb-report-chip is-muted">{t("rep.noSubstantiveChanges")}</span>
-            : live.map((group) => <span className="owb-report-chip" key={group.key}>{group.label} {group.count}</span>)}
-          <small>{t("rep.auditPositions", { count: entry.positionCount })}</small>
-        </div>
-        {live.length > 0 ? (
-          <button type="button" className="owb-report-expand" aria-expanded={open} onClick={() => setOpen(!open)}>
-            {open ? t("rep.collapseChanges") : t("rep.expandChanges")}
-          </button>
-        ) : null}
-        {open && live.length > 0 ? (
-          <div className="owb-report-changes">
-            {entry.changes.hired.length > 0 ? (
-              <section><h4>{t("rep.changeHired")}</h4><ul>{entry.changes.hired.map((role) => <li key={role.id}>{nameOf(role.id)}</li>)}</ul></section>
-            ) : null}
-            {entry.changes.moved.length > 0 ? (
-              <section><h4>{t("rep.changeMoved")}</h4><ul>{entry.changes.moved.map((move) => <li key={move.id}>{nameOf(move.id)}<span className="owb-report-move">{parentOf(move.from)} → {parentOf(move.to)}</span></li>)}</ul></section>
-            ) : null}
-            {entry.changes.dismissed.length > 0 ? (
-              <section><h4>{t("rep.changeDismissed")}</h4><ul>{entry.changes.dismissed.map((role) => <li key={role.id}>{nameOf(role.id)}</li>)}</ul></section>
-            ) : null}
-            {entry.changes.budgetUpdated.length > 0 ? (
-              <section><h4>{t("rep.changeBudget")}</h4><ul>{entry.changes.budgetUpdated.map((id) => <li key={id}>{nameOf(id)}</li>)}</ul></section>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </li>
-  );
-}
-
 function Evidence({ entries, positionNames, focusTurnId, onOpenTimeline, onOpenTurn }: { entries: EvidenceEntry[]; positionNames?: Record<string, string>; focusTurnId?: string; onOpenTimeline: (id: string, turnId?: string) => void; onOpenTurn?: ReportsCenterProps["onOpenTurn"] }) {
   const t = useT();
   const localeTag = useLocaleTag();
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("all");
+  const [selectedTurn, setSelectedTurn] = useState<string>();
   const focused = focusTurnId ? entries.filter((entry) => entry.turnId === focusTurnId) : entries;
-  const filtered = focused.filter((entry) => (status === "all" || entry.status === status) && `${positionNames?.[entry.positionId] ?? entry.positionId} ${entry.engine}`.toLowerCase().includes(query.trim().toLowerCase()));
-  const rows = [...filtered].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const rows = [...focused].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const selected = rows.find(e => evidenceKey(e) === selectedTurn) ?? rows[0];
   if (entries.length === 0) return <Empty text={t("rep.noEvidence")} />;
   return <div className="owb-execution-records">
     {focusTurnId && focused.length === 0 ? <Alert type="warning" showIcon message={t("rep.focusEvidenceMissing", { turnId: focusTurnId })} /> : null}
     {focusTurnId && focused.length > 0 ? <Alert type="info" showIcon message={t("rep.focusEvidenceFound", { turnId: focusTurnId })} /> : null}
-    {focusTurnId && focused.length === 0 ? null : <><div className="owb-report-toolbar">
-    <Input allowClear aria-label={t("rep.searchExecutions")} placeholder={t("rep.searchExecutions")} value={query} onChange={(event) => setQuery(event.target.value)} />
-    <Select aria-label={t("rep.executionStatus")} value={status} onChange={setStatus} options={[{ value: "all", label: t("rep.allStatuses") }, ...["completed", "running", "failed", "indeterminate"].map((value) => ({ value, label: evidenceStatusLabel(value, t) }))]} />
-    <span>{t("rep.recordCount", { count: rows.length })}</span>
-  </div><Table<EvidenceEntry> rowKey="turnId" size="middle" dataSource={rows} scroll={{ x: 670 }} pagination={{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: true }} locale={{ emptyText: t("rep.noMatchingExecutions") }} columns={[
+    {focusTurnId && focused.length === 0 ? null : <><div className="owb-inbox-report-split"><div className="owb-inbox-table"><Table<EvidenceEntry> rowKey={evidenceKey} size="middle" rowClassName={e => selected !== undefined && evidenceKey(e) === evidenceKey(selected) ? "is-selected" : ""} onRow={e => ({ onClick: () => setSelectedTurn(evidenceKey(e)) })} dataSource={rows} scroll={{ x: 560 }} pagination={{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: true }} locale={{ emptyText: t("rep.noMatchingExecutions") }} columns={[
+    { title: t("inbox.task"), key: "task", render: (_, e) => <button className="owb-inbox-row-link" onClick={() => setSelectedTurn(evidenceKey(e))}>{e.runId ?? e.turnId}</button> },
     { title: t("rep.colPosition"), key: "position", render: (_, entry) => <strong>{positionNames?.[entry.positionId] ?? entry.positionId}</strong> },
-    { title: "Agent", dataIndex: "engine", key: "engine", render: (engine: string) => engine.startsWith("codex") ? "Codex" : engine.startsWith("claude") ? "Claude Code" : engine === "gemini" ? "Gemini" : "Qoder" },
+    { responsive: ["xxl"], title: "Agent", dataIndex: "engine", key: "engine", render: (engine: string) => engine.startsWith("codex") ? "Codex" : engine.startsWith("claude") ? "Claude Code" : engine === "gemini" ? "Gemini" : "Qoder" },
     { title: t("rep.executionStatus"), key: "status", render: (_, entry) => <Tag color={entry.status === "failed" ? "error" : entry.status === "completed" ? "success" : "default"}>{evidenceStatusLabel(entry.status, t)}</Tag> },
-    { title: t("rep.recordedTokenTotal"), key: "usage", align: "right", render: (_, entry) => entry.usage.totalTokens.toLocaleString() },
+    { responsive: ["xxl"], title: t("rep.recordedTokenTotal"), key: "usage", align: "right", render: (_, entry) => entry.usage.totalTokens.toLocaleString() },
     { title: t("rep.updatedAt"), key: "at", render: (_, entry) => <time title={formatTime(entry.updatedAt, localeTag)}>{formatRelativeTime(entry.updatedAt, localeTag, t)}</time> },
     { title: "", key: "action", render: (_, entry) => <>{onOpenTurn ? <Button type="link" size="small" aria-label={t("rep.openTurnNamed", { turnId: entry.turnId })} onClick={() => onOpenTurn({ positionId: entry.positionId, conversationId: entry.conversationId, turnId: entry.turnId })}>{t("rep.openTurn")}</Button> : null}<Button type="link" size="small" onClick={() => onOpenTimeline(entry.positionId, entry.turnId)}>{t("rep.openTimeline")}</Button></> },
-  ]} /></>}
+  ]} /><footer>{t("rep.recordCount", { count: rows.length })}</footer></div><RunInspector entry={selected} positionNames={positionNames} onOpenTurn={onOpenTurn} onOpenTimeline={onOpenTimeline} /></div></>}
   </div>;
 }
 
@@ -354,3 +299,5 @@ function formatRelativeTime(value: string, localeTag: string, t: OwbT): string {
 function useLocaleTag(): string {
   return useOwbLocale() === "en" ? "en-US" : "zh-CN";
 }
+
+function recordedDate(at: string): string { return new Date(at).toLocaleDateString("sv-SE"); }

@@ -1,5 +1,5 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { Alert, Badge, Button as AntButton, ConfigProvider, Dropdown, message } from "antd";
+import { Alert, Badge, Button as AntButton, ConfigProvider, Dropdown, Modal, Spin, Tooltip, message } from "antd";
 import { DiagnosticNotice } from "./DiagnosticNotice";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
@@ -16,6 +16,7 @@ import { OrgTree, PositionCard } from "@roleweave/ui";
 import type { OrgDropPosition, PositionCardData } from "@roleweave/ui";
 import type {
   ApprovalView,
+  DocsFileResponse,
   ChangeManifest,
   EmployeeModelConfig,
   GroupTimeline,
@@ -34,6 +35,7 @@ import type {
   WorkspaceCreateResponse,
   WorkspaceInfoResponse,
 } from "@roleweave/shared";
+import { parseDocRef } from "@roleweave/shared/docs";
 import { ChevronsRight, FolderKanban, FolderOpen, Inbox, MessagesSquare, MoreHorizontal, Network, PanelLeft, PencilLine, Plus, Settings, Undo2, X } from "lucide-react";
 import { useThemeMode, useThemeProfile } from "./theme-toggle";
 import { useTheme, ThemeProvider } from "./theme-context";
@@ -57,6 +59,8 @@ import {
   useEngineLabel,
 } from "./turns";
 import { EngineIcon } from "./turns/engine-icon";
+import { TurnThread } from "./turns/TurnThread";
+import { workspaceResourcePath } from "./workspace-resource-path";
 import type {
   CreateTurnRequest,
   PositionMentionOption,
@@ -77,6 +81,7 @@ import { useConversationCopy } from "./locales/conversation";
 import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh-coordinator";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
+import { DocViewer } from "./docs/DocViewer";
 import { ReportsCenter } from "./reports/ReportsCenter";
 import { ApprovalQueue, isActionablePending, type ApprovalQueueItem } from "./approvals";
 import { useApprovals } from "./approvals/useApprovals";
@@ -86,6 +91,7 @@ import { GoalsModule } from "./goals/GoalsModule";
 import { ProjectManagementModule } from "./projects/ProjectManagementModule";
 import { ProjectSwitcher } from "./project/ProjectSwitcher";
 import { ProjectWorkspaceDialog } from "./project/ProjectWorkspaceDialog";
+import { WindowTitleBar } from "./window/WindowTitleBar";
 import { assignDefaultAvatars, avatarSrcFor, readAvatarPreferences, type AvatarValue } from "./PositionAvatar";
 
 /** #480: keep Timeline/Drawer/Progress off the default App graph so org
@@ -269,6 +275,8 @@ function AppInner({
   }, [toggleRailExpanded]);
   const [memorySource, setMemorySource] = useState<MemorySource>("docs");
   const [resourceRequest, setResourceRequest] = useState<{ positionId: string; path: string; nonce: number } | null>(null);
+  const resourceReadVersion = useRef(0);
+  const [roleDocument, setRoleDocument] = useState<{ positionId: string; path: string; loading: boolean; error: boolean; doc: DocsFileResponse | null } | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const healthReadVersion = useRef(0);
   const refreshReadVersion = useRef(0);
@@ -353,11 +361,19 @@ function AppInner({
   const [reports, setReports] = useState<ReportsResponse | null>(null);
   const reportsRead = useRef(0);
   const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsUpdatedAt, setReportsUpdatedAt] = useState<string>();
   const [reportsError, setReportsError] = useState<string | null>(null);
+  const [approvalFocusId, setApprovalFocusId] = useState<string>();
   const [reportsFocusTurnId, setReportsFocusTurnId] = useState<string | null>(null);
   useEffect(() => setReportsFocusTurnId(null), [workspaceInfo?.open, workspaceInfo?.path]);
   const [sessionFocusTurnId, setSessionFocusTurnId] = useState<string | null>(null);
   useEffect(() => setSessionFocusTurnId(null), [workspaceInfo?.open, workspaceInfo?.path]);
+  const legacyResultRequest = useRef(0);
+  const [legacyResult, setLegacyResult] = useState<{ positionId: string; turnId: string; loading: boolean; turns: TurnRecord[]; error?: string } | null>(null);
+  useEffect(() => {
+    legacyResultRequest.current += 1;
+    setLegacyResult(null);
+  }, [workspaceInfo?.open, workspaceInfo?.path]);
   const [orgBusy, setOrgBusy] = useState(false);
   const [orgFeedback, setOrgFeedback] = useState<{ tone: "info" | "warn"; text: string } | null>(null);
   const [orgMessage, orgMessageContextHolder] = message.useMessage();
@@ -415,6 +431,7 @@ function AppInner({
   const groupWorkspaceScope = useMemo(() => Symbol("group-workspace"), [workspaceInfo?.path, workspaceInfo?.open]);
   const latestGroupWorkspaceScope = useRef(groupWorkspaceScope);
   latestGroupWorkspaceScope.current = groupWorkspaceScope;
+  useEffect(() => { resourceReadVersion.current += 1; setRoleDocument(null); }, [groupWorkspaceScope]);
   const [groupDraftSeed, setGroupDraftSeed] = useState<{ members: string[]; nonce: number; scope: symbol } | null>(null);
   /** 亮/暗跟随 <html data-theme>，antd cssinjs 与 --ui-* skin 同步切换。 */
   const themeMode = useThemeMode();
@@ -434,13 +451,17 @@ function AppInner({
     setEditPosition(null);
     void window.owb.position(editTargetId).then((res) => {
       if (!alive) return;
-      const body = res.body as { position?: PositionCardData; code?: string };
+      const body = res.body as { position?: PositionCardData; code?: string; agentEngine?: unknown };
       if (res.status !== 200 || !body.position) {
         setEditTargetId(undefined);
         setOrgFeedback({ tone: "warn", text: t("org.stalePosition") });
         return;
       }
       setEditPosition(normalizePositionForDisplay(body.position, locale));
+      if (isTurnEngine(body.agentEngine)) {
+        const targetEngine = body.agentEngine;
+        setPositionEngines(current => ({ ...current, [body.position!.id]: targetEngine }));
+      }
     }).catch(() => {
       if (alive) setEditTargetId(undefined);
     });
@@ -552,15 +573,14 @@ function AppInner({
       const response = await window.owb.reports();
       if (!isCurrent()) return;
       if (response.status !== 200) {
-        setReports(null);
         setReportsError(apiErrorMessage(response.body, t("rep.readFail")));
         return;
       }
       setReports(response.body as ReportsResponse);
+      setReportsUpdatedAt(new Date().toISOString());
       setReportsError(null);
     } catch {
       if (isCurrent()) {
-        setReports(null);
         setReportsError(t("rep.readFailOffline"));
       }
     } finally {
@@ -600,7 +620,7 @@ function AppInner({
       backupWorkspace.current = { path: backupPath };
       backupRead.current += 1;
       reportsRead.current += 1;
-      setReports(null);
+      setReports(null); setReportsUpdatedAt(undefined); setApprovalFocusId(undefined);
       setReportsError(null);
       setReportsLoading(false);
       setBackups([]);
@@ -699,7 +719,7 @@ function AppInner({
       selectedSessionIdRef.current = null;
       setTurnError(null);
       setBackups([]);
-      setReports(null);
+      setReports(null); setReportsUpdatedAt(undefined); setApprovalFocusId(undefined);
       setReportsError(null);
     }
     } catch {
@@ -1099,6 +1119,55 @@ function AppInner({
     selectPosition(positionId);
   }, [ensureActiveSession, selectPosition, setActiveModule]);
 
+  const openResource = useCallback(async (positionId: string, path: string, origin: "role" | "workspace") => {
+    const workspace = workspacePathRef.current;
+    const scope = latestGroupWorkspaceScope.current;
+    const request = ++resourceReadVersion.current;
+    const current = () => request === resourceReadVersion.current && workspacePathRef.current === workspace
+      && latestGroupWorkspaceScope.current === scope;
+    if (!workspace) return;
+    setRoleDocument(null);
+    if (path.startsWith("vault://notes/")) {
+      setResourceRequest({ positionId, path, nonce: Date.now() });
+      setMemorySource("notes"); setActiveModule("docs");
+      return;
+    }
+    // Graph paths and explicit document URIs identify position files. Preserve
+    // the older turn-link contract for knowledge/* and SKILL.md; other turn
+    // filesystem paths remain confined workspace artifacts.
+    const reference = parseDocRef({ uri: path });
+    if (reference.ok) {
+      const match = /^owb-doc:\/\/([^/]+)\/(.+)$/.exec(reference.ref.uri)!;
+      positionId = match[1]!; path = match[2]!; origin = "role";
+    }
+    if (origin === "workspace" && (/^knowledge\//i.test(path) || path === "SKILL.md")) origin = "role";
+    if (origin === "workspace") {
+      const relativePath = workspaceResourcePath(workspace, path);
+      const openFile = window.owb.openWorkspaceFile;
+      if (!relativePath || !openFile) { message.warning(t("graph.resourceUnavailable")); return; }
+      try { const result = await openFile(relativePath, workspace); if (current() && !result.opened) message.warning(t("graph.resourceUnavailable")); }
+      catch { if (current()) message.warning(t("graph.resourceUnavailable")); }
+      return;
+    }
+    const relativePath = workspaceResourcePath("role-package", path);
+    const readFile = window.owb.positionDocFile;
+    if (!relativePath || !readFile) { message.warning(t("graph.resourceUnavailable")); return; }
+    selectPosition(positionId);
+    const owned = current;
+    setRoleDocument({ positionId, path: relativePath, loading: true, error: false, doc: null });
+    try {
+      const response = await readFile(positionId, relativePath);
+      if (!owned()) return;
+      const doc = response.body as DocsFileResponse;
+      if (response.status !== 200 || doc?.schemaVersion !== "docs-file.v1" || doc.positionId !== positionId || doc.path !== relativePath || typeof doc.content !== "string") throw new Error("invalid_position_document");
+      setRoleDocument({ positionId, path: relativePath, loading: false, error: false, doc });
+    } catch {
+      if (owned()) setRoleDocument({ positionId, path: relativePath, loading: false, error: true, doc: null });
+    } finally {
+      if (request === resourceReadVersion.current && !owned()) setRoleDocument(null);
+    }
+  }, [selectPosition, setActiveModule, t]);
+
   const createTurn = useCallback(async (request: CreateTurnRequest) => {
     const sessionId = selectedSessionIdRef.current;
     if (sessionId === null) {
@@ -1398,6 +1467,39 @@ function AppInner({
       if (loaded && reloadSelected) void loadTurnHistory(source.positionId, source.conversationId);
     });
   }, [loadSessions, loadTurnHistory, setActiveModule]);
+
+  const openProjectTurnSource = useCallback((positionId: string, sessionId?: string, turnId?: string) => {
+    if (sessionId) {
+      openTurnSource({ positionId, conversationId: sessionId, turnId });
+      return;
+    }
+    if (!turnId) {
+      selectPosition(positionId);
+      setActiveModule("conversation");
+      return;
+    }
+    // Older project runs used the position store. Inspect that exact result
+    // read-only instead of presenting an unrelated active session as its source.
+    const workspacePath = workspacePathRef.current;
+    const request = ++legacyResultRequest.current;
+    setLegacyResult({ positionId, turnId, loading: true, turns: [] });
+    void window.owb.turnHistory(positionId).then((response) => {
+      if (request !== legacyResultRequest.current || workspacePathRef.current !== workspacePath) return;
+      const history = response.body;
+      if (response.status !== 200 || history.positionId !== positionId || !Array.isArray(history.turns)) {
+        setLegacyResult({ positionId, turnId, loading: false, turns: [], error: t("turn.historyFail") });
+        return;
+      }
+      const source = history.turns.find((turn) => turn.turnId === turnId && turn.positionId === positionId);
+      setLegacyResult({ positionId, turnId, loading: false,
+        turns: source ? adaptTurnHistory({ ...history, turns: [source] }, positionNamesRef.current[positionId] ?? t("org.unknownPosition"), t("turn.unrenderableOutput")) : [],
+        ...(!source ? { error: t("apr.sourceUnavailable") } : {}),
+      });
+    }).catch(() => {
+      if (request === legacyResultRequest.current && workspacePathRef.current === workspacePath)
+        setLegacyResult({ positionId, turnId, loading: false, turns: [], error: t("turn.historyFailOffline") });
+    });
+  }, [openTurnSource, selectPosition, setActiveModule, t]);
 
   const openApprovalSource = useCallback((item: ApprovalQueueItem) => {
     const source = item.source;
@@ -1722,6 +1824,21 @@ function AppInner({
       modelPinnable: health?.hosts?.workbuddy?.modelPinnable,
       model: health?.hosts?.workbuddy?.model,
     },
+    "workbuddy-local": {
+      configured: health?.hosts?.["workbuddy-local"]?.configured === true,
+      ready: health?.hosts?.["workbuddy-local"]?.ready === true,
+      reason: health?.hosts?.["workbuddy-local"]?.nextStep ?? t("misc.workbuddyHostUnknown"),
+      modelPinnable: health?.hosts?.["workbuddy-local"]?.modelPinnable,
+      model: health?.hosts?.["workbuddy-local"]?.model,
+      connection: health?.hosts?.["workbuddy-local"]?.connection,
+    },
+    "qwen-office-local": {
+      configured: health?.hosts?.["qwen-office-local"]?.configured === true,
+      ready: health?.hosts?.["qwen-office-local"]?.ready === true,
+      reason: health?.hosts?.["qwen-office-local"]?.nextStep ?? t("office.connectionUnavailable"),
+      modelPinnable: false,
+      connection: health?.hosts?.["qwen-office-local"]?.connection,
+    },
     gemini: {
       configured: health?.hosts?.gemini?.configured === true,
       ready: health?.hosts?.gemini?.ready === true,
@@ -1793,7 +1910,7 @@ function AppInner({
     const pending = selectedId === null ? undefined : turnStream.pending[selectedId];
     if (pending?.sessionId === selectedSessionId && live.length === 0 &&
         (pending.runId === null || !historyRunIds.has(pending.runId))) {
-      live.push({ id: `pending-${pending.sessionId}`, provisional: true, positionId: pending.positionId,
+      live.push({ id: `pending-${pending.sessionId}`, provisional: true, dispatchPending: true, positionId: pending.positionId,
         positionName: positionNames[pending.positionId] ?? t("org.unknownPosition"), engine: pending.engine,
         input: pending.input, status: "running", createdAt: pending.startedAt });
     }
@@ -1867,7 +1984,7 @@ function AppInner({
   const projectsActive = ["projects", "goals", "progress"].includes(activeModule);
   const inboxActive = activeModule === "approvals" || activeModule === "reports";
   const sidebarlessModule = !collaborationActive;
-  const pendingApprovals = approvalItems.filter((item) => isActionablePending(item, Date.now())).length;
+  const pendingApprovals = approvalItems.filter((item) => isActionablePending(item, Date.now()) && item.canDecide !== false).length;
   const directoryActions = (
     <div className="owb-side-head__actions">
       <AntButton size="small" disabled={orgBusy} icon={<Undo2 aria-hidden="true" size={12} />}
@@ -1948,17 +2065,7 @@ function AppInner({
       {managementTarget === null && workspaceInfo?.open ? <ProjectSettings workspace={workspaceInfo} onClose={() => setManagementTarget(undefined)}
         onMemory={() => { treeAction(null, "memory"); setManagementTarget(undefined); }} onCollaborate={() => { treeAction(null, "group"); setManagementTarget(undefined); }}
         onSwitch={() => { setManagementTarget(undefined); requestSettingsLeave(() => setProjectHubOpen(true)); }} /> : null}
-      {/* 自定义 40px 标题栏（设计稿 .wintitle）：品牌标 + 窗口点 + 引擎/工作区
-          状态 chip。状态灯诚实映射 /health，不假装在线。 */}
-      <header
-        className="owb-wintitle"
-        onDoubleClick={() => void window.owb.windowToggleMaximize?.()}
-      >
-        {/* #248 小 UI 单①：左上只保留三个窗口控制钮，删品牌标；头像将来放右上，现在不加。 */}
-        <WindowControls />
-        <span className="owb-wintitle__name">RoleWeave</span>
-        <span className="owb-wintitle__spacer" />
-      </header>
+      <WindowTitleBar />
 
     {/* 壳层尺寸（导轨 54 / 侧栏 300 / topbar 48）定在 app.css 的
         `.owb-app .ui-app-shell` 里，不走内联 style——内联优先级最高，会把
@@ -2008,7 +2115,7 @@ function AppInner({
       sidebar={collaborationActive ?
         <Sidebar label={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")}
           header={<div className="owb-collaboration-toolbar">
-            <nav className="owb-context-tabs owb-context-tabs--subtle" aria-label={t("nav.collaboration")}>
+            <nav className="owb-context-tabs owb-context-tabs--subtle owb-view-switch" aria-label={t("nav.collaboration")}>
               <AntButton type="text" aria-pressed={activeModule !== "groups"} onClick={() => setActiveModule("conversation")}>{t("nav.direct")}</AntButton>
               <AntButton type="text" aria-pressed={activeModule === "groups"} onClick={() => setActiveModule("groups")}>{t("rail.groups")}</AntButton>
             </nav>
@@ -2064,6 +2171,7 @@ function AppInner({
             <EditEmployeeDrawer
               open={editTargetId !== undefined && editPosition !== null}
               position={editPosition}
+              engine={editPosition ? engineForPosition(editPosition.id) : undefined}
               busy={orgBusy}
               onClose={() => setEditTargetId(undefined)}
               onSave={(patch) => saveEmployeeProfile(patch, editTargetId)}
@@ -2087,10 +2195,17 @@ function AppInner({
           />
       <div className="owb-main">
         {collaborationActive ? <div className={`owb-context-header${activeModule !== "groups" ? " owb-context-header--employee" : ""}`}>
-          <AntButton className="owb-contacts-toggle" type="text" aria-label={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")} title={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")} icon={<PanelLeft size={15} />} aria-expanded={contactsOpen} onClick={() => setContactsOpen(!contactsOpen)} />
-          {activeModule === "groups" ? <strong>{t("rail.groups")}</strong> : <>
-            <strong className="owb-context-header__name" title={selectedId ? positionNames[selectedId] ?? selectedId : t("nav.selectEmployee")}>{selectedId ? positionNames[selectedId] ?? selectedId : t("nav.selectEmployee")}</strong>
-            <nav className="owb-context-tabs owb-context-tabs--subtle" aria-label={t("nav.employee")}>
+          <Tooltip title={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")} trigger={["hover", "focus"]}>
+            <AntButton className="owb-contacts-toggle" type="text" aria-label={t(activeModule === "groups" ? "nav.groupList" : "nav.contacts")} icon={<PanelLeft size={15} />} aria-expanded={contactsOpen} onClick={() => setContactsOpen(!contactsOpen)} />
+          </Tooltip>
+          {activeModule === "groups" ? <strong className="owb-context-label">{t("rail.groups")}</strong> : <>
+            <div className="owb-context-header__identity owb-context-label">
+              {selectedId ? <img className="owb-context-header__avatar" src={avatarUrls[selectedId] ?? avatarSrcFor(selectedId)} alt="" /> : null}
+              <Tooltip title={selectedId ? positionNames[selectedId] ?? selectedId : t("nav.selectEmployee")}>
+                <strong className="owb-context-header__name">{selectedId ? positionNames[selectedId] ?? selectedId : t("nav.selectEmployee")}</strong>
+              </Tooltip>
+            </div>
+            <nav className="owb-context-tabs owb-context-tabs--subtle owb-view-switch" aria-label={t("nav.employee")}>
               <AntButton type="text" aria-pressed={activeModule === "conversation"} onClick={() => setActiveModule("conversation")}>{t("nav.conversation")}</AntButton>
               <AntButton type="text" aria-pressed={activeModule === "docs"} onClick={() => { setMemorySource("docs"); setActiveModule("docs"); }}>{t("rail.memory")}</AntButton>
               <AntButton type="text" aria-pressed={activeModule === "profile"} onClick={() => setActiveModule("profile")}>{t("nav.profile")}</AntButton>
@@ -2098,23 +2213,23 @@ function AppInner({
             <div className="owb-conversation-header-host" ref={setConversationHeaderHost} hidden={activeModule !== "conversation"} />
           </>}
         </div> : activeModule === "org" ? <div className="owb-context-header">
-          <strong>{t("rail.org")}</strong>
-          <nav className="owb-context-tabs" aria-label={t("nav.organization")}>
-            <AntButton type={orgView === "structure" ? "primary" : "text"} aria-pressed={orgView === "structure"} onClick={() => setOrgView("structure")}>{t("nav.structure")}</AntButton>
-            <AntButton type={orgView === "overview" ? "primary" : "text"} aria-pressed={orgView === "overview"} onClick={() => setOrgView("overview")}>{t("nav.graph")}</AntButton>
+          <strong className="owb-context-label">{t("rail.org")}</strong>
+          <nav className="owb-context-tabs owb-view-switch" aria-label={t("nav.organization")}>
+            <AntButton type="text" aria-pressed={orgView === "structure"} onClick={() => setOrgView("structure")}>{t("nav.structure")}</AntButton>
+            <AntButton type="text" aria-pressed={orgView === "overview"} onClick={() => setOrgView("overview")}>{t("nav.graph")}</AntButton>
           </nav>
         </div> : projectsActive ? <div className="owb-context-header">
-          <strong>{t("rail.projects")}</strong>
-          <nav className="owb-context-tabs" aria-label={t("nav.projects")}>
-            <AntButton type={activeModule === "projects" ? "primary" : "text"} aria-pressed={activeModule === "projects"} onClick={() => setActiveModule("projects")}>{t("project.moduleTitle")}</AntButton>
-            <AntButton type={activeModule === "goals" ? "primary" : "text"} aria-pressed={activeModule === "goals"} onClick={() => setActiveModule("goals")}>{t("rail.goals")}</AntButton>
-            <AntButton type={activeModule === "progress" ? "primary" : "text"} aria-pressed={activeModule === "progress"} onClick={() => setActiveModule("progress")}>{t("rail.progress")}</AntButton>
+          <strong className="owb-context-label">{t("rail.projects")}</strong>
+          <nav className="owb-context-tabs owb-view-switch" aria-label={t("nav.projects")}>
+            <AntButton type="text" aria-pressed={activeModule === "projects"} onClick={() => setActiveModule("projects")}>{t("project.moduleTitle")}</AntButton>
+            <AntButton type="text" aria-pressed={activeModule === "goals"} onClick={() => setActiveModule("goals")}>{t("rail.goals")}</AntButton>
+            <AntButton type="text" aria-pressed={activeModule === "progress"} onClick={() => setActiveModule("progress")}>{t("rail.progress")}</AntButton>
           </nav>
-        </div> : inboxActive ? <div className="owb-context-header">
-          <strong>{t("rail.inbox")}</strong>
-          <nav className="owb-context-tabs" aria-label={t("nav.inbox")}>
-            <AntButton type={activeModule === "approvals" ? "primary" : "text"} aria-label={t("rail.approvals")} aria-pressed={activeModule === "approvals"} onClick={() => { setActiveModule("approvals"); void approvalState.refresh(); }}>{t("rail.approvals")}<Badge count={pendingApprovals} size="small" /></AntButton>
-            <AntButton type={activeModule === "reports" ? "primary" : "text"} aria-pressed={activeModule === "reports"} onClick={() => { setReportsFocusTurnId(null); setActiveModule("reports"); void loadReports(); }}>{t("rail.reports")}</AntButton>
+        </div> : inboxActive ? <div className="owb-context-header owb-context-header--inbox">
+          <strong className="owb-context-label">{t("rail.inbox")}</strong>
+          <nav className="owb-context-tabs owb-view-switch" aria-label={t("nav.inbox")}>
+            <AntButton type="text" aria-label={t("rail.approvals")} aria-pressed={activeModule === "approvals"} onClick={() => { setActiveModule("approvals"); void approvalState.refresh(); }}>{t("rail.approvals")}<Badge count={pendingApprovals} size="small" /></AntButton>
+            <AntButton type="text" aria-pressed={activeModule === "reports"} onClick={() => { setReportsFocusTurnId(null); setActiveModule("reports"); void loadReports(); }}>{t("rail.reports")}</AntButton>
           </nav>
         </div> : null}
         {startupError ? (
@@ -2134,7 +2249,7 @@ function AppInner({
         {orgFeedback?.tone === "warn" ? (
           <Alert type="warning" showIcon role="alert" title={orgFeedback.text} />
         ) : null}
-        {reportsError ? <Alert type="warning" showIcon role="alert" title={reportsError} /> : null}
+
         {fallbackNotice ? (
           <Alert
             type="warning"
@@ -2147,7 +2262,7 @@ function AppInner({
         ) : null}
         {activeModule === "progress" ? (
           <Suspense fallback={<div className="owb-progress" aria-hidden="true"><Skeleton /></div>}>
-            <ProgressBoard workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
+            <ProgressBoard key={workspaceInfo?.path} workspaceOpen={workspaceInfo?.open === true} positionNames={positionNames} />
           </Suspense>
         ) : activeModule === "reports" ? (
           <ReportsCenter
@@ -2156,7 +2271,12 @@ function AppInner({
             workspaceScope={groupWorkspaceScope}
             onOpenExperiments={() => { setSettingsInitialCategory("experiments"); setActiveModule("settings"); }}
             onRefresh={() => void loadReports()}
+            approvals={approvalItems}
+            onOpenApproval={id => { setApprovalFocusId(id); setActiveModule("approvals"); void approvalState.refresh(); }}
             reports={reports}
+            errorMessage={reportsError ?? undefined}
+            updatedAt={reportsUpdatedAt}
+            onNavigateToOrg={() => setActiveModule("conversation")}
             loading={reportsLoading}
             positionNames={positionNames}
             positionColors={positionColors}
@@ -2165,6 +2285,9 @@ function AppInner({
           />
         ) : activeModule === "approvals" ? (
           <ApprovalQueue
+            key={workspaceInfo?.path}
+            focusApprovalId={approvalFocusId}
+            onRefresh={() => void approvalState.refresh()}
             items={approvalItems}
             dataState={approvalState.ready ? "ready" : "not-connected"}
             loading={approvalState.loading && !approvalState.ready}
@@ -2187,27 +2310,7 @@ function AppInner({
             positionAvatarSources={avatarUrls}
             ownerPositionId={snapshot?.owner}
             onOpenApprovals={() => setActiveModule("approvals")}
-            onOpenBoundSession={(positionId, sessionId, turnId) => {
-              if (selectedIdRef.current === positionId) {
-                if (sessionId) {
-                  const key = JSON.stringify([workspacePathRef.current, positionId]);
-                  selectedSessions.current[key] = sessionId;
-                  setSelectedSessionId(sessionId);
-                  selectedSessionIdRef.current = sessionId;
-                } else {
-                  void ensureActiveSession(positionId);
-                }
-              } else {
-                selectPosition(positionId);
-                if (sessionId) {
-                  selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
-                }
-              }
-              if (turnId) {
-                setSessionFocusTurnId(turnId);
-              }
-              setActiveModule("conversation");
-            }}
+            onOpenBoundSession={openProjectTurnSource}
           />
         ) : activeModule === "goals" ? (
           <GoalsModule
@@ -2219,27 +2322,7 @@ function AppInner({
             positionAvatarSources={avatarUrls}
             ownerPositionId={snapshot?.owner}
             onOpenApprovals={() => setActiveModule("approvals")}
-            onOpenBoundSession={(positionId, sessionId, turnId) => {
-              if (selectedIdRef.current === positionId) {
-                if (sessionId) {
-                  const key = JSON.stringify([workspacePathRef.current, positionId]);
-                  selectedSessions.current[key] = sessionId;
-                  setSelectedSessionId(sessionId);
-                  selectedSessionIdRef.current = sessionId;
-                } else {
-                  void ensureActiveSession(positionId);
-                }
-              } else {
-                selectPosition(positionId);
-                if (sessionId) {
-                  selectedSessions.current[JSON.stringify([workspacePathRef.current, positionId])] = sessionId;
-                }
-              }
-              if (turnId) {
-                setSessionFocusTurnId(turnId);
-              }
-              setActiveModule("conversation");
-            }}
+            onOpenBoundSession={openProjectTurnSource}
           />
 
         ) : activeModule === "settings" ? (
@@ -2247,7 +2330,25 @@ function AppInner({
         ) : activeModule === "docs" ? (
           <MemoryModule
             key={workspaceInfo?.path}
-            onContinue={(id, sessionId) => { selectPosition(id); selectedSessions.current[JSON.stringify([workspacePathRef.current, id])] = sessionId; setActiveModule("conversation"); }}
+            workspaceKey={workspaceInfo?.path}
+            onContinue={(id, sessionId) => {
+              const samePosition = selectedIdRef.current === id;
+              selectPosition(id);
+              selectedSessions.current[JSON.stringify([workspacePathRef.current, id])] = sessionId;
+              if (samePosition) {
+                selectedSessionIdRef.current = sessionId;
+                setSelectedSessionId(sessionId);
+              }
+              setActiveModule("conversation");
+            }}
+            onOpenSource={(source) => {
+              if (!source.positionId || !source.sessionId) return;
+              const samePosition = selectedIdRef.current === source.positionId;
+              selectedSessions.current[JSON.stringify([workspacePathRef.current, source.positionId])] = source.sessionId;
+              selectPosition(source.positionId);
+              if (samePosition) { selectedSessionIdRef.current = source.sessionId; setSelectedSessionId(source.sessionId); }
+              setSessionFocusTurnId(source.turnId ?? null); setActiveModule("conversation");
+            }}
             workspaceOpen={workspaceInfo?.open === true}
             positions={positions}
             selectedPositionId={selectedId}
@@ -2279,12 +2380,8 @@ function AppInner({
             error={graph.error}
             onReload={graph.reload}
             onOpenAgent={openConversation}
-            onOpenResource={(positionId, path) => {
-              selectPosition(positionId);
-              setResourceRequest({ positionId, path, nonce: Date.now() });
-              setMemorySource("docs");
-              setActiveModule("docs");
-            }}
+            onOpenDrive={() => { setResourceRequest(null); setMemorySource("drive"); setActiveModule("docs"); }}
+            onOpenResource={(positionId, path) => { void openResource(positionId, path, "role"); }}
           />
         ) : null}
         {groupsOpened ? <div className="owb-module-pane" hidden={activeModule !== "groups"}>
@@ -2303,6 +2400,7 @@ function AppInner({
             liveRuns={turnStream.runs}
             onSpawnRuns={spawnGroupRuns}
             onReconcileTimeline={reconcileGroup}
+            onOpenResource={(positionId, path) => { void openResource(positionId, path, "workspace"); }}
             listHost={groupListHost}
             onSelectGroup={() => setContactsOpen(false)}
           />
@@ -2312,6 +2410,7 @@ function AppInner({
               <div className="owb-position-column">
                 <PositionCard
                   position={card.data}
+                  nativeToolOwner={card.data && engineForPosition(card.data.id) === "qwen-office-local" ? engineLabel("qwen-office-local") : undefined}
                   loading={card.loading}
                   notFound={card.notFound}
                   running={selectedId !== null && runningPositionIds.has(selectedId)}
@@ -2397,19 +2496,23 @@ function AppInner({
             decidedApprovalIds={decidedApprovals}
             cancelling={turnCancelling}
             focusTurnId={sessionFocusTurnId}
-            onOpenResource={(positionId, path) => {
-              if (!/^knowledge\//i.test(path) && path !== "SKILL.md") {
-                void window.owb.openWorkspaceFile?.(path);
-                return;
-              }
-              selectPosition(positionId);
-              setResourceRequest({ positionId, path, nonce: Date.now() });
-              setMemorySource("docs");
-              setActiveModule("docs");
-            }}
+            onOpenResource={(positionId, path) => { void openResource(positionId, path, "workspace"); }}
           />
           </div>
         </> : null}
+        <Modal open={roleDocument !== null} title={roleDocument ? `${t("resources.docs.title")} · ${positionNames[roleDocument.positionId] ?? roleDocument.positionId} / ${roleDocument.path}` : ""}
+          footer={null} width={800} styles={{ body: { maxHeight: "70dvh", overflowY: "auto" } }}
+          onCancel={() => { resourceReadVersion.current += 1; setRoleDocument(null); }}>
+          {roleDocument?.loading ? <div role="status" aria-label={t("docs.reading")}><Spin /></div> : roleDocument?.error ? <Alert type="error" showIcon title={t("docs.readFail")} /> : roleDocument?.doc ?
+            <DocViewer source={roleDocument.doc.content} path={roleDocument.path} title={roleDocument.path} version={roleDocument.doc.version} updatedAt={roleDocument.doc.modifiedAt} /> : null}
+        </Modal>
+        <Modal open={legacyResult !== null} title={t("project.legacyResult")} footer={null}
+          onCancel={() => { legacyResultRequest.current += 1; setLegacyResult(null); }} width={800}>
+          <p>{t("project.legacyResultReadOnly")}</p>
+          {legacyResult?.error ? <Alert type="error" message={legacyResult.error} /> : null}
+          <TurnThread turns={legacyResult?.turns ?? []} loading={legacyResult?.loading ?? false}
+            emptyPrompt={t("apr.sourceUnavailable")} scrollKey={`legacy:${legacyResult?.positionId}:${legacyResult?.turnId}`} />
+        </Modal>
       </div>
     </AppShell>
     </div>
@@ -2534,11 +2637,6 @@ function findNodeById(nodes: OrgTreeNodeV1[], id: string): OrgTreeNodeV1 | null 
   return null;
 }
 
-/** Real window chrome for the frameless shell (设计稿 .wintitle 左上三点).
- * macOS-style traffic lights: close / minimize / maximize, each an actual
- * button with an accessible name — the previous decorative dots sat under the
- * native frame and did nothing. Guarded with `?.` so the renderer still boots
- * against an older preload bridge (tests stub a partial bridge). */
 function normalizePositionForDisplay(position: PositionCardData, locale: OwbLocale): PositionCardData {
   return localizePositionCard({
     ...position,
@@ -2555,49 +2653,6 @@ function normalizePositionForDisplay(position: PositionCardData, locale: OwbLoca
   }, locale);
 }
 
-function WindowControls() {
-  const t = useT();
-  return (
-    <span className="owb-wintitle__controls">
-      <button
-        type="button"
-        className="owb-wctl owb-wctl--close"
-        aria-label={t("win.close")}
-        title={t("win.closeTitle")}
-        onClick={() => void window.owb.windowClose?.()}
-      >
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        className="owb-wctl owb-wctl--min"
-        aria-label={t("win.minimize")}
-        title={t("win.minimizeTitle")}
-        onClick={() => void window.owb.windowMinimize?.()}
-      >
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2.2 5h5.6" />
-        </svg>
-      </button>
-      {/* 文案保持静态：WSLg 下 isMaximized() 不可信，不向用户谎报当前状态。 */}
-      <button
-        type="button"
-        className="owb-wctl owb-wctl--max"
-        aria-label={t("win.maximize")}
-        title={t("win.maximizeTitle")}
-        onClick={() => void window.owb.windowToggleMaximize?.()}
-      >
-        {/* #248 小 UI 单②：fullscreen 为绿底斜杠 ⃠ glyph。 */}
-        <svg viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2.8 7.2L7.2 2.8" />
-        </svg>
-      </button>
-    </span>
-  );
-}
-
 function Breadcrumbs({
   workspace,
 }: {
@@ -2612,16 +2667,17 @@ function Breadcrumbs({
   };
   return (
     <span className="owb-topbar-context">
-      <button
-        type="button"
-        className="owb-workspace-location"
-        title={`${workspace.path} · ${t("misc.workspaceRevealHint")}`}
-        aria-label={`${t("misc.workspaceRevealHint")}: ${workspace.path}`}
-        onClick={() => void revealInFileManager()}
-      >
-        <FolderOpen aria-hidden="true" size={12} />
-        <span className="owb-workspace-location__path">{workspace.path}</span>
-      </button>
+      <Tooltip title={`${workspace.path} · ${t("misc.workspaceRevealHint")}`} trigger={["hover", "focus"]}>
+        <button
+          type="button"
+          className="owb-workspace-location"
+          aria-label={`${t("misc.workspaceRevealHint")}: ${workspace.path}`}
+          onClick={() => void revealInFileManager()}
+        >
+          <FolderOpen aria-hidden="true" size={12} />
+          <span className="owb-workspace-location__path">{workspace.path}</span>
+        </button>
+      </Tooltip>
     </span>
   );
 }

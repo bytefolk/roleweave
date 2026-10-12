@@ -36,17 +36,17 @@ describe('shared settings draft',()=>{
   await waitFor(()=>expect(input.value).toBe(''));
  });
  it('checks only a saved service and reenables checking after the shared draft is saved',async()=>{
-  const api=install(snapshot({...initial(),services:{doc:{apiUrl:'https://doc.example'}}}));
-  const probe=vi.fn().mockResolvedValue({status:200,body:{kind:'doc',state:'ready',version:'1.0',checkedAt:'2026-09-30T00:00:00Z'}});
-  Object.assign(window.owb.services,{probe,list:vi.fn().mockResolvedValue({status:200,body:{connections:[{kind:'doc',configured:true,apiUrl:'https://doc.example',tokenConfigured:false,webUrl:null,workspaceId:null}]}})});
+  const api=install(snapshot({...initial(),services:{mem:{apiUrl:'https://mem.example'}}}));
+  const probe=vi.fn().mockResolvedValue({status:200,body:{kind:'mem',state:'ready',version:'1.0',checkedAt:'2026-09-30T00:00:00Z'}});
+  Object.assign(window.owb.services,{probe,list:vi.fn().mockResolvedValue({status:200,body:{connections:[{kind:'mem',configured:true,apiUrl:'https://mem.example',tokenConfigured:false,webUrl:null,workspaceId:null}]}})});
   await show();fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));
   const card=document.querySelectorAll('.owb-config-service')[0]!;
   const check=within(card as HTMLElement).getByRole('button',{name:'检查连接'});
   await waitFor(()=>expect(check).toBeEnabled());
-  fireEvent.change(screen.getByRole('textbox',{name:'Doc Web URL'}),{target:{value:'https://doc.example/web'}});
+  fireEvent.change(screen.getByRole('textbox',{name:'Mem Web URL'}),{target:{value:'https://mem.example/web'}});
   expect(check).toBeDisabled();fireEvent.click(check);expect(probe).not.toHaveBeenCalled();
   fireEvent.click(footerSave());await waitFor(()=>expect(check).toBeEnabled());
-  fireEvent.click(check);await waitFor(()=>expect(probe).toHaveBeenCalledWith('doc'));
+  fireEvent.click(check);await waitFor(()=>expect(probe).toHaveBeenCalledWith('mem'));
   expect(within(card as HTMLElement).getByText('服务 API 可访问，授权有效')).toBeInTheDocument();
   expect(api.save).toHaveBeenCalledTimes(1);
  });
@@ -160,12 +160,12 @@ describe('shared settings draft',()=>{
  });
  it('retains an unsaved service token through temporarily invalid JSONC and category changes',async()=>{
   const api=install();await show();fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));
-  fireEvent.change(screen.getByRole('textbox',{name:'Doc API URL'}),{target:{value:'https://doc.example'}});
-  const token=document.getElementById('config-doc-token') as HTMLInputElement;fireEvent.input(token,{target:{value:'dummy-uncommitted-token'}});
+  fireEvent.change(screen.getByRole('textbox',{name:'Mem API URL'}),{target:{value:'https://mem.example'}});
+  const token=document.getElementById('config-mem-token') as HTMLInputElement;fireEvent.input(token,{target:{value:'dummy-uncommitted-token'}});
   const editor=await fileView(),valid=(editor as HTMLTextAreaElement).value;
-  fireEvent.change(editor,{target:{value:'{ broken'}});expect(document.getElementById('config-doc-token')).toBe(token);expect(token.value).toBe('dummy-uncommitted-token');
+  fireEvent.change(editor,{target:{value:'{ broken'}});expect(document.getElementById('config-mem-token')).toBe(token);expect(token.value).toBe('dummy-uncommitted-token');
   fireEvent.change(editor,{target:{value:valid}});fireEvent.click(screen.getByRole('tab',{name:'文档与记忆'}));expect(token.value).toBe('dummy-uncommitted-token');
-  fireEvent.click(footerSave());await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1));expect((api.save.mock.calls[0]![0] as unknown as {serviceChanges:{doc:string}}).serviceChanges.doc).toBe('dummy-uncommitted-token');
+  fireEvent.click(footerSave());await waitFor(()=>expect(api.save).toHaveBeenCalledTimes(1));expect((api.save.mock.calls[0]![0] as unknown as {serviceChanges:{mem:string}}).serviceChanges.mem).toBe('dummy-uncommitted-token');
  });
  it('updates category reactively when initialCategory changes after mount',async()=>{
   install();

@@ -1,6 +1,6 @@
 import type { EmployeeModelConnection, TurnRecord as ApiTurnRecord, TurnAttachment } from "@roleweave/shared";
 export type { TurnAttachment } from "@roleweave/shared";
-export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "gemini" | "openai-compatible";
+export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "workbuddy-local" | "qwen-office-local" | "gemini" | "openai-compatible";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
 
@@ -80,6 +80,8 @@ export interface TurnRecord {
   model?: string;
   /** Renderer-only live/pending projection; never a persisted receipt. */
   provisional?: boolean;
+  /** Optimistic dispatch waiting for the server to capture its model snapshot. */
+  dispatchPending?: boolean;
   id: string;
   positionId: string;
   positionName: string;

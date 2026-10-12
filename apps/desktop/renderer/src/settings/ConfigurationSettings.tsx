@@ -151,7 +151,7 @@ export function ConfigurationSettings({updates, initialCategory, ...scope}:{upda
   [copy('Chat input'), `${config.chat.sendShortcut==='enter'?'Enter':'⌘ / Ctrl + Enter'} · ${copy(config.chat.rememberLayout?'Remember layout':'Do not remember layout')}`],
   [copy('Runtime'), config.runtime.mode==='wsl'?`WSL · ${config.runtime.distro||copy('Default distribution')}`:copy(config.runtime.mode==='native'?'Native':'Launch default')],
   [copy('Host connections'), Object.entries(hostKeys).map(([name,key])=>`${name}: ${copy(snapshot?.sources[`hosts.${key}`]==='environment'?'Environment override':Object.keys(config.hosts[key]??{}).length?'Saved locally':'Host default login')}`).join(' · ')],
-  [copy('Docs and memory'), (['doc','mem'] as const).map(kind=>`${kind==='doc'?'Doc':'Mem'}: ${config.services[kind]?.apiUrl??copy(config.services[kind]===null?'Disconnected':'Launch default')}`).join(' · ')],
+  [copy('Docs and memory'), `Mem: ${config.services.mem?.apiUrl??copy(config.services.mem===null?'Disconnected':'Launch default')}`],
  ] : [];
  const input=(label:string,path:string[],value:string|undefined,placeholder?:string)=><label className="owb-config-field"><span>{label}</span><Input value={value??''} onChange={e=>field(path,e.target.value||undefined)} placeholder={placeholder} spellCheck={false} maxLength={4096} /></label>;
  async function browseProjectDirectory(){setLocationBusy(true);setLocationError(false);try{const result=await window.owb.configuration!.pickProjectDirectory();if('ok' in result&&result.ok)setSelectedLocation(result.path);else if(!('canceled' in result))setLocationError(true);}catch{setLocationError(true);}finally{setLocationBusy(false);}}

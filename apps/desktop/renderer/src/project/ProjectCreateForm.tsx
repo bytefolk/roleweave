@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button as AntButton, Input, Select } from "antd";
-import { FolderPlus } from "lucide-react";
+import { ChevronDown, FolderPlus } from "lucide-react";
 import type { WorkspaceCreateResponse } from "@roleweave/shared";
 import { useT } from "@roleweave/ui";
 import { AGENT_HOST_LABEL, AGENT_HOSTS, defaultAgentHost, resolveAgentEngine, type AgentHost } from "../turns/agent-host";
 import type { TurnEngine, TurnEngineAvailability } from "../turns/types";
+import "./project-create-presets.css";
+
+const PROJECT_PRESETS = ["general", "software", "research"] as const;
+type ProjectPreset = (typeof PROJECT_PRESETS)[number] | "custom";
+type ProjectDraft = { business: string; description: string };
 
 interface ProjectCreateFormProps {
   onCancel: () => void;
@@ -40,23 +45,65 @@ export function slugify(value: string): string {
 /** The creation form is intentionally independent from the workspace picker. */
 export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAvailability, targetPath, initialBusiness = "" }: ProjectCreateFormProps) {
   const t = useT();
-  const [business, setBusiness] = useState(initialBusiness);
-  const [description, setDescription] = useState("");
+  const initialDraft = (preset: ProjectPreset): ProjectDraft => ({
+    business: initialBusiness || (preset === "custom" ? "" : t(`project.template.${preset}.name`)),
+    description: preset === "custom" ? "" : t(`project.template.${preset}.description`),
+  });
+  const [preset, setPreset] = useState<ProjectPreset>("general");
+  const [draft, setDraft] = useState<ProjectDraft>(() => initialDraft("general"));
+  const { business, description } = draft;
+  const drafts = useRef<Partial<Record<ProjectPreset, ProjectDraft>>>({});
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [agentHost, setAgentHost] = useState<AgentHost>(() => defaultAgentHost(engineAvailability));
+  const agentChosen = useRef(false);
   const [busy, setBusy] = useState(false);
+  const creating = useRef<symbol | null>(null);
+  const alive = useRef(true);
+  const scope = useMemo(() => Symbol("project-create-scope"), [initialBusiness, targetPath]);
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (targetPath !== undefined) setBusiness(initialBusiness);
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      if (creating.current !== null) onBusyChange?.(false);
+      creating.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    setPreset("general");
+    setDraft(initialDraft("general"));
+    drafts.current = {};
+    setSettingsOpen(false);
+    creating.current = null;
+    setBusy(false);
+    setError(null);
+    onBusyChange?.(false);
   }, [initialBusiness, targetPath]);
+  useEffect(() => {
+    if (!agentChosen.current) setAgentHost(defaultAgentHost(engineAvailability));
+  }, [engineAvailability]);
   const generatedId = useMemo(() => slugify(business), [business]);
   const agentEngine = useMemo(
     () => resolveAgentEngine(agentHost, engineAvailability),
     [agentHost, engineAvailability],
   );
-  const formValid = business.trim().length > 0;
+  const formValid = business.trim().length > 0 && business.trim().length <= 64;
+  const choosePreset = (next: ProjectPreset) => {
+    if (busy || next === preset) return;
+    drafts.current[preset] = draft;
+    setPreset(next);
+    setDraft(drafts.current[next] ?? initialDraft(next));
+    if (next === "custom") setSettingsOpen(true);
+    setError(null);
+  };
 
   const create = async () => {
-    if (!formValid || busy) return;
+    if (!formValid || creating.current) return;
+    const operation = Symbol("project-create");
+    creating.current = operation;
+    const isCurrent = () => alive.current && creating.current === operation && currentScope.current === scope;
     setBusy(true);
     onBusyChange?.(true);
     setError(null);
@@ -75,6 +122,7 @@ export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAva
             description: description.trim(),
             agentEngine,
           });
+      if (!isCurrent()) return;
       if (!response || !("status" in response)) {
         setError(targetPath ? t("project.initializeFailed") : t("project.createFailed"));
         return;
@@ -86,10 +134,13 @@ export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAva
       }
       onCreated(response.body as WorkspaceCreateResponse);
     } catch {
-      setError(targetPath ? t("project.initializeOffline") : t("project.createOffline"));
+      if (isCurrent()) setError(targetPath ? t("project.initializeOffline") : t("project.createOffline"));
     } finally {
-      setBusy(false);
-      onBusyChange?.(false);
+      if (isCurrent()) {
+        creating.current = null;
+        setBusy(false);
+        onBusyChange?.(false);
+      }
     }
   };
 
@@ -102,17 +153,35 @@ export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAva
         void create();
       }}
     >
-      <div className="owb-project-create-form__field">
+      <section className="owb-project-presets" aria-label={t("project.templateHeading")}>
+        <div className="owb-project-presets__heading"><strong>{t("project.templateHeading")}</strong><p>{t("project.templateHint")}</p></div>
+        <div className="owb-project-presets__choices">
+          {PROJECT_PRESETS.map((choice) => <button key={choice} type="button" aria-pressed={preset === choice} disabled={busy} onClick={() => choosePreset(choice)}>
+            <strong>{t(`project.template.${choice}.title`)}</strong><span>{t(`project.template.${choice}.hint`)}</span>
+          </button>)}
+        </div>
+        <button className="owb-project-presets__custom" type="button" aria-pressed={preset === "custom"} disabled={busy} onClick={() => choosePreset("custom")}>{t("project.customStart")}</button>
+      </section>
+
+      <section className="owb-project-draft-preview" aria-label={t("project.draftPreview")}>
+        <strong>{business || t("project.customStart")}</strong>
+        {description ? <p>{description}</p> : null}
+        <span>{t("project.agentSummary", { agent: AGENT_HOST_LABEL[agentHost] })}</span>
+      </section>
+
+      <details className="owb-project-create-settings" open={settingsOpen} onToggle={(event) => setSettingsOpen(event.currentTarget.open)}>
+        <summary><ChevronDown size={15} aria-hidden="true" />{t("project.adjustSettings")}</summary>
+        <div className="owb-project-create-settings__body">
+        <div className="owb-project-create-form__field">
         <label htmlFor="owb-project-business">{t("project.business")}</label>
         <Input
           id="owb-project-business"
-          autoFocus
+          disabled={busy}
           value={business}
           maxLength={64}
           placeholder={t("project.businessPh")}
-          onChange={(event) => setBusiness(event.target.value)}
+          onChange={(event) => setDraft((current) => ({ ...current, business: event.target.value }))}
         />
-        <p>{targetPath ? t("project.initializeIdNote") : t("project.idAutoNote")}</p>
       </div>
 
       <div className="owb-project-create-form__field">
@@ -120,10 +189,11 @@ export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAva
         <Input.TextArea
           id="owb-project-description"
           value={description}
+          disabled={busy}
           maxLength={1024}
           autoSize={{ minRows: 3, maxRows: 6 }}
           placeholder={t("project.descriptionPh")}
-          onChange={(event) => setDescription(event.target.value)}
+          onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
         />
       </div>
 
@@ -133,11 +203,14 @@ export function ProjectCreateForm({ onCancel, onCreated, onBusyChange, engineAva
           id="owb-project-owner-agent"
           aria-label={t("project.ownerAgent")}
           value={agentHost}
-          onChange={(value) => setAgentHost(value as AgentHost)}
+          disabled={busy}
+          onChange={(value) => { agentChosen.current = true; setAgentHost(value as AgentHost); }}
           options={AGENT_HOSTS.map((host) => ({ value: host, label: AGENT_HOST_LABEL[host] }))}
         />
         <p>{targetPath ? t("project.initializeAgentHint") : t("project.ownerAgentHint")}</p>
       </div>
+        </div>
+      </details>
 
       {error ? <p className="owb-project-create-form__error" role="alert">{error}</p> : null}
 

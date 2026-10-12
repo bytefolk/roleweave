@@ -3,6 +3,7 @@ export { BytefolkOpenHerdMark } from "./brand-mark";
 export { OrgTree, OrgTreeNode, hueForId, type OrgDropPosition, type OrgTreeProps, type OrgTreeNodeProps } from "./org-tree";
 export { PositionCard, type PositionCardProps } from "./position-card";
 export { EmptyState } from "./empty-state";
+export { DateField, DateTimeRangeField, type DateFieldProps, type DateTimeRangeFieldProps, type DateTimeRange } from "./date-fields";
 export { localizePositionCard } from "./types";
 export type { BudgetCaps, PositionCardData } from "./types";
 export {

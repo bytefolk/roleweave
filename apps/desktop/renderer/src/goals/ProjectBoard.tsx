@@ -11,14 +11,16 @@ import {
   Search,
   UserRound,
 } from "lucide-react";
-import { useOwbLocale, useT } from "@roleweave/ui";
+import { DateField, useOwbLocale, useT } from "@roleweave/ui";
 import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { TurnEngine } from "@roleweave/shared";
 import { useEngineLabel } from "../turns/engine-select";
+import { TaskAcceptanceDrawer } from "./TaskAcceptanceDrawer";
 import "./project-board.css";
 
 export interface ProjectBoardProps {
   detail: GoalDetail;
+  workspaceKey?: string;
   positionNames: Record<string, string>;
   positionEngines?: Record<string, TurnEngine>;
   onRefresh: () => void | Promise<void>;
@@ -73,6 +75,7 @@ function responseError(body: unknown, fallback: string) {
 /** Planning state is explicitly separate from the latest observed Agent turn. */
 export function ProjectBoard({
   detail,
+  workspaceKey,
   positionNames,
   positionEngines = {},
   onRefresh,
@@ -88,6 +91,7 @@ export function ProjectBoard({
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [acceptanceTask, setAcceptanceTask] = useState<{ item: GoalWorkItem; scopeKey: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -99,6 +103,16 @@ export function ProjectBoard({
   const launchLocks = useRef(new Set<string>());
   const detailRef = useRef(detail);
   detailRef.current = detail;
+  const scopeKey = JSON.stringify([workspaceKey, detail.goal.goalId]);
+  const scopeRef = useRef({ key: scopeKey, generation: 0 });
+  if (scopeRef.current.key !== scopeKey) {
+    scopeRef.current = { key: scopeKey, generation: scopeRef.current.generation + 1 };
+  }
+  useEffect(() => {
+    setAccepted({});
+    setLaunching({});
+    setError(null);
+  }, [scopeKey]);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -164,17 +178,44 @@ export function ProjectBoard({
     );
   };
 
-  const refresh = async () => {
+  const acceptanceRequired = (item: GoalWorkItem) =>
+    !!own(accepted, item.taskId) || !!own(detail.taskExecutions, item.taskId) ||
+    !!own(detail.taskDeliveries, item.taskId) || !!own(detail.taskDeliveryUnavailable, item.taskId) ||
+    !!detail.executionUnavailable || !!detail.goal.taskAcceptances?.some((record) => record.taskId === item.taskId);
+  const openAcceptance = (item: GoalWorkItem) =>
+    setAcceptanceTask({ item: { ...item }, scopeKey });
+  const acceptanceItem = acceptanceTask?.scopeKey === scopeKey
+    ? items.find((item) => item.taskId === acceptanceTask.item.taskId) ?? acceptanceTask.item : undefined;
+  const acceptanceEntry = (item: GoalWorkItem) => {
+    const delivery = own(detail.taskDeliveries, item.taskId);
+    const records = (detail.goal.taskAcceptances ?? []).filter((record) => record.taskId === item.taskId);
+    if (!delivery && records.length === 0 && executionOf(item)?.status !== "completed") return null;
+    const latest = records[records.length - 1];
+    const currentRecord = latest && delivery && latest.source.turnId === delivery.source.turnId &&
+      latest.source.outputDigest === delivery.source.outputDigest &&
+      JSON.stringify(latest.criteriaSnapshot) === JSON.stringify(detail.goal.acceptanceCriteria) ? latest : undefined;
+    return <div className="owb-project-card__acceptance">
+      <span data-decision={currentRecord?.decision}>{currentRecord
+        ? t(`project.acceptance.decision.${currentRecord.decision}`)
+        : t(records.length > 0 ? "project.acceptance.hasHistory" : "project.acceptance.pending")}</span>
+      <Button size="small" type="link" disabled={busy} onClick={() => openAcceptance(item)}
+        aria-label={t(currentRecord ? "project.acceptance.historyNamed" : "project.acceptance.reviewNamed", { title: item.title })}>
+        {t(currentRecord ? "project.acceptance.history" : "project.acceptance.review")}
+      </Button>
+    </div>;
+  };
+
+  const refresh = async (isCurrent = () => alive.current) => {
     try {
       await onRefresh();
-      if (typeof window.owb.goal === "function") {
+      if (isCurrent() && typeof window.owb.goal === "function") {
         const res = await window.owb.goal(detail.goal.goalId);
-        if (res.status === 200 && res.body?.goal && alive.current) {
+        if (res.status === 200 && res.body?.goal && isCurrent()) {
           detailRef.current = res.body;
         }
       }
     } catch {
-      if (alive.current) setError(t("project.refreshError"));
+      if (isCurrent()) setError(t("project.refreshError"));
     }
   };
   const save = async (
@@ -250,6 +291,11 @@ export function ProjectBoard({
     );
   const submit = () => {
     if (!editor || !validEditor) return;
+    if (!editor.isNew && editor.item.status === "done" &&
+      items.find((item) => item.taskId === editor.item.taskId)?.status !== "done" && acceptanceRequired(editor.item)) {
+      setError(t("project.acceptance.useAcceptance"));
+      return;
+    }
     const draft = editor.item;
     const item: GoalWorkItem = {
       taskId: draft.taskId,
@@ -300,26 +346,50 @@ export function ProjectBoard({
   const launch = async (item: GoalWorkItem) => {
     const positionId = item.assigneePositionId;
     const engine = positionId ? own(positionEngines, positionId) : undefined;
+    const launchScope = scopeRef.current;
+    const lockKey = `${launchScope.generation}:${item.taskId}`;
+    const isCurrent = () => alive.current && scopeRef.current === launchScope;
     if (
       !positionId ||
       !engine ||
-      launchLocks.current.has(item.taskId) ||
+      launchLocks.current.has(lockKey) ||
       executionOf(item)?.status === "running" ||
       detail.executionUnavailable
     )
       return;
-    launchLocks.current.add(item.taskId);
+    launchLocks.current.add(lockKey);
     setLaunching((current) => ({ ...current, [item.taskId]: true }));
     setError(null);
     try {
-      const result = await window.owb.createTurn({
-        positionId,
+      let listed = await window.owb.sessions(positionId);
+      if (!isCurrent()) return;
+      if (listed.status !== 200) throw new Error(responseError(listed.body, t("project.runError")));
+      let sessionId = listed.body.activeSessionId;
+      if (!sessionId) {
+        const created = await window.owb.createSession({ positionId });
+        if (!isCurrent()) return;
+        if (created.status === 201) {
+          sessionId = created.body.sessionId;
+        } else if (created.status === 409) {
+          // A conversation opened while we were creating its first session.
+          // Reuse that session; never rotate or replace the user's thread.
+          listed = await window.owb.sessions(positionId);
+          if (!isCurrent()) return;
+          if (listed.status !== 200) throw new Error(responseError(listed.body, t("project.runError")));
+          sessionId = listed.body.activeSessionId;
+        } else {
+          throw new Error(responseError(created.body, t("project.runError")));
+        }
+      }
+      if (!sessionId) throw new Error(t("project.runError"));
+      const result = await window.owb.createSessionTurn({
+        sessionId,
         engine,
         input: [item.title, item.description].filter(Boolean).join("\n\n"),
         goalId: detail.goal.goalId,
         branchId: item.taskId,
       });
-      if (!alive.current) return;
+      if (!isCurrent()) return;
       if (
         result.status !== 200 &&
         result.status !== 201 &&
@@ -331,19 +401,20 @@ export function ProjectBoard({
         [item.taskId]: {
           turnId: result.body.turnId,
           positionId,
+          sessionId,
           status: result.body.status,
           startedAt: result.body.createdAt,
         },
       }));
-      await refresh();
+      await refresh(isCurrent);
     } catch (cause) {
-      if (alive.current)
+      if (isCurrent())
         setError(
           cause instanceof Error ? cause.message : t("project.runError"),
         );
     } finally {
-      launchLocks.current.delete(item.taskId);
-      if (alive.current)
+      launchLocks.current.delete(lockKey);
+      if (isCurrent())
         setLaunching((current) => ({ ...current, [item.taskId]: false }));
     }
   };
@@ -365,7 +436,7 @@ export function ProjectBoard({
             size="small"
             type="link"
             className="owb-project-view-turn-btn"
-            onClick={() => onOpenBoundSession(run.positionId, undefined, run.turnId)}
+            onClick={() => onOpenBoundSession(run.positionId, run.sessionId, run.turnId)}
             title={t("project.viewTurn")}
             aria-label={t("project.viewTurnNamed", { title: item.title })}
           >
@@ -414,7 +485,11 @@ export function ProjectBoard({
           <CalendarDays size={13} aria-hidden="true" />
           {item.startDate || item.dueDate ? (
             <span>
-              {item.startDate ?? "…"} → {item.dueDate ?? "…"}
+              {item.startDate && item.dueDate
+                ? `${item.startDate} → ${item.dueDate}`
+                : item.startDate
+                  ? t("project.startOnly", { date: item.startDate })
+                  : t("project.dueOnly", { date: item.dueDate! })}
             </span>
           ) : (
             t("project.unscheduled")
@@ -426,7 +501,11 @@ export function ProjectBoard({
           value={item.status}
           disabled={busy}
           options={STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) }))}
-          onChange={(status) =>
+          onChange={(status) => {
+            if (status === "done" && item.status !== "done" && acceptanceRequired(item)) {
+              openAcceptance(item);
+              return;
+            }
             void save(
               items.map((existing) =>
                 existing.taskId === item.taskId
@@ -437,8 +516,8 @@ export function ProjectBoard({
                   : existing,
               ),
               detail.goal.updatedAt,
-            )
-          }
+            );
+          }}
         />
         <div className="owb-project-card__execution">
           {execution(item)}
@@ -466,6 +545,7 @@ export function ProjectBoard({
             {t("project.run")}
           </Button>
         </div>
+        {acceptanceEntry(item)}
         {item.assigneePositionId && !engine && (
           <p className="owb-project-card__hint">
             {t("project.configureEngine")}
@@ -498,13 +578,13 @@ export function ProjectBoard({
       <div className="owb-project-summary">
         <div className="owb-project-summary__progress">
           <strong>
-            {t("project.completion", { done, total: items.length })}
+            {items.length ? t("project.completion", { done, total: items.length }) : t("project.noTasks")}
           </strong>
-          <progress
+          {items.length > 0 && <progress
             aria-label={t("project.progress")}
             value={done}
             max={Math.max(items.length, 1)}
-          />
+          />}
           <span>{t("project.manualProgress")}</span>
         </div>
         <button
@@ -542,78 +622,82 @@ export function ProjectBoard({
         </button>
       </div>
       <div className="owb-project-toolbar">
-        <div
-          className="owb-project-view-switch"
-          role="group"
-          aria-label={t("project.views")}
-        >
-          <Button
-            type={view === "board" ? "primary" : "default"}
-            aria-pressed={view === "board"}
-            icon={<Columns3 size={14} aria-hidden="true" />}
-            onClick={() => setView("board")}
+        <div className="owb-project-toolbar__primary">
+          <div
+            className="owb-project-view-switch"
+            role="group"
+            aria-label={t("project.views")}
           >
-            {t("project.board")}
-          </Button>
+            <Button
+              type={view === "board" ? "primary" : "default"}
+              aria-pressed={view === "board"}
+              icon={<Columns3 size={14} aria-hidden="true" />}
+              onClick={() => setView("board")}
+            >
+              {t("project.board")}
+            </Button>
+            <Button
+              type={view === "schedule" ? "primary" : "default"}
+              aria-pressed={view === "schedule"}
+              icon={<CalendarDays size={14} aria-hidden="true" />}
+              onClick={() => setView("schedule")}
+            >
+              {t("project.schedule")}
+            </Button>
+          </div>
           <Button
-            type={view === "schedule" ? "primary" : "default"}
-            aria-pressed={view === "schedule"}
-            icon={<CalendarDays size={14} aria-hidden="true" />}
-            onClick={() => setView("schedule")}
+            type="primary"
+            icon={<Plus size={14} aria-hidden="true" />}
+            disabled={busy || items.length >= MAX_ITEMS}
+            title={items.length >= MAX_ITEMS ? t("project.maxItemsReached") : undefined}
+            onClick={() => edit()}
           >
-            {t("project.schedule")}
+            {t("project.create")}
           </Button>
         </div>
-        <Input
-          className="owb-project-search"
-          prefix={<Search size={14} aria-hidden="true" />}
-          aria-label={t("project.search")}
-          placeholder={t("project.search")}
-          value={query}
-          allowClear
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <Select<string>
-          className="owb-project-select owb-project-owner-filter"
-          aria-label={t("project.filterOwner")}
-          value={owner}
-          options={[
-            { value: "all", label: t("project.allOwners") },
-            { value: "unassigned", label: t("project.unassigned") },
-            ...ownerIds.map((id) => ({ value: `position:${id}`, label: own(positionNames, id) ?? id })),
-          ]}
-          onChange={setOwner}
-        />
-        <Select<string>
-          className="owb-project-select owb-project-status-filter"
-          aria-label={t("project.filterStatus")}
-          value={statusFilter}
-          options={[
-            { value: "all", label: t("project.allStatuses") },
-            ...STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) })),
-            { value: "overdue", label: t("project.overdue") },
-          ]}
-          onChange={setStatusFilter}
-        />
-        <Select<string>
-          className="owb-project-select owb-project-priority-filter"
-          aria-label={t("project.filterPriority")}
-          value={priorityFilter}
-          options={[
-            { value: "all", label: t("project.allPriorities") },
-            ...PRIORITIES.map((priority) => ({ value: priority, label: t(`project.priority.${priority}`) })),
-          ]}
-          onChange={setPriorityFilter}
-        />
-        <Button
-          type="primary"
-          icon={<Plus size={14} aria-hidden="true" />}
-          disabled={busy || items.length >= MAX_ITEMS}
-          title={items.length >= MAX_ITEMS ? t("project.maxItemsReached") : undefined}
-          onClick={() => edit()}
-        >
-          {t("project.create")}
-        </Button>
+        <div className="owb-project-filters">
+          <Input
+            className="owb-project-search"
+            prefix={<Search size={14} aria-hidden="true" />}
+            aria-label={t("project.search")}
+            placeholder={t("project.search")}
+            value={query}
+            allowClear
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <Select<string>
+            className="owb-project-select owb-project-owner-filter"
+            aria-label={t("project.filterOwner")}
+            value={owner}
+            options={[
+              { value: "all", label: t("project.allOwners") },
+              { value: "unassigned", label: t("project.unassigned") },
+              ...ownerIds.map((id) => ({ value: `position:${id}`, label: own(positionNames, id) ?? id })),
+            ]}
+            onChange={setOwner}
+          />
+          <Select<string>
+            className="owb-project-select owb-project-status-filter"
+            aria-label={t("project.filterStatus")}
+            value={statusFilter}
+            options={[
+              { value: "all", label: t("project.allStatuses") },
+              ...STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) })),
+              { value: "overdue", label: t("project.overdue") },
+            ]}
+            onChange={setStatusFilter}
+          />
+          <Select<string>
+            className="owb-project-select owb-project-priority-filter"
+            aria-label={t("project.filterPriority")}
+            value={priorityFilter}
+            options={[
+              { value: "all", label: t("project.allPriorities") },
+              ...PRIORITIES.map((priority) => ({ value: priority, label: t(`project.priority.${priority}`) })),
+            ]}
+            onChange={setPriorityFilter}
+          />
+        </div>
         {items.length >= MAX_ITEMS && (
           <span className="owb-project-limit-notice" role="status">
             {t("project.maxItemsReached")}
@@ -636,8 +720,14 @@ export function ProjectBoard({
       <p className="owb-project-caption">{t("project.executionNote")}</p>
       {items.length === 0 && (
         <div className="owb-project-empty">
+          <Columns3 size={30} aria-hidden="true" />
           <strong>{t("project.empty")}</strong>
           <p>{t("project.emptyHint")}</p>
+          <ol className="owb-project-empty__steps">
+            <li>{t("project.emptyStep.plan")}</li>
+            <li>{t("project.emptyStep.assign")}</li>
+            <li>{t("project.emptyStep.deliver")}</li>
+          </ol>
         </div>
       )}
       {items.length > 0 && filtered.length === 0 && (
@@ -655,7 +745,7 @@ export function ProjectBoard({
           </Button>
         </div>
       )}
-      {view === "board" ? (
+      {items.length > 0 && filtered.length > 0 && (view === "board" ? (
         <div className="owb-project-columns">
           {STATUSES.map((status) => (
             <section
@@ -673,6 +763,7 @@ export function ProjectBoard({
               </header>
               <div className="owb-project-column__cards">
                 {filtered.filter((item) => item.status === status).map(card)}
+                {!filtered.some((item) => item.status === status) && <p className="owb-project-column__empty">{t("project.emptyColumn")}</p>}
               </div>
             </section>
           ))}
@@ -756,6 +847,7 @@ export function ProjectBoard({
                       </span>
                       <small>{label}</small>
                       {execution(item)}
+                      {acceptanceEntry(item)}
                     </div>
                     <div
                       className="owb-project-timeline__track"
@@ -812,7 +904,7 @@ export function ProjectBoard({
             <div>{unscheduled.map(card)}</div>
           </div>
         </div>
-      )}
+      ))}
       <Drawer
         title={editor?.isNew ? t("project.create") : t("project.edit")}
         open={!!editor}
@@ -906,7 +998,7 @@ export function ProjectBoard({
                     aria-label={t("project.taskStatus")}
                     value={editor.item.status}
                     disabled={busy}
-                    options={STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`) }))}
+                    options={STATUSES.map((status) => ({ value: status, label: t(`project.status.${status}`), disabled: status === "done" && !editor.isNew && editor.item.status !== "done" && acceptanceRequired(editor.item) }))}
                     onChange={(status) =>
                       patch({
                         status,
@@ -930,28 +1022,38 @@ export function ProjectBoard({
                   />
                 </label>
               </div>
+              {!editor.isNew && acceptanceRequired(editor.item) && <p className="owb-project-caption">
+                {t("project.acceptance.useAcceptance")}
+                <Button size="small" type="link" disabled={busy || JSON.stringify(editor.item) !== JSON.stringify(items.find((item) => item.taskId === editor.item.taskId))}
+                  onClick={() => { openAcceptance(editor.item); setEditor(null); setError(null); }}>
+                  {t("project.acceptance.review")}
+                </Button>
+                {JSON.stringify(editor.item) !== JSON.stringify(items.find((item) => item.taskId === editor.item.taskId)) && t("project.acceptance.saveEditsFirst")}
+              </p>}
               <div className="owb-project-form__row">
                 <label>
                   <span>{t("project.startDate")}</span>
-                  <input
-                    type="date"
+                  <DateField
+                    aria-label={t("project.startDate")}
                     className="owb-project-select"
                     value={editor.item.startDate ?? ""}
                     max={editor.item.dueDate || undefined}
-                    onChange={(event) =>
-                      patch({ startDate: event.target.value || undefined })
+                    disabled={busy}
+                    onChange={(value) =>
+                      patch({ startDate: value || undefined })
                     }
                   />
                 </label>
                 <label>
                   <span>{t("project.dueDate")}</span>
-                  <input
-                    type="date"
+                  <DateField
+                    aria-label={t("project.dueDate")}
                     className="owb-project-select"
                     value={editor.item.dueDate ?? ""}
                     min={editor.item.startDate || undefined}
-                    onChange={(event) =>
-                      patch({ dueDate: event.target.value || undefined })
+                    disabled={busy}
+                    onChange={(value) =>
+                      patch({ dueDate: value || undefined })
                     }
                   />
                 </label>
@@ -999,6 +1101,14 @@ export function ProjectBoard({
           </>
         )}
       </Drawer>
+      {acceptanceItem && <TaskAcceptanceDrawer
+        key={`${scopeKey}:${acceptanceItem.taskId}`}
+        detail={detail}
+        item={acceptanceItem}
+        workspaceKey={workspaceKey}
+        onClose={() => setAcceptanceTask(null)}
+        onRefresh={onRefresh}
+      />}
     </section>
   );
 }

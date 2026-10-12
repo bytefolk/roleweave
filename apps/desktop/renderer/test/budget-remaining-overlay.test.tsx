@@ -51,6 +51,37 @@ function panel(onCreateTurn: (request: CreateTurnRequest) => void) {
 }
 
 describe("pre-send budget remaining overlay #462", () => {
+  it("announces a pending check, closes without a second request and closes with Escape", async () => {
+    let finish!: (value: unknown) => void;
+    const budgetRemainingAdvice = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+    window.owb = { budgetRemainingAdvice } as unknown as OwbBridge;
+    render(<BudgetRemainingOverlay experiment={experiment} positionId="repo-owner" />);
+    const trigger = screen.getByRole("button", { name: "检查预算建议" });
+    fireEvent.click(trigger);
+    const panel = await screen.findByRole("region", { name: "预算剩余建议" });
+    await waitFor(() => expect(panel).toHaveFocus());
+    expect(panel).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("正在检查剩余额度…");
+    await act(async () => finish({ status: 503 }));
+    expect(panel).toHaveAttribute("aria-busy", "false");
+    fireEvent.click(trigger);
+    expect(budgetRemainingAdvice).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole("region", { name: "预算剩余建议" })).not.toBeInTheDocument());
+    fireEvent.click(trigger);
+    const reopened = await screen.findByRole("region", { name: "预算剩余建议" });
+    expect(budgetRemainingAdvice).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(reopened, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("region", { name: "预算剩余建议" })).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+  });
+
+  it("explains an unavailable bridge instead of leaving a check without feedback", async () => {
+    window.owb = {} as unknown as OwbBridge;
+    render(<BudgetRemainingOverlay experiment={experiment} positionId="repo-owner" />);
+    fireEvent.click(screen.getByRole("button", { name: "检查预算建议" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("预算建议暂不可用");
+  });
+
   it("requests only scoped facts and exposes an unknown daily remainder honestly", async () => {
     const response: BudgetRemainingAdviceResponse = {
       workspacePath: experiment.workspacePath,
@@ -65,6 +96,11 @@ describe("pre-send budget remaining overlay #462", () => {
     window.owb = { budgetRemainingAdvice } as unknown as OwbBridge;
 
     render(<BudgetRemainingOverlay experiment={experiment} positionId="repo-owner" />);
+    const check = screen.getByRole("button", { name: "检查预算建议" });
+    expect(check).not.toHaveAttribute("title");
+    fireEvent.focus(check);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("检查预算建议");
+    fireEvent.blur(check);
     fireEvent.click(screen.getByRole("button", { name: "检查预算建议" }));
 
     await waitFor(() => expect(budgetRemainingAdvice).toHaveBeenCalledWith({
@@ -182,7 +218,8 @@ describe("pre-send budget remaining overlay #462", () => {
       revision: 0,
     };
     rerender(<BudgetRemainingOverlay experiment={next} positionId="community-operator" />);
-    expect(screen.getByText("发送前可检查权威剩余额度；不会修改预算或自动发送。")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "预算剩余建议" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "检查预算建议" }).textContent).toBe("");
 
     await act(async () => resolve({
       status: 200,

@@ -32,6 +32,21 @@ function validateDriveDetailRequest(id) {
   return { ok: true, pathname: `/drive/detail?id=${encodeURIComponent(id)}` };
 }
 
+function validateDrivePreviewRequest(id) {
+  if (typeof id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(id)) {
+    return invalidResponse("a bounded object id is required");
+  }
+  return { ok: true, pathname: `/drive/preview?id=${encodeURIComponent(id)}` };
+}
+
+function authorizeDriveReadSender(event, expectedWindow, allowedUrl) {
+  const { isTrustedWindowSender } = require("./window-ipc.cjs");
+  if (!isTrustedWindowSender(event, expectedWindow, allowedUrl)) {
+    return { ok: false, response: { status: 403, body: { code: "drive_request_invalid", message: "Untrusted sender", retryable: false } } };
+  }
+  return { ok: true };
+}
+
 function validateDriveUploadRequest(filePath) {
   if (typeof filePath !== "string" || filePath.length === 0) {
     return invalidResponse("filePath required");
@@ -43,5 +58,8 @@ function validateDriveUploadRequest(filePath) {
 module.exports = {
   validateDriveListRequest,
   validateDriveDetailRequest,
+  validateDrivePreviewRequest,
+  authorizeDriveReadSender,
+  authorizeDrivePreviewSender: authorizeDriveReadSender,
   validateDriveUploadRequest,
 };

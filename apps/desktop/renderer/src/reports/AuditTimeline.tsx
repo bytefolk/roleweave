@@ -12,13 +12,12 @@ import { useMemo, useState } from "react";
 import {
   Button,
   Collapse,
-  DatePicker,
   Empty,
   Pagination,
   Select,
   Tag,
 } from "antd";
-import { useOwbLocale, useT } from "@roleweave/ui";
+import { DateTimeRangeField, useOwbLocale, useT } from "@roleweave/ui";
 import { useEngineLabel } from "../turns/TurnPanel";
 import type { TurnEngine, TurnTerminalReason } from "@roleweave/shared";
 
@@ -168,10 +167,10 @@ export function isEventVisible(event: AuditTimelineEvent, filters: AuditTimeline
     if (!filters.classes.includes(classifyAuditEvent(event))) return false;
   }
   if (filters.from) {
-    if (event.at < filters.from) return false;
+    if (!(Date.parse(event.at) >= Date.parse(filters.from))) return false;
   }
   if (filters.to) {
-    if (event.at > filters.to) return false;
+    if (!(Date.parse(event.at) <= Date.parse(filters.to))) return false;
   }
   return true;
 }
@@ -303,14 +302,12 @@ export function AuditTimeline({
           aria-label={t("rep.filterClassAria")}
           data-testid="timeline-filter-class"
         />
-        <DatePicker.RangePicker
+        <DateTimeRangeField
           size="small"
-          showTime
           className="owb-timeline__filter owb-timeline__filter--range"
-          value={null}
-          onChange={(_dates, dateStrings) => {
-            const [from, to] = dateStrings;
-            updateFilters({ ...activeFilters, from: from || undefined, to: to || undefined });
+          value={[activeFilters.from, activeFilters.to]}
+          onChange={([from, to]) => {
+            updateFilters({ ...activeFilters, from, to });
           }}
           aria-label={t("rep.filterRangeAria")}
           data-testid="timeline-filter-range"

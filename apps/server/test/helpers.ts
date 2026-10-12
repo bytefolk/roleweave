@@ -141,7 +141,7 @@ export async function startTestServer(
     sessionStore: new SessionStore(),
     groupStore: new GroupStore(),
     relayStop: new RelayStopCoordinator(),
-    goalStore: new GoalStore(),
+    goalStore: new GoalStore({ readTurns: workspace => ctx.turnStore.reportRecords(workspace) }),
     taskBoardStore: new TaskBoardStore(),
     contextExporter,
   };
