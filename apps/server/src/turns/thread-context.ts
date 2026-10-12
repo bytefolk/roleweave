@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { OrgApiError, errorCodes } from "@roleweave/shared";
+import { OrgApiError, errorCodes, hasUnexecutedToolText } from "@roleweave/shared";
 import type { ThreadContextMetadata, TurnRecord } from "@roleweave/shared";
 import { THREAD_CONTEXT_MAX_OMITTED_TURNS } from "../history-limits.js";
 
@@ -21,11 +21,11 @@ function bounded(text: string, limit: number): string {
 
 /** Only public answer surfaces enter history. Tool traces and reasoning fields never do. */
 function visibleOutput(output: unknown): string {
-  if (typeof output === "string") return output;
+  if (typeof output === "string") return hasUnexecutedToolText(output) ? "[Earlier reply printed unexecuted tool text. It is not evidence of completed work. Use actual authorized tools for the current request.]" : output;
   if (output === null || typeof output !== "object" || Array.isArray(output)) return "";
   const record = output as Record<string, unknown>;
   for (const key of ["text", "answer", "output", "summary"] as const) {
-    if (typeof record[key] === "string") return record[key];
+    if (typeof record[key] === "string") return visibleOutput(record[key]);
   }
   return "";
 }

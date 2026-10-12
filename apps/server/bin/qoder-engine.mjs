@@ -16,8 +16,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
 import { redactApprovalSecrets } from "@roleweave/shared/approval-redaction";
+import { hasUnexecutedToolText } from "@roleweave/shared";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
+import { claudeReadPlan } from "../src/claude-workspace-tools.js";
 import { CODEX_DISABLED_FEATURES, openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
 import { resolveGeminiClient, validatedGeminiModel } from "../src/gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../src/workbuddy-binary.js";
@@ -1387,7 +1389,7 @@ async function turnRunQoder(workspaceDir, positionId, input) {
     });
 }
 
-function turnRunClaude(workspaceDir, positionId, input, engineModel) {
+async function turnRunClaude(workspaceDir, positionId, input, engineModel) {
   const runId = randomUUID();
   emit({ type: "run.started", runId, timestamp: now() });
 
@@ -1419,6 +1421,21 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     return;
   }
   const childEnv = claudeChildEnvironment(process.env, engineModel, provider.providerEnv);
+  let readPlan, maxTurns = 1;
+  try {
+    const position = (await scanPositions(workspaceDir)).find(entry => entry.id === positionId);
+    if (!position) throw new Error("position missing");
+    readPlan = await claudeReadPlan(workspaceDir, position.dir);
+    if (readPlan.tools.length) {
+      const budget = await readJson(path.join(position.dir, "budget.json"));
+      const iterations = budget?.perTask?.iterations;
+      if (!Number.isSafeInteger(iterations) || iterations < 1) throw new Error("invalid iteration budget");
+      maxTurns = Math.min(iterations, 32);
+    }
+  } catch {
+    fail("claude.position_permissions_invalid", "无法安全准备员工工具权限。当前支持已授权范围内的 Read、Glob、Grep；不会加载全局工具或放宽权限。", false);
+    return;
+  }
   const versionSpawn = createQoderSpawnSpec(claudeBin, ["--version"], childEnv);
   const versionProbe = spawnSync(versionSpawn.command, versionSpawn.args, {
     ...versionSpawn.options,
@@ -1445,7 +1462,7 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
   }
 
   const safeInput = (input || "Execute your position duties for this turn.").replace(/@/g, "\\u0040");
-  const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n`;
+  const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n[Readable patterns: ${readPlan.rules.filter(rule => rule.effect === "allow" && !rule.approval).map(rule => rule.pattern).join(", ") || "none"}]\n\n`;
   const localLogin = engineModel === "claude-local" && !childEnv.ANTHROPIC_API_KEY && !childEnv.ANTHROPIC_AUTH_TOKEN;
   const selectedModel = process.env.ROLEWEAVE_TURN_MODEL || provider.selectedDefault;
   const args = [
@@ -1461,10 +1478,17 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     "--setting-sources", localLogin ? "user" : "",
     ...(localLogin ? ["--settings", '{"disableAllHooks":true}'] : []),
     "--strict-mcp-config",
+    "--mcp-config", JSON.stringify({ mcpServers: readPlan.tools.length ? { roleweave: {
+      type: "stdio", command: process.execPath,
+      args: [fileURLToPath(new URL("./claude-workspace-mcp.mjs", import.meta.url)), JSON.stringify(readPlan)],
+      env: { ELECTRON_RUN_AS_NODE: "1", ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_CUSTOM_HEADERS: "", CLAUDE_CODE_OAUTH_TOKEN: "" },
+    } } : {} }),
+    ...(readPlan.tools.length ? ["--allowedTools", readPlan.tools.map(tool => `mcp__roleweave__${tool}`).join(",")] : []),
+    "--append-system-prompt", "RoleWeave tools only execute through structured tool_use calls. Use the provided MCP read tools for authorized files. Shell commands, writes and unlisted tools are unavailable. Never print <tool_call> commands as if executed; if permissions prevent the task, say which access is missing. Do not claim changes that have not been made.",
     "--disable-slash-commands",
     "--no-chrome",
     "--no-session-persistence",
-    "--max-turns", "1",
+    "--max-turns", String(maxTurns),
     ...(selectedModel ? ["--model", selectedModel] : []),
   ];
 
@@ -1488,6 +1512,9 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
   let buffer = "";
   let initSeen = false;
   let textSnapshot = "";
+  let partialText = "";
+  const toolActivities = new Map();
+  let successfulTools = 0, failedTools = 0;
 
   child.stdout.on("data", (chunk) => {
     buffer += String(chunk);
@@ -1503,6 +1530,14 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     stderrTail = (stderrTail + String(chunk)).slice(-2000);
   });
 
+  // The CLI owns the MCP stdio session. Never leave its worker alive when this
+  // adapter exits after a terminal frame or receives a cancellation signal.
+  process.once("exit", () => { if (child.exitCode === null) child.kill("SIGTERM"); });
+  for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => {
+    child.kill(signal);
+    setTimeout(() => process.exit(signal === "SIGTERM" ? 143 : 130), 1000).unref();
+  });
+
   function handleClaudeLine(line) {
     if (terminalEmitted || line.trim().length === 0) return;
     let event;
@@ -1513,28 +1548,50 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     }
 
     if (event?.type === "system" && event?.subtype === "init") {
+      if (readPlan.tools.length && !event.mcp_servers?.some(server => server.name === "roleweave" && server.status === "connected")) {
+        fail("claude.workspace_tools_unavailable", "员工文件工具没有连通，本次任务未开始。请重启应用并检查工具连接。", true);
+        return;
+      }
       initSeen = true;
       return;
     }
 
     if (event?.type === "assistant" && Array.isArray(event?.message?.content)) {
+      const messageText = event.message.content.filter(block => block?.type === "text" && typeof block.text === "string").map(block => block.text).join("");
+      if (messageText) {
+        const alreadySent = partialText || textSnapshot;
+        const delta = messageText.startsWith(alreadySent) ? messageText.slice(alreadySent.length) : messageText;
+        textSnapshot = messageText;
+        if (delta) emit({ type: "model.delta", runId, timestamp: now(), text: delta });
+      }
+      partialText = "";
       for (const block of event.message.content) {
-        if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
-          const delta = block.text.length > textSnapshot.length
-            ? block.text.slice(textSnapshot.length)
-            : block.text;
-          textSnapshot = block.text;
-          if (delta.length > 0) {
-            emit({ type: "model.delta", runId, timestamp: now(), text: delta });
-          }
+        if (block?.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string" && !toolActivities.has(block.id)) {
+          const title = block.name.replace(/^mcp__roleweave__/, "");
+          const detail = typeof block.input?.file_path === "string" ? block.input.file_path : typeof block.input?.pattern === "string" ? block.input.pattern : undefined;
+          const activity = { title: activityText(title, 256), ...(detail ? { detail: activityText(detail, 2048) } : {}) };
+          toolActivities.set(block.id, activity);
+          emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.id, 256), kind: "tool", status: "running", ...activity });
         }
       }
       return;
     }
 
+    if (event?.type === "user" && Array.isArray(event?.message?.content)) {
+      for (const block of event.message.content) if (block?.type === "tool_result" && typeof block.tool_use_id === "string" && toolActivities.has(block.tool_use_id)) {
+        if (block.is_error === true) failedTools++; else successfulTools++;
+        emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.tool_use_id, 256), kind: "tool",
+          status: block.is_error === true ? "failed" : "completed", ...toolActivities.get(block.tool_use_id) });
+      }
+      return;
+    }
+
+    if (event?.type === "stream_event" && event?.event?.type === "message_start") { partialText = ""; textSnapshot = ""; return; }
+
     if (event?.type === "stream_event" && event?.event?.type === "content_block_delta") {
       const delta = event.event.delta;
       if (delta?.type === "text_delta" && typeof delta.text === "string" && delta.text.length > 0) {
+        partialText += delta.text;
         emit({ type: "model.delta", runId, timestamp: now(), text: delta.text });
       }
       return;
@@ -1556,8 +1613,16 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
           : Array.isArray(event.errors) ? event.errors.filter((error) => typeof error === "string").join("\n") : "";
         fail(errorCode, details || stderrTail || "Claude Code reported an error result", false);
       } else {
-        terminalEmitted = true;
         const output = typeof event.result === "string" ? event.result : "";
+        if (Array.isArray(event.permission_denials) && event.permission_denials.length || failedTools > 0 && successfulTools === 0) {
+          fail("claude.tool_permission_denied", "本次文件操作未执行成功。请检查员工已授权的读取范围，再重新发起任务。", false);
+          return;
+        }
+        if (hasUnexecutedToolText(output)) {
+          fail("claude.tool_protocol_invalid", "模型返回了未执行的工具调用文本，本次任务没有完成。请使用支持结构化工具调用的模型；不会把文本命令直接执行。", false);
+          return;
+        }
+        terminalEmitted = true;
         emit({ type: "usage", runId, timestamp: now(), ...usage });
         emit({ type: "run.completed", runId, timestamp: now(), output, terminalReason: "goal_met" });
         process.exit(0);
@@ -1783,6 +1848,17 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
     if (terminalEmitted) return;
     terminalEmitted = true;
     stopChild();
+    // A provider's HTML access-denied page is a connection failure, not task
+    // output or evidence that the CLI's ChatGPT login URL is misconfigured.
+    if (/\b(?:status|HTTP)\s*:?\s*403\b|\b403\s+Forbidden\b/i.test(message)) {
+      code = "codex.access_denied";
+      message = "Codex 服务拒绝连接（403），本次任务未执行。请检查账号访问权限和网络连接后重试。";
+      retryable = false;
+    } else if (/\b(?:status|HTTP)\s*:?\s*401\b|\b401\s+Unauthorized\b/i.test(message)) {
+      code = "codex.authentication_failed";
+      message = "Codex 登录验证失败（401）。请在当前运行环境重新登录 Codex 后再试。";
+      retryable = false;
+    }
     emit({
       type: "run.failed",
       runId,

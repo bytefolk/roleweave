@@ -18,6 +18,7 @@ export * from "./health.js";
 export * from "./turns.js";
 export * from "./turn-progress.js";
 export * from "./agent-binding.js";
+export * from "./tool-output.js";
 export * from "./model-selection.js";
 export * from "./sessions.js";
 export * from "./groups.js";

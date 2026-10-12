@@ -556,6 +556,8 @@ export const zhCatalog: Record<string, string> = {
   "turn.activityRunningExpanded": "正在执行中",
   "turn.activityRunningTool": "正在调用 {tool}",
   "turn.activityProcessed": "已处理",
+  "turn.toolsNotExecuted": "工具未执行",
+  "turn.toolsNotExecutedHelp": "这条旧回复只输出了工具文本，没有实际执行。请重新发起任务。",
   "turn.duration": "耗时 {seconds} 秒",
   "turn.timeoutTitle": "执行超时",
   "turn.timeoutPreserved": "任务超过时间限制后已停止；已保留本次收到的内容，建议检查后再决定是否重新执行。",

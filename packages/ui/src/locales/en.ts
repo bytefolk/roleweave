@@ -553,6 +553,8 @@ export const enCatalog: Record<string, string> = {
   "turn.activityRunningExpanded": "Running",
   "turn.activityRunningTool": "Calling {tool}",
   "turn.activityProcessed": "Processed",
+  "turn.toolsNotExecuted": "Tools were not executed",
+  "turn.toolsNotExecutedHelp": "This earlier reply printed tool text without executing it. Start a new task.",
   "turn.duration": "Completed in {seconds}s",
   "turn.timeoutTitle": "Execution timed out",
   "turn.timeoutPreserved": "The task stopped after reaching its time limit. Received content was preserved; review it before running again.",
