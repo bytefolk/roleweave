@@ -22,7 +22,7 @@ Its organizing principle is simple: **the file tree is the org chart.** Roles li
 
 For example, an open-source maintenance team can have a repository owner with three supporting roles: an issue researcher, a community operator, and a release engineer. The repository includes an [example workspace](examples/oss-maintainer) with this structure and role budgets.
 
-The [CXO reference library and company scenarios](examples/cxo-company/README.md) provide 25 optional functional roles, a three-role starter company and a nine-role product company. They demonstrate existing organization and group collaboration capabilities through a synthetic, read-only product-validation task.
+The [CXO reference library and company scenarios](examples/cxo-company/README.md) provide 25 optional functional roles, a three-role starter company, a nine-role product company and a nineteen-role delivery company with fourteen professional roles. Four team runbooks demonstrate product, engineering, marketing and delivery coordination through existing group routes, explicit handoffs and operator-controlled review/repair. The synthetic tasks deliver read-only plans and code drafts, not a deployed product.
 
 The v0.5.0 source adds local WorkBuddy and Qwen Office client connections, improves Agent readiness checks, and refines employee settings, organization search, project layouts and rich conversation replies. See the [v0.5.0 notes](docs/releases/v0.5.0.md) for the local candidate and [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits.
 

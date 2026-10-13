@@ -1,6 +1,6 @@
 # Reference workspaces
 
-- [CXO 公司](cxo-company/README.md)：25 种参考职能、三个岗位的入门公司和九个职能的 AI 产品公司；使用现有群组并行与接力能力。
+- [CXO 公司与执行团队](cxo-company/README.md)：25 种参考职能、14 个专业岗位、三个公司场景与四类团队 runbook；使用现有群组并行与接力能力。
 - [开源维护组织](#examplesoss-maintainer)：仓库负责人、问题研究、发布工程和社区运营。
 - [GitHub 运维](github-ops/README.md)：GitHub 工作场景。
 - [关系图](relationship-graph/README.md)：关系视图示例。

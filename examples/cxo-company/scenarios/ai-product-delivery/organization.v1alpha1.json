@@ -1,0 +1,656 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace-org.schema.json",
+  "schemaVersion": "workspace-org.v1",
+  "business": "cxo-ai-product-delivery",
+  "description": "AI 产品交付公司：五个经营职能与十四个专业岗位形成产品、研发、市场、交付运营四个执行团队；以只读 MVP 交付包演示跨团队协作。",
+  "owner": "chief-executive-officer",
+  "roles": [
+    {
+      "id": "chief-executive-officer",
+      "name": "CEO · 首席执行官",
+      "description": "明确公司目标、优先级与资源取舍，对整体结果负责。",
+      "reportTo": null,
+      "package": {
+        "name": "chief-executive-officer",
+        "version": "0.1.0",
+        "digest": "sha256:2956ad951f726f9f15fb257149517a2f61a380f5c4e6d51a5267950ecc259519",
+        "localReference": "/workspace/positions/chief-executive-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-executive-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 40000,
+          "iterations": 12
+        },
+        "perDay": {
+          "tokens": 400000,
+          "iterations": 96
+        }
+      }
+    },
+    {
+      "id": "chief-product-officer",
+      "name": "CPO · 首席产品官",
+      "description": "将用户问题转成产品范围、路线图与验证方法。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-product-officer",
+        "version": "0.1.0",
+        "digest": "sha256:1d4ed98d07081907d90a4079a2e3c1570c3fd858d39e4111b1b92ab48fc6e76b",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-product-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-product-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-technology-officer",
+      "name": "CTO · 首席技术官",
+      "description": "制定技术方案，组织研发并检查技术结果。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-technology-officer",
+        "version": "0.1.0",
+        "digest": "sha256:aba838c2160bb13d473267eb15062d1771f284e1f9b5359cffb78f4ac6bcb399",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-technology-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-technology-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-marketing-officer",
+      "name": "CMO · 首席营销官",
+      "description": "制定市场定位、品牌与需求获取方案。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-marketing-officer",
+        "version": "0.1.0",
+        "digest": "sha256:fd15ea28159f5b9d790780c6b6d357c21139ad95eef718debe57f3d565a4f61a",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-marketing-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-marketing-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-operating-officer",
+      "name": "COO · 首席运营官",
+      "description": "将目标转成执行计划，协调流程、进度与交付。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-operating-officer",
+        "version": "0.1.0",
+        "digest": "sha256:66883d8f06ce4e8d755cac37b9ba4b1cd0d31174ba0022975ea2f7c56011c308",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-operating-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-operating-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "product-manager",
+      "name": "产品经理",
+      "description": "将目标转成明确范围、优先级和可检查的产品规格。",
+      "reportTo": "chief-product-officer",
+      "package": {
+        "name": "product-manager",
+        "version": "0.1.0",
+        "digest": "sha256:ce073c82decf02221e0b5328057c4397db75c3aaa1ece428b66b66684d5e1825",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-product-officer/product-manager"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "product-manager"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "user-researcher",
+      "name": "用户研究员",
+      "description": "整理用户问题、证据缺口和可执行的研究计划。",
+      "reportTo": "product-manager",
+      "package": {
+        "name": "user-researcher",
+        "version": "0.1.0",
+        "digest": "sha256:187413827694484bb48f8895608fd78ba109016b5fd3e357052e1c345b74bc0c",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-product-officer/product-manager/user-researcher"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "user-researcher"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "interaction-designer",
+      "name": "交互设计师",
+      "description": "把产品范围转为可审阅的用户流程和交互规格。",
+      "reportTo": "product-manager",
+      "package": {
+        "name": "interaction-designer",
+        "version": "0.1.0",
+        "digest": "sha256:3ad660052b65de0cb5d3fb4e28431d1853e1379f81a3b7af4381dc04f760551e",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-product-officer/product-manager/interaction-designer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "interaction-designer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "engineering-lead",
+      "name": "研发负责人",
+      "description": "协调技术任务、接口约定、实现整合与验证。",
+      "reportTo": "chief-technology-officer",
+      "package": {
+        "name": "engineering-lead",
+        "version": "0.1.0",
+        "digest": "sha256:a1afc71d7727fdfc65f4a12d941c1d8e365b47a56309d4ddfbd8b73d884d4040",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-technology-officer/engineering-lead"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "engineering-lead"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "software-architect",
+      "name": "软件架构师",
+      "description": "确定实现边界、数据结构、接口契约和技术取舍。",
+      "reportTo": "engineering-lead",
+      "package": {
+        "name": "software-architect",
+        "version": "0.1.0",
+        "digest": "sha256:1a64370926cb9cef0e0628c51a405258eadcca6c563c8d8255d781ebafc46af3",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-technology-officer/engineering-lead/software-architect"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "software-architect"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "frontend-developer",
+      "name": "前端开发工程师",
+      "description": "按交互与接口约定产出前端实现草稿，说明限制和验证方法。",
+      "reportTo": "engineering-lead",
+      "package": {
+        "name": "frontend-developer",
+        "version": "0.1.0",
+        "digest": "sha256:17f011afb96daaf41b9a75f5049391a5a803749b3edccdabd95a1dcf55a120f5",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-technology-officer/engineering-lead/frontend-developer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "frontend-developer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "backend-developer",
+      "name": "后端开发工程师",
+      "description": "按数据与接口契约产出后端实现草稿及验证说明。",
+      "reportTo": "engineering-lead",
+      "package": {
+        "name": "backend-developer",
+        "version": "0.1.0",
+        "digest": "sha256:8846d40639b456b103330064d9626d227db6f81ad59023957af60b6e165888a8",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-technology-officer/engineering-lead/backend-developer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "backend-developer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "test-engineer",
+      "name": "测试工程师",
+      "description": "独立检查交付是否符合验收项，提供可定位的问题和证据。",
+      "reportTo": "engineering-lead",
+      "package": {
+        "name": "test-engineer",
+        "version": "0.1.0",
+        "digest": "sha256:8cf2b251a2e0fed736f9801207e855b0e2a260ecfd5438bc4e8fdac03e994ad9",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-technology-officer/engineering-lead/test-engineer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "test-engineer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "campaign-strategist",
+      "name": "营销策划负责人",
+      "description": "定义受众、市场定位、渠道选择及活动验收方式。",
+      "reportTo": "chief-marketing-officer",
+      "package": {
+        "name": "campaign-strategist",
+        "version": "0.1.0",
+        "digest": "sha256:38a32bd6850af889a1fa9d529f5f2c08375a6db0796d51829c06e834a59784b8",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-marketing-officer/campaign-strategist"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "campaign-strategist"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "content-creator",
+      "name": "内容策划",
+      "description": "基于批准的产品信息产出可审阅的营销内容。",
+      "reportTo": "campaign-strategist",
+      "package": {
+        "name": "content-creator",
+        "version": "0.1.0",
+        "digest": "sha256:d7f6ddde4a0b21d185f899d479cba5250e1fa6aeb54ae5910b308475b33f69b2",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-marketing-officer/campaign-strategist/content-creator"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "content-creator"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "growth-analyst",
+      "name": "增长分析师",
+      "description": "设计增长实验和指标，分析证据而不虚构效果。",
+      "reportTo": "campaign-strategist",
+      "package": {
+        "name": "growth-analyst",
+        "version": "0.1.0",
+        "digest": "sha256:ea032aceffa9c1bddd85599768ae3dbcf20acd1561ea9aff53c23a229e808834",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-marketing-officer/campaign-strategist/growth-analyst"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "growth-analyst"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "delivery-lead",
+      "name": "交付负责人",
+      "description": "整合团队交付、协调依赖并组织用户验收。",
+      "reportTo": "chief-operating-officer",
+      "package": {
+        "name": "delivery-lead",
+        "version": "0.1.0",
+        "digest": "sha256:26a0a2847aed4023946adda439fee5a3317257dcc6225e7de61321d2d2072160",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-operating-officer/delivery-lead"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "delivery-lead"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "project-coordinator",
+      "name": "项目协调员",
+      "description": "维护任务、依赖、状态和交接记录。",
+      "reportTo": "delivery-lead",
+      "package": {
+        "name": "project-coordinator",
+        "version": "0.1.0",
+        "digest": "sha256:24c159eaaf8471ded47e91622d18f4effb848b39226a8657d5504a0b92c52ca7",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-operating-officer/delivery-lead/project-coordinator"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "project-coordinator"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "customer-support-analyst",
+      "name": "客户支持分析员",
+      "description": "整理支持问题、反馈假设和交付说明。",
+      "reportTo": "delivery-lead",
+      "package": {
+        "name": "customer-support-analyst",
+        "version": "0.1.0",
+        "digest": "sha256:fcf6bfaa2e66ab4dfe8eb832962439d8ca104ddff8215b7d8e0b09debe1b94b1",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-operating-officer/delivery-lead/customer-support-analyst"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "customer-support-analyst"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    }
+  ],
+  "updatedAt": "2026-10-14T00:00:00.000Z"
+}

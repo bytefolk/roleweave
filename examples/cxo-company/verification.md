@@ -44,3 +44,28 @@ npm run check
 真实模型验收应复制场景、连接参与岗位的 Agent，按 walkthrough 执行并由用户检查阶段产出与完整验收项。这一步尚未验证；实际模型质量、额度、上下文和真实业务效果不能由本记录证明。
 
 通用能力缺口另见 [缺口清单](../../docs/design/cxo-example-capability-gaps.md)。
+
+## 2026-10-14：执行团队补充
+
+新增 `ai-product-delivery` 场景：五个经营职能、十四个专业岗位，共十九个岗位。产品、研发、市场、交付运营四条 runbook 都通过现有群组接口使用；方法来源、交接、验证、升级及复盘模板单独列在案例资料中。
+
+这次验证使用 RoleWeave 基线 `28ba55aa`，Node 24.11.1 / Ubuntu 22.04 WSL、同一 CI 固定 design-system 和框架源码 `8a8a2a3`。原来的两个场景仍保留，所有三个场景共 31 个岗位包。
+
+- 31 个岗位包均通过真实框架 validate，目录摘要与声明一致；三个场景的组织 apply 得到 3、9、19 个岗位，重复应用无变更。
+- 四个团队的每个阶段都通过真实 HTTP 群组路由派发，只调用显式选择的专业岗位；sponsor 没有被自动加入或调用。
+- 由测试客户端选择可信产出并作为下一阶段 input 传递，覆盖产品→研发/市场→交付的跨团队材料接缝；未增加隐式共享或自动 DAG 调度。
+- QA 的 FAIL 仍属于 completed 的业务报告，不伪装成模型执行失败。测试覆盖 FAIL→用户发起修复→复验 PASS，以及三次验证 FAIL 后由客户端停止并升级的示例路径。
+- QA FAIL 后没有自动派发；修复仅调用指定实现岗位，测试岗位不加入实现名单，其他团队没有被激活。NOT_VERIFIED fixture 保留证据不足的状态。
+- 来源校验拒绝跨团队收件人、循环/前向依赖、不受限的修复次数和实现者自验收配置。快照比较按整组文件内容区分同一岗位在不同场景中的包，避免只按 role ID 误用摘要。
+- 本轮完整 `npm run check` 通过，构建、脚本/组件/服务端/renderer/桌面测试及依赖安全检查均完成；依赖 audit 为零漏洞。新增来源约束和 QA 缺证据断言另通过针对性测试。
+
+复现新测试：
+
+```bash
+npm run build
+node --test scripts/test/cxo-examples.test.mjs apps/server/dist/test/cxo-examples.test.js apps/server/dist/test/cxo-team-runbooks.test.js
+node scripts/cxo-examples.mjs validate --framework-root /path/to/built/digital-employee
+npm run check
+```
+
+这些 HTTP 测试仍使用确定性驱动和合成产出，没有调用真实模型，也没有运行生成的软件、采集真实客户反馈或发布部署。人工 runbook 上限不是平台新加的全局循环限制。真实模型与文件执行的验收边界保持如上。
