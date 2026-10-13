@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "cxo-example-scenarios.v1",
+  "createdAt": "2026-10-13T00:00:00.000Z",
+  "scenarios": [
+    {
+      "id": "starter",
+      "name": "CXO 入门公司",
+      "description": "CEO、CTO、COO 以只读方案交付演示需求澄清、技术规划和执行协调。",
+      "owner": "chief-executive-officer",
+      "roles": [
+        {"id":"chief-executive-officer","reportTo":null},
+        {"id":"chief-technology-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-operating-officer","reportTo":"chief-executive-officer"}
+      ],
+      "walkthrough": "walkthroughs/product-validation.json",
+      "relay": ["chief-executive-officer","chief-technology-officer","chief-operating-officer"],
+      "parallel": ["chief-technology-officer","chief-operating-officer"]
+    },
+    {
+      "id": "ai-product-company",
+      "name": "AI 产品公司",
+      "description": "九个职能以参考公司演示产品定义、技术与设计规划、经营分析、营销、人才和安全审查。",
+      "owner": "chief-executive-officer",
+      "roles": [
+        {"id":"chief-executive-officer","reportTo":null},
+        {"id":"chief-product-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-technology-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-operating-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-financial-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-marketing-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-human-resources-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-design-officer","reportTo":"chief-product-officer"},
+        {"id":"chief-information-security-officer","reportTo":"chief-executive-officer"}
+      ],
+      "walkthrough": "walkthroughs/product-validation.json",
+      "relay": ["chief-executive-officer","chief-product-officer","chief-technology-officer","chief-operating-officer"],
+      "parallel": ["chief-financial-officer","chief-marketing-officer","chief-information-security-officer"]
+    }
+  ]
+}

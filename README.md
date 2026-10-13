@@ -22,6 +22,8 @@ Its organizing principle is simple: **the file tree is the org chart.** Roles li
 
 For example, an open-source maintenance team can have a repository owner with three supporting roles: an issue researcher, a community operator, and a release engineer. The repository includes an [example workspace](examples/oss-maintainer) with this structure and role budgets.
 
+The [CXO reference library and company scenarios](examples/cxo-company/README.md) provide 25 optional functional roles, a three-role starter company and a nine-role product company. They demonstrate existing organization and group collaboration capabilities through a synthetic, read-only product-validation task.
+
 The v0.5.0 source adds local WorkBuddy and Qwen Office client connections, improves Agent readiness checks, and refines employee settings, organization search, project layouts and rich conversation replies. See the [v0.5.0 notes](docs/releases/v0.5.0.md) for the local candidate and [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits.
 
 Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior ships with v0.2.0.

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "employee-evals.v1alpha1",
+  "cases": [
+    {
+      "id": "synthetic-scope",
+      "input": {
+        "message": "本岗位的案例资料是否是真实客户反馈？"
+      },
+      "expectedOutput": {
+        "status": "answered",
+        "answer": "不是。资料是已批准的合成需求；客户反馈和模型效果仍需验证。",
+        "citations": [
+          {
+            "label": "合成案例资料",
+            "uri": "./knowledge/README.md"
+          }
+        ]
+      }
+    }
+  ]
+}

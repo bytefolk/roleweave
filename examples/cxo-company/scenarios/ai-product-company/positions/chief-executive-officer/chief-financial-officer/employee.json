@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/employee-package.schema.json",
+  "schemaVersion": "employee-package.v1alpha1",
+  "name": "chief-financial-officer",
+  "version": "0.1.0",
+  "description": "规划财务资源，分析成本、预算与经营表现。",
+  "license": "Apache-2.0",
+  "authors": [
+    "bytefolk"
+  ],
+  "host": {
+    "protocol": "agent-host.v1",
+    "requiredCapabilities": []
+  },
+  "entrypoints": {
+    "skill": "./SKILL.md",
+    "inputSchema": "./schemas/input.schema.json",
+    "outputSchema": "./schemas/output.schema.json"
+  },
+  "policy": {
+    "mode": "read_only",
+    "network": "deny",
+    "filesystem": {
+      "read": [
+        "./knowledge/**"
+      ],
+      "write": []
+    },
+    "mcpTools": []
+  },
+  "assets": [
+    "./knowledge/README.md",
+    "./evals/cases.json"
+  ]
+}

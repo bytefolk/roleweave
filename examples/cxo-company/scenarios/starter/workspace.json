@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace.schema.json",
+  "schemaVersion": "workspace.v1alpha1",
+  "name": "starter",
+  "description": "CEO、CTO、COO 以只读方案交付演示需求澄清、技术规划和执行协调。",
+  "template": "cxo-example-starter",
+  "createdAt": "2026-10-13T00:00:00.000Z",
+  "organization": "./organization.v1alpha1.json",
+  "positions": "./positions",
+  "context": "./context"
+}
