@@ -20,6 +20,18 @@ function disclosure() {
 afterEach(() => vi.useRealTimers());
 
 describe("conversation activity status", () => {
+  it("does not present a legacy unexecuted tool reply as completed work", () => {
+    render(<TurnThread turns={[turn({ status: "completed", completedAt: ended, trace: [], output: "我来检查。<tool_call>find /workspace -type f" })]} />);
+    expect(screen.getByRole("group", { name: "执行进展" })).toHaveTextContent("工具未执行");
+    expect(screen.getByRole("alert")).toHaveTextContent("没有实际执行");
+    expect(screen.queryByText("已处理")).not.toBeInTheDocument();
+  });
+
+  it("preserves intentionally quoted tool syntax as an ordinary answer", () => {
+    render(<TurnThread turns={[turn({ status: "completed", completedAt: ended, trace: [], output: "示例：`<tool_call>find x`" })]} />);
+    expect(screen.getByRole("group", { name: "执行进展" })).toHaveTextContent("已处理");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
   it("names the live tool consistently when details are expanded or folded", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-10T06:00:08.000Z"));

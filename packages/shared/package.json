@@ -37,6 +37,10 @@
       "types": "./dist/model-selection.d.ts",
       "import": "./dist/model-selection.js"
     },
+    "./tool-output": {
+      "types": "./dist/tool-output.d.ts",
+      "import": "./dist/tool-output.js"
+    },
     "./capabilities": {
       "types": "./dist/capabilities.d.ts",
       "import": "./dist/capabilities.js"

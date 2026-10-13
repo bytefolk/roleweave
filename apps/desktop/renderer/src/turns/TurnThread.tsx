@@ -15,6 +15,7 @@ import { EngineIcon } from "./engine-icon";
 import type { TurnRecord } from "./types";
 import { DiffViewer } from "../approvals/DiffViewer";
 import { Tooltip } from "antd";
+import { hasUnexecutedToolText } from "@roleweave/shared/tool-output";
 
 export interface TurnThreadProps {
   turns: TurnRecord[];
@@ -145,6 +146,7 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
   // the still-running tool stays visible in the body.
   const runningThought = trail.find((item) => item.status === "running" && item.kind === "thought");
   const awaitingApproval = turn.approvalRequest !== undefined;
+  const unexecuted = turn.status === "completed" && hasUnexecutedToolText(turn.output);
   const running = turn.status === "running" && !awaitingApproval;
   const failedTools = tools.filter((item) => item.status === "failed").length;
   const [now, setNow] = useState(Date.now);
@@ -157,12 +159,12 @@ export function ProgressTrail({ turn, approvalDecided = false, onOpenResource }:
   const phase = `${turn.id}:${turn.status}:${approvalDecided}`;
   const [choice, setChoice] = useState<{ phase: string; open: boolean } | null>(null);
   const open = choice?.phase === phase ? choice.open : running;
-  const state = awaitingApproval ? (approvalDecided ? "decided" : "awaiting_approval") : turn.status;
+  const state = awaitingApproval ? (approvalDecided ? "decided" : "awaiting_approval") : unexecuted ? "failed" : turn.status;
   const label = awaitingApproval
     ? t(approvalDecided ? "apr.decided" : "turn.progressAwaitingApproval")
     : turn.errorCode === "turn_cancelled"
       ? copy.cancelled
-      : running
+      : unexecuted ? t("turn.toolsNotExecuted") : running
         ? runningThought
             ? t("turn.thoughtRunning")
             : runningActivity
@@ -554,7 +556,7 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
               ) : null}
               <div className="owb-bubble__hover-actions">
                 {turn.output ? <MessageActions raw={turn.output} plain={markdownToPlainText(turn.output)} /> : null}
-                {turn.output && !isProvisional && turn.status === "completed" && window.owb?.vault ? <TurnNoteAction turn={turn}
+                {turn.output && !isProvisional && turn.status === "completed" && !hasUnexecutedToolText(turn.output) && window.owb?.vault ? <TurnNoteAction turn={turn}
                   onCreated={(uri) => onOpenResource?.(turn.positionId, uri)} /> : null}
                 {turn.approvalRequest === undefined && retryable && onRetry ? (
                   <button
@@ -569,6 +571,7 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
                 ) : null}
               </div>
 
+              {turn.status === "completed" && hasUnexecutedToolText(turn.output) ? <p className="owb-turn__warning" role="alert">{t("turn.toolsNotExecutedHelp")}</p> : null}
               {turn.error ? (
                 <div className="owb-bubble__error owb-turn-failure" role="alert" title={turn.error}>
                   <div className="owb-turn-failure__title"><AlertTriangle aria-hidden="true" size={14} />
