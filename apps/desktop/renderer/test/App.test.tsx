@@ -1244,6 +1244,9 @@ describe("App runtime bridge", () => {
     expect(screen.queryByTitle("Agent：Qoder")).not.toBeInTheDocument();
   });
 
+  // Each case mounts two complete workspaces and can send two turns. Use the
+  // same bounded budget as the other full App flows: a 5s timeout on a loaded
+  // runner lets this case's finally clear storage while the next case is active.
   it.each(["qoder", "claude-code", "codex-local", "workbuddy", "workbuddy-local"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
     window.localStorage.setItem("owb-turn-engine", "codex-local");
     try {
@@ -1280,7 +1283,7 @@ describe("App runtime bridge", () => {
     } finally {
       window.localStorage.removeItem("owb-turn-engine");
     }
-  });
+  }, 15_000);
 
   it("keeps a bound local WorkBuddy employee unavailable until its own health recovers, even when the API host is ready", async () => {
     const bridge = openedBridge({
