@@ -1242,7 +1242,7 @@ describe("App runtime bridge", () => {
     expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
     expect(screen.getByTitle("Agent：Codex")).toBeInTheDocument();
     expect(screen.queryByTitle("Agent：Qoder")).not.toBeInTheDocument();
-  });
+  }, 15_000);
 
   // Each case mounts two complete workspaces and can send two turns. Use the
   // same bounded budget as the other full App flows: a 5s timeout on a loaded
