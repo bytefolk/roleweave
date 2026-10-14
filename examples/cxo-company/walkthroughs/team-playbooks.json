@@ -1,0 +1,27 @@
+{
+  "schemaVersion":"cxo-example-playbooks.v1",
+  "scenarioId":"ai-product-delivery",
+  "control":"manual",
+  "maxRepairAttempts":3,
+  "note":"阶段、review 和 transitions 是供用户操作与验收的案例资料，不是控制面可执行的编排协议。所有请求仍使用现有群组的 input、mentions、mode。",
+  "runbooks":[
+    {"id":"product-discovery","teamId":"product","name":"产品发现与规格","sources":["method-agency","method-bmad","method-metagpt"],"stages":[
+      {"id":"research","mode":"parallel","mentions":["user-researcher","interaction-designer"],"instruction":"基于合成任务分别整理用户假设、研究缺口和主要用户流程；不能虚构访谈。","outputs":["research-notes","interaction-outline"],"acceptance":["事实和假设分开","空输入和错误反馈有说明"]},
+      {"id":"specification","mode":"relay","mentions":["product-manager","interaction-designer"],"instruction":"用户提供已审阅的研究和流程材料；产品经理整理范围与验收项，交互设计师据此前驱可信结果补齐交互规格。","outputs":["product-specification","interaction-specification"],"acceptance":["范围和排除项明确","每个主要行为可验收"]}
+    ],"finalReview":{"reviewers":["product-manager"],"criteria":["研究缺口被保留","产品范围、交互和验收一致"],"decisionOwner":"operator"}},
+    {"id":"engineering-validation","teamId":"engineering","name":"技术草稿、独立审阅与修复","sources":["method-metagpt","method-agency","method-gstack","method-omc"],"stages":[
+      {"id":"contract","mode":"relay","mentions":["engineering-lead","software-architect"],"instruction":"用户提供产品规格；负责人说明交付边界，架构师明确接口请求、响应、正常与错误行为。","outputs":["engineering-plan","interface-contract"],"acceptance":["输入和响应字段完整","空输入、错误状态和不接入真实模型的约束明确"]},
+      {"id":"implementation","mode":"parallel","mentions":["frontend-developer","backend-developer"],"instruction":"用户提供同一份已确认接口契约。分别给出前端和后端最小实现代码草稿及待运行测试；不自行写文件或运行服务。","outputs":["frontend-draft","backend-draft"],"acceptance":["双方遵守同一契约","未运行的测试不标为通过"]},
+      {"id":"review","mode":"relay","mentions":["engineering-lead","test-engineer"],"instruction":"用户提供前后端草稿与契约。负责人整合材料，测试工程师独立给出 PASS、FAIL 或 NOT_VERIFIED，逐项说明预期、实际、证据和需要修复的岗位。","outputs":["integration-summary","qa-verdict"],"acceptance":["验证范围和证据明确","结论不等同于模型回合终态"]}
+    ],"repair":{"onVerdict":"FAIL","mode":"parallel","mentions":["frontend-developer","backend-developer"],"instruction":"用户只把明确的问题和证据交给涉及的实现岗位，修复指定问题并提交修复说明。不会自动重新派发。","outputs":["corrected-drafts","repair-notes"],"reviewStage":"review","onExhausted":"operator_escalation"},"finalReview":{"reviewers":["test-engineer"],"criteria":["草稿一致性可被检查","真实运行仍未验证的项不被隐藏"],"decisionOwner":"operator"}},
+    {"id":"market-validation","teamId":"marketing","name":"市场定位、内容与增长实验","sources":["method-agency"],"stages":[
+      {"id":"campaign-drafts","mode":"parallel","mentions":["content-creator","growth-analyst"],"instruction":"用户提供已确认的产品范围；内容策划编写内容草稿，增长分析师提出渠道实验和测量方案。不得虚构评价、增长或转化数据。","outputs":["campaign-content","growth-experiment"],"acceptance":["没有虚假效果承诺","发布和投放均未执行"]},
+      {"id":"campaign-review","mode":"relay","mentions":["growth-analyst","campaign-strategist"],"instruction":"用户提供内容和实验草稿；分析师核对指标与假设，负责人整合活动方案、检查事实表述与品牌一致性。","outputs":["measurement-review","campaign-plan"],"acceptance":["指标、受众和范围一致","未知项有后续验证方法"]}
+    ],"finalReview":{"reviewers":["campaign-strategist"],"criteria":["内容仅使用已确认能力","实验方法明确，结果仍待验证"],"decisionOwner":"operator"}},
+    {"id":"delivery-acceptance","teamId":"delivery","name":"交付整合与用户验收","sources":["method-agency","method-bmad","method-gstack"],"stages":[
+      {"id":"readiness","mode":"parallel","mentions":["project-coordinator","customer-support-analyst"],"instruction":"用户提供各团队交付与验证记录；协调员整理依赖和阻塞，支持分析员编写用户说明、FAQ 和反馈计划。","outputs":["readiness-checklist","support-draft"],"acceptance":["阻塞和未验证项明确","不声称客户已经使用或验收"]},
+      {"id":"acceptance-package","mode":"relay","mentions":["project-coordinator","delivery-lead"],"instruction":"用户提供团队产物、检查清单和用户说明；协调员整理出处与依赖，负责人形成交付包和验收表，留给用户作最终决定。","outputs":["handoff-index","acceptance-package"],"acceptance":["每项验收有产物或明确缺口","实际发布、测试和反馈的状态如实记录"]}
+    ],"finalReview":{"reviewers":["delivery-lead"],"criteria":["所有团队产物可追溯","最终验收决策归用户"],"decisionOwner":"operator"}}
+  ],
+  "crossTeam":{"id":"mvp-delivery","stages":[{"teamId":"product","runbookId":"product-discovery","requires":[]},{"teamId":"engineering","runbookId":"engineering-validation","requires":["product"]},{"teamId":"marketing","runbookId":"market-validation","requires":["product"]},{"teamId":"delivery","runbookId":"delivery-acceptance","requires":["engineering","marketing"]}],"handoff":"用户审阅并选择关键产物，将证据、限制与未解决项显式放入下一阶段 input。跨群组没有隐式共享结果。"}
+}

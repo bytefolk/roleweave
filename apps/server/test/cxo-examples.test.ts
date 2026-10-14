@@ -8,7 +8,7 @@ import type { EngineEvent, GroupConversation, GroupTimeline, TurnRecord, TurnRun
 import { api, startTestServer, type TestServer } from './helpers.js';
 
 const example = fileURLToPath(new URL('../../../../examples/cxo-company/', import.meta.url));
-interface Scenario { id: string; owner: string; roles: Array<{ id: string; reportTo: string | null }>; relay: string[]; parallel: string[] }
+interface Scenario { id: string; owner: string; roles: Array<{ id: string; reportTo: string | null }>; relay: string[]; parallel: string[]; walkthrough: string }
 
 /** Synthetic execution proves routing/records, not a model's answer quality. */
 class ExampleDriver implements TurnRunDriver {
@@ -39,11 +39,11 @@ async function waitForTurns(server: TestServer, ref: string, count: number): Pro
   throw new Error('CXO group did not reach recorded terminal states');
 }
 
-for (const scenarioId of ['starter', 'ai-product-company']) {
+for (const scenarioId of ['starter', 'ai-product-company', 'ai-product-delivery']) {
   test(`${scenarioId}: existing workspace/group routes preserve the org and relay trusted results`, async () => {
     const source = JSON.parse(await fs.readFile(path.join(example, 'scenarios.json'), 'utf8')) as { scenarios: Scenario[] };
     const scenario = source.scenarios.find(scene => scene.id === scenarioId)!;
-    const walkthrough = JSON.parse(await fs.readFile(path.join(example, 'walkthroughs/product-validation.json'), 'utf8')) as { brief: string; relayInput: string; parallelInput: string };
+    const walkthrough = JSON.parse(await fs.readFile(path.join(example, scenario.walkthrough), 'utf8')) as { brief: string; relayInput: string; parallelInput: string };
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'rw-cxo-'));
     await fs.cp(path.join(example, 'scenarios', scenarioId), workspace, { recursive: true });
     const originalOrg = await fs.readFile(path.join(workspace, 'organization.v1alpha1.json'), 'utf8');

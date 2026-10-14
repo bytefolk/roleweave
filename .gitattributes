@@ -5,3 +5,4 @@ examples/cxo-company/** text eol=lf
 examples/cxo-company/scenarios/** linguist-generated=true
 examples/cxo-company/generated-files.json linguist-generated=true
 examples/cxo-company/role-catalog/README.md linguist-generated=true
+examples/cxo-company/execution-catalog/README.md linguist-generated=true
