@@ -2758,7 +2758,7 @@ it("returns to the conversation through collaboration after leaving organization
   expect(composer).toBeVisible();
 });
 
-it("rechecks health without rebuilding the workspace or losing the selected conversation draft", async () => {
+it.each(["button", "window focus"])("rechecks health via %s without rebuilding the workspace or losing the selected conversation draft", async trigger => {
   const bridge = openedBridge();
   const ready = await bridge.status();
   const unavailable = { ...ready, health: { ...ready.health!, engine: { ...ready.health!.engine, available: false, nextStep: "RAW_ENGINE_PATH" } } };
@@ -2774,8 +2774,13 @@ it("rechecks health without rebuilding the workspace or losing the selected conv
   let finish!: (value: Awaited<ReturnType<OwbBridge["status"]>>) => void;
   vi.mocked(bridge.status).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const recheck = screen.getByRole("button", { name: "重新检查" });
-  fireEvent.click(recheck);
-  fireEvent.click(recheck);
+  if (trigger === "button") {
+    fireEvent.click(recheck);
+    fireEvent.click(recheck);
+  } else {
+    fireEvent(window, new Event("focus"));
+    fireEvent(window, new Event("focus"));
+  }
   expect(screen.getByRole("button", { name: "检查中…" })).toBeDisabled();
   expect(bridge.status).toHaveBeenCalledTimes(2);
   expect(document.body.innerHTML).not.toContain("RAW_ENGINE_PATH");

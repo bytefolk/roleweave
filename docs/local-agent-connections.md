@@ -30,6 +30,11 @@ The CLI executable must support the adapter's headless flags; a Qoder IDE
 launcher is not a compatible CLI. Local login checks do not prove model
 entitlement or sufficient credits.
 
+When you return to RoleWeave from the CLI or browser login, the selected Qoder
+employee's connection and model configuration are checked again. You can also
+use the conversation's recheck button; an old failed probe does not require an
+application restart.
+
 The adapter reads `QODER_CONFIG_DIR/settings.json` or `~/.qoder/settings.json`,
 including JSON comments. It projects provider/model configuration into a
 private temporary settings file and removes that file when the adapter exits.
@@ -71,9 +76,18 @@ confirms account and model access.
 
 Choose **Qwen Office** when hiring an employee and keep the signed-in Windows
 client open. Its local control service must be enabled at startup: set
-`QWENWORK_DESKTOP_CONTROL_ENABLED=true` in `~/.qwenworkcn/.env`, then restart
+`QWENWORK_DESKTOP_CONTROL_ENABLED=true` in the **Windows user's**
+`~/.qwenworkcn/.env` (not the WSL home), then restart
 the idle client. RoleWeave uses its authenticated loopback control protocol;
 WSL employees use a separate desktop-owned private channel.
+
+If the client is closed, use **Open Qwen Office** in the conversation notice.
+RoleWeave opens the client's registered Windows launcher and checks its
+connection for up to 45 seconds. Returning from the client also refreshes
+availability. Opening the application alone does not mark the connection ready:
+the authenticated client probe must succeed. Missing local control, expired
+login and incompatible protocol responses have separate diagnostics. The open
+action does not modify the client's configuration or restart an active task.
 
 Each RoleWeave turn creates a fresh Office session and supplies the assembled
 employee context. Previous Office conversations are not imported when a

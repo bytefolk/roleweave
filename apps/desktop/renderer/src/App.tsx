@@ -59,6 +59,7 @@ import {
   useEngineLabel,
 } from "./turns";
 import { EngineIcon } from "./turns/engine-icon";
+import { useLocalConnectionRecovery } from "./turns/use-local-connection-recovery";
 import { TurnThread } from "./turns/TurnThread";
 import { workspaceResourcePath } from "./workspace-resource-path";
 import type {
@@ -1887,6 +1888,9 @@ function AppInner({
     [defaultTurnEngine, positionEngines],
   );
   const engineLabel = useEngineLabel();
+  const selectedEngine = selectedId === null ? null : engineForPosition(selectedId);
+  const officeConnection = useLocalConnectionRecovery(selectedEngine,
+    selectedEngine !== null && engineAvailability[selectedEngine].ready, recheckAvailability);
 
   const displayTurns = useMemo(() => {
     const historyRunIds = new Set(turns.flatMap((turn) => (turn.runId ? [turn.runId] : [])));
@@ -2451,6 +2455,7 @@ function AppInner({
             headerHost={conversationHeaderHost}
             availabilityCheck={availabilityCheck}
             qoderLogin={qoderLoginSurface}
+            officeConnection={officeConnection}
             key={workspaceInfo?.path}
             workspaceKey={workspaceInfo?.path}
             workspaceScope={groupWorkspaceScope}

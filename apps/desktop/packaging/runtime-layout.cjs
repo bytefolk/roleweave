@@ -22,6 +22,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/workbuddy-client.cjs",
   "src/qwen-office-bridge.cjs",
   "src/qwen-office-client.cjs",
+  "src/qwen-office-open.cjs",
   "src/docs-ipc.cjs",
   "src/drive-ipc.cjs",
   "src/vault-ipc.cjs",

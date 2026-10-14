@@ -25,6 +25,7 @@ const {
 } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
 const { closeQwenOfficeClient, hasPendingQwenOfficeTasks } = require("./qwen-office-client.cjs");
+const { openQwenOffice } = require("./qwen-office-open.cjs");
 const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -441,6 +442,10 @@ ipcMain.handle("owb:control-plane:stop", async () => {
 // renderer only starts it and observes its state (see routes/qoder-login.ts).
 ipcMain.handle("owb:qoder:login", async () => apiRequest("/qoder/login", { method: "POST" }));
 ipcMain.handle("owb:qoder:login-status", async () => apiRequest("/qoder/login", { method: "GET" }));
+ipcMain.handle("owb:qwen-office:open", (event) => openQwenOffice({
+  event, isTrusted: (sender) => isTrustedWindowSender(sender, mainWindow, trustedRendererUrl),
+  openExternal: (url) => shell.openExternal(url),
+}));
 
 function pickWorkspaceDirectory(options) {
   return mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options);
