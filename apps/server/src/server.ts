@@ -390,7 +390,7 @@ async function dispatch(
       return;
     }
     if (pathname === routes.driveUpload && method === "POST") {
-      await handleDriveUpload(res);
+      await handleDriveUpload(ctx, req, res, url);
       return;
     }
     if (pathname === routes.driveProvider && method === "GET") {

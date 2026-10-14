@@ -80,8 +80,8 @@ const {
   validateDriveDetailRequest,
   validateDrivePreviewRequest,
   authorizeDriveReadSender,
-  validateDriveUploadRequest,
 } = require("./drive-ipc.cjs");
+const { registerDriveUploadIpc } = require("./drive-upload.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
 const { validatePositionProfileRequest } = require("./position-profile-ipc.cjs");
 const { validateAvatarGenerateRequest } = require("./avatar-ipc.cjs");
@@ -282,13 +282,15 @@ function stopControlPlane() {
   return controlPlaneStopPromise;
 }
 
-function apiRequest(pathname, { method = "GET", withAuth = true, body = null, timeoutMs } = {}) {
+function apiRequest(pathname, { method = "GET", withAuth = true, body = null, binaryBody, timeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     if (!controlPlane) {
       reject(new Error("control plane is not running"));
       return;
     }
-    const payload = body === null ? null : JSON.stringify(body);
+    const payload = binaryBody ?? (body === null ? null : JSON.stringify(body));
+    let uploadDeadline;
+    const finishUpload = () => { if (uploadDeadline) clearTimeout(uploadDeadline); };
     const req = http.request(
       {
         host: "127.0.0.1",
@@ -298,16 +300,24 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null, ti
         headers: {
           ...(withAuth ? { authorization: `Bearer ${controlPlane.token}` } : {}),
           ...(payload !== null
-            ? { "content-type": "application/json", "content-length": Buffer.byteLength(payload) }
+            ? { "content-type": binaryBody !== undefined ? "application/octet-stream" : "application/json", "content-length": Buffer.byteLength(payload) }
             : {}),
         },
       },
       (res) => {
+        if (binaryBody !== undefined) {
+          res.setEncoding("utf8");
+          res.on("error", () => { finishUpload(); reject(new Error("upload response interrupted")); });
+        }
         let raw = "";
         res.on("data", (chunk) => {
           raw += String(chunk);
+          if (binaryBody !== undefined && Buffer.byteLength(raw) > 128 * 1024) {
+            finishUpload(); req.destroy(new Error("upload response exceeds size limit"));
+          }
         });
         res.on("end", () => {
+          finishUpload();
           let parsed = null;
           try {
             parsed = raw.length > 0 ? JSON.parse(raw) : null;
@@ -318,7 +328,11 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null, ti
         });
       },
     );
-    req.on("error", reject);
+    req.on("error", (error) => { finishUpload(); reject(error); });
+    if (binaryBody !== undefined && timeoutMs !== undefined) {
+      uploadDeadline = setTimeout(() => req.destroy(new Error("upload timed out")), timeoutMs);
+      uploadDeadline.unref();
+    }
     if (timeoutMs !== undefined) req.setTimeout(timeoutMs, () => req.destroy(new Error("status request timed out")));
     if (payload !== null) req.write(payload);
     req.end();
@@ -916,8 +930,7 @@ ipcMain.handle("owb:goal:delete", async (event, goalId) => {
 });
 
 // Drive plane (bytefolk/mem proxy): whitelisted list/detail reads and a
-// stubbed upload seam. The desktop shell owns the OS file picker so an
-// absolute path never crosses the renderer boundary unvalidated.
+// desktop-picked binary uploads. File paths remain in the desktop process.
 ipcMain.handle("owb:drive:list", async (_event, query) => {
   const validated = validateDriveListRequest(query);
   if (!validated.ok) return validated.response;
@@ -946,27 +959,10 @@ ipcMain.handle("owb:drive:provider", async (event) => {
   return apiRequest("/drive/provider");
 });
 
-ipcMain.handle("owb:drive:upload", async (_event, filePath) => {
-  const validated = validateDriveUploadRequest(filePath);
-  if (!validated.ok) return validated.response;
-  // TODO(mem-upload): once mem's multipart PUT to /v1/files is contract-frozen,
-  // read validated.request.filePath here and stream it upstream. Until then
-  // the server route also returns a stub payload, keeping the seam honest.
-  return apiRequest("/drive/upload", { method: "POST", body: validated.request });
-});
-
-ipcMain.handle("owb:drive:pick-and-upload", async () => {
-  const options = {
-    title: "选择要上传到 mem 的文件",
-    properties: ["openFile"],
-  };
-  const picked = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, options)
-    : await dialog.showOpenDialog(options);
-  if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
-  const validated = validateDriveUploadRequest(picked.filePaths[0]);
-  if (!validated.ok) return validated.response;
-  return apiRequest("/drive/upload", { method: "POST", body: validated.request });
+registerDriveUploadIpc({
+  ipcMain, dialog, apiRequest,
+  getMainWindow: () => mainWindow,
+  getTrustedRendererUrl: () => trustedRendererUrl,
 });
 
 ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);
