@@ -4,10 +4,10 @@ import { EngineIcon } from "../src/turns/engine-icon";
 import type { TurnEngine } from "../src/turns";
 
 describe("EngineIcon (#57)", () => {
-  it("uses a neutral office glyph rather than another Agent's brand for Qwen Office", () => {
+  it("uses the official Qwen Office app mark", () => {
     const { container } = render(<EngineIcon engine="qwen-office-local" />);
-    expect(container.querySelector("svg.owb-engine-icon--qwen-office-local")).toHaveAttribute("aria-hidden", "true");
-    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("img.owb-engine-icon--qwen-office-local")).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelector("img")?.getAttribute("src")).toMatch(/qwen-office/);
   });
   const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "workbuddy-local", "gemini", "openai-compatible"];
 
@@ -27,6 +27,7 @@ describe("EngineIcon (#57)", () => {
     // Vite inlines the small claude.svg as a data URI; the brand fill #D97757
     // stays percent-encoded, so it is the stable identity marker in tests.
     expect(src("qoder")).toMatch(/qoder/);
+    expect(src("qwen-office-local")).not.toBe(src("qoder"));
     expect(src("claude-code")).toContain("%23D97757");
     expect(src("claude-local")).toContain("%23D97757");
     expect(src("claude-code")).toBe(src("claude-local"));

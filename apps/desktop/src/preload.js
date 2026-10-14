@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("owb", {
   },
   openExternalUrl: (url) => ipcRenderer.invoke("owb:external:open", url),
   status: () => ipcRenderer.invoke("owb:status"),
+  openQwenOffice: () => ipcRenderer.invoke("owb:qwen-office:open"),
   qoderLogin: {
     start: () => ipcRenderer.invoke("owb:qoder:login"),
     status: () => ipcRenderer.invoke("owb:qoder:login-status"),

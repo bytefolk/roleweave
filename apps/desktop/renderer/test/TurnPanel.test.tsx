@@ -676,6 +676,23 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
   });
 });
 
+it("offers Office startup only for a disconnected Office employee and unlocks after recheck", () => {
+  const open = vi.fn();
+  const props: TurnPanelProps = { workspaceOpen: true, positions, selectedPositionId: "repo-owner",
+    engine: "qwen-office-local", engineAvailability: { ...availability,
+      "qwen-office-local": { configured: false, ready: false, reason: "qwen_office.control_disabled" } },
+    turns: [], onCreateTurn: vi.fn(), officeConnection: { action: { label: "打开千问办公", onClick: open }, feedback: null } };
+  const { rerender } = render(<TurnPanel {...props} />);
+  expect(screen.getByLabelText("下达任务")).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "打开千问办公" }));
+  expect(open).toHaveBeenCalledTimes(1);
+  rerender(<TurnPanel {...props} engineAvailability={availability} />);
+  expect(screen.queryByRole("button", { name: "打开千问办公" })).not.toBeInTheDocument();
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  rerender(<TurnPanel {...props} engine="qoder" engineAvailability={{ ...availability, qoder: { configured: false, ready: false } }} />);
+  expect(screen.queryByRole("button", { name: "打开千问办公" })).not.toBeInTheDocument();
+});
+
 it("never renders invalid model diagnostics and blocks sending even when the host is ready", () => {
   const createTurn = vi.fn();
   render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner"
