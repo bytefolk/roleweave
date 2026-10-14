@@ -1170,7 +1170,8 @@ process.stdout.write(JSON.stringify({ status: "SUCCESS", response: "Antigravity 
   assert.equal(await fs.readFile(copiedTokenFile, "utf8"), "fixture-oauth-token");
 });
 
-test("qoder-engine turn run: terminating the Gemini adapter reaps its detached Antigravity client", { skip: process.platform === "win32" ? "requires POSIX process groups" : false }, async (t) => {
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+test(`qoder-engine turn run: ${signal} reaps the detached Antigravity client before Gemini exits`, { skip: process.platform === "win32" ? "requires POSIX process groups" : false }, async (t) => {
   const dir = await makeWorkspace();
   const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-antigravity-signal-"));
   t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
@@ -1197,6 +1198,8 @@ setInterval(() => {}, 1000);
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
+  let stdout = "";
+  adapter.stdout.on("data", chunk => { stdout += String(chunk); });
   adapter.stdin.end(JSON.stringify({ input: "wait for termination" }));
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try { await fs.access(childStateFile); break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); }
@@ -1206,13 +1209,15 @@ setInterval(() => {}, 1000);
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     adapter.once("close", (code, signal) => resolve({ code, signal }));
   });
-  adapter.kill("SIGTERM");
+  adapter.kill(signal);
   const exit = await exited;
   assert.equal(exit.code, 143);
   assert.equal(exit.signal, null);
   await assert.rejects(fs.access(temporaryRoot), { code: "ENOENT" });
   assert.throws(() => process.kill(childState.pid, 0), { code: "ESRCH" });
+  assert.equal(stdout.includes('"type":"run.failed"'), false, "cancellation must not race into an internal failure");
 });
+}
 
 test("qoder-engine turn run: claude-local preserves OAuth discovery without unrelated service credentials", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
   const dir = await makeWorkspace();

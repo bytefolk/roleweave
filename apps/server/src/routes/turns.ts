@@ -386,7 +386,7 @@ export async function executeTurn(
       assertAttachmentBatch(resolvedAttachments);
       augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, augmentedInput);
     }
-    const vaultContext = await assembleVaultContext(workspace, body.positionId, augmentedInput);
+    const vaultContext = await assembleVaultContext(workspace, body.positionId, augmentedInput, body.input);
     augmentedInput = vaultContext.input;
     const context = materializeThreadContext({
       input: augmentedInput,

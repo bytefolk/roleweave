@@ -1242,16 +1242,21 @@ describe("App runtime bridge", () => {
     expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
     expect(screen.getByTitle("Agent：Codex")).toBeInTheDocument();
     expect(screen.queryByTitle("Agent：Qoder")).not.toBeInTheDocument();
-  });
+  }, 15_000);
 
+  // Each case mounts two complete workspaces and can send two turns. Use the
+  // same bounded budget as the other full App flows: a 5s timeout on a loaded
+  // runner lets this case's finally clear storage while the next case is active.
   it.each(["qoder", "claude-code", "codex-local", "workbuddy", "workbuddy-local"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
     window.localStorage.setItem("owb-turn-engine", "codex-local");
+    let activeBridge: OwbBridge | undefined;
     try {
       for (let mount = 0; mount < 2; mount += 1) {
         const bridge = openedBridge({
           position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine, agentLocked: true } }),
           createSessionTurn: vi.fn().mockResolvedValue({ status: 200, body: apiTurn({ engine: agentEngine, input: "使用员工绑定" }) }),
         });
+        activeBridge = bridge;
         const view = render(<App />);
         try {
           await selectRepoOwner();
@@ -1278,9 +1283,10 @@ describe("App runtime bridge", () => {
         }
       }
     } finally {
-      window.localStorage.removeItem("owb-turn-engine");
+      // Vitest can begin the next case before a timed-out async body settles.
+      if (window.owb === activeBridge) window.localStorage.removeItem("owb-turn-engine");
     }
-  });
+  }, 15_000);
 
   it("keeps a bound local WorkBuddy employee unavailable until its own health recovers, even when the API host is ready", async () => {
     const bridge = openedBridge({
