@@ -57,6 +57,30 @@ test("note from turn finds personal-session source and copies only public surfac
   } finally { await server.ctx.contextExporter.waitForIdle(); await server.close(); await fs.rm(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 }); }
 });
 
+test("a real turn ranks the explicitly requested note before presentation boilerplate", async () => {
+  const server = await startTestServer(); const dir = await copyExampleWorkspace();
+  try {
+    const ws = await server.ctx.workspace.openWorkspace(dir);
+    const requested = await createVaultNote(ws, { path: "质量/功能验收清单.md", content: "# 功能验收清单\n先核对真实写入结果，再检查拒绝后的文件不存在。", positionIds: ["repo-owner"] });
+    for (let index = 0; index < 6; index++) await createVaultNote(ws, {
+      path: `格式说明${index}.md`,
+      content: "# Response presentation for RoleWeave\nUse concise Markdown. Use bold for key conclusions and short labels, descriptive text for real URLs, lists for parallel items, and fenced code blocks with a language for code.",
+      positionIds: ["repo-owner"],
+    });
+    const response = await api(server.baseUrl, "/turns", { method: "POST", token: server.token,
+      body: { positionId: "repo-owner", input: "请根据《功能验收清单》列出检查项。", engine: "qoder" } });
+    assert.equal(response.status, 200);
+    const turn = response.body as TurnRecord;
+    assert.equal(turn.status, "completed");
+    const usage = await api(server.baseUrl, `/vault/used?positionId=repo-owner&turnId=${turn.turnId}`, { token: server.token });
+    assert.equal(usage.status, 200);
+    const notes = (usage.body as { notes: Array<{ noteId: string; excerpt: string }> }).notes;
+    assert.equal(notes[0]?.noteId, requested.note.noteId);
+    assert.match(notes[0]!.excerpt, /真实写入结果/);
+    assert.ok(notes.length <= 4);
+  } finally { await server.close(); await fs.rm(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 25 }); }
+});
+
 test("failed or interrupted turns cannot become verified notes", async () => {
   const driver: TurnRunDriver = { async turnRun() {
     const timestamp = new Date().toISOString();
