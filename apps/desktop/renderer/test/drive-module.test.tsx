@@ -169,7 +169,7 @@ describe("drive file browser", () => {
     if (action === "Enter") fireEvent.keyDown(folder, { key: "Enter" }); else fireEvent.doubleClick(folder);
     const dialog = await screen.findByRole("dialog", { name: "预览：项目资料" });
     await waitFor(() => expect(within(dialog).getByText("当前存储来源尚不支持进入文件夹。")).toBeVisible());
-    expect(within(dialog).getByText("文件夹")).toBeVisible();
+    expect(within(dialog).getAllByText("文件夹")[0]).toBeVisible();
     expect(within(dialog).getByText("—")).toBeVisible();
     expect(bridge.detail).not.toHaveBeenCalled();
     expect(bridge.preview).not.toHaveBeenCalled();
@@ -350,6 +350,21 @@ describe("drive file browser", () => {
 });
 
 describe("actual drive image previews", () => {
+  it("enlarges a one-pixel original and reports its real dimensions, then clears dimensions on another file", async () => {
+    installBridge(imageObjects); render(<DriveModule workspaceOpen />); await openImage();
+    const image = await screen.findByRole("img", { name: "示意图.png" });
+    Object.defineProperties(image, { naturalWidth: { value: 1 }, naturalHeight: { value: 1 } });
+    fireEvent.load(image);
+    expect(image).toHaveStyle({ width: "160px", height: "160px", imageRendering: "pixelated" });
+    const dialog = screen.getByRole("dialog", { name: "预览：示意图.png" });
+    expect(within(dialog).getAllByText("1 × 1 px")).toHaveLength(2);
+    expect(within(dialog).getByText("原图较小，已放大显示")).toBeVisible();
+    fireEvent.doubleClick(screen.getByRole("button", { name: "选择 现场照片.jpg" }));
+    await screen.findByRole("img", { name: "现场照片.jpg" });
+    expect(screen.queryByText("原图较小，已放大显示")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 × 1 px")).not.toBeInTheDocument();
+  });
+
   it("loads only on explicit preview, preserves metadata and opens the loaded image at full size", async () => {
     const bridge = installBridge(imageObjects); const pending = deferred<ReturnType<typeof previewResponse>>(); bridge.preview.mockReturnValue(pending.promise);
     render(<DriveModule workspaceOpen />);
