@@ -547,6 +547,27 @@ function isBundledQoderEngine(version: string | undefined): boolean {
   return typeof version === "string" && /^qoder-engine\s+\d+\.\d+\.\d+$/.test(version.trim());
 }
 
+function qwenOfficeNextStep(code: string): string {
+  switch (code) {
+    case "qwen_office.platform_unavailable":
+      return "千问办公本地连接需要 Windows 桌面客户端；可在 Windows 版 RoleWeave 中使用原生或 WSL 引擎。";
+    case "qwen_office.client_signed_out":
+    case "qwen_office.authentication_expired":
+      return "请打开千问办公并重新登录，返回 RoleWeave 后会自动检查连接。";
+    case "qwen_office.control_disabled":
+      return "请先打开千问办公。若客户端已启动仍无法连接，请在 Windows 用户目录的 .qwenworkcn/.env 中设置 QWENWORK_DESKTOP_CONTROL_ENABLED=true，并在任务结束后重启千问办公。";
+    case "qwen_office.connection_failed":
+    case "qwen_office.instance_changed":
+      return "千问办公连接已断开，请打开客户端并等待启动完成，再重新检查。";
+    case "qwen_office.client_incompatible":
+    case "qwen_office.response_invalid":
+    case "qwen_office.protocol_invalid":
+      return "千问办公客户端接口不兼容，请更新客户端和 RoleWeave 后重新检查。";
+    default:
+      return "请打开并登录千问办公，再重新检查本地连接。工具和审批由千问办公管理。";
+  }
+}
+
 function bundledQoderNextStep(state: QoderLocalBinaryState, engineAvailable: boolean): string | undefined {
   if (!engineAvailable) return "先修复 bundled qoder-engine 的本地启动配置";
   if (state.failure === "timed_out") {
@@ -747,7 +768,7 @@ export function hostHealth({
       connection: { source: "official", kind: "official", billing: "unknown", status: qwenOfficeLocal.configured ? "configured" : "invalid" },
       ...(!bundledElectronEngine || !engineAvailable
         ? { nextStep: "千问办公需要 RoleWeave 内置引擎，请恢复内置引擎后重试。" }
-        : !qwenOfficeLocal.configured ? { nextStep: "打开并登录千问办公，启用客户端本地控制接口后刷新。工具和审批由千问办公管理。" } : {}),
+        : !qwenOfficeLocal.configured ? { nextStep: qwenOfficeNextStep(qwenOfficeLocal.code) } : {}),
     },
     workbuddy: (() => {
       // Health describes local configuration, not authentication, model quota,

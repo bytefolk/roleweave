@@ -67,6 +67,7 @@ export interface TurnPanelProps {
   /** One-click Qoder login surface owned by the shell; rendered only while the
    *  qoder Host is the selected runtime and reports loginRequired. */
   qoderLogin?: { action: NoticeAction; link?: NoticeAction; feedback: string | null };
+  officeConnection?: { action?: NoticeAction; feedback: string | null };
   modelConfig?: EmployeeModelConfig;
   avatarUrls?: Record<string, string>;
   modelSaving?: boolean;
@@ -127,6 +128,7 @@ export function TurnPanel({
   sendShortcut = "enter",
   availabilityCheck,
   qoderLogin,
+  officeConnection,
   modelConfig,
   avatarUrls,
   modelSaving = false,
@@ -445,9 +447,11 @@ export function TurnPanel({
         disabledSummary={disabledState?.summary}
         disabledDiagnostic={disabledState?.diagnostic}
         availabilityCheck={disabledState?.canRecheck ? availabilityCheck : undefined}
-        primaryAction={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.action : undefined}
+        primaryAction={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.action
+          : engine === "qwen-office-local" && !engineAvailability[engine].ready ? officeConnection?.action : undefined}
         linkAction={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.link : undefined}
-        primaryFeedback={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.feedback ?? null : undefined}
+        primaryFeedback={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.feedback ?? null
+          : engine === "qwen-office-local" && !engineAvailability[engine].ready ? officeConnection?.feedback : undefined}
         diagnosticKey={`${selectedPositionId}:${selectedSessionId ?? ""}:${engine}`}
         running={runningTurn}
         cancelling={stopping}

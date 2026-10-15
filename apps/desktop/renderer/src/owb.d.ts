@@ -97,6 +97,8 @@ export interface OwbBridge {
   setPositionAgentEngine?(request: { positionId: string; engine: TurnEngine }): Promise<OwbApiResponse<{ agentEngine: TurnEngine; agentLocked: true; modelConfig: import("@roleweave/shared").EmployeeModelConfig }>>;
   updatePositionProfile?(request: PositionProfilePatch & { positionId: string }): Promise<OwbApiResponse<PositionProfileResult>>;
   status(): Promise<OwbStatusResponse>;
+  /** Opens the installed Windows Office client through its fixed protocol. */
+  openQwenOffice?(): Promise<{ opened: boolean; reason?: string }>;
   /** One-click Qoder CLI login owned by the control plane. */
   qoderLogin: {
     start(): Promise<OwbApiResponse<QoderLoginResponse>>;
@@ -201,6 +203,7 @@ export interface OwbBridge {
     preview?(id: string): Promise<OwbApiResponse<DriveObjectPreviewResponse>>;
     /** Explicit readonly probe of the configured server provider. */
     provider?(): Promise<OwbApiResponse<DriveProviderStatusResponse>>;
+    /** Deprecated path channel: always denied; use the OS picker. */
     upload(filePath: string): Promise<OwbApiResponse<DriveUploadResponse>>;
     pickAndUpload(): Promise<OwbApiResponse<DriveUploadResponse> | { canceled: true }>;
   };

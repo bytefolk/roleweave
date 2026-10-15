@@ -1242,16 +1242,21 @@ describe("App runtime bridge", () => {
     expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
     expect(screen.getByTitle("Agent：Codex")).toBeInTheDocument();
     expect(screen.queryByTitle("Agent：Qoder")).not.toBeInTheDocument();
-  });
+  }, 15_000);
 
+  // Each case mounts two complete workspaces and can send two turns. Use the
+  // same bounded budget as the other full App flows: a 5s timeout on a loaded
+  // runner lets this case's finally clear storage while the next case is active.
   it.each(["qoder", "claude-code", "codex-local", "workbuddy", "workbuddy-local"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
     window.localStorage.setItem("owb-turn-engine", "codex-local");
+    let activeBridge: OwbBridge | undefined;
     try {
       for (let mount = 0; mount < 2; mount += 1) {
         const bridge = openedBridge({
           position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine, agentLocked: true } }),
           createSessionTurn: vi.fn().mockResolvedValue({ status: 200, body: apiTurn({ engine: agentEngine, input: "使用员工绑定" }) }),
         });
+        activeBridge = bridge;
         const view = render(<App />);
         try {
           await selectRepoOwner();
@@ -1278,9 +1283,10 @@ describe("App runtime bridge", () => {
         }
       }
     } finally {
-      window.localStorage.removeItem("owb-turn-engine");
+      // Vitest can begin the next case before a timed-out async body settles.
+      if (window.owb === activeBridge) window.localStorage.removeItem("owb-turn-engine");
     }
-  });
+  }, 15_000);
 
   it("keeps a bound local WorkBuddy employee unavailable until its own health recovers, even when the API host is ready", async () => {
     const bridge = openedBridge({
@@ -1819,7 +1825,7 @@ describe("App runtime bridge", () => {
       listener!({ seq: 3, type: "turn.model.delta", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
     });
     expect(await screen.findByText("正在分析…核对完成")).toBeInTheDocument();
-    expect(screen.getByText("正在执行中")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "执行进展" })).toHaveTextContent("思考中");
 
     act(() => {
       listener!({ seq: 3, type: "turn.model.delta", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
@@ -2758,7 +2764,7 @@ it("returns to the conversation through collaboration after leaving organization
   expect(composer).toBeVisible();
 });
 
-it("rechecks health without rebuilding the workspace or losing the selected conversation draft", async () => {
+it.each(["button", "window focus"])("rechecks health via %s without rebuilding the workspace or losing the selected conversation draft", async trigger => {
   const bridge = openedBridge();
   const ready = await bridge.status();
   const unavailable = { ...ready, health: { ...ready.health!, engine: { ...ready.health!.engine, available: false, nextStep: "RAW_ENGINE_PATH" } } };
@@ -2774,8 +2780,13 @@ it("rechecks health without rebuilding the workspace or losing the selected conv
   let finish!: (value: Awaited<ReturnType<OwbBridge["status"]>>) => void;
   vi.mocked(bridge.status).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const recheck = screen.getByRole("button", { name: "重新检查" });
-  fireEvent.click(recheck);
-  fireEvent.click(recheck);
+  if (trigger === "button") {
+    fireEvent.click(recheck);
+    fireEvent.click(recheck);
+  } else {
+    fireEvent(window, new Event("focus"));
+    fireEvent(window, new Event("focus"));
+  }
   expect(screen.getByRole("button", { name: "检查中…" })).toBeDisabled();
   expect(bridge.status).toHaveBeenCalledTimes(2);
   expect(document.body.innerHTML).not.toContain("RAW_ENGINE_PATH");

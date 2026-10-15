@@ -22,8 +22,10 @@ const DESKTOP_RUNTIME_FILES = [
   "src/workbuddy-client.cjs",
   "src/qwen-office-bridge.cjs",
   "src/qwen-office-client.cjs",
+  "src/qwen-office-open.cjs",
   "src/docs-ipc.cjs",
   "src/drive-ipc.cjs",
+  "src/drive-upload.cjs",
   "src/vault-ipc.cjs",
   "src/experiments-ipc.cjs",
   "src/goal-ipc.cjs",
@@ -38,6 +40,7 @@ const DESKTOP_RUNTIME_FILES = [
   "src/runtime-paths.cjs",
   "src/runtime-settings.cjs",
   "src/service-connections.cjs",
+  "src/status-tray.cjs",
   "src/credential-settings.cjs",
   "src/configuration.cjs",
   "src/configuration-ipc.cjs",
@@ -60,8 +63,10 @@ const DESKTOP_RUNTIME_FILES = [
 const SERVER_RUNTIME_FILES = [
   "package.json",
   "bin/qoder-engine.mjs",
+  "bin/claude-workspace-mcp.mjs",
   "src/qoder-binary.js",
   "src/claude-binary.js",
+  "src/claude-workspace-tools.js",
   "src/codex-binary.js",
   "src/gemini-binary.js",
   "src/workbuddy-binary.js",
@@ -85,6 +90,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/auth.js",
   "dist/src/bus.js",
   "dist/src/claude-binary.js",
+  "dist/src/claude-workspace-tools.js",
   "dist/src/codex-binary.js",
   "dist/src/config.js",
   "dist/src/context-export/adapter-cli.js",
@@ -148,6 +154,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/services/doc-contract.js",
   "dist/src/services/drive-preview.js",
   "dist/src/services/drive-providers.js",
+  "dist/src/services/drive-upload.js",
   "dist/src/services/mem-contract.js",
   "dist/src/services/probes.js",
   "dist/src/sessions/store.js",
@@ -218,6 +225,7 @@ const SHARED_RUNTIME_FILES = [
   "dist/services.js",
   "dist/sessions.js",
   "dist/task-board.js",
+  "dist/tool-output.js",
   "dist/turn-progress.js",
   "dist/turns.js",
   "dist/updates.js",
@@ -261,7 +269,7 @@ const EXAMPLE_RUNTIME_FILES = [
 ];
 
 const RUNTIME_FILE_SETS = [
-  { from: ".", to: ".", filter: ["package.json", "LICENSE"] },
+  { from: ".", to: ".", filter: ["package.json", "LICENSE", "branding/roleweave/platform-icons/roleweave.png"] },
   {
     from: "apps/desktop",
     to: "apps/desktop",
@@ -287,6 +295,7 @@ const RUNTIME_FILE_SETS = [
 const APP_RESOURCE_REQUIRED_ENTRIES = [
   "package.json",
   "LICENSE",
+  "branding/roleweave/platform-icons/roleweave.png",
   ...DESKTOP_RUNTIME_FILES
     .filter((entry) => !entry.includes("*"))
     .map((entry) => `apps/desktop/${entry}`),

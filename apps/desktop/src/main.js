@@ -9,7 +9,8 @@
 // Shell-service split (ADR-0001): main spawns apps/server as a child process
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
-const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage, Tray, Menu, nativeImage } = require("electron");
+const { createStatusTray } = require("./status-tray.cjs");
 const { TURN_ENGINE_IDS } = require("@roleweave/shared/turn-engines");
 // Keep the development window and the packaged bundle aligned on the public
 // product name. The old IPC/package identifiers below remain compatibility
@@ -24,6 +25,7 @@ const {
 } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
 const { closeQwenOfficeClient, hasPendingQwenOfficeTasks } = require("./qwen-office-client.cjs");
+const { openQwenOffice } = require("./qwen-office-open.cjs");
 const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -78,8 +80,8 @@ const {
   validateDriveDetailRequest,
   validateDrivePreviewRequest,
   authorizeDriveReadSender,
-  validateDriveUploadRequest,
 } = require("./drive-ipc.cjs");
+const { registerDriveUploadIpc } = require("./drive-upload.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
 const { validatePositionProfileRequest } = require("./position-profile-ipc.cjs");
 const { validateAvatarGenerateRequest } = require("./avatar-ipc.cjs");
@@ -135,6 +137,7 @@ let controlPlaneStopPromise = null;
 let updaterService = null;
 let controlPlaneError = null;
 let mainWindow = null;
+let statusTray = null;
 let mainWindowUsesNativeControls = false;
 /** file:// URL of the packaged renderer entry loaded into mainWindow — the
  * one and only URL a trusted window IPC call may be sent from (#77 review). */
@@ -279,13 +282,15 @@ function stopControlPlane() {
   return controlPlaneStopPromise;
 }
 
-function apiRequest(pathname, { method = "GET", withAuth = true, body = null } = {}) {
+function apiRequest(pathname, { method = "GET", withAuth = true, body = null, binaryBody, timeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     if (!controlPlane) {
       reject(new Error("control plane is not running"));
       return;
     }
-    const payload = body === null ? null : JSON.stringify(body);
+    const payload = binaryBody ?? (body === null ? null : JSON.stringify(body));
+    let uploadDeadline;
+    const finishUpload = () => { if (uploadDeadline) clearTimeout(uploadDeadline); };
     const req = http.request(
       {
         host: "127.0.0.1",
@@ -295,16 +300,24 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null } =
         headers: {
           ...(withAuth ? { authorization: `Bearer ${controlPlane.token}` } : {}),
           ...(payload !== null
-            ? { "content-type": "application/json", "content-length": Buffer.byteLength(payload) }
+            ? { "content-type": binaryBody !== undefined ? "application/octet-stream" : "application/json", "content-length": Buffer.byteLength(payload) }
             : {}),
         },
       },
       (res) => {
+        res.setEncoding("utf8");
+        if (binaryBody !== undefined) {
+          res.on("error", () => { finishUpload(); reject(new Error("upload response interrupted")); });
+        }
         let raw = "";
         res.on("data", (chunk) => {
           raw += String(chunk);
+          if (binaryBody !== undefined && Buffer.byteLength(raw) > 128 * 1024) {
+            finishUpload(); req.destroy(new Error("upload response exceeds size limit"));
+          }
         });
         res.on("end", () => {
+          finishUpload();
           let parsed = null;
           try {
             parsed = raw.length > 0 ? JSON.parse(raw) : null;
@@ -315,7 +328,12 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null } =
         });
       },
     );
-    req.on("error", reject);
+    req.on("error", (error) => { finishUpload(); reject(error); });
+    if (binaryBody !== undefined && timeoutMs !== undefined) {
+      uploadDeadline = setTimeout(() => req.destroy(new Error("upload timed out")), timeoutMs);
+      uploadDeadline.unref();
+    }
+    if (timeoutMs !== undefined) req.setTimeout(timeoutMs, () => req.destroy(new Error("status request timed out")));
     if (payload !== null) req.write(payload);
     req.end();
   });
@@ -337,6 +355,7 @@ function startEventStream() {
     },
     (res) => {
       broadcastSseStatus("connected");
+      res.setEncoding("utf8");
       let buffer = "";
       res.on("data", (chunk) => {
         buffer += String(chunk);
@@ -348,9 +367,11 @@ function startEventStream() {
           const dataLine = raw
             .split("\n")
             .find((line) => line.startsWith("data: "));
-          if (dataLine && mainWindow && !mainWindow.isDestroyed()) {
+          if (dataLine) {
             try {
-              mainWindow.webContents.send("owb:event", JSON.parse(dataLine.slice(6)));
+              const event = JSON.parse(dataLine.slice(6));
+              statusTray?.onEvent(event);
+              if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("owb:event", event);
             } catch {
               // Non-JSON frame; ignore.
             }
@@ -375,6 +396,7 @@ function startEventStream() {
 
 function broadcastSseStatus(state) {
   currentSseStatus = state;
+  statusTray?.setConnection(state === "connected" ? "ready" : "offline");
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("owb:sse-status", state);
   }
@@ -435,6 +457,10 @@ ipcMain.handle("owb:control-plane:stop", async () => {
 // renderer only starts it and observes its state (see routes/qoder-login.ts).
 ipcMain.handle("owb:qoder:login", async () => apiRequest("/qoder/login", { method: "POST" }));
 ipcMain.handle("owb:qoder:login-status", async () => apiRequest("/qoder/login", { method: "GET" }));
+ipcMain.handle("owb:qwen-office:open", (event) => openQwenOffice({
+  event, isTrusted: (sender) => isTrustedWindowSender(sender, mainWindow, trustedRendererUrl),
+  openExternal: (url) => shell.openExternal(url),
+}));
 
 function pickWorkspaceDirectory(options) {
   return mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options);
@@ -905,8 +931,7 @@ ipcMain.handle("owb:goal:delete", async (event, goalId) => {
 });
 
 // Drive plane (bytefolk/mem proxy): whitelisted list/detail reads and a
-// stubbed upload seam. The desktop shell owns the OS file picker so an
-// absolute path never crosses the renderer boundary unvalidated.
+// desktop-picked binary uploads. File paths remain in the desktop process.
 ipcMain.handle("owb:drive:list", async (_event, query) => {
   const validated = validateDriveListRequest(query);
   if (!validated.ok) return validated.response;
@@ -935,27 +960,10 @@ ipcMain.handle("owb:drive:provider", async (event) => {
   return apiRequest("/drive/provider");
 });
 
-ipcMain.handle("owb:drive:upload", async (_event, filePath) => {
-  const validated = validateDriveUploadRequest(filePath);
-  if (!validated.ok) return validated.response;
-  // TODO(mem-upload): once mem's multipart PUT to /v1/files is contract-frozen,
-  // read validated.request.filePath here and stream it upstream. Until then
-  // the server route also returns a stub payload, keeping the seam honest.
-  return apiRequest("/drive/upload", { method: "POST", body: validated.request });
-});
-
-ipcMain.handle("owb:drive:pick-and-upload", async () => {
-  const options = {
-    title: "选择要上传到 mem 的文件",
-    properties: ["openFile"],
-  };
-  const picked = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, options)
-    : await dialog.showOpenDialog(options);
-  if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
-  const validated = validateDriveUploadRequest(picked.filePaths[0]);
-  if (!validated.ok) return validated.response;
-  return apiRequest("/drive/upload", { method: "POST", body: validated.request });
+registerDriveUploadIpc({
+  ipcMain, dialog, apiRequest,
+  getMainWindow: () => mainWindow,
+  getTrustedRendererUrl: () => trustedRendererUrl,
 });
 
 ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);
@@ -1278,6 +1286,25 @@ function publishUpdateState(event) {
 }
 
 app.whenReady().then(async () => {
+  // OS tray is a main-process surface: it works while the renderer is
+  // minimized and only receives counts from the authenticated local server.
+  try {
+    statusTray = createStatusTray({
+      Tray, Menu, nativeImage, iconPath: ROLEWEAVE_DEV_ICON, platform: process.platform,
+      locale: app.getLocale(),
+      requestStatus: () => apiRequest("/desktop/status", { timeoutMs: 3000 }),
+      onOpen: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      },
+      onQuit: () => app.quit(),
+    });
+  } catch (error) {
+    // A desktop without a system-tray host must still open its main window.
+    process.stderr.write(`RoleWeave tray unavailable: ${error.message}\n`);
+  }
   // Finder/LaunchServices does not inherit the user's command search path.
   // Recover only a bounded login-shell PATH before the control plane (and in
   // turn Qoder/MCP children) is spawned; all other inherited env is unchanged.
@@ -1299,6 +1326,7 @@ app.whenReady().then(async () => {
   } catch (err) {
     controlPlaneError = err;
     controlPlaneState = "failed";
+    statusTray?.setConnection("offline");
   }
   // The vendored bundle is loaded through the service so a missing or unloadable
   // one degrades to an explained refusal. This used to be a bare require on the
@@ -1357,6 +1385,7 @@ app.on("before-quit", (event) => {
 });
 
 app.on("quit", () => {
+  statusTray?.dispose();
   if (updateCheckTimer !== null) clearInterval(updateCheckTimer);
   if (eventStreamRequest) eventStreamRequest.destroy();
   void stopControlPlane();

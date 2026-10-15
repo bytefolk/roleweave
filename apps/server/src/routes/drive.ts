@@ -1,4 +1,4 @@
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { OrgApiError, errorCodes } from "@roleweave/shared";
 import type {
   DriveObjectDetailResponse,
@@ -15,6 +15,8 @@ import {
 import { sendJson } from "../http.js";
 import type { ControlPlaneContext } from "../context.js";
 import { resolveDriveProvider } from "../services/drive-providers.js";
+import { readDriveUpload } from "../services/drive-upload.js";
+import { resolveServiceConnection } from "../services/connections.js";
 
 /**
  * Drive plane routes (MVP surface, pluggable upstream).
@@ -24,8 +26,7 @@ import { resolveDriveProvider } from "../services/drive-providers.js";
  * Every provider's upstream response shape is normalized exactly once (see
  * `services/drive-providers.ts`) so the renderer never depends on provider
  * field naming — the frozen `drive-object.v1` wire contract is unchanged.
- * Uploads remain handled by the desktop shell today (main process pickers)
- * and are stubbed at this seam — see /drive/upload below.
+ * Uploads read only OS-picked desktop files and forward bounded binary bytes.
  *
  * `GET /drive/provider` reports the selected provider's health. Probing is an
  * explicit, bounded action; the drive reads themselves never spawn the CLI
@@ -90,14 +91,10 @@ export async function handleDriveProviderStatus(ctx: ControlPlaneContext, res: S
   sendJson(res, 200, body);
 }
 
-/** POST /drive/upload: stubbed until the provider upload contracts are pinned. */
-export async function handleDriveUpload(res: ServerResponse): Promise<void> {
-  // TODO(drive-upload): forward multipart PUT once the per-provider upload
-  // paths land with a stable content-type. The renderer already goes through
-  // a whitelisted IPC seam so wiring is additive.
-  sendJson(res, 202, {
-    stub: true,
-    message:
-      "drive upload seam is stubbed; renderer IPC is wired but per-provider multipart uploads are pending contract sign-off",
-  });
+/** POST /drive/upload?name=...&mime=...: exact, bounded binary upload. */
+export async function handleDriveUpload(ctx: ControlPlaneContext, req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  const provider = resolveDriveProvider(ctx, { memConnection: resolveServiceConnection(ctx, "mem") });
+  if (!provider.upload) throw new OrgApiError(errorCodes.drive_action_unsupported, 501, "This storage provider does not support desktop uploads");
+  const result = await provider.upload(await readDriveUpload(req, url));
+  sendJson(res, result.deduped ? 200 : 201, result);
 }

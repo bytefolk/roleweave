@@ -141,6 +141,10 @@ export const errorCodes = {
   drive_provider_invalid: "drive_provider_invalid",
   /** The selected drive provider's upstream authorization has expired; re-authentication is required. */
   drive_auth_expired: "drive_auth_expired",
+  /** Mem credentials do not permit this file operation or workspace. */
+  drive_permission_denied: "drive_permission_denied",
+  /** A desktop-picked upload exceeds the supported byte limit. */
+  drive_upload_too_large: "drive_upload_too_large",
   /** The selected drive provider cannot serve this drive action at all (e.g. detail by id). */
   drive_action_unsupported: "drive_action_unsupported",
   /** A drive object is not an allowlisted raster image. */

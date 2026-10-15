@@ -47,6 +47,97 @@ async function openImage(name = "示意图.png") {
 }
 
 describe("drive file browser", () => {
+  function installUploader(result: unknown, files = objects) {
+    const bridge = { ...installBridge(files), provider: vi.fn().mockResolvedValue(providerResponse()), pickAndUpload: vi.fn().mockResolvedValue(result) };
+    Object.defineProperty(window, "owb", { configurable: true, value: { drive: bridge } });
+    return bridge;
+  }
+
+  it("uploads from the native picker, reports verified success and refreshes the full newest listing", async () => {
+    const uploaded = { ...imageObjects[0], id: "new-image", name: "新素材.png" };
+    const bridge = installUploader({ status: 201, body: { schemaVersion: "drive-object-upload.v1", object: uploaded, deduped: false } });
+    render(<DriveModule workspaceOpen />);
+    const button = await screen.findByRole("button", { name: "上传", exact: true });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "音频", exact: true }));
+    bridge.list.mockResolvedValueOnce(listResponse([...objects, uploaded]));
+    fireEvent.click(button);
+    expect(await screen.findByText("已上传：新素材.png")).toBeVisible();
+    expect(await screen.findByRole("button", { name: "选择 新素材.png" })).toBeVisible();
+    expect(bridge.pickAndUpload).toHaveBeenCalledOnce();
+    expect(bridge.list).toHaveBeenCalledTimes(2);
+    expect(bridge.list).toHaveBeenLastCalledWith("");
+    expect(screen.getByRole("combobox", { name: "文件排序" })).toHaveValue("newest");
+  });
+
+  it("picker cancellation produces no success, failure or extra list request", async () => {
+    const bridge = installUploader({ canceled: true });
+    render(<DriveModule workspaceOpen />);
+    const button = await screen.findByRole("button", { name: "上传", exact: true });
+    await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
+    await waitFor(() => expect(bridge.pickAndUpload).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bridge.list).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [401, "drive_auth_expired", "Mem 令牌无效或已过期，请在服务设置中更新 API 令牌后重试。"],
+    [403, "drive_permission_denied", "Mem 拒绝访问，请检查令牌的读写权限和工作区范围。"],
+    [413, "drive_upload_too_large", "文件超过上传大小限制，请在 Mem 中管理较大文件。"],
+    [202, undefined, "无法确认上传结果，请先刷新网盘检查文件，再尝试上传。"],
+    [200, undefined, "无法确认上传结果，请先刷新网盘检查文件，再尝试上传。"],
+  ])("handles upload failure or obsolete success response %s honestly", async (status, code, message) => {
+    const bridge = installUploader({ status, body: { code, stub: true } });
+    render(<DriveModule workspaceOpen />);
+    const button = await screen.findByRole("button", { name: "上传", exact: true });
+    await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(screen.queryByText(/已上传：/)).not.toBeInTheDocument(); expect(bridge.list).toHaveBeenCalledOnce();
+  });
+
+  it("discards an upload completion after the workspace changed", async () => {
+    const pending = deferred<unknown>();
+    const bridge = installUploader({ canceled: true }); bridge.pickAndUpload.mockReturnValueOnce(pending.promise);
+    const view = render(<DriveModule workspaceOpen workspaceKey="before" />);
+    const button = await screen.findByRole("button", { name: "上传", exact: true });
+    await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button);
+    view.rerender(<DriveModule workspaceOpen workspaceKey="after" />);
+    await waitFor(() => expect(bridge.list).toHaveBeenCalledTimes(2));
+    await act(async () => pending.resolve({ status: 201, body: { schemaVersion: "drive-object-upload.v1", object: objects[0], deduped: false } }));
+    expect(screen.queryByText(/已上传：/)).not.toBeInTheDocument(); expect(bridge.list).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps unsupported provider browsing available without offering a Mem upload button", async () => {
+    const bridge = installUploader({ canceled: true }); bridge.provider.mockResolvedValue(providerResponse("bdpan"));
+    render(<DriveModule workspaceOpen />);
+    await screen.findByRole("button", { name: "选择 会议纪要-Q3.md" });
+    await waitFor(() => expect(screen.getByText(/百度网盘/)).toBeVisible());
+    expect(screen.queryByRole("button", { name: "上传", exact: true })).not.toBeInTheDocument();
+  });
+
+  it("turns raw list authentication errors into actionable token guidance", async () => {
+    const bridge = installBridge(); bridge.list.mockResolvedValue({ status: 401, body: { code: "drive_upstream_failed", message: "mem upstream failed: 401" } });
+    render(<DriveModule workspaceOpen />);
+    expect(await screen.findByText("Mem 令牌无效或已过期，请在服务设置中更新 API 令牌后重试。")).toBeVisible();
+    expect(screen.queryByText("mem upstream failed: 401")).not.toBeInTheDocument();
+  });
+
+  it("preserves other providers' authentication and unsupported-read guidance", async () => {
+    const bridge = installBridge();
+    bridge.list.mockResolvedValueOnce({ status: 503, body: { code: "drive_auth_expired", message: "Reauthenticate with bdpan" } });
+    const view = render(<DriveModule workspaceOpen />);
+    expect(await screen.findByText("Reauthenticate with bdpan")).toBeVisible();
+    expect(screen.queryByText(/Mem 令牌/)).not.toBeInTheDocument();
+    view.unmount();
+    const readable = installBridge();
+    readable.detail.mockResolvedValue({ status: 501, body: { code: "drive_action_unsupported", message: "This provider cannot read details by ID" } });
+    render(<DriveModule workspaceOpen />);
+    fireEvent.click(await screen.findByRole("button", { name: "选择 会议纪要-Q3.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "文件详情" }));
+    expect(await screen.findByText("This provider cannot read details by ID")).toBeVisible();
+    expect(screen.queryByText("当前存储来源暂不支持直接上传。")).not.toBeInTheDocument();
+  });
+
   it("recognizes real upstream directory entries in both views and uses only listed metadata for their details", async () => {
     const directory = { id: "bdpan-directory", name: "项目资料", size: 8192, mime: "inode/directory", createdAt: "2026-10-07T08:00:00.000Z" };
     const bridge = installBridge([...objects, directory]);
@@ -78,7 +169,7 @@ describe("drive file browser", () => {
     if (action === "Enter") fireEvent.keyDown(folder, { key: "Enter" }); else fireEvent.doubleClick(folder);
     const dialog = await screen.findByRole("dialog", { name: "预览：项目资料" });
     await waitFor(() => expect(within(dialog).getByText("当前存储来源尚不支持进入文件夹。")).toBeVisible());
-    expect(within(dialog).getByText("文件夹")).toBeVisible();
+    expect(within(dialog).getAllByText("文件夹")[0]).toBeVisible();
     expect(within(dialog).getByText("—")).toBeVisible();
     expect(bridge.detail).not.toHaveBeenCalled();
     expect(bridge.preview).not.toHaveBeenCalled();
@@ -259,6 +350,21 @@ describe("drive file browser", () => {
 });
 
 describe("actual drive image previews", () => {
+  it("enlarges a one-pixel original and reports its real dimensions, then clears dimensions on another file", async () => {
+    installBridge(imageObjects); render(<DriveModule workspaceOpen />); await openImage();
+    const image = await screen.findByRole("img", { name: "示意图.png" });
+    Object.defineProperties(image, { naturalWidth: { value: 1 }, naturalHeight: { value: 1 } });
+    fireEvent.load(image);
+    expect(image).toHaveStyle({ width: "160px", height: "160px", imageRendering: "pixelated" });
+    const dialog = screen.getByRole("dialog", { name: "预览：示意图.png" });
+    expect(within(dialog).getAllByText("1 × 1 px")).toHaveLength(2);
+    expect(within(dialog).getByText("原图较小，已放大显示")).toBeVisible();
+    fireEvent.doubleClick(screen.getByRole("button", { name: "选择 现场照片.jpg" }));
+    await screen.findByRole("img", { name: "现场照片.jpg" });
+    expect(screen.queryByText("原图较小，已放大显示")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 × 1 px")).not.toBeInTheDocument();
+  });
+
   it("loads only on explicit preview, preserves metadata and opens the loaded image at full size", async () => {
     const bridge = installBridge(imageObjects); const pending = deferred<ReturnType<typeof previewResponse>>(); bridge.preview.mockReturnValue(pending.promise);
     render(<DriveModule workspaceOpen />);
