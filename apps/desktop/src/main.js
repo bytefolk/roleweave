@@ -303,6 +303,7 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null, ti
         },
       },
       (res) => {
+        res.setEncoding("utf8");
         let raw = "";
         res.on("data", (chunk) => {
           raw += String(chunk);
@@ -341,6 +342,7 @@ function startEventStream() {
     },
     (res) => {
       broadcastSseStatus("connected");
+      res.setEncoding("utf8");
       let buffer = "";
       res.on("data", (chunk) => {
         buffer += String(chunk);

@@ -976,6 +976,16 @@ async function turnRunGemini(workspaceDir, positionId, input) {
   // descendants can be reaped. Relay graceful termination across that group
   // boundary; otherwise a SIGKILL fallback leaves `agy` running indefinitely.
   const terminate = () => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
+    // Keep the adapter alive until Node has reaped its own detached child.
+    // Exiting immediately after kill races with SIGCHLD and can orphan a zombie.
+    if (child?.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+      child.once("close", () => process.exit(143));
+      setTimeout(() => process.exit(143), 1000).unref();
+      cleanup();
+      return;
+    }
     cleanup();
     process.exit(143);
   };
