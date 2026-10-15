@@ -76,6 +76,23 @@ test("relationship graph requires the local operator and an open workspace", asy
   assert.equal((await api(server.baseUrl, "/graph/relationships", { token: server.token })).status, 422);
 });
 
+test("goal work-item assignees are projected before any execution branch exists", async (t) => {
+  const server = await startTestServer(); const workspace = await copyExampleWorkspace();
+  t.after(async () => { await server.close(); await fs.rm(workspace, { recursive: true, force: true }); });
+  await server.ctx.workspace.openWorkspace(workspace);
+  const goal = await server.ctx.goalStore.create(workspace, { title: "Plan release", description: "Owned work" });
+  await server.ctx.goalStore.update(workspace, goal.goalId, { expectedUpdatedAt: goal.updatedAt, workItems: [
+    { taskId: "release-check", title: "Check release", status: "todo", priority: "normal", assigneePositionId: "release-engineer" },
+    { taskId: "unassigned", title: "Unassigned item", status: "todo", priority: "normal" },
+  ] });
+  const result = await graph(server);
+  const goalNode = result.nodes.find(node => node.evidence.locator === `goal:${goal.goalId}`)!;
+  const owner = result.nodes.find(node => node.kind === "agent" && node.positionId === "release-engineer")!;
+  assert.ok(goalNode && owner);
+  assert.ok(result.edges.some(edge => edge.source === goalNode.id && edge.target === owner.id && edge.kind === "assigned_to"));
+  assert.deepEqual(result.coverage.find(item => item.source === "goals"), { source: "goals", state: "complete", count: 1 });
+});
+
 test("graph GET is pure and stable, with declared policy and observed resource/task evidence", async (t) => {
   const server = await startTestServer();
   const workspace = await copyExampleWorkspace();

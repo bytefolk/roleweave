@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
 const vm = require("node:vm");
+const { execFileSync } = require("node:child_process");
 const { readPickedFile, registerDriveUploadIpc } = require("../src/drive-upload.cjs");
 
 function harness({ picked = { canceled: true, filePaths: [] }, apiRequest, readFile } = {}) {
@@ -53,6 +54,10 @@ test("OS-picked file reading is bounded and rejects directories, symlinks, missi
     const read = await readPickedFile(selected); assert.deepEqual(read.bytes, bytes); assert.equal(read.name, "素材.png"); assert.equal(read.mime, "image/png");
     for (const candidate of [root, path.join(root, "absent"), "relative.png"]) await assert.rejects(readPickedFile(candidate), error => error.status === 400 && !JSON.stringify(error).includes(root));
     if (process.platform !== "win32") { const link = path.join(root, "link.png"); await fs.symlink(selected, link); await assert.rejects(readPickedFile(link), error => error.status === 400); }
+    if (process.platform !== "win32") {
+      const fifo = path.join(root, "pipe.png"); execFileSync("mkfifo", [fifo]);
+      await assert.rejects(readPickedFile(fifo), error => error.status === 400);
+    }
     const big = path.join(root, "big.bin"); const fd = await fs.open(big, "w"); await fd.truncate(32 * 1024 * 1024 + 1); await fd.close();
     await assert.rejects(readPickedFile(big), error => error.status === 413);
   } finally { await fs.rm(root, { recursive: true, force: true }); }

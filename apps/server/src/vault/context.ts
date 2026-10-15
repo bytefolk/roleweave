@@ -38,8 +38,11 @@ function keywords(input: string): string[] {
   return [...values].slice(0, 64);
 }
 
-export async function assembleVaultContext(workspace: OpenWorkspace, positionId: string, input: string): Promise<{ input: string; notes: VaultContextNote[] }> {
-  const terms = keywords(input);
+export async function assembleVaultContext(workspace: OpenWorkspace, positionId: string, input: string, query = input): Promise<{ input: string; notes: VaultContextNote[] }> {
+  // Rank against the user's request, not presentation or attachment wrappers.
+  // Their generic words can otherwise exhaust the bounded keyword budget before
+  // a specifically requested document title is reached.
+  const terms = keywords(query);
   const sources = (await readPositionVaultNotes(workspace, positionId)).filter(source => !source.note.archived && source.content.trim());
   const candidates = sources.map(source => {
     const content = publicVaultText(source.content);

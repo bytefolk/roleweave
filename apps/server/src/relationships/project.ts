@@ -318,6 +318,11 @@ async function addGoals(graph: Projection, root: string, workspace: string, know
           if (knownRoles.has(branch.positionId)) graph.edge(id, graph.id("agent", branch.positionId), "assigned_to", { ...proof, basis: "declared", locator: `goal:${goal.goalId}/branch:${label(branch.branchId, "branch")}` });
           else invalid = true;
         }
+        for (const item of goal.workItems ?? []) {
+          if (!item.assigneePositionId) continue;
+          if (knownRoles.has(item.assigneePositionId)) graph.edge(id, graph.id("agent", item.assigneePositionId), "assigned_to", { ...proof, basis: "declared", locator: `goal:${goal.goalId}/work-item:${item.taskId}` });
+          else invalid = true;
+        }
         count += 1;
       } catch { invalid = true; }
     }

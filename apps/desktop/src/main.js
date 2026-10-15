@@ -305,8 +305,8 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null, bi
         },
       },
       (res) => {
+        res.setEncoding("utf8");
         if (binaryBody !== undefined) {
-          res.setEncoding("utf8");
           res.on("error", () => { finishUpload(); reject(new Error("upload response interrupted")); });
         }
         let raw = "";
@@ -355,6 +355,7 @@ function startEventStream() {
     },
     (res) => {
       broadcastSseStatus("connected");
+      res.setEncoding("utf8");
       let buffer = "";
       res.on("data", (chunk) => {
         buffer += String(chunk);

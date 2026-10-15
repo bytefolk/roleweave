@@ -18,12 +18,17 @@ async function readPickedFile(filePath) {
   if (!name || name === "." || name === ".." || Buffer.byteLength(name) > 512 || /[\\/\x00-\x1f\x7f]/u.test(name) || Buffer.from(name).toString("utf8") !== name) throw invalidFile();
   let handle;
   try {
-    const before = await fs.lstat(filePath);
-    if (!before.isFile() || before.isSymbolicLink()) throw invalidFile();
-    if (before.size > DRIVE_UPLOAD_MAX_BYTES) throw failure(413, "drive_upload_too_large", "Uploads are limited to 32 MiB; use Mem for larger files");
-    handle = await fs.open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    // Open first, then inspect the descriptor that will actually be read.
+    // NOFOLLOW rejects a symlink atomically where supported; NONBLOCK keeps
+    // a raced-in FIFO from hanging open before its type can be inspected.
+    handle = await fs.open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const opened = await handle.stat();
-    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino || opened.size !== before.size || opened.mtimeMs !== before.mtimeMs) throw invalidFile();
+    if (!opened.isFile()) throw invalidFile();
+    if (opened.size > DRIVE_UPLOAD_MAX_BYTES) throw failure(413, "drive_upload_too_large", "Uploads are limited to 32 MiB; use Mem for larger files");
+    // Windows may not implement NOFOLLOW. Compare the selected path with the
+    // already-open descriptor, rejecting links/replacements before any read.
+    const selected = await fs.lstat(filePath);
+    if (!selected.isFile() || selected.isSymbolicLink() || opened.dev !== selected.dev || opened.ino !== selected.ino || opened.size !== selected.size || opened.mtimeMs !== selected.mtimeMs) throw invalidFile();
     // One extra byte detects growth without readFile's unbounded allocation.
     const buffer = Buffer.alloc(opened.size + 1); let length = 0;
     while (length < buffer.length) {
