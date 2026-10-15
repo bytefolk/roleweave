@@ -203,6 +203,7 @@ export interface OwbBridge {
     preview?(id: string): Promise<OwbApiResponse<DriveObjectPreviewResponse>>;
     /** Explicit readonly probe of the configured server provider. */
     provider?(): Promise<OwbApiResponse<DriveProviderStatusResponse>>;
+    /** Deprecated path channel: always denied; use the OS picker. */
     upload(filePath: string): Promise<OwbApiResponse<DriveUploadResponse>>;
     pickAndUpload(): Promise<OwbApiResponse<DriveUploadResponse> | { canceled: true }>;
   };

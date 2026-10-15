@@ -2,10 +2,8 @@
 //
 // The renderer never opens a raw channel to mem; the whitelist below just
 // bounds argument shapes and encodes them into the frozen /drive/* routes.
-// Upload validation is intentionally minimal — the OS file picker in main
-// returns the absolute path, and the server route today is a stub (see
-// apps/server/src/routes/drive.ts). When mem's multipart contract is pinned,
-// the actual PUT will be added inside main.js against a validated filePath.
+// Uploads are owned by drive-upload.cjs: only OS-picked files can be read,
+// and binary bytes rather than local paths cross the HTTP boundary.
 
 function invalidResponse(message) {
   return {

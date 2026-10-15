@@ -1,12 +1,13 @@
 import { execFile, type ExecFileException } from "node:child_process";
 import { OrgApiError, errorCodes } from "@roleweave/shared";
-import type { DriveObject, DriveObjectPreview, DriveProviderKind, DriveProviderState, DriveProviderStatus } from "@roleweave/shared";
+import type { DriveObject, DriveObjectPreview, DriveProviderKind, DriveProviderState, DriveProviderStatus, DriveUploadResponse } from "@roleweave/shared";
 import { DRIVE_PROVIDER_SCHEMA_VERSION, parseDriveProviderKind } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { requestService, resolveServiceConnection, SERVICE_TIMEOUT_MS } from "./connections.js";
 import type { ServiceConnection } from "./connections.js";
 import { normalizeMemFile } from "./mem-contract.js";
 import { fetchMemImagePreview } from "./drive-preview.js";
+import { uploadMemFile, type DriveUploadInput } from "./drive-upload.js";
 
 /**
  * Drive provider seam (drive-provider.v1).
@@ -37,6 +38,7 @@ export interface DriveProvider {
   list(query: string): Promise<DriveObject[]>;
   detail(id: string): Promise<DriveObject>;
   preview?(id: string): Promise<DriveObjectPreview>;
+  upload?(input: DriveUploadInput): Promise<DriveUploadResponse>;
   probe(): Promise<DriveProviderStatus>;
 }
 
@@ -100,6 +102,12 @@ export class MemDriveProvider implements DriveProvider {
   async probe(): Promise<DriveProviderStatus> {
     const connection = this.connection();
     return providerStatus("mem", connection === null ? "not_connected" : "ready");
+  }
+
+  async upload(input: DriveUploadInput): Promise<DriveUploadResponse> {
+    const connection = this.connection();
+    if (!connection) throw new OrgApiError(errorCodes.drive_not_configured, 503, "Connect Mem in service settings before uploading");
+    return uploadMemFile(connection, input);
   }
 
   private async fetchMem(pathname: string, connection: ServiceConnection | null = this.connection()): Promise<unknown> {

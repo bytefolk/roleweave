@@ -529,6 +529,20 @@ GET  /groups/:conversationRef/turns
 
 输入错误返回 `400 service_request_invalid`；上游传输、响应大小或契约异常返回 `502 service_upstream_failed`（具体 probe 状态仍按上述成功响应返回）。原生窗口和凭据持久化通过受信任桌面 IPC 提供，不属于远程服务可访问的控制面能力。部署和版本策略见 [独立服务说明](design/independent-services.md)。
 
+### 2.16a `/drive/upload` — 桌面选择文件上传（#600）
+
+`POST /drive/upload?name=<filename>&mime=<mime>` 使用 `application/octet-stream` 请求体和精确的 `Content-Length`，支持 0–32 MiB。查询参数只接受各一个 `name`、`mime`；文件名不含路径、控制字符，UTF-8 长度最多 512 字节。不接受 JSON `filePath`、分块传输或任意目标目录。桌面主进程从原生文件选择器读取文件，将字节发送给本地控制面；Windows 路径不会发送给 WSL。上传保留 boot token 认证。
+
+Mem provider 在请求开始时捕获连接，使用该连接的 API 地址、令牌和工作区向 `POST /v1/files?stream=1` 上传到 Mem 根目录 `/`。需要令牌的 `write` 权限与目标工作区/路径访问权；浏览和刷新仍需要 `read`。上游请求不跟随重定向，接收文件和上传阶段分别限时 30 秒，上传响应最多 64 KiB。成功响应校验文件元数据、实际大小与 SHA-256 后，返回 `201`（新文件）或 `200`（去重）：
+
+```json
+{"schemaVersion":"drive-object-upload.v1","object":{"id":"file-id","name":"asset.png","size":1024,"mime":"image/png","createdAt":"2026-10-15T00:00:00Z"},"deduped":false}
+```
+
+`object` 沿用 `DriveObject`；不返回本地路径、令牌、存储 key 或上游原始响应。旧的占位 `202 {stub:true}` 不再作为成功结果。未配置返回 `503 drive_not_configured`；不支持上传的 provider 返回 `501 drive_action_unsupported`；令牌无效/过期返回 `401 drive_auth_expired`；权限不足返回 `403 drive_permission_denied`；文件超限返回 `413 drive_upload_too_large`。传输失败或无效回执返回 `502`，用户应先检查清单再重试，因为上游可能已经保存文件。
+
+桌面 `owb:drive:pick-and-upload` 只接受当前受信任主窗口，无输入参数；取消返回 `{canceled:true}`。读取文件前后与发起上传前重新检查窗口身份，拒绝符号链接、非普通文件、超限或读取中发生变化的文件；并发选择/上传请求被拒绝。旧的 `owb:drive:upload(filePath)` 保留为明确的 `501` 拒绝，不读取任何渲染进程提供的路径。
+
 ### 2.17 `PATCH /positions/:id/profile` — 编辑员工档案（#291 加法）
 
 `POST /hire` 是唯一的**创建**通道，此前没有任何通道治理创建之后的记录：员工一旦入岗，姓名与权限即不可改，只能裁撤后重招——而裁撤会同时丢弃以该岗位 ID 归档的全部回合、会话与群聊引用。本端点补上这一格。它与既有的 `PATCH /positions/:id/model`、`PATCH /positions/:id/agent-engine` 同为 `/positions/:id/*` 写入面，并沿用同一套接缝。

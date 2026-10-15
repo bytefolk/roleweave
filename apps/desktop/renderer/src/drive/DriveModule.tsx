@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Alert, Button, Drawer, Empty, Image as ImagePreview, Input, Modal, Spin, Tooltip } from "antd";
-import { ArrowDownWideNarrow, Cloud, File, FileText, Film, Folder, Image, Info, LayoutGrid, List, Music2, RefreshCw, Search, ZoomIn } from "lucide-react";
+import { ArrowDownWideNarrow, Cloud, File, FileText, Film, Folder, Image, Info, LayoutGrid, List, Music2, RefreshCw, Search, Upload, ZoomIn } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
 import type { DriveObject, DriveObjectDetailResponse, DriveObjectListResponse, DriveObjectPreviewResponse, DriveProviderStatusResponse } from "@roleweave/shared";
 import "./drive-browser.css";
@@ -41,6 +41,12 @@ function errorCode(body: unknown): string | null {
 function errorMessage(body: unknown, fallback: string): string {
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 }
+function driveError(response: { status: number; body?: unknown }, t: ReturnType<typeof useT>, fallback: string): string {
+  if (response.status === 401) return t("drive.authExpired");
+  if (response.status === 403 || errorCode(response.body) === "drive_permission_denied") return t("drive.permissionDenied");
+  if (response.status === 413 || errorCode(response.body) === "drive_upload_too_large") return t("drive.uploadTooLarge");
+  return errorMessage(response.body, fallback);
+}
 function formatBytes(bytes: number, mime?: string) {
   if (mime && fileKind(mime) === "folder") return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -49,7 +55,7 @@ function formatBytes(bytes: number, mime?: string) {
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
-/** A flat, read-only file browser over the existing bounded drive API. */
+/** Bounded file browsing and OS-picked Mem uploads. */
 export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, serviceAction }: DriveModuleProps) {
   const t = useT();
   const translation = useRef(t); translation.current = t;
@@ -68,6 +74,9 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
   const [providerError, setProviderError] = useState(false);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const [sort, setSort] = useState<Sort>("newest");
+  const [uploading, setUploading] = useState(false);
+  const [uploadNotice, setUploadNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const uploadEpoch = useRef(0);
   const [view, setView] = useState<"list" | "grid">("list");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -95,7 +104,7 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
   const clearSelection = useCallback(() => {
     invalidateInspector(); activeRef.current = null; setActiveId(null); setSelectedIds(new Set());
   }, [invalidateInspector]);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; listEpoch.current += 1; providerEpoch.current += 1; detailEpoch.current += 1; previewEpoch.current += 1; }; }, []);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; listEpoch.current += 1; providerEpoch.current += 1; detailEpoch.current += 1; previewEpoch.current += 1; uploadEpoch.current += 1; }; }, []);
 
   const loadObjects = useCallback(async (needle = "") => {
     if (!workspaceOpen) return;
@@ -108,7 +117,7 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
       if (!current()) return;
       if (response.status >= 400 || !response.body) {
         if (errorCode(response.body) === "drive_not_configured") { setConnection("unconfigured"); return; }
-        throw new Error(errorMessage(response.body, translation.current("drive.listFail")));
+        throw new Error(driveError(response, translation.current, translation.current("drive.listFail")));
       }
       const body = response.body as DriveObjectListResponse;
       if (body.schemaVersion !== "drive-object-list.v1" || !Array.isArray(body.objects) || body.mocked !== false) throw new Error(translation.current("drive.listFail"));
@@ -130,7 +139,31 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
       setProvider(body.status);
     } catch { if (current()) setProviderError(true); }
   }, [scope, workspaceOpen]);
+  const uploadFile = async () => {
+    if (uploading || !workspaceOpen) return;
+    const request = ++uploadEpoch.current;
+    const current = () => alive.current && currentScope.current === scope && request === uploadEpoch.current;
+    setUploading(true); setUploadNotice(null);
+    try {
+      const response = await window.owb.drive.pickAndUpload();
+      if (!current() || "canceled" in response) return;
+      if (response.status !== 200 && response.status !== 201) throw new Error(errorCode(response.body) === "drive_action_unsupported"
+        ? translation.current("drive.uploadUnsupported") : driveError(response, translation.current, translation.current("drive.uploadFail")));
+      const body = response.body;
+      if (!body || body.schemaVersion !== "drive-object-upload.v1" || typeof body.deduped !== "boolean" ||
+          typeof body.object?.id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(body.object.id) ||
+          typeof body.object.name !== "string" || !body.object.name || !Number.isSafeInteger(body.object.size) || body.object.size < 0) {
+        throw new Error(translation.current("drive.uploadFail"));
+      }
+      setUploadNotice({ type: "success", message: translation.current(body.deduped ? "drive.uploadDeduped" : "drive.uploadSuccess", { name: body.object.name }) });
+      setQuery(""); setFilter("all"); setSort("newest");
+      await loadObjects("");
+    } catch (error) {
+      if (current()) setUploadNotice({ type: "error", message: error instanceof Error ? error.message : translation.current("drive.uploadFail") });
+    } finally { if (current()) setUploading(false); }
+  };
   useEffect(() => {
+    uploadEpoch.current += 1; setUploading(false); setUploadNotice(null);
     clearSelection(); setQuery(""); setAppliedQuery(""); setFilter("all"); setObjects([]); setListError(null); setLoading(false); setConnection("checking");
     void loadProvider(); if (workspaceOpen) void loadObjects();
     return () => { listEpoch.current += 1; providerEpoch.current += 1; detailEpoch.current += 1; previewEpoch.current += 1; };
@@ -145,7 +178,7 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
       const response = await window.owb.drive.detail(object.id);
       if (!current()) return;
       const body = response.body as DriveObjectDetailResponse;
-      if (response.status >= 400 || body?.schemaVersion !== "drive-object.v1" || body?.object?.id !== object.id || body.mocked !== false) throw new Error(errorMessage(response.body, t("drive.detailFail")));
+      if (response.status >= 400 || body?.schemaVersion !== "drive-object.v1" || body?.object?.id !== object.id || body.mocked !== false) throw new Error(driveError(response, t, t("drive.detailFail")));
       setDetail(body.object);
     } catch (error) { if (current()) setDetailError(error instanceof Error ? error.message : t("drive.detailFail")); }
     finally { if (current()) setDetailLoading(false); }
@@ -162,7 +195,7 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
       if (!current()) return;
       if (response.status >= 400 || !response.body) {
         const key = ({ drive_preview_unsupported: "drive.previewUnsupported", drive_preview_too_large: "drive.previewTooLarge", drive_preview_invalid: "drive.previewInvalid", drive_action_unsupported: "drive.previewSourceUnsupported" } as Record<string, string>)[errorCode(response.body) ?? ""];
-        throw new Error(key ? t(key) : errorMessage(response.body, t("drive.previewFail")));
+        throw new Error(key ? t(key) : driveError(response, t, t("drive.previewFail")));
       }
       const image = (response.body as DriveObjectPreviewResponse).preview;
       const mime = typeof image?.mime === "string" ? mimeOf(image.mime) : "";
@@ -262,11 +295,14 @@ export function DriveModule({ workspaceOpen, workspaceKey, embedded = false, ser
       <label className="owb-drive-browser__sort"><ArrowDownWideNarrow size={15} aria-hidden="true" /><select aria-label={t("drive.sortAria")} value={sort} onChange={(event) => setSort(event.target.value as Sort)}>{SORTS.map((value) => <option key={value} value={value}>{t(`drive.sort.${value}`)}</option>)}</select></label>
       <div className="owb-drive-browser__views" role="group" aria-label={t("drive.viewAria")}><Tooltip title={t("drive.viewList")}><Button aria-label={t("drive.viewList")} aria-pressed={view === "list"} type="text" icon={<List size={16} aria-hidden="true" />} onClick={() => setView("list")} /></Tooltip><Tooltip title={t("drive.viewGrid")}><Button aria-label={t("drive.viewGrid")} aria-pressed={view === "grid"} type="text" icon={<LayoutGrid size={16} aria-hidden="true" />} onClick={() => setView("grid")} /></Tooltip></div>
       <Tooltip title={t("drive.refreshAria")}><Button type="text" aria-label={t("drive.refreshAria")} icon={<RefreshCw size={16} aria-hidden="true" />} onClick={() => { void loadObjects(appliedQuery); void loadProvider(); }} /></Tooltip>
+      {provider?.kind === "mem" && typeof window.owb.drive.pickAndUpload === "function" && <Button icon={<Upload size={14} aria-hidden="true" />} title={t("drive.uploadHint")} loading={uploading} disabled={loading || connection !== "connected" || provider.state !== "ready"} onClick={() => void uploadFile()}>{t("drive.upload")}</Button>}
+
       {provider?.kind !== "bdpan" && serviceAction}
     </div>
     <div className="owb-drive-browser__filterbar"><div className="owb-drive-browser__filters" role="group" aria-label={t("drive.filterAria")}>{FILTERS.map((value) => <button type="button" key={value} aria-label={t(kindKey(value))} aria-pressed={filter === value} onClick={() => { setFilter(value); clearSelection(); }}>{t(kindKey(value))}<span aria-hidden="true">{value === "all" ? objects.length : objects.filter(object => fileKind(object.mime) === value).length}</span></button>)}</div>{appliedQuery && <Button size="small" onClick={() => { setQuery(""); void loadObjects(""); }}>{t("drive.clearSearch")}</Button>}</div>
     {connection === "unconfigured" && <div className="owb-drive-browser__empty-state" role="status"><Empty description={t("drive.notConfigured")} /></div>}
     {listError && <Alert type="error" showIcon title={listError} action={<Button onClick={() => void loadObjects(appliedQuery)}>{t("drive.retry")}</Button>} />}
+    {uploadNotice && <Alert type={uploadNotice.type} showIcon title={uploadNotice.message} closable onClose={() => setUploadNotice(null)} />}
     {loading && <div className="owb-drive-browser__loading" role="status"><Spin size="small" /><span>{t("drive.loading")}</span></div>}
     {!loading && connection === "connected" && <div className={`owb-drive-browser__files is-${view}`} ref={browser}>
       {visible.length === 0 ? <Empty description={objects.length === 0 ? t("drive.empty") : t("drive.noMatches")}>
