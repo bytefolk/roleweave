@@ -18,11 +18,13 @@ import "./goals-workspace.css";
 import { GoalEvidence } from "./GoalEvidence.js";
 import { GoalCreateDialog } from "./GoalCreateDialog.js";
 import { GoalCriteriaDialog } from "./GoalCriteriaDialog.js";
+import { DeliveryPreflightPanel } from "./DeliveryPreflightPanel.js";
 
 interface GoalsModuleProps {
   workspaceOpen: boolean;
   presentation?: "goals" | "projects";
   workspaceKey?: string;
+  workspaceScope?: symbol;
   positionNames?: Record<string, string>;
   positionEngines?: Record<string, TurnEngine>;
   positionAvatars?: Record<string, import("../PositionAvatar.js").AvatarValue>;
@@ -62,7 +64,7 @@ export function GoalsModule(props: GoalsModuleProps) {
   );
 }
 
-function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", positionNames = {}, positionEngines = {}, positionAvatars = {}, positionAvatarSources = {}, ownerPositionId, onOpenApprovals, onOpenBoundSession }: GoalsModuleProps) {
+function GoalsWorkspace({ workspaceOpen, workspaceKey, workspaceScope, presentation = "goals", positionNames = {}, positionEngines = {}, positionAvatars = {}, positionAvatarSources = {}, ownerPositionId, onOpenApprovals, onOpenBoundSession }: GoalsModuleProps) {
   const t = useT();
   const projectMode = presentation === "projects";
   const selectionKey = workspaceKey ? `${presentation}:${workspaceKey}` : undefined;
@@ -701,6 +703,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, presentation = "goals", p
                           )}
                         </ol>
                       </section>
+                    {!projectMode ? (
+                      <DeliveryPreflightPanel
+                        workspacePath={workspaceKey}
+                        workspaceScope={workspaceScope}
+                        goalId={detail.goal.goalId}
+                        acceptanceCriteria={detail.goal.acceptanceCriteria}
+                      />
+                    ) : null}
                     {!projectMode && <GoalEvidence branches={detail.goal.branches} positionNames={positionNames} onOpenBoundSession={onOpenBoundSession} />}
                     {projectMode && detail.goal.branches.length > 0 && (
                       <section>

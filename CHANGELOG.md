@@ -9,7 +9,7 @@
 
 ### Added
 
-- Buyer delivery acceptance details in the existing approval contract; refined shared-resource browsing and image previews; CXO company scenarios, execution teams and collaboration runbooks.
+- #467：Goals 详情新增项目级 opt-in 的“交付预检”。用户为每条验收标准显式选择带版本 `DocRef` 的文档材料；预检只核对引用结构、断链、版本冲突和 mtime，不读取正文、不调用 Laya、不写 `goal.status` / `goal.health`，也不会产生整体通过结论。Refs #422。- Buyer delivery acceptance details in the existing approval contract; refined shared-resource browsing and image previews; CXO company scenarios, execution teams and collaboration runbooks.
 
 - 网盘面板支持直接选择并上传文件到 Mem，单文件最大 32 MiB，成功或去重后刷新清单；Windows 桌面向 WSL 控制面传送文件字节，文件路径留在桌面主进程。
 
