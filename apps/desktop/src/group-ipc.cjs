@@ -57,6 +57,29 @@ function validateGroupAddMemberRequest(value) {
   return { ok: true, conversationRef: value.conversationRef, request: { positionId: value.positionId } };
 }
 
+function validateGroupRelayStopDecision(value) {
+  if (
+    value === null || typeof value !== "object" || Array.isArray(value) ||
+    Object.keys(value).sort().join(",") !== "conversationRef,decision,messageId" ||
+    !validateConversationRef(value.conversationRef) ||
+    !validateConversationRef(value.messageId) ||
+    (value.decision !== "stop" && value.decision !== "continue")
+  ) {
+    return {
+      ok: false,
+      response: invalid(
+        "group_request_invalid",
+        "relay stop decision accepts exactly bounded conversationRef, messageId and stop or continue",
+      ),
+    };
+  }
+  return {
+    ok: true,
+    conversationRef: value.conversationRef,
+    request: { messageId: value.messageId, decision: value.decision },
+  };
+}
+
 function validateGroupTurnRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("group_request_invalid", "group turn must be an object") };
@@ -137,5 +160,6 @@ module.exports = {
   validateConversationRef,
   validateGroupCreateRequest,
   validateGroupAddMemberRequest,
+  validateGroupRelayStopDecision,
   validateGroupTurnRequest,
 };

@@ -1,0 +1,23 @@
+.owb-app .owb-document-tree { padding: 6px; }
+.owb-app .owb-document-tree[hidden] { display: none !important; }
+.owb-app .owb-document-tree ul { margin: 0; padding: 0; list-style: none; }
+.owb-app .owb-document-tree ul[role="group"] { padding-left: 14px; }
+.owb-app .owb-document-tree__item { min-width: 0; padding: 0; outline: none; }
+.owb-app .owb-document-tree :is(.owb-docs-panel__file, .owb-document-tree__folder) {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0;
+  height: 30px; min-height: 30px; padding: 0 6px; margin: 1px 0;
+  border: 0; border-radius: 5px; background: transparent;
+  color: var(--ui-foreground); font: 12px var(--ui-font-sans);
+  text-align: left; white-space: nowrap; cursor: pointer;
+}
+.owb-app .owb-document-tree .owb-docs-panel__file { padding-left: 25px; }
+.owb-app .owb-document-tree .owb-docs-panel__file-copy { display: block; min-width: 0; }
+.owb-app .owb-document-tree .owb-docs-panel__file-name,
+.owb-app .owb-document-tree__folder > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.owb-app .owb-document-tree .owb-docs-panel__file-name { display: block; font-size: 12px; font-weight: 400; }
+.owb-app .owb-document-tree .owb-docs-panel__file[aria-pressed="true"] .owb-docs-panel__file-name { font-weight: 500; }
+.owb-app .owb-document-tree svg { flex: none; color: var(--ui-foreground-muted); }
+.owb-app .owb-document-tree__folder > .is-expanded { transform: rotate(90deg); }
+.owb-app .owb-document-tree__folder:hover { background: var(--ui-surface-inset); }
+.owb-app .owb-document-tree__item:focus-visible > :is(button, .owb-docs-panel__file),
+.owb-app .owb-document-tree__folder:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: -2px; }

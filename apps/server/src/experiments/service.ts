@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import {
-  OrgApiError, errorCodes, reportAdviceSuggestions,
+  OrgApiError, errorCodes, isPositionId, reportAdviceSuggestions,
+  type BudgetRemainingAdviceRequest, type BudgetRemainingAdviceResponse,
   type ExperimentsResponse, type ExperimentsUpdateRequest, type ReportsAdviceRequest,
   type ReportsAdviceResponse,
 } from "@roleweave/shared";
@@ -9,6 +10,8 @@ import type { OpenWorkspace } from "../workspace-state.js";
 import { readReports } from "../routes/reports.js";
 import { LAYA_ENDPOINT, LayaAdviceProvider, MAX_ADVICE_ITEMS, normalizeAdviceMetadata, type AdviceProvider } from "./provider.js";
 import { readExperiments, writeExperiments, type StoredExperiments } from "./store.js";
+import { askLaya } from "../laya/client.js";
+import { projectBudgetRemainingFact, resolveBudgetRemainingChoice } from "../turns/budget-remaining-advice.js";
 
 const conflict = () => new OrgApiError(errorCodes.experiments_conflict, 409, "workspace or experimental settings changed; reload before trying again");
 const invalid = () => new OrgApiError(errorCodes.experiments_request_invalid, 400, "invalid experimental settings request");
@@ -37,6 +40,19 @@ export function parseExperimentsRequest(raw: unknown, update: boolean): Experime
     !Number.isSafeInteger(body.revision) || (body.revision as number) < 0 ||
     (update && typeof body.enabled !== "boolean")) throw invalid();
   return body as unknown as ExperimentsUpdateRequest;
+}
+
+export function parseBudgetRemainingAdviceRequest(raw: unknown): BudgetRemainingAdviceRequest {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw invalid();
+  const body = raw as Record<string, unknown>;
+  if (Object.keys(body).some(key => !["workspacePath", "workspaceSession", "revision", "positionId"].includes(key)) ||
+    !isPositionId(body.positionId)) throw invalid();
+  const scope = parseExperimentsRequest({
+    workspacePath: body.workspacePath,
+    workspaceSession: body.workspaceSession,
+    revision: body.revision,
+  }, false);
+  return { ...scope, positionId: body.positionId };
 }
 
 export function experiments(ctx: ControlPlaneContext): ExperimentsService {
@@ -114,6 +130,7 @@ export class ExperimentsService {
       availability: !stored.valid || state.inhibited ? "storage_error" : !enabled ? "disabled" : configured ? "ready" : "not_configured",
       provider: { name: "Laya · local", endpointHost: "127.0.0.1", endpointUrl: this.ctx.config.layaUrl || LAYA_ENDPOINT, configured },
       sending: ["status", "errorCode", "budgetRelated"],
+      budgetAdviceSending: ["remainingPerTask", "remainingPerDay", "positionId"],
     };
   }
 
@@ -190,6 +207,59 @@ export class ExperimentsService {
     });
     state.inFlight.set(key, { controller, result });
     return result;
+  }
+
+  async adviseBudgetRemaining(
+    workspace: OpenWorkspace,
+    request: BudgetRemainingAdviceRequest,
+  ): Promise<BudgetRemainingAdviceResponse> {
+    const state = this.state(workspace);
+    type Prepared =
+      | { response: BudgetRemainingAdviceResponse }
+      | { generation: number; base: BudgetRemainingAdviceResponse };
+    const prepared = await this.serial<Prepared>(state, async () => {
+      this.assertCurrent(state, request);
+      const stored = await this.refresh(state);
+      if (stored.settings.revision !== request.revision) throw conflict();
+      if (!workspace.organization.roles.some(role => role.id === request.positionId)) throw invalid();
+      const base: BudgetRemainingAdviceResponse = {
+        workspacePath: request.workspacePath,
+        workspaceSession: request.workspaceSession,
+        revision: request.revision,
+        status: "unavailable",
+        fact: { positionId: request.positionId, remainingPerTask: null, remainingPerDay: null },
+        suggestion: null,
+      };
+      if (!stored.valid || state.inhibited) return { response: { ...base, reason: "settings_invalid" } };
+      if (!stored.settings.enabled) return { response: { ...base, status: "disabled", reason: "flag_off" } };
+      return { generation: state.generation, base };
+    });
+    if ("response" in prepared) return prepared.response;
+
+    this.assertGeneration(state, prepared.generation);
+    const fact = projectBudgetRemainingFact(request.positionId);
+    const base: BudgetRemainingAdviceResponse = { ...prepared.base, fact };
+    if (fact.remainingPerTask === null || fact.remainingPerDay === null) {
+      return { ...base, status: "abstained", reason: "unknown_remaining" };
+    }
+    if (!this.ctx.config.layaEnabled) return { ...base, reason: "not_configured" };
+    const suggestion = await resolveBudgetRemainingChoice({
+      positionId: fact.positionId,
+      remainingPerTask: fact.remainingPerTask,
+      remainingPerDay: fact.remainingPerDay,
+    }, body => askLaya(body, { env: {
+      ROLEWEAVE_LAYA_ENABLED: "1",
+      ROLEWEAVE_LAYA_URL: this.ctx.config.layaUrl,
+      ROLEWEAVE_LAYA_MODEL: this.ctx.config.layaModel,
+      ROLEWEAVE_LAYA_TIMEOUT_MS: String(this.ctx.config.layaTimeoutMs),
+    }, strictAnswerShape: true }));
+    await this.serial(state, async () => {
+      await this.refresh(state);
+      this.assertGeneration(state, prepared.generation);
+    });
+    return suggestion === null
+      ? { ...base, status: "abstained", reason: "insufficient_information" }
+      : { ...base, status: "ready", suggestion };
   }
 
   private assertGeneration(state: WorkspaceExperiments, generation: number): void {

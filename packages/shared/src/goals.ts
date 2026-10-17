@@ -1,4 +1,5 @@
 import type { TurnRecordStatus } from "./turns.js";
+import { validateAcceptanceDecisionInput, type AcceptanceDecision, type AcceptanceVerdict } from "./acceptance.js";
 
 /**
  * Goal contracts (v1).
@@ -22,6 +23,56 @@ export const GOAL_MAX_BRANCHES = 32;
 export const GOAL_MAX_ACTIVITY_ENTRIES = 128;
 export const GOAL_MAX_LIST_ITEMS = 64;
 export const GOAL_MAX_WORK_ITEMS = 64;
+export const GOAL_TASK_ACCEPTANCE_SCHEMA_VERSION = "goal-task-acceptance.v1" as const;
+export const GOAL_MAX_TASK_ACCEPTANCES = 64;
+
+/** Goal tasks are not Spaces. This scope reuses acceptance.v1 verdict semantics. */
+export interface GoalTaskAcceptanceSource {
+  positionId: string;
+  turnId: string;
+  sessionId: string;
+  outputDigest: string;
+}
+
+export interface GoalTaskDelivery {
+  source: GoalTaskAcceptanceSource;
+  output: unknown;
+  completedAt: string;
+}
+
+export type GoalTaskDeliveryUnavailable = "session_required" | "output_missing" | "execution_incomplete";
+
+export interface GoalTaskAcceptanceCreateRequest {
+  expectedWorkspacePath: string;
+  expectedUpdatedAt: string;
+  idempotencyKey: string;
+  source: GoalTaskAcceptanceSource;
+  decision: AcceptanceDecision;
+  verdicts: Pick<AcceptanceVerdict, "criteriaIndex" | "passed">[];
+  note?: string;
+}
+
+export interface GoalTaskAcceptanceRecord {
+  schemaVersion: typeof GOAL_TASK_ACCEPTANCE_SCHEMA_VERSION;
+  scope: "goal-task";
+  acceptanceId: string;
+  goalId: string;
+  taskId: string;
+  planUpdatedAt: string;
+  workspacePath: string;
+  criteriaSnapshot: string[];
+  source: GoalTaskAcceptanceSource;
+  decision: AcceptanceDecision;
+  verdicts: Pick<AcceptanceVerdict, "criteriaIndex" | "passed">[];
+  note?: string;
+  decidedBy: string;
+  decidedAt: string;
+  idempotencyKey: string;
+  /** Canonical request digest makes replay payload-bound across task IDs. */
+  requestDigest: string;
+}
+
+export interface GoalTaskAcceptanceCreateResponse { record: GoalTaskAcceptanceRecord }
 
 export const goalWorkItemStatuses = ["todo", "in_progress", "blocked", "review", "done"] as const;
 export type GoalWorkItemStatus = (typeof goalWorkItemStatuses)[number];
@@ -43,6 +94,8 @@ export interface GoalWorkItem {
 export interface GoalTaskExecution {
   turnId: string;
   positionId: string;
+  /** Exact personal session that owns this turn; absent for legacy bare turns. */
+  sessionId?: string;
   status: TurnRecordStatus;
   startedAt?: string;
   completedAt?: string;
@@ -89,6 +142,8 @@ export interface Goal {
   branches: GoalBranch[];
   /** Optional so existing goal.v1 files remain valid without migration. */
   workItems?: GoalWorkItem[];
+  /** Append-only human decisions, committed atomically with workItems status. */
+  taskAcceptances?: GoalTaskAcceptanceRecord[];
   createdAt: string;
   updatedAt: string;
 }
@@ -102,12 +157,14 @@ export interface GoalActivity {
   createdAt: string;
 }
 
-export type GoalSummary = Omit<Goal, "branches" | "workItems"> & { branchCount: number };
+export type GoalSummary = Omit<Goal, "branches" | "workItems" | "taskAcceptances"> & { branchCount: number };
 
 export interface GoalDetail {
   goal: Goal;
   activity: GoalActivity[];
   taskExecutions?: Record<string, GoalTaskExecution>;
+  taskDeliveries?: Record<string, GoalTaskDelivery>;
+  taskDeliveryUnavailable?: Record<string, GoalTaskDeliveryUnavailable>;
   /** A failed turn-history read must never look like an empty execution history. */
   executionUnavailable?: boolean;
   /** Advisory Laya Choice when enabled; never written to persisted goal.health. */
@@ -346,7 +403,7 @@ export function validateGoalWorkItems(raw: unknown): GoalValidationResult<GoalWo
 }
 
 export function validateGoal(raw: unknown): GoalValidationResult<Goal> {
-  if (!isRecord(raw) || !keysMatch(raw, ["schemaVersion", "goalId", "title", "description", "acceptanceCriteria", "status", "health", "branches", "createdAt", "updatedAt"], ["workItems"])) {
+  if (!isRecord(raw) || !keysMatch(raw, ["schemaVersion", "goalId", "title", "description", "acceptanceCriteria", "status", "health", "branches", "createdAt", "updatedAt"], ["workItems", "taskAcceptances"])) {
     return fail("goal_unknown_field", "goal has unexpected or missing fields");
   }
   if (raw.schemaVersion !== GOAL_SCHEMA_VERSION) return fail("goal_invalid", "goal.schemaVersion is not supported");
@@ -373,6 +430,23 @@ export function validateGoal(raw: unknown): GoalValidationResult<Goal> {
   if (workItems?.ok && workItems.value.some((item) => branches.value.some((branch) => branch.branchId === item.taskId))) {
     return fail("goal_duplicate_reference", "work item identifiers must be distinct from existing branch identifiers");
   }
+  const taskAcceptances: GoalTaskAcceptanceRecord[] = [];
+  if (raw.taskAcceptances !== undefined) {
+    const list = boundedList(raw.taskAcceptances, "taskAcceptances", GOAL_MAX_TASK_ACCEPTANCES);
+    if (!list.ok) return list;
+    const ids = new Set<string>();
+    const keys = new Set<string>();
+    for (const value of list.value) {
+      const record = validateGoalTaskAcceptanceRecord(value);
+      if (!record.ok) return record;
+      if (record.value.goalId !== goalId.value || ids.has(record.value.acceptanceId) || keys.has(record.value.idempotencyKey)) {
+        return fail("goal_duplicate_reference", "acceptance records must belong to this goal with unique IDs and replay keys");
+      }
+      ids.add(record.value.acceptanceId);
+      keys.add(record.value.idempotencyKey);
+      taskAcceptances.push(record.value);
+    }
+  }
 
   return {
     ok: true,
@@ -386,10 +460,79 @@ export function validateGoal(raw: unknown): GoalValidationResult<Goal> {
       health: health.value,
       branches: branches.value,
       ...(workItems?.ok ? { workItems: workItems.value } : {}),
+      ...(raw.taskAcceptances !== undefined ? { taskAcceptances } : {}),
       createdAt: createdAt.value,
       updatedAt: updatedAt.value,
     },
   };
+}
+
+function validateGoalTaskAcceptanceSource(raw: unknown): GoalValidationResult<GoalTaskAcceptanceSource> {
+  if (!isRecord(raw) || !keysMatch(raw, ["positionId", "turnId", "sessionId", "outputDigest"])) {
+    return fail("goal_unknown_field", "acceptance source has unexpected or missing fields");
+  }
+  for (const field of ["positionId", "turnId", "sessionId"] as const) {
+    if (typeof raw[field] !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(raw[field])) {
+      return fail("goal_invalid", `source.${field} must be a safe identifier`);
+    }
+  }
+  if (typeof raw.outputDigest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(raw.outputDigest)) {
+    return fail("goal_invalid", "source.outputDigest must be a SHA-256 digest");
+  }
+  return { ok: true, value: raw as unknown as GoalTaskAcceptanceSource };
+}
+
+export function validateGoalTaskAcceptanceCreateRequest(raw: unknown): GoalValidationResult<GoalTaskAcceptanceCreateRequest> {
+  if (!isRecord(raw) || !keysMatch(raw, ["expectedWorkspacePath", "expectedUpdatedAt", "idempotencyKey", "source", "decision", "verdicts"], ["note"])) {
+    return fail("goal_unknown_field", "task acceptance request has unexpected or missing fields");
+  }
+  const version = iso8601(raw.expectedUpdatedAt, "expectedUpdatedAt");
+  if (!version.ok) return version;
+  const workspace = nonEmptyText(raw.expectedWorkspacePath, "expectedWorkspacePath");
+  if (!workspace.ok) return workspace;
+  if (!/^(?:\/|[a-zA-Z]:[\\/]|\\\\)/.test(workspace.value)) return fail("goal_invalid", "expectedWorkspacePath must be absolute");
+  if (typeof raw.idempotencyKey !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(raw.idempotencyKey)) {
+    return fail("goal_invalid", "idempotencyKey must be a safe identifier up to 128 characters");
+  }
+  const source = validateGoalTaskAcceptanceSource(raw.source);
+  if (!source.ok) return source;
+  if (!Array.isArray(raw.verdicts) || raw.verdicts.length > GOAL_MAX_CRITERIA_ITEMS || raw.verdicts.some(value => !isRecord(value) || !keysMatch(value, ["criteriaIndex", "passed"]))) {
+    return fail("goal_unknown_field", "verdicts must contain only criteriaIndex and passed");
+  }
+  // Check syntax and decision consistency now; the store checks the actual plan count.
+  const count = Math.max(0, ...raw.verdicts.map(value => typeof value.criteriaIndex === "number" ? value.criteriaIndex + 1 : 0));
+  const decision = validateAcceptanceDecisionInput({ criteriaCount: count, verdicts: raw.verdicts, decision: raw.decision,
+    ...(raw.note !== undefined ? { note: raw.note } : {}) });
+  if (!decision.ok) return fail("goal_invalid", decision.message);
+  return { ok: true, value: { expectedWorkspacePath: workspace.value, expectedUpdatedAt: version.value, idempotencyKey: raw.idempotencyKey, source: source.value,
+    decision: decision.value.decision, verdicts: decision.value.verdicts,
+    ...(decision.value.note !== undefined ? { note: decision.value.note } : {}) } };
+}
+
+export function validateGoalTaskAcceptanceRecord(raw: unknown): GoalValidationResult<GoalTaskAcceptanceRecord> {
+  if (!isRecord(raw) || !keysMatch(raw, ["schemaVersion", "scope", "acceptanceId", "goalId", "taskId", "planUpdatedAt", "workspacePath", "criteriaSnapshot", "source", "decision", "verdicts", "decidedBy", "decidedAt", "idempotencyKey", "requestDigest"], ["note"])) {
+    return fail("goal_unknown_field", "task acceptance record has unexpected or missing fields");
+  }
+  if (raw.schemaVersion !== GOAL_TASK_ACCEPTANCE_SCHEMA_VERSION || raw.scope !== "goal-task") {
+    return fail("goal_invalid", "task acceptance scope or schema is unsupported");
+  }
+  for (const field of ["acceptanceId", "goalId", "taskId", "decidedBy"] as const) {
+    const id = identifier(raw[field], field);
+    if (!id.ok) return id;
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(id.value)) return fail("goal_invalid", `${field} must be a safe identifier`);
+  }
+  const criteria = validateCriteria(raw.criteriaSnapshot);
+  if (!criteria.ok) return criteria;
+  const time = iso8601(raw.decidedAt, "decidedAt");
+  if (!time.ok) return time;
+  if (typeof raw.requestDigest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(raw.requestDigest)) return fail("goal_invalid", "requestDigest must be a SHA-256 digest");
+  const request = validateGoalTaskAcceptanceCreateRequest({ expectedWorkspacePath: raw.workspacePath, expectedUpdatedAt: raw.planUpdatedAt, idempotencyKey: raw.idempotencyKey,
+    source: raw.source, decision: raw.decision, verdicts: raw.verdicts, ...(raw.note !== undefined ? { note: raw.note } : {}) });
+  if (!request.ok) return request;
+  const decision = validateAcceptanceDecisionInput({ criteriaCount: criteria.value.length, verdicts: request.value.verdicts,
+    decision: request.value.decision, ...(request.value.note !== undefined ? { note: request.value.note } : {}) });
+  if (!decision.ok) return fail("goal_invalid", decision.message);
+  return { ok: true, value: raw as unknown as GoalTaskAcceptanceRecord };
 }
 
 export function validateGoalActivity(raw: unknown): GoalValidationResult<GoalActivity> {

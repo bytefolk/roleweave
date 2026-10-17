@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { enterPickerDate } from "./date-picker-helper";
 import { describe, expect, it, vi } from "vitest";
 import { ApprovalQueue } from "../src/approvals/ApprovalQueue";
 import type { ApprovalQueueItem } from "../src/approvals/types";
@@ -21,6 +22,112 @@ function makeItem(over: Partial<ApprovalQueueItem> = {}): ApprovalQueueItem {
 }
 
 const noop = () => {};
+
+describe("inline approval workspace", () => {
+  it("allows bulk denial of overreach but blocks cached batch decisions after a read failure", async () => {
+    const source = { kind: "session" as const, positionId: "writer-1", conversationId: "session-1", turnId: "turn-1", runId: "run-1", engine: "qoder" as const };
+    const items = ["batch-a", "batch-b"].map(approvalId => makeItem({ approvalId, category: "tool", requestedTool: "fs.write", source, batchMaxItems: 3, canDecide: true }));
+    const onApproveBatch = vi.fn();
+    const onDenyBatch = vi.fn().mockResolvedValue({ succeeded: ["batch-a", "batch-b"], failed: [] });
+    const props = { items, onApprove: noop, onDeny: noop, onApproveBatch, onDenyBatch };
+    const { rerender } = render(<ApprovalQueue {...props} />);
+    for (const selector of screen.getAllByRole("checkbox", { name: "选择加入策略受控批量批准" })) fireEvent.click(selector);
+    expect(screen.getByRole("button", { name: "批准所选项" })).toBeDisabled();
+    expect(screen.getByTestId("approval-batch-deny-button")).toBeEnabled();
+    rerender(<ApprovalQueue {...props} errorMessage="offline" />);
+    expect(screen.getByTestId("approval-batch-deny-button")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("approval-batch-deny-button"));
+    expect(onDenyBatch).not.toHaveBeenCalled();
+    rerender(<ApprovalQueue {...props} />);
+    await act(async () => fireEvent.click(screen.getByTestId("approval-batch-deny-button")));
+    expect(onDenyBatch).toHaveBeenCalledWith(["batch-a", "batch-b"]);
+    expect(onApproveBatch).not.toHaveBeenCalled();
+  });
+  it("blocks context-only permission overreach, while leaving denial available", () => {
+    const onApprove = vi.fn(), onDeny = vi.fn();
+    render(<ApprovalQueue items={[makeItem({ positionMode: undefined, context: { risk: "high", requestedCapability: "write", impact: "workspace_write", permissions: { mode: "read_only", allowedTools: [], deniedTools: [] }, preview: { status: "unavailable", reason: "engine_preview_not_supplied" }, scope: { allowed: ["once"] } } })]} onApprove={onApprove} onDeny={onDeny} />);
+    expect(screen.getByTestId("approval-approve-button")).toBeDisabled();
+    expect(screen.getByTestId("approval-deny-button")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("approval-deny-button"));
+    expect(onDeny).toHaveBeenCalledWith("appr-abc", undefined);
+    expect(onApprove).not.toHaveBeenCalled();
+  });
+  it("distinguishes no matches and disables decisions on a disconnected snapshot", () => {
+    const item = makeItem();
+    const { rerender } = render(<ApprovalQueue items={[item]} onApprove={noop} onDeny={noop} />);
+    fireEvent.change(screen.getByTestId("approval-filter-keyword"), { target: { value: "no such request" } });
+    expect(screen.getByText("没有匹配的记录")).toBeInTheDocument();
+    expect(screen.queryByTestId("approval-approve-button")).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: "清除过滤" })[0]!);
+    rerender(<ApprovalQueue items={[item]} errorMessage="offline" onApprove={noop} onDeny={noop} />);
+    expect(screen.getByTestId("approval-approve-button")).toBeDisabled();
+    expect(screen.getByTestId("approval-deny-button")).toBeDisabled();
+  });
+  it("counts only the current actor's pending requests and focuses an audit backlink", () => {
+    const items = [makeItem(), makeItem({ approvalId: "voted", canDecide: false })];
+    const { rerender } = render(<ApprovalQueue items={items} onApprove={noop} onDeny={noop} />);
+    expect(screen.queryByTestId("approval-card-voted")).toBeNull();
+    rerender(<ApprovalQueue items={items} focusApprovalId="voted" onApprove={noop} onDeny={noop} />);
+    expect(screen.getByRole("region", { name: "审批详情" })).toHaveAttribute("data-approval-id", "voted");
+    expect(screen.getByTestId("approval-approve-button")).toBeDisabled();
+  });
+  it("advances pagination and keyboard focus with Next, then resets the page when filtering", () => {
+    const items = Array.from({ length: 25 }, (_, index) => makeItem({ approvalId: `page-${index}`, positionName: `Employee ${index}`, description: `Request ${index}` }));
+    render(<ApprovalQueue items={items} onApprove={noop} onDeny={noop} />);
+    fireEvent.click(screen.getByTestId("approval-card-page-19"));
+    const next = within(screen.getByRole("region", { name: "审批详情" })).getByRole("button", { name: "下一条" });
+    next.focus();
+    fireEvent.click(next);
+    expect(screen.getByTestId("approval-card-page-20")).toBeInTheDocument();
+    expect(screen.queryByTestId("approval-card-page-0")).toBeNull();
+    expect(within(screen.getByRole("region", { name: "审批详情" })).getByRole("heading", { name: "Request 20" })).toHaveFocus();
+    fireEvent.change(screen.getByTestId("approval-filter-keyword"), { target: { value: "Request" } });
+    expect(screen.getByTestId("approval-card-page-0")).toBeInTheDocument();
+    expect(screen.queryByTestId("approval-card-page-20")).toBeNull();
+    expect(screen.getByRole("region", { name: "审批详情" })).toHaveAttribute("data-approval-id", "page-0");
+  });
+
+  it("shows the first request and decision controls beside the list without a drawer", () => {
+    const { container } = render(<ApprovalQueue items={[makeItem()]} onApprove={noop} onDeny={noop} />);
+    const details = screen.getByRole("region", { name: "审批详情" });
+    expect(container).toContainElement(details);
+    expect(within(details).getByTestId("approval-approve-button")).toBeEnabled();
+    expect(document.querySelector(".ant-drawer")).toBeNull();
+    expect(screen.getByTestId("approval-card-appr-abc").querySelector("button")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps a processed request and its execution result visible until the next request is selected", () => {
+    const first = makeItem();
+    const second = makeItem({ approvalId: "second", description: "Another write", positionName: "Second employee" });
+    const { rerender } = render(<ApprovalQueue items={[first, second]} onApprove={noop} onDeny={noop} />);
+    rerender(<ApprovalQueue items={[{ ...first, decision: { kind: "granted", scope: "once" }, executionPhase: "failed", executionErrorCode: "failed_fixture" }, second]} onApprove={noop} onDeny={noop} />);
+    const details = screen.getByRole("region", { name: "审批详情" });
+    expect(details).toHaveAttribute("data-approval-id", first.approvalId);
+    expect(details).toHaveTextContent("failed_fixture");
+    expect(within(details).getByTestId("approval-approve-button")).toBeDisabled();
+    expect(screen.queryByTestId("approval-card-appr-abc")).toBeNull();
+    fireEvent.click(within(details).getByRole("button", { name: "下一条" }));
+    expect(screen.getByRole("region", { name: "审批详情" })).toHaveAttribute("data-approval-id", "second");
+  });
+
+  it("keeps advanced filters collapsed, applies them explicitly and clears a hidden selection", () => {
+    render(<ApprovalQueue items={[makeItem(), makeItem({ approvalId: "exec", category: "exec", positionName: "Operator" })]} onApprove={noop} onDeny={noop} />);
+    expect(screen.queryByRole("combobox", { name: "按动作类别过滤" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更多筛选" }));
+    pickSelectOption("按动作类别过滤", "命令执行");
+    expect(screen.getByRole("region", { name: "审批详情" })).toHaveAttribute("data-approval-id", "exec");
+    expect(screen.queryByTestId("approval-card-appr-abc")).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: "清除过滤" })[0]!);
+    expect(screen.getByTestId("approval-card-appr-abc")).toBeInTheDocument();
+  });
+
+  it("does not leave an actionable stale selection after all matching requests disappear", () => {
+    const { rerender } = render(<ApprovalQueue items={[makeItem()]} onApprove={noop} onDeny={noop} />);
+    rerender(<ApprovalQueue items={[]} onApprove={noop} onDeny={noop} />);
+    expect(screen.queryByTestId("approval-approve-button")).not.toBeInTheDocument();
+    expect(screen.getByText("选择一条请求查看详情")).toBeInTheDocument();
+  });
+});
 
 describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
   it("数据未接入时不把 0 误报成安全结论，并提供回到组织模块的入口", () => {
@@ -67,18 +174,17 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
         onDeny={noop}
       />,
     );
-    expect(screen.getByTestId("approval-rule-risk")).toHaveTextContent(/高风险|high/i);
-    expect(screen.getByTestId("approval-risk-overlay").textContent ?? "").toMatch(/建议未采纳|suggestion not adopted|apr.suggestionNotAdopted/);
+    expect(within(screen.getByTestId("approval-card-appr-abc")).getByTestId("approval-rule-risk")).toHaveTextContent(/高风险|high/i);
+    expect(within(screen.getByTestId("approval-card-appr-abc")).getByTestId("approval-risk-overlay").textContent ?? "").toMatch(/建议未采纳|suggestion not adopted|apr.suggestionNotAdopted/);
   });
 
   it("\u6e32\u67d3 pending \u5217\u8868\uff1a\u5c97\u4f4d\u540d\u3001\u63cf\u8ff0\u3001\u76ee\u6807\u5747\u5230\u4f4d", () => {
     render(
       <ApprovalQueue items={[makeItem()]} onApprove={noop} onDeny={noop} />,
     );
-    expect(screen.getByText("\u5185\u5bb9\u5199\u4f5c\u5458")).toBeInTheDocument();
-    expect(
-      screen.getByText(/\u8bf7\u6c42\u5199\u5165 \.\/positions\/ops-lead\/report\.md/),
-    ).toBeInTheDocument();
+    const list = within(screen.getByRole("region", { name: "审批请求" }));
+    expect(list.getByText("内容写作员")).toBeInTheDocument();
+    expect(list.getByText(/请求写入 \.\/positions\/ops-lead\/report\.md/)).toBeInTheDocument();
     // The card carries the pending state marker.
     const card = screen.getByTestId("approval-card-appr-abc");
     expect(card.getAttribute("data-decision-state")).toBe("pending");
@@ -97,9 +203,10 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
         onDeny={noop}
       />,
     );
-    expect(screen.getByText("内容写作员")).toBeInTheDocument();
-    expect(screen.getByText("请求写入 report.md")).toBeInTheDocument();
-    expect(screen.getByText("目标/report.md")).toBeInTheDocument();
+    const list = within(screen.getByRole("region", { name: "审批请求" }));
+    expect(list.getByText("内容写作员")).toBeInTheDocument();
+    expect(list.getByText("请求写入 report.md")).toBeInTheDocument();
+    expect(list.getByText("目标/report.md")).toBeInTheDocument();
   });
 
   it("\u8d8a\u6743\u5f90\u6807\uff1aread_only \u5c97\u4f4d\u53d1\u8d77 write \u547d\u4e2d\uff0c\u666e\u901a\u5c97\u4f4d\u4e0d\u547d\u4e2d", () => {
@@ -248,9 +355,18 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(screen.getByTestId("approval-card-appr-exec")).toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId("approval-filter-keyword"), { target: { value: "" } });
-    fireEvent.change(screen.getByTestId("approval-filter-from"), { target: { value: "2026-09-18" } });
+    fireEvent.click(screen.getByRole("button", { name: "更多筛选" }));
+    enterPickerDate(screen.getByTestId("approval-filter-from"), "2026-09-18");
     expect(screen.getByTestId("approval-card-appr-write")).toBeInTheDocument();
     expect(screen.queryByTestId("approval-card-appr-exec")).toBeNull();
+    expect(screen.getByTestId("approval-filter-from")).toHaveValue("2026-09-18");
+    fireEvent.click(within(screen.getByTestId("approval-filter-from").closest(".ant-picker")! as HTMLElement).getByRole("button", { name: "清除" }));
+    expect(screen.getByTestId("approval-card-appr-exec")).toBeInTheDocument();
+    enterPickerDate(screen.getByTestId("approval-filter-to"), "2026-09-17");
+    expect(screen.queryByTestId("approval-card-appr-write")).toBeNull();
+    expect(screen.getByTestId("approval-card-appr-exec")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId("approval-filter-to").closest(".ant-picker")! as HTMLElement).getByRole("button", { name: "清除" }));
+    expect(screen.getByTestId("approval-card-appr-write")).toBeInTheDocument();
   });
 
   it("filters decision history by the separate recovery execution phase", () => {
@@ -269,12 +385,13 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(screen.getByTestId("approval-card-appr-failed")).toHaveAttribute("data-execution-phase", "failed");
     expect(screen.getByText("裁决已保存，后续执行失败")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "更多筛选" }));
     pickSelectOption("按执行状态过滤", "裁决已保存，后续执行失败");
     expect(screen.queryByTestId("approval-card-appr-completed")).toBeNull();
     expect(screen.getByTestId("approval-card-appr-failed")).toBeInTheDocument();
     expect(screen.queryByTestId("approval-card-appr-pending")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "清除过滤" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "清除过滤" })[0]!);
     expect(screen.getByTestId("approval-card-appr-completed")).toBeInTheDocument();
     expect(screen.getByTestId("approval-card-appr-failed")).toBeInTheDocument();
     expect(screen.getByTestId("approval-card-appr-pending")).toBeInTheDocument();
@@ -423,14 +540,14 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
           onDeny={noop}
         />,
       );
-      expect(screen.getByLabelText("待裁决 1")).toBeInTheDocument();
+      expect(screen.getAllByLabelText("待裁决 1")[0]).toBeInTheDocument();
       expect(screen.getByTestId("approval-card-appr-abc")).toBeInTheDocument();
 
       act(() => vi.advanceTimersByTime(60_000));
-      expect(screen.getByLabelText("待裁决 0")).toBeInTheDocument();
+      expect(screen.getAllByLabelText("待裁决 0")[0]).toBeInTheDocument();
       expect(screen.queryByTestId("approval-card-appr-abc")).toBeNull();
 
-      fireEvent.click(screen.getByRole("radio", { name: "全部" }));
+      fireEvent.click(screen.getByRole("radio", { name: /^全部/ }));
       expect(screen.getByTestId("approval-card-appr-abc")).toHaveAttribute("data-expiry-state", "expired");
     } finally {
       vi.useRealTimers();
@@ -620,17 +737,10 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     render(<ApprovalQueue items={[morningItem]} defaultFilter="all" onApprove={noop} onDeny={noop} />);
     expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
 
-    const dateInputs = screen.getAllByDisplayValue("");
-    const fromInput = dateInputs.find(input => input.getAttribute("type") === "date");
-    const toInput = dateInputs.filter(input => input.getAttribute("type") === "date")[1];
-    if (fromInput) {
-      fireEvent.change(fromInput, { target: { value: localDayStr } });
-      expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
-    }
-    if (toInput) {
-      fireEvent.change(toInput, { target: { value: localDayStr } });
-      expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
-    }
+    fireEvent.click(screen.getByRole("button", { name: "更多筛选" }));
+    enterPickerDate(screen.getByTestId("approval-filter-from"), localDayStr);
+    enterPickerDate(screen.getByTestId("approval-filter-to"), localDayStr);
+    expect(screen.getByTestId("approval-card-appr-morning")).toBeInTheDocument();
   });
 
   it("keeps reason textarea editable when byte length exceeds limit while disabling submit buttons", async () => {

@@ -4,7 +4,9 @@ import path from "node:path";
 import {
   GOAL_ACTIVITY_SCHEMA_VERSION,
   GOAL_MAX_ACTIVITY_ENTRIES,
+  GOAL_MAX_TASK_ACCEPTANCES,
   GOAL_SCHEMA_VERSION,
+  GOAL_TASK_ACCEPTANCE_SCHEMA_VERSION,
   OrgApiError,
   canTransitionGoalStatus,
   errorCodes,
@@ -12,15 +14,20 @@ import {
   validateGoalActivity,
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
+  validateGoalTaskAcceptanceCreateRequest,
+  validateAcceptanceDecisionInput,
   type Goal,
   type GoalActivity,
   type GoalDetail,
   type GoalHealthStatus,
   type GoalSummary,
   type GoalTaskExecution,
+  type GoalTaskAcceptanceRecord,
+  type GoalTaskDelivery,
+  type GoalTaskDeliveryUnavailable,
 } from "@roleweave/shared";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
-import { atomicWriteJson, nodeAtomicTurnWriteOperations } from "../turns/store.js";
+import { atomicWriteJson, nodeAtomicTurnWriteOperations, TurnStore, type AtomicTurnWriteOperations } from "../turns/store.js";
 import type { TurnRecord } from "@roleweave/shared";
 import { askLaya, type LayaAsk } from "../laya/client.js";
 import { layaEnabled } from "../laya/config.js";
@@ -28,7 +35,7 @@ import { layaEnabled } from "../laya/config.js";
 const GOAL_ROOT_SEGMENTS = [".roleweave", "goals"];
 const MAX_GOALS = 64;
 // 64 bounded work items can exceed the previous 32 KiB record size.
-const MAX_GOAL_RECORD_BYTES = 2 * 1024 * 1024;
+const MAX_GOAL_RECORD_BYTES = 8 * 1024 * 1024;
 const MAX_GOAL_ACTIVITY_BYTES = 16 * 1024;
 const GOAL_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -154,7 +161,7 @@ async function readBoundedJson(file: string, maxBytes: number): Promise<unknown>
 }
 
 function toSummary(goal: Goal): GoalSummary {
-  const { branches: _, workItems: _workItems, ...rest } = goal;
+  const { branches: _, workItems: _workItems, taskAcceptances: _acceptances, ...rest } = goal;
   return { ...rest, branchCount: goal.branches.length };
 }
 
@@ -164,6 +171,47 @@ const HEALTH_SEVERITY: Record<GoalHealthStatus, number> = {
   blocked: 1,
   unknown: 0,
 };
+
+/** Canonical JSON binds the review to the full saved output, including structured replies. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function digest(value: unknown): string {
+  return `sha256:${crypto.createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
+}
+
+function taskTurns(goal: Goal, taskId: string, turns: readonly TurnRecord[]): TurnRecord[] {
+  return turns.filter(turn => turn.goalId === goal.goalId && turn.branchId === taskId)
+    .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.turnId.localeCompare(right.turnId, "en"));
+}
+
+export function projectTaskDeliveries(goal: Goal, turns: readonly TurnRecord[]): {
+  taskDeliveries: Record<string, GoalTaskDelivery>;
+  taskDeliveryUnavailable: Record<string, GoalTaskDeliveryUnavailable>;
+} {
+  const taskDeliveries: Record<string, GoalTaskDelivery> = Object.create(null);
+  const taskDeliveryUnavailable: Record<string, GoalTaskDeliveryUnavailable> = Object.create(null);
+  for (const item of goal.workItems ?? []) {
+    const turn = taskTurns(goal, item.taskId, turns).at(-1);
+    if (!turn) continue;
+    if (turn.status !== "completed" || !item.assigneePositionId || turn.positionId !== item.assigneePositionId) {
+      taskDeliveryUnavailable[item.taskId] = "execution_incomplete";
+    } else if (!turn.conversationRef || turn.conversationRef !== turn.conversationId || turn.groupRef) {
+      taskDeliveryUnavailable[item.taskId] = "session_required";
+    } else if (turn.output === undefined || (typeof turn.output === "string" && !turn.output.trim())) {
+      taskDeliveryUnavailable[item.taskId] = "output_missing";
+    } else {
+      taskDeliveries[item.taskId] = { source: { positionId: turn.positionId, turnId: turn.turnId,
+        sessionId: turn.conversationRef, outputDigest: digest(turn.output) }, output: turn.output, completedAt: turn.updatedAt };
+    }
+  }
+  return { taskDeliveries, taskDeliveryUnavailable };
+}
 
 export function computeHealthFromTurns(goal: Goal, turns: readonly TurnRecord[]): GoalHealthStatus {
   if (goal.branches.length === 0) return goal.health;
@@ -202,6 +250,7 @@ export function projectTaskExecutions(goal: Goal, turns: readonly TurnRecord[], 
   return Object.fromEntries([...latest].map(([taskId, turn]) => [taskId, {
     turnId: turn.turnId,
     positionId: turn.positionId,
+    ...(turn.conversationRef !== undefined && turn.conversationRef === turn.conversationId && !turn.groupRef ? { sessionId: turn.conversationRef } : {}),
     status: turn.status === "running" && !isRunning(turn) ? "indeterminate" : turn.status,
     startedAt: turn.createdAt,
     ...(turn.status === "running" ? {} : { completedAt: turn.updatedAt }),
@@ -315,6 +364,13 @@ export async function resolveLayaHealthOverlay(
 
 export class GoalStore {
   private readonly locks = new Map<string, Promise<void>>();
+  private readonly history = new TurnStore();
+
+  constructor(private readonly options: {
+    /** Server-owned history reader; requests can never supply execution facts. */
+    readTurns?: (workspace: string) => Promise<readonly TurnRecord[]>;
+    acceptanceWriteOperations?: AtomicTurnWriteOperations;
+  } = {}) {}
 
   async create(workspace: string, request: unknown, now = new Date().toISOString()): Promise<Goal> {
     const parsed = validateGoalCreateRequest(request);
@@ -380,8 +436,16 @@ export class GoalStore {
   }
 
   async get(workspace: string, goalId: string): Promise<Goal> {
-    if (!GOAL_ID_PATTERN.test(goalId) && !goalId.includes("-")) {
+    if (!GOAL_ID_PATTERN.test(goalId)) {
       throw goalMissing();
+    }
+    await ensureRealDirectories(workspace);
+    try {
+      const stat = await fs.lstat(goalDir(workspace, goalId));
+      if (!stat.isDirectory() || stat.isSymbolicLink()) throw goalError("local goal record directory must be real");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw goalMissing();
+      throw error;
     }
     const raw = await readBoundedJson(goalFile(workspace, goalId), MAX_GOAL_RECORD_BYTES).catch((error) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") throw goalMissing();
@@ -420,6 +484,7 @@ export class GoalStore {
         goal,
         activity,
         taskExecutions: projectTaskExecutions(goal, turns, isRunning),
+        ...projectTaskDeliveries(goal, turns),
         ...(overlay != null && overlay !== goal.health ? { healthOverlay: overlay } : {}),
       };
     });
@@ -441,6 +506,28 @@ export class GoalStore {
 
       if (parsed.value.status !== undefined && !canTransitionGoalStatus(existing.status, parsed.value.status)) {
         throw goalConflict(`cannot transition goal status from ${existing.status} to ${parsed.value.status}`);
+      }
+
+      if (parsed.value.workItems?.some(item => item.status === "done")) {
+        // A history-read failure must not degrade to an unexecuted manual task.
+        const turns = await this.readTurns(workspace);
+        for (const item of parsed.value.workItems) {
+          if (item.status !== "done") continue;
+          const previous = existing.workItems?.find(candidate => candidate.taskId === item.taskId);
+          const bound = taskTurns(existing, item.taskId, turns);
+          const priorDecisions = existing.taskAcceptances?.filter(record => record.taskId === item.taskId) ?? [];
+          if (bound.length === 0 && priorDecisions.length === 0) continue; // Legacy manual plans.
+          const accepted = priorDecisions.at(-1);
+          const latest = bound.at(-1);
+          const unchangedPlan = previous?.status === "done" && canonicalJson({ ...previous, status: "done" }) === canonicalJson(item)
+            && canonicalJson(parsed.value.acceptanceCriteria ?? existing.acceptanceCriteria) === canonicalJson(existing.acceptanceCriteria);
+          if (!unchangedPlan || accepted?.decision !== "accepted" || !latest || latest.status !== "completed"
+            || latest.turnId !== accepted.source.turnId || latest.positionId !== accepted.source.positionId
+            || item.assigneePositionId !== accepted.source.positionId || digest(latest.output) !== accepted.source.outputDigest
+            || canonicalJson(accepted.criteriaSnapshot) !== canonicalJson(existing.acceptanceCriteria)) {
+            throw goalConflict("executed work items require a current human acceptance; submit the task acceptance decision instead of patching done");
+          }
+        }
       }
 
       const updated: Goal = {
@@ -485,6 +572,62 @@ export class GoalStore {
       await this.appendActivity(workspace, goalId, activity);
       return updated;
     });
+  }
+
+  async acceptTask(workspace: string, goalId: string, taskId: string, request: unknown, actor: string,
+    now = new Date().toISOString()): Promise<GoalTaskAcceptanceRecord> {
+    if (!actor || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(actor)) {
+      throw new OrgApiError(errorCodes.unauthorized, 403, "a trusted operator is required for task acceptance");
+    }
+    if (!GOAL_ID_PATTERN.test(taskId)) throw goalRequestInvalid("taskId must be a safe identifier");
+    const parsed = validateGoalTaskAcceptanceCreateRequest(request);
+    if (!parsed.ok) throw goalRequestInvalid(parsed.message);
+    const value = parsed.value;
+    if (path.resolve(value.expectedWorkspacePath) !== path.resolve(workspace)) throw goalConflict("workspace changed; reload before accepting a delivery");
+    const requestDigest = digest({ goalId, taskId, actor, ...value });
+    return this.exclusive(`goal\0${path.resolve(workspace)}\0${goalId}`, async () => {
+      const goal = await this.get(workspace, goalId);
+      const replay = goal.taskAcceptances?.find(record => record.idempotencyKey === value.idempotencyKey);
+      if (replay) {
+        if (replay.requestDigest !== requestDigest) throw goalConflict("acceptance idempotency key was already used for another payload");
+        return replay;
+      }
+      if (value.expectedUpdatedAt !== goal.updatedAt) throw goalConflict("goal plan changed; reload before accepting a delivery");
+      const task = goal.workItems?.find(item => item.taskId === taskId);
+      if (!task) throw goalRequestInvalid("task does not belong to this goal plan");
+      const turns = await this.readTurns(workspace);
+      const delivery = projectTaskDeliveries(goal, turns).taskDeliveries[taskId];
+      if (!delivery || canonicalJson(delivery.source) !== canonicalJson(value.source)) {
+        throw goalConflict("delivery changed or is not a completed personal-session turn for this task; reload before deciding");
+      }
+      const verdict = validateAcceptanceDecisionInput({ criteriaCount: goal.acceptanceCriteria.length, verdicts: value.verdicts,
+        decision: value.decision, ...(value.note !== undefined ? { note: value.note } : {}) });
+      if (!verdict.ok) throw goalRequestInvalid(verdict.message);
+      if ((goal.taskAcceptances?.length ?? 0) >= GOAL_MAX_TASK_ACCEPTANCES) throw goalConflict("task acceptance history reached its bounded capacity");
+      const decidedAt = new Date(Math.max(Date.parse(now), Date.parse(goal.updatedAt) + 1)).toISOString();
+      const record: GoalTaskAcceptanceRecord = { schemaVersion: GOAL_TASK_ACCEPTANCE_SCHEMA_VERSION, scope: "goal-task",
+        acceptanceId: crypto.randomUUID(), goalId, taskId, planUpdatedAt: goal.updatedAt, workspacePath: path.resolve(workspace),
+        criteriaSnapshot: [...goal.acceptanceCriteria], source: delivery.source, decision: value.decision,
+        verdicts: value.verdicts, ...(value.note !== undefined ? { note: value.note } : {}),
+        decidedBy: actor, decidedAt, idempotencyKey: value.idempotencyKey, requestDigest };
+      const updated: Goal = { ...goal, workItems: goal.workItems!.map(item => item.taskId === taskId
+        ? { ...item, status: value.decision === "accepted" ? "done" : "review" } : item),
+        taskAcceptances: [...(goal.taskAcceptances ?? []), record], updatedAt: decidedAt };
+      // One fsync+rename transaction is the durable authority for both verdict and status.
+      // No second activity file is required to reconstruct acceptance after a restart.
+      try {
+        await atomicWriteJson(goalFile(workspace, goalId), updated, MAX_GOAL_RECORD_BYTES,
+          this.options.acceptanceWriteOperations ?? nodeAtomicTurnWriteOperations, goalError);
+      } catch (error) {
+        if (error instanceof OrgApiError) throw error;
+        throw goalError("task acceptance could not be persisted atomically", error);
+      }
+      return record;
+    });
+  }
+
+  private readTurns(workspace: string): Promise<readonly TurnRecord[]> {
+    return this.options.readTurns ? this.options.readTurns(workspace) : this.history.reportRecords(workspace);
   }
 
   async delete(workspace: string, goalId: string): Promise<void> {

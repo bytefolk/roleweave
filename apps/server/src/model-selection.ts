@@ -5,12 +5,28 @@ import type { EmployeeModelConfig, EmployeeModelConnection, EmployeeModelOption,
 import { decodeStableUtf8, readStableBoundedFile } from "./stable-read.js";
 import { LocalProviderConfigError, resolveClaudeProviderConfig, resolveQoderProviderConfig } from "./local-provider-config.js";
 import { qoderModelCatalog } from "./qoder-model-catalog.js";
+import { openAICompatibleConfiguration } from "./codex-binary.js";
+import { workbuddyConfiguration } from "./workbuddy-runtime.js";
+import { workbuddyLocalBridgeConfigured } from "./workbuddy-local.js";
+import { qwenOfficeLocalBridgeConfigured } from "./qwen-office-local.js";
 
 const MAX_MODEL_CACHE_BYTES = 4 * 1024 * 1024;
 
 /** These are provider-supported aliases; Codex's concrete list comes from
  * its local account cache, never from a guessed public model availability. */
 export async function employeeModelConfig(engine: TurnEngine, selected?: string, editable = true, env: NodeJS.ProcessEnv = process.env, catalogMode: "refresh" | "cached" = "refresh"): Promise<EmployeeModelConfig> {
+  if (engine === "qwen-office-local") {
+    // The native Office client owns its model. Ignore stale saved selectors,
+    // never read another Host's account cache, and never mutate client config.
+    const connection: EmployeeModelConnection | undefined = editable
+      ? { source: "official", kind: "official", billing: "unknown", status: qwenOfficeLocalBridgeConfigured(env) ? "configured" : "invalid" }
+      : undefined;
+    return {
+      selected: "provider-default", recommended: "provider-default", source: "default", editable: false,
+      options: [{ id: "provider-default", name: "Current Qwen Office model", tier: "default", billing: "unknown" }],
+      ...(connection ? { connection } : {}),
+    };
+  }
   let source: EmployeeModelConfig["source"] = "provider-tiers";
   let options: EmployeeModelOption[] = [];
   let connection: EmployeeModelConnection | undefined;
@@ -62,6 +78,29 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       followLocalDefault = local.connection.kind === "gateway" || !!selectedDefault;
       if (local.connection.source === "local-config") source = "local-config";
     }
+  } else if (engine === "workbuddy-local" || engine === "workbuddy") {
+    // WorkBuddy owns its model selection. Never read Codex's model cache or
+    // borrow a service credential for the client-login mode.
+    source = "default";
+    followLocalDefault = true;
+    if (engine === "workbuddy-local") {
+      const ownedAdapter = editable;
+      editable = false;
+      selectedDefault = "auto";
+      // Automatic selection is the adapter's fixed contract, not an account
+      // catalog. Background employee-card reads must not consume broker slots
+      // or turn temporary concurrency pressure into a false login failure.
+      // Health probes the desktop client separately; a real turn asserts auth.
+      if (ownedAdapter) connection = { source: "official", kind: "official", billing: "unknown", status: workbuddyLocalBridgeConfigured(env) ? "configured" : "invalid" };
+    } else if (editable) {
+      const configuration = workbuddyConfiguration({ ...env, ROLEWEAVE_TURN_MODEL: undefined });
+      selectedDefault = configuration.ready ? configuration.model : undefined;
+      if (selectedDefault) options = [{ id: selectedDefault, name: selectedDefault, tier: "default", billing: "provider" }];
+      connection = { source: "environment", kind: configuration.baseUrl ? "gateway" : "official", billing: "provider", status: configuration.ready ? "configured" : "invalid",
+        ...(configuration.baseUrl ? { endpointHost: new URL(configuration.baseUrl).hostname } : {}) };
+      allowCustomModel = true;
+      customModelFormat = "strict";
+    }
   } else if (engine === "gemini") {
     // Both Gemini CLI and Antigravity CLI own their account-specific catalog.
     // Keep the provider default plus any explicit/saved model instead of
@@ -77,6 +116,30 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       kind: "official",
       billing: apiKey ? "provider" : "subscription",
       status: "configured",
+    };
+  } else if (engine === "openai-compatible") {
+    // A user-configured OpenAI-compatible endpoint (e.g. TokenRhythm, OpenRouter,
+    // or any provider that speaks the /v1/chat/completions protocol). The
+    // operator supplies OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL in the
+    // server environment; this engine forwards them verbatim and exposes a free
+    // model text field so arbitrary model ids from the provider's catalog work.
+    source = "default";
+    followLocalDefault = true;
+    allowCustomModel = true;
+    customModelFormat = "strict";
+    const configuration = openAICompatibleConfiguration(env);
+    selectedDefault = configuration.ready ? configuration.model : undefined;
+    let endpointHost: string | undefined;
+    if (configuration.ready && configuration.baseUrl) endpointHost = new URL(configuration.baseUrl).hostname;
+    const hasProviderInput = [env.OPENAI_API_KEY, env.OPENAI_BASE_URL, env.OPENAI_MODEL]
+      .some((value) => typeof value === "string" && value.length > 0);
+    connection = {
+      source: hasProviderInput ? "environment" : "official",
+      kind: "gateway",
+      billing: "provider",
+      status: configuration.ready ? "configured" : "invalid",
+      ...(endpointHost ? { endpointHost } : {}),
+      ...(configuration.ready ? {} : { message: "Set a valid OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL to use this agent" }),
     };
   } else {
     source = "default";

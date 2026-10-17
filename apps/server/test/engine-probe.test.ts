@@ -79,7 +79,7 @@ test("Linux Node bundled adapter is ready without an Electron runtime flag", { s
     engineAvailable: probe.available,
     engineVersion: probe.version,
     bundledElectronEngine: config.bundledElectronEngine,
-    codex: { installed: true, version: "0.147.0" },
+    codex: { installed: true, version: "0.147.0", supported: true },
   });
   assert.equal(hosts["codex-local"].ready, true);
 });
@@ -103,7 +103,7 @@ test("a Node marker cannot qualify an external engine, other runtime, or injecte
     assert.equal(hostHealth({
       env, engineAvailable: true, engineVersion: "qoder-engine 0.2.0",
       bundledElectronEngine: config.bundledElectronEngine,
-      codex: { installed: true, version: "0.147.0" },
+      codex: { installed: true, version: "0.147.0", supported: true },
     })["codex-local"].ready, false, command);
   }
   for (const marker of [undefined, "0", "true"]) {

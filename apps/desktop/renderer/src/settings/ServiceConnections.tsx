@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Alert, Button, Checkbox, Input, Spin, Tag } from "antd";
 import { ExternalLink, Link2, RefreshCw, Save, Unplug } from "lucide-react";
 import { useT } from "@roleweave/ui";
@@ -18,7 +18,7 @@ export function serviceErrorKey(body: unknown): string {
   return "services.failed";
 }
 
-function ConnectionForm({ connection, onChange, operationsOnly = false }: { connection: ServiceConnectionView; onChange: (view: ServiceConnectionView) => void; operationsOnly?: boolean }) {
+function ConnectionForm({ connection, onChange, operationsOnly = false, actionsDisabled = false }: { connection: ServiceConnectionView; onChange: (view: ServiceConnectionView) => void; operationsOnly?: boolean; actionsDisabled?: boolean }) {
   const t = useT();
   const kind = connection.kind;
   const name = kind === "doc" ? "Doc" : "Mem";
@@ -31,29 +31,42 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
   const [notice, setNotice] = useState<{ type: "error" | "success"; key: string } | null>(null);
   const [probe, setProbe] = useState<ServiceProbe | null>(null);
   const [release, setRelease] = useState<ServiceRelease | null>(null);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const busyRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const savedApiUrl = connection.apiUrl ?? "";
+  const savedWebUrl = connection.webUrl ?? "";
+  const savedWorkspaceId = connection.workspaceId ?? "";
+  const savedTokenConfigured = connection.tokenConfigured;
 
   useEffect(() => {
-    setApiUrl(connection.apiUrl ?? "");
-    setWebUrl(connection.webUrl ?? "");
-    setWorkspaceId(connection.workspaceId ?? "");
+    if (dirtyRef.current) return; // an unsaved draft wins over a background refresh
+    setApiUrl(savedApiUrl);
+    setWebUrl(savedWebUrl);
+    setWorkspaceId(savedWorkspaceId);
     setToken(""); setClearToken(false);
-  }, [connection]);
+  }, [savedApiUrl, savedWebUrl, savedWorkspaceId, savedTokenConfigured]);
 
   async function run(action: string, operation: () => Promise<void>) {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(action); setNotice(null);
     try { await operation(); }
     catch { setNotice({ type: "error", key: "services.failed" }); }
-    finally { setBusy(null); }
+    finally { busyRef.current = false; setBusy(null); }
   }
   async function save() {
+    const nextToken = tokenRef.current;
     let response;
     try {
       response = await window.owb.services.configure({ kind, apiUrl: apiUrl.trim(), webUrl: webUrl.trim(),
         ...(kind === "mem" ? { workspaceId: workspaceId.trim() } : {}),
-        ...(clearToken ? { token: "" } : token ? { token } : {}),
+        ...(clearToken ? { token: "" } : nextToken ? { token: nextToken } : {}),
       });
     } catch { setNotice({ type: "error", key: "services.failed" }); return; }
     if (response.status !== 200) { setNotice({ type: "error", key: serviceErrorKey(response.body) }); return; }
+    dirtyRef.current = false;
     setToken(""); setProbe(null); onChange(response.body);
     setNotice({ type: "success", key: "services.saved" });
     window.dispatchEvent(new Event(SERVICES_CHANGED));
@@ -71,6 +84,7 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
   async function disconnect() {
     const response = await window.owb.services.disconnect(kind);
     if (response.status !== 200) { setNotice({ type: "error", key: serviceErrorKey(response.body) }); return; }
+    dirtyRef.current = false;
     setProbe(null); onChange(response.body);
     setNotice({ type: "success", key: "services.disconnected" });
     window.dispatchEvent(new Event(SERVICES_CHANGED));
@@ -83,43 +97,43 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
   return <form className="owb-service-connection" aria-label={t("services.connectionAria", { name })}
     onSubmit={(event) => { event.preventDefault(); void run("save", save); }}>
     <header className="owb-service-connection__header">
-      <h3>{name}</h3>
+      {!operationsOnly ? <h3>{name}</h3> : null}
       <Tag>{t(connection.configured ? "services.configured" : "services.notConfigured")}</Tag>
-      <Button size="small" icon={<ExternalLink size={14} aria-hidden="true" />} disabled={!connection.configured || !!busy}
+      <Button size="small" icon={<ExternalLink size={14} aria-hidden="true" />} disabled={!connection.configured || !!busy || actionsDisabled}
         onClick={() => void run("open", open)}>{t("services.open", { name })}</Button>
     </header>
-    <p className="owb-settings-module__hint">{t(`services.${kind}Description`)}</p>
+    {!operationsOnly ? <p className="owb-settings-module__hint">{t(`services.${kind}Description`)}</p> : null}
     {!operationsOnly ? <><div className="owb-service-connection__fields">
       <label htmlFor={`service-${kind}-api`}>
         <span>{t("services.apiUrl")}</span>
         <Input id={`service-${kind}-api`} value={apiUrl} required disabled={!!busy}
           placeholder={kind === "doc" ? "http://localhost:3100" : "http://localhost:8080"}
-          onChange={(event) => setApiUrl(event.target.value)} autoComplete="off" spellCheck={false} />
+          onChange={(event) => { dirtyRef.current = true; setApiUrl(event.target.value); }} autoComplete="off" spellCheck={false} />
       </label>
       <label htmlFor={`service-${kind}-web`}>
         <span>{t("services.webUrl")}</span>
         <Input id={`service-${kind}-web`} value={webUrl} disabled={!!busy} placeholder={t("services.webPlaceholder")}
-          onChange={(event) => setWebUrl(event.target.value)} autoComplete="off" spellCheck={false} />
+          onChange={(event) => { dirtyRef.current = true; setWebUrl(event.target.value); }} autoComplete="off" spellCheck={false} />
       </label>
       <label htmlFor={`service-${kind}-token`}>
         <span>{t("services.token")}</span>
         <Input.Password id={`service-${kind}-token`} value={token} disabled={!!busy || clearToken}
           placeholder={t(connection.tokenConfigured ? "services.tokenSaved" : "services.tokenPlaceholder")}
-          onChange={(event) => setToken(event.target.value)} autoComplete="new-password" />
+          onChange={(event) => { dirtyRef.current = true; setToken(event.target.value); }} autoComplete="new-password" />
       </label>
       {kind === "mem" ? <label htmlFor="service-mem-workspace">
         <span>{t("services.workspace")}</span>
         <Input id="service-mem-workspace" value={workspaceId} disabled={!!busy} placeholder={t("services.workspacePlaceholder")}
-          onChange={(event) => setWorkspaceId(event.target.value)} autoComplete="off" spellCheck={false} />
+          onChange={(event) => { dirtyRef.current = true; setWorkspaceId(event.target.value); }} autoComplete="off" spellCheck={false} />
       </label> : null}
     </div>
     {connection.tokenConfigured ? <Checkbox checked={clearToken} disabled={!!busy}
-      onChange={(event) => { setClearToken(event.target.checked); setToken(""); }}>{t("services.clearToken")}</Checkbox> : null}
+      onChange={(event) => { dirtyRef.current = true; setClearToken(event.target.checked); setToken(""); }}>{t("services.clearToken")}</Checkbox> : null}
     <p className="owb-settings-module__hint">{t("services.addressHint")}</p>
     </> : null}
     <div className="owb-settings-module__actions">
       {!operationsOnly ? <Button htmlType="submit" type="primary" icon={<Save size={14} aria-hidden="true" />} loading={busy === "save"} disabled={!!busy || !apiUrl.trim()}>{t("services.save")}</Button> : null}
-      <Button icon={<Link2 size={14} aria-hidden="true" />} loading={busy === "probe"} disabled={!!busy || !connection.configured}
+      <Button icon={<Link2 size={14} aria-hidden="true" />} loading={busy === "probe"} disabled={!!busy || !connection.configured || actionsDisabled}
         onClick={() => void run("probe", check)}>{t("services.check")}</Button>
       {!operationsOnly ? <Button icon={<Unplug size={14} aria-hidden="true" />} disabled={!!busy || !connection.configured}
         onClick={() => void run("disconnect", disconnect)}>{t("services.disconnect")}</Button> : null}
@@ -127,7 +141,7 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
     {notice ? <Alert showIcon type={notice.type} title={t(notice.key)} /> : null}
     {probe ? <Alert showIcon type={probe.state === "ready" ? "success" : "warning"}
       title={t(`services.probe.${probe.state}`)}
-      description={t("services.probeDetail", { version: probe.version ?? t("services.versionUnreported"), time: new Date(probe.checkedAt).toLocaleString() })} /> : null}
+      description={t("services.probeDetail", { version: probe.version ?? t("services.versionUnreported"), time: !probe.checkedAt || Number.isNaN(new Date(probe.checkedAt).getTime()) ? "—" : new Date(probe.checkedAt).toLocaleString() })} /> : null}
     <div className="owb-service-connection__release">
       <p className="owb-settings-module__hint">{t(kind === "doc" ? "services.docUpdates" : "services.memUpdates")}</p>
       <div className="owb-settings-module__actions">
@@ -144,7 +158,7 @@ function ConnectionForm({ connection, onChange, operationsOnly = false }: { conn
   </form>;
 }
 
-export function ServiceConnections({ kind, operationsOnly = false }: { kind?: ExternalServiceKind; operationsOnly?: boolean }) {
+export function ServiceConnections({ kind, operationsOnly = false, actionsDisabled = false, renderConnection }: { kind?: ExternalServiceKind; operationsOnly?: boolean; actionsDisabled?: boolean; renderConnection?: (kind: ExternalServiceKind, operations: ReactNode) => ReactNode }) {
   const t = useT();
   const [connections, setConnections] = useState<ServiceConnectionView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -159,13 +173,26 @@ export function ServiceConnections({ kind, operationsOnly = false }: { kind?: Ex
     refresh(); window.addEventListener(SERVICES_CHANGED, refresh);
     return () => { cancelled = true; window.removeEventListener(SERVICES_CHANGED, refresh); };
   }, []);
+  if (renderConnection) return <>
+    {error ? <Alert showIcon type="error" title={t(error)} /> : null}
+    <div className="owb-config-services-grid">
+      {(["mem"] as const).map(serviceKind => <Fragment key={serviceKind}>
+        {renderConnection(serviceKind, window.owb.services ? <>
+          {connections === null && !error ? <Spin size="small" /> : null}
+          <ConnectionForm operationsOnly actionsDisabled={actionsDisabled || connections === null}
+            connection={connections?.find(view => view.kind === serviceKind) ?? emptyConnection(serviceKind)}
+            onChange={view => setConnections(current => [...(current ?? []).filter(entry => entry.kind !== view.kind), view])} />
+        </> : null)}
+      </Fragment>)}
+    </div>
+  </>;
   // Older packaged shells and existing preview fixtures may lack this bridge.
   if (!window.owb.services) return null;
   return <section className="owb-settings-module__pane owb-service-connections" aria-label={t("services.title")}>
     <header className="owb-settings-module__pane-header"><h2>{t("services.title")}</h2></header>
     <p className="owb-settings-module__hint">{t("services.description")}</p>
     {error ? <Alert showIcon type="error" title={t(error)} /> : connections === null ? <Spin /> :
-      (kind ? [kind] : ["doc", "mem"] as const).map((serviceKind) =>
+      (kind ? [kind] : ["mem"] as const).map((serviceKind) =>
         <ConnectionForm key={serviceKind} operationsOnly={operationsOnly} connection={connections.find((view) => view.kind === serviceKind) ?? emptyConnection(serviceKind)}
           onChange={(view) => setConnections((current) => [...(current ?? []).filter((entry) => entry.kind !== view.kind), view])} />)}
   </section>;

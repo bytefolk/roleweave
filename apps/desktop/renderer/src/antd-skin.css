@@ -16,6 +16,16 @@
   --ui-warning-foreground: var(--ui-primary-foreground);
   --ui-danger-foreground: var(--ui-primary-foreground);
 
+  /* Shared typography colours for product surfaces. Keep component styles on
+   * these aliases so light/dark mode and custom palettes stay in sync. */
+  --owb-text-heading: var(--ui-foreground, #1d2733);
+  --owb-text-primary: var(--ui-foreground, #263443);
+  --owb-text-secondary: var(--ui-foreground-muted, #758393);
+  --owb-text-subtle: var(--ui-foreground-subtle, #8794a1);
+  --owb-text-status: var(--ui-foreground-subtle, #586a78);
+  --owb-text-navigation: var(--ui-foreground-muted, #425366);
+  --owb-text-icon: var(--ui-foreground-subtle, #526778);
+
   --owb-font-display: var(--ui-font-sans);
   --owb-duration-fast: var(--ui-duration-fast);
   --owb-duration-mid: var(--ui-duration-normal);

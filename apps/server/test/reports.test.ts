@@ -10,6 +10,7 @@ import type {
   TurnRunResult,
   WorkbenchSession,
 } from "@roleweave/shared";
+import { setPositionAgentEngine } from "../src/agent-binding.js";
 import { compareReportRecords } from "../src/turns/store.js";
 import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
@@ -153,6 +154,80 @@ test("reports: empty workspace returns truthful empty streams and declared budge
     await server.close();
   }
 });
+
+test("reports: pre-bound session progress does not require a legacy conversation after restart", async () => {
+  const dir = await copyExampleWorkspace();
+  const before = await startTestServer(undefined, new ReportsTurnDriver());
+  let record: TurnRecord;
+  try {
+    await open(before, dir);
+    await setPositionAgentEngine(before.ctx.workspace.requireOpen(), "repo-owner", "qoder");
+    ({ record } = await createSessionTurn(before));
+    await before.ctx.progressTracker.persist(dir, "repo-owner", record.turnId);
+    assert.deepEqual(await fs.readdir(path.join(dir, ".roleweave", "conversations", "repo-owner")), ["progress"]);
+    const response = await api(before.baseUrl, "/reports", { token: before.token });
+    assert.equal(response.status, 200);
+    assert.deepEqual((response.body as ReportsResponse).streams.evidence.map((entry) => entry.turnId), [record.turnId]);
+  } finally {
+    await before.close();
+  }
+  const after = await startTestServer();
+  try {
+    await open(after, dir);
+    const response = await api(after.baseUrl, "/reports", { token: after.token });
+    assert.equal(response.status, 200);
+    const body = response.body as ReportsResponse;
+    assert.deepEqual(body.streams.evidence.map((entry) => entry.turnId), [record!.turnId]);
+    assert.deepEqual(body.streams.evidence[0]!.usage, { inputTokens: 21, outputTokens: 13, totalTokens: 34 });
+    const progress = await api(after.baseUrl, "/turns/progress", { token: after.token });
+    assert.equal(progress.status, 200);
+    assert.ok((progress.body as { snapshots: { taskId: string }[] }).snapshots.some((entry) => entry.taskId === record!.turnId));
+  } finally {
+    await after.close();
+  }
+});
+
+test("reports: preflight failure progress is not fabricated into turn evidence", async () => {
+  const server = await startTestServer();
+  const dir = await copyExampleWorkspace();
+  try {
+    server.ctx.progressTracker.begin({ workspacePath: dir, positionId: "repo-owner", taskId: "preflight-failure" });
+    server.ctx.progressTracker.failCurrent("preflight-failure", "engine unavailable");
+    await server.ctx.progressTracker.persist(dir, "repo-owner", "preflight-failure");
+    await open(server, dir);
+    const response = await api(server.baseUrl, "/reports", { token: server.token });
+    assert.equal(response.status, 200);
+    assert.deepEqual((response.body as ReportsResponse).streams.evidence, []);
+    assert.ok((response.body as ReportsResponse).budgets.every((budget) => budget.state === "unobserved"));
+  } finally {
+    await server.close();
+  }
+});
+
+for (const shape of ["empty", "turns", "unknown", "progress-file", "progress-symlink"] as const) {
+  test(`reports: progress-only exemption rejects ${shape} without conversation metadata`, async () => {
+    const server = await startTestServer();
+    const dir = await copyExampleWorkspace();
+    try {
+      const conversation = path.join(dir, ".roleweave", "conversations", "repo-owner");
+      await fs.mkdir(conversation, { recursive: true });
+      const progress = path.join(conversation, "progress");
+      if (shape === "progress-file") await fs.writeFile(progress, "{}");
+      else if (shape === "progress-symlink") await fs.symlink(dir, progress, "junction");
+      else if (shape !== "empty") {
+        await fs.mkdir(progress);
+        if (shape === "turns") await fs.mkdir(path.join(conversation, "turns"));
+        else await fs.writeFile(path.join(conversation, "unknown.json"), "{}");
+      }
+      await open(server, dir);
+      const response = await api(server.baseUrl, "/reports", { token: server.token });
+      assert.equal(response.status, 500);
+      assert.equal((response.body as { code: string }).code, "reports_data_invalid");
+    } finally {
+      await server.close();
+    }
+  });
+}
 
 test("#112 reports: durable session turns survive rotate/restart and remain public-safe evidence", async () => {
   const dir = await copyExampleWorkspace();

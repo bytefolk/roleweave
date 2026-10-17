@@ -19,6 +19,7 @@ import type { OpenWorkspace } from "../workspace-state.js";
 import type { RunningTurnReservation } from "../turns/running.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { createTurnEnvelope } from "../turns/envelope.js";
+import { withResponsePresentation } from "../turns/response-format.js";
 import { DeltaForwarder } from "../turns/delta-forwarder.js";
 import { assertPositionId, compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 import { compactThreadContextHistory, materializeThreadContext, type SupplementalContext, type ThreadContextSource } from "../turns/thread-context.js";
@@ -28,6 +29,8 @@ import { readAttachmentMetas, attachmentFilePath } from "../attachments/store.js
 import { assertAttachmentBatch, assertAttachmentId } from "../attachments/validate.js";
 import type { TurnAttachment } from "@roleweave/shared";
 import { ATTACHMENT_MAX_COUNT } from "@roleweave/shared";
+import { assembleVaultContext } from "../vault/context.js";
+import { recordVaultUsage } from "../vault/receipts.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -367,7 +370,7 @@ export async function executeTurn(
     }
     // Additive #306: resolve attachment manifests and build engine context.
     let resolvedAttachments: TurnAttachment[] | undefined;
-    let augmentedInput = body.input;
+    let augmentedInput = withResponsePresentation(body.input);
     if (body.attachmentIds !== undefined) {
       if (session === undefined) {
         throw new OrgApiError(
@@ -381,8 +384,10 @@ export async function executeTurn(
         throw new OrgApiError(errorCodes.attachment_missing, 400, "one or more attachment ids were not found in this session");
       }
       assertAttachmentBatch(resolvedAttachments);
-      augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, body.input);
+      augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, augmentedInput);
     }
+    const vaultContext = await assembleVaultContext(workspace, body.positionId, augmentedInput, body.input);
+    augmentedInput = vaultContext.input;
     const context = materializeThreadContext({
       input: augmentedInput,
       enabled: group !== undefined || (session !== undefined && session.threadContextEnabled !== false),
@@ -430,6 +435,7 @@ export async function executeTurn(
     const running = session === undefined
       ? await ctx.turnStore.begin(beginInput)
       : await ctx.turnStore.beginSession({ ...beginInput, sessionId: session.sessionId });
+    await recordVaultUsage(workspace, body.positionId, turnId, vaultContext.notes).catch(() => {});
     tracker.reportStepFinish(turnId, 1);
     tracker.reportStepStart(turnId, 2);
 

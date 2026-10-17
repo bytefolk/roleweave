@@ -455,6 +455,46 @@ test("codex-local turn env forwards login state and drops relay credentials at t
   }
 });
 
+test("Gemini turn env forwards only its API key and model", async () => {
+  const saved = {
+    apiKey: process.env.GEMINI_API_KEY,
+    model: process.env.GEMINI_MODEL,
+    openai: process.env.OPENAI_API_KEY,
+  };
+  process.env.GEMINI_API_KEY = "gemini-fixture-key";
+  process.env.GEMINI_MODEL = "gemini-3-flash";
+  process.env.OPENAI_API_KEY = "unrelated-openai-key";
+  try {
+    const command = await fixtureCli(`
+      for await (const chunk of process.stdin) {}
+      if (process.env.DIGITAL_EMPLOYEE_ENGINE_MODEL !== "gemini") process.exit(8);
+      if (process.env.GEMINI_API_KEY !== "gemini-fixture-key") process.exit(7);
+      if (process.env.GEMINI_MODEL !== "gemini-3-flash") process.exit(6);
+      if (process.env.OPENAI_API_KEY !== undefined) process.exit(5);
+      const base = { runId: "run-1", timestamp: "2026-08-24T00:00:00.000Z" };
+      console.log(JSON.stringify({ ...base, type: "run.started" }));
+      console.log(JSON.stringify({ ...base, type: "run.completed", output: "ok", terminalReason: "goal_met" }));
+    `);
+    const result = await new DigitalEmployeeCliDriver(command).turnRun({
+      workspace: "/workspace",
+      positionId: "repo-owner",
+      engine: "gemini",
+      envelope: ENVELOPE,
+    });
+    assert.equal(result.status, "trusted", result.diagnostic);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      const environmentKey = {
+        apiKey: "GEMINI_API_KEY",
+        model: "GEMINI_MODEL",
+        openai: "OPENAI_API_KEY",
+      }[key]!;
+      if (value === undefined) delete process.env[environmentKey];
+      else process.env[environmentKey] = value;
+    }
+  }
+});
+
 test("claude-code turn env forwards ANTHROPIC_BASE_URL when set (#81)", async () => {
   const saved = {
     baseUrl: process.env.ANTHROPIC_BASE_URL,
@@ -821,6 +861,34 @@ test("timeout is configurable via the constructor parameter (AC-001)", async () 
 test("default timeout is 120000ms when not specified (AC-001)", async () => {
   const driver = new DigitalEmployeeCliDriver("nonexistent-command");
   assert.equal((driver as unknown as { timeoutMs: number }).timeoutMs, 120_000);
+});
+
+test("turn timeout is an inactivity window: a turn that keeps emitting events outlives the budget", async () => {
+  const command = await fixtureCli(`
+    const base = { runId: "run-steady", timestamp: "2026-08-24T00:00:00.000Z" };
+    console.log(JSON.stringify({ ...base, type: "run.started" }));
+    let i = 0;
+    const tick = setInterval(() => {
+      i += 1;
+      console.log(JSON.stringify({ ...base, type: "trace.activity", activityId: "act-" + i, kind: "tool", status: "running", title: "tool " + i }));
+      if (i >= 6) {
+        clearInterval(tick);
+        console.log(JSON.stringify({ ...base, type: "run.completed", output: "steady-ok", terminalReason: "goal_met" }));
+      }
+    }, 600);
+  `);
+  const driver = new DigitalEmployeeCliDriver(command, 1_000);
+  const start = Date.now();
+  const result = await driver.turnRun({
+    workspace: "/workspace",
+    positionId: "repo-owner",
+    engine: "qoder",
+    envelope: ENVELOPE,
+  });
+  const elapsed = Date.now() - start;
+  assert.equal(result.status, "trusted");
+  assert.equal(result.events[result.events.length - 1]!.type, "run.completed");
+  assert.ok(elapsed > 3_000, `turn should have run past the 1000ms budget, took ${elapsed}ms`);
 });
 
 test("timeout reaps engine descendants via process group (AC-006)", async () => {

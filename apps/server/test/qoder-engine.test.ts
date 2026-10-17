@@ -693,7 +693,7 @@ test("qoder-engine turn run: maps qoder stream-json into engine.v1 events and pa
   const trace = events.filter((event) => event.type === "trace.activity");
   assert.deepEqual(trace, [
     { type: "trace.activity", runId, timestamp: trace[0]?.timestamp, activityId: "tool-1", kind: "tool", status: "running", title: "Read", detail: "apps/server/src/routes/turns.ts · packages/shared/src/turns.ts · apps/desktop/renderer/src/turns/TurnThread.tsx" },
-    { type: "trace.activity", runId, timestamp: trace[1]?.timestamp, activityId: "tool-1", kind: "tool", status: "completed", title: "Read" },
+    { type: "trace.activity", runId, timestamp: trace[1]?.timestamp, activityId: "tool-1", kind: "tool", status: "completed", title: "Read", detail: "apps/server/src/routes/turns.ts · packages/shared/src/turns.ts · apps/desktop/renderer/src/turns/TurnThread.tsx" },
   ]);
   assert.ok(!result.stdout.includes("internal"), "private reasoning is never emitted");
   assert.ok(!result.stdout.includes("must-not-leak"), "secret-shaped tool input is never emitted");
@@ -912,6 +912,55 @@ async function writeFakeClaude(dir: string, script: string): Promise<string> {
   return file;
 }
 
+test("Claude executes its owned read tool within the declared scope and emits real activity without duplicate streamed text", { skip: process.platform === "win32" }, async t => {
+  const dir = await makeWorkspace(), fixture = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-claude-tool-fixture-"));
+  t.after(() => Promise.all([fs.rm(dir, { force: true, recursive: true }), fs.rm(fixture, { force: true, recursive: true })]));
+  const knowledge = path.join(dir, "positions", "repo-owner", "knowledge");
+  await fs.mkdir(knowledge);
+  await fs.writeFile(path.join(knowledge, "proof.txt"), "actual-file-evidence-3197");
+  await fs.writeFile(path.join(dir, "positions", "repo-owner", "permissions.json"), JSON.stringify({ schemaVersion: "workbench-permissions.v1", tools: ["Read"], rules: [{ scope: "position", resource: "./knowledge/**", actions: ["read"] }] }));
+  const fake = await writeFakeClaude(fixture, `#!/usr/bin/env node
+const {spawn}=require('node:child_process');
+if(process.argv.includes('--version')){console.log('2.1.300');process.exit(0)}
+const argv=process.argv.slice(2), config=JSON.parse(argv[argv.indexOf('--mcp-config')+1]);
+if(argv[argv.indexOf('--tools')+1]!=='' || argv[argv.indexOf('--max-turns')+1]!=='8' || Object.keys(config.mcpServers).join(',')!=='roleweave')process.exit(91);
+process.stdin.resume();process.stdin.once('end',()=>{
+ const write=e=>process.stdout.write(JSON.stringify(e)+'\\n');
+ write({type:'system',subtype:'init',mcp_servers:[{name:'roleweave',status:'connected'}]});
+ write({type:'stream_event',event:{type:'message_start'}});
+ write({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Reading evidence'}}});
+ write({type:'assistant',message:{content:[{type:'text',text:'Reading evidence'},{type:'tool_use',id:'read-1',name:'mcp__roleweave__Read',input:{file_path:'positions/repo-owner/knowledge/proof.txt'}}]}});
+ const server=config.mcpServers.roleweave, child=spawn(server.command,server.args,{env:{...process.env,...server.env},stdio:['pipe','pipe','pipe']});
+ let body='';child.stdout.on('data',chunk=>body+=chunk);child.once('close',code=>{
+  if(code!==0)process.exit(92);
+  const response=body.trim().split('\\n').map(JSON.parse).find(row=>row.id===3);
+  const result=JSON.parse(response.result.content[0].text);
+  write({type:'user',message:{content:[{type:'tool_result',tool_use_id:'read-1',is_error:false}]}});
+  write({type:'result',subtype:'success',is_error:false,result:result.text,usage:{input_tokens:100,output_tokens:20}});
+ });
+ child.stdin.end([{jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-06-18'}},{jsonrpc:'2.0',id:2,method:'tools/list'},{jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'Read',arguments:{file_path:'positions/repo-owner/knowledge/proof.txt'}}}].map(JSON.stringify).join('\\n')+'\\n');
+});`);
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], { stdin: JSON.stringify({ input: "Read proof" }), env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-code", DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fake, ANTHROPIC_API_KEY: "fixture-key" } });
+  const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
+  assert.equal(events.at(-1).type, "run.completed", result.stderr);
+  assert.equal(events.at(-1).output, "actual-file-evidence-3197");
+  assert.deepEqual(events.filter(row => row.type === "model.delta").map(row => row.text), ["Reading evidence"]);
+  assert.deepEqual(events.filter(row => row.type === "trace.activity").map(row => [row.title, row.status]), [["Read", "running"], ["Read", "completed"]]);
+});
+
+test("Claude never marks bare tool protocol text as successful execution", { skip: process.platform === "win32" }, async t => {
+  const dir = await makeWorkspace(), fixture = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-claude-raw-tool-"));
+  t.after(() => Promise.all([fs.rm(dir, { force: true, recursive: true }), fs.rm(fixture, { force: true, recursive: true })]));
+  const fake = await writeFakeClaude(fixture, `#!/usr/bin/env node
+if(process.argv.includes('--version')){console.log('2.1.300');process.exit(0)}
+process.stdin.resume();process.stdin.once('end',()=>{console.log(JSON.stringify({type:'result',subtype:'success',is_error:false,result:'检查文件。<tool_call>find /workspace -type f'}))});`);
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], { stdin: '{"input":"inspect"}', env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: "claude-code", DIGITAL_EMPLOYEE_CLAUDE_COMMAND: fake, ANTHROPIC_API_KEY: "fixture-key" } });
+  const events = result.stdout.trim().split("\n").map(line => JSON.parse(line));
+  assert.equal(events.at(-1).type, "run.failed");
+  assert.equal(events.at(-1).error.code, "claude.tool_protocol_invalid");
+  assert.equal(events.some(row => row.type === "run.completed"), false);
+});
+
 const FAKE_CLAUDE_VERSION_SCRIPT = `#!/usr/bin/env node
 console.log("2.1.300");
 `;
@@ -1121,7 +1170,8 @@ process.stdout.write(JSON.stringify({ status: "SUCCESS", response: "Antigravity 
   assert.equal(await fs.readFile(copiedTokenFile, "utf8"), "fixture-oauth-token");
 });
 
-test("qoder-engine turn run: terminating the Gemini adapter reaps its detached Antigravity client", { skip: process.platform === "win32" ? "requires POSIX process groups" : false }, async (t) => {
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+test(`qoder-engine turn run: ${signal} reaps the detached Antigravity client before Gemini exits`, { skip: process.platform === "win32" ? "requires POSIX process groups" : false }, async (t) => {
   const dir = await makeWorkspace();
   const fixture = await fs.mkdtemp(path.join(os.tmpdir(), "owb-fake-antigravity-signal-"));
   t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
@@ -1148,6 +1198,8 @@ setInterval(() => {}, 1000);
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
+  let stdout = "";
+  adapter.stdout.on("data", chunk => { stdout += String(chunk); });
   adapter.stdin.end(JSON.stringify({ input: "wait for termination" }));
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try { await fs.access(childStateFile); break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); }
@@ -1157,13 +1209,15 @@ setInterval(() => {}, 1000);
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     adapter.once("close", (code, signal) => resolve({ code, signal }));
   });
-  adapter.kill("SIGTERM");
+  adapter.kill(signal);
   const exit = await exited;
   assert.equal(exit.code, 143);
   assert.equal(exit.signal, null);
   await assert.rejects(fs.access(temporaryRoot), { code: "ENOENT" });
   assert.throws(() => process.kill(childState.pid, 0), { code: "ESRCH" });
+  assert.equal(stdout.includes('"type":"run.failed"'), false, "cancellation must not race into an internal failure");
 });
+}
 
 test("qoder-engine turn run: claude-local preserves OAuth discovery without unrelated service credentials", { skip: process.platform === "win32" ? "requires POSIX exec of a shebang fixture" : false }, async () => {
   const dir = await makeWorkspace();
@@ -1954,6 +2008,21 @@ test("codex turn run: a provider reconnect loop fails with the provider message 
   assert.ok(elapsed < 30_000, `expected a prompt terminal, took ${elapsed}ms`);
   // The engine must not leave Codex running behind the terminal.
   assert.equal(result.code, 0);
+});
+
+test("Codex access-denied HTML is an actionable connection failure and never task output", { skip: codexSkip }, async t => {
+  const dir = await makeWorkspace(), fixture = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-codex-403-"));
+  t.after(() => Promise.all([fs.rm(dir, { force: true, recursive: true }), fs.rm(fixture, { force: true, recursive: true })]));
+  const fake = await writeFakeCodex(fixture, `#!/usr/bin/env node
+console.log(JSON.stringify({type:'thread.started',thread_id:'fixture'}));
+console.log(JSON.stringify({type:'turn.failed',error:{message:'unexpected status 403 Forbidden: <html><style>secret-style-marker</style></html>'}}));`);
+  const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], { stdin: '{"input":"connect"}', env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex-local", DIGITAL_EMPLOYEE_CODEX_COMMAND: fake } });
+  const events = codexEvents(result.stdout);
+  assert.equal(events.at(-1)?.type, "run.failed");
+  assert.equal((events.at(-1)?.error as Record<string, unknown>).code, "codex.access_denied");
+  assert.match(String((events.at(-1)?.error as Record<string, unknown>).message), /403/);
+  assert.doesNotMatch(result.stdout, /secret-style-marker|<html>|OPENAI_BASE_URL/);
+  assert.equal(events.some(event => event.type === "run.completed"), false);
 });
 
 test("codex turn run: a transient reconnect that recovers still completes (#221 review B1)", { skip: codexSkip }, async () => {

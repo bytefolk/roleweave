@@ -18,6 +18,7 @@ import { ProgressTracker } from "./turns/progress.js";
 import { RunningTurnRegistry } from "./turns/running.js";
 import { SessionStore } from "./sessions/store.js";
 import { GroupStore } from "./groups/store.js";
+import { RelayStopCoordinator } from "./groups/relay-stop.js";
 import { GoalStore } from "./goals/store.js";
 import { TaskBoardStore } from "./tasks/store.js";
 import { ContextCliAdapterClient } from "./context-export/adapter-cli.js";
@@ -43,7 +44,8 @@ const ctx: ControlPlaneContext = {
   runningTurns: new RunningTurnRegistry(),
   sessionStore: new SessionStore(),
   groupStore: new GroupStore(),
-  goalStore: new GoalStore(),
+  relayStop: new RelayStopCoordinator(),
+  goalStore: new GoalStore({ readTurns: workspace => ctx.turnStore.reportRecords(workspace) }),
   taskBoardStore: new TaskBoardStore(),
   contextExporter: new ContextExportService(
     new ContextCliAdapterClient(config.contextCliCommand, process.env),

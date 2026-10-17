@@ -2,10 +2,8 @@
 //
 // The renderer never opens a raw channel to mem; the whitelist below just
 // bounds argument shapes and encodes them into the frozen /drive/* routes.
-// Upload validation is intentionally minimal — the OS file picker in main
-// returns the absolute path, and the server route today is a stub (see
-// apps/server/src/routes/drive.ts). When mem's multipart contract is pinned,
-// the actual PUT will be added inside main.js against a validated filePath.
+// Uploads are owned by drive-upload.cjs: only OS-picked files can be read,
+// and binary bytes rather than local paths cross the HTTP boundary.
 
 function invalidResponse(message) {
   return {
@@ -32,6 +30,21 @@ function validateDriveDetailRequest(id) {
   return { ok: true, pathname: `/drive/detail?id=${encodeURIComponent(id)}` };
 }
 
+function validateDrivePreviewRequest(id) {
+  if (typeof id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(id)) {
+    return invalidResponse("a bounded object id is required");
+  }
+  return { ok: true, pathname: `/drive/preview?id=${encodeURIComponent(id)}` };
+}
+
+function authorizeDriveReadSender(event, expectedWindow, allowedUrl) {
+  const { isTrustedWindowSender } = require("./window-ipc.cjs");
+  if (!isTrustedWindowSender(event, expectedWindow, allowedUrl)) {
+    return { ok: false, response: { status: 403, body: { code: "drive_request_invalid", message: "Untrusted sender", retryable: false } } };
+  }
+  return { ok: true };
+}
+
 function validateDriveUploadRequest(filePath) {
   if (typeof filePath !== "string" || filePath.length === 0) {
     return invalidResponse("filePath required");
@@ -43,5 +56,8 @@ function validateDriveUploadRequest(filePath) {
 module.exports = {
   validateDriveListRequest,
   validateDriveDetailRequest,
+  validateDrivePreviewRequest,
+  authorizeDriveReadSender,
+  authorizeDrivePreviewSender: authorizeDriveReadSender,
   validateDriveUploadRequest,
 };

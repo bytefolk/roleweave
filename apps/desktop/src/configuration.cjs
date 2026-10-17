@@ -19,10 +19,12 @@ const HOST_URLS = { claude: 'ANTHROPIC_BASE_URL', codex: 'OPENAI_BASE_URL' };
 const serialize = value => JSON.stringify(value, null, 2) + '\n';
 const clone = value => JSON.parse(JSON.stringify(value));
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const validProjectDirectory = value => typeof value === 'string' && value.length <= 4096 &&
+  !/[\x00-\x1f\x7f]/.test(value) && (path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || /^\\\\/.test(value));
 const fail = code => ({ ok: false, code });
 function defaults() { return { schemaVersion: 1, appearance: { mode: 'system', profile: 'mint', locale: 'zh-CN' },
   chat: { sendShortcut: 'enter', rememberLayout: true }, layouts: { focusByWorkspace: {} },
-  runtime: {}, hosts: { qoder: {}, claude: {}, codex: {}, gemini: {} }, services: {}, migration: { rendererPreferences: false, pendingHostUrls: [] } }; }
+  storage: {}, notifications: { taskComplete: false }, runtime: {}, hosts: { qoder: {}, claude: {}, codex: {}, gemini: {} }, services: {}, migration: { rendererPreferences: false, pendingHostUrls: [] } }; }
 function validateConfigurationText(text) {
   const errors = [];
   if (typeof text !== 'string' || Buffer.byteLength(text) > MAX_BYTES) return { ok: false, code: 'invalid_configuration', errors: [{ field: '$', line: 1, column: 1, message: 'Configuration exceeds 256 KiB.' }] };
@@ -72,6 +74,13 @@ function validateConfigurationText(text) {
     if (!plain(records) || Object.keys(records).length > 256 || Object.entries(records).some(([key, v]) =>
       !key || key.length > 4096 || ['__proto__','constructor','prototype'].includes(key) || /[\x00-\x1f]/.test(key) || typeof v !== 'boolean')) error('layouts.focusByWorkspace', 'Expected at most 256 workspace layout preferences.');
   }
+  // Older configurations predate storage preferences. Keep them valid until
+  // the next ordinary save writes the new section.
+  if (value.storage !== undefined && shape(value.storage, ['projectDirectory'], 'storage') &&
+    value.storage.projectDirectory !== undefined && !validProjectDirectory(value.storage.projectDirectory))
+    error('storage.projectDirectory', 'Choose an absolute project directory.');
+  if (value.notifications !== undefined && shape(value.notifications, ['taskComplete'], 'notifications') &&
+    typeof value.notifications.taskComplete !== 'boolean') error('notifications.taskComplete', 'Expected a boolean.');
   try { validateRuntimeSettings(value.runtime); } catch { error('runtime', 'Invalid runtime fields. WSL paths must be absolute Linux paths.'); }
   if (shape(value.hosts, Object.keys(REF_FIELDS), 'hosts')) for (const [host, refs] of Object.entries(REF_FIELDS)) {
     // Adding a Host must not invalidate a configuration written by an older

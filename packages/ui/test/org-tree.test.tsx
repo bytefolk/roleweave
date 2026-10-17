@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { OrgTreeSnapshot } from "@roleweave/shared";
 import { describe, expect, it, vi } from "vitest";
 import { OrgTree } from "../src/org-tree";
+import { OwbI18nProvider } from "../src/i18n";
 import { SNAPSHOT } from "./fixtures";
 
 describe("OrgTree (D1 spec §2, frozen org-tree.v1)", () => {
@@ -463,17 +464,61 @@ describe("OrgTree (#32 §1 insertion lines, invalid-drop rejection, ⌘ reorder)
 
   it("keeps toolbar chrome outside treeitem and filters by name or id", () => {
     render(<OrgTree snapshot={SNAPSHOT} displayNames={{ "issue-researcher": "议题研究员" }} />);
-    expect(screen.getByRole("searchbox", { name: "搜索岗位" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "全部展开" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "全部收起" })).toBeInTheDocument();
+    const search = screen.getByRole("searchbox", { name: "搜索岗位" });
+    expect(search).toBeInTheDocument();
+    expect(search.closest('[role="tree"]')).toBeNull();
+    for (const name of ["全部展开", "全部收起"]) {
+      const action = screen.getByRole("button", { name });
+      expect(action).toHaveAttribute("aria-label", name);
+      expect(action).toHaveAttribute("title", name);
+      expect(action.textContent?.trim()).toBe("");
+      expect(action.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+      expect(action.closest('[role="tree"]')).toBeNull();
+    }
     expect(screen.getByText("议题研究员").closest('[role="treeitem"]')?.querySelector(".ui-org-tree__count")).toBeNull();
     expect(screen.getByText("repo-owner").closest('[role="treeitem"]')?.querySelector(".ui-org-tree__count")?.textContent).toBe("3");
 
-    fireEvent.change(screen.getByRole("searchbox", { name: "搜索岗位" }), { target: { value: "议题" } });
+    fireEvent.change(search, { target: { value: "议题" } });
     expect(screen.getByText("议题研究员")).toBeInTheDocument();
     expect(screen.getByText("repo-owner")).toBeInTheDocument();
     expect(screen.queryByText("release-engineer")).not.toBeInTheDocument();
     expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+
+    fireEvent.change(search, { target: { value: "release-engineer" } });
+    expect(screen.getByText("release-engineer")).toBeInTheDocument();
+    expect(screen.getByText("repo-owner")).toBeInTheDocument();
+    expect(screen.queryByText("议题研究员")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+  });
+
+  it("clears search without losing the manually collapsed state and returns focus to search", () => {
+    render(<OrgTree snapshot={SNAPSHOT} />);
+    const search = screen.getByRole("searchbox", { name: "搜索岗位" });
+    expect(screen.queryByRole("button", { name: "清空搜索" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "全部收起" }));
+    expect(screen.getAllByRole("treeitem")).toHaveLength(1);
+
+    fireEvent.change(search, { target: { value: "issue-researcher" } });
+    expect(screen.getByText("issue-researcher")).toBeInTheDocument();
+    const clear = screen.getByRole("button", { name: "清空搜索" });
+    expect(clear).toHaveAttribute("title", "清空搜索");
+    expect(clear.textContent?.trim()).toBe("");
+    fireEvent.click(clear);
+    expect(search).toHaveValue("");
+    expect(search).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "清空搜索" })).not.toBeInTheDocument();
+    expect(screen.queryByText("issue-researcher")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("treeitem")).toHaveLength(1);
+    expect(screen.getByText("repo-owner").closest('[role="treeitem"]')).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("localizes the accessible labels of the icon toolbar", () => {
+    render(<OwbI18nProvider locale="en"><OrgTree snapshot={SNAPSHOT} /></OwbI18nProvider>);
+    const search = screen.getByRole("searchbox", { name: "Search positions" });
+    expect(screen.getByRole("button", { name: "Expand all" })).toHaveAttribute("title", "Expand all");
+    expect(screen.getByRole("button", { name: "Collapse all" })).toHaveAttribute("title", "Collapse all");
+    fireEvent.change(search, { target: { value: "issue" } });
+    expect(screen.getByRole("button", { name: "Clear search" })).toHaveAttribute("title", "Clear search");
   });
 
   it("collapse-all hides children until expand-all restores them", () => {

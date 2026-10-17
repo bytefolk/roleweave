@@ -37,6 +37,10 @@
       "types": "./dist/model-selection.d.ts",
       "import": "./dist/model-selection.js"
     },
+    "./tool-output": {
+      "types": "./dist/tool-output.d.ts",
+      "import": "./dist/tool-output.js"
+    },
     "./capabilities": {
       "types": "./dist/capabilities.d.ts",
       "import": "./dist/capabilities.js"
@@ -44,6 +48,10 @@
     "./goals": {
       "types": "./dist/goals.d.ts",
       "import": "./dist/goals.js"
+    },
+    "./acceptance": {
+      "types": "./dist/acceptance.d.ts",
+      "import": "./dist/acceptance.js"
     },
     "./task-board": {
       "types": "./dist/task-board.d.ts",
@@ -56,6 +64,10 @@
     "./attachments": {
       "types": "./dist/attachments.d.ts",
       "import": "./dist/attachments.js"
+    },
+    "./experiments": {
+      "types": "./dist/experiments.d.ts",
+      "import": "./dist/experiments.js"
     }
   },
   "files": [

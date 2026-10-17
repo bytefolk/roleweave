@@ -1,0 +1,23 @@
+{
+  "reviewedAt": "2026-10-12",
+  "note": "用于确认职称与职责方向。部分页面是历史披露，不代表当前任职；AI 交付物、协作关系及权限边界是本案例的设计建议。",
+  "sources": [
+    {"id":"salesforce-leadership","title":"Salesforce Leadership","url":"https://www.salesforce.com/company/leadership/"},
+    {"id":"atlassian-leadership","title":"Atlassian Our people","url":"https://www.atlassian.com/company/people"},
+    {"id":"sap-personas","title":"SAP Understanding Key Personas","url":"https://learning.sap.com/courses/discovering-sap-sustainability-portfolio/understanding-key-personas"},
+    {"id":"microsoft-leadership","title":"Microsoft 2025 Annual Report","url":"https://www.microsoft.com/investor/reports/ar25/index.html"},
+    {"id":"ibm-cdo","title":"IBM What is a chief data officer?","url":"https://www.ibm.com/think/topics/chief-data-officer"},
+    {"id":"loreal-digital","title":"L’Oréal Chief Digital Officer appointment, 2021","url":"https://www.loreal.com/en/press-release/group/loreal-executive-committee-nomination-asmita-dubey/"},
+    {"id":"ibm-caio","title":"IBM The rise and ROI of the chief AI officer","url":"https://www.ibm.com/think/news/rise-chief-ai-officer"},
+    {"id":"ibm-security","title":"IBM What is information security?","url":"https://www.ibm.com/think/topics/information-security"},
+    {"id":"cocacola-growth","title":"Coca-Cola leadership appointments defining Chief Growth Officer, 2017","url":"https://investors.coca-colacompany.com/news-events/press-releases/detail/877/the-coca-cola-company-announces-senior-leadership-appointments"},
+    {"id":"microsoft-commercial","title":"Microsoft 2024 Annual Report","url":"https://www.microsoft.com/investor/reports/ar24/"},
+    {"id":"salesforce-customer","title":"Salesforce Customer Success Strategies","url":"https://trailhead.salesforce.com/content/learn/modules/appx_customer_success/appx_customer_success_focus"},
+    {"id":"atlassian-experience","title":"Atlassian Customer Experience team","url":"https://www.atlassian.com/company/careers/teams"},
+    {"id":"salesforce-legal","title":"Salesforce Chief Legal Officer responsibilities","url":"https://www.salesforce.com/company/sabastian-niles-bio/"},
+    {"id":"citi-governance","title":"Citi 2024 Form 10-K governance and risk disclosure","url":"https://www.sec.gov/Archives/edgar/data/831001/000083100125000067/c-20241231.htm"},
+    {"id":"siemens-strategy","title":"Siemens Chief Technology and Chief Strategy Officer appointment, 2024","url":"https://press.siemens.com/global/en/pressrelease/siemens-ag-supervisory-board-announces-executive-leadership-appointments-accelerate"},
+    {"id":"sap-supply-chain","title":"SAP Supply chain orchestration and C-suite responsibilities","url":"https://www.sap.com/resources/supply-chain-orchestration-explained"},
+    {"id":"microsoft-sustainability","title":"Microsoft Chief Sustainability Officer responsibilities, 2022","url":"https://blogs.microsoft.com/blog/2022/12/15/microsoft-names-new-chief-sustainability-officer/"}
+  ]
+}

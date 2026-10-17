@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import net from "node:net";
+import os from "node:os";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import test from "node:test";
 import type {
@@ -106,7 +109,10 @@ test("POST /turns seals one Qoder turn, persists it with 0600 mode, and publishe
     assert.equal(turnDriver.calls.length, 1);
     assert.equal(turnDriver.calls[0]!.engine, "qoder");
     assert.equal(turnDriver.calls[0]!.envelope.positionId, "repo-owner");
-    assert.equal(turnDriver.calls[0]!.envelope.input, "What should we do?");
+    assert.match(turnDriver.calls[0]!.envelope.input, /^Vault context \(vault-context\.v1\): .*untrusted reference material/);
+    assert.ok(turnDriver.calls[0]!.envelope.input.endsWith("Current user request:\nWhat should we do?"));
+    assert.match(turnDriver.calls[0]!.envelope.input, /Response presentation for RoleWeave/);
+    assert.equal(record.input, "What should we do?");
     assert.equal(turnDriver.calls[0]!.envelope.envelopeDigest, record.envelopeDigest);
 
     const started = await sse.waitForEvent("turn.started");
@@ -187,6 +193,22 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
   const turnDriver = new FakeTurnDriver();
   const server = await startTestServer(undefined, turnDriver);
   const workspace = await copyExampleWorkspace();
+  const savedOpenAI = {
+    key: process.env.OPENAI_API_KEY,
+    url: process.env.OPENAI_BASE_URL,
+    model: process.env.OPENAI_MODEL,
+  };
+  const savedOffice = {
+    ROLEWEAVE_QWEN_OFFICE_BRIDGE: process.env.ROLEWEAVE_QWEN_OFFICE_BRIDGE,
+    ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN: process.env.ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN,
+  };
+  let officeRoot: string | undefined;
+  let officeBridge: net.Server | undefined;
+  let officeConnections = 0;
+  const originalBundledEngine = server.ctx.config.bundledElectronEngine;
+  process.env.OPENAI_API_KEY = "fixture-provider-key";
+  process.env.OPENAI_BASE_URL = "https://relay.example.com/v1";
+  process.env.OPENAI_MODEL = "provider/model-1";
   try {
     await openWorkspace(server.baseUrl, server.token, workspace);
 
@@ -209,6 +231,28 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
       const freshWorkspace = await copyExampleWorkspace();
       try {
         await openWorkspace(server.baseUrl, server.token, freshWorkspace);
+        if (engine === "qwen-office-local") {
+          server.ctx.config.bundledElectronEngine = true;
+          delete process.env.ROLEWEAVE_QWEN_OFFICE_BRIDGE;
+          delete process.env.ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN;
+          const callsBefore: number = turnDriver.calls.length;
+          const unconfigured = await api(server.baseUrl, "/turns", {
+            method: "POST", token: server.token,
+            body: { positionId: "repo-owner", input: "hello", engine },
+          });
+          assert.equal(unconfigured.status, 400, "Office must reject an unconfigured private channel");
+          assert.equal((unconfigured.body as { code: string }).code, "turn_request_invalid");
+          assert.equal(turnDriver.calls.length, callsBefore);
+          officeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "rw-qwen-office-"));
+          await fs.chmod(officeRoot, 0o700);
+          const endpoint = process.platform === "win32"
+            ? `\\\\.\\pipe\\roleweave-qwen-office-${randomUUID()}` : path.join(officeRoot, "bridge.sock");
+          officeBridge = net.createServer(socket => { officeConnections++; socket.destroy(); });
+          await new Promise<void>((resolve, reject) => { officeBridge!.once("error", reject); officeBridge!.listen(endpoint, resolve); });
+          if (process.platform !== "win32") await fs.chmod(endpoint, 0o600);
+          process.env.ROLEWEAVE_QWEN_OFFICE_BRIDGE = endpoint;
+          process.env.ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN = "a".repeat(64);
+        }
         const accepted = await api(server.baseUrl, "/turns", {
           method: "POST",
           token: server.token,
@@ -229,11 +273,24 @@ test("POST /turns accepts every engine in the shared contract as a legacy first-
         assert.equal((readback.body as { turns: Array<{ engine: TurnEngine }> }).turns[0]?.engine, engine);
         assert.equal((await api(server.baseUrl, "/reports", { token: server.token })).status, 200);
       } finally {
+        server.ctx.config.bundledElectronEngine = originalBundledEngine;
         await fs.rm(freshWorkspace, { recursive: true, force: true });
       }
     }
     assert.equal(turnDriver.calls.length, turnEngines.length);
+    assert.equal(officeConnections, 0, "the contract fixture uses the fake driver without contacting a native client");
   } finally {
+    for (const [key, value] of Object.entries(savedOffice)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    if (officeBridge) await new Promise<void>((resolve, reject) => officeBridge!.close(error => error ? reject(error) : resolve()));
+    if (officeRoot) await fs.rm(officeRoot, { recursive: true, force: true });
+    for (const [key, value] of Object.entries(savedOpenAI)) {
+      const environmentKey = { key: "OPENAI_API_KEY", url: "OPENAI_BASE_URL", model: "OPENAI_MODEL" }[key]!;
+      if (value === undefined) delete process.env[environmentKey];
+      else process.env[environmentKey] = value;
+    }
     await server.close();
   }
 });

@@ -213,3 +213,20 @@ test('Windows startup migration and rollback flush a writable temporary descript
  assert.ok(flushed>=5);assert.equal(descriptors.size,0);
  assert.equal(fs.readdirSync(h.dir).some(name=>name.endsWith('.tmp')||name.endsWith('.transaction')),false);
 });
+test('project directory and completion notification preferences validate and survive a save', t => {
+ const h=setup(t),before=h.store.getPreferences(),next=structuredClone(before.config);
+ const legacy=structuredClone(next);delete legacy.storage;delete legacy.notifications;
+ assert.equal(validateConfigurationText(text(legacy)).ok,true);
+ next.storage={projectDirectory:'/tmp/roleweave-projects'};
+ next.notifications={taskComplete:true};
+ const saved=h.store.save({text:text(next),revision:before.revision});
+ assert.equal(saved.ok,true);
+ assert.equal(h.store.getPreferences().config.storage.projectDirectory,'/tmp/roleweave-projects');
+ assert.equal(h.store.getPreferences().config.notifications.taskComplete,true);
+ for(const bad of ['relative/path','/tmp/bad\npath']){
+  next.storage.projectDirectory=bad;
+  assert.equal(validateConfigurationText(text(next)).ok,false);
+ }
+ next.storage.projectDirectory='C:\\Users\\tester\\Projects';
+ assert.equal(validateConfigurationText(text(next)).ok,true);
+});

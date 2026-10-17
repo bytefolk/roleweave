@@ -3,6 +3,22 @@ import test from "node:test";
 import { OrgApiError } from "@roleweave/shared";
 import { RunningTurnRegistry } from "../src/turns/running.js";
 
+test("desktop count excludes mutations and clears cancellation after the actual run releases", () => {
+  const registry = new RunningTurnRegistry();
+  const mutation = registry.reserveMutation("/workspace/a", "editor");
+  const first = registry.reserve("/workspace/a", "writer", "first");
+  const second = registry.reserve("/workspace/b", "writer", "second");
+  assert.equal(registry.activeCount, 2);
+  registry.cancel("/workspace/a", "writer", "first");
+  assert.equal(registry.activeCount, 2);
+  first.release();
+  first.release();
+  assert.equal(registry.activeCount, 1);
+  second.release();
+  assert.equal(registry.activeCount, 0);
+  mutation();
+});
+
 test("reservations isolate employees and workspaces and reject a duplicate before any async work", () => {
   const registry = new RunningTurnRegistry();
   const first = registry.reserve("/workspace/a", "writer");
