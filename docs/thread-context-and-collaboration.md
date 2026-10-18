@@ -32,6 +32,39 @@ Assignment is explicit. This change does not add role-based automatic matching, 
 
 ## API and compatibility
 
+### Repair a rejected goal task
+
+After reviewing a completed project task, use its existing acceptance drawer to
+return it with criterion verdicts and a concrete reason. Run the task again in
+the assigned employee's original personal session. The control plane adds the
+saved decision, criteria, acceptance ID, source digest and visible rejected
+answer to the existing bounded, sanitized context. The operator's original
+request remains unchanged. This feedback is supplied even when ordinary session
+history is disabled; it is part of the explicitly requested task repair.
+
+Each repaired result needs a new human review before another repair. A maximum
+of three repair executions is counted from durable task history after its first
+rejection, including failed attempts. Restarting the control plane does not
+reset that count. Exhaustion requires reassessing the work and creating a
+follow-up task. An unavailable ledger, changed plan, reassigned employee,
+different session, closed goal or unreviewed newer execution stops dispatch.
+Feedback larger than the existing context field limit must be split into
+smaller tasks; visible answer excerpts may be truncated and the receipt reports
+that limit. A failed or indeterminate repair requires operator investigation;
+the system does not replay it automatically.
+
+This is a human-started repair handoff, not an autonomous verification loop.
+Agent completion does not accept a task or approve external actions. Existing
+tool permissions, per-turn budgets, cancellation and human acceptance apply.
+Tests exercise the real HTTP/session/store boundaries with a deterministic
+driver, not a live model or a customer deployment.
+
+RoleWeave owns general execution and review. Reusable business cases belong in
+[Workbench Examples](https://github.com/bytefolk/workbench-examples); enterprise
+facts, ontology, evidence and their data authorization belong to the independent
+Enterprise Context service. This handoff adds no business schema, case library,
+second task store or queue.
+
 - `PATCH /sessions/:sessionId/context` accepts exactly `{ "enabled": true }` or `{ "enabled": false }` and returns the updated `workbench-session.v1`. The optional `threadContextEnabled` field defaults to `true` when absent in older records.
 - `POST /groups/:conversationRef/turns` accepts optional `mode: "parallel" | "relay"`; omitted mode means parallel. The `mentions` array is the explicit recipient/relay order.
 - `turn-record.v1` may include a `threadContext` receipt (`thread-context.v1`). The original operator `input` remains separate from the materialized model input.

@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Human-started repairs of rejected goal tasks receive the saved criterion verdicts, feedback and rejected delivery through bounded context. Repairs stop after three attempts or when the plan, owner, session or reviewed delivery changes; an Agent result still requires human acceptance. Refs #606.
+
 ## [0.5.0] — 2026-10-16
 
 ### Added

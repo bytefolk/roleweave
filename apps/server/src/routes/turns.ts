@@ -31,6 +31,7 @@ import type { TurnAttachment } from "@roleweave/shared";
 import { ATTACHMENT_MAX_COUNT } from "@roleweave/shared";
 import { assembleVaultContext } from "../vault/context.js";
 import { recordVaultUsage } from "../vault/receipts.js";
+import { prepareGoalRework } from "../goals/rework.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -253,6 +254,9 @@ export async function executeTurn(
     void tracker.persist(workspace.dir, body.positionId, turnId);
   };
   try {
+    const repairContext = await prepareGoalRework(ctx, workspace.dir, body, group ? undefined : session?.sessionId);
+    assertTurnWorkspace(ctx, workspace);
+    if (repairContext.length > 0) supplementalContext = [...(supplementalContext ?? []), ...repairContext];
     let retryHistory: TurnRecord[] | undefined;
     if (body.retryOf !== undefined) {
       if (session === undefined || group !== undefined) {
