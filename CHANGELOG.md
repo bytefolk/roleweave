@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
+
 ### Added
 
 - Human-started repairs of rejected goal tasks receive the saved criterion verdicts, feedback and rejected delivery through bounded context. Repairs stop after three attempts or when the plan, owner, session or reviewed delivery changes; an Agent result still requires human acceptance. Refs #606.
