@@ -43,11 +43,18 @@ request remains unchanged. This feedback is supplied even when ordinary session
 history is disabled; it is part of the explicitly requested task repair.
 
 Each repaired result needs a new human review before another repair. A maximum
-of three repair executions is counted from durable task history after its first
-rejection, including failed attempts. Restarting the control plane does not
+of three personal-session repair executions is counted from durable task history
+after its first rejection, including failed attempts. Group turns keep their
+ordinary execution path without repair context and do not consume this ceiling.
+Restarting the control plane does not
 reset that count. Exhaustion requires reassessing the work and creating a
 follow-up task. An unavailable ledger, changed plan, reassigned employee,
 different session, closed goal or unreviewed newer execution stops dispatch.
+The saved plan fingerprint ignores health refresh clocks while detecting changes
+to criteria, work items and branches. Older decisions without that fingerprint
+retain the conservative record-clock check; record a fresh human verdict after
+a refresh. A workspace ledger exceeding its bounded read capacity is unavailable
+for repair until the operator resolves the history problem.
 Feedback larger than the existing context field limit must be split into
 smaller tasks; visible answer excerpts may be truncated and the receipt reports
 that limit. A failed or indeterminate repair requires operator investigation;

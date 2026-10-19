@@ -59,6 +59,8 @@ export interface GoalTaskAcceptanceRecord {
   goalId: string;
   taskId: string;
   planUpdatedAt: string;
+  /** Saved plan after this verdict; absent on records written before repair support. */
+  planDigest?: string;
   workspacePath: string;
   criteriaSnapshot: string[];
   source: GoalTaskAcceptanceSource;
@@ -510,7 +512,7 @@ export function validateGoalTaskAcceptanceCreateRequest(raw: unknown): GoalValid
 }
 
 export function validateGoalTaskAcceptanceRecord(raw: unknown): GoalValidationResult<GoalTaskAcceptanceRecord> {
-  if (!isRecord(raw) || !keysMatch(raw, ["schemaVersion", "scope", "acceptanceId", "goalId", "taskId", "planUpdatedAt", "workspacePath", "criteriaSnapshot", "source", "decision", "verdicts", "decidedBy", "decidedAt", "idempotencyKey", "requestDigest"], ["note"])) {
+  if (!isRecord(raw) || !keysMatch(raw, ["schemaVersion", "scope", "acceptanceId", "goalId", "taskId", "planUpdatedAt", "workspacePath", "criteriaSnapshot", "source", "decision", "verdicts", "decidedBy", "decidedAt", "idempotencyKey", "requestDigest"], ["note", "planDigest"])) {
     return fail("goal_unknown_field", "task acceptance record has unexpected or missing fields");
   }
   if (raw.schemaVersion !== GOAL_TASK_ACCEPTANCE_SCHEMA_VERSION || raw.scope !== "goal-task") {
@@ -526,6 +528,9 @@ export function validateGoalTaskAcceptanceRecord(raw: unknown): GoalValidationRe
   const time = iso8601(raw.decidedAt, "decidedAt");
   if (!time.ok) return time;
   if (typeof raw.requestDigest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(raw.requestDigest)) return fail("goal_invalid", "requestDigest must be a SHA-256 digest");
+  if (raw.planDigest !== undefined && (typeof raw.planDigest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(raw.planDigest))) {
+    return fail("goal_invalid", "planDigest must be a SHA-256 digest");
+  }
   const request = validateGoalTaskAcceptanceCreateRequest({ expectedWorkspacePath: raw.workspacePath, expectedUpdatedAt: raw.planUpdatedAt, idempotencyKey: raw.idempotencyKey,
     source: raw.source, decision: raw.decision, verdicts: raw.verdicts, ...(raw.note !== undefined ? { note: raw.note } : {}) });
   if (!request.ok) return request;

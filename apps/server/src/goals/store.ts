@@ -185,6 +185,13 @@ function digest(value: unknown): string {
   return `sha256:${crypto.createHash("sha256").update(canonicalJson(value)).digest("hex")}`;
 }
 
+/** Bind repairs to the human plan, excluding health and record refresh clocks. */
+export function goalPlanDigest(goal: Goal): string {
+  return digest({ title: goal.title, description: goal.description, status: goal.status,
+    acceptanceCriteria: goal.acceptanceCriteria, workItems: goal.workItems ?? [],
+    branches: goal.branches.map(({ createdAt: _created, updatedAt: _updated, ...plan }) => plan) });
+}
+
 function taskTurns(goal: Goal, taskId: string, turns: readonly TurnRecord[]): TurnRecord[] {
   return turns.filter(turn => turn.goalId === goal.goalId && turn.branchId === taskId)
     .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.turnId.localeCompare(right.turnId, "en"));
@@ -613,6 +620,7 @@ export class GoalStore {
       const updated: Goal = { ...goal, workItems: goal.workItems!.map(item => item.taskId === taskId
         ? { ...item, status: value.decision === "accepted" ? "done" : "review" } : item),
         taskAcceptances: [...(goal.taskAcceptances ?? []), record], updatedAt: decidedAt };
+      record.planDigest = goalPlanDigest(updated);
       // One fsync+rename transaction is the durable authority for both verdict and status.
       // No second activity file is required to reconstruct acceptance after a restart.
       try {
