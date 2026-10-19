@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
+
 ## [0.5.0] — 2026-10-16
 
 ### Added
