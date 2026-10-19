@@ -9,11 +9,11 @@ import { openAICompatibleConfiguration } from "./codex-binary.js";
 import { workbuddyConfiguration } from "./workbuddy-runtime.js";
 import { workbuddyLocalBridgeConfigured } from "./workbuddy-local.js";
 import { qwenOfficeLocalBridgeConfigured } from "./qwen-office-local.js";
+import { codexModelCatalog, codexModelTier } from "./codex-model-catalog.js";
 
 const MAX_MODEL_CACHE_BYTES = 4 * 1024 * 1024;
 
-/** These are provider-supported aliases; Codex's concrete list comes from
- * its local account cache, never from a guessed public model availability. */
+/** Provider catalogs own concrete model availability; disk caches are fallbacks. */
 export async function employeeModelConfig(engine: TurnEngine, selected?: string, editable = true, env: NodeJS.ProcessEnv = process.env, catalogMode: "refresh" | "cached" = "refresh"): Promise<EmployeeModelConfig> {
   if (engine === "qwen-office-local") {
     // The native Office client owns its model. Ignore stale saved selectors,
@@ -35,6 +35,7 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
   let allowCustomModel = false;
   let customModelFormat: EmployeeModelConfig["customModelFormat"];
   let catalogStatus: EmployeeModelConfig["catalogStatus"];
+  let catalogRecommended: string | undefined;
   try {
   if (engine === "qoder") {
     options = [
@@ -141,20 +142,31 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       ...(endpointHost ? { endpointHost } : {}),
       ...(configuration.ready ? {} : { message: "Set a valid OPENAI_API_KEY, OPENAI_BASE_URL, and OPENAI_MODEL to use this agent" }),
     };
-  } else {
+  } else if (engine === "codex" || engine === "codex-local") {
     source = "default";
-    try {
-      const file = path.join(env.CODEX_HOME ?? path.join(env.HOME ?? os.homedir(), ".codex"), "models_cache.json");
-      const stable = await readStableBoundedFile(file, MAX_MODEL_CACHE_BYTES);
-      const cache = JSON.parse(decodeStableUtf8(stable.buffer));
-      if (Array.isArray(cache.models)) {
-        options = cache.models.filter((m: any) => m.visibility === "list" && isModelId(m.slug)).slice(0, 64).map((m: any): EmployeeModelOption => ({
-          id: m.slug, name: typeof m.display_name === "string" ? m.display_name.slice(0, 100) : m.slug,
-          tier: /luna|mini|spark/i.test(m.slug) ? "economy" : /astra|pro|opus/i.test(m.slug) ? "powerful" : "balanced",
-        }));
-        if (options.length > 0) source = "local-cache";
-      }
-    } catch { /* Without an account catalog, retain an explicit provider default. */ }
+    const catalog = editable ? await codexModelCatalog.read(env, catalogMode, engine) : undefined;
+    if (catalog) {
+      options = catalog.options;
+      catalogStatus = catalog.status;
+      catalogRecommended = catalog.recommended;
+      if (catalog.status !== "unavailable") source = "provider-catalog";
+      allowCustomModel = true;
+      customModelFormat = "strict";
+    }
+    if (!catalog || catalog.status === "unavailable") {
+      try {
+        const file = path.join(env.CODEX_HOME ?? path.join(env.HOME ?? env.USERPROFILE ?? os.homedir(), ".codex"), "models_cache.json");
+        const stable = await readStableBoundedFile(file, MAX_MODEL_CACHE_BYTES);
+        const cache = JSON.parse(decodeStableUtf8(stable.buffer));
+        if (Array.isArray(cache.models)) {
+          options = cache.models.filter((m: any) => m?.visibility === "list" && isModelId(m.slug)).slice(0, 64).map((m: any): EmployeeModelOption => ({
+            id: m.slug, name: typeof m.display_name === "string" ? m.display_name.slice(0, 100) : m.slug,
+            tier: codexModelTier(m.slug),
+          }));
+          if (options.length > 0) { source = "local-cache"; if (editable) catalogStatus = "stale"; }
+        }
+      } catch { /* Without an account catalog, retain an explicit provider default. */ }
+    }
   }
   } catch (error) {
     if (!(error instanceof LocalProviderConfigError)) throw error;
@@ -165,9 +177,9 @@ export async function employeeModelConfig(engine: TurnEngine, selected?: string,
       connection: { source: "local-config", kind: "gateway", billing: "unknown", status: "invalid", message: error.message },
     };
   }
-  // Prefer the account's affordable general-purpose model over a specialist
-  // fast model. Labels are qualitative, never fabricated prices or rates.
-  const recommended = followLocalDefault ? "provider-default" : options.find((m) => /luna/.test(m.id))?.id ?? options.find((m) => m.tier === "economy")?.id ?? "provider-default";
+  // Honor the provider's recommendation; older catalogs retain the affordable
+  // general-purpose fallback. Labels are qualitative, never fabricated prices.
+  const recommended = followLocalDefault ? "provider-default" : catalogRecommended ?? options.find((m) => /luna/.test(m.id))?.id ?? options.find((m) => m.tier === "economy")?.id ?? "provider-default";
   options = options.filter((option, index, all) => all.findIndex((item) => item.id === option.id) === index && option.id !== "provider-default");
   options.sort((a, b) => Number(b.id === recommended) - Number(a.id === recommended));
   options.push({ id: "provider-default", name: "Agent default", tier: "default", ...(selectedDefault ? { resolvedModel: selectedDefault } : {}), ...(connection ? { billing: connection.billing } : {}) });

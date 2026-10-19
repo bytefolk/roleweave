@@ -195,7 +195,7 @@ it.each(["stale", "unavailable"] as const)("keeps fallback model selection avail
   const select = screen.getByRole("combobox", { name: "员工模型" });
   expect(select).toBeEnabled();
   fireEvent.mouseDown(select);
-  expect(await screen.findByRole("status")).toHaveTextContent(catalogStatus === "stale" ? "显示上次的模型列表" : "暂未取得 Qoder 模型列表");
+  expect(await screen.findByRole("status")).toHaveTextContent(catalogStatus === "stale" ? "显示上次的模型列表" : "暂未取得模型列表");
   fireEvent.click(screen.getByRole("button", { name: "刷新模型列表" }));
   expect(reload).toHaveBeenCalledTimes(1);
   rerender(<ConversationOptions {...base} loading />);
@@ -265,7 +265,7 @@ it("submits only a valid Qoder custom model identifier and never asks for a key"
   expect(screen.queryByText("官方连接")).not.toBeInTheDocument();
   fireEvent.click(await screen.findByRole("button", { name: "使用已配置模型…" }));
   const input = await screen.findByLabelText("模型标识");
-  expect(screen.getByText("填写 Qoder 中已配置的模型标识，不是 API Key。")).toBeInTheDocument();
+  expect(screen.getByText("填写当前 Agent 或服务商支持的完整模型标识。")).toBeInTheDocument();
   // The entry lives in a Select popup. Its trigger keeps that popup open, but
   // must not prevent the portal-hosted input from receiving a real pointer
   // interaction (which would otherwise make it impossible to edit).
