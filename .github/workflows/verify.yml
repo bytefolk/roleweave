@@ -175,6 +175,10 @@ jobs:
         working-directory: org-workbench
         run: node --test --test-timeout=45000 apps/desktop/test/window-chrome-windows.cjs
 
+      - name: Accept complete Codex prompts through Windows cmd launchers
+        working-directory: org-workbench
+        run: node --test --test-timeout=30000 apps/desktop/test/codex-prompt.test.cjs
+
       - name: Verify Windows staging manifest
         working-directory: org-workbench
         run: npm run verify:package:windows

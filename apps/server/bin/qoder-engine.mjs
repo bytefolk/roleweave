@@ -1903,16 +1903,16 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
   }
 
   const args = codexTurnArgs(model, baseUrl);
-  args.push(`[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n${input || "Execute your position duties for this turn."}`);
+  // cmd.exe truncates multiline argv passed through npm .cmd launchers.
+  // stdin also avoids Windows command-line length limits for thread context.
+  args.push("-");
 
   try {
     const spawnSpec = createQoderSpawnSpec(codexBin, args, codexChildEnvironment(process.env, engineModel));
     child = spawn(spawnSpec.command, spawnSpec.args, {
       ...spawnSpec.options,
       cwd: workspaceDir,
-      // Codex exec also drains stdin; leaving it closed keeps the turn
-      // non-interactive instead of waiting for further input.
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       // Own the process group so a stalled Codex and any descendant it
       // spawned can both be killed when the engine decides the outcome.
       detached: process.platform !== "win32",
@@ -2061,6 +2061,9 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
     if (terminalEmitted) return;
     fail("codex.no_terminal_event", stderrTail.trim() || `codex exited with code ${code} without a terminal event`, true);
   });
+  child.stdin.on("error", () => fail("codex.stdin_failed", "cannot send the request to Codex", true));
+  // Close the pipe after the complete prompt so exec remains non-interactive.
+  child.stdin.end(`[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n${input || "Execute your position duties for this turn."}`);
 }
 
 export { workbuddyTurnArgs } from "../src/workbuddy-runtime.js";
