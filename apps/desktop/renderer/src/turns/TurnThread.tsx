@@ -485,6 +485,9 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
       <ol ref={threadRef} className={`owb-turn-thread${turns.length === 0 ? " owb-turn-thread--empty" : ""}`} role="log" aria-live="polite" aria-label={t("turn.threadAria")} hidden={turns.length === 0}>
         {turns.map((turn) => {
         const retryable = turn.status === "failed" || turn.status === "indeterminate";
+        const modelAccessDenied = (turn.engine === "codex" || turn.engine === "codex-local") && turn.errorCode === "codex.model_access_denied";
+        const failureMessage = modelAccessDenied
+          ? t("turn.codexModelAccessDenied", { model: turn.model ?? t("model.agentDefault") }) : turn.error;
         const stateClass =
           turn.status === "running"
             ? "is-running"
@@ -573,12 +576,12 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
 
               {turn.status === "completed" && hasUnexecutedToolText(turn.output) ? <p className="owb-turn__warning" role="alert">{t("turn.toolsNotExecutedHelp")}</p> : null}
               {turn.error ? (
-                <div className="owb-bubble__error owb-turn-failure" role="alert" title={turn.error}>
+                <div className="owb-bubble__error owb-turn-failure" role="alert" title={failureMessage}>
                   <div className="owb-turn-failure__title"><AlertTriangle aria-hidden="true" size={14} />
-                    {t(turn.errorCode === "turn_timeout" ? "turn.timeoutTitle" : "turn.failedTitle")}
+                    {t(modelAccessDenied ? "turn.modelAccessDeniedTitle" : turn.errorCode === "turn_timeout" ? "turn.timeoutTitle" : "turn.failedTitle")}
                   </div>
-                  {turn.errorCode === "turn_timeout" && turn.output ? <p>{t("turn.timeoutPreserved")}</p> : turn.error !== t("turn.failedTitle") ? <p>{turn.error}</p> : null}
-                  {turn.errorCode !== "turn_timeout" ? <small>{t("turn.failedHelp")}</small> : null}
+                  {turn.errorCode === "turn_timeout" && turn.output ? <p>{t("turn.timeoutPreserved")}</p> : failureMessage !== t("turn.failedTitle") ? <p>{failureMessage}</p> : null}
+                  {turn.errorCode !== "turn_timeout" ? <small>{t(modelAccessDenied ? "turn.codexModelAccessHelp" : "turn.failedHelp")}</small> : null}
                 </div>
               ) : null}
               {turn.diagnostic ? (

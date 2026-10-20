@@ -188,7 +188,7 @@ Useful commands from the repository root:
 
 ## Current limits
 
-For Codex employees, the model picker queries the installed Codex CLI's `model/list` catalog and caches results briefly. Use **Refresh model list** to retry discovery. Failed discovery keeps the previous list or local disk cache and shows a fallback status; saved model choices remain available. A listed model does not guarantee inference access for the account or provider.
+For Codex employees, the model picker queries the installed Codex CLI's `model/list` catalog and caches results briefly. Use **Refresh model list** to retry discovery. Failed discovery keeps the previous list or local disk cache and shows a fallback status; saved model choices remain available. A listed or recommended model does not guarantee inference access for the account or provider; refreshing the list does not verify that access. If Codex rejects a model for the ChatGPT login, the conversation explains the rejection and the picker flags the last matching failed request. Choose another employee model or check the login in the same Codex CLI before resending. RoleWeave keeps the saved model and never switches to API billing automatically.
 
 - Real Qoder execution has been verified on a macOS machine. Claude Code live execution, full delegation chains, and end-to-end long-term context workflows are not yet part of the verified baseline.
 - macOS has a signed-manifest update mechanism. New Windows builds can check, download, and install unsigned NSIS updates after user confirmation. The downloaded installer is checked against SHA-512 metadata fetched over HTTPS; there is no independent publisher signature on this channel. Publishing a release exposes its metadata to clients checking these channels.
