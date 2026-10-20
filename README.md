@@ -18,6 +18,7 @@ Its organizing principle is simple: **the file tree is the org chart.** Roles li
 - **Work with individual roles.** Start conversations, revisit local history, and start a fresh session when the task changes.
 - **Keep instructions close to the work.** Read role documents alongside the workspace and connect shared organization documents.
 - **Understand what happened.** Review recorded activity, organization changes, turn outcomes, and available budget usage in the reporting center.
+- **Follow project tasks.** See each task's execution stages in the board, schedule, and editor. Progress follows the latest Agent attempt and recovers on reconnect; completed execution still requires delivery acceptance. Stage counts describe execution phases, not work completed or time remaining.
 - **Connect knowledge sources.** Add optional document, file, and context services when your workflow needs them.
 
 For example, an open-source maintenance team can have a repository owner with three supporting roles: an issue researcher, a community operator, and a release engineer. The repository includes an [example workspace](examples/oss-maintainer) with this structure and role budgets.

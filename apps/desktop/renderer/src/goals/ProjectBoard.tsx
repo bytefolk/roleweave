@@ -16,6 +16,8 @@ import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { TurnEngine } from "@roleweave/shared";
 import { useEngineLabel } from "../turns/engine-select";
 import { TaskAcceptanceDrawer } from "./TaskAcceptanceDrawer";
+import { ProjectTaskProgress } from "./ProjectTaskProgress";
+import { useProjectTaskProgress } from "./useProjectTaskProgress";
 import "./project-board.css";
 
 export interface ProjectBoardProps {
@@ -104,6 +106,7 @@ export function ProjectBoard({
   const detailRef = useRef(detail);
   detailRef.current = detail;
   const scopeKey = JSON.stringify([workspaceKey, detail.goal.goalId]);
+  const progress = useProjectTaskProgress({ ...detail.taskExecutions, ...accepted }, scopeKey, workspaceKey);
   const scopeRef = useRef({ key: scopeKey, generation: 0 });
   if (scopeRef.current.key !== scopeKey) {
     scopeRef.current = { key: scopeKey, generation: scopeRef.current.generation + 1 };
@@ -125,7 +128,10 @@ export function ProjectBoard({
       Object.fromEntries(
         Object.entries(previous).filter(([taskId, run]) => {
           const current = own(detail.taskExecutions, taskId);
-          return !current || current.turnId !== run.turnId;
+          if (!current) return true;
+          if (current.turnId === run.turnId) return false;
+          // A newer externally started attempt also retires the local response.
+          return !current.startedAt || !run.startedAt || Date.parse(current.startedAt) <= Date.parse(run.startedAt);
         }),
       ),
     );
@@ -421,8 +427,15 @@ export function ProjectBoard({
 
   const execution = (item: GoalWorkItem) => {
     const run = executionOf(item);
+    const decision = detail.goal.taskAcceptances?.filter((record) => record.taskId === item.taskId).at(-1);
+    const acceptedRun = decision?.decision === "accepted" && decision.source.turnId === run?.turnId &&
+      decision.source.outputDigest === own(detail.taskDeliveries, item.taskId)?.source.outputDigest &&
+      JSON.stringify(decision.criteriaSnapshot) === JSON.stringify(detail.goal.acceptanceCriteria);
     return (
-      <div className="owb-project-execution-wrap">
+      <div className="owb-project-execution-detail">
+        <ProjectTaskProgress item={item} run={run} snapshot={progress.snapshotFor(run)}
+          accepted={acceptedRun} unavailable={detail.executionUnavailable} now={progress.now} />
+        <div className="owb-project-execution-wrap">
         <span
           className="owb-project-execution"
           data-status={run?.status ?? "none"}
@@ -443,6 +456,7 @@ export function ProjectBoard({
             {t("project.viewTurn")}
           </Button>
         ) : null}
+        </div>
       </div>
     );
   };
@@ -717,7 +731,7 @@ export function ProjectBoard({
           </Button>
         </p>
       )}
-      <p className="owb-project-caption">{t("project.executionNote")}</p>
+      <p className="owb-project-caption">{t("project.executionNote")} {t("project.taskProgress.boundary")}</p>
       {items.length === 0 && (
         <div className="owb-project-empty">
           <Columns3 size={30} aria-hidden="true" />
@@ -951,6 +965,8 @@ export function ProjectBoard({
       >
         {editor && (
           <>
+            {!editor.isNew && items.find((item) => item.taskId === editor.item.taskId) &&
+              execution(items.find((item) => item.taskId === editor.item.taskId)!)}
             <fieldset className="owb-project-form" disabled={busy}>
               <label>
                 <span>{t("project.taskTitle")}</span>

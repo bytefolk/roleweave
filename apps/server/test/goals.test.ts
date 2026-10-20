@@ -432,9 +432,22 @@ test("HTTP task execution preserves goal and task binding and never marks the hu
     assert.equal(record.goalId, goalId);
     assert.equal(record.branchId, plannedTask.taskId);
     const detail = (await api(server.baseUrl, `${routes.goals}/${goalId}`, { token: server.token })).body as GoalDetail;
-    assert.deepEqual(detail.taskExecutions?.[plannedTask.taskId], {
+    const { progress, ...execution } = detail.taskExecutions![plannedTask.taskId]!;
+    assert.deepEqual(execution, {
       turnId: record.turnId, positionId: "repo-owner", status: "completed", startedAt: record.createdAt, completedAt: record.updatedAt,
     });
+    assert.equal(progress?.taskId, record.turnId);
+    assert.equal(progress?.progress, 100);
+    // More recent, unrelated activity must not hide an exact task reference.
+    for (let index = 0; index < 129; index += 1) {
+      const turnId = `unrelated-${index}`;
+      server.ctx.progressTracker.begin({ workspacePath: workspace, taskId: turnId, positionId: "repo-owner" });
+      for (let step = 0; step < 5; step += 1) server.ctx.progressTracker.reportStepFinish(turnId, step);
+    }
+    assert.equal((await server.ctx.progressTracker.listAll(workspace)).some((entry) => entry.taskId === record.turnId), false);
+    const restored = (await api(server.baseUrl, `${routes.goals}/${goalId}`, { token: server.token })).body as GoalDetail;
+    assert.equal(restored.taskExecutions?.[plannedTask.taskId]?.progress?.progress, 100);
+    assert.equal((await server.ctx.goalStore.get(workspace, goalId)).workItems?.[0]?.status, "todo");
     assert.equal(detail.goal.workItems?.[0]?.status, "todo");
     const diskTurns = await server.ctx.turnStore.reportRecords(workspace);
     assert.equal(diskTurns.find((turn) => turn.turnId === record.turnId)?.branchId, plannedTask.taskId);
@@ -499,6 +512,7 @@ test("execution projection picks the latest matching attempt and excludes other 
   ], () => true);
   assert.deepEqual(projection, { [plannedTask.taskId]: { turnId: "newest", positionId: "repo-owner", status: "running", startedAt: newest.createdAt } });
   assert.deepEqual(projectTaskExecutions({ ...goal, workItems: [{ ...plannedTask, assigneePositionId: undefined }] }, [base]), {});
+  assert.equal(projectTaskExecutions(goal, [{ ...newest, status: "failed", error: { code: "turn_cancelled", message: "Cancelled", retryable: false } }])[plannedTask.taskId]?.errorCode, "turn_cancelled");
 });
 
 test("HTTP execution status requires an exact live reservation and does not rewrite orphaned turn records", async () => {

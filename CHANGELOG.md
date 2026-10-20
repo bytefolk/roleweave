@@ -5,10 +5,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- #615: Show per-task execution progress in project cards, schedule rows, and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect, and keep completed execution separate from delivery acceptance.
+
 ### Fixed
 
 - Explain Codex ChatGPT-login model rejections with localized recovery and distinguish model catalog discovery from verified access (#613).
-
+- #615: Validate Windows process ancestry by creation time so reused parent PIDs cannot attach unrelated processes to the packaged-app smoke test or its cleanup tree.
+- #611: Preserve complete Codex employee questions and thread context on Windows by sending prompts through stdin. Chinese, multiline and long requests no longer lose their content through `.cmd` launchers; input-pipe failures produce a typed error.
 - #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
 
 ## [0.5.0] — 2026-10-16
