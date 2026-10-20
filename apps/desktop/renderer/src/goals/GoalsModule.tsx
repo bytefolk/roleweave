@@ -239,7 +239,11 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, workspaceScope, presentat
   useEffect(() => {
     if (!workspaceOpen) return;
     return window.owb.onEvent((event: unknown) => {
-      const e = event as { type?: string };
+      const e = event as { type?: string; payload?: { workspacePath?: string } };
+      if (e.payload?.workspacePath && e.payload.workspacePath !== workspaceKey) return;
+      if (projectMode && ["turn.started", "turn.completed", "turn.failed", "turn.indeterminate"].includes(e.type ?? "")) {
+        if (selectedRef.current) void loadDetail(selectedRef.current);
+      }
       if (
         e.type === "goal.created" ||
         e.type === "goal.updated" ||
@@ -250,7 +254,14 @@ function GoalsWorkspace({ workspaceOpen, workspaceKey, workspaceScope, presentat
         if (view === "board") void reloadTasks();
       }
     });
-  }, [workspaceOpen, loadGoals, loadDetail, view, reloadTasks]);
+  }, [workspaceOpen, workspaceKey, projectMode, loadGoals, loadDetail, view, reloadTasks]);
+
+  useEffect(() => {
+    if (!workspaceOpen || !projectMode) return;
+    return window.owb.onSseStatus?.((state) => {
+      if (state === "connected" && selectedRef.current) void loadDetail(selectedRef.current);
+    });
+  }, [workspaceOpen, projectMode, loadDetail]);
 
   // Refresh execution evidence without unmounting an open task editor.
   useEffect(() => {

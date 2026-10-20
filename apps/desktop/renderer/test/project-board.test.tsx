@@ -318,6 +318,18 @@ describe("ProjectBoard", () => {
     expect(context.updateGoal).not.toHaveBeenCalled();
   });
 
+  it("retires a local launch response when the server observes a newer execution", async () => {
+    const context = setup();
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    await waitFor(() => expect(context.onRefresh).toHaveBeenCalled());
+    context.rerender(<ProjectBoard {...context.props} detail={{ ...detail(), taskExecutions: {
+      [task.taskId]: { turnId: "newer-turn", positionId: "engineer", status: "completed", startedAt: "2026-09-23T00:00:00.000Z" },
+    } }} />);
+    await screen.findByText("执行结束 · 待验收");
+    fireEvent.click(screen.getByRole("button", { name: "查看任务执行：Ship board" }));
+    expect(context.onOpenBoundSession).toHaveBeenCalledWith("engineer", undefined, "newer-turn");
+  });
+
   it("starts work in the newly created session when the assignee has no conversation", async () => {
     const sessions = vi.fn().mockResolvedValue({ status: 200, body: { activeSessionId: null, sessions: [] } });
     const createSession = vi.fn().mockResolvedValue({ status: 201, body: { sessionId: activeSessionId } });

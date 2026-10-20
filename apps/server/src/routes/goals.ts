@@ -39,6 +39,13 @@ export async function handleGoalGet(
   }
   const detail = await ctx.goalStore.getDetail(workspace.dir, goalId, turns,
     (turn) => ctx.runningTurns.isRunning(workspace.dir, turn.positionId, turn.turnId));
+  // Resolve exact references rather than relying on the recent-progress list.
+  await Promise.all(Object.values(detail.taskExecutions ?? {}).map(async (execution) => {
+    const snapshot = await ctx.progressTracker.loadPersisted(workspace.dir, execution.positionId, execution.turnId);
+    if (snapshot?.workspacePath === workspace.dir && snapshot.positionId === execution.positionId) {
+      execution.progress = snapshot;
+    }
+  }));
   sendJson(res, 200, detail);
 }
 

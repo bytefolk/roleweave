@@ -109,6 +109,36 @@ describe("live task board (#580)", () => {
   });
 });
 
+describe("project execution refresh (#615)", () => {
+  it("recovers on reconnect and terminal events without treating foreign workspace events as local", async () => {
+    const value = detail();
+    value.goal.workItems = [{ taskId: "project-task", title: "Progress task", status: "todo", priority: "normal", assigneePositionId: "engineer" }];
+    value.taskExecutions = { "project-task": { turnId: "project-turn", positionId: "engineer", status: "running" } };
+    const listeners = new Set<(event: unknown) => void>();
+    let reconnect: (state: "connected" | "connecting") => void = () => {};
+    const bridge = install(value, {
+      onEvent: vi.fn((fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; }),
+      onSseStatus: vi.fn((fn) => { reconnect = fn; return () => {}; }),
+    });
+    render(<GoalsModule workspaceOpen workspaceKey="/workspace" presentation="projects" positionNames={{ engineer: "Engineer" }} />);
+    const meter = await screen.findByRole("progressbar", { name: "执行进度：Progress task" });
+    expect(meter).not.toHaveAttribute("value");
+    bridge.goal.mockClear();
+    await act(async () => listeners.forEach((fn) => fn({ type: "turn.completed", payload: { workspacePath: "/other" } })));
+    expect(bridge.goal).not.toHaveBeenCalled();
+    const completed = structuredClone(value);
+    completed.taskExecutions!["project-task"].status = "completed";
+    bridge.goal.mockResolvedValue({ status: 200, body: completed });
+    await act(async () => reconnect("connected"));
+    await waitFor(() => expect(meter).toHaveAttribute("value", "100"));
+    expect(screen.getByText("执行结束 · 待验收")).toBeInTheDocument();
+    bridge.goal.mockClear();
+    await act(async () => listeners.forEach((fn) => fn({ type: "turn.failed", payload: { workspacePath: "/workspace" } })));
+    expect(bridge.goal).toHaveBeenCalledWith(value.goal.goalId);
+    expect(completed.goal.workItems![0].status).toBe("todo");
+  });
+});
+
 describe("acceptance criteria repair (#578)", () => {
   it("preserves a conflicting draft, explicitly reloads current criteria and retries with the new version", async () => {
     const latest = detail(); latest.goal.acceptanceCriteria = ["Server criterion"]; latest.goal.updatedAt = later;
@@ -183,5 +213,6 @@ describe("acceptance criteria repair (#578)", () => {
     await screen.findByText("验收已保存，任务已完成。");
     expect(createGoalTaskAcceptance).toHaveBeenCalledWith(expect.objectContaining({ source, expectedUpdatedAt: later, decision: "accepted", verdicts: [{ criteriaIndex: 0, passed: true }] }));
     expect(value.goal.workItems[0].status).toBe("done");
+    await waitFor(() => expect(screen.getByRole("progressbar", { name: "执行进度：Delivery" }).closest(".owb-project-task-progress")).toHaveAttribute("data-state", "accepted"));
   });
 });
