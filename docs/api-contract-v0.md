@@ -607,6 +607,19 @@ Mem provider 在请求开始时捕获连接，使用该连接的 API 地址、�
 
 `source` 必须直接采用 `GET /goals/:goalId` 的 `taskDeliveries[taskId].source`。该投影包含最新已完成的个人会话产出，且必须属于当前任务和员工；失败、运行中、无正文或旧版无 session 的记录不能验收。`taskExecutions` 保留执行状态，并增加可选 `sessionId` 用于精确回看。
 
+`GET /goals/:goalId` also returns optional `taskExecutions[taskId].progress`
+(`TaskProgressSnapshot`) and `errorCode` for the latest matching execution.
+Progress is resolved by the exact turn and employee, including persisted
+snapshots outside the recent progress list. Missing historical snapshots omit
+`progress`; they do not imply zero progress. This response-only evidence is
+never written to the goal plan. `turn.progress` uses `taskId = turnId`, so
+clients join it through `taskExecutions[taskId].turnId` and isolate updates by
+workspace, employee, and execution attempt. The five workbench stages measure
+execution phases, not business completion or ETA. A completed run still needs
+explicit delivery acceptance. Project clients refresh execution evidence on
+turn lifecycle events and SSE reconnection, with the existing bounded polling
+fallback; a stale phase alone is not proof that an Agent has stopped.
+
 接受必须覆盖项目全部非空验收标准并逐项通过；拒绝必须带非空 `note`。成功返回 `{ "record": GoalTaskAcceptanceRecord }`。裁决使用 `goal-task-acceptance.v1`，`scope` 固定为 `goal-task`，复用 `acceptance.v1` 的决定与逐项校验规则，不创建 Space。记录包含计划版本、标准快照和产出 digest，与任务的 `done` / `review` 状态在同一 goal 文件原子保存。
 
 工作区、计划或产出变化返回 409 `goal_conflict`；同一幂等键与同一请求重试返回原记录，不同请求重用键返回 409。已有执行的任务不能通过普通 `PATCH workItems` 伪造完成；无执行的人工计划仍可直接更新规划状态。每个 goal 最多保留 64 条验收记录，达到上限拒绝新写入，不静默删除历史。旧版本的严格读取器不支持 `taskAcceptances`，降级前需保留数据备份。
