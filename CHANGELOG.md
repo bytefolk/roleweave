@@ -7,6 +7,7 @@
 
 ### Fixed
 
+- #611: Preserve complete Codex employee questions and thread context on Windows by sending prompts through stdin. Chinese, multiline and long requests no longer lose their content through `.cmd` launchers; input-pipe failures produce a typed error.
 - #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
 
 ## [0.5.0] — 2026-10-16
