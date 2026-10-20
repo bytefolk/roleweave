@@ -1,4 +1,5 @@
 import type { TurnRecordStatus } from "./turns.js";
+import type { TaskProgressSnapshot } from "./turn-progress.js";
 import { validateAcceptanceDecisionInput, type AcceptanceDecision, type AcceptanceVerdict } from "./acceptance.js";
 
 /**
@@ -99,6 +100,9 @@ export interface GoalTaskExecution {
   status: TurnRecordStatus;
   startedAt?: string;
   completedAt?: string;
+  errorCode?: string;
+  /** Transient execution evidence; never part of the human-owned goal plan. */
+  progress?: TaskProgressSnapshot;
 }
 
 export const goalStatuses = ["open", "in_progress", "completed", "cancelled"] as const;

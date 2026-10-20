@@ -252,6 +252,7 @@ export function projectTaskExecutions(goal: Goal, turns: readonly TurnRecord[], 
     positionId: turn.positionId,
     ...(turn.conversationRef !== undefined && turn.conversationRef === turn.conversationId && !turn.groupRef ? { sessionId: turn.conversationRef } : {}),
     status: turn.status === "running" && !isRunning(turn) ? "indeterminate" : turn.status,
+    ...(turn.error?.code ? { errorCode: turn.error.code } : {}),
     startedAt: turn.createdAt,
     ...(turn.status === "running" ? {} : { completedAt: turn.updatedAt }),
   }]));

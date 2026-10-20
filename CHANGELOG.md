@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- #615: Show per-task execution progress in project cards, schedule rows, and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect, and keep completed execution separate from delivery acceptance.
+
 ### Fixed
 
 - #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
