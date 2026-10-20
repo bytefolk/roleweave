@@ -92,6 +92,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/claude-binary.js",
   "dist/src/claude-workspace-tools.js",
   "dist/src/codex-binary.js",
+  "dist/src/codex-model-catalog.js",
   "dist/src/config.js",
   "dist/src/context-export/adapter-cli.js",
   "dist/src/context-export/exporter.js",
