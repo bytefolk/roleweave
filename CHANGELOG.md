@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- #615: Validate Windows process ancestry by creation time so reused parent PIDs cannot attach unrelated processes to the packaged-app smoke test or its cleanup tree.
 - #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
 
 ## [0.5.0] — 2026-10-16
