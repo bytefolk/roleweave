@@ -2010,6 +2010,59 @@ test("codex turn run: a provider reconnect loop fails with the provider message 
   assert.equal(result.code, 0);
 });
 
+for (const engine of ["codex", "codex-local"] as const) {
+  for (const jsonEnvelope of [false, true]) {
+    test(`Codex model access rejection is actionable without fallback (${engine}, JSON=${jsonEnvelope})`, { skip: codexSkip }, async t => {
+      const dir = await makeWorkspace(), fixture = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-codex-model-access-"));
+      t.after(() => Promise.all([fs.rm(dir, { force: true, recursive: true }), fs.rm(fixture, { force: true, recursive: true })]));
+      const message = "The 'gpt-6-luna' model is not supported when using Codex with a ChatGPT account.";
+      const providerError = jsonEnvelope ? JSON.stringify({ type: "error", status: 400, error: { type: "invalid_request_error", message } }) : message;
+      const argsFile = path.join(fixture, "args.json");
+      const fake = await writeFakeCodex(fixture, `#!/usr/bin/env node
+require('node:fs').appendFileSync(${JSON.stringify(argsFile)}, JSON.stringify(process.argv.slice(2)) + "\\n");
+console.log(JSON.stringify({ type: 'error', message: ${JSON.stringify(providerError)} }));
+console.log(JSON.stringify({ type: 'turn.failed', error: { message: ${JSON.stringify(providerError)} } }));`);
+      const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+        stdin: JSON.stringify({ input: "Where is the workspace?" }),
+        env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: engine, DIGITAL_EMPLOYEE_CODEX_COMMAND: fake, ROLEWEAVE_TURN_MODEL: "gpt-6-luna" },
+      });
+      const events = codexEvents(result.stdout);
+      assert.equal(result.code, 0);
+      assert.equal(events.filter(event => event.type === "run.failed").length, 1);
+      assert.equal(events.some(event => event.type === "run.completed" || event.type === "model.delta"), false);
+      const error = events.at(-1)?.error as Record<string, unknown>;
+      assert.equal(error.code, "codex.model_access_denied");
+      assert.equal(error.retryable, false);
+      assert.match(String(error.message), /ChatGPT login/);
+      assert.match(String(error.message), /Choose another model/);
+      assert.match(String(error.message), /does not verify access/);
+      assert.doesNotMatch(String(error.message), /invalid_request_error|"status"|gpt-6-luna/);
+      const invocations = (await fs.readFile(argsFile, "utf8")).trim().split("\n");
+      assert.equal(invocations.length, 1, "must not probe or retry with a substituted model");
+      const args = JSON.parse(invocations[0]!) as string[];
+      assert.equal(args[args.indexOf("--model") + 1], "gpt-6-luna");
+    });
+  }
+}
+
+for (const [message, code] of [
+  ['{"status":400,"error":{"type":"invalid_request_error","message":"Invalid input schema"}}', "codex.turn_failed"],
+  ["unexpected status 401 Unauthorized", "codex.authentication_failed"],
+  ["unexpected status 403 Forbidden", "codex.access_denied"],
+  ["Stream disconnected before completion", "codex.turn_failed"],
+]) {
+  test(`Codex does not classify unrelated errors as model access: ${code} (${message})`, { skip: codexSkip }, async t => {
+    const dir = await makeWorkspace(), fixture = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-codex-model-control-"));
+    t.after(() => Promise.all([fs.rm(dir, { force: true, recursive: true }), fs.rm(fixture, { force: true, recursive: true })]));
+    const fake = await writeFakeCodex(fixture, `#!/usr/bin/env node
+console.log(JSON.stringify({type: 'turn.failed', error: { message: ${JSON.stringify(message)} }}));`);
+    const result = await runAdapter(["turn", "run", dir, "--position", "engineer", "--stdin"], {
+      stdin: '{"input":"run"}', env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex-local", DIGITAL_EMPLOYEE_CODEX_COMMAND: fake },
+    });
+    assert.equal((codexEvents(result.stdout).at(-1)?.error as Record<string, unknown>).code, code);
+  });
+}
+
 test("Codex access-denied HTML is an actionable connection failure and never task output", { skip: codexSkip }, async t => {
   const dir = await makeWorkspace(), fixture = await fs.mkdtemp(path.join(os.tmpdir(), "roleweave-codex-403-"));
   t.after(() => Promise.all([fs.rm(dir, { force: true, recursive: true }), fs.rm(fixture, { force: true, recursive: true })]));

@@ -103,6 +103,9 @@ export function ConversationOptions({ config, engine, saving, disabled, loading 
   const contextPanel = useRef<HTMLElement | null>(null);
   const usagePanel = useRef<HTMLElement | null>(null);
   const completed = turns.filter((turn) => !turn.provisional && turn.status !== "running");
+  const codex = engine === "codex" || engine === "codex-local";
+  const lastModelAttempt = codex ? completed.filter((turn) => turn.engine === engine && turn.model === config?.selected).at(-1) : undefined;
+  const modelWasRejected = lastModelAttempt?.status === "failed" && lastModelAttempt.errorCode === "codex.model_access_denied";
   const reported = completed.filter((turn) => turn.totalTokens !== undefined);
   const total = reported.reduce((sum, turn) => sum + turn.totalTokens!, 0);
   // The latest completed turn is authoritative. Do not surface an older
@@ -211,6 +214,8 @@ export function ConversationOptions({ config, engine, saving, disabled, loading 
             </Tooltip> : null}
           </div>
           {config.catalogStatus && config.catalogStatus !== "ready" ? <p className="owb-model-menu__catalog-status" role="status">{t(`model.catalog.${config.catalogStatus}`)}</p> : null}
+          {codex ? <p className="owb-model-menu__catalog-status" role="note">{t("model.codexAccessUnverified")}</p> : null}
+          {modelWasRejected ? <p className="owb-model-menu__catalog-status" role="alert">{t("model.codexLastRejected")}</p> : null}
           {connection ? <div className="owb-model-menu__connection"><ConnectionSummary connection={connection} /></div> : null}
           {menu}
           {config.allowCustomModel && !connectionInvalid && onModel ? <CustomModelEntry strict={config.customModelFormat === "strict"} /> : null}

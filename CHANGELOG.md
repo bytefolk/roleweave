@@ -7,6 +7,8 @@
 
 ### Fixed
 
+- Explain Codex ChatGPT-login model rejections with localized recovery and distinguish model catalog discovery from verified access (#613).
+
 - #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
 
 ## [0.5.0] — 2026-10-16

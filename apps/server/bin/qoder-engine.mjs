@@ -1868,6 +1868,12 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
       code = "codex.authentication_failed";
       message = "Codex 登录验证失败（401）。请在当前运行环境重新登录 Codex 后再试。";
       retryable = false;
+    } else if (/\bmodel is not supported when using Codex with a ChatGPT account\b/i.test(message)) {
+      // Catalog discovery is not an inference entitlement check. Keep this
+      // specific rejection distinct from malformed requests or login failures.
+      code = "codex.model_access_denied";
+      message = "The selected model was rejected for this Codex ChatGPT login. Choose another model or check the login in the same Codex CLI before resending. Refreshing the model list does not verify access.";
+      retryable = false;
     }
     emit({
       type: "run.failed",
