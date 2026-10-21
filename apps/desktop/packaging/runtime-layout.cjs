@@ -77,6 +77,7 @@ const SERVER_RUNTIME_FILES = [
   "src/windows-launcher.js",
   "dist/src/agent-binding.js",
   "dist/src/agent-registry.js",
+  "dist/src/approvals/aging-overlay.js",
   "dist/src/approvals/context.js",
   "dist/src/approvals/delivery.js",
   "dist/src/approvals/policy.js",

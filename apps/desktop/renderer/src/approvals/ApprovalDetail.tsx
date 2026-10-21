@@ -116,6 +116,11 @@ function SelectedApprovalDetail({
                     {t("apr.riskOverlay")}: {t(`apr.risk.${context.riskOverlay}`)} · {t("apr.suggestionNotAdopted")}
                   </Tag>
                 ) : null}
+                {context.agingOverlay ? (
+                  <Tag data-testid="approval-aging-overlay">
+                    {t("apr.agingOverlay")}: {t(`apr.aging.${context.agingOverlay}`)}
+                  </Tag>
+                ) : null}
               </>
             ) : null}
             {permissionMode ? (
