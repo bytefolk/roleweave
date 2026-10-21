@@ -122,6 +122,8 @@ export interface TurnRecord {
 }
 
 export interface CreateTurnRequest {
+  /** Local optimistic display only; never forwarded as server authority. */
+  attachments?: TurnAttachment[];
   positionId: string;
   engine: TurnEngine;
   input: string;

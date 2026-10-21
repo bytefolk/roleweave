@@ -694,6 +694,9 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
   }
 
   turnRun(request: TurnRunRequest): Promise<TurnRunResult> {
+    if (request.imagePaths?.length && (!this.bundledElectronEngine || !["codex", "codex-local"].includes(request.engine))) {
+      return Promise.resolve({ status: "indeterminate", events: [], diagnostic: "image inputs require the bundled Codex driver", code: "attachment_images_unsupported" });
+    }
     // An external digital-employee CLI cannot execute this bundled-only Host.
     // Reject before even starting the external engine so identity cannot fall
     // through to a different Host or leak a WorkBuddy service credential.
@@ -949,7 +952,10 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         // close/error classification remains authoritative; EPIPE is expected
         // when the child rejects before consuming the envelope.
       });
-      child.stdin?.end(JSON.stringify(request.envelope));
+      // Keep the frozen envelope byte-for-byte for external CLIs. This extra
+      // field is private to our bundled adapter, separate from prompt text.
+      child.stdin?.end(JSON.stringify(request.imagePaths?.length
+        ? { ...request.envelope, roleweaveImagePaths: request.imagePaths } : request.envelope));
     });
   }
 }

@@ -6,6 +6,7 @@ import { useT } from "@roleweave/ui";
 import { DiagnosticNotice, type AvailabilityCheck, type NoticeAction } from "../DiagnosticNotice";
 import type { PendingAttachment } from "./types";
 import { PendingAttachmentCard } from "./AttachmentCard";
+import { inputFeedback } from "./input-feedback";
 import "./composer-toolbar.css";
 
 export interface TurnComposerProps {
@@ -71,7 +72,11 @@ export function TurnComposer({
   const composing = useRef(false);
   const pendingCaret = useRef<{ input: HTMLTextAreaElement; value: string; offset: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const hasContent = value.trim().length > 0 || attachments.some((a) => a.status === "ready");
+  const feedback = inputFeedback(value, attachments);
+  const hasContent = feedback === null;
+  const failedUpload = attachments.find(a => a.status === "error");
+  const inputHint = !running && feedback && (attachments.length > 0 || value.trim().length > 0)
+    ? t(feedback) + (failedUpload?.error ? ` (${failedUpload.fileName}: ${failedUpload.error})` : "") : undefined;
   useLayoutEffect(() => {
     const pending = pendingCaret.current;
     pendingCaret.current = null;
@@ -162,7 +167,7 @@ export function TurnComposer({
                   aria-keyshortcuts="Meta+. Control+." loading={cancelling}
                   icon={<Square aria-hidden="true" size={15} />} onClick={() => void onCancel()} />
               </span>
-            </Tooltip> : <Tooltip title={disabledSummary ?? disabledReason ?? (hasContent ? sendShortcut === "mod-enter" ? copy.modEnterHint : t("turn.keyboardHint") : copy.emptySend)} trigger={["hover", "focus"]}>
+            </Tooltip> : <Tooltip title={disabledSummary ?? disabledReason ?? inputHint ?? (hasContent ? sendShortcut === "mod-enter" ? copy.modEnterHint : t("turn.keyboardHint") : copy.emptySend)} trigger={["hover", "focus"]}>
               <span className="owb-turn-composer__action-trigger" tabIndex={disabledReason !== null || !hasContent ? 0 : undefined}>
                 <AntButton type="primary" htmlType="submit" disabled={disabledReason !== null || !hasContent}
                   aria-label={t("turn.send")} aria-keyshortcuts={sendShortcut === "mod-enter" ? "Meta+Enter Control+Enter" : "Enter"}
@@ -172,6 +177,7 @@ export function TurnComposer({
           </div>
         </div>
       </div>
+      {inputHint ? <p className="owb-turn-composer__hint" role="status">{inputHint}</p> : null}
       {!running && disabledReason ? (
         <DiagnosticNotice className="owb-turn-composer__hint"
           message={disabledSummary ?? disabledReason}

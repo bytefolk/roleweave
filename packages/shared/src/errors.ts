@@ -44,6 +44,9 @@ export const errorCodes = {
   position_profile_invalid: "position_profile_invalid",
   /** POST /turns shape or input is invalid. */
   turn_request_invalid: "turn_request_invalid",
+  turn_input_empty: "turn_input_empty",
+  turn_input_too_large: "turn_input_too_large",
+  attachment_images_unsupported: "attachment_images_unsupported",
   /** The selected Host is outside the contracted D3 turn engine allowlist. */
   turn_engine_unsupported: "turn_engine_unsupported",
   /** The position id is malformed and cannot be used as local state path. */

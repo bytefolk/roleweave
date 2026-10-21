@@ -626,6 +626,8 @@ fallback; a stale phase alone is not proof that an Agent has stopped.
 
 ## 3. 稳定错误码登记表
 
+附件发送校验（#627 加法）：`turn_input_empty`（400，缺少文字任务说明）、`turn_input_too_large`（400，文字 UTF-8 超过 256 KiB）、`attachment_images_unsupported`（400，所选接入不支持直接图片输入；外部 CLI driver 拒绝该输入时也用作回合结果码）。仅 bundled Codex / codex-local 将当前请求中经会话校验的图片作为原生图片输入；私有 adapter 字段不改变冻结的上游 envelope。重试沿用原回合附件；更换附件必须作为新任务发送。
+
 控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）；hire 通道码（#33 加法）：`hire_request_invalid`（400 形状级）、`hire_position_exists`（409 重名）；群聊通道码（#52 加法）：`group_request_invalid`（400 形状级）、`group_missing`（404）、`group_conflict`（409 重复成员/成员上限）、`group_storage_failed`（500 fail-closed）；员工档案通道码（#291 加法）：`position_profile_invalid`（400 形状级，含权限投影的边界校验）。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 

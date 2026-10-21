@@ -9,6 +9,14 @@ const {
 
 const sessionId = "11111111-1111-4111-8111-111111111111";
 
+test("input failures distinguish missing instructions from oversized UTF-8 text", () => {
+  const base = { sessionId, engine: "codex-local", attachmentIds: [sessionId] };
+  assert.equal(validateSessionTurnRequest({ ...base, input: "  " }).response.body.code, "turn_input_empty");
+  assert.equal(validateSessionTurnRequest({ ...base, input: "汉".repeat(87382) }).response.body.code, "turn_input_too_large");
+  assert.equal(validateSessionTurnRequest({ ...base, input: "汉".repeat(87381) + "x" }).ok, true);
+  assert.equal(validateSessionTurnRequest({ ...base, input: null }).response.body.code, "turn_request_invalid");
+});
+
 test("project session IPC forwards only expected plan/workspace references and requires a task binding", () => {
   const taskBriefing = { expectedWorkspacePath: "/workspace", expectedUpdatedAt: "2026-10-21T00:00:00Z" };
   const value = { sessionId, input: "start", engine: "qoder", goalId: "goal-one", branchId: "task-one", taskBriefing };

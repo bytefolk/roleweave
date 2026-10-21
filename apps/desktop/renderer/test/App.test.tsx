@@ -1355,6 +1355,38 @@ describe("App runtime bridge", () => {
     expect(bridge.position).toHaveBeenCalledWith("repo-owner");
   });
 
+  it("shows attached images beside their text before HTTP acceptance and throughout streaming", async () => {
+    let listener: ((event: unknown) => void) | undefined;
+    let finish!: (value: unknown) => void;
+    const attachment = { id: "22222222-2222-4222-8222-222222222222", fileName: "screenshot.png", mimeType: "image/png" as const, sizeBytes: 4 };
+    const completed = apiTurn({ turnId: "image-turn", runId: "image-run", input: "分析截图", attachments: [attachment] });
+    const bridge = openedBridge({
+      uploadAttachment: vi.fn().mockResolvedValue({ status: 200, body: { attachment } }),
+      onEvent: vi.fn((callback: (event: unknown) => void) => { listener = callback; return () => {}; }),
+      createSessionTurn: vi.fn(() => new Promise(resolve => { finish = resolve; })) as OwbBridge["createSessionTurn"],
+      sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }),
+    });
+    const { container } = render(<App />);
+    await selectRepoOwner();
+    const file = new File(["data"], "screenshot.png", { type: "image/png" });
+    Object.defineProperty(file, "arrayBuffer", { value: async () => new Uint8Array([1, 2, 3, 4]).buffer });
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText(/已添加附件，请补充说明/)).toBeVisible());
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "分析截图" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+    await waitFor(() => expect(bridge.createSessionTurn).toHaveBeenCalled());
+    const row = () => container.querySelector(".owb-bubble--operator")!;
+    expect(row()).toHaveTextContent("分析截图");
+    expect(row()).toHaveTextContent("screenshot.png");
+    expect(vi.mocked(bridge.createSessionTurn).mock.calls[0]![0]).not.toHaveProperty("attachments");
+    act(() => listener?.({ seq: 1, type: "turn.started", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "image-run", timestamp: "2026-10-21T00:00:00Z", type: "run.started" } }));
+    expect(row()).toHaveTextContent("screenshot.png");
+    vi.mocked(bridge.sessionTurnHistory).mockResolvedValue({ status: 200, body: history([completed]) });
+    await act(async () => finish({ status: 200, body: completed }));
+    await waitFor(() => expect(container.querySelectorAll(".owb-bubble--operator")).toHaveLength(1));
+    expect(row()).toHaveTextContent("screenshot.png");
+  });
+
   it("edits the right-clicked employee's record from the tree menu without moving the selection", async () => {
     const docsPosition = { ...position, id: "docs-writer", name: "文档工程师", description: "维护文档", reportTo: "repo-owner" };
     const twoNodeSnapshot = {
