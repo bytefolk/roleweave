@@ -83,3 +83,17 @@ test("session retry IPC forwards only a bounded server turn identity", () => {
   }
   assert.equal(validateSessionTurnRequest({ sessionId, input: "try again", engine: "qoder", retryOf, principal: "admin" }).ok, false);
 });
+
+test("relay step IPC forwards operator requirements only for selected relay members", () => {
+  const { validateGroupTurnRequest } = require("../src/group-ipc.cjs");
+  const value = { conversationRef: "group-one", engine: "qoder", input: "draft then review", mentions: ["writer", "reviewer"], mode: "relay" };
+  const relaySteps = [{ positionId: "reviewer", instruction: "Check the sources" }];
+  assert.deepEqual(validateGroupTurnRequest({ ...value, relaySteps }).request.relaySteps, relaySteps);
+  assert.equal(validateGroupTurnRequest({ ...value, relaySteps: [] }).request.relaySteps, undefined);
+  for (const bad of [
+    { ...value, mode: "parallel", relaySteps }, { ...value, relaySteps: [...relaySteps, ...relaySteps] },
+    { ...value, relaySteps: [{ positionId: "other", instruction: "x" }] },
+    { ...value, relaySteps: [{ ...relaySteps[0], instruction: "汉".repeat(1366) }] },
+    { ...value, relaySteps: [{ ...relaySteps[0], sources: [] }] },
+  ]) assert.equal(validateGroupTurnRequest(bad).ok, false);
+});

@@ -7,6 +7,10 @@
 
 ### Added
 
+- #617：接力任务支持可选本步要求，以及与模型输入一致的交接快照；可查看前序结果来源、裁剪和过滤提示，共享现有上下文预算并去除重复来源。新增本地记录字段，降级旧版本前请备份工作区。
+
+### Added
+
 - #615: Show per-task execution progress in project cards, schedule rows, and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect, and keep completed execution separate from delivery acceptance.
 - #466：审批队列和详情展示可选 Jev 老化建议（`nudge` / `wait` / `discuss-close`），仅为文案。出站载荷只有 `{ createdAt, now, decision.kind, risk }`。overlay 不得隐藏 pending high，不得 POST decision，点击只打开事项。过期仍走现有 clock helpers。`ROLEWEAVE_LAYA_ENABLED` 默认关。https://github.com/bytefolk/roleweave/issues/422
 

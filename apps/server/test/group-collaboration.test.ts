@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import type { EngineEvent, GroupConversation, GroupTimeline, TurnRecord, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
+import { serializeRelayHandoff, snapshotRelayHandoff } from "../src/turns/relay-handoff.js";
+import { isTurnRecord } from "../src/turns/store.js";
 import { RelayStopCoordinator } from "../src/groups/relay-stop.js";
 import type { LayaAsk } from "../src/laya/client.js";
 import { api, connectSse, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
@@ -107,7 +109,7 @@ test("relay waits for trusted completion, forwards the draft, and keeps the user
   const { server, workspace, group } = await setup(driver);
   try {
     const accepted = await api(server.baseUrl, "/groups/" + group.conversationRef + "/turns", {
-      method: "POST", token: server.token, body: { input: "Write then review the report", engine: "qoder", mentions: group.members, mode: "relay" },
+      method: "POST", token: server.token, body: { input: "Write then review the report", engine: "qoder", mentions: group.members, mode: "relay", relaySteps: [{ positionId: "release-engineer", instruction: "Verify citations and list unresolved questions" }] },
     });
     assert.equal(accepted.status, 202);
     await until(() => driver.calls.length === 1, "first relay employee should start");
@@ -119,8 +121,35 @@ test("relay waits for trusted completion, forwards the draft, and keeps the user
     assert.equal(driver.calls[1]!.positionId, "release-engineer");
     assert.match(driver.calls[1]!.envelope.input, /DRAFT-FROM-WRITER-214/);
     assert.match(driver.calls[1]!.envelope.input, /handoff/);
+    const runningTimeline = await timeline(server, group);
+    const runningReviewer = runningTimeline.items.find(item => item.kind === "member" && item.turn.positionId === "release-engineer");
+    assert.ok(runningReviewer?.kind === "member" && runningReviewer.turn.relayHandoff);
+    const savedSnapshot = structuredClone(runningReviewer.turn.relayHandoff);
+    assert.equal(isTurnRecord(runningReviewer.turn), true);
+    for (const mismatch of [
+      { ...savedSnapshot.payload, turnId: crypto.randomUUID() },
+      { ...savedSnapshot.payload, conversationRef: crypto.randomUUID() },
+      { ...savedSnapshot.payload, generatedAt: "2020-01-01T00:00:00.000Z" },
+      { ...savedSnapshot.payload, step: { ...savedSnapshot.payload.step, positionId: "foreign-member" } },
+    ]) {
+      assert.equal(isTurnRecord({ ...runningReviewer.turn, relayHandoff: snapshotRelayHandoff(mismatch) }), false,
+        "a valid digest cannot attach another execution's snapshot to this turn");
+    }
+    assert.ok(driver.calls[1]!.envelope.input.includes(serializeRelayHandoff(savedSnapshot.payload)));
+    assert.equal(savedSnapshot.payload.instruction, "Verify citations and list unresolved questions");
+    assert.equal(savedSnapshot.payload.sources[0]?.turnId, driver.calls[0]!.envelope.turnId);
+    assert.equal(driver.calls[1]!.envelope.input.split("DRAFT-FROM-WRITER-214").length - 1, 1);
+    assert.equal(runningReviewer.turn.threadContext?.sourceTurnCount, 1);
     driver.finish(1, "Reviewed final report");
     const turns = await settled(server, group);
+    assert.deepEqual(turns.find(turn => turn.positionId === "release-engineer")?.relayHandoff, savedSnapshot);
+    const restarted = await startTestServer(undefined, driver);
+    try {
+      await open(restarted, workspace);
+      const restored = await settled(restarted, group);
+      assert.deepEqual(restored.find(turn => turn.positionId === "release-engineer")?.relayHandoff, savedSnapshot);
+      assert.equal(driver.calls.length, 2);
+    } finally { await restarted.close(); }
     assert.ok(turns.every((turn) => turn.input === "Write then review the report"));
     assert.ok(turns.every((turn) => turn.status === "completed"));
   } finally { driver.settleAll(); await server.close(); await fs.rm(workspace, { recursive: true, force: true }); }
@@ -506,4 +535,42 @@ test("relay mention order is unchanged when STOP advice is disabled, abstains, i
       await fs.rm(workspace, { recursive: true, force: true });
     }
   }
+});
+
+
+test("invalid relay requirements are rejected before acceptance and model execution", async () => {
+  const driver = new ControlledDriver();
+  const { server, workspace, group } = await setup(driver);
+  try {
+    for (const extra of [
+      { mode: "parallel", relaySteps: [{ positionId: "repo-owner", instruction: "x" }] },
+      { mode: "relay", relaySteps: [{ positionId: "outsider", instruction: "x" }] },
+      { mode: "relay", relaySteps: [{ positionId: "repo-owner", instruction: "汉".repeat(1366) }] },
+      { mode: "relay", relaySteps: [{ positionId: "repo-owner", instruction: "x", sources: [] }] },
+    ]) {
+      const response = await api(server.baseUrl, "/groups/" + group.conversationRef + "/turns", {
+        method: "POST", token: server.token, body: { input: "Draft then review", engine: "qoder", mentions: group.members, ...extra },
+      });
+      assert.equal(response.status, 400);
+    }
+    assert.equal(driver.calls.length, 0);
+    assert.equal((await timeline(server, group)).items.length, 0);
+  } finally { await server.close(); await fs.rm(workspace, { recursive: true, force: true }); }
+});
+
+test("relay budget failure is durable and explicit without a model call or an invented used snapshot", async () => {
+  const driver = new ControlledDriver();
+  const { server, workspace, group } = await setup(driver);
+  try {
+    const response = await api(server.baseUrl, "/groups/" + group.conversationRef + "/turns", {
+      method: "POST", token: server.token, body: { input: "x".repeat(256 * 1024), engine: "qoder", mentions: group.members, mode: "relay" },
+    });
+    assert.equal(response.status, 202);
+    const turns = await settled(server, group);
+    assert.equal(driver.calls.length, 0);
+    assert.ok(turns.every(turn => turn.relayHandoff === undefined));
+    assert.equal(turns.find(turn => turn.positionId === "repo-owner")?.error?.code, "group_handoff_invalid");
+    assert.match(turns.find(turn => turn.positionId === "repo-owner")?.error?.message ?? "", /insufficient space/);
+    assert.equal(turns.find(turn => turn.positionId === "release-engineer")?.error?.code, "group_relay_blocked");
+  } finally { await server.close(); await fs.rm(workspace, { recursive: true, force: true }); }
 });

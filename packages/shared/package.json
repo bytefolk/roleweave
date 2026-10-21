@@ -68,12 +68,18 @@
     "./experiments": {
       "types": "./dist/experiments.d.ts",
       "import": "./dist/experiments.js"
+    },
+    "./relay-steps": {
+      "types": "./dist/relay-steps.d.ts",
+      "import": "./dist/relay-steps.js",
+      "require": "./relay-steps.cjs"
     }
   },
   "files": [
     "dist",
     "position-id.cjs",
     "turn-engines.cjs",
-    "pending-approval.cjs"
+    "pending-approval.cjs",
+    "relay-steps.cjs"
   ]
 }

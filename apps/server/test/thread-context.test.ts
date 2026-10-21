@@ -112,6 +112,7 @@ test("thread context read bound follows injected changes to either source limit"
       const limits = await import(limitsUrl) as typeof import("../src/history-limits.js");
       const context = await import(moduleUrl(contextSource
         .replace('"../history-limits.js"', JSON.stringify(limitsUrl))
+        .replace('"./relay-handoff.js"', JSON.stringify(new URL('../src/turns/relay-handoff.js', import.meta.url).href))
         .replace('"@roleweave/shared"', JSON.stringify(import.meta.resolve("@roleweave/shared"))))) as typeof import("../src/turns/thread-context.js");
       const expected = limits.MAX_TURNS_PER_POSITION * limits.MAX_GROUP_MEMBERS + limits.MAX_GROUP_MEMBERS;
       assert.equal(limits.THREAD_CONTEXT_MAX_OMITTED_TURNS, expected);
