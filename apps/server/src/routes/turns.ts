@@ -22,6 +22,7 @@ import { createTurnEnvelope } from "../turns/envelope.js";
 import { withResponsePresentation } from "../turns/response-format.js";
 import { DeltaForwarder } from "../turns/delta-forwarder.js";
 import { assertPositionId, compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
+import type { RelayExecutionContext } from "../turns/relay-handoff.js";
 import { compactThreadContextHistory, materializeThreadContext, type SupplementalContext, type ThreadContextSource } from "../turns/thread-context.js";
 import { readPositionAgentBinding, resolvePositionAgentEngine } from "../agent-binding.js";
 import { employeeModelConfig } from "../model-selection.js";
@@ -235,6 +236,7 @@ export async function executeTurn(
   supplementalContext?: readonly SupplementalContext[],
   expectedWorkspace?: OpenWorkspace,
   approvalExecution?: { turnId: string; reservation: RunningTurnReservation; beforeRun: () => Promise<void> },
+  options?: { relay: RelayExecutionContext },
 ): Promise<TurnRecord> {
   const workspace = expectedWorkspace ?? ctx.workspace.requireOpen();
   assertTurnWorkspace(ctx, workspace);
@@ -308,6 +310,11 @@ export async function executeTurn(
       turnId, positionId: body.positionId, engine: body.engine,
       ...(session !== undefined ? { sessionId: session.sessionId, conversationRef: session.sessionId } : {}),
     }) };
+    const relay = options?.relay;
+    if (relay && (!group || relay.message.conversationRef !== group.groupRef || relay.message.messageId !== group.messageId)) {
+      throw new OrgApiError(errorCodes.turn_request_invalid, 400, "relay does not belong to this group dispatch");
+    }
+    const relaySourceIds = new Set(relay?.sources.map(source => source.turnId));
     let history: ThreadContextSource[] = [];
     let omittedTurnCount = 0;
     let historyTruncated = false;
@@ -332,7 +339,7 @@ export async function executeTurn(
           seen.add(spawn.turnId);
           try {
             const source = await ctx.turnStore.readPositionTurn(workspace.dir, spawn.positionId, spawn.turnId, createdAt);
-            if (source === null || !belongs(source) || source.status !== "completed") continue;
+            if (source === null || !belongs(source) || source.status !== "completed" || relaySourceIds.has(source.turnId)) continue;
             const candidates = memberSources.get(spawn.positionId) ?? [];
             candidates.push(source);
             candidates.sort(compare);
@@ -355,7 +362,7 @@ export async function executeTurn(
         if (!conversation.members.includes(member)) continue;
         try {
           const legacy = await ctx.turnStore.history(workspace.dir, member, createdAt);
-          const compact = compactThreadContextHistory(legacy.turns.filter((turn) => belongs(turn) && !seen.has(turn.turnId)));
+          const compact = compactThreadContextHistory(legacy.turns.filter((turn) => belongs(turn) && !seen.has(turn.turnId) && !relaySourceIds.has(turn.turnId)));
           history.push(...compact.turns);
           omittedTurnCount += compact.omittedTurnCount;
           historyTruncated ||= compact.truncated;
@@ -396,6 +403,7 @@ export async function executeTurn(
       truncated: historyTruncated,
       redacted: historyRedacted,
       ...(supplementalContext !== undefined ? { supplementalContext } : {}),
+      ...(relay ? { relay: { ...relay, turnId, positionId: body.positionId, generatedAt: createdAt } } : {}),
     });
     tracker.reportStepFinish(turnId, 0);
     tracker.reportStepStart(turnId, 1);
@@ -422,6 +430,7 @@ export async function executeTurn(
       message: body.input,
       envelopeDigest: envelope.envelopeDigest,
       ...(session !== undefined || group !== undefined || supplementalContext !== undefined ? { threadContext: context.metadata } : {}),
+      ...(context.relayHandoff ? { relayHandoff: context.relayHandoff } : {}),
       now: createdAt,
       // Additive #52: group spawns persist through the position store tagged
       // with the local conversationRef (session arg stays undefined). Kept as a

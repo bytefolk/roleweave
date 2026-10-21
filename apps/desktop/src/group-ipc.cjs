@@ -5,6 +5,7 @@ const { isPositionId } = require("@roleweave/shared/position-id");
 const CONVERSATION_REF = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const { TURN_ENGINE_IDS, turnEngineMessage } = require("@roleweave/shared/turn-engines");
 const TURN_ENGINES = new Set(TURN_ENGINE_IDS);
+const { isRelaySteps } = require("@roleweave/shared/relay-steps");
 const MAX_INPUT_BYTES = 256 * 1024;
 const MAX_GROUP_MEMBERS = 32;
 
@@ -84,9 +85,9 @@ function validateGroupTurnRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("group_request_invalid", "group turn must be an object") };
   }
-  const allowedKeys = new Set(["conversationRef", "input", "engine", "engines", "mentions", "mode", "goalId", "branchId"]);
+  const allowedKeys = new Set(["conversationRef", "input", "engine", "engines", "mentions", "mode", "goalId", "branchId", "relaySteps"]);
   if (Object.keys(value).some((k) => !allowedKeys.has(k))) {
-    return { ok: false, response: invalid("group_request_invalid", "group turn accepts conversationRef, input, engine, optional engines, mentions and optional mode, goalId, branchId") };
+    return { ok: false, response: invalid("group_request_invalid", "group turn accepts conversationRef, input, engine, optional engines, mentions and optional mode, relaySteps, goalId, branchId") };
   }
   if (value.mode !== undefined && value.mode !== "parallel" && value.mode !== "relay") {
     return { ok: false, response: invalid("group_request_invalid", "mode must be parallel or relay") };
@@ -110,6 +111,9 @@ function validateGroupTurnRequest(value) {
       ok: false,
       response: invalid("group_request_invalid", "mentions must be a non-empty unique positionId list; broadcast is not allowed"),
     };
+  }
+  if (value.relaySteps !== undefined && !isRelaySteps(value.relaySteps, value.mentions, value.mode)) {
+    return { ok: false, response: invalid("group_request_invalid", "relaySteps must contain unique mentioned positions and non-empty instructions (4 KiB each, 32 KiB total) in relay mode") };
   }
   let engines;
   if (value.engines !== undefined) {
@@ -144,6 +148,7 @@ function validateGroupTurnRequest(value) {
       engine: value.engine,
       ...(engines !== undefined ? { engines } : {}),
       mentions: value.mentions,
+      ...(value.relaySteps?.length ? { relaySteps: value.relaySteps } : {}),
       ...(value.mode !== undefined ? { mode: value.mode } : {}),
       ...(value.goalId !== undefined ? { goalId: value.goalId } : {}),
       ...(value.branchId !== undefined ? { branchId: value.branchId } : {}),

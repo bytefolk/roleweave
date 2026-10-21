@@ -729,9 +729,11 @@ it("sends explicit relay in selected order and restores mode, outputs and blocke
   pickSelectOption("选择要 @ 的成员", "Release Engineer");
   pickSelectOption("选择要 @ 的成员", "Repo Owner");
   expect(screen.getByText(/按选择顺序执行：Release Engineer → Repo Owner/)).toBeInTheDocument();
+  fireEvent.click(screen.getByText("本步要求（可选）"));
+  fireEvent.change(screen.getByRole("textbox", { name: "Repo Owner 的本步要求" }), { target: { value: "Verify the citations" } });
   fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), { target: { value: "next relay" } });
   fireEvent.click(screen.getByRole("button", { name: "发送群消息" }));
-  await waitFor(() => expect(bridge.createGroupTurn).toHaveBeenCalledWith({ conversationRef: group.conversationRef, input: "next relay", engine: "qoder", engines: { "release-engineer": "qoder", "repo-owner": "qoder" }, mentions: ["release-engineer", "repo-owner"], mode: "relay" }));
+  await waitFor(() => expect(bridge.createGroupTurn).toHaveBeenCalledWith({ conversationRef: group.conversationRef, input: "next relay", engine: "qoder", engines: { "release-engineer": "qoder", "repo-owner": "qoder" }, mentions: ["release-engineer", "repo-owner"], mode: "relay", relaySteps: [{ positionId: "repo-owner", instruction: "Verify the citations" }] }));
 });
 
 it("shows relay STOP advice and requires an explicit owner confirmation (#469)", async () => {
@@ -885,4 +887,22 @@ it.each([["codex-local", "Codex"], ["workbuddy", "WorkBuddy"]] as const)("blocks
   expect(screen.getByRole("button", { name: "复制诊断" })).toBeEnabled();
   fireEvent.submit(screen.getByRole("textbox", { name: "群聊消息" }).closest("form")!);
   expect(bridge.createGroupTurn).not.toHaveBeenCalled();
+});
+
+
+it("does not submit oversized step requirements or carry them into parallel mode", async () => {
+  const { bridge } = renderPanel({ createGroupTurn: vi.fn().mockResolvedValue({ status: 202, body: { conversationRef: group.conversationRef, messageId: "new-message", spawns: [] } }) });
+  await screen.findByRole("textbox", { name: "群聊消息" });
+  pickSelectOption("协作方式", "依次接力");
+  pickSelectOption("选择要 @ 的成员", "Repo Owner");
+  fireEvent.click(screen.getByText("本步要求（可选）"));
+  fireEvent.change(screen.getByRole("textbox", { name: "Repo Owner 的本步要求" }), { target: { value: "汉".repeat(1366) } });
+  fireEvent.change(screen.getByRole("textbox", { name: "群聊消息" }), { target: { value: "current task" } });
+  expect(screen.getByRole("button", { name: "发送群消息" })).toBeDisabled();
+  expect(screen.getByRole("alert")).toHaveTextContent("4 KiB");
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "协作方式" }));
+  fireEvent.click(await screen.findByText("并行处理", { selector: ".ant-select-item-option-content" }));
+  fireEvent.click(screen.getByRole("button", { name: "发送群消息" }));
+  await waitFor(() => expect(bridge.createGroupTurn).toHaveBeenCalled());
+  expect((bridge.createGroupTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0]).not.toHaveProperty("relaySteps");
 });

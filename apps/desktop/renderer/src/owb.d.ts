@@ -175,6 +175,7 @@ export interface OwbBridge {
     engines?: Record<string, TurnEngine>;
     mentions: string[];
     mode?: "parallel" | "relay";
+    relaySteps?: import("@roleweave/shared").RelayStepInstruction[];
   }): Promise<OwbApiResponse<{
     conversationRef: string;
     messageId: string;

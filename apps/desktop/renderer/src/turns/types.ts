@@ -95,6 +95,7 @@ export interface TurnRecord {
   errorCode?: string;
   diagnostic?: string;
   threadContext?: ApiTurnRecord["threadContext"];
+  relayHandoff?: ApiTurnRecord["relayHandoff"];
   /** Engine runId when the server record carries one; keys live-stream dedupe. */
   runId?: string;
   /** Live engine-reported usage; present only on provisional live rows. */

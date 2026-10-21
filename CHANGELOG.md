@@ -7,6 +7,10 @@
 
 ### Added
 
+- #617：接力任务支持可选本步要求，以及与模型输入一致的交接快照；可查看前序结果来源、裁剪和过滤提示，共享现有上下文预算并去除重复来源。新增本地记录字段，降级旧版本前请备份工作区。
+
+### Added
+
 - #615: Show per-task execution progress in project cards, schedule rows, and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect, and keep completed execution separate from delivery acceptance.
 
 ### Fixed
