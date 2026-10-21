@@ -1395,9 +1395,9 @@
   line-height: 1.45;
 }
 
-/* Scoped to the textarea surface: the composer may host other buttons
-   (group @mention chips, #52/#53) that must stay in normal flow. */
-.owb-turn-composer__surface button {
+/* Legacy group composer: only the direct send button uses absolute positioning.
+   Attachment actions and compact toolbar controls own their layout. */
+.owb-turn-composer__surface > button {
   position: absolute;
   right: 8px;
   bottom: 8px;
@@ -1422,7 +1422,7 @@
    pair `--ui-surface-raised` / `--ui-foreground-subtle` instead: it is the
    same pairing contrast.test.cjs already holds to ≥4.5:1 on every surface in
    both themes, and it reads as "receded/inactive" without going illegible. */
-.owb-turn-composer__surface button:disabled {
+.owb-turn-composer__surface > button:disabled {
   background: var(--ui-surface-raised);
   color: var(--ui-foreground-subtle);
   cursor: not-allowed;

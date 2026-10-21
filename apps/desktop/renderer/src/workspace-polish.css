@@ -219,7 +219,7 @@
   min-height: 112px; padding: 14px 14px 42px; border: 0; border-radius: 12px;
   background: transparent; box-shadow: none; font-family: var(--ui-font-sans); font-size: 14px; line-height: 1.6; resize: none;
 }
-[data-theme] .owb-app .owb-turn-composer__surface button { right: 10px; bottom: 10px; border-radius: 8px; }
+[data-theme] .owb-app .owb-turn-composer__surface > button { right: 10px; bottom: 10px; border-radius: 8px; }
 [data-theme] .owb-app .owb-turn-composer__shortcut { margin: 7px 0 0; text-align: right; color: var(--ui-foreground-subtle); font-size: 11px; }
 [data-theme] .owb-app .owb-turn-composer__hint { margin: 8px 0 0; line-height: 1.6; overflow-wrap: anywhere; }
 [data-theme] .owb-app .owb-sr-only {

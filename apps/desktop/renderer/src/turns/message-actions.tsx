@@ -69,6 +69,6 @@ export function OperatorMessage({ turn, onEdit }: { turn: TurnRecord; onEdit?: (
       </div>
     ) : null}
     {long ? <button className="owb-message-expand" type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? copy.collapse : copy.expand}</button> : null}
-    <div className="owb-message-meta"><time dateTime={turn.createdAt}>{new Date(turn.createdAt).toLocaleTimeString()}</time><MessageActions raw={turn.input} onEdit={onEdit} /></div>
+    <div className="owb-message-meta"><MessageActions raw={turn.input} onEdit={onEdit} /></div>
   </>;
 }

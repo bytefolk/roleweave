@@ -71,3 +71,10 @@
 html, body, .owb-app, button, input, textarea, select {
   font-family: var(--ui-font-sans);
 }
+
+/* rc-trigger moves tooltips offscreen while measuring their position. The
+ * reduced-motion reset sets a transition duration on every element, which
+ * otherwise animates those temporary coordinates and makes the hint flash. */
+@media (prefers-reduced-motion: reduce) {
+  .ant-tooltip { transition-property: none !important; }
+}
