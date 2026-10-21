@@ -44,6 +44,9 @@ describe("TurnThread evidence timeline (#73)", () => {
     // #248 R2 ④: 下达任务在操作员气泡（右），输出在岗位气泡（左）。
     expect(item?.querySelector(".owb-bubble--operator")?.textContent).toContain("检查发布门禁");
     expect(card?.querySelector(".owb-tc__out")?.textContent).toContain("门禁已检查。");
+    // The request time appears once below the operator bubble, beside the model.
+    expect(item?.querySelectorAll('time[datetime="2026-08-26T04:00:00.000Z"]')).toHaveLength(1);
+    expect(item?.querySelector(".owb-bubble--operator time")).toBeNull();
     // 状态由过程摘要统一呈现，settled 回合不再显示 running。
     expect(card?.querySelector(".owb-turn-progress__title")?.textContent).toContain("已处理");
   });

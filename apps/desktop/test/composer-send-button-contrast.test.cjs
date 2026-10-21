@@ -1,4 +1,4 @@
-// #94: the composer's send/cancel button (`.owb-turn-composer__surface button`)
+// #94: the composer's send/cancel button (`.owb-turn-composer__surface > button`)
 // used `opacity: 0.45` for its disabled state on top of an already-saturated
 // brand background (white icon on `--ui-ai` #722ed1 in light mode). Dimming
 // both the icon and the background toward the same backdrop collapses them
@@ -28,8 +28,8 @@ function builtCss() {
 test("composer send/cancel button stays legible when disabled (#94)", () => {
   const css = builtCss();
 
-  const rule = /\.owb-turn-composer__surface button:disabled\{([^}]*)\}/.exec(css);
-  assert.ok(rule !== null, ".owb-turn-composer__surface button:disabled rule must exist");
+  const rule = /\.owb-turn-composer__surface>button:disabled\{([^}]*)\}/.exec(css);
+  assert.ok(rule !== null, ".owb-turn-composer__surface > button:disabled rule must exist");
   const body = rule[1];
 
   assert.ok(
