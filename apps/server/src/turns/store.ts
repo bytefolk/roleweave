@@ -13,7 +13,7 @@ import {
   approvalPreviewFingerprintInput,
   isApprovalChangePreview,
 } from "@roleweave/shared";
-import type { ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
+import type { RelayHandoffSnapshot, ThreadContextMetadata, TurnEngine, TurnHistory, TurnRecord, WorkbenchSession } from "@roleweave/shared";
 import type { EngineEvent, TurnTerminalReason, TurnAttachment, AttachmentMimeType } from "@roleweave/shared";
 import { ATTACHMENT_ALLOWED_MIME_TYPES } from "@roleweave/shared";
 import { assertSessionId, readAuthoritativeSessionIndex } from "../sessions/store.js";
@@ -21,6 +21,7 @@ import { PerKeyLock } from "../per-key-lock.js";
 import { StableReadError, decodeStableUtf8, readStableBoundedFile } from "../stable-read.js";
 import { MAX_TURNS_PER_POSITION } from "../history-limits.js";
 
+import { isRelayHandoffSnapshot } from "./relay-handoff.js";
 import { isThreadContextMetadata } from "./thread-context.js";
 
 const STATE_ROOT = path.join(".roleweave", "conversations");
@@ -406,10 +407,18 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
       "schemaVersion", "conversationId", "turnId", "positionId", "engine", "status",
       "input", "envelopeDigest", "createdAt", "updatedAt", "events",
     ],
-    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "goalId", "branchId", "model", "retryOf", "attachments"],
+    ["runId", "output", "error", "groupRef", "conversationRef", "threadContext", "relayHandoff", "goalId", "branchId", "model", "retryOf", "attachments"],
   )) return false;
   if (Object.hasOwn(value, "retryOf") && (typeof value.retryOf !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.retryOf) || value.retryOf === value.turnId)) return false;
   if (Object.hasOwn(value, "threadContext") && !isThreadContextMetadata(value.threadContext)) return false;
+  if (Object.hasOwn(value, "relayHandoff")) {
+    if (!isRelayHandoffSnapshot(value.relayHandoff, timestamp => parseRfc3339Instant(timestamp) !== null)) return false;
+    const snapshot = value.relayHandoff;
+    if (snapshot.payload.turnId !== value.turnId || snapshot.payload.step.positionId !== value.positionId ||
+        snapshot.payload.conversationRef !== value.conversationRef || snapshot.payload.generatedAt !== value.createdAt ||
+        !isThreadContextMetadata(value.threadContext) || snapshot.payloadBytes > value.threadContext.contextBytes ||
+        snapshot.payload.sources.length > value.threadContext.sourceTurnCount) return false;
+  }
   if (Object.hasOwn(value, "model") && !isEngineModelId(value.model, value.engine)) return false;
   if (Object.hasOwn(value, "attachments") && !isTurnAttachmentArray(value.attachments)) return false;
   const createdInstant = parseRfc3339Instant(value.createdAt);
@@ -862,6 +871,7 @@ export class TurnStore {
     message: string;
     envelopeDigest: string;
     threadContext?: ThreadContextMetadata;
+    relayHandoff?: RelayHandoffSnapshot;
     now: string;
     /** Additive #52: local group conversationRef for group-spawned turns. */
     groupRef?: string;
@@ -889,6 +899,7 @@ export class TurnStore {
       input: input.message,
       envelopeDigest: input.envelopeDigest,
       ...(input.threadContext !== undefined ? { threadContext: input.threadContext } : {}),
+      ...(input.relayHandoff !== undefined ? { relayHandoff: input.relayHandoff } : {}),
       createdAt: input.now,
       updatedAt: input.now,
       events: [],
@@ -932,6 +943,7 @@ export class TurnStore {
     message: string;
     envelopeDigest: string;
     threadContext?: ThreadContextMetadata;
+    relayHandoff?: RelayHandoffSnapshot;
     now: string;
     /** owb#63: contract-level back-link (= sessionId for session turns). */
     conversationRef?: string;
@@ -962,6 +974,7 @@ export class TurnStore {
       input: input.message,
       envelopeDigest: input.envelopeDigest,
       ...(input.threadContext !== undefined ? { threadContext: input.threadContext } : {}),
+      ...(input.relayHandoff !== undefined ? { relayHandoff: input.relayHandoff } : {}),
       createdAt: input.now,
       updatedAt: input.now,
       events: [],

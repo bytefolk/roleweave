@@ -9110,3 +9110,17 @@ body,
 @media (prefers-reduced-motion: reduce) { .owb-turn-panel *, .owb-org-module__splitter::before { animation: none !important; transition: none !important; } }
 
 .owb-turn-panel .owb-tc-head__eng { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+/* Bounded relay notes and optional per-step requirements. */
+.owb-relay-handoff, .owb-relay-instructions { min-width: 0; margin-block: 8px; }
+.owb-relay-handoff summary, .owb-relay-instructions summary { cursor: pointer; overflow-wrap: anywhere; }
+.owb-relay-handoff__body { max-height: 420px; overflow: auto; padding: 8px 0; }
+.owb-relay-handoff dl { margin: 8px 0; }
+.owb-relay-handoff dt { font-weight: 600; }
+.owb-relay-handoff dd { margin: 4px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.owb-relay-handoff section { border-top: 1px solid var(--ui-border); padding-block: 10px; }
+.owb-relay-handoff pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.owb-relay-handoff code { overflow-wrap: anywhere; }
+.owb-relay-instructions__fields { display: grid; gap: 10px; max-height: 240px; overflow: auto; padding: 8px 0; }
+.owb-relay-instructions__fields label { display: grid; gap: 4px; min-width: 0; }
+.owb-relay-instructions small { color: var(--ui-foreground-muted); }

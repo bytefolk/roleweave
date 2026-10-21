@@ -39,3 +39,17 @@ Assignment is explicit. This change does not add role-based automatic matching, 
 - All new settings and receipts use the existing workspace-local stores and validation boundaries. No database migration or direct `mem`/`context` database access is involved.
 
 Rollback requires reverting this source change and retaining a workspace backup. Older strict readers may reject records with the new optional fields; do not edit durable records by hand to simulate a successful rollback. New sessions in a separate workspace can be used to test an older application version.
+
+## Relay handoff notes (#617)
+
+In **Sequential handoff**, open **Step requirements (optional)** to describe each selected employee's responsibility, deliverable, or acceptance criteria. Recipient selection order remains the execution order. Blank requirements follow the original task; the application does not infer assignments from job titles. Requirements are limited to 4 KiB UTF-8 per step and 32 KiB across the request.
+
+Each started relay step saves a handoff snapshot with its recipient/order, next recipient, task excerpt, explicit requirement (if any), and the preceding completed results actually included. Open **Handoff notes** on the employee's timeline reply to inspect that snapshot and its source turn identities and timestamps. Completed results are not claims of approval or acceptance. Sources may be empty, filtered, shortened, or omitted; the view states those limits. Older records without a snapshot do not establish what handoff data their model received.
+
+Handoff sources and ordinary group history share the existing 12-source/64-KiB context budget and the 256-KiB final-input limit. A predecessor is included only once, even when also present in group history. The immediate predecessor takes priority; when needed its excerpt is shortened on UTF-8 boundaries using the final serialized size. Requirements are never silently shortened to fit the budget. If the handoff cannot fit, the step is recorded as unexecuted with a reason, and later steps remain blocked.
+
+The snapshot is saved before the model call and retained through terminal updates and readback. Its deterministic payload, byte count and digest match the payload included in model input. Restart does not regenerate snapshots or replay model calls. This is relay-specific; personal sessions and parallel dispatch do not acquire handoff snapshots, and no permission, automatic delegation, semantic conflict detector, or live collaborator-status feed is added.
+
+`POST /groups/:conversationRef/turns` accepts optional `relaySteps: [{ positionId, instruction }]` only with `mode: "relay"`. Entries must be unique selected recipients with non-empty instructions. `GroupMessage.relaySteps` and `TurnRecord.relayHandoff` are additive local fields. New readers accept old records; older strict readers may reject the new fields. Keep a workspace backup for downgrades and do not strip stored evidence to simulate compatibility.
+
+See [the implementation contract](design/relay-handoff-notes-v1.md) for the payload, persistence and verification boundaries.

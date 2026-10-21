@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { Button as AntButton, Input, Select as AntSelect } from "antd";
 import { ArrowUp, Plus, Search, Trash2, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
+import { RelayHandoffDetails } from "./RelayHandoffDetails";
+import { instructionBytes, selectedRelaySteps, relayStepsTooLarge, RELAY_INSTRUCTION_BYTES } from "./relay-instructions";
 import { PositionAvatar } from "../PositionAvatar";
 import { DiagnosticNotice, type AvailabilityCheck } from "../DiagnosticNotice";
 import { ProgressTrail } from "../turns/TurnThread";
@@ -208,8 +210,8 @@ export function GroupsPanel({
   const [createOpen, setCreateOpen] = useState(false);
   const [draftMembers, setDraftMembers] = useState<ReadonlySet<string>>(new Set());
   const draftKey = selectedRef ?? "";
-  const [drafts, setDrafts] = useState<Record<string, { input: string; mentions: string[]; mode: "parallel" | "relay" }>>({});
-  const emptyDraft = { input: "", mentions: [] as string[], mode: "parallel" as const };
+  const [drafts, setDrafts] = useState<Record<string, { input: string; mentions: string[]; mode: "parallel" | "relay"; instructions: Record<string, string> }>>({});
+  const emptyDraft = { input: "", mentions: [] as string[], mode: "parallel" as const, instructions: {} as Record<string, string> };
   const draft = drafts[draftKey] ?? emptyDraft;
   const input = draft.input;
   const mentions = useMemo(() => new Set(draft.mentions), [draft.mentions]);
@@ -230,6 +232,12 @@ export function GroupsPanel({
   );
   const mentionsReady = unavailableMention === undefined;
   const dispatchMode = draft.mode;
+  const relaySteps = selectedRelaySteps(mentionedPositionIds, draft.instructions);
+  const invalidRelaySteps = dispatchMode === "relay" && relayStepsTooLarge(relaySteps);
+  const setStepInstruction = (positionId: string, instruction: string) => setDrafts(current => {
+    const previous = current[draftKey] ?? emptyDraft;
+    return { ...current, [draftKey]: { ...previous, instructions: { ...previous.instructions, [positionId]: instruction } } };
+  });
   const setInput = (input: string) => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), input } }));
   const setMentions = (mentions: ReadonlySet<string>) => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), mentions: [...mentions] } }));
   const setDispatchMode = (mode: "parallel" | "relay") => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), mode } }));
@@ -543,7 +551,7 @@ export function GroupsPanel({
     const ref = selectedRefRef.current;
     const trimmed = input.trim();
     if (
-      ref === null || trimmed.length === 0 || mentions.size === 0 || !mentionsReady ||
+      ref === null || trimmed.length === 0 || mentions.size === 0 || !mentionsReady || invalidRelaySteps ||
       sendingGroupsRef.current.has(ref)
     ) return;
     const requestEngine = mentionEngines[mentionedPositionIds[0]!] ?? engine;
@@ -560,6 +568,7 @@ export function GroupsPanel({
         engines: mentionEngines,
         mentions: mentionedPositionIds,
         mode: dispatchMode,
+        ...(dispatchMode === "relay" && relaySteps.length ? { relaySteps } : {}),
       });
       if (!isCurrent()) return;
       if (res.status !== 202) {
@@ -572,7 +581,7 @@ export function GroupsPanel({
         spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>;
       };
       onSpawnRuns(ref, body.messageId, body.spawns, trimmed, requestEngine);
-      setDrafts((current) => current[ref]?.input === input ? { ...current, [ref]: { ...current[ref]!, input: "", mentions: [] } } : current);
+      setDrafts((current) => current[ref] === draft ? { ...current, [ref]: { ...current[ref]!, input: "", mentions: [], instructions: {} } } : current);
       void loadTimeline(ref);
     } catch {
       if (isCurrent() && selectedRefRef.current === ref) setPanelError(t("grp.turnFailOffline"));
@@ -585,6 +594,9 @@ export function GroupsPanel({
   }, [
     captureScope,
     dispatchMode,
+    draft,
+    invalidRelaySteps,
+    relaySteps,
     engine,
     input,
     loadTimeline,
@@ -946,6 +958,7 @@ export function GroupsPanel({
                         )}
                       </header>
                       {isLive || !["group_relay_blocked", "group_relay_stopped"].includes(turn.errorCode ?? "") ? <ProgressTrail turn={turn} onOpenResource={onOpenResource} /> : null}
+                      {"relayHandoff" in turn && turn.relayHandoff ? <RelayHandoffDetails snapshot={turn.relayHandoff} positionName={displayPositionName} /> : null}
                       {turn.output ? (
                         <GroupBubbleExpand
                           summaryClassName="owb-turn__output owb-clamp-2"
@@ -1042,6 +1055,20 @@ export function GroupsPanel({
                   options={[{ value: "parallel", label: t("grp.modeParallel") }, { value: "relay", label: t("grp.modeRelay") }]} />
               </label>
               {dispatchMode === "relay" ? <p className="owb-turn-composer__hint">{t("grp.relayOrder", { order: [...mentions].map(displayPositionName).join(" → ") })}</p> : null}
+              {dispatchMode === "relay" && mentions.size > 0 ? <details className="owb-relay-instructions">
+                <summary>{t("grp.relayInstructions")}</summary>
+                <div className="owb-relay-instructions__fields">
+                  {mentionedPositionIds.map((positionId, index) => <label key={positionId}>
+                    <span>{index + 1}. {displayPositionName(positionId)}</span>
+                    <Input.TextArea value={draft.instructions[positionId] ?? ""} rows={2}
+                      aria-label={t("grp.relayInstructionFor", { name: displayPositionName(positionId) })}
+                      placeholder={t("grp.relayInstructionPh")} disabled={sending}
+                      onChange={event => setStepInstruction(positionId, event.target.value)} />
+                    <small>{instructionBytes((draft.instructions[positionId] ?? "").trim())} / {RELAY_INSTRUCTION_BYTES} bytes</small>
+                  </label>)}
+                </div>
+              </details> : null}
+              {invalidRelaySteps ? <p role="alert">{t("grp.relayInstructionLimit")}</p> : null}
               <div className="owb-turn-composer__surface">
                 <Input.TextArea
                   value={input}
@@ -1064,7 +1091,7 @@ export function GroupsPanel({
                 <AntButton
                   type="primary"
                   htmlType="submit"
-                  disabled={sending || input.trim().length === 0 || mentions.size === 0 || !mentionsReady}
+                  disabled={sending || input.trim().length === 0 || mentions.size === 0 || !mentionsReady || invalidRelaySteps}
                   aria-label={t("grp.send")}
                   icon={<ArrowUp aria-hidden="true" size={15} />}
                 />

@@ -208,6 +208,35 @@ export interface ThreadContextMetadata {
   truncated: boolean;
 }
 
+export interface RelayHandoffPayload {
+  schemaVersion: "relay-handoff.v1";
+  generatedAt: string;
+  conversationRef: string;
+  messageId: string;
+  turnId: string;
+  step: { positionId: string; number: number; total: number; nextPositionId?: string };
+  taskExcerpt: string;
+  instruction: string | null;
+  sources: Array<{
+    turnId: string;
+    positionId: string;
+    sourceUpdatedAt: string;
+    outputExcerpt: string;
+    excerptDigest: string;
+    truncated: boolean;
+    redacted: boolean;
+  }>;
+  omittedSourceCount: number;
+  taskExcerptTruncated: boolean;
+  redacted: boolean;
+}
+
+export interface RelayHandoffSnapshot {
+  payload: RelayHandoffPayload;
+  payloadBytes: number;
+  payloadDigest: string;
+}
+
 export interface TurnRecord {
   /** Explicit user retry of a failed/unknown turn in this same session. */
   retryOf?: string;
@@ -237,6 +266,8 @@ export interface TurnRecord {
    * are written with conversationRef instead. */
   groupRef?: string;
   threadContext?: ThreadContextMetadata;
+  /** Immutable, bounded relay data actually included in this turn input. */
+  relayHandoff?: RelayHandoffSnapshot;
   /** Additive #222: optional goal binding. When present, this turn
    * contributes to a specific goal branch's progress. */
   goalId?: string;
