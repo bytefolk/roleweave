@@ -207,6 +207,7 @@ describe("project task delivery acceptance", () => {
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "刷新交付并重新核对" }));
     await screen.findByText("Revised real output");
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "The build works" })).toBeEnabled());
     expect(screen.getByLabelText("验收说明 / 退回原因")).toHaveValue("Retain my note");
     expect(screen.getByRole("checkbox", { name: "The build works" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "验收通过" })).toBeDisabled();
