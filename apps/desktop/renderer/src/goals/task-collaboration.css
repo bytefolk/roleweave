@@ -13,3 +13,4 @@
 .owb-task-collaboration-editor__person { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--ui-border); border-radius: 8px; min-width: 0; }
 .owb-task-collaboration-editor__person > div:first-child { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .owb-task-collaboration-editor__dependencies { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow: auto; overflow-wrap: anywhere; }
+.owb-task-collaboration-editor__dependencies .ant-checkbox-wrapper { display: flex; align-items: flex-start; gap: 0; }
