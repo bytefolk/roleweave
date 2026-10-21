@@ -174,6 +174,7 @@ export function adaptTurnRecord(
     ...(pendingApproval !== undefined ? { approvalRequest: pendingApproval } : {}),
     envelopeDigest: record.envelopeDigest,
     ...(record.threadContext !== undefined ? { threadContext: record.threadContext } : {}),
+    ...(record.relayHandoff !== undefined ? { relayHandoff: record.relayHandoff } : {}),
     ...(progress.length > 0 ? { progress } : {}),
     ...(trace && trace.length > 0 ? { trace } : {}),
     ...(usage !== undefined ? { totalTokens: usage } : {}),

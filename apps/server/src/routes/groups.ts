@@ -11,9 +11,11 @@ import {
   OrgApiError,
   errorCodes,
   turnEngines,
+  isRelaySteps,
 } from "@roleweave/shared";
 import type {
   GroupExecutionMode,
+  RelayStepInstruction,
   GroupMessage,
   GroupTimeline,
   GroupTimelineItem,
@@ -25,7 +27,8 @@ import { readJsonBody, sendJson } from "../http.js";
 import { MAX_GROUP_MEMBERS, MAX_GROUP_INPUT_BYTES, assertConversationRef } from "../groups/store.js";
 import { assertPositionExists, assertTurnWorkspace, executeTurn, type GroupEventAttribution } from "./turns.js";
 import { createTurnEnvelope } from "../turns/envelope.js";
-import { compactThreadContextHandoff, type SupplementalContext } from "../turns/thread-context.js";
+import { compactThreadContextHandoff } from "../turns/thread-context.js";
+import type { RelayExecutionContext } from "../turns/relay-handoff.js";
 import { compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 import { resolvePositionAgentEngine } from "../agent-binding.js";
 
@@ -102,6 +105,7 @@ interface GroupTurnBody {
   engines?: Record<string, TurnEngine>;
   mentions: string[];
   mode: GroupExecutionMode;
+  relaySteps?: RelayStepInstruction[];
   goalId?: string;
   branchId?: string;
 }
@@ -114,12 +118,12 @@ function parseGroupTurn(raw: unknown): GroupTurnBody {
       "group turn request must be a JSON object",
     );
   }
-  const allowedKeys = new Set(["input", "engine", "engines", "mentions", "mode", "goalId", "branchId"]);
+  const allowedKeys = new Set(["input", "engine", "engines", "mentions", "mode", "goalId", "branchId", "relaySteps"]);
   if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
     throw new OrgApiError(
       errorCodes.group_request_invalid,
       400,
-      "group turn accepts input, engine, optional engines, mentions, and optional mode, goalId, branchId",
+      "group turn accepts input, engine, optional engines, mentions, and optional mode, relaySteps, goalId, branchId",
     );
   }
   if (
@@ -149,6 +153,9 @@ function parseGroupTurn(raw: unknown): GroupTurnBody {
       400,
       "mentions must be a non-empty unique positionId list; broadcast is not allowed",
     );
+  }
+  if (raw.relaySteps !== undefined && !isRelaySteps(raw.relaySteps, raw.mentions as string[], raw.mode)) {
+    throw new OrgApiError(errorCodes.group_request_invalid, 400, "relaySteps must contain unique mentioned positions and non-empty instructions (4 KiB each, 32 KiB total) in relay mode");
   }
   let engines: Record<string, TurnEngine> | undefined;
   const suppliedEngines = raw.engines;
@@ -186,6 +193,7 @@ function parseGroupTurn(raw: unknown): GroupTurnBody {
     ...(engines !== undefined ? { engines } : {}),
     mentions: raw.mentions as string[],
     mode: raw.mode ?? "parallel",
+    ...(Array.isArray(raw.relaySteps) && raw.relaySteps.length ? { relaySteps: (raw.relaySteps as RelayStepInstruction[]).map(step => ({ ...step, instruction: step.instruction.trim() })) } : {}),
     ...(raw.goalId !== undefined ? { goalId: raw.goalId } : {}),
     ...(raw.branchId !== undefined ? { branchId: raw.branchId } : {}),
   };
@@ -342,6 +350,7 @@ export async function handleGroupTurnPost(
       input: body.input,
       mentions: body.mentions,
       mode: body.mode,
+      ...(body.relaySteps ? { relaySteps: body.relaySteps } : {}),
       spawns,
       // Retained as the old-message fallback; new spawns carry their own
       // resolved engine so mixed-Agent groups remain faithfully attributable.
@@ -354,7 +363,7 @@ export async function handleGroupTurnPost(
     throw error;
   }
   void (async () => {
-    const handoffs: SupplementalContext[] = [];
+    const relaySources: RelayExecutionContext["sources"] = [];
     const run = async (spawn: typeof spawns[number]): Promise<TurnRecord | null> => {
       const attribution = {
         groupRef: ref,
@@ -374,10 +383,13 @@ export async function handleGroupTurnPost(
           ...body,
           positionId: spawn.positionId,
           engine: spawn.engine,
-        }, undefined, attribution, handoffs, workspace);
+        }, undefined, attribution, undefined, workspace, undefined,
+          body.mode === "relay" ? { relay: { message, sources: relaySources } } : undefined);
       } catch (error) {
+        const handoffError = body.mode === "relay" && error instanceof OrgApiError && error.code === errorCodes.turn_request_invalid;
         return await persistUnexecutedTurn(ctx, workspace.dir, body.input, attribution,
-          error instanceof OrgApiError && error.code === errorCodes.session_conflict ? "group_employee_busy" : "group_spawn_failed", message.createdAt);
+          handoffError ? "group_handoff_invalid" : error instanceof OrgApiError && error.code === errorCodes.session_conflict ? "group_employee_busy" : "group_spawn_failed",
+          message.createdAt, handoffError ? error.message : undefined);
       }
     };
     if (body.mode === "parallel") {
@@ -399,7 +411,9 @@ export async function handleGroupTurnPost(
       const record = await run(spawn);
       if (record?.status !== "completed") blocked = true;
       else {
-        handoffs.push(compactThreadContextHandoff({ label: `Completed relay step: ${spawn.positionId}`, input: body.input, output: record.output }));
+        const compact = compactThreadContextHandoff({ label: record.turnId, input: "", output: record.output });
+        relaySources.push({ turnId: record.turnId, positionId: record.positionId, conversationRef: record.conversationRef,
+          updatedAt: record.updatedAt, status: record.status, output: compact.output, redacted: compact.redacted, truncated: compact.truncated });
         const remaining = spawns.slice(index + 1);
         if (remaining.length === 0 || ctx.bus.listenerCount === 0) continue;
         const suggestion = await ctx.relayStop.suggest(record);
@@ -451,8 +465,9 @@ async function persistUnexecutedTurn(
   workspace: string,
   input: string,
   attribution: GroupEventAttribution,
-  code: "group_relay_blocked" | "group_relay_stopped" | "group_spawn_failed" | "group_workspace_changed" | "group_employee_busy" | "group_dispatch_interrupted",
+  code: "group_handoff_invalid" | "group_relay_blocked" | "group_relay_stopped" | "group_spawn_failed" | "group_workspace_changed" | "group_employee_busy" | "group_dispatch_interrupted",
   createdAt: string,
+  handoffDetail?: string,
 ): Promise<TurnRecord | null> {
   return ctx.groupStore.withSpawnRecovery(workspace, attribution.positionId, attribution.turnId, async () => {
     let record: TurnRecord | null = null;
@@ -474,7 +489,9 @@ async function persistUnexecutedTurn(
         updatedAt: compareRfc3339Instants(now, running.updatedAt) < 0 ? running.updatedAt : now,
         error: {
           code, retryable: false,
-          message: code === "group_relay_blocked"
+          message: code === "group_handoff_invalid"
+            ? `This step did not run: ${handoffDetail ?? "relay handoff validation failed"}.`
+            : code === "group_relay_blocked"
             ? "This step did not run because an earlier relay step did not complete successfully."
             : code === "group_relay_stopped"
               ? "This step did not run because the owner confirmed stopping the remaining relay."
