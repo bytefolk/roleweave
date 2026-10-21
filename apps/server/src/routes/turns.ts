@@ -44,7 +44,7 @@ import { projectTaskCollaboration } from "../goals/collaboration.js";
 const MAX_INPUT_BYTES = 256 * 1024;
 
 /**
- * Engine-visible attachment context (Decision A2). P0 lists file paths only —
+ * Engine-visible file descriptions complement Codex's native image inputs.
  * PDF text extraction is out of scope until pdfjs-dist is a declared, packaged
  * runtime dependency. The assembled string must fit the 256 KiB input budget
  * so thread history is not squeezed to zero.
@@ -124,17 +124,9 @@ function parsePostBody(raw: unknown): TurnPostBody {
     );
   }
   const positionId = assertPositionId(raw.positionId);
-  if (
-    typeof raw.input !== "string" ||
-    raw.input.trim().length === 0 ||
-    Buffer.byteLength(raw.input, "utf8") > MAX_INPUT_BYTES
-  ) {
-    throw new OrgApiError(
-      errorCodes.turn_request_invalid,
-      400,
-      "input must be a non-empty UTF-8 string no larger than 256 KiB",
-    );
-  }
+  if (typeof raw.input !== "string") throw new OrgApiError(errorCodes.turn_request_invalid, 400, "input must be a string");
+  if (!raw.input.trim()) throw new OrgApiError(errorCodes.turn_input_empty, 400, "input requires a text instruction");
+  if (Buffer.byteLength(raw.input, "utf8") > MAX_INPUT_BYTES) throw new OrgApiError(errorCodes.turn_input_too_large, 400, "text input exceeds 256 KiB in UTF-8");
   if (typeof raw.engine !== "string" || !turnEngines.includes(raw.engine as TurnEngine)) {
     throw new OrgApiError(
       errorCodes.turn_engine_unsupported,
@@ -288,6 +280,11 @@ export async function executeTurn(
       if (body.input !== original.input) {
         throw new OrgApiError(errorCodes.turn_request_invalid, 400, "edited input must be submitted as a new task without retryOf");
       }
+      const originalIds = original.attachments?.map(a => a.id);
+      if (body.attachmentIds && JSON.stringify(body.attachmentIds) !== JSON.stringify(originalIds)) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "edited attachments must be submitted as a new task without retryOf");
+      }
+      if (originalIds?.length) body = { ...body, attachmentIds: originalIds };
       if (original.taskBriefing) {
         const p = original.taskBriefing.payload;
         if ((body.goalId !== undefined && body.goalId !== p.goalId) ||
@@ -443,6 +440,7 @@ export async function executeTurn(
     }
     // Additive #306: resolve attachment manifests and build engine context.
     let resolvedAttachments: TurnAttachment[] | undefined;
+    let imagePaths: string[] | undefined;
     let augmentedInput = withResponsePresentation(body.input);
     if (body.attachmentIds !== undefined) {
       if (session === undefined) {
@@ -457,6 +455,13 @@ export async function executeTurn(
         throw new OrgApiError(errorCodes.attachment_missing, 400, "one or more attachment ids were not found in this session");
       }
       assertAttachmentBatch(resolvedAttachments);
+      const images = resolvedAttachments.filter(a => a.mimeType.startsWith("image/"));
+      if (images.length) {
+        if (body.engine !== "codex" && body.engine !== "codex-local") {
+          throw new OrgApiError(errorCodes.attachment_images_unsupported, 400, "selected engine does not support direct image inputs");
+        }
+        imagePaths = images.map(a => attachmentFilePath(workspace.dir, session.sessionId, a.id));
+      }
       augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, augmentedInput);
     }
     const vaultContext = await assembleVaultContext(workspace, body.positionId, augmentedInput, body.input);
@@ -530,6 +535,7 @@ export async function executeTurn(
       await approvalExecution?.beforeRun();
       assertTurnWorkspace(ctx, workspace);
       result = await ctx.turnDriver.turnRun({
+        ...(imagePaths?.length ? { imagePaths } : {}),
         ...(model === undefined ? {} : { model }),
         workspace: workspace.dir,
         positionId: body.positionId,

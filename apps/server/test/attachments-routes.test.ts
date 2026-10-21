@@ -22,8 +22,8 @@ test("attachment upload/read bind to a real session and reject illegal base64 an
       token: server.token,
       body: {
         sessionId: "11111111-1111-4111-8111-111111111111",
-        fileName: "note.png",
-        mimeType: "image/png",
+        fileName: "note.pdf",
+        mimeType: "application/pdf",
         dataBase64: Buffer.from("abcd").toString("base64"),
       },
     });
@@ -49,8 +49,8 @@ test("attachment upload/read bind to a real session and reject illegal base64 an
       token: server.token,
       body: {
         sessionId: session.sessionId,
-        fileName: "note.png",
-        mimeType: "image/png",
+        fileName: "note.pdf",
+        mimeType: "application/pdf",
         dataBase64: "!!!!",
       },
     });
@@ -61,8 +61,8 @@ test("attachment upload/read bind to a real session and reject illegal base64 an
       token: server.token,
       body: {
         sessionId: session.sessionId,
-        fileName: "note.png",
-        mimeType: "image/png",
+        fileName: "note.pdf",
+        mimeType: "application/pdf",
         dataBase64: Buffer.from("abcd").toString("base64"),
       },
     });

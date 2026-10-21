@@ -79,6 +79,7 @@ import { EmployeeSettings, ProjectSettings, TreeRowMenu, type TreeAction } from 
 import { useConfigurationBootstrap, useSendShortcut, useWorkspaceFocus, requestSettingsLeave, taskCompletionNotification } from "./configuration-preferences";
 import { createConversationMemory } from "./turns/conversation-memory";
 import { useConversationCopy } from "./locales/conversation";
+import { turnRequestError } from "./turns/input-feedback";
 import { createOrgRefreshCoordinator, onlyMovesAndReorders } from "./org/refresh-coordinator";
 import { GroupsPanel } from "./groups/GroupsPanel";
 import { MemoryModule, type MemorySource } from "./memory/MemoryModule";
@@ -1189,6 +1190,7 @@ function AppInner({
         sessionId,
         engine: request.engine,
         input: request.input,
+        ...(request.attachments ? { attachments: request.attachments } : {}),
       }),
     );
     try {
@@ -1203,7 +1205,7 @@ function AppInner({
         ...(request.attachmentIds !== undefined ? { attachmentIds: request.attachmentIds } : {}),
       });
       if (res.status !== 200) {
-        const message = apiErrorMessage(res.body, t("turn.createFail"));
+        const message = turnRequestError(res.body, request.input, !!request.attachmentIds?.length, t, t("turn.createFail"));
         if (isSelected()) setTurnError(message);
         updateWorkspaceStream(workspacePath, (current) => settlePendingTurn(current, { positionId: request.positionId, sessionId, runId: null }));
         return false;
@@ -1905,6 +1907,7 @@ function AppInner({
             positionName: positionNames[run.positionId] ?? t("org.unknownPosition"),
             engine: run.engine,
             input: run.input,
+            ...(run.attachments ? { attachments: run.attachments } : {}),
             status: "running" as const,
             createdAt: run.startedAt,
             ...(run.text !== "" ? { output: run.text } : {}),
@@ -1916,7 +1919,7 @@ function AppInner({
         (pending.runId === null || !historyRunIds.has(pending.runId))) {
       live.push({ id: `pending-${pending.sessionId}`, provisional: true, dispatchPending: true, positionId: pending.positionId,
         positionName: positionNames[pending.positionId] ?? t("org.unknownPosition"), engine: pending.engine,
-        input: pending.input, status: "running", createdAt: pending.startedAt });
+        input: pending.input, ...(pending.attachments ? { attachments: pending.attachments } : {}), status: "running", createdAt: pending.startedAt });
     }
     return [...turns, ...live].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(turn => {
       if (!turn.approvalRequest) return turn;

@@ -11,6 +11,7 @@ import { closeNarration, foldNarration, putTrailItem } from "./trail";
  */
 
 export interface PendingTurnRequestState {
+  attachments?: import("@roleweave/shared").TurnAttachment[];
   startedAt: string;
   positionId: string;
   sessionId?: string;
@@ -23,6 +24,7 @@ export interface PendingTurnRequestState {
 }
 
 export interface LiveRunState {
+  attachments?: import("@roleweave/shared").TurnAttachment[];
   sessionId?: string;
   /** Stable group dispatch identity. The map key may be re-keyed to runId. */
   turnId?: string;
@@ -203,7 +205,7 @@ function terminalRecord(turn: TurnRecord): boolean {
 
 export function beginPendingTurn(
   state: TurnStreamState,
-  request: { positionId: string; sessionId?: string; engine: TurnEngine; input: string },
+  request: { positionId: string; sessionId?: string; engine: TurnEngine; input: string; attachments?: import("@roleweave/shared").TurnAttachment[] },
 ): TurnStreamState {
   return { ...state, pending: { ...state.pending, [request.positionId]: { ...request, runId: null, startedAt: new Date().toISOString() } } };
 }
@@ -455,6 +457,7 @@ export function applyTurnEvent(
             ...(pending.sessionId !== undefined ? { sessionId: pending.sessionId } : {}),
             engine: pending.engine,
             input: pending.input,
+            ...(pending.attachments ? { attachments: pending.attachments } : {}),
             text: delta,
             startedAt,
             totalTokens: null,
