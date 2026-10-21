@@ -5,6 +5,7 @@ import type { OwbBridge } from "../src/owb";
 import { TaskAcceptanceDrawer } from "../src/goals/TaskAcceptanceDrawer";
 import { ProjectBoard } from "../src/goals/ProjectBoard";
 import { visibleSelectOptions } from "./select-helper";
+import type { TaskCollaborationContext } from "@roleweave/shared/task-collaboration";
 
 const workspaceKey = "/workspaces/release";
 const task: GoalWorkItem = {
@@ -62,6 +63,24 @@ function choose(control: HTMLElement, name: string) {
 }
 
 describe("project task delivery acceptance", () => {
+  it("distinguishes changed live collaboration from the immutable execution context", async () => {
+    const value = detail();
+    const used: TaskCollaborationContext = { schemaVersion: "task-collaboration.v1", goalId: value.goal.goalId, taskId: task.taskId, capturedAt: version,
+      participants: [], dependencies: [{ taskId: "upstream", title: "Upstream work", status: "done", readiness: "manual_done" }],
+      dependents: [], omittedDependentCount: 0, redacted: false };
+    value.taskCollaborations = { [task.taskId]: { ...used, dependencies: [{ ...used.dependencies[0], status: "review", readiness: "pending", executionStatus: "failed" }] } };
+    value.taskDeliveries![task.taskId] = { ...delivery, taskBriefing: { payload: { schemaVersion: "task-briefing.v1", generatedAt: version,
+      planUpdatedAt: version, goalId: value.goal.goalId, taskId: task.taskId, turnId: delivery.source.turnId, sessionId: delivery.source.sessionId,
+      positionId: "engineer", goalTitle: "Project", goalDescription: "Goal", taskTitle: task.title, taskDescription: "Work", acceptanceCriteria: value.goal.acceptanceCriteria,
+      collaboration: used, redacted: false }, payloadBytes: 0, payloadDigest: "fixture" } };
+    const context = setup(value);
+    expect(screen.getByText("执行后的协作状态已变化，请对照当前状态验收；历史输入未改写。")).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/执行时的任务说明/));
+    expect(await screen.findByText("手工任务已标记完成")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("当前协作状态"));
+    expect(await screen.findByText("尚未就绪")).toBeInTheDocument();
+    expect(context.createGoalTaskAcceptance).not.toHaveBeenCalled();
+  });
   it("shows the real output safely and persists all criterion confirmations bound to the exact source and workspace", async () => {
     const context = setup();
     expect(screen.getByLabelText("Agent 真实产出")).toHaveTextContent(delivery.output as string);
@@ -79,6 +98,33 @@ describe("project task delivery acceptance", () => {
       verdicts: [{ criteriaIndex: 0, passed: true }, { criteriaIndex: 1, passed: true }],
     });
     expect(context.onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it("shows execution-time criteria alongside the current human review without substituting either version", async () => {
+    const value = detail();
+    value.taskDeliveries!["task-one"] = { ...delivery, taskBriefing: {
+      payload: { schemaVersion: "task-briefing.v1", goalId: "goal-one", taskId: "task-one", turnId: "turn-one", sessionId: "session-one",
+        positionId: "engineer", generatedAt: version, planUpdatedAt: "2026-10-06T00:00:00.000Z", goalTitle: "Original goal", goalDescription: "Original background",
+        taskTitle: "Original task", taskDescription: "Original assignment", acceptanceCriteria: ["Original execution criterion"], redacted: false },
+      payloadBytes: 0, payloadDigest: "sha256:fixture",
+    } };
+    const context = setup(value);
+    fireEvent.click(screen.getByText(/执行时的任务说明/));
+    expect(await screen.findByText("Original execution criterion")).toBeInTheDocument();
+    expect(screen.getByText(/当前项目计划已更新/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "The build works" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Original execution criterion" })).not.toBeInTheDocument();
+    confirmCriteria();
+    fireEvent.click(screen.getByRole("button", { name: "验收通过" }));
+    await waitFor(() => expect(context.createGoalTaskAcceptance).toHaveBeenCalledOnce());
+    expect(context.createGoalTaskAcceptance).toHaveBeenCalledWith(expect.objectContaining({ expectedUpdatedAt: version, source: delivery.source }));
+  });
+
+  it("explains the missing snapshot on historical deliveries while retaining human acceptance", () => {
+    setup();
+    expect(screen.getByText("该历史执行未保存任务说明快照。")).toBeInTheDocument();
+    confirmCriteria();
+    expect(screen.getByRole("button", { name: "验收通过" })).toBeEnabled();
   });
 
   it("requires a reason for rejection and preserves unconfirmed criteria as failed verdicts", async () => {
@@ -180,6 +226,7 @@ describe("project task delivery acceptance", () => {
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "刷新交付并重新核对" }));
     await screen.findByText("Revised real output");
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "The build works" })).toBeEnabled());
     expect(screen.getByLabelText("验收说明 / 退回原因")).toHaveValue("Retain my note");
     expect(screen.getByRole("checkbox", { name: "The build works" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "验收通过" })).toBeDisabled();

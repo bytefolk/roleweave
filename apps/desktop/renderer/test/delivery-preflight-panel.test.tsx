@@ -102,8 +102,9 @@ describe("DeliveryPreflightPanel (#467)", () => {
     );
 
     expect(await screen.findByTestId("delivery-preflight-panel")).toBeInTheDocument();
-    expect(await screen.findByText("criterion-1")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("checkbox", { name: /Release evidence.*asset-release/ }));
+    const material = await screen.findByRole("checkbox", { name: /Release evidence.*asset-release/ });
+    expect(screen.getByText("criterion-1")).toBeInTheDocument();
+    fireEvent.click(material);
     fireEvent.click(screen.getByTestId("delivery-preflight-run"));
 
     await waitFor(() => expect(api.resolveDocRef).toHaveBeenCalledWith(doc.docRef));

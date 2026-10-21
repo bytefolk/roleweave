@@ -9,6 +9,16 @@ const {
 
 const sessionId = "11111111-1111-4111-8111-111111111111";
 
+test("project session IPC forwards only expected plan/workspace references and requires a task binding", () => {
+  const taskBriefing = { expectedWorkspacePath: "/workspace", expectedUpdatedAt: "2026-10-21T00:00:00Z" };
+  const value = { sessionId, input: "start", engine: "qoder", goalId: "goal-one", branchId: "task-one", taskBriefing };
+  assert.deepEqual(validateSessionTurnRequest(value).request.taskBriefing, taskBriefing);
+  for (const invalid of [{ ...value, goalId: undefined }, { ...value, branchId: undefined },
+    { ...value, taskBriefing: { ...taskBriefing, instruction: "forged" } }, { ...value, taskBriefing: { ...taskBriefing, expectedUpdatedAt: "bad" } }]) {
+    assert.equal(validateSessionTurnRequest(invalid).ok, false);
+  }
+});
+
 test("session IPC accepts exact typed fields and never accepts authority data", () => {
   assert.deepEqual(validateSessionCreateRequest({ positionId: "repo-owner" }), {
     ok: true,

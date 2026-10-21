@@ -175,6 +175,7 @@ export function adaptTurnRecord(
     envelopeDigest: record.envelopeDigest,
     ...(record.threadContext !== undefined ? { threadContext: record.threadContext } : {}),
     ...(record.relayHandoff !== undefined ? { relayHandoff: record.relayHandoff } : {}),
+    ...(record.taskBriefing !== undefined ? { taskBriefing: record.taskBriefing } : {}),
     ...(progress.length > 0 ? { progress } : {}),
     ...(trace && trace.length > 0 ? { trace } : {}),
     ...(usage !== undefined ? { totalTokens: usage } : {}),

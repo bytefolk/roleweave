@@ -57,7 +57,9 @@ a refresh. A workspace ledger exceeding its bounded read capacity is unavailable
 for repair until the operator resolves the history problem.
 Feedback larger than the existing context field limit must be split into
 smaller tasks; visible answer excerpts may be truncated and the receipt reports
-that limit. A failed or indeterminate repair requires operator investigation;
+that limit. Explicit retries first restore any saved project-task briefing
+identity, then revalidate the same repair guards; omitting task IDs cannot bypass
+the human-review requirement. A failed or indeterminate repair requires operator investigation;
 the system does not replay it automatically.
 
 This is a human-started repair handoff, not an autonomous verification loop.
@@ -93,3 +95,19 @@ The snapshot is saved before the model call and retained through terminal update
 `POST /groups/:conversationRef/turns` accepts optional `relaySteps: [{ positionId, instruction }]` only with `mode: "relay"`. Entries must be unique selected recipients with non-empty instructions. `GroupMessage.relaySteps` and `TurnRecord.relayHandoff` are additive local fields. New readers accept old records; older strict readers may reject the new fields. Keep a workspace backup for downgrades and do not strip stored evidence to simulate compatibility.
 
 See [the implementation contract](design/relay-handoff-notes-v1.md) for the payload, persistence and verification boundaries.
+
+
+## Project delegation briefing (#619)
+
+Project Run explicitly requests a server-owned `task-briefing.v1` snapshot using the expected workspace and goal revision. It includes the assigned goal/task requirements and full filtered acceptance criteria. Required briefing bytes reserve space before optional history; oversize or stale plans fail before execution. The same canonical payload is injected and saved on the turn, retained across retries/approval resumes and shown in personal conversations and human acceptance. Current review criteria remain distinct from execution-time criteria. Historical deliveries without snapshots remain reviewable.
+
+See [project-task-briefings-v1.md](design/project-task-briefings-v1.md) for request validation, budgets, identity/retry rules, compatibility and the remaining roadmap.
+
+
+## Task collaborators and dependencies (#621)
+
+Project work items can record explicit collaborators/responsibilities and same-project predecessor task IDs. A validated acyclic graph and authoritative latest-delivery/human-acceptance checks gate execution. Configured tasks cannot bypass the gate with unbound goal-tag execution. Manual done states remain distinct from accepted execution evidence.
+
+The task briefing now captures the same versioned collaboration context injected into input. Direct public delivery excerpts/digests reserve source slots and deduplicate against optional history; budgets remain shared. Current task views refresh through existing events/reconnection while running and historical snapshots remain fixed. Human review can compare saved and current collaboration. Omitted relationship fields preserve existing configuration; explicit empty arrays clear it.
+
+See [task-collaboration-context-v1.md](design/task-collaboration-context-v1.md) for limits, readiness, validation, compatibility and rollback.

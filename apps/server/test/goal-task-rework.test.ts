@@ -63,6 +63,28 @@ test("human-started repair receives saved feedback even with session history dis
   assert.equal(f.inputs.length, 2, "unreviewed repair cannot launch another model call");
 });
 
+test("briefing retry cannot omit its restored task binding to bypass repair review", async t => {
+  const f = await fixture(t);
+  f.server.ctx.turnDriver = { async turnRun(request) {
+    f.inputs.push(request);
+    return { status: "indeterminate", events: [], diagnostic: "", code: "turn_timeout" };
+  } };
+  const started = await f.call(`/sessions/${f.sessionId}/turns`, "POST", {
+    input: "Produce the report", engine: "qoder", goalId: f.goalId, branchId: "report",
+    taskBriefing: { expectedWorkspacePath: f.workspace, expectedUpdatedAt: (await f.detail()).goal.updatedAt },
+  });
+  assert.equal(started.status, 200);
+  const failed = started.body as TurnRecord;
+  assert.equal(failed.status, "indeterminate");
+  assert.ok(failed.taskBriefing);
+  const retry = await f.call(`/sessions/${f.sessionId}/turns`, "POST", {
+    input: failed.input, engine: "qoder", retryOf: failed.turnId,
+  });
+  assert.equal(retry.status, 409);
+  assert.match(JSON.stringify(retry.body), /new human review/);
+  assert.equal(f.inputs.length, 2, "restored project identity must be checked before another model call");
+});
+
 test("three persisted repair attempts exhaust the limit across store restarts", async t => {
   const f = await fixture(t);
   for (let attempt = 0; attempt < 3; attempt++) {

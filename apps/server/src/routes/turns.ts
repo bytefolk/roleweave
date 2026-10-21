@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   OrgApiError,
@@ -13,6 +14,9 @@ import type {
   TurnPendingApproval,
   TurnRecord,
   WorkbenchSession,
+  TaskBriefingRequest,
+  TaskBriefingSnapshot,
+  Goal,
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
@@ -33,6 +37,9 @@ import { ATTACHMENT_MAX_COUNT } from "@roleweave/shared";
 import { assembleVaultContext } from "../vault/context.js";
 import { recordVaultUsage } from "../vault/receipts.js";
 import { prepareGoalRework } from "../goals/rework.js";
+import { createTaskBriefing, renderTaskBriefing, taskBriefingBinding } from "../turns/task-briefing.js";
+import { projectTaskDeliveries, projectTaskExecutions } from "../goals/store.js";
+import { projectTaskCollaboration } from "../goals/collaboration.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -67,6 +74,8 @@ export function buildAttachmentContext(
 }
 
 export interface TurnPostBody {
+  /** Explicit project delegation; only the session route accepts this field. */
+  taskBriefing?: TaskBriefingRequest;
   /** Session retry association; never accepted by the bare or group routes. */
   retryOf?: string;
   positionId: string;
@@ -256,9 +265,6 @@ export async function executeTurn(
     void tracker.persist(workspace.dir, body.positionId, turnId);
   };
   try {
-    const repairContext = await prepareGoalRework(ctx, workspace.dir, body, group ? undefined : session?.sessionId);
-    assertTurnWorkspace(ctx, workspace);
-    if (repairContext.length > 0) supplementalContext = [...(supplementalContext ?? []), ...repairContext];
     let retryHistory: TurnRecord[] | undefined;
     if (body.retryOf !== undefined) {
       if (session === undefined || group !== undefined) {
@@ -282,7 +288,23 @@ export async function executeTurn(
       if (body.input !== original.input) {
         throw new OrgApiError(errorCodes.turn_request_invalid, 400, "edited input must be submitted as a new task without retryOf");
       }
+      if (original.taskBriefing) {
+        const p = original.taskBriefing.payload;
+        if ((body.goalId !== undefined && body.goalId !== p.goalId) ||
+            (body.branchId !== undefined && body.branchId !== p.taskId) ||
+            (body.taskBriefing !== undefined && (body.taskBriefing.expectedUpdatedAt !== p.planUpdatedAt ||
+              path.resolve(body.taskBriefing.expectedWorkspacePath) !== path.resolve(workspace.dir)))) {
+          throw new OrgApiError(errorCodes.turn_request_invalid, 400, "retry must retain its original project task and plan revision");
+        }
+        body = { ...body, ...taskBriefingBinding(original, workspace.dir) };
+      } else if (body.taskBriefing) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "adding a project briefing requires a fresh task without retryOf");
+      }
     }
+    // A retry may restore its project identity from the saved briefing.
+    const repairContext = await prepareGoalRework(ctx, workspace.dir, body, group ? undefined : session?.sessionId);
+    assertTurnWorkspace(ctx, workspace);
+    if (repairContext.length > 0) supplementalContext = [...(supplementalContext ?? []), ...repairContext];
     // The renderer's engine value is only a first-use fallback for legacy
     // positions. Once a sidecar exists it is authoritative, including for
     // session and group paths which share this executor.
@@ -315,6 +337,46 @@ export async function executeTurn(
       ...(session !== undefined ? { sessionId: session.sessionId, conversationRef: session.sessionId } : {}),
     }) };
     const relay = options?.relay;
+    let boundGoal: Goal | undefined;
+    if (body.goalId && body.branchId && !body.taskBriefing) {
+      try { boundGoal = await ctx.goalStore.get(workspace.dir, body.goalId); }
+      catch (error) { if (!(error instanceof OrgApiError) || error.code !== errorCodes.goal_missing) throw error; }
+      assertTurnWorkspace(ctx, workspace);
+      const task = boundGoal?.workItems?.find(item => item.taskId === body.branchId);
+      if (task && ((task.participants?.length ?? 0) > 0 || (task.dependsOn?.length ?? 0) > 0)) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "collaboration tasks require an explicit project briefing; launch from the current project plan");
+      }
+    }
+    let taskBriefing: TaskBriefingSnapshot | undefined;
+    if (body.taskBriefing) {
+      if (!session || group || !body.goalId || !body.branchId) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "project briefing requires a goal-bound personal session task");
+      }
+      if (path.resolve(body.taskBriefing.expectedWorkspacePath) !== path.resolve(workspace.dir)) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "workspace changed; reload before starting the task");
+      }
+      const goal = await ctx.goalStore.get(workspace.dir, body.goalId);
+      assertTurnWorkspace(ctx, workspace);
+      if (goal.updatedAt !== body.taskBriefing.expectedUpdatedAt) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "project plan changed; reload and start a fresh task");
+      }
+      const task = goal.workItems?.find(item => item.taskId === body.branchId);
+      if (!task) throw new OrgApiError(errorCodes.goal_conflict, 409, "project task no longer exists; reload before starting");
+      if (task.participants?.some(p => !workspace.organization.roles.some(role => role.id === p.positionId))) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "a task collaborator is no longer available; update the project assignment");
+      }
+      // A dependency references only task-bound public deliveries in this goal.
+      // No personal history or arbitrary resource grant is copied to a peer.
+      const turns = task.dependsOn?.length ? await ctx.turnStore.reportRecords(workspace.dir) : [];
+      assertTurnWorkspace(ctx, workspace);
+      const collaboration = projectTaskCollaboration(goal, task, {
+        deliveries: projectTaskDeliveries(goal, turns).taskDeliveries,
+        executions: projectTaskExecutions(goal, turns, turn => ctx.runningTurns.isRunning(workspace.dir, turn.positionId, turn.turnId)),
+        tasksWithTurns: new Set(turns.filter(turn => turn.goalId === goal.goalId).map(turn => turn.branchId).filter((id): id is string => !!id)),
+        historyAvailable: true,
+      }, createdAt);
+      taskBriefing = createTaskBriefing(goal, task, { turnId, sessionId: session.sessionId, positionId: body.positionId, generatedAt: createdAt }, collaboration);
+    }
     if (relay && (!group || relay.message.conversationRef !== group.groupRef || relay.message.messageId !== group.messageId)) {
       throw new OrgApiError(errorCodes.turn_request_invalid, 400, "relay does not belong to this group dispatch");
     }
@@ -404,8 +466,10 @@ export async function executeTurn(
       enabled: group !== undefined || (session !== undefined && session.threadContextEnabled !== false),
       turns: history,
       omittedTurnCount,
-      truncated: historyTruncated,
-      redacted: historyRedacted,
+      truncated: historyTruncated || !!taskBriefing?.payload.collaboration?.dependencies.some(d => d.delivery?.truncated) || !!taskBriefing?.payload.collaboration?.omittedDependentCount,
+      redacted: historyRedacted || (taskBriefing?.payload.redacted ?? false),
+      ...(taskBriefing ? { requiredContext: renderTaskBriefing(taskBriefing),
+        requiredSourceIds: taskBriefing.payload.collaboration?.dependencies.flatMap(d => d.delivery ? [d.delivery.turnId] : []) } : {}),
       ...(supplementalContext !== undefined ? { supplementalContext } : {}),
       ...(relay ? { relay: { ...relay, turnId, positionId: body.positionId, generatedAt: createdAt } } : {}),
     });
@@ -435,6 +499,7 @@ export async function executeTurn(
       envelopeDigest: envelope.envelopeDigest,
       ...(session !== undefined || group !== undefined || supplementalContext !== undefined ? { threadContext: context.metadata } : {}),
       ...(context.relayHandoff ? { relayHandoff: context.relayHandoff } : {}),
+      ...(taskBriefing ? { taskBriefing } : {}),
       now: createdAt,
       // Additive #52: group spawns persist through the position store tagged
       // with the local conversationRef (session arg stays undefined). Kept as a

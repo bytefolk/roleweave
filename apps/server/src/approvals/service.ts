@@ -1,3 +1,4 @@
+import { taskBriefingBinding } from "../turns/task-briefing.js";
 import crypto from "node:crypto";
 import { OrgApiError, approvalRunScopeBindingInput, errorCodes, validatePendingApproval, type ApprovalRecord, type ApprovalView, type ApprovalDecisionRequest, type ApprovalBatchDecisionRequest, type ApprovalBatchDecisionResponse, type TurnRecord, type WorkbenchSession } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
@@ -349,6 +350,7 @@ export class ApprovalService {
       const job = (async () => {
         try {
           const result = await executeTurn(this.ctx, undefined, {
+            ...taskBriefingBinding(source, ws.dir),
             positionId: a.source.positionId, engine: a.source.engine,
             input: `${request.decision === "granted" ? "[审批裁决] 请继续执行以下原任务中已批准的动作" : "[审批裁决] 已拒绝以下原任务的动作，不得执行"}\n${source.input}`,
             pendingApproval: { approvalId: a.approvalId, decision: request.decision, decidedBy: "operator", scope: effectiveScope, ...(request.reason ? { reason: request.reason } : {}), ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}) },
@@ -541,6 +543,7 @@ export class ApprovalService {
       const job = (async () => {
         try {
           const result = await executeTurn(this.ctx, undefined, {
+            ...taskBriefingBinding(source, ws.dir),
             positionId: sourceRecord.source.positionId, engine: sourceRecord.source.engine,
             input: `[审批批量裁决] 请继续执行原任务中这一组已批准的受限工具动作\n${source.input}`,
             pendingApprovals: members.map(member => ({ approvalId: member.record.approvalId, decision: "granted" as const, decidedBy: "operator" as const, scope: "once" as const, ...(request.reason ? { reason: request.reason } : {}), ...(member.record.expiresAt ? { expiresAt: member.record.expiresAt } : {}) })),

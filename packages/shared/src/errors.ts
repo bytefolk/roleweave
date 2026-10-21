@@ -159,6 +159,7 @@ export const errorCodes = {
   goal_missing: "goal_missing",
   /** Goal lifecycle state rejects the requested mutation (#222). */
   goal_conflict: "goal_conflict",
+  goal_dependency_blocked: "goal_dependency_blocked",
   /** Workspace-local goal state failed validation or atomic persistence (#222). */
   goal_storage_failed: "goal_storage_failed",
   /** Additive #306: attachment upload request shape is invalid. */

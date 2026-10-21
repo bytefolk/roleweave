@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { OwbBridge } from "../src/owb";
 import { ProjectBoard } from "../src/goals/ProjectBoard";
-import { visibleSelectOptions } from "./select-helper";
+import { visibleSelectOptions, pickSelectOption } from "./select-helper";
 import { enterPickerDate } from "./date-picker-helper";
 
 const task: GoalWorkItem = {
@@ -78,6 +78,7 @@ function setup(
   const onOpenBoundSession = vi.fn();
   const props = {
     detail: value,
+    workspaceKey: "/workspaces/release",
     positionNames: { engineer: "Engineer", designer: "Designer" },
     positionEngines: { engineer: "codex" as const },
     onRefresh,
@@ -103,6 +104,48 @@ function defer<T>() {
   });
   return { promise, resolve };
 }
+
+it("saves explicit collaborator responsibilities and predecessor references from the task editor", async () => {
+  const source: GoalWorkItem = { taskId: "source", title: "Design plan", status: "todo", priority: "normal", assigneePositionId: "designer" };
+  const context = setup(detail([task, source]));
+  fireEvent.click(screen.getByRole("button", { name: "Ship board", exact: true }));
+  pickSelectOption("添加协作者", "Designer");
+  const drawer = screen.getByRole("dialog");
+  expect(within(drawer).getByRole("button", { name: "保存任务" })).toBeDisabled();
+  fireEvent.change(screen.getByRole("textbox", { name: "Designer 的协作职责" }), { target: { value: " Review interface assumptions " } });
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "Designer 的协作角色" }));
+  fireEvent.click(await screen.findByText("审核参与", { selector: ".ant-select-item-option-content" }));
+  fireEvent.click(within(drawer).getByRole("checkbox", { name: "Design plan" }));
+  fireEvent.click(within(drawer).getByRole("button", { name: "保存任务" }));
+  await waitFor(() => expect(context.updateGoal).toHaveBeenCalledOnce());
+  expect(context.updateGoal).toHaveBeenCalledWith(expect.objectContaining({ workItems: [expect.objectContaining({
+    taskId: task.taskId, participants: [{ positionId: "designer", role: "reviewer", responsibility: "Review interface assumptions" }], dependsOn: ["source"],
+  }), source] }));
+});
+
+it("prevents cyclic editor dependencies and deleting a task that still has dependents", async () => {
+  const source: GoalWorkItem = { taskId: "source", title: "Design plan", status: "todo", priority: "normal", dependsOn: [task.taskId] };
+  const context = setup(detail([task, source]));
+  fireEvent.click(screen.getByRole("button", { name: "Ship board", exact: true }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Design plan" }));
+  expect(screen.getByRole("button", { name: "保存任务" })).toBeDisabled();
+  expect(screen.getByRole("alert")).toHaveTextContent("依赖是否形成环");
+  fireEvent.click(screen.getByRole("button", { name: "删除任务" }));
+  expect(screen.getByText("其他任务仍依赖此任务，请先编辑这些依赖后再删除。")).toBeInTheDocument();
+  expect(context.updateGoal).not.toHaveBeenCalled();
+});
+
+it("requires authoritative dependency readiness and unlocks after a refreshed manual completion", () => {
+  const assigned = { ...task, dependsOn: ["source"] };
+  const value = detail([assigned]);
+  const context = setup(value);
+  expect(screen.getByRole("button", { name: "执行任务：Ship board" })).toBeDisabled();
+  value.taskCollaborations = { [task.taskId]: { schemaVersion: "task-collaboration.v1", goalId: value.goal.goalId, taskId: task.taskId,
+    capturedAt: value.goal.updatedAt, participants: [], dependencies: [{ taskId: "source", title: "Design plan", status: "done", readiness: "manual_done" }],
+    dependents: [], omittedDependentCount: 0, redacted: false } };
+  context.rerender(<ProjectBoard {...context.props} detail={{ ...value }} />);
+  expect(screen.getByRole("button", { name: "执行任务：Ship board" })).toBeEnabled();
+});
 function chooseOption(control: HTMLElement, name: string) {
   fireEvent.mouseDown(control);
   const option = visibleSelectOptions().find(
@@ -286,6 +329,7 @@ describe("ProjectBoard", () => {
       input: "Ship board\n\nBuild a working board",
       goalId: "goal-one",
       branchId: "task-one",
+      taskBriefing: { expectedWorkspacePath: "/workspaces/release", expectedUpdatedAt: detail().goal.updatedAt },
     });
     expect(context.createTurn).not.toHaveBeenCalled();
     expect(context.createSession).not.toHaveBeenCalled();
@@ -316,6 +360,15 @@ describe("ProjectBoard", () => {
         .closest(".ant-select"),
     ).toHaveTextContent("待办");
     expect(context.updateGoal).not.toHaveBeenCalled();
+  });
+
+  it("does not downgrade a stale briefing request into an unbound launch", async () => {
+    const createSessionTurn = vi.fn().mockResolvedValue({ status: 409, body: { code: "goal_conflict" } });
+    const context = setup(detail(), { createSessionTurn });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    expect(await screen.findByText("项目、任务分工或工作区已变化，请刷新后重新执行。")).toBeInTheDocument();
+    expect(createSessionTurn).toHaveBeenCalledOnce();
+    expect(context.createTurn).not.toHaveBeenCalled();
   });
 
   it("retires a local launch response when the server observes a newer execution", async () => {

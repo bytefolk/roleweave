@@ -8,6 +8,11 @@ import { HireDrawer } from "../src/org/HireDrawer";
 import type { OwbBridge } from "../src/owb";
 import type { ApprovalView, GoalDetail, ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession, WorkspaceInfoResponse } from "@roleweave/shared";
 
+// These mount the whole desktop and exercise several async user actions. CI
+// in CI and local full-suite runs exceeded the unit-test default while
+// assertions still completed in isolation. Keep a bounded integration deadline for this file only.
+vi.setConfig({ testTimeout: 15_000 });
+
 function roleResourceGraph(path: string) {
   const evidence = { source: "workspace_documents", locator: `position:repo-owner/${path}`, basis: "observed" as const, observedAt: "2026-10-11T00:00:00Z" };
   return { schemaVersion: "relationship-graph.v1" as const, workspaceId: "resource-navigation-fixture", revision: "resource-1", generatedAt: evidence.observedAt,

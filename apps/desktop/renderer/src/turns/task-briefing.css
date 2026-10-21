@@ -1,0 +1,8 @@
+.owb-task-briefing { margin-block: 10px; border: 1px solid var(--ui-border); border-radius: 8px; font-size: 12px; }
+.owb-task-briefing > summary { cursor: pointer; padding: 10px 12px; overflow-wrap: anywhere; }
+.owb-task-briefing__body { padding: 0 12px 12px; max-height: 360px; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.owb-task-briefing__body dl { display: grid; grid-template-columns: minmax(68px, auto) minmax(0, 1fr); gap: 6px 12px; }
+.owb-task-briefing__body dt { color: var(--ui-foreground-muted); }
+.owb-task-briefing__body dd { margin: 0; }
+.owb-task-briefing__body dd p { margin-block: 4px; }
+.owb-task-briefing__body ol { padding-inline-start: 20px; }

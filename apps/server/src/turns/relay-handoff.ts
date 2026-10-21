@@ -1,4 +1,5 @@
-import crypto from "node:crypto";
+import { digest, serializeContextPayload } from "./context-snapshot.js";
+export { digest } from "./context-snapshot.js";
 import { isPositionId } from "@roleweave/shared";
 import type { GroupMessage, RelayHandoffPayload, RelayHandoffSnapshot, TurnRecord } from "@roleweave/shared";
 
@@ -10,15 +11,9 @@ export interface RelayExecutionContext {
 }
 export interface RelayAssemblyContext extends RelayExecutionContext { turnId: string; positionId: string; generatedAt: string }
 
-export function digest(text: string): string {
-  return `sha256:${crypto.createHash("sha256").update(text, "utf8").digest("hex")}`;
-}
-
 /** Key ordering is independent of JSON reader/property insertion order. */
 export function serializeRelayHandoff(payload: RelayHandoffPayload): string {
-  const ordered = (value: unknown): unknown => Array.isArray(value) ? value.map(ordered)
-    : value !== null && typeof value === "object" ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, ordered(item)])) : value;
-  return JSON.stringify(ordered(payload));
+  return serializeContextPayload(payload);
 }
 export function snapshotRelayHandoff(payload: RelayHandoffPayload): RelayHandoffSnapshot {
   const text = serializeRelayHandoff(payload);
