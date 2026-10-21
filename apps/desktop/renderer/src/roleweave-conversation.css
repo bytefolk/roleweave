@@ -314,7 +314,6 @@
 .owb-message-actions__trigger { display: inline-flex; }
 .owb-bubble__hover-actions:has(.owb-message-actions__feedback:not(:empty)),
 .owb-bubble--operator .owb-message-actions:has(.owb-message-actions__feedback:not(:empty)) { opacity: 1; }
-.owb-message-meta time { color: var(--ui-foreground-subtle); font-variant-numeric: tabular-nums; }
 :is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress__header[aria-expanded="true"] .owb-turn-progress__chevron {
   transform: rotate(90deg);
 }
@@ -565,7 +564,7 @@
   background: var(--ui-surface-inset);
 }
 
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer__surface button {
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer__surface > button {
   width: 30px;
   height: 30px;
   border-radius: 6px;
@@ -587,7 +586,7 @@
   color: var(--ui-danger-strong);
 }
 
-:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer__surface button:disabled {
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer__surface > button:disabled {
   background: var(--ui-surface-inset);
   color: var(--ui-foreground-subtle);
   opacity: 1;
@@ -1016,11 +1015,12 @@
 .owb-attachment-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 8px 0;
+  gap: 10px;
+  padding: 10px 8px 0;
 }
 
 .owb-attachment-card {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1048,17 +1048,41 @@
 }
 
 .owb-attachment-card__remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: 50%;
+  background: var(--ui-surface);
   color: var(--ui-foreground-muted);
   cursor: pointer;
-  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ui-duration-fast);
+}
+
+.owb-attachment-card:hover .owb-attachment-card__remove,
+.owb-attachment-card:focus-within .owb-attachment-card__remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.owb-attachment-card__remove:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+@media (hover: none) {
+  .owb-attachment-card__remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .owb-attachment-card__remove:hover {

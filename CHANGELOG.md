@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- #625: Stabilize conversation tooltips with reduced motion, keep attachment removal at the hovered card's top-right corner without covering Send, and show each personal-conversation request timestamp only once.
+
 ## [0.6.0] — 2026-10-21
 
 ### Added
