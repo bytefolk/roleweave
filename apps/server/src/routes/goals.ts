@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { errorCodes, OrgApiError, validateGoalTaskAcceptanceCreateRequest } from "@roleweave/shared";
+import { errorCodes, OrgApiError, validateGoalTaskAcceptanceCreateRequest, validateGoalUpdateRequest } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 
@@ -57,6 +57,13 @@ export async function handleGoalUpdate(
 ): Promise<void> {
   const workspace = ctx.workspace.requireOpen();
   const body = await readJsonBody<unknown>(req);
+  const parsed = validateGoalUpdateRequest(body);
+  if (parsed.ok) {
+    const employees = new Set(workspace.organization.roles.map(role => role.id));
+    if (parsed.value.workItems?.some(task => task.participants?.some(p => !employees.has(p.positionId)))) {
+      throw new OrgApiError(errorCodes.goal_request_invalid, 400, "collaborators must be employees in the current workspace");
+    }
+  }
   const goal = await ctx.goalStore.update(workspace.dir, goalId, body as Record<string, unknown>);
   ctx.bus.publish("goal.updated", { goalId: goal.goalId, workspacePath: workspace.dir });
   sendJson(res, 200, { goalId: goal.goalId });

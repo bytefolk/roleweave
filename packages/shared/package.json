@@ -78,6 +78,10 @@
       "types": "./dist/task-briefing.d.ts",
       "import": "./dist/task-briefing.js",
       "require": "./task-briefing.cjs"
+    },
+    "./task-collaboration": {
+      "types": "./dist/task-collaboration.d.ts",
+      "import": "./dist/task-collaboration.js"
     }
   },
   "files": [

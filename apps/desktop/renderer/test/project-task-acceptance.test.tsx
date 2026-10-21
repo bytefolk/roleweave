@@ -5,6 +5,7 @@ import type { OwbBridge } from "../src/owb";
 import { TaskAcceptanceDrawer } from "../src/goals/TaskAcceptanceDrawer";
 import { ProjectBoard } from "../src/goals/ProjectBoard";
 import { visibleSelectOptions } from "./select-helper";
+import type { TaskCollaborationContext } from "@roleweave/shared/task-collaboration";
 
 const workspaceKey = "/workspaces/release";
 const task: GoalWorkItem = {
@@ -62,6 +63,24 @@ function choose(control: HTMLElement, name: string) {
 }
 
 describe("project task delivery acceptance", () => {
+  it("distinguishes changed live collaboration from the immutable execution context", async () => {
+    const value = detail();
+    const used: TaskCollaborationContext = { schemaVersion: "task-collaboration.v1", goalId: value.goal.goalId, taskId: task.taskId, capturedAt: version,
+      participants: [], dependencies: [{ taskId: "upstream", title: "Upstream work", status: "done", readiness: "manual_done" }],
+      dependents: [], omittedDependentCount: 0, redacted: false };
+    value.taskCollaborations = { [task.taskId]: { ...used, dependencies: [{ ...used.dependencies[0], status: "review", readiness: "pending", executionStatus: "failed" }] } };
+    value.taskDeliveries![task.taskId] = { ...delivery, taskBriefing: { payload: { schemaVersion: "task-briefing.v1", generatedAt: version,
+      planUpdatedAt: version, goalId: value.goal.goalId, taskId: task.taskId, turnId: delivery.source.turnId, sessionId: delivery.source.sessionId,
+      positionId: "engineer", goalTitle: "Project", goalDescription: "Goal", taskTitle: task.title, taskDescription: "Work", acceptanceCriteria: value.goal.acceptanceCriteria,
+      collaboration: used, redacted: false }, payloadBytes: 0, payloadDigest: "fixture" } };
+    const context = setup(value);
+    expect(screen.getByText("执行后的协作状态已变化，请对照当前状态验收；历史输入未改写。")).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/执行时的任务说明/));
+    expect(await screen.findByText("手工任务已标记完成")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("当前协作状态"));
+    expect(await screen.findByText("尚未就绪")).toBeInTheDocument();
+    expect(context.createGoalTaskAcceptance).not.toHaveBeenCalled();
+  });
   it("shows the real output safely and persists all criterion confirmations bound to the exact source and workspace", async () => {
     const context = setup();
     expect(screen.getByLabelText("Agent 真实产出")).toHaveTextContent(delivery.output as string);

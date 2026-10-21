@@ -1,7 +1,9 @@
 import { createRequire } from "node:module";
+import type { TaskCollaborationContext } from "./task-collaboration.js";
 
 export interface TaskBriefingRequest { expectedWorkspacePath: string; expectedUpdatedAt: string }
 export interface TaskBriefingPayload {
+  collaboration?: TaskCollaborationContext;
   schemaVersion: "task-briefing.v1";
   generatedAt: string;
   planUpdatedAt: string;

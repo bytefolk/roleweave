@@ -429,6 +429,7 @@ export function isTurnRecord(value: unknown): value is TurnRecord {
         p.generatedAt !== value.createdAt || value.relayHandoff !== undefined ||
         !isThreadContextMetadata(value.threadContext) || snapshot.payloadBytes > value.threadContext.contextBytes ||
         (p.redacted && !value.threadContext.redacted)) return false;
+    if ((p.collaboration?.dependencies.filter(d => d.delivery).length ?? 0) > value.threadContext.sourceTurnCount) return false;
   }
   if (Object.hasOwn(value, "model") && !isEngineModelId(value.model, value.engine)) return false;
   if (Object.hasOwn(value, "attachments") && !isTurnAttachmentArray(value.attachments)) return false;
