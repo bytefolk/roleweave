@@ -4,11 +4,12 @@ import { Button, Modal, Popover, Tooltip } from "antd";
 import { useConversationCopy } from "../locales/conversation";
 import { createConversationMemory, conversationKey, type ConversationMemory } from "./conversation-memory";
 import { Maximize2, Minimize2, History, MessagesSquare } from "lucide-react";
-import type { EmployeeModelConfig, WorkbenchSession } from "@roleweave/shared";
+import type { EmployeeModelConfig, WorkbenchSession, TurnAttachment } from "@roleweave/shared";
 import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
 import type { AvailabilityCheck, NoticeAction } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
+import { inputFeedback } from "./input-feedback";
 import { BudgetRemainingOverlay } from "./BudgetRemainingOverlay";
 import { useWorkspaceExperiments } from "../experiments/useWorkspaceExperiments";
 import { EngineSelect, TURN_ENGINES, useEngineLabel } from "./engine-select";
@@ -26,6 +27,7 @@ import type {
 import {
   ATTACHMENT_ALLOWED_MIME_TYPES,
   ATTACHMENT_MAX_COUNT,
+  ATTACHMENT_MAX_SINGLE_BYTES,
   ATTACHMENT_MAX_TOTAL_BYTES,
 } from "@roleweave/shared/attachments";
 
@@ -174,7 +176,11 @@ export function TurnPanel({
   const [editRequest, setEditRequest] = useState<{ key: string; text: string } | null>(null);
   const [sendErrors, setSendErrors] = useState<Record<string, string>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [attachmentDrafts, setAttachmentDrafts] = useState<Record<string, PendingAttachment[]>>({});
+  const pendingAttachments = attachmentDrafts[draftKey] ?? [];
+  const setPendingAttachments = (update: (current: PendingAttachment[]) => PendingAttachment[]) => {
+    setAttachmentDrafts(current => ({ ...current, [draftKey]: update(current[draftKey] ?? []) }));
+  };
   const input = conversationMemory.drafts.get(draftKey) ?? "";
   const sending = sendingKeys[draftKey] === true;
   const setInput = (value: string, key = draftKey) => {
@@ -256,6 +262,10 @@ export function TurnPanel({
     const fileArray = Array.from(files);
     const accepted = fileArray.filter((f) => (ATTACHMENT_ALLOWED_MIME_TYPES as readonly string[]).includes(f.type));
     if (accepted.length === 0) return;
+    if (accepted.some(file => file.size > ATTACHMENT_MAX_SINGLE_BYTES)) {
+      setSendErrors(current => ({ ...current, [draftKey]: t("turn.attachmentSizeError") }));
+      return;
+    }
 
     const currentTotal = pendingAttachments.reduce((sum, a) => sum + a.sizeBytes, 0);
     const newTotal = accepted.reduce((sum, f) => sum + f.size, 0);
@@ -277,9 +287,8 @@ export function TurnPanel({
     }));
     setPendingAttachments((prev) => [...prev, ...newPending]);
 
-    for (const pending of newPending) {
-      const file = accepted.find((f) => f.name === pending.fileName && f.size === pending.sizeBytes);
-      if (!file) continue;
+    for (const [index, pending] of newPending.entries()) {
+      const file = accepted[index]!;
       setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "uploading" as const } : a));
       try {
         const buffer = await file.arrayBuffer();
@@ -291,12 +300,17 @@ export function TurnPanel({
           dataBase64,
         });
         if (res.status !== 200 || !res.body?.attachment) {
-          setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "error" as const, error: "upload failed" } : a));
+          const code = (res.body as { code?: string })?.code;
+          const reason = t(code === "attachment_too_large" ? "turn.attachmentSizeError"
+            : code === "attachment_total_size_exceeded" ? "turn.attachmentTotalSizeError"
+            : code === "attachment_type_unsupported" ? "turn.attachmentTypeError"
+            : code === "attachment_count_exceeded" ? "turn.attachmentCountError" : "turn.attachmentUploadFailed");
+          setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "error" as const, error: reason } : a));
           continue;
         }
         setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "ready" as const, serverId: res.body.attachment.id } : a));
       } catch {
-        setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "error" as const, error: "upload failed" } : a));
+        setPendingAttachments((prev) => prev.map((a) => a.id === pending.id ? { ...a, status: "error" as const, error: t("turn.attachmentUploadFailed") } : a));
       }
     }
   };
@@ -308,8 +322,7 @@ export function TurnPanel({
   const dispatchTurn = async (): Promise<void> => {
     const trimmed = input.trim();
     const readyAttachments = pendingAttachments.filter((a) => a.status === "ready" && a.serverId);
-    const hasContent = trimmed.length > 0 || readyAttachments.length > 0;
-    if (!hasContent || disabledReason || !selectedPosition || sendingRef.current.has(draftKey)) return;
+    if (inputFeedback(trimmed, pendingAttachments) || disabledReason || !selectedPosition || sendingRef.current.has(draftKey)) return;
     setSending(true);
     setSendErrors(current => ({ ...current, [draftKey]: "" }));
     const submittedDraft = input;
@@ -324,9 +337,11 @@ export function TurnPanel({
         engine,
         input: trimmed,
         ...(attachmentIds !== undefined ? { attachmentIds } : {}),
+        ...(readyAttachments.length ? { attachments: readyAttachments.map(a => ({ id: a.serverId!, fileName: a.fileName, mimeType: a.mimeType as TurnAttachment["mimeType"], sizeBytes: a.sizeBytes })) } : {}),
       });
       if (created !== false) {
-        setPendingAttachments([]);
+        const submitted = new Set(readyAttachments.map(a => a.id));
+        setPendingAttachments(current => current.filter(a => !submitted.has(a.id)));
       }
       if (created === false) {
         if ((conversationMemory.drafts.get(draftKey) ?? "") === "") setInput(submittedDraft, draftKey);

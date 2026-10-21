@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- #627: Explain missing attachment instructions and oversized text, block partial sends while uploads are pending or failed, show attachments immediately with optimistic and streamed messages, and pass validated images through Codex's native image inputs.
+
 ## [0.6.0] — 2026-10-21
 
 ### Added

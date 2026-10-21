@@ -70,16 +70,9 @@ function parseSessionTurn(raw: unknown): {
       "session turn requires input and engine",
     );
   }
-  if (
-    typeof raw.input !== "string" || raw.input.trim().length === 0 ||
-    Buffer.byteLength(raw.input, "utf8") > MAX_INPUT_BYTES
-  ) {
-    throw new OrgApiError(
-      errorCodes.turn_request_invalid,
-      400,
-      "input must be a non-empty UTF-8 string no larger than 256 KiB",
-    );
-  }
+  if (typeof raw.input !== "string") throw new OrgApiError(errorCodes.turn_request_invalid, 400, "input must be a string");
+  if (!raw.input.trim()) throw new OrgApiError(errorCodes.turn_input_empty, 400, "input requires a text instruction");
+  if (Buffer.byteLength(raw.input, "utf8") > MAX_INPUT_BYTES) throw new OrgApiError(errorCodes.turn_input_too_large, 400, "text input exceeds 256 KiB in UTF-8");
   if (typeof raw.engine !== "string" || !turnEngines.includes(raw.engine as TurnEngine)) {
     throw new OrgApiError(errorCodes.turn_engine_unsupported, 400, `engine must be ${turnEngines.join(" or ")}`);
   }

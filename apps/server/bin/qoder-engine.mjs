@@ -9,7 +9,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { constants as fsConstants, realpathSync, rmSync, rmdirSync } from "node:fs";
+import { constants as fsConstants, realpathSync, statSync, rmSync, rmdirSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -754,8 +754,11 @@ function turnRun(workspaceDir, positionId) {
   });
   process.stdin.on("end", () => {
     let input = "";
+    let imagePaths;
     try {
-      input = String(JSON.parse(stdinText || "{}")?.input ?? "");
+      const request = JSON.parse(stdinText || "{}");
+      input = String(request?.input ?? "");
+      imagePaths = request?.roleweaveImagePaths;
     } catch {
       input = "";
     }
@@ -766,7 +769,7 @@ function turnRun(workspaceDir, positionId) {
         return turnRunClaude(workspaceDir, positionId, input, engineModel);
       case "codex":
       case "codex-local":
-        return turnRunCodex(workspaceDir, positionId, input, engineModel);
+        return turnRunCodex(workspaceDir, positionId, input, engineModel, imagePaths);
       case "workbuddy":
         return turnRunWorkbuddy(workspaceDir, positionId, input);
       case "workbuddy-local":
@@ -1829,7 +1832,7 @@ export function codexTurnArgs(model, baseUrl) {
   return args;
 }
 
-function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
+function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex", imagePaths) {
   const localLogin = engineModel === "codex-local";
   const runId = randomUUID();
   emit({ type: "run.started", runId, timestamp: now() });
@@ -1909,6 +1912,27 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
   }
 
   const args = codexTurnArgs(model, baseUrl);
+  if (imagePaths !== undefined) {
+    try {
+      if (!Array.isArray(imagePaths) || imagePaths.length === 0 || imagePaths.length > 5) throw new Error("invalid image list");
+      const root = realpathSync(workspaceDir);
+      let total = 0;
+      for (const file of imagePaths) {
+        if (typeof file !== "string" || file.length > 4096 || !path.isAbsolute(file)) throw new Error("invalid image path");
+        const resolved = realpathSync(file);
+        const relative = path.relative(root, resolved).split(path.sep).join("/");
+        if (!/^\.roleweave\/sessions\/[0-9a-f-]{36}\/attachments\/[0-9a-f-]{36}\/file$/.test(relative)) throw new Error("image outside attachment store");
+        const stat = statSync(resolved);
+        if (!stat.isFile() || stat.size <= 0 || stat.size > 10 * 1024 * 1024) throw new Error("invalid image file");
+        total += stat.size;
+        if (total > 30 * 1024 * 1024) throw new Error("image budget exceeded");
+        args.push("--image", resolved);
+      }
+    } catch {
+      fail("attachment.image_input_invalid", "cannot read the attached image; remove it and upload it again", false);
+      return;
+    }
+  }
   // cmd.exe truncates multiline argv passed through npm .cmd launchers.
   // stdin also avoids Windows command-line length limits for thread context.
   args.push("-");

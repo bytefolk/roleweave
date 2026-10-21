@@ -170,6 +170,8 @@ export interface TurnEnvelope {
 }
 
 export interface TurnRunRequest {
+  /** Server-resolved current-session image files, never renderer-supplied paths. */
+  imagePaths?: string[];
   model?: string;
   workspace: string;
   positionId: string;

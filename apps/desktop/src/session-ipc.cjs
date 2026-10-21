@@ -37,10 +37,9 @@ function validateSessionTurnRequest(value) {
   if (!validateSessionId(value.sessionId)) {
     return { ok: false, response: invalid("session_request_invalid", "sessionId is invalid") };
   }
-  if (typeof value.input !== "string" || value.input.trim().length === 0 ||
-      Buffer.byteLength(value.input, "utf8") > MAX_INPUT_BYTES) {
-    return { ok: false, response: invalid("turn_request_invalid", "input must be non-empty and no larger than 256 KiB") };
-  }
+  if (typeof value.input !== "string") return { ok: false, response: invalid("turn_request_invalid", "input must be a string") };
+  if (value.input.trim().length === 0) return { ok: false, response: invalid("turn_input_empty", "input requires a text instruction") };
+  if (Buffer.byteLength(value.input, "utf8") > MAX_INPUT_BYTES) return { ok: false, response: invalid("turn_input_too_large", "text input exceeds 256 KiB in UTF-8") };
   if (typeof value.engine !== "string" || !TURN_ENGINES.has(value.engine)) {
     return { ok: false, response: invalid("turn_engine_unsupported", `engine must be ${turnEngineMessage()}`) };
   }
