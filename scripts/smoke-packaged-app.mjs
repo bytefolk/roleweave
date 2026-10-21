@@ -180,7 +180,8 @@ printf '%s\\n' '__ORG_WORKBENCH_LOGIN_PATH__=${smokeBin}:/usr/bin:/bin:/usr/sbin
 
 export function createLayoutLaunchEnvironment(platform, { stagingRoot, workspace, report }) {
   // #127 AC-004: full-app layout smoke. Deliberately NO packaged-smoke nonce:
-  // the renderer must render the REAL app (two-column org workspace), not the
+  // the renderer must render the REAL app (two-column workspace — since #523
+  // the collaboration sidebar beside the conversation turn panel), not the
   // minimal static smoke entry. Main measures the layout and writes the report.
   const base = createLaunchEnvironment(platform, {
     stagingRoot,
@@ -537,7 +538,7 @@ export async function smokePackagedApp(platform, candidate, options = {}) {
       // a null layout means the two-column module never rendered. The layout
       // app exits right after writing its report, so the liveness/process-tree
       // proofs below (static/behavior only) are skipped for this mode.
-      assert.notEqual(smoke.layout, null, "layout smoke did not measure the two-column org workspace");
+      assert.notEqual(smoke.layout, null, "layout smoke did not measure the two-column workspace");
       // #186: wait for the exit the comment above assumes, before the cleanup
       // below removes the tree the app is still holding open. Ordered before
       // `completedReport` is set on purpose: if the app does not close, the

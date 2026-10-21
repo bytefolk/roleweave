@@ -6,8 +6,20 @@ import type { ControlPlaneContext } from "./context.js";
 import { sendError, sendJson } from "./http.js";
 import { handleAssetsCreate, handleAssetsList, handleAssetsRead } from "./routes/assets.js";
 import { handleDocPlaneDetail, handleDocPlaneList } from "./routes/doc-plane.js";
-import { handleDocsCreate, handleDocsList, handleDocsRead, handleDocsResolve } from "./routes/docs.js";
-import { handleDriveDetail, handleDriveList, handleDriveUpload } from "./routes/drive.js";
+import {
+  handleDocsArchive,
+  handleDocsCreate,
+  handleDocsDelete,
+  handleDocsList,
+  handleDocsRead,
+  handleDocsRename,
+  handleDocsResolve,
+  handleDocsRestore,
+  handleDocsWrite,
+} from "./routes/docs.js";
+import { handleDriveDetail, handleDriveList, handleDrivePreview, handleDriveProviderStatus, handleDriveUpload } from "./routes/drive.js";
+import { handleVault } from "./vault/routes.js";
+import { handleVaultExtensions } from "./vault/extensions.js";
 import { handleEvents } from "./routes/events.js";
 import {
   handleGroupAddMember,
@@ -17,6 +29,7 @@ import {
   handleGroupList,
   handleGroupTimeline,
   handleGroupTurnPost,
+  handleGroupRelayStopDecision,
 } from "./routes/groups.js";
 import {
   handleGoalCreate,
@@ -24,6 +37,7 @@ import {
   handleGoalGet,
   handleGoalList,
   handleGoalUpdate,
+  handleGoalTaskAcceptance,
 } from "./routes/goals.js";
 import { handleHealth } from "./routes/health.js";
 import { handleQoderLoginStart, handleQoderLoginStatus } from "./routes/qoder-login.js";
@@ -32,7 +46,12 @@ import { handleAvatarGenerate } from "./routes/avatar.js";
 import { handleOrgApply, handleOrgBackups, handleOrgRestore, handleOrgTree, handleOrgUndo } from "./routes/org.js";
 import { handlePositionAgentEngine, handlePositionGet, handlePositionModel, handlePositionProfilePatch } from "./routes/positions.js";
 import { handleReports } from "./routes/reports.js";
-import { handleExperimentsGet, handleExperimentsUpdate, handleReportsAdvice } from "./routes/experiments.js";
+import {
+  handleBudgetRemainingAdvice,
+  handleExperimentsGet,
+  handleExperimentsUpdate,
+  handleReportsAdvice,
+} from "./routes/experiments.js";
 import { handleApprovals } from "./routes/approvals.js";
 import { approvals } from "./approvals/service.js";
 import {
@@ -63,6 +82,7 @@ export function createControlPlane(ctx: ControlPlaneContext): http.Server {
   server.headersTimeout = 10000;
   server.on("close", () => { void approvals(ctx).close().catch(() => undefined); });
   server.on("close", () => { ctx.experimentsService?.close(); });
+  server.on("close", () => { ctx.relayStop.continueAll("disconnect"); });
   return server;
 }
 
@@ -87,7 +107,18 @@ async function dispatch(
     }
 
     if (await handleServices(ctx, req, res, url)) return;
+    if (await handleVaultExtensions(ctx, req, res, url)) return;
+    if (await handleVault(ctx, req, res, url)) return;
     if (await handleApprovals(ctx, req, res, url, actor)) return;
+
+    // Authenticated, count-only shell status. No task text, file paths or
+    // credentials enter the OS tray; reservations cover all open workspaces.
+    if (pathname === "/desktop/status" && method === "GET") {
+      const workspace = ctx.workspace.active;
+      const pending = workspace ? (await approvals(ctx).list(workspace)).filter(item => item.status === "pending").length : 0;
+      sendJson(res, 200, { runningTurns: ctx.runningTurns.activeCount, pendingApprovals: pending });
+      return;
+    }
 
     if (pathname === routes.health && method === "GET") {
       await handleHealth(ctx, res);
@@ -165,6 +196,10 @@ async function dispatch(
       await handleReportsAdvice(ctx, req, res);
       return;
     }
+    if (pathname === routes.budgetRemainingAdvice && method === "POST") {
+      await handleBudgetRemainingAdvice(ctx, req, res);
+      return;
+    }
     if (pathname === routes.sessions && method === "POST") {
       await handleSessionCreate(ctx, req, res);
       return;
@@ -217,7 +252,7 @@ async function dispatch(
       await handleGroupList(ctx, res);
       return;
     }
-    const groupMatch = pathname.match(/^\/groups\/([^/]+)(?:\/(members|turns))?$/);
+    const groupMatch = pathname.match(/^\/groups\/([^/]+)(?:\/(members|turns|relay-stop))?$/);
     if (groupMatch) {
       let conversationRef: string;
       try {
@@ -244,6 +279,10 @@ async function dispatch(
       }
       if (operation === "turns" && method === "GET") {
         await handleGroupTimeline(ctx, res, conversationRef);
+        return;
+      }
+      if (operation === "relay-stop" && method === "POST") {
+        await handleGroupRelayStopDecision(ctx, req, res, conversationRef);
         return;
       }
       sendJson(
@@ -298,6 +337,26 @@ async function dispatch(
       await handleDocsResolve(ctx, req, res);
       return;
     }
+    if (pathname === routes.docsWrite && method === "POST") {
+      await handleDocsWrite(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docsRename && method === "POST") {
+      await handleDocsRename(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docsArchive && method === "POST") {
+      await handleDocsArchive(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docsRestore && method === "POST") {
+      await handleDocsRestore(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.docsDelete && method === "POST") {
+      await handleDocsDelete(ctx, req, res);
+      return;
+    }
     if (pathname === routes.docPlaneList && method === "GET") {
       await handleDocPlaneList(ctx, res, url);
       return;
@@ -326,8 +385,16 @@ async function dispatch(
       await handleDriveDetail(ctx, res, url);
       return;
     }
+    if (pathname === routes.drivePreview && method === "GET") {
+      await handleDrivePreview(ctx, res, url);
+      return;
+    }
     if (pathname === routes.driveUpload && method === "POST") {
-      await handleDriveUpload(res);
+      await handleDriveUpload(ctx, req, res, url);
+      return;
+    }
+    if (pathname === routes.driveProvider && method === "GET") {
+      await handleDriveProviderStatus(ctx, res);
       return;
     }
     if (pathname === routes.goals && method === "POST") {
@@ -351,6 +418,15 @@ async function dispatch(
     }
     if (pathname === routes.goals && method === "GET") {
       await handleGoalList(ctx, res);
+      return;
+    }
+    const goalAcceptanceMatch = pathname.match(/^\/goals\/([a-zA-Z0-9_-]{1,64})\/tasks\/([a-zA-Z0-9_-]{1,64})\/acceptance$/);
+    if (goalAcceptanceMatch) {
+      if (method !== "POST") {
+        sendJson(res, 405, new OrgApiError(errorCodes.method_not_allowed, 405, "task acceptance requires POST").toBody());
+        return;
+      }
+      await handleGoalTaskAcceptance(ctx, req, res, goalAcceptanceMatch[1]!, goalAcceptanceMatch[2]!, actor!);
       return;
     }
     const goalMatch = pathname.match(/^\/goals\/([^/]+)$/);

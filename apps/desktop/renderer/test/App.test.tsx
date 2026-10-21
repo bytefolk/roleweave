@@ -1,10 +1,35 @@
+import { applyConfiguration } from "../src/configuration-preferences";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { message } from "antd";
 import { pickSelectOption, visibleSelectOptions } from "./select-helper";
 import { App } from "../src/App";
 import { HireDrawer } from "../src/org/HireDrawer";
 import type { OwbBridge } from "../src/owb";
-import type { ApprovalView, ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession, WorkspaceInfoResponse } from "@roleweave/shared";
+import type { ApprovalView, GoalDetail, ReportsResponse, TurnHistory, TurnRecord, WorkbenchSession, WorkspaceInfoResponse } from "@roleweave/shared";
+
+function roleResourceGraph(path: string) {
+  const evidence = { source: "workspace_documents", locator: `position:repo-owner/${path}`, basis: "observed" as const, observedAt: "2026-10-11T00:00:00Z" };
+  return { schemaVersion: "relationship-graph.v1" as const, workspaceId: "resource-navigation-fixture", revision: "resource-1", generatedAt: evidence.observedAt,
+    nodes: [
+      { id: "agent:repo-owner", kind: "agent" as const, label: "Reader Owner", state: "ready" as const, positionId: "repo-owner", evidence },
+      { id: "source:role-docs", kind: "source" as const, label: "Role docs", state: "ready" as const, evidence },
+      { id: "resource:role-file", kind: "resource" as const, label: path, state: "ready" as const, positionId: "repo-owner", resourcePath: path, evidence },
+    ], edges: [
+      { id: "edge:source", source: "agent:repo-owner", target: "source:role-docs", kind: "declares_source" as const, evidence, permission: "unknown" as const },
+      { id: "edge:file", source: "source:role-docs", target: "resource:role-file", kind: "contains_resource" as const, evidence, permission: "unknown" as const },
+    ], coverage: [], truncated: false, limits: { nodes: 400, edges: 800 } };
+}
+
+async function openGraphRoleResource(path: string) {
+  await openOrganizationStructure();
+  fireEvent.click(within(screen.getByRole("navigation", { name: "组织视图" })).getByRole("button", { name: "关系图谱" }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Reader Owner / }));
+  const context = within(screen.getByRole("region", { name: "关联上下文" }));
+  fireEvent.click(context.getByRole("button", { name: "探索对象: Role docs" }));
+  fireEvent.click(context.getByRole("button", { name: `探索对象: ${path}` }));
+  fireEvent.click(context.getByRole("button", { name: "打开文档" }));
+}
 
 const activeSession: WorkbenchSession = {
   schemaVersion: "workbench-session.v1",
@@ -68,6 +93,13 @@ function installBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
       detail: vi.fn().mockResolvedValue({ status: 404, body: { code: "asset_not_found" } }),
       upload: vi.fn().mockResolvedValue({ status: 202, body: { stub: true, filePath: "", message: "stub" } }),
       pickAndUpload: vi.fn().mockResolvedValue({ canceled: true }),
+    },
+    vault: {
+      list: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "vault-list.v1", notes: [] } }),
+      read: vi.fn(), create: vi.fn(), write: vi.fn(), rename: vi.fn(), archive: vi.fn(), restore: vi.fn(), delete: vi.fn(), migrate: vi.fn(),
+      bindings: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "vault-bindings.v1", bindings: [] } }),
+      bind: vi.fn(), source: vi.fn().mockResolvedValue({ status: 200, body: { vaultId: "fixture-vault" } }), resolve: vi.fn(), image: vi.fn(), attach: vi.fn(), fromTurn: vi.fn(), sync: vi.fn(),
+      targets: vi.fn().mockResolvedValue({ status: 200, body: { vaults: [] } }), context: vi.fn(), history: vi.fn(), used: vi.fn().mockResolvedValue({ status: 200, body: { notes: [] } }),
     },
     createTurn: vi.fn().mockResolvedValue({ status: 500, body: { code: "internal", message: "unexpected" } }),
     turnHistory: vi.fn().mockResolvedValue({
@@ -187,6 +219,7 @@ function openedBridge(overrides: Partial<OwbBridge> = {}): OwbBridge {
           codex: { configured: true, ready: true },
           "codex-local": { configured: true, ready: true },
           workbuddy: { configured: true, ready: true, modelPinnable: true, model: "fixture-model" },
+          "workbuddy-local": { configured: true, ready: true, modelPinnable: true, model: "fixture-model" },
         },
         workspace: { open: true, path: "/fixture/workspace" },
       },
@@ -234,6 +267,449 @@ async function chooseExistingWorkspace(): Promise<void> {
   });
 }
 
+async function openOrganizationStructure(): Promise<HTMLElement> {
+  fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "组织" }));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "组织视图" })).getByRole("button", { name: "组织架构" }));
+  const structure = await screen.findByRole("region", { name: "组织架构" });
+  expect(structure.closest(".owb-main")).not.toBeNull();
+  expect(structure.closest(".ui-app-shell__sidebar")).toBeNull();
+  return structure;
+}
+
+async function openInbox(view: "审批" | "上报" = "审批"): Promise<void> {
+  await act(async () => {
+    fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "收件箱" }));
+  });
+  const views = within(screen.getByRole("navigation", { name: "收件箱视图" }));
+  expect(views.getByRole("button", { name: "审批" })).toHaveAttribute("aria-pressed", "true");
+  if (view === "上报") {
+    await act(async () => { fireEvent.click(views.getByRole("button", { name: "上报" })); });
+  }
+}
+
+function selectEmployeeView(name: "对话" | "资料与记忆" | "档案"): void {
+  fireEvent.click(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name }));
+}
+
+function contactAction(name: "创建员工" | "撤销"): void {
+  fireEvent.click(screen.getByRole("button", { name: "通讯录操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name }));
+}
+
+describe("App context navigation", () => {
+  // Renders the full App and walks every module tab, so on slower runners it
+  // sits above the 5s default and fails fresh runs of main (#529). 15s
+  // matches the other full-App tests in this file.
+  it("consolidates the collaboration toolbar and places employee actions beside the tabs", async () => {
+    const bridge = openedBridge();
+    render(<App />);
+    await screen.findByRole("tree");
+    const sidebar = within(document.querySelector<HTMLElement>(".ui-sidebar")!);
+    expect(document.querySelector(".owb-context-header__name")).toHaveTextContent("选择员工");
+    expect(sidebar.queryByRole("button", { name: "创建员工" })).toBeNull();
+    expect(sidebar.queryByRole("button", { name: "撤销" })).toBeNull();
+    fireEvent.click(sidebar.getByRole("button", { name: "通讯录操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "撤销" }));
+    await waitFor(() => expect(bridge.orgUndo).toHaveBeenCalledTimes(1));
+    await selectRepoOwner();
+    const header = document.querySelector<HTMLElement>(".owb-context-header--employee")!;
+    expect(header).not.toBeNull();
+    expect(within(header).getByRole("button", { name: "会话历史" })).toBeVisible();
+    expect(within(header).getByRole("button", { name: "专注对话" })).toBeVisible();
+    const conversation = screen.getByRole("region", { name: "岗位对话" });
+    expect(conversation.querySelector(".owb-turn-panel__header")).toBeNull();
+    expect(conversation).toHaveClass("owb-turn-panel--embedded");
+    const input = screen.getByRole("textbox", { name: "下达任务" });
+    fireEvent.change(input, { target: { value: "精简布局仍保留草稿" } });
+    selectEmployeeView("资料与记忆");
+    expect(screen.queryByRole("button", { name: "会话历史" })).toBeNull();
+    selectEmployeeView("对话");
+    expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(input);
+    expect(input).toHaveValue("精简布局仍保留草稿");
+    expect(within(header).getByRole("button", { name: "会话历史" })).toBeVisible();
+    for (const name of ["组织", "项目", "收件箱", "设置"]) {
+      fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name }));
+      expect(screen.queryByRole("button", { name: "会话历史" })).toBeNull();
+      fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "协作" }));
+      const restored = document.querySelector<HTMLElement>(".owb-context-header--employee")!;
+      expect(within(restored).getByRole("button", { name: "会话历史" })).toBeVisible();
+      expect(screen.getAllByRole("button", { name: "会话历史" })).toHaveLength(1);
+      expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(input);
+      expect(input).toHaveValue("精简布局仍保留草稿");
+    }
+  }, 15_000);
+
+  it("opens employee creation from the compact contacts menu without submitting it", async () => {
+    const bridge = openedBridge();
+    render(<App />);
+    await screen.findByRole("tree");
+    fireEvent.click(screen.getByRole("button", { name: "通讯录操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "创建员工" }));
+    expect(await screen.findByRole("button", { name: "开始创建" })).toBeDisabled();
+    expect(bridge.hire).not.toHaveBeenCalled();
+  });
+
+  it("groups primary navigation by working context instead of individual features", async () => {
+    openedBridge();
+    render(<App />);
+    await screen.findByRole("tree");
+    const rail = within(screen.getByRole("navigation", { name: "模块" }));
+    expect(rail.getAllByRole("button").filter(button => !button.hasAttribute("aria-expanded")).map(button => button.getAttribute("aria-label") ?? button.textContent)).toEqual(["协作", "组织", "项目", "收件箱", "设置"]);
+    expect(rail.getByRole("button", { name: "协作" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("keeps context labels separate from choices and marks only the actual current view selected", async () => {
+    const group = { schemaVersion: "conversation-group.v1" as const,
+      conversationRef: "33333333-3333-4333-8333-333333333333", sessionId: "44444444-4444-4444-8444-444444444444",
+      members: ["repo-owner"], createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" };
+    openedBridge({
+      groups: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "conversation-group-list.v1", groups: [group] } }),
+      groupTimeline: vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "group-timeline.v1", conversationRef: group.conversationRef, items: [] } }),
+    });
+    render(<App />);
+    await selectRepoOwner();
+    const expectChoice = (groupName: string, selectedName: string) => {
+      const navigation = screen.getByRole("navigation", { name: groupName });
+      const choices = within(navigation).getAllByRole("button");
+      const selected = within(navigation).getByRole("button", { name: selectedName });
+      expect(choices.filter(button => button.getAttribute("aria-pressed") === "true")).toEqual([selected]);
+      for (const button of choices.filter(button => button !== selected)) expect(button).toHaveAttribute("aria-pressed", "false");
+      return navigation;
+    };
+    const expectLabel = (navigation: HTMLElement, text: string) => {
+      const header = navigation.closest(".owb-context-header")!;
+      const label = header.querySelector<HTMLElement>(".owb-context-label")!;
+      expect(label).toHaveTextContent(text);
+      expect(label.closest("button")).toBeNull();
+      expect(label.closest("nav")).toBeNull();
+      expect(label).not.toHaveAttribute("aria-pressed");
+      expect(label).not.toHaveAttribute("tabindex");
+      expect(label.querySelector("button")).toBeNull();
+    };
+    const clickChoice = async (navigation: HTMLElement, name: string) => {
+      await act(async () => { fireEvent.click(within(navigation).getByRole("button", { name })); });
+    };
+    expectChoice("协作方式", "单聊");
+    expectLabel(expectChoice("员工视图", "对话"), "代码库负责人");
+    for (const [name, region] of [["资料与记忆", "笔记库"], ["档案", "岗位档案"], ["对话", "岗位对话"]] as const) {
+      await clickChoice(screen.getByRole("navigation", { name: "员工视图" }), name);
+      expect(await screen.findByRole("region", { name: region })).toBeVisible();
+      expectLabel(expectChoice("员工视图", name), "代码库负责人");
+      expectChoice("协作方式", "单聊");
+    }
+    await clickChoice(screen.getByRole("navigation", { name: "协作方式" }), "群聊");
+    expect(await screen.findByLabelText("群聊消息")).toBeVisible();
+    expectChoice("协作方式", "群聊");
+    await clickChoice(screen.getByRole("navigation", { name: "协作方式" }), "单聊");
+    expect(await screen.findByRole("region", { name: "岗位对话" })).toBeVisible();
+    expectChoice("协作方式", "单聊");
+    const rail = screen.getByRole("navigation", { name: "模块" });
+    await clickChoice(rail, "组织");
+    for (const name of ["组织架构", "关系图谱", "组织架构"]) {
+      await clickChoice(screen.getByRole("navigation", { name: "组织视图" }), name);
+      expect(await screen.findByRole("region", { name })).toBeVisible();
+      expectLabel(expectChoice("组织视图", name), "组织");
+    }
+    await clickChoice(rail, "项目");
+    for (const [name, region] of [["目标", "目标"], ["进度", "任务实时进度"], ["项目管理", "项目管理"]] as const) {
+      await clickChoice(screen.getByRole("navigation", { name: "项目视图" }), name);
+      expect(await screen.findByRole("region", { name: region })).toBeVisible();
+      expectLabel(expectChoice("项目视图", name), "项目");
+    }
+    await clickChoice(rail, "收件箱");
+    for (const [name, region] of [["审批", "审批中心"], ["上报", "执行上报"], ["审批", "审批中心"]] as const) {
+      await clickChoice(screen.getByRole("navigation", { name: "收件箱视图" }), name);
+      expect(await screen.findByRole("region", { name: region })).toBeVisible();
+      expectLabel(expectChoice("收件箱视图", name), "收件箱");
+    }
+  }, 15_000);
+
+  it("keeps Agent selection and the conversation draft across memory and profile", async () => {
+    openedBridge();
+    render(<App />);
+    await selectRepoOwner();
+    const composer = screen.getByRole("textbox", { name: "下达任务" });
+    fireEvent.change(composer, { target: { value: "保留这段协作草稿" } });
+    const views = within(screen.getByRole("navigation", { name: "员工视图" }));
+    const tree = screen.getByRole("tree");
+    fireEvent.click(views.getByRole("button", { name: "资料与记忆" }));
+    expect(await screen.findByRole("region", { name: "笔记库" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tree")).toBe(tree);
+    fireEvent.click(views.getByRole("button", { name: "档案" }));
+    expect(await screen.findByRole("region", { name: "岗位档案" })).toHaveTextContent("代码库负责人");
+    fireEvent.click(views.getByRole("button", { name: "对话" }));
+    expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(composer);
+    expect(composer).toHaveValue("保留这段协作草稿");
+  });
+
+  it.each(["资料与记忆", "档案"] as const)("keeps the %s subview and correct identity when switching between two contacts", async subview => {
+    const employees = [position, { ...position, id: "docs-writer", name: "文档负责人", description: "负责文档维护", reportTo: "repo-owner" }];
+    const sessions = employees.map((employee, index) => ({
+      ...activeSession, positionId: employee.id, principal: `position.${employee.id}`,
+      sessionId: `${index + 1}1111111-1111-4111-8111-111111111111`,
+    }));
+    const positionDocs = vi.fn(async (id: string) => ({ status: 200, body: {
+      schemaVersion: "docs-file-list.v1", positionId: id,
+      files: [{ path: `${id}.md`, kind: "file", size: 32, modifiedAt: "2026-08-27T00:00:00.000Z" }],
+    } }));
+    const bridge = openedBridge({
+      orgTree: vi.fn().mockResolvedValue({ status: 200, body: { ...snapshot, positionCount: 2, depth: 2,
+        tree: [{ ...snapshot.tree[0]!, children: [{ ...snapshot.tree[0]!, id: "docs-writer", reportTo: "repo-owner" }] }],
+      } }),
+      position: vi.fn(async id => ({ status: 200, body: { position: employees.find(employee => employee.id === id)!, agentEngine: "qoder" } })),
+      sessions: vi.fn(async id => ({ status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId: id,
+        activeSessionId: sessions.find(session => session.positionId === id)!.sessionId,
+        sessions: sessions.filter(session => session.positionId === id),
+      } })),
+      sessionTurnHistory: vi.fn(async sessionId => ({ status: 200, body: {
+        ...history([apiTurn({ conversationId: sessionId, positionId: sessions.find(session => session.sessionId === sessionId)!.positionId,
+          output: `${sessions.find(session => session.sessionId === sessionId)!.positionId} 的结果` })]),
+        conversationId: sessionId, positionId: sessions.find(session => session.sessionId === sessionId)!.positionId,
+      } })),
+      positionDocs,
+    });
+    render(<App />);
+    await selectRepoOwner();
+    expect(await screen.findByText("repo-owner 的结果")).toBeVisible();
+    selectEmployeeView(subview);
+    const views = within(screen.getByRole("navigation", { name: "员工视图" }));
+    for (const employee of [employees[0]!, employees[1]!, employees[0]!]) {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("tree").querySelector(`[data-org-node-id="${employee.id}"]`)!);
+      });
+      expect(views.getByRole("button", { name: subview })).toHaveAttribute("aria-pressed", "true");
+      expect(views.getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "false");
+      expect(screen.queryByRole("region", { name: "岗位对话" })).not.toBeInTheDocument();
+      expect(document.querySelector(".owb-context-header__name")).toHaveTextContent(employee.name);
+      const other = employees.find(candidate => candidate.id !== employee.id)!;
+      if (subview === "资料与记忆") {
+        const memory = within(screen.getByRole("region", { name: "笔记库" }));
+        expect(await memory.findByText("还没有笔记")).toBeVisible();
+        expect(bridge.vault.list).toHaveBeenCalledWith(expect.objectContaining({ includeLegacy: true }));
+        expect(positionDocs).not.toHaveBeenCalled();
+        expect(memory.queryByRole("combobox", { name: "选择员工查看资料与记忆" })).not.toBeInTheDocument();
+      } else {
+        const profile = within(screen.getByRole("region", { name: "岗位档案" }));
+        expect(await profile.findByRole("heading", { name: employee.name })).toBeVisible();
+        expect(profile.getByText(employee.description)).toBeVisible();
+        expect(profile.queryByRole("heading", { name: other.name })).not.toBeInTheDocument();
+      }
+      selectEmployeeView("对话");
+      const conversation = within(await screen.findByRole("region", { name: "岗位对话" }));
+      expect(await conversation.findByText(`${employee.id} 的结果`)).toBeVisible();
+      expect(conversation.queryByText(`${other.id} 的结果`)).not.toBeInTheDocument();
+      expect(bridge.sessionTurnHistory).toHaveBeenLastCalledWith(sessions.find(session => session.positionId === employee.id)!.sessionId);
+      selectEmployeeView(subview);
+    }
+  }, 10_000);
+
+  it("removes the contact sidebar on every global context while retaining the workspace switcher", async () => {
+    openedBridge();
+    render(<App />);
+    await screen.findByRole("tree");
+    for (const name of ["组织", "项目", "收件箱", "设置"]) {
+      fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name }));
+      expect(document.querySelector(".ui-app-shell__sidebar .ui-sidebar")).toBeNull();
+      const switcher = screen.getByRole("button", { name: "项目入口" });
+      expect(switcher.closest(".ui-app-shell__sidebar")).toBeNull();
+      expect(switcher).toBeEnabled();
+    }
+    fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "协作" }));
+    expect(await screen.findByRole("tree")).toBeInTheDocument();
+  });
+
+  it("keeps project children global and opens approvals and reports inside the inbox", async () => {
+    openedBridge();
+    render(<App />);
+    await screen.findByRole("tree");
+    const rail = within(screen.getByRole("navigation", { name: "模块" }));
+    fireEvent.click(rail.getByRole("button", { name: "项目" }));
+    const projectViews = within(screen.getByRole("navigation", { name: "项目视图" }));
+    for (const name of ["目标", "进度", "项目管理"]) {
+      fireEvent.click(projectViews.getByRole("button", { name }));
+      expect(rail.getByRole("button", { name: "项目" })).toHaveAttribute("aria-current", "page");
+      expect(document.querySelector(".ui-app-shell__sidebar .ui-sidebar")).toBeNull();
+    }
+    fireEvent.click(rail.getByRole("button", { name: "收件箱" }));
+    const inboxViews = within(screen.getByRole("navigation", { name: "收件箱视图" }));
+    fireEvent.click(inboxViews.getByRole("button", { name: "上报" }));
+    expect(await screen.findByRole("region", { name: "执行上报" })).toBeInTheDocument();
+    fireEvent.click(inboxViews.getByRole("button", { name: "审批" }));
+    expect(rail.getByRole("button", { name: "收件箱" })).toHaveAttribute("aria-current", "page");
+  });
+});
+
+describe("App organization feedback", () => {
+  function installOpenableBridge(overrides: Partial<OwbBridge> = {}) {
+    return openedBridge({
+      openWorkspace: vi.fn().mockResolvedValue({
+        status: 200,
+        body: { open: true, path: "/fixture/workspace", business: "开源业务" },
+      }),
+      ...overrides,
+    });
+  }
+
+  // Avoid waitFor's real-timer microtask drain while the notification clock is fake.
+  async function openWorkspace() {
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "项目入口" })); });
+    const dialog = screen.getByRole("dialog", { name: "选择工作区" });
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: /打开项目/ })); });
+  }
+
+  it("shows explicit open feedback outside the main content and dismisses it after three seconds", async () => {
+    installOpenableBridge();
+    const view = render(<App />);
+    await screen.findByRole("tree");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      await openWorkspace();
+      const feedback = screen.getByText("项目「开源业务」已打开");
+      expect.soft(feedback.closest(".owb-main")).toBeNull();
+      expect.soft(feedback.closest(".ant-message")).not.toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(2999); });
+      expect(screen.getByText("项目「开源业务」已打开")).toBeInTheDocument();
+      // Ant Design checks elapsed time on animation frames; include the next paint.
+      await act(async () => { await vi.advanceTimersByTimeAsync(17); });
+      expect(screen.queryByText("项目「开源业务」已打开")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /\/fixture\/workspace$/ })).toBeInTheDocument();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not announce a workspace automatically restored at startup", async () => {
+    openedBridge();
+    const view = render(<App />);
+    await screen.findByRole("tree");
+    expect(screen.getByRole("button", { name: /\/fixture\/workspace$/ })).toBeInTheDocument();
+    expect(screen.queryByText("项目「开源业务」已打开")).not.toBeInTheDocument();
+    expect(document.querySelector(".ant-message-notice")).toBeNull();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+      expect(screen.queryByText("项目「开源业务」已打开")).not.toBeInTheDocument();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a replacement warning inline beyond the previous notification timeout", async () => {
+    installOpenableBridge({
+      orgUndo: vi.fn().mockResolvedValue({ status: 409, body: { message: "组织已变更，请重试" } }),
+    });
+    const view = render(<App />);
+    await screen.findByRole("tree");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      await openWorkspace();
+      expect(screen.getByText("项目「开源业务」已打开")).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      await act(async () => { contactAction("撤销"); });
+      const main = document.querySelector<HTMLElement>(".owb-main")!;
+      expect(within(main).getByRole("alert")).toHaveTextContent("组织已变更，请重试");
+      expect(screen.queryByText("项目「开源业务」已打开")).not.toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+      expect(within(main).getByRole("alert")).toHaveTextContent("组织已变更，请重试");
+      expect(document.querySelector(".ant-message-notice")).toBeNull();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("replaces info without stacking and gives the new notification its own timeout", async () => {
+    installOpenableBridge();
+    const view = render(<App />);
+    await screen.findByRole("tree");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "requestAnimationFrame", "cancelAnimationFrame"] });
+    try {
+      await openWorkspace();
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      await act(async () => { contactAction("撤销"); });
+      expect(screen.queryByText("项目「开源业务」已打开")).not.toBeInTheDocument();
+      expect.soft(document.querySelectorAll(".ant-message-notice")).toHaveLength(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1016); });
+      expect(screen.getByText("没有可撤销的组织调整")).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      expect(screen.queryByText("没有可撤销的组织调整")).not.toBeInTheDocument();
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not let a late info onClose erase a newer warning", async () => {
+    // Keep real Ant Design rendering; capture only the callback to replay a delayed close.
+    const useMessage = vi.spyOn(message, "useMessage");
+    installOpenableBridge({
+      orgUndo: vi.fn().mockResolvedValue({ status: 409, body: { message: "组织已变更，请重试" } }),
+    });
+    const view = render(<App />);
+    let restoreOpen: (() => void) | undefined;
+    try {
+      await screen.findByRole("tree");
+      const result = useMessage.mock.results.find((entry) => entry.type === "return")?.value;
+      expect(result).toBeDefined();
+      const open = vi.spyOn(result![0], "open");
+      restoreOpen = () => open.mockRestore();
+      await openWorkspace();
+      const onClose = open.mock.calls[0]?.[0].onClose;
+      expect(onClose).toBeTypeOf("function");
+      await act(async () => { contactAction("撤销"); });
+      expect(screen.getByRole("alert")).toHaveTextContent("组织已变更，请重试");
+      act(() => onClose!());
+      expect(screen.getByRole("alert")).toHaveTextContent("组织已变更，请重试");
+    } finally {
+      view.unmount();
+      restoreOpen?.();
+      useMessage.mockRestore();
+    }
+  });
+
+  it("removes an active notification when the app unmounts", async () => {
+    installOpenableBridge();
+    const view = render(<App />);
+    await screen.findByRole("tree");
+    await openWorkspace();
+    expect(screen.getByText("项目「开源业务」已打开")).toBeInTheDocument();
+    view.unmount();
+    expect(screen.queryByText("项目「开源业务」已打开")).not.toBeInTheDocument();
+  });
+
+  it("clears the previous locale's notification when the language changes", async () => {
+    const previousLocale = window.localStorage.getItem("owb-locale");
+    installOpenableBridge();
+    const view = render(<App />);
+    await screen.findByRole("tree");
+    try {
+      await openWorkspace();
+      expect(screen.getByText("项目「开源业务」已打开")).toBeInTheDocument();
+      await act(async () => {
+        applyConfiguration({ config: {
+          schemaVersion: 1, appearance: { locale: "en", mode: "system", profile: "mint" },
+          chat: { sendShortcut: "enter", rememberLayout: true }, layouts: { focusByWorkspace: {} },
+          runtime: {}, hosts: {}, services: {}, migration: { rendererPreferences: true },
+        } } as Parameters<typeof applyConfiguration>[0]);
+      });
+      expect(screen.queryByText("项目「开源业务」已打开")).not.toBeInTheDocument();
+      expect(document.querySelector(".ant-message-notice")).toBeNull();
+    } finally {
+      view.unmount();
+      applyConfiguration({ config: {
+        schemaVersion: 1, appearance: { locale: previousLocale === "en" ? "en" : "zh-CN", mode: "system", profile: "mint" },
+        chat: { sendShortcut: "enter", rememberLayout: true }, layouts: { focusByWorkspace: {} },
+        runtime: {}, hosts: {}, services: {}, migration: { rendererPreferences: true },
+      } } as Parameters<typeof applyConfiguration>[0]);
+      if (previousLocale === null) window.localStorage.removeItem("owb-locale");
+      else window.localStorage.setItem("owb-locale", previousLocale);
+    }
+  });
+});
+
 describe("rail collapse control", () => {
   it("starts above the bottom edge and supports vertical drag without toggling", async () => {
     window.localStorage.removeItem("owb.railExpanded");
@@ -280,17 +756,19 @@ describe("App removed-employee recovery", () => {
   });
   type BackupResponse = Awaited<ReturnType<OwbBridge["orgBackups"]>>;
 
-  it("removes the recovery region and sidebar footer only after confirming the list is empty", async () => {
+  it("removes the recovery region from organization structure only after confirming the list is empty", async () => {
     let finish!: (value: BackupResponse) => void;
     const orgBackups = vi.fn(() => new Promise<BackupResponse>(resolve => { finish = resolve; }));
     openedBridge({ orgBackups });
     await act(async () => { render(<App />); });
+    const structure = await openOrganizationStructure();
     expect(orgBackups).toHaveBeenCalledOnce();
-    expect(screen.getByText("正在加载已移除员工…")).toBeVisible();
+    expect(within(structure).getByText("正在加载已移除员工…")).toBeVisible();
 
     await act(async () => finish(backupResponse([])));
-    expect(screen.queryByRole("region", { name: "已移除员工" })).not.toBeInTheDocument();
-    expect(screen.queryByText("暂无可恢复岗位")).not.toBeInTheDocument();
+    expect(within(structure).queryByRole("region", { name: "已移除员工" })).not.toBeInTheDocument();
+    expect(within(structure).queryByText("暂无可恢复岗位")).not.toBeInTheDocument();
+    expect(structure).toBeVisible();
     expect(document.querySelector(".ui-sidebar__footer")).toBeNull();
   });
 
@@ -300,13 +778,15 @@ describe("App removed-employee recovery", () => {
     const orgBackups = vi.fn().mockResolvedValueOnce(backupResponse()).mockResolvedValue(backupResponse([]));
     openedBridge({ orgBackups, orgRestore });
     await act(async () => { render(<App />); });
-    const toggle = screen.getByRole("button", { name: "已移除员工 · 1" });
+    expect(screen.queryByRole("region", { name: "已移除员工" })).not.toBeInTheDocument();
+    const structure = await openOrganizationStructure();
+    const toggle = within(structure).getByRole("button", { name: "已移除员工 · 1" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("button", { name: "恢复" })).not.toBeInTheDocument();
+    expect(within(structure).queryByRole("button", { name: "恢复" })).not.toBeInTheDocument();
 
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
-    const tray = screen.getByRole("region", { name: "已移除员工" });
+    const tray = within(structure).getByRole("region", { name: "已移除员工" });
     expect(within(tray).getByText("旧文档负责人")).toBeVisible();
     expect(within(tray).getByText("原汇报 代码库负责人")).toBeVisible();
     const restore = within(tray).getByRole("button", { name: "恢复" });
@@ -329,16 +809,19 @@ describe("App removed-employee recovery", () => {
     orgBackups.mockImplementationOnce(() => new Promise<BackupResponse>(resolve => { finishRetry = resolve; }));
     openedBridge({ orgBackups });
     await act(async () => { render(<App />); });
-    expect(screen.getByRole("alert")).toHaveTextContent("无法加载已移除员工");
-    expect(screen.queryByText("暂无可恢复岗位")).not.toBeInTheDocument();
-    expect(document.querySelector(".ui-sidebar__footer")).not.toBeNull();
+    const structure = await openOrganizationStructure();
+    const tray = within(structure).getByRole("region", { name: "已移除员工" });
+    expect(within(tray).getByRole("alert")).toHaveTextContent("无法加载已移除员工");
+    expect(within(structure).queryByText("暂无可恢复岗位")).not.toBeInTheDocument();
+    expect(tray).toBeVisible();
+    expect(document.querySelector(".ui-sidebar__footer")).toBeNull();
 
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "重试" })); });
+    await act(async () => { fireEvent.click(within(tray).getByRole("button", { name: "重试" })); });
     expect(orgBackups).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("正在加载已移除员工…")).toBeVisible();
+    expect(within(structure).getByText("正在加载已移除员工…")).toBeVisible();
     await act(async () => finishRetry(backupResponse()));
-    expect(screen.queryByText("无法加载已移除员工")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "已移除员工 · 1" })).toHaveAttribute("aria-expanded", "false");
+    expect(within(structure).queryByText("无法加载已移除员工")).not.toBeInTheDocument();
+    expect(within(structure).getByRole("button", { name: "已移除员工 · 1" })).toHaveAttribute("aria-expanded", "false");
   });
 
   it.each([
@@ -363,16 +846,17 @@ describe("App removed-employee recovery", () => {
       await chooseExistingWorkspace();
     }
     expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
-    fireEvent.click(screen.getByRole("button", { name: "已移除员工 · 1" }));
-    expect(screen.getByText(`Current ${destination}`)).toBeVisible();
+    const structure = await openOrganizationStructure();
+    fireEvent.click(within(structure).getByRole("button", { name: "已移除员工 · 1" }));
+    expect(within(structure).getByText(`Current ${destination}`)).toBeVisible();
 
     await act(async () => {
       if (outcome === "success") finishOld(backupResponse());
       else rejectOld(new Error("stale workspace failure"));
     });
-    expect(screen.getByText(`Current ${destination}`)).toBeVisible();
-    expect(screen.queryByText(oldEmployee.name)).not.toBeInTheDocument();
-    expect(screen.queryByText("无法加载已移除员工")).not.toBeInTheDocument();
+    expect(within(structure).getByText(`Current ${destination}`)).toBeVisible();
+    expect(within(structure).queryByText(oldEmployee.name)).not.toBeInTheDocument();
+    expect(within(structure).queryByText("无法加载已移除员工")).not.toBeInTheDocument();
   });
 
   it("keeps the latest same-workspace recovery read when an older read finishes last", async () => {
@@ -382,12 +866,16 @@ describe("App removed-employee recovery", () => {
       .mockResolvedValue(backupResponse([]));
     openedBridge({ orgBackups });
     await act(async () => { render(<App />); });
+    const structure = await openOrganizationStructure();
+    expect(within(structure).getByText("正在加载已移除员工…")).toBeVisible();
     await chooseExistingWorkspace();
     expect(orgBackups).toHaveBeenCalledTimes(2);
+    expect(within(structure).queryByRole("region", { name: "已移除员工" })).not.toBeInTheDocument();
     expect(document.querySelector(".ui-sidebar__footer")).toBeNull();
 
     await act(async () => finishOld(backupResponse()));
-    expect(screen.queryByRole("region", { name: "已移除员工" })).not.toBeInTheDocument();
+    expect(structure).toBeVisible();
+    expect(within(structure).queryByRole("region", { name: "已移除员工" })).not.toBeInTheDocument();
     expect(document.querySelector(".ui-sidebar__footer")).toBeNull();
   });
 
@@ -400,12 +888,14 @@ describe("App removed-employee recovery", () => {
       orgBackups: vi.fn().mockResolvedValue(backupResponse()),
     });
     await act(async () => { render(<App />); });
+    const structure = await openOrganizationStructure();
     expect(bridge.orgTree).toHaveBeenCalledOnce();
     expect(bridge.orgBackups).toHaveBeenCalledOnce();
-    expect(screen.queryByText("正在加载已移除员工…")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "已移除员工 · 1" }));
-    expect(screen.getByText(oldEmployee.name)).toBeVisible();
-    expect(screen.getByRole("button", { name: "恢复" })).toBeEnabled();
+    expect(within(structure).queryByText("正在加载已移除员工…")).not.toBeInTheDocument();
+    fireEvent.click(within(structure).getByRole("button", { name: "已移除员工 · 1" }));
+    const tray = within(structure).getByRole("region", { name: "已移除员工" });
+    expect(within(tray).getByText(oldEmployee.name)).toBeVisible();
+    expect(within(tray).getByRole("button", { name: "恢复" })).toBeEnabled();
   });
 
   it.each([["B", "success"], ["B", "offline"], ["A", "success"]])("ignores an old workspace summary after switching to %s when the old read ends with %s", async (destination, outcome) => {
@@ -443,8 +933,9 @@ describe("App removed-employee recovery", () => {
     const expectedReads = destination === "A" ? 3 : 2;
     expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
     expect(orgBackups).toHaveBeenCalledTimes(expectedReads);
-    fireEvent.click(screen.getByRole("button", { name: "已移除员工 · 1" }));
-    expect(screen.getByText(`Current ${destination}`)).toBeVisible();
+    const structure = await openOrganizationStructure();
+    fireEvent.click(within(structure).getByRole("button", { name: "已移除员工 · 1" }));
+    expect(within(structure).getByText(`Current ${destination}`)).toBeVisible();
     orgBackups.mockResolvedValue({ status: 503, body: { code: "unavailable" } });
 
     await act(async () => {
@@ -453,8 +944,8 @@ describe("App removed-employee recovery", () => {
     });
     expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
     expect(orgBackups).toHaveBeenCalledTimes(expectedReads);
-    expect(screen.getByText(`Current ${destination}`)).toBeVisible();
-    expect(screen.queryByText("无法加载已移除员工")).not.toBeInTheDocument();
+    expect(within(structure).getByText(`Current ${destination}`)).toBeVisible();
+    expect(within(structure).queryByText("无法加载已移除员工")).not.toBeInTheDocument();
     expect(screen.queryByText(/本地服务未能连接/)).not.toBeInTheDocument();
   });
 });
@@ -510,12 +1001,13 @@ describe("App runtime bridge", () => {
     render(<App />);
 
     const chip = await screen.findByRole("button", { name: /\/fixture\/workspace$/ });
-    expect(chip.getAttribute("title")).toContain("/fixture/workspace");
+    fireEvent.mouseEnter(chip);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("/fixture/workspace");
     fireEvent.click(chip);
     await waitFor(() => expect(revealWorkspace).toHaveBeenCalledTimes(1));
   });
 
-  it("opens a centered workspace chooser from the organization sidebar", async () => {
+  it("opens a centered workspace chooser from the global topbar", async () => {
     const openWorkspace = vi.fn().mockResolvedValue({ canceled: true });
     openedBridge({ openWorkspace });
 
@@ -600,7 +1092,7 @@ describe("App runtime bridge", () => {
     expect(screen.queryByRole("combobox", { name: "选择对话岗位" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "选择本地会话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "岗位对话" })).getAllByText("Qoder").length).toBeGreaterThan(0);
+    expect(document.querySelector(".owb-conversation-header-host .owb-engine-badge")).toHaveTextContent("Qoder");
     expect(screen.queryByRole("button", { name: "轮换当前会话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "启用会话上下文" })).not.toBeInTheDocument();
   });
@@ -750,16 +1242,21 @@ describe("App runtime bridge", () => {
     expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent(`Workspace ${destination}`);
     expect(screen.getByTitle("Agent：Codex")).toBeInTheDocument();
     expect(screen.queryByTitle("Agent：Qoder")).not.toBeInTheDocument();
-  });
+  }, 15_000);
 
-  it.each(["qoder", "claude-code", "codex-local", "workbuddy"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
+  // Each case mounts two complete workspaces and can send two turns. Use the
+  // same bounded budget as the other full App flows: a 5s timeout on a loaded
+  // runner lets this case's finally clear storage while the next case is active.
+  it.each(["qoder", "claude-code", "codex-local", "workbuddy", "workbuddy-local"] as const)("uses the persisted %s binding across remounts instead of a stale global preference", async (agentEngine) => {
     window.localStorage.setItem("owb-turn-engine", "codex-local");
+    let activeBridge: OwbBridge | undefined;
     try {
       for (let mount = 0; mount < 2; mount += 1) {
         const bridge = openedBridge({
           position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine, agentLocked: true } }),
           createSessionTurn: vi.fn().mockResolvedValue({ status: 200, body: apiTurn({ engine: agentEngine, input: "使用员工绑定" }) }),
         });
+        activeBridge = bridge;
         const view = render(<App />);
         try {
           await selectRepoOwner();
@@ -786,9 +1283,37 @@ describe("App runtime bridge", () => {
         }
       }
     } finally {
-      window.localStorage.removeItem("owb-turn-engine");
+      // Vitest can begin the next case before a timed-out async body settles.
+      if (window.owb === activeBridge) window.localStorage.removeItem("owb-turn-engine");
     }
-  });
+  }, 15_000);
+
+  it("keeps a bound local WorkBuddy employee unavailable until its own health recovers, even when the API host is ready", async () => {
+    const bridge = openedBridge({
+      position: vi.fn().mockResolvedValue({ status: 200, body: { position, agentEngine: "workbuddy-local", agentLocked: true } }),
+      createSessionTurn: vi.fn().mockResolvedValue({ status: 200, body: apiTurn({ engine: "workbuddy-local", input: "使用客户端登录" }) }),
+    });
+    const ready = await bridge.status();
+    vi.mocked(bridge.status).mockResolvedValue({
+      ...ready, health: { ...ready.health!, hosts: { ...ready.health!.hosts!,
+        "workbuddy-local": { configured: false, ready: false, nextStep: "RAW_ACCOUNT_OR_PATH" },
+      } },
+    });
+    await act(async () => { render(<App />); });
+    await selectRepoOwner();
+    expect(await screen.findByText("WorkBuddy 暂时无法使用。")).toBeVisible();
+    expect(screen.getByLabelText("下达任务")).toBeDisabled();
+    expect(screen.queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
+    expect(document.body.innerHTML).not.toContain("RAW_ACCOUNT_OR_PATH");
+    expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+
+    vi.mocked(bridge.status).mockResolvedValue(ready);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "重新检查" })));
+    await waitFor(() => expect(screen.getByLabelText("下达任务")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "使用客户端登录" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+    await waitFor(() => expect(bridge.createSessionTurn).toHaveBeenCalledWith({ sessionId: activeSession.sessionId, engine: "workbuddy-local", input: "使用客户端登录" }));
+  }, 15_000);
 
   it("opens a workspace, selects an employee in the tree, loads local history, sends, and reads persisted history back", async () => {
     const existing = apiTurn();
@@ -961,7 +1486,7 @@ describe("App runtime bridge", () => {
     });
 
     const { container } = render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "群聊" }));
+    fireEvent.click(within(await screen.findByRole("navigation", { name: "协作方式" })).getByRole("button", { name: "群聊" }));
     await screen.findByLabelText("群聊消息");
     const recipientSelect = screen.getByRole("combobox", { name: "选择要 @ 的成员" });
     fireEvent.mouseDown(recipientSelect);
@@ -979,7 +1504,7 @@ describe("App runtime bridge", () => {
     await selectRepoOwner();
     expect(screen.queryByRole("combobox", { name: "选择本地会话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "轮换当前会话" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "群聊" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "协作方式" })).getByRole("button", { name: "群聊" }));
     await waitFor(() => expect(container.querySelectorAll(".owb-bubble-row--employee")).toHaveLength(1));
 
     act(() => listeners.forEach((listener) => listener({ seq: 1, type: "turn.completed", payload: { workspacePath: "/fixture/workspace", groupRef: group.conversationRef, messageId: "message-1", turnId: "group-turn-1", positionId: "repo-owner", engine: "qoder", runId: "group-run-1" } })));
@@ -1153,7 +1678,7 @@ describe("App runtime bridge", () => {
       changes: [{ op: "reorder", parentId: "repo-owner", order: ["release-engineer", "docs-writer"] }],
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    contactAction("撤销");
     await waitFor(() => expect(orgUndo).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("已撤销最近一次组织调整")).toBeInTheDocument();
   });
@@ -1161,11 +1686,15 @@ describe("App runtime bridge", () => {
   it("surfaces a friendly note when there is nothing to undo", async () => {
     openedBridge({ turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "撤销" }));
+    await screen.findByRole("button", { name: "通讯录操作" });
+    contactAction("撤销");
     expect(await screen.findByText("没有可撤销的组织调整")).toBeInTheDocument();
   });
 
-  it.each(["codex", "codex-local"] as const)("binds the ready %s runtime in HireDrawer and sends it through POST /hire", async (agentEngine) => {
+  // Full-App render with the hire drawer round-trip; a macOS runner timeout
+  // was observed at the 5s default (#529). 15s matches the other full-App
+  // tests in this file.
+  it.each(["codex", "codex-local", "workbuddy", "workbuddy-local"] as const)("binds the selected %s connection in HireDrawer and sends it through POST /hire", async (agentEngine) => {
     const hire = vi.fn().mockResolvedValue({
       status: 200,
       body: { status: "hired", positionId: "docs-writer", agentEngine, version: { seq: 6, updatedAt: "2026-08-26T00:00:00.000Z" } },
@@ -1182,14 +1711,21 @@ describe("App runtime bridge", () => {
           ...status.health.hosts,
           codex: { configured: true, ready: agentEngine === "codex" },
           "codex-local": { configured: true, ready: agentEngine === "codex-local" },
+          workbuddy: { configured: true, ready: agentEngine === "workbuddy" },
+          "workbuddy-local": { configured: true, ready: agentEngine === "workbuddy-local" },
         },
       },
     });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "创建员工" }));
+    await screen.findByRole("button", { name: "通讯录操作" });
+    contactAction("创建员工");
     expect(await screen.findByRole("button", { name: "开始创建" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /员工 Agent/ }));
-    fireEvent.click(screen.getByRole("option", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("option", { name: agentEngine.startsWith("codex") ? "Codex" : "WorkBuddy" }));
+    if (!agentEngine.endsWith("-local")) {
+      fireEvent.click(screen.getByRole("button", { name: /接入方式/ }));
+      fireEvent.click(screen.getByRole("option", { name: "API 接入" }));
+    }
     fireEvent.change(screen.getByPlaceholderText("员工姓名（≤24 字）"), { target: { value: "文档负责人" } });
     fireEvent.change(screen.getByPlaceholderText("≤500 字"), { target: { value: "维护文档" } });
     const taskTokens = screen.getByLabelText("每任务 token 上限*");
@@ -1220,7 +1756,7 @@ describe("App runtime bridge", () => {
     }));
     expect(orgApply).not.toHaveBeenCalled();
     expect(await screen.findByText("文档负责人 已加入团队")).toBeInTheDocument();
-  });
+  }, 15_000);
 
   it("requires dismissal confirmation and invokes one-click restore through typed IPC", async () => {
     const childSnapshot = { ...snapshot, positionCount: 2, depth: 2, tree: [{ ...snapshot.tree[0]!, children: [{ id: "docs-writer", reportTo: "repo-owner", budget: snapshot.tree[0]!.budget, children: [] }] }] };
@@ -1236,6 +1772,7 @@ describe("App runtime bridge", () => {
     });
     render(<App />);
     fireEvent.click(await screen.findByText("docs-writer", { selector: ".ui-org-tree__name, .ui-org-tree__id" }));
+    selectEmployeeView("档案");
     // #137 review：裁撤动作住在岗位档案卡头部，而不是悬浮在卡片外面。
     const cardRegion = screen.getByRole("region", { name: "岗位档案" });
     fireEvent.click(await within(cardRegion).findByRole("button", { name: "裁撤" }));
@@ -1245,8 +1782,9 @@ describe("App runtime bridge", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认裁撤并留痕" }));
     await waitFor(() => expect(orgApply).toHaveBeenCalledWith({ schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "docs-writer" }] }));
 
-    fireEvent.click(screen.getByRole("button", { name: "已移除员工 · 1" }));
-    fireEvent.click(screen.getByRole("button", { name: "恢复" }));
+    const structure = await openOrganizationStructure();
+    fireEvent.click(within(structure).getByRole("button", { name: "已移除员工 · 1" }));
+    fireEvent.click(within(structure).getByRole("button", { name: "恢复" }));
     await waitFor(() => expect(orgRestore).toHaveBeenCalledWith("old-writer-1756000000000-abcdef"));
   });
 
@@ -1287,7 +1825,7 @@ describe("App runtime bridge", () => {
       listener!({ seq: 3, type: "turn.model.delta", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
     });
     expect(await screen.findByText("正在分析…核对完成")).toBeInTheDocument();
-    expect(screen.getByText("运行中")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "执行进展" })).toHaveTextContent("思考中");
 
     act(() => {
       listener!({ seq: 3, type: "turn.model.delta", payload: { positionId: "repo-owner", sessionId: activeSession.sessionId, engine: "qoder", runId: "run-stream", timestamp: "2026-08-24T05:00:01.000Z", type: "model.delta", text: "…核对完成" } });
@@ -1302,7 +1840,7 @@ describe("App runtime bridge", () => {
     });
     expect(await screen.findByText("发布门禁通过")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("正在分析…核对完成")).not.toBeInTheDocument());
-    expect(screen.getByText("已完成")).toBeInTheDocument();
+    expect(screen.getByText("已处理")).toBeInTheDocument();
   });
 
   it.each(["success", "rejection"])("keeps workspace report facts in B when A's delayed request finishes with %s", async outcome => {
@@ -1321,7 +1859,7 @@ describe("App runtime bridge", () => {
     workspace = "B";
     await chooseExistingWorkspace();
     expect(screen.getByRole("button", { name: "项目入口" })).toHaveTextContent("Workspace B");
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "上报" })); });
+    await openInbox("上报");
     expect(screen.getByRole("button", { name: "已记录 Token" })).toHaveTextContent("22");
     await act(async () => {
       if (outcome === "success") finishOld({ status: 200, body: reportWithTotal(11) });
@@ -1350,9 +1888,9 @@ describe("App runtime bridge", () => {
     };
     openedBridge({ reports: vi.fn().mockResolvedValue({ status: 200, body: reports }), turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([]) }) });
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "上报" }));
-    expect(await screen.findByRole("heading", { name: "上报中心" })).toBeInTheDocument();
-    expect(screen.queryByText("position_budget_exceeded")).not.toBeInTheDocument();
+    await openInbox("上报");
+    expect(await screen.findByRole("heading", { name: "执行上报" })).toBeInTheDocument();
+    expect(within(screen.getByRole("complementary", { name: "异常详情" })).getByRole("heading", { name: "position_budget_exceeded" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /用量与预算/ }));
     expect(screen.getByRole("meter", { name: "单任务消耗" })).toHaveAttribute("aria-valuenow", "50");
     expect(screen.queryByRole("meter", { name: "单日用量不可用" })).not.toBeInTheDocument();
@@ -1366,21 +1904,121 @@ describe("App runtime bridge", () => {
     // sanitized evidence reaches reports.v1 it must also populate the derived timeline.
     // #394: the stream switcher is flat now, so anchor the nav tab label to
     // avoid matching the evidence table's per-row "查看时间线" link button.
-    fireEvent.click(screen.getByRole("button", { name: /^时间线/ }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "上报数据流" })).getByRole("button", { name: /^时间线/ }));
     expect(screen.getByLabelText("执行时间线")).toBeInTheDocument();
     expect(screen.getByText("共 3 条")).toBeInTheDocument();
     expect(screen.getByTestId("timeline-budget-tag-turn-1")).toBeInTheDocument();
     expect(screen.queryByText("turn-1")).not.toBeInTheDocument();
   });
+
+  it("opens the exact employee session and focuses the turn from a report row", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const reports: ReportsResponse = {
+      schemaVersion: "reports.v1",
+      streams: {
+        escalations: [{ schemaVersion: "turn-escalation.v1", positionId: "repo-owner", turnId: "turn-1", at: "2026-08-24T06:00:00Z", status: "failed", code: "turn_failed", reportingChain: ["repo-owner"], budgetRelated: false }],
+        audits: [],
+        evidence: [{ schemaVersion: "turn-evidence.v1", positionId: "repo-owner", turnId: "turn-1", conversationId: "conversation-1", engine: "qoder", status: "failed", createdAt: "2026-08-24T05:59:00Z", updatedAt: "2026-08-24T06:00:00Z", envelopeDigest: "sha256:evidence", usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 }, errorCode: "turn_failed" }],
+      },
+      budgets: [],
+      page: { cursor: null, hasMore: false },
+    };
+    const reportSession: WorkbenchSession = { ...activeSession, sessionId: "conversation-1", status: "rotated", rotatedTo: activeSession.sessionId };
+    const sessionTurnHistory = vi.fn().mockResolvedValue({
+      status: 200,
+      body: history([apiTurn({ turnId: "turn-1", status: "failed", output: undefined })]),
+    });
+    const bridge = openedBridge({
+      reports: vi.fn().mockResolvedValue({ status: 200, body: reports }),
+      sessions: vi.fn().mockResolvedValue({
+        status: 200,
+        body: { schemaVersion: "workbench-session-list.v1", positionId: "repo-owner", activeSessionId: activeSession.sessionId, sessions: [activeSession, reportSession] },
+      }),
+      sessionTurnHistory,
+    });
+
+    render(<App />);
+    for (let visit = 1; visit <= 2; visit += 1) {
+      await openInbox("上报");
+      fireEvent.click(
+        await screen.findByRole("button", { name: "打开回合对话：turn-1" }),
+      );
+
+      const conversation = await screen.findByRole("region", { name: "岗位对话" });
+      expect(conversation).toBeVisible();
+      expect(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "协作" })).toHaveAttribute("aria-current", "page");
+      expect(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.queryByRole("region", { name: "执行上报" })).not.toBeInTheDocument();
+      expect(bridge.sessions).toHaveBeenCalledWith("repo-owner");
+      await waitFor(() =>
+        expect(conversation.querySelector('[data-turn-id="turn-1"]')).toBeInTheDocument(),
+      );
+      expect(sessionTurnHistory).toHaveBeenCalledWith("conversation-1");
+      expect(sessionTurnHistory).not.toHaveBeenCalledWith(activeSession.sessionId);
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(visit));
+      expect(scrollIntoView.mock.instances[visit - 1]).toBe(conversation.querySelector('[data-turn-id="turn-1"]'));
+    }
+  });
 });
 
 describe("App employee-memory module wiring", () => {
+  it("continues the active session from employee memory after viewing a rotated conversation", async () => {
+    const rotatedSession: WorkbenchSession = {
+      ...activeSession,
+      sessionId: "22222222-2222-4222-8222-222222222222",
+      status: "rotated",
+      rotatedTo: activeSession.sessionId,
+      rotatedAt: "2026-08-24T05:00:00.000Z",
+    };
+    const sessionTurnHistory = vi.fn(async (sessionId: string) => ({
+      status: 200,
+      body: {
+        ...history([apiTurn({
+          conversationId: sessionId,
+          turnId: sessionId === activeSession.sessionId ? "active-memory-turn" : "rotated-memory-turn",
+          input: sessionId === activeSession.sessionId ? "当前会话任务" : "归档会话任务",
+          output: sessionId === activeSession.sessionId ? "当前会话回复" : "归档会话回复",
+        })]),
+        conversationId: sessionId,
+      },
+    }));
+    openedBridge({
+      sessions: vi.fn().mockResolvedValue({
+        status: 200,
+        body: { schemaVersion: "workbench-session-list.v1", positionId: position.id, activeSessionId: activeSession.sessionId, sessions: [activeSession, rotatedSession] },
+      }),
+      sessionTurnHistory,
+    });
+    render(<App />);
+    await selectRepoOwner();
+    expect(await screen.findByText("当前会话回复")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "会话历史" }));
+    fireEvent.click(await screen.findByRole("button", { name: /22222222.*历史会话只读/ }));
+    expect(await screen.findByText("归档会话回复")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "下达任务" })).toBeDisabled();
+
+    sessionTurnHistory.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "会话历史" }));
+    fireEvent.click(await screen.findByRole("button", { name: /11111111.*当前会话/ }));
+
+    await waitFor(() => expect(sessionTurnHistory).toHaveBeenLastCalledWith(activeSession.sessionId));
+    const conversation = screen.getByRole("region", { name: "岗位对话" });
+    expect(await within(conversation).findByText("当前会话回复")).toBeVisible();
+    expect(within(conversation).queryByText("归档会话回复")).not.toBeInTheDocument();
+    expect(within(conversation).getByRole("textbox", { name: "下达任务" })).toBeEnabled();
+    expect(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
+  }, 15_000);
+
   it("uses the current Workbench mem bridge from the unified memory surface", async () => {
     const list = vi.fn().mockResolvedValue({
       status: 200,
       body: {
         schemaVersion: "drive-object-list.v1",
-        mocked: true,
+        mocked: false,
         objects: [{
           id: "mem-001",
           name: "会议纪要.md",
@@ -1400,9 +2038,9 @@ describe("App employee-memory module wiring", () => {
     });
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "记忆" }));
-    expect(await screen.findByRole("heading", { name: "记忆与协作" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "打开 统一网盘 记忆来源" }));
+    fireEvent.click(await screen.findByRole("button", { name: "资料与记忆" }));
+    expect(await screen.findByRole("region", { name: "笔记库" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "网盘" }));
     expect(await screen.findByText("会议纪要.md")).toBeInTheDocument();
     expect(list).toHaveBeenCalledWith("");
     expect(screen.queryByText(/Obsidian/)).not.toBeInTheDocument();
@@ -1423,54 +2061,28 @@ describe("App settings module wiring (#134)", () => {
     expect(await screen.findByRole("heading", { name: "设置", level: 1 })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "应用更新", level: 2 })).toBeInTheDocument();
     expect(bridge.update.status).toHaveBeenCalled();
-    // The prefs drawer (#174) keeps its own two toggles; the update pane did not
-    // move into it and does not duplicate them here.
-    expect(screen.queryByRole("button", { name: /语言/ })).toBeNull();
+    expect(document.querySelector(".owb-wintitle .owb-prefs")).toBeNull();
   });
 });
 
-describe("App docs module wiring (#35 S3)", () => {
-  it("activates the docs rail entry and browses a position's documents end-to-end", async () => {
-    const positionDocs = vi.fn().mockResolvedValue({
-      status: 200,
-      body: {
-        schemaVersion: "docs-file-list.v1",
-        positionId: "repo-owner",
-        files: [{ path: "handbook.md", kind: "file", size: 32, modifiedAt: "2026-08-27T00:00:00.000Z" }],
-      },
-    });
-    const positionDocFile = vi.fn().mockResolvedValue({
-      status: 200,
-      body: {
-        schemaVersion: "docs-file.v1",
-        positionId: "repo-owner",
-        path: "handbook.md",
-        content: "# Handbook\n\n正文内容",
-        version: "2026-08-27T00:00:00.000Z",
-        size: 32,
-        modifiedAt: "2026-08-27T00:00:00.000Z",
-      },
-    });
-    openedBridge({ positionDocs, positionDocFile } as Partial<OwbBridge>);
-
+describe("App unified note library wiring", () => {
+  it("opens the workspace vault from an employee and leaves legacy documents untouched", async () => {
+    const entry = { noteId: "note-handbook", path: "手册.md", title: "手册", size: 32, version: "sha256:abc", modifiedAt: "2026-10-07T00:00:00Z", archived: false, readOnly: false, positionIds: [], ref: { uri: "vault://notes/note-handbook", version: "sha256:abc" } };
+    const bridge = openedBridge();
+    vi.mocked(bridge.vault.list).mockResolvedValue({ status: 200, body: { schemaVersion: "vault-list.v1", notes: [entry] } });
+    vi.mocked(bridge.vault.read).mockResolvedValue({ status: 200, body: { schemaVersion: "vault-note.v1", note: entry, content: "# Handbook\n\n正文内容" } });
     render(<App />);
     await selectRepoOwner();
-
-    const docsEntry = screen.getByRole("button", { name: "记忆" });
-    expect(docsEntry).not.toHaveAttribute("aria-current");
-    fireEvent.click(docsEntry);
-    expect(docsEntry).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("region", { name: "员工记忆" })).toBeInTheDocument();
-    await waitFor(() => expect(positionDocs).toHaveBeenCalledWith("repo-owner"));
-
-    fireEvent.click(await screen.findByRole("button", { name: "handbook.md" }));
-    expect(await screen.findByRole("heading", { name: "Handbook" })).toBeInTheDocument();
-    expect(screen.getByText("正文内容")).toBeInTheDocument();
-    expect(document.querySelector('time[datetime="2026-08-27T00:00:00.000Z"]')).toHaveTextContent("更新于");
-    expect(positionDocFile).toHaveBeenCalledWith("repo-owner", "handbook.md");
+    selectEmployeeView("资料与记忆");
+    expect(screen.getByRole("region", { name: "笔记库" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Handbook" })).toBeVisible();
+    expect(screen.getByText("正文内容")).toBeVisible();
+    expect(bridge.vault.read).toHaveBeenCalledWith("note-handbook");
+    expect(bridge.vault.list).toHaveBeenCalledWith(expect.objectContaining({ positionId: undefined, includeLegacy: true }));
+    expect(screen.queryByText("共享知识")).not.toBeInTheDocument();
+    expect(screen.queryByText("会话记忆")).not.toBeInTheDocument();
   });
 });
-
 it("runs A/B/C independently and keeps late responses, streams and cancellation in their own sessions", async () => {
   const ids = ["repo-owner", "docs-writer", "release-engineer"];
   const employees = Object.fromEntries(ids.map((id, index) => [id, {
@@ -1576,23 +2188,30 @@ it("#413 keeps employee A's card and thread while B's position fetch is in fligh
     fireEvent.click((await screen.findByRole("tree")).querySelector(`[data-org-node-id="${id}"]`)!);
   };
   await choose("repo-owner");
-  expect(await screen.findByRole("heading", { name: "代码库负责人" })).toBeInTheDocument();
-  expect(await screen.findByText("历史结果")).toBeInTheDocument();
+  expect(await screen.findByText("历史结果")).toBeVisible();
+  selectEmployeeView("档案");
+  const card = () => within(screen.getByRole("region", { name: "岗位档案" }));
+  expect(await card().findByRole("heading", { name: "代码库负责人" })).toBeVisible();
 
   holdB = true;
   await choose("docs-writer");
-  expect(screen.getByRole("heading", { name: "代码库负责人" })).toBeInTheDocument();
-  expect(screen.getByText("历史结果")).toBeInTheDocument();
+  expect(card().getByRole("heading", { name: "代码库负责人" })).toBeVisible();
   expect(document.querySelector(".ui-org-position-card__skeleton-title")).toBeNull();
+  expect(screen.queryByRole("region", { name: "岗位对话" })).not.toBeInTheDocument();
+  selectEmployeeView("对话");
+  expect(within(screen.getByRole("region", { name: "岗位对话" })).getByText("历史结果")).toBeVisible();
   expect(document.querySelector(".owb-turn-thread--loading")).toBeNull();
+  selectEmployeeView("档案");
 
   await act(async () => finishB({
     status: 200,
     body: { position: { ...position, id: "docs-writer", name: "文档负责人" }, agentEngine: "qoder" },
   }));
-  expect(await screen.findByRole("heading", { name: "文档负责人" })).toBeInTheDocument();
-  expect(await screen.findByText("B 的结果")).toBeInTheDocument();
-  expect(screen.queryByText("历史结果")).not.toBeInTheDocument();
+  expect(await card().findByRole("heading", { name: "文档负责人" })).toBeVisible();
+  selectEmployeeView("对话");
+  const conversation = within(screen.getByRole("region", { name: "岗位对话" }));
+  expect(await conversation.findByText("B 的结果")).toBeVisible();
+  expect(conversation.queryByText("历史结果")).not.toBeInTheDocument();
 });
 
 it("#420 does not dismiss B under A's name while B's position fetch is in flight", async () => {
@@ -1641,13 +2260,15 @@ it("#420 does not dismiss B under A's name while B's position fetch is in flight
   };
   const card = () => screen.getByRole("region", { name: "岗位档案" });
   await choose("repo-owner");
-  expect(await screen.findByRole("heading", { name: "代码库负责人" })).toBeInTheDocument();
+  expect(await screen.findByText("历史结果")).toBeVisible();
+  selectEmployeeView("档案");
+  expect(await within(card()).findByRole("heading", { name: "代码库负责人" })).toBeVisible();
   expect(within(card()).getByRole("button", { name: "编辑" })).toBeInTheDocument();
   expect(within(card()).queryByRole("button", { name: "裁撤" })).toBeNull();
 
   holdB = true;
   await choose("docs-writer");
-  expect(screen.getByRole("heading", { name: "代码库负责人" })).toBeInTheDocument();
+  expect(within(card()).getByRole("heading", { name: "代码库负责人" })).toBeVisible();
   expect(within(card()).queryByRole("button", { name: "裁撤" })).toBeNull();
   expect(within(card()).queryByRole("button", { name: "编辑" })).toBeNull();
   expect(screen.queryByRole("heading", { name: "确认裁撤 代码库负责人" })).toBeNull();
@@ -1656,7 +2277,12 @@ it("#420 does not dismiss B under A's name while B's position fetch is in flight
     status: 200,
     body: { position: { ...position, id: "docs-writer", name: "文档负责人" }, agentEngine: "qoder" },
   }));
-  expect(await within(card()).findByRole("heading", { name: "文档负责人" })).toBeInTheDocument();
+  expect(await within(card()).findByRole("heading", { name: "文档负责人" })).toBeVisible();
+  selectEmployeeView("对话");
+  const conversation = within(screen.getByRole("region", { name: "岗位对话" }));
+  expect(await conversation.findByText("B 的结果")).toBeVisible();
+  expect(conversation.queryByText("历史结果")).not.toBeInTheDocument();
+  selectEmployeeView("档案");
   fireEvent.click(within(card()).getByRole("button", { name: "裁撤" }));
   expect(screen.getByRole("heading", { name: "确认裁撤 文档负责人" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "确认裁撤并留痕" }));
@@ -1702,10 +2328,12 @@ it("#413 clears employee A's thread once B is confirmed to have no session", asy
   };
   await choose("repo-owner");
   expect(await screen.findByText("历史结果")).toBeInTheDocument();
+  selectEmployeeView("档案");
 
   await choose("docs-writer");
-  expect(await screen.findByRole("heading", { name: "文档负责人" })).toBeInTheDocument();
-  await waitFor(() => expect(screen.queryByText("历史结果")).not.toBeInTheDocument());
+  expect(await within(screen.getByRole("region", { name: "岗位档案" })).findByRole("heading", { name: "文档负责人" })).toBeVisible();
+  selectEmployeeView("对话");
+  await waitFor(() => expect(within(screen.getByRole("region", { name: "岗位对话" })).queryByText("历史结果")).not.toBeInTheDocument());
 });
 
 it("keeps B usable during A's delayed automatic session creation, then restores A", async () => {
@@ -1761,7 +2389,7 @@ it("drops workspace A's late group 202 after switching to B and reloads A on ret
   // instead of polling the full animated App DOM for each transition.
   await act(async () => { render(<App />); });
   const projectEntry = screen.getByRole("button", { name: "项目入口" });
-  const groupEntry = screen.getByRole("button", { name: "群聊" });
+  const groupEntry = within(screen.getByRole("navigation", { name: "协作方式" })).getByRole("button", { name: "群聊" });
   const organizationEntry = screen.getByRole("button", { name: "组织" });
   await act(async () => { fireEvent.click(groupEntry); });
   const composer = screen.getByLabelText("群聊消息");
@@ -1921,60 +2549,222 @@ it.each(["history", "sessions"])("ignores A %s rejection after opening B with th
   expect(screen.queryByText(kind === "history" ? "本地历史读取失败：本地服务不可用" : "会话列表读取失败：本地服务不可用")).not.toBeInTheDocument();
 });
 
-it("keeps the employee workbench mounted while the overview handles organization navigation", async () => {
-  const bridge = openedBridge();
+it.each(["knowledge/README.md", "SKILL.md", "schemas/task.json"])("opens the exact graph role file %s without depending on the vault's asynchronous list", async (path) => {
+  const content = path.endsWith(".json") ? '{"originalRoleSource":"schemas/task.json"}' : `# Original role file\n\nOriginal role source: ${path}`;
+  const readFile = vi.fn().mockResolvedValue({ status: 200, body: {
+    schemaVersion: "docs-file.v1", positionId: "repo-owner", path, content,
+    version: "2026-10-11T00:00:00Z", modifiedAt: "2026-10-11T00:00:00Z", size: content.length,
+  } });
+  const bridge = openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph(path) }), positionDocFile: readFile });
+  vi.mocked(bridge.vault.list).mockImplementation(() => new Promise(() => {}));
+  render(<App />);
+  await openGraphRoleResource(path);
+  const reader = await screen.findByRole("dialog", { name: new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
+  await waitFor(() => expect(readFile).toHaveBeenCalledExactlyOnceWith("repo-owner", path));
+  await waitFor(() => expect(reader.querySelector(".owb-doc-viewer__body")).toHaveTextContent(path.endsWith(".json") ? content : `Original role source: ${path}`));
+  expect(bridge.vault.source).not.toHaveBeenCalled();
+  expect(bridge.vault.resolve).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+  expect(bridge.vault.list).not.toHaveBeenCalled();
+  expect(screen.queryByText("未找到该篇笔记")).not.toBeInTheDocument();
+  expect(within(reader).queryByRole("textbox")).not.toBeInTheDocument();
+});
+
+it("keeps an ordinary turn path as a confined workspace artifact despite its employee identity", async () => {
+  const openFile = vi.fn().mockResolvedValue({ opened: true });
+  const readFile = vi.fn();
+  const bridge = openedBridge({ openWorkspaceFile: openFile, positionDocFile: readFile, sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: {
+    ...history([apiTurn({ conversationId: activeSession.sessionId, output: "[Open workspace artifact](src/README.md)" })]), conversationId: activeSession.sessionId,
+  } }) });
+  render(<App />); await selectRepoOwner();
+  fireEvent.click(await screen.findByRole("link", { name: /Open workspace artifact/ }));
+  await waitFor(() => expect(openFile).toHaveBeenCalledExactlyOnceWith("src/README.md", "/fixture/workspace"));
+  expect(readFile).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+  expect(bridge.vault.resolve).not.toHaveBeenCalled();
+});
+
+it.each(["knowledge/README.md", "SKILL.md"])("preserves the legacy turn role-document link %s", async (path) => {
+  const readFile = vi.fn().mockResolvedValue({ status: 200, body: { schemaVersion: "docs-file.v1", positionId: "repo-owner", path,
+    content: "# Legacy role source\n\nRead directly from this employee package.", version: "original", modifiedAt: "2026-10-11T00:00:00Z", size: 64 } });
+  const bridge = openedBridge({ positionDocFile: readFile, openWorkspaceFile: vi.fn(), sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: {
+    ...history([apiTurn({ conversationId: activeSession.sessionId, output: `[Open role document](${path})` })]), conversationId: activeSession.sessionId,
+  } }) });
+  render(<App />); await selectRepoOwner();
+  fireEvent.click(await screen.findByRole("link", { name: /Open role document/ }));
+  await waitFor(() => expect(readFile).toHaveBeenCalledExactlyOnceWith("repo-owner", path));
+  const reader = await screen.findByRole("dialog");
+  expect(reader.querySelector(".ant-modal-title")).toHaveTextContent(path);
+  await waitFor(() => expect(within(reader).getByRole("heading", { name: "Legacy role source" })).toBeVisible());
+  expect(readFile).toHaveBeenCalledExactlyOnceWith("repo-owner", path);
+  expect(bridge.openWorkspaceFile).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+});
+
+it("opens an explicit turn vault reference by note identity even while its list is pending", async () => {
+  const note = { noteId: "note-original", path: "项目记录.md", title: "项目记录", size: 44, version: "sha256:fixture", modifiedAt: "2026-10-11T00:00:00Z", archived: false, readOnly: false, positionIds: [], ref: { uri: "vault://notes/note-original", version: "sha256:fixture" } };
+  const bridge = openedBridge({ positionDocFile: vi.fn(), sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: {
+    ...history([apiTurn({ conversationId: activeSession.sessionId, output: "[Open exact note](vault://notes/note-original)" })]), conversationId: activeSession.sessionId,
+  } }) });
+  vi.mocked(bridge.vault.list).mockImplementation(() => new Promise(() => {}));
+  vi.mocked(bridge.vault.resolve).mockResolvedValue({ status: 200, body: { schemaVersion: "vault-note.v1", note, content: "# Authoritative note identity\n\nExact notebook source." } });
+  vi.mocked(bridge.vault.read).mockResolvedValue({ status: 200, body: { schemaVersion: "vault-note.v1", note, content: "# Authoritative note identity\n\nExact notebook source." } });
+  render(<App />); await selectRepoOwner();
+  fireEvent.click(await screen.findByRole("link", { name: /Open exact note/ }));
+  expect(await screen.findByRole("heading", { name: "Authoritative note identity" })).toBeVisible();
+  expect(bridge.vault.resolve).toHaveBeenCalledWith({ uri: "vault://notes/note-original" });
+  expect(bridge.vault.read).toHaveBeenCalledWith("note-original");
+  expect(bridge.positionDocFile).not.toHaveBeenCalled();
+  expect(screen.queryByText("未找到该篇笔记")).not.toBeInTheDocument();
+});
+
+it("rejects a role reader response for a different owner despite the same file name", async () => {
+  const path = "knowledge/README.md";
+  openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph(path) }), positionDocFile: vi.fn().mockResolvedValue({ status: 200, body: {
+    schemaVersion: "docs-file.v1", positionId: "different-employee", path, content: "# Different owner's source", version: "other", modifiedAt: "2026-10-11T00:00:00Z", size: 32,
+  } }) });
+  render(<App />); await openGraphRoleResource(path);
+  const reader = await screen.findByRole("dialog", { name: /knowledge\/README/ });
+  await waitFor(() => expect(within(reader).getByText("文档读取失败")).toBeVisible());
+  expect(within(reader).queryByRole("heading", { name: "Different owner's source" })).not.toBeInTheDocument();
+});
+
+it("opens an explicit document URI at its exact employee and role-relative path", async () => {
+  const uri = "owb-doc://release-engineer/schemas/task.json";
+  const readFile = vi.fn().mockResolvedValue({ status: 200, body: {
+    schemaVersion: "docs-file.v1", positionId: "release-engineer", path: "schemas/task.json", content: '{"source":"release-engineer-original"}',
+    version: "original", modifiedAt: "2026-10-11T00:00:00Z", size: 38,
+  } });
+  const bridge = openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph(uri) }), positionDocFile: readFile, openWorkspaceFile: vi.fn() });
+  render(<App />); await openGraphRoleResource(uri);
+  await waitFor(() => expect(readFile).toHaveBeenCalledExactlyOnceWith("release-engineer", "schemas/task.json"));
+  const reader = await screen.findByRole("dialog");
+  await waitFor(() => expect(reader.querySelector(".owb-doc-viewer__body")).toHaveTextContent('"source":"release-engineer-original"'));
+  expect(bridge.vault.resolve).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+  expect(bridge.openWorkspaceFile).not.toHaveBeenCalled();
+});
+
+it.each([
+  "owb-doc://Invalid_Employee/knowledge/README.md",
+  "owb-doc://repo-owner/knowledge/../SKILL.md",
+  "owb-doc://repo-owner/knowledge/%2e%2e/SKILL.md",
+  "knowledge/../SKILL.md",
+])("rejects an unsafe role document locator before reading any source: %s", async (path) => {
+  const warning = vi.spyOn(message, "warning");
+  const bridge = openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph(path) }), positionDocFile: vi.fn(), openWorkspaceFile: vi.fn() });
+  render(<App />); await openGraphRoleResource(path);
+  await waitFor(() => expect(warning).toHaveBeenCalledWith("此资源暂无文档打开入口"));
+  expect(bridge.positionDocFile).not.toHaveBeenCalled();
+  expect(bridge.openWorkspaceFile).not.toHaveBeenCalled();
+  expect(bridge.vault.read).not.toHaveBeenCalled();
+  expect(bridge.vault.resolve).not.toHaveBeenCalled();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it.each(["B", "A"] as const)("does not show an old role document when its workspace changes and ends at %s", async (destination) => {
+  let workspace = "A";
+  let finishRead!: (value: unknown) => void;
+  const readFile = vi.fn(() => new Promise(resolve => { finishRead = resolve; }));
+  openedBridge({ relationshipGraph: vi.fn().mockResolvedValue({ status: 200, body: roleResourceGraph("knowledge/README.md") }), positionDocFile: readFile,
+    workspace: vi.fn(async () => ({ status: 200, body: { open: true, path: `/workspace/${workspace}`, business: `Workspace ${workspace}` } })),
+  });
+  // Immediate fixture reads and picker actions are flushed by async act; do
+  // not repeatedly poll the complete App DOM between real workspace changes.
+  await act(async () => { render(<App />); });
+  const projectEntry = screen.getByRole("button", { name: "项目入口" });
+  await openGraphRoleResource("knowledge/README.md");
+  expect(readFile).toHaveBeenCalledExactlyOnceWith("repo-owner", "knowledge/README.md");
+  workspace = "B"; await chooseExistingWorkspace();
+  expect(projectEntry).toHaveTextContent("Workspace B");
+  if (destination === "A") {
+    workspace = "A"; await chooseExistingWorkspace();
+    expect(projectEntry).toHaveTextContent("Workspace A");
+  }
+  await act(async () => finishRead({ status: 200, body: { schemaVersion: "docs-file.v1", positionId: "repo-owner", path: "knowledge/README.md", content: "# Old workspace A source", version: "old", modifiedAt: "2026-10-11T00:00:00Z", size: 32 } }));
+  expect(screen.queryByRole("heading", { name: "Old workspace A source" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: /knowledge\/README/ })).not.toBeInTheDocument();
+}, 15_000);
+
+it("preserves the actual composer, draft and selected session across organization graph navigation", async () => {
+  const bridge = openedBridge({ sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: {
+    ...history([apiTurn({ conversationId: activeSession.sessionId })]), conversationId: activeSession.sessionId,
+  } }) });
   const { container } = render(<App />);
   await selectRepoOwner();
-  const input = screen.getByRole("textbox", { name: "下达任务" });
+  const conversation = screen.getByRole("region", { name: "岗位对话" });
+  const input = within(conversation).getByRole("textbox", { name: "下达任务" });
   await waitFor(() => expect(input).toBeEnabled());
+  expect(await within(conversation).findByText("历史结果")).toBeVisible();
   fireEvent.change(input, { target: { value: "draft stays with this employee" } });
-  const split = container.querySelector<HTMLElement>(".owb-org-module")!;
-  fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowRight" });
-  const ratio = split.style.getPropertyValue("--owb-org-left-width");
+  const sessionReads = vi.mocked(bridge.sessions).mock.calls.length;
   expect(container.querySelector(".owb-org-chart")).toBeNull();
+  expect(screen.queryByRole("button", { name: "3D 星图", exact: true })).not.toBeInTheDocument();
+  const rail = within(screen.getByRole("navigation", { name: "模块" }));
+  const openGraph = () => {
+    fireEvent.click(rail.getByRole("button", { name: "组织" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "组织视图" })).getByRole("button", { name: "关系图谱" }));
+  };
+  const expectConversation = () => {
+    expect(screen.getByRole("region", { name: "岗位对话" })).toBe(conversation);
+    expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(input);
+    expect(input).toBeVisible();
+    expect(input).toHaveValue("draft stays with this employee");
+    expect(within(conversation).getByText("历史结果")).toBeVisible();
+    expect(rail.getByRole("button", { name: "协作" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
+  };
 
   fireEvent.click(screen.getByRole("button", { name: "上下文详情", exact: true }));
   await waitFor(() => expect(screen.getByText("携带会话历史")).toBeVisible());
   // Keyboard activation does not produce the outside mousedown that normally closes a portal.
-  screen.getByRole("button", { name: "组织概览", exact: true }).focus();
-  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  rail.getByRole("button", { name: "组织" }).focus();
+  openGraph();
   await waitFor(() => expect(screen.queryByText("携带会话历史")).not.toBeInTheDocument());
   expect(screen.getByRole("region", { name: "关系图谱" })).toBeVisible();
+  expect(input).toBeInTheDocument();
   expect(input).not.toBeVisible();
-  expect(split).toHaveAttribute("hidden");
+  expect(conversation.closest(".owb-module-pane")).toHaveAttribute("hidden");
   expect(screen.queryByRole("button", { name: "折叠组织图" })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "员工工作台", exact: true }));
-  expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(input);
-  expect(input).toHaveValue("draft stays with this employee");
-  expect(split.style.getPropertyValue("--owb-org-left-width")).toBe(ratio);
+  fireEvent.click(rail.getByRole("button", { name: "协作" }));
+  expectConversation();
+  expect(bridge.sessions).toHaveBeenCalledTimes(sessionReads);
+  expect(bridge.sessionTurnHistory).toHaveBeenLastCalledWith(activeSession.sessionId);
 
-  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
+  openGraph();
   fireEvent.click(await within(screen.getByRole("list", { name: "对象" })).findByRole("button", { name: /Repo Owner/ }));
   expect(input).not.toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "打开员工工作台" }));
-  expect(input).toBeVisible();
-  expect(input).toHaveValue("draft stays with this employee");
-  expect(screen.getByRole("button", { name: "员工工作台", exact: true })).toHaveFocus();
+  fireEvent.click(within(screen.getByRole("region", { name: "关联上下文" })).getByRole("button", { name: "打开员工工作台" }));
+  await waitFor(expectConversation);
   expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+  expect(bridge.createSession).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
-  fireEvent.click(screen.getByRole("tree").querySelector('[data-org-node-id="repo-owner"]')!);
-  expect(input).toBeVisible();
-  expect(container.querySelector(".owb-rgraph")).not.toBeVisible();
+  const structure = await openOrganizationStructure();
+  fireEvent.click(within(structure).getByRole("tree").querySelector('[data-org-node-id="repo-owner"]')!);
+  await waitFor(expectConversation);
+  expect(screen.queryByRole("region", { name: "关系图谱" })).not.toBeInTheDocument();
+  fireEvent.click(within(conversation).getByRole("button", { name: "发送任务" }));
+  await waitFor(() => expect(bridge.createSessionTurn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    sessionId: activeSession.sessionId, input: "draft stays with this employee",
+  })));
 }, 15_000);
 
-it("returns to the workbench after leaving the organization module", async () => {
+it("returns to the conversation through collaboration after leaving organization and inbox", async () => {
   openedBridge();
   const { container } = render(<App />);
   await selectRepoOwner();
-  fireEvent.click(screen.getByRole("button", { name: "组织概览", exact: true }));
-  fireEvent.click(screen.getByRole("button", { name: "审批", exact: true }));
-  fireEvent.click(screen.getByRole("button", { name: "组织", exact: true }));
+  const composer = screen.getByRole("textbox", { name: "下达任务" });
+  await openOrganizationStructure();
+  fireEvent.click(within(screen.getByRole("navigation", { name: "组织视图" })).getByRole("button", { name: "关系图谱" }));
+  await openInbox();
+  fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "协作" }));
   expect(container.querySelector(".owb-org-chart")).toBeNull();
-  expect(screen.getByRole("button", { name: "员工工作台", exact: true })).toHaveAttribute("aria-pressed", "true");
+  expect(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("textbox", { name: "下达任务" })).toBe(composer);
+  expect(composer).toBeVisible();
 });
 
-it("rechecks health without rebuilding the workspace or losing the selected conversation draft", async () => {
+it.each(["button", "window focus"])("rechecks health via %s without rebuilding the workspace or losing the selected conversation draft", async trigger => {
   const bridge = openedBridge();
   const ready = await bridge.status();
   const unavailable = { ...ready, health: { ...ready.health!, engine: { ...ready.health!.engine, available: false, nextStep: "RAW_ENGINE_PATH" } } };
@@ -1990,8 +2780,13 @@ it("rechecks health without rebuilding the workspace or losing the selected conv
   let finish!: (value: Awaited<ReturnType<OwbBridge["status"]>>) => void;
   vi.mocked(bridge.status).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
   const recheck = screen.getByRole("button", { name: "重新检查" });
-  fireEvent.click(recheck);
-  fireEvent.click(recheck);
+  if (trigger === "button") {
+    fireEvent.click(recheck);
+    fireEvent.click(recheck);
+  } else {
+    fireEvent(window, new Event("focus"));
+    fireEvent(window, new Event("focus"));
+  }
   expect(screen.getByRole("button", { name: "检查中…" })).toBeDisabled();
   expect(bridge.status).toHaveBeenCalledTimes(2);
   expect(document.body.innerHTML).not.toContain("RAW_ENGINE_PATH");
@@ -2090,7 +2885,9 @@ it.each(["success", "failure"])("finishes an overlapping employee card read with
     selected: "provider-default", recommended: "provider-default", editable: true, source: "local-config", options: [],
     connection: { source: "local-config", kind: "gateway", billing: "unknown", status: "invalid", message: "STALE_CONFIG" },
   } } }));
-  expect(screen.getByText("负责开源仓库")).toBeVisible();
+  selectEmployeeView("档案");
+  expect(within(screen.getByRole("region", { name: "岗位档案" })).getByText("负责开源仓库")).toBeVisible();
+  selectEmployeeView("对话");
   expect(screen.queryByText("模型连接需要检查。")).not.toBeInTheDocument();
   expect(screen.queryByText("Claude Code 暂时无法使用。")).not.toBeInTheDocument();
   if (outcome === "success") expect(screen.getByLabelText("下达任务")).toBeEnabled();
@@ -2172,11 +2969,180 @@ it("keeps a failed model selection on the old value, exposes retry, and retains 
 it("opens project management independently from Goals through the module rail", async () => {
   installBridge();
   render(<App />);
-  fireEvent.click(await screen.findByRole("button", { name: "项目管理", exact: true }));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "项目", exact: true }));
   expect(await screen.findByRole("heading", { name: "项目管理", level: 1 })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "目标", exact: true }));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "项目视图" })).getByRole("button", { name: "目标", exact: true }));
   expect(await screen.findByRole("heading", { name: "目标", level: 1 })).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "项目管理", level: 1 })).not.toBeInTheDocument();
+});
+
+  // Full-App render with two module switches and turn-link re-anchors, so on
+  // slower runners it sits above the 5s default (#529). 15s matches the
+  // other full-App tests in this file.
+  it("reanchors a repeated project turn link without replacing the conversation draft", async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+  const detail: GoalDetail = {
+    goal: {
+      schemaVersion: "goal.v1", goalId: "repeat-link-project", title: "重复定位项目", description: "",
+      acceptanceCriteria: [], status: "open", health: "unknown", branches: [],
+      workItems: [{ taskId: "project-task", title: "已执行任务", status: "done", priority: "normal", assigneePositionId: "repo-owner" }],
+      createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z",
+    },
+    activity: [],
+    taskExecutions: { "project-task": { turnId: "project-turn", positionId: "repo-owner", sessionId: activeSession.sessionId, status: "completed" } },
+  };
+  const bridge = openedBridge({
+    goals: vi.fn().mockResolvedValue({ status: 200, body: { goals: [{ ...detail.goal, branchCount: 0 }] } }),
+    goal: vi.fn().mockResolvedValue({ status: 200, body: detail }),
+    sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([apiTurn({ turnId: "project-turn", output: "项目执行结果" })]) }),
+  });
+  render(<App />);
+  await selectRepoOwner();
+  await screen.findByText("项目执行结果");
+  const composer = screen.getByLabelText("下达任务");
+  fireEvent.change(composer, { target: { value: "保留未发送草稿" } });
+  for (let visit = 0; visit < 2; visit += 1) {
+    fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "项目", exact: true }));
+    const link = await screen.findByRole("button", { name: "查看任务执行：已执行任务" });
+    scrollIntoView.mockClear();
+    fireEvent.click(link);
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    const target = screen.getByRole("region", { name: "岗位对话" }).querySelector('[data-turn-id="project-turn"]');
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(target);
+    expect(screen.getByLabelText("下达任务")).toBe(composer);
+    expect(composer).toHaveValue("保留未发送草稿");
+  }
+  expect(bridge.createTurn).not.toHaveBeenCalled();
+  expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+}, 15_000);
+
+it("opens a legacy project result read-only without replacing the active conversation", async () => {
+  const detail: GoalDetail = {
+    goal: { schemaVersion: "goal.v1", goalId: "legacy-project", title: "旧项目", description: "查看旧派工结果",
+      acceptanceCriteria: [], status: "open", health: "unknown", branches: [],
+      workItems: [{ taskId: "legacy-task", title: "旧派工", status: "review", priority: "normal", assigneePositionId: "repo-owner" }],
+      createdAt: "2026-09-01T00:00:00Z", updatedAt: "2026-09-01T00:00:00Z" }, activity: [],
+    taskExecutions: { "legacy-task": { turnId: "legacy-turn", positionId: "repo-owner", status: "completed" } },
+  };
+  const bridge = openedBridge({
+    goals: vi.fn().mockResolvedValue({ status: 200, body: { goals: [{ ...detail.goal, branchCount: 0 }] } }),
+    goal: vi.fn().mockResolvedValue({ status: 200, body: detail }),
+    turnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([apiTurn({ turnId: "legacy-turn", output: "旧派工的精确结果" })]) }),
+    sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([apiTurn({ turnId: "current-turn", output: "当前会话结果" })]) }),
+  });
+  render(<App />);
+  await selectRepoOwner();
+  await screen.findByText("当前会话结果");
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "保留当前草稿" } });
+  fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "项目", exact: true }));
+  fireEvent.click(await screen.findByRole("button", { name: "查看任务执行：旧派工" }));
+  await waitFor(() => expect(bridge.turnHistory).toHaveBeenCalledWith("repo-owner"));
+  // rc-component's test-mode IDs collide with the background filter label.
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() => expect(within(dialog).getByText("旧版执行结果")).toBeVisible());
+  await waitFor(() => expect(within(dialog).getByText("旧派工的精确结果")).toBeVisible());
+  expect(within(dialog).queryByText("当前会话结果")).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole("textbox", { name: "下达任务" })).not.toBeInTheDocument();
+  expect(bridge.turnHistory).toHaveBeenCalledWith("repo-owner");
+  fireEvent.click(within(dialog).getByRole("button", { name: "关闭", exact: true }));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "模块" })).getByRole("button", { name: "协作", exact: true }));
+  expect(await screen.findByText("当前会话结果")).toBeVisible();
+  expect(screen.getByLabelText("下达任务")).toHaveValue("保留当前草稿");
+  expect(bridge.createTurn).not.toHaveBeenCalled();
+  expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+}, 15_000);
+
+it("counts only actionable inbox items and opens an approval's exact employee session and turn", async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+  const writer = { ...position, id: "docs-writer", name: "文档负责人", reportTo: "repo-owner" };
+  const currentSession = { ...activeSession, positionId: writer.id, principal: `position.${writer.id}`, sessionId: "writer-current" };
+  const sourceSession: WorkbenchSession = { ...currentSession, sessionId: "writer-source", status: "rotated", rotatedTo: currentSession.sessionId };
+  const source = { kind: "session" as const, positionId: writer.id, conversationId: sourceSession.sessionId,
+    turnId: "approval-source-turn", runId: "approval-source-run", engine: "qoder" as const };
+  const pending: ApprovalView = {
+    schemaVersion: "workbench-approval.v1", id: "actionable", version: 1, approvalId: "engine-actionable", source,
+    action: { kind: "tool", description: "Review the source task" }, status: "pending", canDecide: true,
+    execution: { phase: "not_started" }, requestedAt: "2026-09-24T00:00:00Z",
+    createdAt: "2026-09-24T00:00:00Z", updatedAt: "2026-09-24T00:00:00Z",
+  };
+  const expired: ApprovalView = { ...pending, id: "expired", approvalId: "engine-expired", expiresAt: "2000-01-01T00:00:00Z" };
+  const denied: ApprovalView = { ...pending, id: "denied", approvalId: "engine-denied", status: "denied", canDecide: false };
+  const listApprovals = vi.fn().mockResolvedValue({ status: 200, body: {
+    items: [pending, expired, denied], workspaceToken: "tok", nextCursor: null, pendingCount: 2, revision: "1", syncState: "ready",
+  } });
+  const bridge = openedBridge({
+    orgTree: vi.fn().mockResolvedValue({ status: 200, body: { ...snapshot, positionCount: 2, depth: 2,
+      tree: [{ ...snapshot.tree[0]!, children: [{ ...snapshot.tree[0]!, id: writer.id, reportTo: "repo-owner" }] }],
+    } }),
+    position: vi.fn(async id => ({ status: 200, body: { position: id === writer.id ? writer : position, agentEngine: "qoder" } })),
+    sessions: vi.fn(async id => ({ status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId: id,
+      activeSessionId: id === writer.id ? currentSession.sessionId : activeSession.sessionId,
+      sessions: id === writer.id ? [currentSession, sourceSession] : [activeSession],
+    } })),
+    sessionTurnHistory: vi.fn(async sessionId => ({ status: 200, body: {
+      ...history([apiTurn({ conversationId: sessionId, positionId: sessionId === sourceSession.sessionId ? writer.id : position.id,
+        turnId: sessionId === sourceSession.sessionId ? source.turnId : "owner-turn",
+        output: sessionId === sourceSession.sessionId ? "审批来源结果" : "原员工结果" })]),
+      conversationId: sessionId, positionId: sessionId === sourceSession.sessionId ? writer.id : position.id,
+    } })),
+    listApprovals,
+  });
+  render(<App />);
+  await selectRepoOwner();
+  expect(await screen.findByText("原员工结果")).toBeVisible();
+  const rail = within(screen.getByRole("navigation", { name: "模块" }));
+  const inbox = rail.getByRole("button", { name: "收件箱" });
+  await waitFor(() => expect(within(inbox).getByTitle("1")).toBeVisible());
+  await openInbox();
+  const approvalTab = within(screen.getByRole("navigation", { name: "收件箱视图" })).getByRole("button", { name: "审批" });
+  expect(within(approvalTab).getByTitle("1")).toBeVisible();
+  expect(inbox).toHaveAttribute("aria-current", "page");
+  fireEvent.click(await screen.findByTestId("approval-card-actionable"));
+  const detail = screen.getByRole("region", { name: "审批详情" });
+  const references = detail.querySelector('[data-testid="approval-source-references"]')!;
+  if (!references.hasAttribute("open")) fireEvent.click(references.querySelector("summary")!);
+  expect(within(detail).getByText(sourceSession.sessionId)).toBeVisible();
+  fireEvent.click(within(detail).getByRole("button", { name: "打开原会话" }));
+
+  const conversation = await screen.findByRole("region", { name: "岗位对话" });
+  expect(await within(conversation).findByText("审批来源结果")).toBeVisible();
+  expect(within(conversation).queryByText("原员工结果")).not.toBeInTheDocument();
+  expect(document.querySelector(".owb-context-header__name")).toHaveTextContent(writer.name);
+  expect(rail.getByRole("button", { name: "协作" })).toHaveAttribute("aria-current", "page");
+  expect(within(screen.getByRole("navigation", { name: "员工视图" })).getByRole("button", { name: "对话" })).toHaveAttribute("aria-pressed", "true");
+  expect(bridge.sessions).toHaveBeenLastCalledWith(writer.id);
+  expect(bridge.sessionTurnHistory).toHaveBeenLastCalledWith(sourceSession.sessionId);
+  expect(bridge.sessionTurnHistory).not.toHaveBeenCalledWith(currentSession.sessionId);
+  await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+  expect(scrollIntoView.mock.instances[0]).toBe(conversation.querySelector(`[data-turn-id="${source.turnId}"]`));
+  expect(bridge.createSession).not.toHaveBeenCalled();
+  expect(bridge.createSessionTurn).not.toHaveBeenCalled();
+
+  listApprovals.mockResolvedValue({ status: 200, body: {
+    items: [expired, denied], workspaceToken: "tok", nextCursor: null, pendingCount: 1, revision: "2", syncState: "ready",
+  } });
+  await openInbox();
+  await waitFor(() => expect(inbox.querySelector(".ant-badge-count")).toBeNull());
+});
+
+it.each([
+  { source: "/fixture/workspace/apps/server/src/index.ts", opened: true, allowed: true },
+  { source: "/outside/private.ts", opened: true, allowed: false },
+  { source: "/fixture/workspace/apps/server/src/index.ts", opened: false, allowed: true },
+])("opens an observed source only within its workspace and reports failures: $source / $opened", async ({ source, opened, allowed }) => {
+  const openWorkspaceFile = vi.fn().mockResolvedValue({ opened });
+  const warning = vi.spyOn(message, "warning");
+  const turn = apiTurn({ events: [{ type: "trace.activity", runId: "source-run", timestamp: "2026-08-24T04:00:00Z", activityId: "read-source", kind: "tool", status: "completed", title: "Read", detail: `path: ${source}` }] });
+  openedBridge({ openWorkspaceFile, sessionTurnHistory: vi.fn().mockResolvedValue({ status: 200, body: history([turn]) }) });
+  render(<App />);
+  await selectRepoOwner();
+  fireEvent.click(await screen.findByRole("button", { name: /查看过程详情/ }));
+  fireEvent.click(screen.getByRole("link", { name: `文档链接：${source}` }));
+  if (allowed) await waitFor(() => expect(openWorkspaceFile).toHaveBeenCalledWith("apps/server/src/index.ts", "/fixture/workspace"));
+  else expect(openWorkspaceFile).not.toHaveBeenCalled();
+  if (!allowed || !opened) await waitFor(() => expect(warning).toHaveBeenCalledWith("此资源暂无文档打开入口"));
 });
 
 it("wires approval module bulk deny so failed items remain selected in the queue", async () => {
@@ -2218,11 +3184,10 @@ it("wires approval module bulk deny so failed items remain selected in the queue
 
   render(<App />);
 
-  // Navigate to Approvals module via rail
-  const approvalsTab = await screen.findByRole("button", { name: "审批", exact: true });
-  fireEvent.click(approvalsTab);
+  // Inbox defaults to approvals; the rail badge belongs to the whole context.
+  await openInbox();
 
-  expect(await screen.findByRole("heading", { name: "审批中心", level: 1 })).toBeInTheDocument();
+  expect(await screen.findByRole("region", { name: "审批中心" })).toBeInTheDocument();
 
   // Select both items
   const card1 = await screen.findByTestId("approval-card-appr-1");

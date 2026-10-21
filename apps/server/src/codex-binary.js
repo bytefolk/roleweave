@@ -3,6 +3,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// Share the execution boundary with the local health probe. A CLI that cannot
+// apply any one of these switches must never be reported ready merely because
+// its --version command succeeds.
+export const CODEX_DISABLED_FEATURES = Object.freeze([
+  "shell_tool", "unified_exec", "apps", "plugins", "skill_search",
+  "multi_agent", "view_image", "workspace_dependencies",
+]);
+
 /**
  * Resolve a candidate to its executable regular-file target.
  * Mirrors the Qoder and Claude resolvers: follows symlinks, verifies isFile + X_OK.
@@ -67,6 +75,79 @@ export function validatedCodexModel(value) {
   if (value === undefined || value.length === 0) return undefined;
   if (value.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(value)) return null;
   return value;
+}
+
+/**
+ * Validate the complete configuration used by the bundled
+ * `openai-compatible` engine. Unlike Codex, that engine has no provider
+ * default and no local-login fallback: key, endpoint and model must all be
+ * explicit before any network request is made.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @param {string | undefined} [selectedModel]
+ * @returns {{ ready: boolean, code?: string, apiKey?: string, baseUrl?: string, model?: string }}
+ */
+export function openAICompatibleConfiguration(
+  env,
+  selectedModel = env.ROLEWEAVE_TURN_MODEL ?? env.OPENAI_MODEL,
+) {
+  const apiKey = env.OPENAI_API_KEY;
+  if (apiKey === undefined || apiKey.length === 0) {
+    return { ready: false, code: "openai.api_key_missing" };
+  }
+  if (
+    apiKey.length < 5 ||
+    apiKey.length > 8192 ||
+    apiKey !== apiKey.trim() ||
+    /[\s\u0000-\u001f\u007f]/u.test(apiKey)
+  ) {
+    return { ready: false, code: "openai.api_key_invalid" };
+  }
+
+  const rawBaseUrl = env.OPENAI_BASE_URL;
+  if (rawBaseUrl === undefined || rawBaseUrl.length === 0) {
+    return { ready: false, code: "openai.base_url_missing" };
+  }
+  if (
+    rawBaseUrl.length > 2048 ||
+    rawBaseUrl !== rawBaseUrl.trim() ||
+    /[\u0000-\u001f\u007f]/u.test(rawBaseUrl)
+  ) {
+    return { ready: false, code: "openai.base_url_invalid" };
+  }
+  let parsed;
+  try {
+    parsed = new URL(rawBaseUrl);
+  } catch {
+    return { ready: false, code: "openai.base_url_invalid" };
+  }
+  const loopback =
+    parsed.hostname === "localhost" ||
+    parsed.hostname.endsWith(".localhost") ||
+    parsed.hostname === "127.0.0.1" ||
+    parsed.hostname === "[::1]";
+  if (
+    (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+    (parsed.protocol === "http:" && !loopback) ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    return { ready: false, code: "openai.base_url_invalid" };
+  }
+  const port = parsed.port.length > 0 ? `:${parsed.port}` : "";
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  const baseUrl = `${parsed.protocol}//${parsed.hostname}${port}${pathname}`;
+  if (/["\\]/.test(baseUrl)) {
+    return { ready: false, code: "openai.base_url_invalid" };
+  }
+
+  const model = validatedCodexModel(selectedModel);
+  if (model === undefined) return { ready: false, code: "openai.model_missing" };
+  if (model === null) return { ready: false, code: "openai.model_invalid" };
+  return { ready: true, apiKey, baseUrl, model };
 }
 
 /**

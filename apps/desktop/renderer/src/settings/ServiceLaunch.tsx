@@ -7,7 +7,7 @@ import { ServiceConnections, SERVICES_CHANGED, serviceErrorKey } from "./Service
 
 /** The native app is opened by the shell from its saved connection. This
  * component never supplies a URL or injects the integration token into it. */
-export function ServiceLaunch({ kind }: { kind: ExternalServiceKind }) {
+export function ServiceLaunch({ kind, connectLabel, openLabel }: { kind: ExternalServiceKind; connectLabel?: string; openLabel?: string }) {
   const t = useT();
   const name = kind === "doc" ? "Doc" : "Mem";
   const [configured, setConfigured] = useState(false);
@@ -37,7 +37,7 @@ export function ServiceLaunch({ kind }: { kind: ExternalServiceKind }) {
   }
   return <div className="owb-service-launch">
     <Button size="small" loading={busy} icon={configured ? <ExternalLink size={13} /> : <Link2 size={13} />}
-      onClick={() => { if (configured) void open(); else setEditing(true); }}>{t(configured ? "services.open" : "services.connect", { name })}</Button>
+      onClick={() => { if (configured) void open(); else setEditing(true); }}>{configured ? openLabel ?? t("services.open", { name }) : connectLabel ?? t("services.connect", { name })}</Button>
     {configured ? <Tooltip title={t("services.manage")}><Button size="small" type="text" aria-label={t("services.manage")}
       icon={<Settings2 size={13} />} onClick={() => setEditing(true)} /></Tooltip> : null}
     <Modal className="owb-service-dialog" title={t("services.connectionAria", { name })} open={editing}

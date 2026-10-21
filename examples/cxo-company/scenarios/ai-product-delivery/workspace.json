@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace.schema.json",
+  "schemaVersion": "workspace.v1alpha1",
+  "name": "ai-product-delivery",
+  "description": "五个经营职能与十四个专业岗位形成产品、研发、市场、交付运营四个执行团队；以只读 MVP 交付包演示跨团队协作。",
+  "template": "cxo-example-ai-product-delivery",
+  "createdAt": "2026-10-14T00:00:00.000Z",
+  "organization": "./organization.v1alpha1.json",
+  "positions": "./positions",
+  "context": "./context"
+}

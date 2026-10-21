@@ -4,6 +4,22 @@
   gap: 14px;
   color: var(--ui-foreground);
 }
+.owb-project-execution-detail { min-width: 0; width: 100%; }
+.owb-project-task-progress { --task-progress-color: var(--ui-primary); display: grid; gap: 5px; margin-block: 8px; min-width: 0; }
+.owb-project-task-progress__meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; font-size: 11px; color: var(--ui-foreground-muted); }
+.owb-project-task-progress__meta > :first-child { overflow-wrap: anywhere; }
+.owb-project-task-progress small { font-size: 10px; color: var(--ui-foreground-muted); }
+.owb-project-task-progress progress { appearance: none; width: 100%; height: 5px; border: 0; border-radius: 3px; overflow: hidden; background: var(--ui-surface-inset); accent-color: var(--task-progress-color); }
+.owb-project-task-progress progress::-webkit-progress-bar { background: var(--ui-surface-inset); }
+.owb-project-task-progress progress::-webkit-progress-value { background: var(--task-progress-color); border-radius: 3px; }
+.owb-project-task-progress progress::-moz-progress-bar { background: var(--task-progress-color); }
+.owb-project-task-progress[data-state="accepted"], .owb-project-task-progress[data-state="done"] { --task-progress-color: var(--ui-success); }
+.owb-project-task-progress[data-state="failed"] { --task-progress-color: var(--ui-danger); }
+.owb-project-task-progress[data-state="blocked"] { --task-progress-color: var(--ui-warning); }
+.owb-project-task-progress[data-state="cancelled"], .owb-project-task-progress[data-state="indeterminate"], .owb-project-task-progress[data-state="unavailable"] { --task-progress-color: var(--ui-foreground-muted); }
+.owb-project-task-progress[data-state="running"] progress { animation: owb-project-progress-pulse 1.8s ease-in-out infinite; }
+@keyframes owb-project-progress-pulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .owb-project-task-progress[data-state="running"] progress { animation: none; } }
 .owb-project-summary {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) repeat(3, minmax(62px, auto));
@@ -99,25 +115,15 @@
   max-width: 240px;
 }
 .owb-project-select {
-  height: 32px;
-  padding: 4px 26px 4px 9px;
-  border: 1px solid var(--ui-border);
-  border-radius: 6px;
-  background: var(--ui-surface);
-  color: var(--ui-foreground);
-  font: inherit;
-  font-size: 12px;
   min-width: 0;
   max-width: 100%;
 }
-.owb-project-select:focus-visible,
+.owb-project-select .ant-select-selector {
+  font-size: 12px;
+}
 .owb-project-board button:focus-visible {
   outline: 2px solid var(--ui-primary);
   outline-offset: 2px;
-}
-.owb-project-select:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 .owb-project-owner-filter {
   max-width: 170px;
@@ -541,7 +547,6 @@
 }
 .owb-project-form .owb-project-select {
   width: 100%;
-  height: 36px;
 }
 .owb-project-form__row {
   display: grid;

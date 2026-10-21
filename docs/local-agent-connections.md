@@ -30,6 +30,11 @@ The CLI executable must support the adapter's headless flags; a Qoder IDE
 launcher is not a compatible CLI. Local login checks do not prove model
 entitlement or sufficient credits.
 
+When you return to RoleWeave from the CLI or browser login, the selected Qoder
+employee's connection and model configuration are checked again. You can also
+use the conversation's recheck button; an old failed probe does not require an
+application restart.
+
 The adapter reads `QODER_CONFIG_DIR/settings.json` or `~/.qoder/settings.json`,
 including JSON comments. It projects provider/model configuration into a
 private temporary settings file and removes that file when the adapter exits.
@@ -47,12 +52,90 @@ sources and MCP, and limits built-in tools to the employee's explicit grants.
 MCP grant references are currently unsupported by this adapter and fail closed
 instead of loading global MCP servers.
 
+## Codex
+
+Choose Codex's **Local login** connection (`codex-local`) to reuse the CLI's
+existing sign-in in the control-plane environment. A WSL control plane uses
+the WSL installation and account, independently of the Windows desktop app.
+The resolver honors `DIGITAL_EMPLOYEE_CODEX_COMMAND` first, then PATH; the
+configured Node installation can therefore select a different Codex version
+from an interactive shell. Local login does not receive `OPENAI_API_KEY` or
+`OPENAI_BASE_URL` from a service provider.
+
+Each invocation ignores user configuration, uses an ephemeral conversation
+and a read-only sandbox, and disables supported native integrations. Codex
+can expose native tools such as `apply_patch`; the sandbox remains the filesystem boundary.
+The selected CLI must accept all required feature switches, including
+`--disable view_image`; older installations can reject the turn before it
+reaches the provider. Update that installation or explicitly select a
+compatible executable instead of removing the tool restrictions.
+A successful local probe confirms CLI compatibility; an actual completed turn
+confirms account and model access.
+
+## Qwen Office desktop (`qwen-office-local`)
+
+Choose **Qwen Office** when hiring an employee and keep the signed-in Windows
+client open. Its local control service must be enabled at startup: set
+`QWENWORK_DESKTOP_CONTROL_ENABLED=true` in the **Windows user's**
+`~/.qwenworkcn/.env` (not the WSL home), then restart
+the idle client. RoleWeave uses its authenticated loopback control protocol;
+WSL employees use a separate desktop-owned private channel.
+
+If the client is closed, use **Open Qwen Office** in the conversation notice.
+RoleWeave opens the client's registered Windows launcher and checks its
+connection for up to 45 seconds. Returning from the client also refreshes
+availability. Opening the application alone does not mark the connection ready:
+the authenticated client probe must succeed. Missing local control, expired
+login and incompatible protocol responses have separate diagnostics. The open
+action does not modify the client's configuration or restart an active task.
+
+Each RoleWeave turn creates a fresh Office session and supplies the assembled
+employee context. Previous Office conversations are not imported when a
+RoleWeave conversation or its context setting changes. The client uses its
+own current model, account, organization, workspace and native tool policy.
+Tools and pending confirmations are managed in Qwen Office; RoleWeave never
+approves a native action or changes global client permissions. Office-generated
+files remain in the client's workspace and task history.
+
+Keep the client account and organization unchanged until the turn finishes.
+The public protocol lets RoleWeave detect visible user changes, while Office
+checks identity inside each request and binds existing tasks to their native
+owner and host turn. It does not offer an identity-epoch/CAS parameter or expose
+organization/team identity in status, so the session-create/submission sequence
+cannot promise an atomic lock to the initial tenant.
+
+Tasks have a three-minute deadline. Cancellation and application exit attempt
+to cancel only the submitted native task, with bounded confirmation before
+the owning broker exits. If the client disconnects, signs out or changes
+organization, verify the original task's state in Qwen Office. RoleWeave's
+recorded budgets are not native per-task token caps; unreported usage stays
+unknown. Known control tickets are blocked from public results and histories.
+
 ## WorkBuddy (CodeBuddy Code)
 
-Select **WorkBuddy** in project creation or employee hiring. Its durable engine
-id is `workbuddy`; an existing employee keeps that binding when the app
-reopens. When it is the only ready Host, it is also the default for a new
-binding. There is one service-credential variant.
+Select **WorkBuddy** in employee hiring, then choose the connection method.
+Hiring retains that concrete binding when the app reopens or availability
+changes; a failed local connection never switches an employee to service API.
+
+### Windows desktop login (`workbuddy-local`)
+
+Choose **Local login** while hiring, and keep the signed-in WorkBuddy Windows
+client open. RoleWeave connects to its authenticated WBIPC v1 `wb.request`
+broker; provider credentials remain in WorkBuddy. WSL control planes use the
+desktop-owned stdin/stdout lease and a private user-owned Unix socket. There
+is no public network listener and no Windows CLI launched from Linux.
+
+This connection currently uses the client's **automatic model** (`auto`).
+The account model-list endpoint is not compatible with the broker's allowed
+headers, so RoleWeave does not offer guessed model choices. Requests contain
+no native tools, and returned tool/function calls, refusals, truncated outputs,
+invalid UTF-8, missing SSE completion, and oversized responses fail closed.
+The client broker buffers responses; this Host does not advertise token
+streaming. Cancellation, client sign-out, desktop exit, and WSL lease closure
+close owned requests. Local health is a transport preflight; only a real turn
+proves provider authentication and entitlement.
+
+### Service API (`workbuddy`)
 
 Set both `CODEBUDDY_API_KEY` and `CODEBUDDY_MODEL` in the control-plane process
 environment, then restart RoleWeave. A personal WorkBuddy login is not reused.
@@ -97,6 +180,37 @@ output, and no surviving owned processes. Its summary distinguishes an
 omitted provider `tools` field from an empty array. It does not download a CLI,
 read real credentials, or qualify a real provider account. See
 [issue #275 evidence and remaining acceptance](evidence/issue-275/README.md).
+
+## OpenAI Compatible
+
+Select **OpenAI Compatible** in project creation or employee hiring. Its
+durable engine id is `openai-compatible`; an existing employee keeps that
+binding when the app reopens.
+
+This host targets any gateway that speaks the OpenAI Chat Completions
+protocol (`POST {baseUrl}/chat/completions` with Bearer auth), for example
+TokenRhythm, OpenRouter, or a self-hosted proxy. It does not require a local
+CLI login — the control plane and the bundled engine make the API call
+directly, so readiness depends on the provider triad rather than a binary.
+
+Set all three variables in the control-plane process environment, then
+restart RoleWeave:
+
+- `OPENAI_API_KEY` — the service credential (Bearer token).
+- `OPENAI_BASE_URL` — the provider root, e.g. `https://tokenrhythm.studio/v1`.
+  The engine appends `/chat/completions`. There is no default: the URL must use
+  HTTPS, or loopback HTTP, and cannot contain credentials, a query, or fragment.
+- `OPENAI_MODEL` — a model id the provider's catalog serves, e.g.
+  `deepseek-v4-flash`.
+
+The model menu accepts any strict model id (first character alphanumeric,
+then `A-Z a-z 0-9 . _ : / -`, length ≤ 256) and a per-position selection can
+be pinned via `ROLEWEAVE_TURN_MODEL`. Unknown selectors are labelled
+unconfirmed until a real provider turn validates them. Credentials are never
+CLI arguments or UI fields; they cross the process boundary via environment
+only. Health readiness is gated on a non-empty key and base URL plus a legal
+model id; provider entitlement, quota and billing are still proven only by a
+successful real-provider turn.
 
 ## Gemini and Antigravity
 

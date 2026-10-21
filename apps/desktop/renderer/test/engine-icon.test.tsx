@@ -4,7 +4,12 @@ import { EngineIcon } from "../src/turns/engine-icon";
 import type { TurnEngine } from "../src/turns";
 
 describe("EngineIcon (#57)", () => {
-  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini"];
+  it("uses the official Qwen Office app mark", () => {
+    const { container } = render(<EngineIcon engine="qwen-office-local" />);
+    expect(container.querySelector("img.owb-engine-icon--qwen-office-local")).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelector("img")?.getAttribute("src")).toMatch(/qwen-office/);
+  });
+  const engines: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "workbuddy-local", "gemini", "openai-compatible"];
 
   it.each(engines)("renders a normalized brand mark for %s", (engine) => {
     const { container } = render(<EngineIcon engine={engine} />);
@@ -22,6 +27,7 @@ describe("EngineIcon (#57)", () => {
     // Vite inlines the small claude.svg as a data URI; the brand fill #D97757
     // stays percent-encoded, so it is the stable identity marker in tests.
     expect(src("qoder")).toMatch(/qoder/);
+    expect(src("qwen-office-local")).not.toBe(src("qoder"));
     expect(src("claude-code")).toContain("%23D97757");
     expect(src("claude-local")).toContain("%23D97757");
     expect(src("claude-code")).toBe(src("claude-local"));
@@ -33,8 +39,13 @@ describe("EngineIcon (#57)", () => {
     // The two Codex Hosts share one mark, exactly as the two Claude ones do.
     expect(src("codex-local")).toBe(src("codex"));
     expect(src("workbuddy")).toMatch(/workbuddy/);
+    expect(src("workbuddy-local")).toBe(src("workbuddy"));
     expect(src("workbuddy")).not.toBe(src("codex"));
     expect(src("gemini")).toContain("%234285f4");
     expect(src("gemini")).not.toBe(src("workbuddy"));
+    // openai-compatible carries its own generic API mark.
+    expect(src("openai-compatible")).toContain("data:image/svg+xml");
+    expect(src("openai-compatible")).not.toBe(src("gemini"));
+    expect(src("openai-compatible")).not.toBe(src("workbuddy"));
   });
 });

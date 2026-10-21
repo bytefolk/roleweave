@@ -18,30 +18,33 @@ Its organizing principle is simple: **the file tree is the org chart.** Roles li
 - **Work with individual roles.** Start conversations, revisit local history, and start a fresh session when the task changes.
 - **Keep instructions close to the work.** Read role documents alongside the workspace and connect shared organization documents.
 - **Understand what happened.** Review recorded activity, organization changes, turn outcomes, and available budget usage in the reporting center.
+- **Follow project tasks.** See each task's execution stages in the board, schedule, and editor. Progress follows the latest Agent attempt and recovers on reconnect; completed execution still requires delivery acceptance. Stage counts describe execution phases, not work completed or time remaining.
 - **Connect knowledge sources.** Add optional document, file, and context services when your workflow needs them.
 
 For example, an open-source maintenance team can have a repository owner with three supporting roles: an issue researcher, a community operator, and a release engineer. The repository includes an [example workspace](examples/oss-maintainer) with this structure and role budgets.
 
-The v0.3.0 source adds native phone shells for iOS, Android, and HarmonyOS, editable employee profiles with permission management, persistent per-employee Agent bindings, an encrypted host-credential settings surface, semantic color theming, and a bundled WorkBuddy engine host, on top of the goal-centered collaboration spine, the Windows WSL runtime for projects and Agent hosts, and local doc/mem service surfaces shipped in v0.2.0. See [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits. Older v0.2.0 installers do not include these features.
+The [CXO reference library and company scenarios](examples/cxo-company/README.md) provide 25 optional functional roles, a three-role starter company, a nine-role product company and a nineteen-role delivery company with fourteen professional roles. Four team runbooks demonstrate product, engineering, marketing and delivery coordination through existing group routes, explicit handoffs and operator-controlled review/repair. The synthetic tasks deliver read-only plans and code drafts, not a deployed product.
+
+The v0.5.0 source adds local WorkBuddy and Qwen Office client connections, improves Agent readiness checks, and refines employee settings, organization search, project layouts and rich conversation replies. See the [v0.5.0 notes](docs/releases/v0.5.0.md) for the release changes and [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits.
 
 Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior ships with v0.2.0.
 
 ## Download
 
-RoleWeave is an **early preview**. This source targets **v0.3.0**. The versioned downloads below become available when the release is published; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
+RoleWeave is an **early preview**. This source targets **v0.5.0**. The versioned downloads below become available when publication completes; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
 
 | Platform | Download |
 | --- | --- |
-| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.3.0/roleweave-0.3.0-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.3.0/roleweave-0.3.0-arm64.zip) |
-| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.3.0/roleweave-0.3.0-x64.exe) |
+| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.5.0/roleweave-0.5.0-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.5.0/roleweave-0.5.0-arm64.zip) |
+| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.5.0/roleweave-0.5.0-x64.exe) |
 
-See the [v0.3.0 release notes](docs/releases/v0.3.0.md) for this candidate's changes and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
+See the [v0.5.0 release notes](docs/releases/v0.5.0.md) for changes and upgrade guidance and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
 
-**Installation notes:** macOS packages are not Apple Developer ID-signed or notarized, and the Windows installer is not Authenticode-signed. Your operating system may show a security prompt on installation or first launch. The macOS update manifest has a separate cryptographic signature; this does not provide Apple code-signing trust. Users of older Org Workbench development builds need to install RoleWeave manually once.
+**Installation notes:** macOS packages are not Apple Developer ID-signed or notarized, and the Windows installer is not Authenticode-signed. Your operating system may show a security prompt on installation or first launch. The macOS update manifest has a separate cryptographic signature; this does not provide Apple code-signing trust. Windows updates use the HTTPS release feed and the installer's SHA-512 checksum, without publisher verification. Users of older Org Workbench development builds need to install RoleWeave manually once. Existing unsigned Windows builds that disable in-app installation also need one manual upgrade to a build containing this update change.
 
 ## Get started
 
-1. **Install and open RoleWeave.** Choose the package for your platform above. The interface supports English and Simplified Chinese; open Preferences in the top-right title bar, then choose Language to switch to English.
+1. **Install and open RoleWeave.** Choose the package for your platform above. The interface supports English and Simplified Chinese; open Settings → General, then choose Language to switch to English.
 2. **Create or open a workspace.** Use the project menu to create a project or open an existing `digital-employee` workspace. To explore a prepared team, download or clone this repository and open its `examples/oss-maintainer` folder. If you choose a source folder that has no RoleWeave files yet, the app explains why it cannot be opened and offers **Initialize this folder**; that action keeps your existing files and adds a project owner plus the workspace metadata.
 3. **Choose a role.** Inspect its instructions and budget, or create a role for the work you want it to do.
 4. **Prepare an AI host.** The default desktop adapter uses a locally installed Qoder CLI **1.x, version 1.1.0 or newer**, and checks the headless command options required for employee conversations. Install the native CLI with `npm install -g @qoder-ai/qodercli` and sign in with `qodercli login`; the Qoder editor's `qoder` launcher is not the CLI. RoleWeave checks the CLI's reported login status before enabling Qoder conversations. When the missing login is the only blocker, the conversation composer offers a one-click sign-in that launches `qodercli login` from the control plane and refreshes automatically once the credential lands. It does not include a model subscription, and local readiness does not establish model entitlement or a successful model request.
@@ -70,6 +73,8 @@ After fully restarting RoleWeave, project pickers start in the selected WSL home
 For environment-based provider, document or memory connections, keep each endpoint and its credentials together in one environment. A Windows override replaces that connection's Linux environment values as a group; missing credentials are never borrowed from Linux. Connections without a Windows override keep their Linux environment configuration.
 
 Choose an Agent when creating a project or hiring an employee. Each employee keeps its own saved runtime binding across restarts and health changes; conversations do not share a global Host selector. Claude Code and Codex prefer an available local configuration for new bindings. A ready status does not prove model entitlement or a successful model request. Settings shows which environment supplies the project and Agents alongside the document and memory service connections. Closing the desktop also closes its WSL backend.
+
+For interactive or scripted operator work inside the distribution — a native Linux shell with `ssh`, `scp`, and `rsync` instead of per-command `wsl.exe` calls — set up passwordless SSH with `node scripts/setup-wsl-ssh.mjs`. See [driving a WSL workspace over SSH](docs/development/wsl-ssh.md). This is an optional developer convenience; the application keeps using `wsl.exe`.
 
 ## How workspaces work
 
@@ -160,7 +165,7 @@ git clone https://github.com/bytefolk/design-system.git
 git clone https://github.com/bytefolk/roleweave.git
 
 cd design-system
-git checkout 910456901dda74da4d5b0320cd03d36ad18650b0
+git checkout 4a82fce41f89f1a55b6b02cdb54f7a4e9ce9d84d
 npm ci
 npm run build:package
 
@@ -183,8 +188,10 @@ Useful commands from the repository root:
 
 ## Current limits
 
+For Codex employees, the model picker queries the installed Codex CLI's `model/list` catalog and caches results briefly. Use **Refresh model list** to retry discovery. Failed discovery keeps the previous list or local disk cache and shows a fallback status; saved model choices remain available. A listed or recommended model does not guarantee inference access for the account or provider; refreshing the list does not verify that access. If Codex rejects a model for the ChatGPT login, the conversation explains the rejection and the picker flags the last matching failed request. Choose another employee model or check the login in the same Codex CLI before resending. RoleWeave keeps the saved model and never switches to API billing automatically.
+
 - Real Qoder execution has been verified on a macOS machine. Claude Code live execution, full delegation chains, and end-to-end long-term context workflows are not yet part of the verified baseline.
-- macOS has a signed-manifest update mechanism. Windows can check the existing Electron update channel, but unsigned builds require manual installation; in-app download and install remain disabled without a publisher identity. Publishing a release exposes its metadata to clients checking these channels.
+- macOS has a signed-manifest update mechanism. New Windows builds can check, download, and install unsigned NSIS updates after user confirmation. The downloaded installer is checked against SHA-512 metadata fetched over HTTPS; there is no independent publisher signature on this channel. Publishing a release exposes its metadata to clients checking these channels.
 - Native builds, packaged launch and layout checks, and asset integrity are covered by CI. Installation, uninstallation, and cross-version automatic updates on user machines are not claimed as fully verified end to end.
 
 See the [latest published release notes](https://github.com/bytefolk/roleweave/releases/latest) for the downloaded build's exact scope.

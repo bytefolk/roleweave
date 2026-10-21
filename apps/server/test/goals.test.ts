@@ -432,12 +432,69 @@ test("HTTP task execution preserves goal and task binding and never marks the hu
     assert.equal(record.goalId, goalId);
     assert.equal(record.branchId, plannedTask.taskId);
     const detail = (await api(server.baseUrl, `${routes.goals}/${goalId}`, { token: server.token })).body as GoalDetail;
-    assert.deepEqual(detail.taskExecutions?.[plannedTask.taskId], {
+    const { progress, ...execution } = detail.taskExecutions![plannedTask.taskId]!;
+    assert.deepEqual(execution, {
       turnId: record.turnId, positionId: "repo-owner", status: "completed", startedAt: record.createdAt, completedAt: record.updatedAt,
     });
+    assert.equal(progress?.taskId, record.turnId);
+    assert.equal(progress?.progress, 100);
+    // More recent, unrelated activity must not hide an exact task reference.
+    for (let index = 0; index < 129; index += 1) {
+      const turnId = `unrelated-${index}`;
+      server.ctx.progressTracker.begin({ workspacePath: workspace, taskId: turnId, positionId: "repo-owner" });
+      for (let step = 0; step < 5; step += 1) server.ctx.progressTracker.reportStepFinish(turnId, step);
+    }
+    assert.equal((await server.ctx.progressTracker.listAll(workspace)).some((entry) => entry.taskId === record.turnId), false);
+    const restored = (await api(server.baseUrl, `${routes.goals}/${goalId}`, { token: server.token })).body as GoalDetail;
+    assert.equal(restored.taskExecutions?.[plannedTask.taskId]?.progress?.progress, 100);
+    assert.equal((await server.ctx.goalStore.get(workspace, goalId)).workItems?.[0]?.status, "todo");
     assert.equal(detail.goal.workItems?.[0]?.status, "todo");
     const diskTurns = await server.ctx.turnStore.reportRecords(workspace);
     assert.equal(diskTurns.find((turn) => turn.turnId === record.turnId)?.branchId, plannedTask.taskId);
+  } finally {
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("HTTP project execution retains its exact session and completed output after rotation and restart", async () => {
+  let server = await startTestServer();
+  const workspace = await copyExampleWorkspace();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const { goalId } = await createGoal(server.baseUrl, server.token);
+    const initial = await server.ctx.goalStore.get(workspace, goalId);
+    await server.ctx.goalStore.update(workspace, goalId, { workItems: [plannedTask], expectedUpdatedAt: initial.updatedAt });
+    const session = await api(server.baseUrl, "/sessions", { method: "POST", token: server.token, body: { positionId: "repo-owner" } });
+    assert.equal(session.status, 201);
+    const { sessionId } = session.body as { sessionId: string };
+    const executed = await api(server.baseUrl, `/sessions/${sessionId}/turns`, {
+      method: "POST", token: server.token,
+      body: { input: "Produce the board deliverable", engine: "qoder", goalId, branchId: plannedTask.taskId },
+    });
+    assert.equal(executed.status, 200);
+    const record = executed.body as TurnRecord;
+    assert.equal(record.conversationRef, sessionId);
+    assert.equal(record.output, "fake turn output");
+    const rotated = await api(server.baseUrl, `/sessions/${sessionId}/rotate`, { method: "POST", token: server.token, body: {} });
+    assert.equal(rotated.status, 201);
+    const nextSessionId = (rotated.body as { sessionId: string }).sessionId;
+    assert.notEqual(nextSessionId, sessionId);
+
+    await server.close();
+    server = await startTestServer();
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const detail = (await api(server.baseUrl, `${routes.goals}/${goalId}`, { token: server.token })).body as GoalDetail;
+    const source = detail.taskExecutions?.[plannedTask.taskId];
+    assert.equal(source?.sessionId, sessionId);
+    assert.equal(source?.turnId, record.turnId);
+    const sourceHistory = await api(server.baseUrl, `/sessions/${source!.sessionId}/turns`, { token: server.token });
+    assert.equal(sourceHistory.status, 200);
+    const turns = (sourceHistory.body as { turns: TurnRecord[] }).turns;
+    assert.equal(turns.find((turn) => turn.turnId === source!.turnId)?.output, "fake turn output");
+    const currentHistory = await api(server.baseUrl, `/sessions/${nextSessionId}/turns`, { token: server.token });
+    assert.deepEqual((currentHistory.body as { turns: TurnRecord[] }).turns, []);
+    assert.equal(detail.goal.workItems?.[0]?.status, "todo");
   } finally {
     await server.close();
     await fs.rm(workspace, { recursive: true, force: true });
@@ -455,6 +512,7 @@ test("execution projection picks the latest matching attempt and excludes other 
   ], () => true);
   assert.deepEqual(projection, { [plannedTask.taskId]: { turnId: "newest", positionId: "repo-owner", status: "running", startedAt: newest.createdAt } });
   assert.deepEqual(projectTaskExecutions({ ...goal, workItems: [{ ...plannedTask, assigneePositionId: undefined }] }, [base]), {});
+  assert.equal(projectTaskExecutions(goal, [{ ...newest, status: "failed", error: { code: "turn_cancelled", message: "Cancelled", retryable: false } }])[plannedTask.taskId]?.errorCode, "turn_cancelled");
 });
 
 test("HTTP execution status requires an exact live reservation and does not rewrite orphaned turn records", async () => {

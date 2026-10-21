@@ -15,6 +15,8 @@ export interface ExperimentsResponse {
     configured: boolean;
   };
   sending: ["status", "errorCode", "budgetRelated"];
+  /** Exact deterministic fields eligible for the pre-send budget preview. */
+  budgetAdviceSending: ["remainingPerTask", "remainingPerDay", "positionId"];
 }
 
 export interface ReportsAdviceRequest {
@@ -49,4 +51,31 @@ export interface ReportsAdviceResponse extends ReportsAdviceRequest {
   considered: number;
   total: number;
   generatedAt: string | null;
+}
+
+export const budgetRemainingAdviceChoices = [
+  "shrink", "switch_employee", "send_anyway",
+] as const;
+export type BudgetRemainingAdviceChoice = (typeof budgetRemainingAdviceChoices)[number];
+
+export interface BudgetRemainingAdviceRequest extends ReportsAdviceRequest {
+  positionId: string;
+}
+
+export interface BudgetRemainingFact {
+  positionId: string;
+  remainingPerTask: number | null;
+  remainingPerDay: number | null;
+}
+
+export interface BudgetRemainingAdviceResponse extends ReportsAdviceRequest {
+  status: "ready" | "disabled" | "abstained" | "unavailable";
+  reason?:
+    | "flag_off"
+    | "unknown_remaining"
+    | "not_configured"
+    | "insufficient_information"
+    | "settings_invalid";
+  fact: BudgetRemainingFact;
+  suggestion: BudgetRemainingAdviceChoice | null;
 }

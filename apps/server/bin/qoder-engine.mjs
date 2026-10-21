@@ -15,16 +15,64 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
+import { redactApprovalSecrets } from "@roleweave/shared/approval-redaction";
+import { hasUnexecutedToolText } from "@roleweave/shared";
 import { resolveQoderExecutable } from "../src/qoder-binary.js";
 import { resolveClaudeExecutable } from "../src/claude-binary.js";
-import { resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
+import { claudeReadPlan } from "../src/claude-workspace-tools.js";
+import { CODEX_DISABLED_FEATURES, openAICompatibleConfiguration, resolveCodexExecutable, validatedCodexModel } from "../src/codex-binary.js";
 import { resolveGeminiClient, validatedGeminiModel } from "../src/gemini-binary.js";
 import { resolveWorkbuddyExecutable } from "../src/workbuddy-binary.js";
 import { workbuddyConfiguration, workbuddyEnvironment, workbuddyVersionProfile, probeWorkbuddyExecutable, workbuddyTurnArgs, createWorkbuddyParser } from "../src/workbuddy-runtime.js";
+import { requestWorkbuddyLocal } from "../src/workbuddy-local.js";
+import { requestQwenOfficeLocal } from "../src/qwen-office-local.js";
 import { createLauncherSpawnSpec } from "../src/windows-launcher.js";
 import { resolveClaudeProviderConfig, resolveQoderProviderConfig } from "../src/local-provider-config.js";
 
 const VERSION = "0.2.0";
+
+function activityText(value, maxBytes) {
+  let result = "";
+  let bytes = 0;
+  for (const character of value) {
+    bytes += Buffer.byteLength(character, "utf8");
+    if (bytes > maxBytes) break;
+    result += character;
+  }
+  return result;
+}
+
+/** Allowlisted file selectors and search patterns, with credential redaction.
+ * Never serialize arbitrary input, commands, queries, URLs or tool results. */
+export function publicQoderActivityDetail(block, redactConfiguredSecrets = value => value) {
+  const input = block?.input;
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const details = [];
+  for (const key of ["path", "file_path", "paths", "files", "file_paths"]) {
+    const value = input[key];
+    if (typeof value === "string" && value.trim()) details.push(value.trim());
+    else if (Array.isArray(value)) details.push(...value.filter(item => typeof item === "string" && item.trim()).map(item => item.trim()));
+  }
+  const name = typeof block.name === "string" ? block.name.toLowerCase().replace(/[\s_.-]/g, "") : "";
+  const firstString = (keys) => keys.map(key => input[key]).find(value => typeof value === "string" && value.trim());
+  if (/^(glob|globsearch|findfiles|grep|searchfiles|searchcontents)$/.test(name)) {
+    const pattern = firstString(name.startsWith("glob") || name === "findfiles" ? ["pattern", "glob_pattern", "glob"] : ["pattern"]);
+    if (pattern) details.unshift(`pattern: ${pattern.trim()}`);
+    if (/^(grep|searchfiles|searchcontents)$/.test(name)) {
+      const glob = firstString(["glob", "include"]);
+      if (glob) details.push(`files: ${glob.trim()}`);
+    }
+  }
+  if (/^(read|readfile|readfiles)$/.test(name)) {
+    for (const key of ["offset", "limit"]) {
+      if (Number.isSafeInteger(input[key]) && input[key] >= 0) details.push(`${key}: ${input[key]}`);
+    }
+  }
+  // Redact before truncation so a secret crossing the byte boundary cannot
+  // survive as a partial value in the durable public trace.
+  return details.length > 0 ? activityText(redactApprovalSecrets(redactConfiguredSecrets([...new Set(details)].join(" · "))), 2048) : undefined;
+}
+
 const POSITION_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
 const QODER_PERMISSION_MODES = new Set([
   "default",
@@ -721,12 +769,191 @@ function turnRun(workspaceDir, positionId) {
         return turnRunCodex(workspaceDir, positionId, input, engineModel);
       case "workbuddy":
         return turnRunWorkbuddy(workspaceDir, positionId, input);
+      case "workbuddy-local":
+        return turnRunWorkbuddyLocal(input);
+      case "qwen-office-local":
+        return turnRunQwenOfficeLocal(workspaceDir, positionId, input);
       case "gemini":
         return turnRunGemini(workspaceDir, positionId, input);
+      case "openai-compatible":
+        return turnRunOpenAICompatible(workspaceDir, positionId, input);
       default:
         return turnRunQoder(workspaceDir, positionId, input);
     }
   });
+}
+
+async function turnRunWorkbuddyLocal(input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+  const controller = new AbortController();
+  let terminal = false;
+  const finish = (event) => {
+    if (terminal) return;
+    terminal = true;
+    clearTimeout(timer);
+    controller.abort();
+    process.stdout.write(`${JSON.stringify(event)}\n`, () => process.exit(0));
+  };
+  const fail = (code, terminalReason = "engine_internal_error") => finish({
+    type: "run.failed", runId, timestamp: now(),
+    error: { code, message: `WorkBuddy 本地连接失败（${code}），请确认客户端已打开并登录。`, retryable: false, terminalReason },
+  });
+  const timer = setTimeout(() => fail("workbuddy.deadline_exceeded", "deadline_exceeded"), 60_000);
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.once(signal, () => fail("workbuddy.cancelled", "cancelled"));
+  try {
+    const model = process.env.ROLEWEAVE_TURN_MODEL;
+    const result = await requestWorkbuddyLocal(process.env, "complete", { input, ...(model && model !== "provider-default" ? { model } : {}) }, { signal: controller.signal });
+    if (terminal) return;
+    emit({ type: "model.delta", runId, timestamp: now(), text: result.text });
+    if (Object.keys(result.usage).length) emit({ type: "usage", runId, timestamp: now(), ...result.usage });
+    finish({ type: "run.completed", runId, timestamp: now(), output: result.text, terminalReason: "goal_met" });
+  } catch (error) {
+    fail(typeof error?.code === "string" && /^workbuddy\.[a-z_]{1,64}$/.test(error.code) ? error.code : "workbuddy.protocol_invalid");
+  }
+}
+
+async function turnRunQwenOfficeLocal(workspaceDir, positionId, input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+  const controller = new AbortController();
+  let terminal = false;
+  const finish = (event) => {
+    if (terminal) return;
+    terminal = true;
+    clearTimeout(timer);
+    controller.abort();
+    process.stdout.write(`${JSON.stringify(event)}\n`, () => process.exit(0));
+  };
+  const fail = (code, terminalReason = "engine_internal_error") => finish({
+    type: "run.failed", runId, timestamp: now(), error: {
+      code, message: `千问办公任务未完成（${code}）。请在客户端查看连接或审批状态。`,
+      retryable: false, terminalReason,
+    },
+  });
+  const timer = setTimeout(() => fail("qwen_office.deadline_exceeded", "deadline_exceeded"), 180_000);
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.once(signal, () => fail("qwen_office.cancelled", "cancelled"));
+  try {
+    // Native Office context never crosses RoleWeave employees/conversations or
+    // bypasses the context toggle: each turn owns a fresh client session.
+    const resolvedWorkspace = await fs.realpath(workspaceDir);
+    const sessionKey = createHash("sha256").update(JSON.stringify([resolvedWorkspace, positionId, runId])).digest("hex");
+    const position = (await scanPositions(resolvedWorkspace)).find((entry) => entry.id === positionId);
+    if (!position) { fail("qwen_office.employee_unavailable"); return; }
+    const declaration = await readJson(path.join(resolvedWorkspace, "organization.v1alpha1.json"));
+    const role = Array.isArray(declaration.roles) ? declaration.roles.find((entry) => entry?.id === positionId) : undefined;
+    const employeeLabel = typeof role?.name === "string" ? role.name.slice(0, 80).replace(/[\x00-\x1f\x7f]/g, " ") : positionId;
+    const model = process.env.ROLEWEAVE_TURN_MODEL;
+    if (model && model !== "provider-default") { fail("qwen_office.model_unavailable"); return; }
+    const result = await requestQwenOfficeLocal(process.env, "complete", {
+      sessionKey, employeeLabel,
+      input: `[RoleWeave employee: ${positionId}]\n[Native tools and confirmations are managed by Qwen Office. RoleWeave supplied the context below.]\n\n${input || "请根据已提供的岗位上下文完成本次任务。"}`,
+    }, {
+      signal: controller.signal,
+      onProgress: ({ status }) => {
+        if (terminal) return;
+        emit({ type: "trace.activity", runId, timestamp: now(), activityId: "qwen-office-native-task", kind: "agent", status: "running",
+          title: status === "waiting_for_input" ? "请在千问办公确认审批或补充信息" : "千问办公正在执行任务" });
+      },
+    });
+    if (terminal) return;
+    emit({ type: "trace.activity", runId, timestamp: now(), activityId: "qwen-office-native-task", kind: "agent", status: "completed", title: "千问办公任务已完成" });
+    emit({ type: "model.delta", runId, timestamp: now(), text: result.text });
+    if (result.usage && Object.keys(result.usage).length) emit({ type: "usage", runId, timestamp: now(), ...result.usage });
+    finish({ type: "run.completed", runId, timestamp: now(), output: result.text, terminalReason: "goal_met" });
+  } catch (error) {
+    fail(typeof error?.code === "string" && /^qwen_office\.[a-z_]{1,64}$/.test(error.code) ? error.code : "qwen_office.protocol_invalid");
+  }
+}
+
+async function turnRunOpenAICompatible(workspaceDir, positionId, input) {
+  const runId = randomUUID();
+  emit({ type: "run.started", runId, timestamp: now() });
+  let terminalEmitted = false;
+  const finish = (event) => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
+    process.stdout.write(`${JSON.stringify(event)}\n`, () => process.exit(0));
+  };
+  const fail = (code, retryable = false) => finish({
+    type: "run.failed", runId, timestamp: now(),
+    error: { code, message: `OpenAI-compatible request failed (${code}); check OPENAI_API_KEY, OPENAI_BASE_URL and the selected model.`, retryable, terminalReason: "engine_internal_error" },
+  });
+
+  const configuration = openAICompatibleConfiguration(process.env);
+  if (!configuration.ready) { fail(configuration.code ?? "openai.configuration_invalid"); return; }
+  const { apiKey, baseUrl, model } = configuration;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120_000);
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: input }],
+        stream: true,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      const code = `openai.http_${response.status}`;
+      await response.body?.cancel().catch(() => {});
+      fail(code); return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let output = "";
+    let done = false;
+    while (!done) {
+      const { value, done: readerDone } = await reader.read();
+      done = readerDone;
+      if (value) buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const data = trimmed.slice(5).trim();
+        if (data === "[DONE]") { done = true; break; }
+        if (!data) continue;
+        try {
+          const chunk = JSON.parse(data);
+          const delta = chunk.choices?.[0]?.delta?.content;
+          if (typeof delta === "string" && delta.length > 0) {
+            output += delta;
+            emit({ type: "model.delta", runId, timestamp: now(), text: delta });
+          }
+          const usage = chunk.usage;
+          if (usage && typeof usage === "object") {
+            const inputTokens = usage.prompt_tokens ?? usage.promptTokens;
+            const outputTokens = usage.completion_tokens ?? usage.completionTokens;
+            const totalTokens = usage.total_tokens ?? usage.totalTokens;
+            if ([inputTokens, outputTokens, totalTokens].some((v) => Number.isSafeInteger(v) && v >= 0)) {
+              emit({ type: "usage", runId, timestamp: now(),
+                ...(Number.isSafeInteger(inputTokens) && inputTokens >= 0 ? { inputTokens } : {}),
+                ...(Number.isSafeInteger(outputTokens) && outputTokens >= 0 ? { outputTokens } : {}),
+                ...(Number.isSafeInteger(totalTokens) && totalTokens >= 0 ? { totalTokens } : {}),
+              });
+            }
+          }
+        } catch {
+          // ignore malformed SSE lines
+        }
+      }
+    }
+    finish({ type: "run.completed", runId, timestamp: now(), output, terminalReason: "goal_met" });
+  } catch (error) {
+    if (error?.name === "AbortError") fail("openai.timeout", true);
+    else fail("openai.request_failed", true);
+  }
 }
 
 async function turnRunGemini(workspaceDir, positionId, input) {
@@ -749,6 +976,16 @@ async function turnRunGemini(workspaceDir, positionId, input) {
   // descendants can be reaped. Relay graceful termination across that group
   // boundary; otherwise a SIGKILL fallback leaves `agy` running indefinitely.
   const terminate = () => {
+    if (terminalEmitted) return;
+    terminalEmitted = true;
+    // Keep the adapter alive until Node has reaped its own detached child.
+    // Exiting immediately after kill races with SIGCHLD and can orphan a zombie.
+    if (child?.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+      child.once("close", () => process.exit(143));
+      setTimeout(() => process.exit(143), 1000).unref();
+      cleanup();
+      return;
+    }
     cleanup();
     process.exit(143);
   };
@@ -1074,28 +1311,7 @@ async function turnRunQoder(workspaceDir, positionId, input) {
     }
 
     let buffer = "";
-    const toolNames = new Map();
-    const activityText = (value, maxBytes) => {
-      let result = "";
-      let bytes = 0;
-      for (const character of value) {
-        bytes += Buffer.byteLength(character, "utf8");
-        if (bytes > maxBytes) break;
-        result += character;
-      }
-      return result;
-    };
-    const publicDetail = (block) => {
-      const input = block?.input;
-      if (!input || typeof input !== "object") return undefined;
-      const details = [];
-      for (const key of ["path", "file_path", "paths", "files", "file_paths"]) {
-        const value = input[key];
-        if (typeof value === "string" && value.trim()) details.push(value.trim());
-        else if (Array.isArray(value)) details.push(...value.filter(item => typeof item === "string" && item.trim()).map(item => item.trim()));
-      }
-      return details.length > 0 ? activityText([...new Set(details)].join(" · "), 2048) : undefined;
-    };
+    const toolActivities = new Map();
     child.stdout.on("data", (chunk) => {
       buffer += String(chunk);
       let newline = buffer.indexOf("\n");
@@ -1123,10 +1339,11 @@ async function turnRunQoder(workspaceDir, positionId, input) {
           if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
             emit({ type: "model.delta", runId, timestamp: now(), text: block.text });
           } else if (block?.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
-            toolNames.set(block.id, activityText(block.name, 256));
-            const detail = publicDetail(block);
+            const title = activityText(block.name, 256);
+            const detail = publicQoderActivityDetail(block, redactDiagnostic);
+            toolActivities.set(block.id, { title, ...(detail ? { detail } : {}) });
             emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.id, 256), kind: "tool",
-              status: "running", title: toolNames.get(block.id), ...(detail ? { detail } : {}) });
+              status: "running", ...toolActivities.get(block.id) });
           }
         }
       }
@@ -1134,7 +1351,7 @@ async function turnRunQoder(workspaceDir, positionId, input) {
         for (const block of event.message.content) {
           if (block?.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
           emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.tool_use_id, 256), kind: "tool",
-            status: block.is_error === true ? "failed" : "completed", title: toolNames.get(block.tool_use_id) ?? "Tool" });
+            status: block.is_error === true ? "failed" : "completed", ...(toolActivities.get(block.tool_use_id) ?? { title: "Tool" }) });
         }
       }
       if (event?.type === "result") {
@@ -1182,7 +1399,7 @@ async function turnRunQoder(workspaceDir, positionId, input) {
     });
 }
 
-function turnRunClaude(workspaceDir, positionId, input, engineModel) {
+async function turnRunClaude(workspaceDir, positionId, input, engineModel) {
   const runId = randomUUID();
   emit({ type: "run.started", runId, timestamp: now() });
 
@@ -1214,6 +1431,21 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     return;
   }
   const childEnv = claudeChildEnvironment(process.env, engineModel, provider.providerEnv);
+  let readPlan, maxTurns = 1;
+  try {
+    const position = (await scanPositions(workspaceDir)).find(entry => entry.id === positionId);
+    if (!position) throw new Error("position missing");
+    readPlan = await claudeReadPlan(workspaceDir, position.dir);
+    if (readPlan.tools.length) {
+      const budget = await readJson(path.join(position.dir, "budget.json"));
+      const iterations = budget?.perTask?.iterations;
+      if (!Number.isSafeInteger(iterations) || iterations < 1) throw new Error("invalid iteration budget");
+      maxTurns = Math.min(iterations, 32);
+    }
+  } catch {
+    fail("claude.position_permissions_invalid", "无法安全准备员工工具权限。当前支持已授权范围内的 Read、Glob、Grep；不会加载全局工具或放宽权限。", false);
+    return;
+  }
   const versionSpawn = createQoderSpawnSpec(claudeBin, ["--version"], childEnv);
   const versionProbe = spawnSync(versionSpawn.command, versionSpawn.args, {
     ...versionSpawn.options,
@@ -1240,7 +1472,7 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
   }
 
   const safeInput = (input || "Execute your position duties for this turn.").replace(/@/g, "\\u0040");
-  const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n`;
+  const positionContext = `[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n[Readable patterns: ${readPlan.rules.filter(rule => rule.effect === "allow" && !rule.approval).map(rule => rule.pattern).join(", ") || "none"}]\n\n`;
   const localLogin = engineModel === "claude-local" && !childEnv.ANTHROPIC_API_KEY && !childEnv.ANTHROPIC_AUTH_TOKEN;
   const selectedModel = process.env.ROLEWEAVE_TURN_MODEL || provider.selectedDefault;
   const args = [
@@ -1256,10 +1488,17 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     "--setting-sources", localLogin ? "user" : "",
     ...(localLogin ? ["--settings", '{"disableAllHooks":true}'] : []),
     "--strict-mcp-config",
+    "--mcp-config", JSON.stringify({ mcpServers: readPlan.tools.length ? { roleweave: {
+      type: "stdio", command: process.execPath,
+      args: [fileURLToPath(new URL("./claude-workspace-mcp.mjs", import.meta.url)), JSON.stringify(readPlan)],
+      env: { ELECTRON_RUN_AS_NODE: "1", ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_CUSTOM_HEADERS: "", CLAUDE_CODE_OAUTH_TOKEN: "" },
+    } } : {} }),
+    ...(readPlan.tools.length ? ["--allowedTools", readPlan.tools.map(tool => `mcp__roleweave__${tool}`).join(",")] : []),
+    "--append-system-prompt", "RoleWeave tools only execute through structured tool_use calls. Use the provided MCP read tools for authorized files. Shell commands, writes and unlisted tools are unavailable. Never print <tool_call> commands as if executed; if permissions prevent the task, say which access is missing. Do not claim changes that have not been made.",
     "--disable-slash-commands",
     "--no-chrome",
     "--no-session-persistence",
-    "--max-turns", "1",
+    "--max-turns", String(maxTurns),
     ...(selectedModel ? ["--model", selectedModel] : []),
   ];
 
@@ -1283,6 +1522,9 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
   let buffer = "";
   let initSeen = false;
   let textSnapshot = "";
+  let partialText = "";
+  const toolActivities = new Map();
+  let successfulTools = 0, failedTools = 0;
 
   child.stdout.on("data", (chunk) => {
     buffer += String(chunk);
@@ -1298,6 +1540,14 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     stderrTail = (stderrTail + String(chunk)).slice(-2000);
   });
 
+  // The CLI owns the MCP stdio session. Never leave its worker alive when this
+  // adapter exits after a terminal frame or receives a cancellation signal.
+  process.once("exit", () => { if (child.exitCode === null) child.kill("SIGTERM"); });
+  for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => {
+    child.kill(signal);
+    setTimeout(() => process.exit(signal === "SIGTERM" ? 143 : 130), 1000).unref();
+  });
+
   function handleClaudeLine(line) {
     if (terminalEmitted || line.trim().length === 0) return;
     let event;
@@ -1308,28 +1558,50 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
     }
 
     if (event?.type === "system" && event?.subtype === "init") {
+      if (readPlan.tools.length && !event.mcp_servers?.some(server => server.name === "roleweave" && server.status === "connected")) {
+        fail("claude.workspace_tools_unavailable", "员工文件工具没有连通，本次任务未开始。请重启应用并检查工具连接。", true);
+        return;
+      }
       initSeen = true;
       return;
     }
 
     if (event?.type === "assistant" && Array.isArray(event?.message?.content)) {
+      const messageText = event.message.content.filter(block => block?.type === "text" && typeof block.text === "string").map(block => block.text).join("");
+      if (messageText) {
+        const alreadySent = partialText || textSnapshot;
+        const delta = messageText.startsWith(alreadySent) ? messageText.slice(alreadySent.length) : messageText;
+        textSnapshot = messageText;
+        if (delta) emit({ type: "model.delta", runId, timestamp: now(), text: delta });
+      }
+      partialText = "";
       for (const block of event.message.content) {
-        if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
-          const delta = block.text.length > textSnapshot.length
-            ? block.text.slice(textSnapshot.length)
-            : block.text;
-          textSnapshot = block.text;
-          if (delta.length > 0) {
-            emit({ type: "model.delta", runId, timestamp: now(), text: delta });
-          }
+        if (block?.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string" && !toolActivities.has(block.id)) {
+          const title = block.name.replace(/^mcp__roleweave__/, "");
+          const detail = typeof block.input?.file_path === "string" ? block.input.file_path : typeof block.input?.pattern === "string" ? block.input.pattern : undefined;
+          const activity = { title: activityText(title, 256), ...(detail ? { detail: activityText(detail, 2048) } : {}) };
+          toolActivities.set(block.id, activity);
+          emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.id, 256), kind: "tool", status: "running", ...activity });
         }
       }
       return;
     }
 
+    if (event?.type === "user" && Array.isArray(event?.message?.content)) {
+      for (const block of event.message.content) if (block?.type === "tool_result" && typeof block.tool_use_id === "string" && toolActivities.has(block.tool_use_id)) {
+        if (block.is_error === true) failedTools++; else successfulTools++;
+        emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(block.tool_use_id, 256), kind: "tool",
+          status: block.is_error === true ? "failed" : "completed", ...toolActivities.get(block.tool_use_id) });
+      }
+      return;
+    }
+
+    if (event?.type === "stream_event" && event?.event?.type === "message_start") { partialText = ""; textSnapshot = ""; return; }
+
     if (event?.type === "stream_event" && event?.event?.type === "content_block_delta") {
       const delta = event.event.delta;
       if (delta?.type === "text_delta" && typeof delta.text === "string" && delta.text.length > 0) {
+        partialText += delta.text;
         emit({ type: "model.delta", runId, timestamp: now(), text: delta.text });
       }
       return;
@@ -1351,8 +1623,16 @@ function turnRunClaude(workspaceDir, positionId, input, engineModel) {
           : Array.isArray(event.errors) ? event.errors.filter((error) => typeof error === "string").join("\n") : "";
         fail(errorCode, details || stderrTail || "Claude Code reported an error result", false);
       } else {
-        terminalEmitted = true;
         const output = typeof event.result === "string" ? event.result : "";
+        if (Array.isArray(event.permission_denials) && event.permission_denials.length || failedTools > 0 && successfulTools === 0) {
+          fail("claude.tool_permission_denied", "本次文件操作未执行成功。请检查员工已授权的读取范围，再重新发起任务。", false);
+          return;
+        }
+        if (hasUnexecutedToolText(output)) {
+          fail("claude.tool_protocol_invalid", "模型返回了未执行的工具调用文本，本次任务没有完成。请使用支持结构化工具调用的模型；不会把文本命令直接执行。", false);
+          return;
+        }
+        terminalEmitted = true;
         emit({ type: "usage", runId, timestamp: now(), ...usage });
         emit({ type: "run.completed", runId, timestamp: now(), output, terminalReason: "goal_met" });
         process.exit(0);
@@ -1534,14 +1814,7 @@ export function codexTurnArgs(model, baseUrl) {
     // implement a Responses feature rejects the whole request rather than
     // ignoring it. A relay answered `RESPONSES_FEATURE_NOT_SUPPORTED:
     // web_search` until web_search was disabled here.
-    "--disable", "shell_tool",
-    "--disable", "unified_exec",
-    "--disable", "apps",
-    "--disable", "plugins",
-    "--disable", "skill_search",
-    "--disable", "multi_agent",
-    "--disable", "view_image",
-    "--disable", "workspace_dependencies",
+    ...CODEX_DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
   ];
   if (model !== undefined && model.length > 0) args.push("--model", model);
   if (baseUrl !== undefined) {
@@ -1585,6 +1858,23 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
     if (terminalEmitted) return;
     terminalEmitted = true;
     stopChild();
+    // A provider's HTML access-denied page is a connection failure, not task
+    // output or evidence that the CLI's ChatGPT login URL is misconfigured.
+    if (/\b(?:status|HTTP)\s*:?\s*403\b|\b403\s+Forbidden\b/i.test(message)) {
+      code = "codex.access_denied";
+      message = "Codex 服务拒绝连接（403），本次任务未执行。请检查账号访问权限和网络连接后重试。";
+      retryable = false;
+    } else if (/\b(?:status|HTTP)\s*:?\s*401\b|\b401\s+Unauthorized\b/i.test(message)) {
+      code = "codex.authentication_failed";
+      message = "Codex 登录验证失败（401）。请在当前运行环境重新登录 Codex 后再试。";
+      retryable = false;
+    } else if (/\bmodel is not supported when using Codex with a ChatGPT account\b/i.test(message)) {
+      // Catalog discovery is not an inference entitlement check. Keep this
+      // specific rejection distinct from malformed requests or login failures.
+      code = "codex.model_access_denied";
+      message = "The selected model was rejected for this Codex ChatGPT login. Choose another model or check the login in the same Codex CLI before resending. Refreshing the model list does not verify access.";
+      retryable = false;
+    }
     emit({
       type: "run.failed",
       runId,
@@ -1619,16 +1909,16 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
   }
 
   const args = codexTurnArgs(model, baseUrl);
-  args.push(`[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n${input || "Execute your position duties for this turn."}`);
+  // cmd.exe truncates multiline argv passed through npm .cmd launchers.
+  // stdin also avoids Windows command-line length limits for thread context.
+  args.push("-");
 
   try {
     const spawnSpec = createQoderSpawnSpec(codexBin, args, codexChildEnvironment(process.env, engineModel));
     child = spawn(spawnSpec.command, spawnSpec.args, {
       ...spawnSpec.options,
       cwd: workspaceDir,
-      // Codex exec also drains stdin; leaving it closed keeps the turn
-      // non-interactive instead of waiting for further input.
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       // Own the process group so a stalled Codex and any descendant it
       // spawned can both be killed when the engine decides the outcome.
       detached: process.platform !== "win32",
@@ -1777,6 +2067,9 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex") {
     if (terminalEmitted) return;
     fail("codex.no_terminal_event", stderrTail.trim() || `codex exited with code ${code} without a terminal event`, true);
   });
+  child.stdin.on("error", () => fail("codex.stdin_failed", "cannot send the request to Codex", true));
+  // Close the pipe after the complete prompt so exec remains non-interactive.
+  child.stdin.end(`[Position: ${positionId}]\n[Workspace: ${workspaceDir}]\n\n${input || "Execute your position duties for this turn."}`);
 }
 
 export { workbuddyTurnArgs } from "../src/workbuddy-runtime.js";

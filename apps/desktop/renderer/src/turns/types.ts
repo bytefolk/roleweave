@@ -1,6 +1,6 @@
 import type { EmployeeModelConnection, TurnRecord as ApiTurnRecord, TurnAttachment } from "@roleweave/shared";
 export type { TurnAttachment } from "@roleweave/shared";
-export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "gemini";
+export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "workbuddy-local" | "qwen-office-local" | "gemini" | "openai-compatible";
 
 export type TurnStatus = "running" | "completed" | "failed" | "indeterminate";
 
@@ -63,18 +63,25 @@ export interface TurnApprovalRequest {
 
 export interface TurnTraceActivity {
   activityId: string;
-  kind: "tool" | "agent";
+  /** "thought" is renderer-derived: the model's narration between two tool
+   * activities (from model.delta runs), bounded and single-line. */
+  kind: "tool" | "agent" | "thought";
   status: "running" | "completed" | "failed";
-  title: string;
+  /** Tool/agent label; thought items carry text instead. */
+  title?: string;
+  /** Bounded thought narration snippet (thought items only). */
+  text?: string;
   detail?: string;
   parentActivityId?: string;
-  at: string;
+  at?: string;
 }
 
 export interface TurnRecord {
   model?: string;
   /** Renderer-only live/pending projection; never a persisted receipt. */
   provisional?: boolean;
+  /** Optimistic dispatch waiting for the server to capture its model snapshot. */
+  dispatchPending?: boolean;
   id: string;
   positionId: string;
   positionName: string;

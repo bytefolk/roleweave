@@ -1,8 +1,13 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ApplicationConfiguration, ConfigurationSnapshot, ConfigurationBridge } from './configuration-types';
+import { configurationText } from './locales/configuration';
 export const CONFIGURATION_APPLIED = 'owb:configuration-applied';
 export const CONFIGURATION_ERROR = 'owb:configuration-error';
 let current: ApplicationConfiguration | null = null;
+export function taskCompletionNotification(): { enabled: boolean; body: string } {
+  return { enabled: current?.notifications?.taskComplete === true,
+    body: configurationText(current?.appearance.locale === 'en', 'A task has completed.') };
+}
 let bridge: ConfigurationBridge | undefined;
 let boot: Promise<void> | null = null;
 let edits: Promise<unknown> = Promise.resolve();

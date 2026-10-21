@@ -1,22 +1,48 @@
-import { useLayoutEffect, useRef, useState } from "react";
-import { Dropdown } from "antd";
-import { Copy, Pencil, ChevronDown } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Dropdown, Tooltip } from "antd";
+import { Check, Copy, Pencil, ChevronDown } from "lucide-react";
 import { useConversationCopy } from "../locales/conversation";
 import type { TurnRecord } from "./types";
 import { SavedAttachmentCard } from "./AttachmentCard";
 export function MessageActions({ raw, plain, onEdit }: { raw: string; plain?: string; onEdit?: (text: string) => void }) {
   const copy = useConversationCopy();
   const [status, setStatus] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const copyButton = useRef<HTMLButtonElement>(null);
+  const messageVersion = useRef({ raw, plain });
+  useLayoutEffect(() => { messageVersion.current = { raw, plain }; setStatus(""); }, [raw, plain]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setMenuOpen(false);
+      copyButton.current?.focus();
+    };
+    window.addEventListener("keydown", escape, true);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, [menuOpen]);
+  useEffect(() => {
+    if (!status) return;
+    const timer = setTimeout(() => setStatus(""), 2400);
+    return () => clearTimeout(timer);
+  }, [status]);
   async function write(value: string) {
-    try { await navigator.clipboard.writeText(value); setStatus(copy.copied); }
-    catch { setStatus(copy.copyFailed); }
+    const version = messageVersion.current;
+    try { await navigator.clipboard.writeText(value); if (messageVersion.current === version) setStatus(copy.copied); }
+    catch { if (messageVersion.current === version) setStatus(copy.copyFailed); }
   }
   return <div className="owb-message-actions">
-    {plain === undefined ? <button type="button" onClick={() => void write(raw)}><Copy size={13} aria-hidden="true" />{copy.copy}</button> : <Dropdown trigger={["click"]} menu={{ items: [{ key: "plain", label: copy.copyPlain }, { key: "raw", label: copy.copyMarkdown }], onClick: ({ key }) => void write(key === "raw" ? raw : plain) }}>
-      <button type="button"><Copy size={13} aria-hidden="true" />{copy.copy}<ChevronDown size={12} aria-hidden="true" /></button>
-    </Dropdown>}
-    {onEdit ? <button type="button" onClick={() => onEdit(raw)}><Pencil size={13} aria-hidden="true" />{copy.edit}</button> : null}
-    {status ? <span role="status">{status}</span> : null}
+    {plain === undefined ? <Tooltip title={status || copy.copy} trigger={["hover", "focus"]}>
+      <button type="button" aria-label={copy.copy} onClick={() => void write(raw)}>{status === copy.copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}</button>
+    </Tooltip> : <Tooltip title={status || copy.copy} trigger={["hover", "focus"]} open={menuOpen ? false : undefined}>
+      <span className="owb-message-actions__trigger"><Dropdown trigger={["click"]} open={menuOpen} onOpenChange={setMenuOpen} menu={{ items: [{ key: "plain", label: copy.copyPlain }, { key: "raw", label: copy.copyMarkdown }], onClick: ({ key }) => { setMenuOpen(false); void write(key === "raw" ? raw : plain); } }}>
+        <button ref={copyButton} type="button" aria-label={copy.copy} aria-haspopup="menu" aria-expanded={menuOpen}>{status === copy.copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}<ChevronDown size={10} aria-hidden="true" /></button>
+      </Dropdown></span>
+    </Tooltip>}
+    {onEdit ? <Tooltip title={copy.edit} trigger={["hover", "focus"]}><button type="button" aria-label={copy.edit} onClick={() => onEdit(raw)}><Pencil size={15} aria-hidden="true" /></button></Tooltip> : null}
+    <span className="owb-message-actions__feedback" role="status">{status}</span>
   </div>;
 }
 export function OperatorMessage({ turn, onEdit }: { turn: TurnRecord; onEdit?: (text: string) => void }) {
@@ -36,7 +62,7 @@ export function OperatorMessage({ turn, onEdit }: { turn: TurnRecord; onEdit?: (
     return () => observer.disconnect();
   }, [turn.input]);
   return <>
-    <p ref={ref} className={`owb-bubble__text${!expanded ? " owb-message-collapsible" : ""}`} title={turn.input}>{turn.input}</p>
+    <p ref={ref} className={`owb-bubble__text${!expanded ? " owb-message-collapsible" : ""}`}>{turn.input}</p>
     {turn.attachments && turn.attachments.length > 0 ? (
       <div className="owb-attachment-strip owb-attachment-strip--saved">
         {turn.attachments.map((att) => <SavedAttachmentCard key={att.id} attachment={att} />)}

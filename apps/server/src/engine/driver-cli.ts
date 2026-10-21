@@ -415,6 +415,22 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, mod
     if (source.DIGITAL_EMPLOYEE_CODEX_COMMAND !== undefined) {
       environment.DIGITAL_EMPLOYEE_CODEX_COMMAND = source.DIGITAL_EMPLOYEE_CODEX_COMMAND;
     }
+  } else if (engine === "qwen-office-local") {
+    // The Windows desktop owns Office's native task channel. Neither service
+    // credentials nor a caller-provided Office endpoint cross this boundary.
+    if (bundledElectronEngine) {
+      for (const key of ["ROLEWEAVE_QWEN_OFFICE_BRIDGE", "ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN"]) {
+        if (source[key] !== undefined) environment[key] = source[key];
+      }
+    }
+  } else if (engine === "workbuddy-local") {
+    // Only the desktop-owned channel crosses this login boundary. Service
+    // credentials, endpoint overrides, and WorkBuddy's native tools do not.
+    if (bundledElectronEngine) {
+      for (const key of ["ROLEWEAVE_WORKBUDDY_BRIDGE", "ROLEWEAVE_WORKBUDDY_BRIDGE_TOKEN"]) {
+        if (source[key] !== undefined) environment[key] = source[key];
+      }
+    }
   } else if (engine === "workbuddy") {
     if (source.CODEBUDDY_API_KEY !== undefined) environment.CODEBUDDY_API_KEY = source.CODEBUDDY_API_KEY;
     if (source.CODEBUDDY_BASE_URL !== undefined) environment.CODEBUDDY_BASE_URL = source.CODEBUDDY_BASE_URL;
@@ -427,6 +443,13 @@ function turnEnvironment(engine: TurnEngine, bundledElectronEngine: boolean, mod
     for (const key of ["DIGITAL_EMPLOYEE_WORKBUDDY_COMMAND", "ProgramFiles", "PROGRAMFILES", "LOCALAPPDATA", "PATHEXT", "SystemRoot", "WINDIR"]) {
       if (source[key] !== undefined) environment[key] = source[key];
     }
+  } else if (engine === "openai-compatible") {
+    // User-provided OpenAI-compatible gateway. The control plane forwards the
+    // same provider trio that Codex uses; downstream we can reuse any
+    // OpenAI-compatible digital-employee adapter. No local CLI login is required.
+    if (source.OPENAI_API_KEY !== undefined) environment.OPENAI_API_KEY = source.OPENAI_API_KEY;
+    if (source.OPENAI_BASE_URL !== undefined) environment.OPENAI_BASE_URL = source.OPENAI_BASE_URL;
+    if (source.OPENAI_MODEL !== undefined) environment.OPENAI_MODEL = source.OPENAI_MODEL;
   } else if (engine === "gemini") {
     if (source.GEMINI_API_KEY !== undefined) environment.GEMINI_API_KEY = source.GEMINI_API_KEY;
     if (source.GEMINI_MODEL !== undefined) environment.GEMINI_MODEL = source.GEMINI_MODEL;
@@ -674,7 +697,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
     // An external digital-employee CLI cannot execute this bundled-only Host.
     // Reject before even starting the external engine so identity cannot fall
     // through to a different Host or leak a WorkBuddy service credential.
-    if (request.engine === "workbuddy" && !this.bundledElectronEngine) {
+    if ((request.engine === "workbuddy" || request.engine === "workbuddy-local" || request.engine === "qwen-office-local") && !this.bundledElectronEngine) {
       return Promise.resolve({ status: "indeterminate", events: [], diagnostic: "", code: "turn_engine_unavailable" });
     }
     return new Promise((resolve) => {
@@ -733,6 +756,22 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         stdoutBuffer = "";
         terminateChild();
       };
+      let turnTimer: NodeJS.Timeout | undefined;
+      const onTurnTimeout = (): void => {
+        if (settled) return;
+        timedOut = true;
+        acceptingOutput = false;
+        stdoutBuffer = "";
+        terminateChild();
+      };
+      // The budget is an inactivity window, not a wall clock: every accepted
+      // engine event proves the turn is still working, so a long multi-tool
+      // run survives while a stalled engine is still reaped.
+      const armTurnTimeout = (): void => {
+        if (settled) return;
+        if (turnTimer !== undefined) clearTimeout(turnTimer);
+        turnTimer = setTimeout(onTurnTimeout, this.timeoutMs);
+      };
       const consumeLine = (line: string): void => {
         if (!acceptingOutput || settled) return;
         if (line.endsWith("\r")) line = line.slice(0, -1);
@@ -768,6 +807,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
           if (event.type !== "run.completed" && event.type !== "run.failed") {
             request.onEvent?.(event);
           }
+          armTurnTimeout();
         } catch (error) {
           failProtocol(error instanceof Error ? error.message : "invalid engine.v1 event");
         }
@@ -802,13 +842,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         return;
       }
 
-      const timer = setTimeout(() => {
-        if (settled) return;
-        timedOut = true;
-        acceptingOutput = false;
-        stdoutBuffer = "";
-        terminateChild();
-      }, this.timeoutMs);
+      armTurnTimeout();
 
       child.stdout?.on("data", (chunk: Buffer | string) => {
         if (!acceptingOutput || settled) return;
@@ -837,7 +871,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         diagnostic += Buffer.from(text, "utf8").subarray(0, remaining).toString("utf8");
       });
       child.on("error", () => {
-        clearTimeout(timer);
+        if (turnTimer !== undefined) clearTimeout(turnTimer);
         if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
         finish({
           status: "indeterminate",
@@ -847,7 +881,7 @@ export class DigitalEmployeeCliDriver implements OrgApplyDriver, TurnRunDriver, 
         });
       });
       child.on("close", (code) => {
-        clearTimeout(timer);
+        if (turnTimer !== undefined) clearTimeout(turnTimer);
         if (forceKillTimer !== undefined) clearTimeout(forceKillTimer);
         if (settled) return;
         if (aborted) {

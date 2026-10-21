@@ -44,7 +44,7 @@ export const errorCodes = {
   position_profile_invalid: "position_profile_invalid",
   /** POST /turns shape or input is invalid. */
   turn_request_invalid: "turn_request_invalid",
-  /** The selected Host is outside the D3 qoder/claude-code/claude-local allowlist. */
+  /** The selected Host is outside the contracted D3 turn engine allowlist. */
   turn_engine_unsupported: "turn_engine_unsupported",
   /** The position id is malformed and cannot be used as local state path. */
   turn_position_invalid: "turn_position_invalid",
@@ -108,6 +108,15 @@ export const errorCodes = {
   docs_storage_failed: "docs_storage_failed",
   /** A document creation target already exists; creation never overwrites (#35 S4). */
   docs_exists: "docs_exists",
+  /** A document changed after it was read and must not be overwritten (#511). */
+  docs_conflict: "docs_conflict",
+  vault_request_invalid: "vault_request_invalid",
+  vault_note_missing: "vault_note_missing",
+  vault_conflict: "vault_conflict",
+  vault_path_forbidden: "vault_path_forbidden",
+  vault_legacy_read_only: "vault_legacy_read_only",
+  vault_limit_exceeded: "vault_limit_exceeded",
+  vault_storage_failed: "vault_storage_failed",
   /** A doc-ref.v1alpha1 value violates the frozen reference shape (#35 S4). */
   doc_ref_invalid: "doc_ref_invalid",
   /** External doc-plane URL is not configured; bridge routes cannot be served (#35 R2). */
@@ -128,6 +137,22 @@ export const errorCodes = {
   drive_upstream_unavailable: "drive_upstream_unavailable",
   /** The upstream mem service returned a non-2xx status for a proxied request. */
   drive_upstream_failed: "drive_upstream_failed",
+  /** The requested drive provider name is not a known kind (drive-provider.v1). */
+  drive_provider_invalid: "drive_provider_invalid",
+  /** The selected drive provider's upstream authorization has expired; re-authentication is required. */
+  drive_auth_expired: "drive_auth_expired",
+  /** Mem credentials do not permit this file operation or workspace. */
+  drive_permission_denied: "drive_permission_denied",
+  /** A desktop-picked upload exceeds the supported byte limit. */
+  drive_upload_too_large: "drive_upload_too_large",
+  /** The selected drive provider cannot serve this drive action at all (e.g. detail by id). */
+  drive_action_unsupported: "drive_action_unsupported",
+  /** A drive object is not an allowlisted raster image. */
+  drive_preview_unsupported: "drive_preview_unsupported",
+  /** Raster preview exceeds the byte or canvas budget. */
+  drive_preview_too_large: "drive_preview_too_large",
+  /** MIME, image signature or immutable file size does not agree. */
+  drive_preview_invalid: "drive_preview_invalid",
   /** Goal request shape is invalid (#222). */
   goal_request_invalid: "goal_request_invalid",
   /** A requested goal does not exist in the open workspace (#222). */

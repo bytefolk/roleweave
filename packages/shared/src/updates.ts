@@ -46,9 +46,8 @@ export interface UpdateEvent {
 /**
  * A `check` / `download` / `install` reply.
  *
- * `unsigned` is the one response that is not a state: the service returns the
- * current state unchanged and refuses the apply path, because an unsigned build
- * cannot verify what it would install.
+ * `unsigned` is a native signature refusal outside the unsigned Windows NSIS
+ * channel. Windows uses the release feed's SHA-512 instead of publisher signing.
  */
 export interface UpdateResult extends UpdateEvent {
   unsigned: boolean;
@@ -67,7 +66,7 @@ export interface UpdateStatus {
   requiresConfirmation: boolean;
   /** Whether this build carries a native platform publisher identity (Apple/Authenticode). */
   signed: boolean;
-  /** Whether the selected update channel has an independent trust check. */
+  /** Whether the selected update channel has an independent signature check. */
   updateVerified: boolean;
   reason: string | null;
   platform: UpdatePlatform;

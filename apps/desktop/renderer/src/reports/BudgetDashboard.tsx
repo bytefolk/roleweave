@@ -158,12 +158,7 @@ export function BudgetDashboard({
         title: t(compact ? "rep.latestTask" : "rep.colPerTask"),
         key: "perTask",
         render: (_: unknown, row: BudgetRow) => (
-          <BudgetBar
-            label={t("pos.perTask")}
-            declared={{ taskLimit: row.declared.perTask, dailyLimit: null }}
-            consumption={row.ratio}
-            format="compact"
-          />
+          compact ? <div><strong>{row.ratio === null ? "—" : budgetPercentText(row.ratio)}</strong><div className={`owb-inbox-budget-meter${row.ratio !== null && row.ratio > 1 ? " is-exceeded" : ""}`} role={row.ratio === null ? undefined : "meter"} aria-label={row.ratio === null ? undefined : t("rep.colPerTask")} aria-valuemin={row.ratio === null ? undefined : 0} aria-valuemax={row.ratio === null ? undefined : Math.max(120, row.ratio * 100)} aria-valuenow={row.ratio === null ? undefined : row.ratio * 100} aria-valuetext={row.ratio === null ? undefined : budgetPercentText(row.ratio)} aria-hidden={row.ratio === null ? true : undefined}><i style={{ width: row.ratio === null ? "0%" : `${Math.min(120, row.ratio * 100) / 1.2}%` }} /><b /></div><small>{row.latestTurn ? row.latestTurn.totalTokens.toLocaleString() : "—"} / {row.declared.perTask.tokens?.toLocaleString() ?? "—"} Token</small></div> : <BudgetBar label={t("pos.perTask")} declared={{ taskLimit: row.declared.perTask, dailyLimit: null }} consumption={row.ratio} format="compact" />
         ),
       },
       {
@@ -200,7 +195,7 @@ export function BudgetDashboard({
             title={`input ${row.recorded.inputTokens.toLocaleString()} · output ${row.recorded.outputTokens.toLocaleString()}`}
           >
             <span className="owb-budget-dash__recorded">
-              {row.recorded.totalTokens.toLocaleString()}
+              {row.latestTurn === null ? "—" : row.recorded.totalTokens.toLocaleString()}
             </span>
           </Tooltip>
         ),

@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-/** #127 AC-004: cross-platform layout parity for the two-column org workspace.
+/** #127 AC-004: cross-platform layout parity for the two-column workspace.
+ * Since #523 that pair is the collaboration sidebar beside the conversation
+ * turn panel; before it, it was the org module's left column beside its turn
+ * panel. The geometry under comparison is the same in both shapes.
  * Compares the `layout` measurements embedded in the packaged static smoke
  * reports produced on macOS arm64 and Windows x64.
  *
@@ -23,12 +26,17 @@
  * Thresholds (declared, reviewable here):
  *  - per-platform bottomDelta (left column bottom vs turn panel bottom) <= 2px,
  *    the two columns must end together;
- *  - per-platform |leftHeight - rightHeight| <= 2px, they must also be the same
- *    height, which bottom alignment alone does not prove;
  *  - cross-platform column width delta <= 4px (fr tracks, same window width);
  *  - cross-platform chrome overhead delta <= 8px, where overhead is
  *    viewport.innerHeight - column height. Absolute heights are never compared
- *    across platforms.
+ *    across platforms;
+ *  - cross-platform column-height-difference delta <= 8px. #523: the columns
+ *    used to be siblings inside the org module and had to be the same height.
+ *    They are now the shell sidebar and the shell main region, and the main
+ *    region starts below the context header, so a height difference is the
+ *    layout working as designed. What still has to hold is that the difference
+ *    is the same on both platforms — a difference that only appears on one of
+ *    them is the regression this replaces.
  * A missing `layout`, `viewport` or `settled: true` on either side fails
  * loudly. The thresholds above are untouched by #194: the settle gate decides
  * when to stop waiting, never what counts as parity. */
@@ -36,9 +44,9 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const BOTTOM_DELTA_MAX = 2;
-const COLUMN_HEIGHT_DELTA_MAX = 2;
 const CROSS_WIDTH_DELTA_MAX = 4;
 const CROSS_CHROME_DELTA_MAX = 8;
+const CROSS_COLUMN_DELTA_MAX = 8;
 
 export function readLayout(file) {
   const report = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -46,7 +54,7 @@ export function readLayout(file) {
     throw new Error(`${file}: smoke report has no layout measurement`);
   }
   if (report.layout === null) {
-    throw new Error(`${file}: layout is null — the two-column org module did not render`);
+    throw new Error(`${file}: layout is null — the two-column workspace did not render`);
   }
   const layout = report.layout;
   const viewport = layout.viewport;
@@ -87,11 +95,6 @@ export function layoutParityFailures(mac, win) {
     if (layout.bottomDelta > BOTTOM_DELTA_MAX) {
       failures.push(`${name}: column bottom delta ${layout.bottomDelta}px exceeds ${BOTTOM_DELTA_MAX}px`);
     }
-    if (Math.abs(layout.leftHeight - layout.rightHeight) > COLUMN_HEIGHT_DELTA_MAX) {
-      failures.push(
-        `${name}: columns are different heights (left ${layout.leftHeight}px vs turn panel ${layout.rightHeight}px, max ${COLUMN_HEIGHT_DELTA_MAX}px)`,
-      );
-    }
     const overhead = chromeOverhead(layout);
     if (overhead < 0) {
       failures.push(
@@ -105,6 +108,17 @@ export function layoutParityFailures(mac, win) {
   }
   if (Math.abs(mac.rightWidth - win.rightWidth) > CROSS_WIDTH_DELTA_MAX) {
     failures.push(`turn panel width differs: mac ${mac.rightWidth}px vs win ${win.rightWidth}px (max ${CROSS_WIDTH_DELTA_MAX}px)`);
+  }
+
+  // #523: a height difference between the two columns is expected (the main
+  // region starts below the context header); only a difference that does not
+  // reproduce on both platforms is a regression.
+  const macColumnDelta = Math.abs(mac.leftHeight - mac.rightHeight);
+  const winColumnDelta = Math.abs(win.leftHeight - win.rightHeight);
+  if (Math.abs(macColumnDelta - winColumnDelta) > CROSS_COLUMN_DELTA_MAX) {
+    failures.push(
+      `column height difference differs: mac ${macColumnDelta}px vs win ${winColumnDelta}px (max ${CROSS_COLUMN_DELTA_MAX}px)`,
+    );
   }
 
   const macOverhead = chromeOverhead(mac);

@@ -6,10 +6,12 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GoalDetail, GoalWorkItem } from "@roleweave/shared/goals";
 import type { OwbBridge } from "../src/owb";
 import { ProjectBoard } from "../src/goals/ProjectBoard";
+import { visibleSelectOptions } from "./select-helper";
+import { enterPickerDate } from "./date-picker-helper";
 
 const task: GoalWorkItem = {
   taskId: "task-one",
@@ -19,6 +21,7 @@ const task: GoalWorkItem = {
   priority: "high",
   assigneePositionId: "engineer",
 };
+const activeSessionId = "11111111-1111-4111-8111-111111111111";
 function detail(items: GoalWorkItem[] = [task]): GoalDetail {
   return {
     goal: {
@@ -37,6 +40,17 @@ function detail(items: GoalWorkItem[] = [task]): GoalDetail {
     activity: [],
   };
 }
+/** The schedule view renders a 28-day window anchored at the current week's
+ * Monday, so fixed calendar dates drift out of the window over time and their
+ * bars disappear (CI failure on 2026-09-28). Window-sensitive fixtures must
+ * derive their dates from today instead. */
+function isoFromToday(offsetDays: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
 function setup(
   value = detail(),
   overrides: Partial<OwbBridge> = {},
@@ -45,7 +59,10 @@ function setup(
   const updateGoal = vi
     .fn()
     .mockResolvedValue({ status: 200, body: { goalId: "goal-one" } });
-  const createTurn = vi
+  const createTurn = vi.fn();
+  const sessions = vi.fn().mockResolvedValue({ status: 200, body: { positionId: "engineer", activeSessionId, sessions: [] } });
+  const createSession = vi.fn();
+  const createSessionTurn = vi
     .fn()
     .mockResolvedValue({
       status: 200,
@@ -56,7 +73,7 @@ function setup(
         createdAt: "2026-09-22T00:00:00.000Z",
       },
     });
-  window.owb = { updateGoal, createTurn, ...overrides } as unknown as OwbBridge;
+  window.owb = { updateGoal, createTurn, sessions, createSession, createSessionTurn, ...overrides } as unknown as OwbBridge;
   const onRefresh = vi.fn().mockResolvedValue(undefined);
   const onOpenBoundSession = vi.fn();
   const props = {
@@ -70,6 +87,9 @@ function setup(
   return {
     updateGoal,
     createTurn,
+    sessions,
+    createSession,
+    createSessionTurn,
     onRefresh,
     onOpenBoundSession,
     props,
@@ -83,8 +103,54 @@ function defer<T>() {
   });
   return { promise, resolve };
 }
+function chooseOption(control: HTMLElement, name: string) {
+  fireEvent.mouseDown(control);
+  const option = visibleSelectOptions().find(
+    (candidate) => candidate.textContent?.trim() === name,
+  );
+  if (!option) {
+    throw new Error(`Select has no visible option named "${name}"`);
+  }
+  fireEvent.click(option);
+}
 
 describe("ProjectBoard", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows creation guidance without empty board columns or a zero-total progress meter", () => {
+    const { container } = setup(detail([]));
+    expect(screen.getByText("把项目拆成可跟进的任务")).toBeInTheDocument();
+    expect(screen.getByText("分配责任岗位")).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(container.querySelector(".owb-project-columns")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+    expect(container.querySelector(".owb-project-schedule")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "新建任务" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("replaces filtered-out tasks with a recoverable empty state in both views", () => {
+    const { container } = setup();
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索任务" }), { target: { value: "missing" } });
+    expect(container.querySelector(".owb-project-columns")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "排期" }));
+    expect(container.querySelector(".owb-project-schedule")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+    expect(screen.getByRole("button", { name: "Ship board" })).toBeInTheDocument();
+    expect(container.querySelector(".owb-project-schedule")).not.toBeNull();
+  });
+
+  it("names the missing date for a task with only a start or due date", () => {
+    setup(detail([
+      { ...task, taskId: "start-only", startDate: "2026-10-08" },
+      { ...task, taskId: "due-only", dueDate: "2026-10-09" },
+    ]));
+    expect(screen.getByText("开始：2026-10-08 · 截止未定")).toBeInTheDocument();
+    expect(screen.getByText("截止：2026-10-09 · 开始未定")).toBeInTheDocument();
+  });
+
   it("creates an assigned task with dates and guards duplicate submission until refresh", async () => {
     const saved = defer<{ status: number; body: { goalId: string } }>();
     const updateGoal = vi.fn().mockReturnValue(saved.promise);
@@ -97,15 +163,9 @@ describe("ProjectBoard", () => {
     fireEvent.change(drawer.getByLabelText("任务说明"), {
       target: { value: "Make plans visible" },
     });
-    fireEvent.change(drawer.getByLabelText("负责人"), {
-      target: { value: "engineer" },
-    });
-    fireEvent.change(drawer.getByLabelText("开始日期"), {
-      target: { value: "2026-09-22" },
-    });
-    fireEvent.change(drawer.getByLabelText("截止日期"), {
-      target: { value: "2026-09-25" },
-    });
+    chooseOption(drawer.getByLabelText("负责人"), "Engineer");
+    enterPickerDate(drawer.getByLabelText("开始日期"), "2026-09-22");
+    enterPickerDate(drawer.getByLabelText("截止日期"), "2026-09-25");
     const saveButton = drawer.getByRole("button", { name: "保存任务" });
     fireEvent.click(saveButton);
     fireEvent.click(saveButton);
@@ -169,33 +229,28 @@ describe("ProjectBoard", () => {
     const control = screen.getByRole("combobox", {
       name: "变更任务状态：Ship board",
     });
-    fireEvent.change(control, { target: { value: "blocked" } });
+    chooseOption(control, "阻塞");
     await screen.findByText("Save failed");
-    expect(control).toHaveValue("todo");
+    expect(control.closest(".ant-select")).toHaveTextContent("待办");
     expect(updateGoal).toHaveBeenCalledWith(
       expect.objectContaining({ workItems: [{ ...task, status: "blocked" }] }),
     );
   });
 
-  it("rejects inverted dates and omits cleared dates in the edited task", async () => {
+  it("rejects inverted date input and omits cleared dates in the edited task", async () => {
     const context = setup(
       detail([{ ...task, startDate: "2026-09-22", dueDate: "2026-09-25" }]),
     );
     fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
     const drawer = within(screen.getByRole("dialog"));
-    fireEvent.change(drawer.getByLabelText("截止日期"), {
-      target: { value: "2026-09-01" },
-    });
-    expect(drawer.getByRole("button", { name: "保存任务" })).toBeDisabled();
-    expect(drawer.getByRole("alert")).toHaveTextContent(
-      "截止日期不能早于开始日期",
-    );
-    fireEvent.change(drawer.getByLabelText("开始日期"), {
-      target: { value: "" },
-    });
-    fireEvent.change(drawer.getByLabelText("截止日期"), {
-      target: { value: "" },
-    });
+    enterPickerDate(drawer.getByLabelText("截止日期"), "2026-09-01");
+    fireEvent.blur(drawer.getByLabelText("截止日期"));
+    await waitFor(() => expect(drawer.getByLabelText("截止日期")).toHaveValue("2026-09-25"));
+    expect(context.updateGoal).not.toHaveBeenCalled();
+    fireEvent.click(drawer.getByLabelText("开始日期").closest(".ant-picker")!.querySelector(".ant-picker-clear")!);
+    fireEvent.click(drawer.getByLabelText("截止日期").closest(".ant-picker")!.querySelector(".ant-picker-clear")!);
+    expect(drawer.getByLabelText("开始日期")).toHaveValue("");
+    expect(drawer.getByLabelText("截止日期")).toHaveValue("");
     fireEvent.click(drawer.getByRole("button", { name: "保存任务" }));
     await waitFor(() =>
       expect(context.updateGoal).toHaveBeenCalledWith(
@@ -204,24 +259,36 @@ describe("ProjectBoard", () => {
     );
   });
 
+  it("blocks saving already stored inverted dates until they are corrected", () => {
+    setup(detail([{ ...task, startDate: "2026-09-22", dueDate: "2026-09-01" }]));
+    fireEvent.click(screen.getByRole("button", { name: "Ship board" }));
+    const drawer = within(screen.getByRole("dialog"));
+    expect(drawer.getByRole("button", { name: "保存任务" })).toBeDisabled();
+    expect(drawer.getByRole("alert")).toHaveTextContent("截止日期不能早于开始日期");
+    fireEvent.click(drawer.getByLabelText("截止日期").closest(".ant-picker")!.querySelector(".ant-picker-clear")!);
+    expect(drawer.getByRole("button", { name: "保存任务" })).toBeEnabled();
+  });
+
   it("links execution to the goal and task, guards duplicate runs, and preserves acceptance state", async () => {
     const pending = defer<{
       status: number;
       body: { turnId: string; status: string };
     }>();
-    const createTurn = vi.fn().mockReturnValue(pending.promise);
-    const context = setup(detail(), { createTurn });
+    const createSessionTurn = vi.fn().mockReturnValue(pending.promise);
+    const context = setup(detail(), { createSessionTurn });
     const run = screen.getByRole("button", { name: "执行任务：Ship board" });
     fireEvent.click(run);
     fireEvent.click(run);
-    expect(createTurn).toHaveBeenCalledTimes(1);
-    expect(createTurn).toHaveBeenCalledWith({
-      positionId: "engineer",
+    await waitFor(() => expect(createSessionTurn).toHaveBeenCalledTimes(1));
+    expect(createSessionTurn).toHaveBeenCalledWith({
+      sessionId: activeSessionId,
       engine: "codex",
       input: "Ship board\n\nBuild a working board",
       goalId: "goal-one",
       branchId: "task-one",
     });
+    expect(context.createTurn).not.toHaveBeenCalled();
+    expect(context.createSession).not.toHaveBeenCalled();
     await act(async () =>
       pending.resolve({
         status: 200,
@@ -229,6 +296,8 @@ describe("ProjectBoard", () => {
       }),
     );
     expect(run).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "查看任务执行：Ship board" }));
+    expect(context.onOpenBoundSession).toHaveBeenCalledWith("engineer", activeSessionId, "turn-one");
     const complete = {
       ...detail(),
       taskExecutions: {
@@ -242,9 +311,71 @@ describe("ProjectBoard", () => {
     context.rerender(<ProjectBoard {...context.props} detail={complete} />);
     await screen.findByText("Agent 执行完成");
     expect(
-      screen.getByRole("combobox", { name: "变更任务状态：Ship board" }),
-    ).toHaveValue("todo");
+      screen
+        .getByRole("combobox", { name: "变更任务状态：Ship board" })
+        .closest(".ant-select"),
+    ).toHaveTextContent("待办");
     expect(context.updateGoal).not.toHaveBeenCalled();
+  });
+
+  it("retires a local launch response when the server observes a newer execution", async () => {
+    const context = setup();
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    await waitFor(() => expect(context.onRefresh).toHaveBeenCalled());
+    context.rerender(<ProjectBoard {...context.props} detail={{ ...detail(), taskExecutions: {
+      [task.taskId]: { turnId: "newer-turn", positionId: "engineer", status: "completed", startedAt: "2026-09-23T00:00:00.000Z" },
+    } }} />);
+    await screen.findByText("执行结束 · 待验收");
+    fireEvent.click(screen.getByRole("button", { name: "查看任务执行：Ship board" }));
+    expect(context.onOpenBoundSession).toHaveBeenCalledWith("engineer", undefined, "newer-turn");
+  });
+
+  it("starts work in the newly created session when the assignee has no conversation", async () => {
+    const sessions = vi.fn().mockResolvedValue({ status: 200, body: { activeSessionId: null, sessions: [] } });
+    const createSession = vi.fn().mockResolvedValue({ status: 201, body: { sessionId: activeSessionId } });
+    const context = setup(detail(), { sessions, createSession });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    await waitFor(() => expect(context.createSessionTurn).toHaveBeenCalledOnce());
+    expect(createSession).toHaveBeenCalledOnce();
+    expect(context.createSessionTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: activeSessionId, goalId: "goal-one", branchId: "task-one" }));
+  });
+
+  it("creates only a missing session and reuses a concurrently opened conversation", async () => {
+    const sessions = vi.fn()
+      .mockResolvedValueOnce({ status: 200, body: { activeSessionId: null, sessions: [] } })
+      .mockResolvedValueOnce({ status: 200, body: { activeSessionId, sessions: [] } });
+    const createSession = vi.fn().mockResolvedValue({ status: 409, body: { message: "position already has an active session" } });
+    const context = setup(detail(), { sessions, createSession });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    await waitFor(() => expect(context.createSessionTurn).toHaveBeenCalledOnce());
+    expect(createSession).toHaveBeenCalledWith({ positionId: "engineer" });
+    expect(context.createSessionTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: activeSessionId }));
+    expect(context.createTurn).not.toHaveBeenCalled();
+  });
+
+  it("does not dispatch after a workspace switch while resolving the session", async () => {
+    const pending = defer<Awaited<ReturnType<OwbBridge["sessions"]>>>();
+    const sessions = vi.fn().mockReturnValue(pending.promise);
+    const context = setup(detail(), { sessions }, { workspaceKey: "workspace-a" });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    context.rerender(<ProjectBoard {...context.props} workspaceKey="workspace-b" />);
+    await act(async () => pending.resolve({ status: 200, body: { schemaVersion: "workbench-session-list.v1", positionId: "engineer", activeSessionId, sessions: [] } }));
+    expect(context.createSessionTurn).not.toHaveBeenCalled();
+    expect(context.createSession).not.toHaveBeenCalled();
+    expect(screen.getByText("Agent 未执行")).toBeInTheDocument();
+  });
+
+  it("discards a previous workspace's completed run without changing its new task", async () => {
+    const pending = defer<Awaited<ReturnType<OwbBridge["createSessionTurn"]>>>();
+    const createSessionTurn = vi.fn().mockReturnValue(pending.promise);
+    const context = setup(detail(), { createSessionTurn }, { workspaceKey: "workspace-a" });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    await waitFor(() => expect(createSessionTurn).toHaveBeenCalledOnce());
+    context.rerender(<ProjectBoard {...context.props} workspaceKey="workspace-b" />);
+    await act(async () => pending.resolve({ status: 200, body: { turnId: "old-turn", status: "completed" } as Awaited<ReturnType<OwbBridge["createSessionTurn"]>>["body"] }));
+    expect(context.onRefresh).not.toHaveBeenCalled();
+    expect(screen.queryByText("Agent 执行完成")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "执行任务：Ship board" })).toBeEnabled();
   });
 
   it("does not present unavailable execution evidence as idle, or run an unconfigured owner", () => {
@@ -279,7 +410,7 @@ describe("ProjectBoard", () => {
 
   it.each(["all", "unassigned"])(
     "filters the supported position ID %s separately from special filter options",
-    (positionId) => {
+    async (positionId) => {
       setup(
         detail([
           {
@@ -303,11 +434,7 @@ describe("ProjectBoard", () => {
         ]),
       );
       const filter = screen.getByRole("combobox", { name: "筛选负责人" });
-      const assignedOption = within(filter).getByRole("option", {
-        name: positionId,
-        exact: true,
-      }) as HTMLOptionElement;
-      fireEvent.change(filter, { target: { value: assignedOption.value } });
+      chooseOption(filter, positionId);
       expect(
         screen.getByRole("article", { name: "Assigned work" }),
       ).toBeInTheDocument();
@@ -318,11 +445,7 @@ describe("ProjectBoard", () => {
         screen.queryByRole("article", { name: "Unassigned work" }),
       ).not.toBeInTheDocument();
 
-      const unassignedOption = within(filter).getByRole("option", {
-        name: "未分配",
-        exact: true,
-      }) as HTMLOptionElement;
-      fireEvent.change(filter, { target: { value: unassignedOption.value } });
+      chooseOption(filter, "未分配");
       expect(
         screen.getByRole("article", { name: "Unassigned work" }),
       ).toBeInTheDocument();
@@ -330,16 +453,12 @@ describe("ProjectBoard", () => {
         screen.queryByRole("article", { name: "Assigned work" }),
       ).not.toBeInTheDocument();
 
-      const allOption = within(filter).getByRole("option", {
-        name: "全部负责人",
-        exact: true,
-      }) as HTMLOptionElement;
-      fireEvent.change(filter, { target: { value: allOption.value } });
+      chooseOption(filter, "全部负责人");
       expect(screen.getAllByRole("article")).toHaveLength(3);
     },
   );
 
-  it("filters tasks and shows partial dates without inventing a duration", () => {
+  it("filters tasks and shows partial dates without inventing a duration", async () => {
     setup(
       detail([
         task,
@@ -353,20 +472,17 @@ describe("ProjectBoard", () => {
       ]),
     );
     const ownerFilter = screen.getByRole("combobox", { name: "筛选负责人" });
-    const designerOption = within(ownerFilter).getByRole("option", {
-      name: "Designer",
-      exact: true,
-    }) as HTMLOptionElement;
-    fireEvent.change(ownerFilter, { target: { value: designerOption.value } });
+    chooseOption(ownerFilter, "Designer");
     expect(
       screen.queryByRole("article", { name: "Ship board" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("article", { name: "Design board" }),
     ).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("combobox", { name: "筛选负责人" }), {
-      target: { value: "all" },
-    });
+    chooseOption(
+      screen.getByRole("combobox", { name: "筛选负责人" }),
+      "全部负责人",
+    );
     fireEvent.click(screen.getByRole("button", { name: "排期" }));
     expect(screen.getByText("开始：2026-09-22 · 截止未定")).toBeInTheDocument();
     expect(
@@ -438,21 +554,21 @@ describe("ProjectBoard", () => {
     );
     // Filter by status dropdown
     const statusFilter = screen.getByRole("combobox", { name: "筛选状态" });
-    fireEvent.change(statusFilter, { target: { value: "in_progress" } });
+    chooseOption(statusFilter, "进行中");
     expect(screen.getByRole("article", { name: "Task 2" })).toBeInTheDocument();
     expect(screen.queryByRole("article", { name: "Task 1" })).not.toBeInTheDocument();
     expect(screen.queryByRole("article", { name: "Task 3" })).not.toBeInTheDocument();
 
     // Filter by priority dropdown
-    fireEvent.change(statusFilter, { target: { value: "all" } });
+    chooseOption(statusFilter, "全部状态");
     const priorityFilter = screen.getByRole("combobox", { name: "筛选优先级" });
-    fireEvent.change(priorityFilter, { target: { value: "high" } });
+    chooseOption(priorityFilter, "高优先级");
     expect(screen.getByRole("article", { name: "Task 2" })).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Task 3" })).toBeInTheDocument();
     expect(screen.queryByRole("article", { name: "Task 1" })).not.toBeInTheDocument();
 
     // Interactive summary metric toggle
-    fireEvent.change(priorityFilter, { target: { value: "all" } });
+    chooseOption(priorityFilter, "全部优先级");
     const inProgressMetric = screen.getByRole("button", { name: /进行中/ });
     fireEvent.click(inProgressMetric);
     expect(screen.getByRole("article", { name: "Task 2" })).toBeInTheDocument();
@@ -528,17 +644,19 @@ describe("ProjectBoard", () => {
   });
 
   it("safely groups malformed or invalid dates into unscheduled section", () => {
+    const validStart = isoFromToday(1);
+    const validDue = isoFromToday(4);
     setup(
       detail([
         { ...task, taskId: "bad-date", title: "Corrupted date task", startDate: "not-a-date" },
-        { ...task, taskId: "valid-date", title: "Valid date task", startDate: "2026-09-22", dueDate: "2026-09-25" },
+        { ...task, taskId: "valid-date", title: "Valid date task", startDate: validStart, dueDate: validDue },
       ]),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "排期" }));
 
     // Valid date task is in timeline
-    expect(screen.getByText("2026-09-22 → 2026-09-25")).toBeInTheDocument();
+    expect(screen.getByText(`${validStart} → ${validDue}`)).toBeInTheDocument();
 
     // Malformed date task is safely placed in unscheduled
     const unscheduledSection = screen.getByRole("heading", { name: /未排期/ });
@@ -559,14 +677,17 @@ describe("ProjectBoard", () => {
   });
 
   it("clamps schedule bar calculations for inverted dates, window-edge spans, and partially invalid dates", () => {
+    const invertedStart = isoFromToday(1);
+    const invertedDue = isoFromToday(0);
+    const partialDue = isoFromToday(5);
     setup(
       detail([
         {
           ...task,
           taskId: "inverted-task",
           title: "Inverted dates task",
-          startDate: "2026-09-28",
-          dueDate: "2026-09-22",
+          startDate: invertedStart,
+          dueDate: invertedDue,
         },
         {
           ...task,
@@ -580,7 +701,7 @@ describe("ProjectBoard", () => {
           taskId: "partial-date-task",
           title: "Partially invalid date task",
           startDate: "malformed-date",
-          dueDate: "2026-09-22",
+          dueDate: partialDue,
         },
       ]),
     );
@@ -610,7 +731,7 @@ describe("ProjectBoard", () => {
     expect(Number.isFinite(partialWidth)).toBe(true);
     expect(partialLeft).toBeGreaterThanOrEqual(0);
     expect(partialWidth).toBeGreaterThan(0);
-    expect(screen.getByText("截止：2026-09-22 · 开始未定")).toBeInTheDocument();
+    expect(screen.getByText(`截止：${partialDue} · 开始未定`)).toBeInTheDocument();
   });
 
   it("surfaces project.deleteTaskFail error message when deletion fails", async () => {

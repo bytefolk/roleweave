@@ -3,6 +3,13 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const workbuddyChannel = require("./workbuddy-bridge.cjs");
+const officeChannel = require("./qwen-office-bridge.cjs");
+const { MAX_FRAME_BYTES, validId } = workbuddyChannel;
+const CHANNELS = [
+  { name: "workbuddy", errorPrefix: "workbuddy", environmentPrefix: "ROLEWEAVE_WORKBUDDY", ...workbuddyChannel },
+  { name: "qwen-office", errorPrefix: "qwen_office", environmentPrefix: "ROLEWEAVE_QWEN_OFFICE", ...officeChannel },
+];
 
 const MAX_CONFIG_BYTES = 128 * 1024;
 const BRIDGED_ENV_KEYS = Object.freeze([
@@ -15,6 +22,8 @@ const BRIDGED_ENV_KEYS = Object.freeze([
   "OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL",
   "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
   "GEMINI_API_KEY", "GEMINI_MODEL", "GOOGLE_GEMINI_BASE_URL",
+  "ROLEWEAVE_WORKBUDDY_BRIDGE_ENABLED",
+  "ROLEWEAVE_QWEN_OFFICE_BRIDGE_ENABLED",
   "ROLEWEAVE_LAYA_ENABLED", "ROLEWEAVE_LAYA_URL", "ROLEWEAVE_LAYA_MODEL", "ROLEWEAVE_LAYA_TIMEOUT_MS",
 ]);
 
@@ -61,6 +70,12 @@ function serverEnvironment(config, source = process.env, nodePath = process.exec
     if (upper.startsWith("ORG_WORKBENCH_PACKAGED_SMOKE_") || upper.startsWith("ORG_WORKBENCH_PACKAGED_BEHAVIOR_SMOKE_")) delete environment[key];
   }
   delete environment.ELECTRON_RUN_AS_NODE;
+  // A bridge endpoint is allocated by this supervisor, never inherited from
+  // either user's shell or sent as a Windows filesystem path into Linux.
+  delete environment.ROLEWEAVE_WORKBUDDY_BRIDGE;
+  delete environment.ROLEWEAVE_WORKBUDDY_BRIDGE_TOKEN;
+  delete environment.ROLEWEAVE_QWEN_OFFICE_BRIDGE;
+  delete environment.ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN;
   environment.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE = "0";
   const bundled = config.engineCommand === null;
   environment.ORG_WORKBENCH_INTERNAL_BUNDLED_NODE_ENGINE = bundled ? "1" : "0";
@@ -122,6 +137,8 @@ function runSupervisor() {
   let configured = false;
   let stopping = false;
   let exitCode = 0;
+  const bridges = new Map();
+  const pendingBridgeCalls = new Map();
   const descendants = new Map();
   let monitor;
   const signalTree = (signal) => {
@@ -139,6 +156,9 @@ function runSupervisor() {
     clearTimeout(startupTimer);
     exitCode = code;
     clearInterval(monitor);
+    for (const bridge of bridges.values()) bridge.close();
+    for (const pending of pendingBridgeCalls.values()) pending.reject(Object.assign(new Error("Local client bridge stopped"), { code: `${pending.channel.errorPrefix}.bridge_closed` }));
+    pendingBridgeCalls.clear();
     if (!child) { process.exitCode = code; process.stdin.destroy(); return; }
     signalTree("SIGTERM");
     // Detached Host groups (including Codex) remain tracked by pid/start time.
@@ -156,30 +176,93 @@ function runSupervisor() {
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (chunk) => {
     if (stopping) return;
-    if (configured) { fail("Unexpected data after WSL launch configuration."); return; }
     buffer += chunk;
-    if (Buffer.byteLength(buffer) > MAX_CONFIG_BYTES) { fail("WSL launch configuration is too large."); return; }
+    if (!configured && Buffer.byteLength(buffer) > MAX_CONFIG_BYTES) { fail("WSL launch input is too large."); return; }
     const newline = buffer.indexOf("\n");
-    if (newline < 0) return;
+    if (newline < 0) {
+      if (configured && Buffer.byteLength(buffer) > MAX_FRAME_BYTES) fail("Local client bridge response is too large.");
+      return;
+    }
+    if (configured) {
+      if (!bridges.size) { fail("Unexpected data after WSL launch configuration."); return; }
+      let index;
+      while ((index = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        try {
+          if (Buffer.byteLength(line) + 1 > MAX_FRAME_BYTES) throw Error();
+          const channel = CHANNELS.find((entry) => bridges.has(entry.name) && line.startsWith(entry.RESPONSE_PREFIX));
+          if (!channel) throw Error();
+          const value = JSON.parse(line.slice(channel.RESPONSE_PREFIX.length));
+          const expectedKeys = value.event !== undefined ? "event,id" : value.error === undefined ? "id,result" : "error,id";
+          if (!validId(value?.id) || Object.keys(value).sort().join(",") !== expectedKeys ||
+              (value.error !== undefined && (typeof value.error !== "string" || !new RegExp(`^${channel.errorPrefix}\\.[a-z_]{1,64}$`).test(value.error)))) throw Error();
+          const key = `${channel.name}:${value.id}`;
+          const pending = pendingBridgeCalls.get(key);
+          if (!pending) continue; // A cancelled request may already be in flight.
+          if (value.event !== undefined) {
+            if (channel.name !== "qwen-office" || !value.event || Object.keys(value.event).join(",") !== "status" ||
+                !["running", "waiting_for_input"].includes(value.event.status)) throw Error();
+            pending.onProgress?.(value.event);
+            continue;
+          }
+          pendingBridgeCalls.delete(key);
+          pending.detach();
+          if (value.error !== undefined) pending.reject(Object.assign(new Error("Local client request failed"), { code: value.error }));
+          else pending.resolve(value.result);
+        } catch { fail("Local client bridge response is invalid."); return; }
+      }
+      if (Buffer.byteLength(buffer) > MAX_FRAME_BYTES) fail("Local client bridge response is too large.");
+      return;
+    }
     clearTimeout(startupTimer);
     try {
       if (buffer.slice(newline + 1).length !== 0) throw new Error("WSL launch configuration contains trailing data");
       const config = parseConfiguration(buffer.slice(0, newline));
       configured = true;
       buffer = "";
-      child = spawn(process.execPath, [config.serverEntry], {
-        env: serverEnvironment(config),
-        stdio: ["ignore", "inherit", "inherit"],
-        detached: true,
-      });
-      child.once("error", () => fail("WSL control plane could not start."));
-      child.once("exit", (code) => stop(code ?? 1));
-      monitor = setInterval(() => {
-        for (const [pid, identity] of descendants) {
-          if (processIdentity(pid) !== identity) descendants.delete(pid);
+      const environment = serverEnvironment(config);
+      const launch = () => {
+        if (stopping) return;
+        for (const channel of CHANNELS) {
+          const bridge = bridges.get(channel.name);
+          if (bridge) {
+            environment[`${channel.environmentPrefix}_BRIDGE`] = bridge.endpoint;
+            environment[`${channel.environmentPrefix}_BRIDGE_TOKEN`] = bridge.token;
+          }
         }
-        rememberDescendants(child.pid, descendants);
-      }, 100);
+        child = spawn(process.execPath, [config.serverEntry], {
+          env: environment,
+          stdio: ["ignore", "inherit", "inherit"],
+          detached: true,
+        });
+        child.once("error", () => fail("WSL control plane could not start."));
+        child.once("exit", (code) => stop(code ?? 1));
+        monitor = setInterval(() => {
+          for (const [pid, identity] of descendants) {
+            if (processIdentity(pid) !== identity) descendants.delete(pid);
+          }
+          rememberDescendants(child.pid, descendants);
+        }, 100);
+      };
+      for (const channel of CHANNELS) {
+        if (config.environment[`${channel.environmentPrefix}_BRIDGE_ENABLED`] !== "1" || config.engineCommand !== null) continue;
+        const bridge = channel.createPrivateBridge((request, signal, onProgress) => new Promise((resolve, reject) => {
+          const key = `${channel.name}:${request.id}`;
+          const cancel = () => {
+            if (!pendingBridgeCalls.delete(key)) return;
+            process.stdout.write(`${channel.REQUEST_PREFIX}${JSON.stringify({ id: request.id, cancel: true })}\n`);
+            reject(Object.assign(new Error("Local client request cancelled"), { code: `${channel.errorPrefix}.cancelled` }));
+          };
+          pendingBridgeCalls.set(key, { resolve, reject, onProgress, channel, detach: () => signal.removeEventListener("abort", cancel) });
+          if (signal.aborted) { cancel(); return; }
+          signal.addEventListener("abort", cancel, { once: true });
+          process.stdout.write(`${channel.REQUEST_PREFIX}${JSON.stringify(request)}\n`);
+        }));
+        bridges.set(channel.name, bridge);
+      }
+      if (bridges.size) Promise.all([...bridges.values()].map((bridge) => bridge.ready)).then(launch, () => fail("Local client bridge could not start."));
+      else launch();
     } catch {
       fail("WSL launch configuration is invalid.");
     }

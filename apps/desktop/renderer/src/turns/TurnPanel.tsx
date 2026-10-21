@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Modal, Popover } from "antd";
+import { createPortal } from "react-dom";
+import { Button, Modal, Popover, Tooltip } from "antd";
 import { useConversationCopy } from "../locales/conversation";
 import { createConversationMemory, conversationKey, type ConversationMemory } from "./conversation-memory";
 import { Maximize2, Minimize2, History, MessagesSquare } from "lucide-react";
@@ -8,6 +9,8 @@ import { ConversationOptions } from "./ConversationOptions";
 import { useT } from "@roleweave/ui";
 import type { AvailabilityCheck, NoticeAction } from "../DiagnosticNotice";
 import { TurnComposer } from "./TurnComposer";
+import { BudgetRemainingOverlay } from "./BudgetRemainingOverlay";
+import { useWorkspaceExperiments } from "../experiments/useWorkspaceExperiments";
 import { EngineSelect, TURN_ENGINES, useEngineLabel } from "./engine-select";
 import { EngineBadge } from "./EngineBadge";
 import { TurnThread } from "./TurnThread";
@@ -44,7 +47,12 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 export interface TurnPanelProps {
   active?: boolean;
+  /** Undefined keeps the standalone header. Defined embeds actions in the host
+   * while active; null hides them without unmounting the conversation. */
+  headerHost?: HTMLElement | null;
   workspaceKey?: string;
+  /** Changes for every workspace transition, including A -> B -> A. */
+  workspaceScope?: symbol;
   memory?: ConversationMemory;
   focused?: boolean;
   onToggleFocus?: () => void;
@@ -59,6 +67,7 @@ export interface TurnPanelProps {
   /** One-click Qoder login surface owned by the shell; rendered only while the
    *  qoder Host is the selected runtime and reports loginRequired. */
   qoderLogin?: { action: NoticeAction; link?: NoticeAction; feedback: string | null };
+  officeConnection?: { action?: NoticeAction; feedback: string | null };
   modelConfig?: EmployeeModelConfig;
   avatarUrls?: Record<string, string>;
   modelSaving?: boolean;
@@ -98,11 +107,15 @@ export interface TurnPanelProps {
   onRotateSession?: (sessionId: string) => void | Promise<void>;
   /** Deep linking anchor to focus and scroll to a specific turn. */
   focusTurnId?: string | null;
+  /** Opens an indexed workspace file from output or tool activity. */
+  onOpenResource?: (positionId: string, path: string) => void;
 }
 
 export function TurnPanel({
   active = true,
+  headerHost,
   workspaceKey = "",
+  workspaceScope,
   memory,
   focused = false,
   onToggleFocus,
@@ -115,6 +128,7 @@ export function TurnPanel({
   sendShortcut = "enter",
   availabilityCheck,
   qoderLogin,
+  officeConnection,
   modelConfig,
   avatarUrls,
   modelSaving = false,
@@ -140,10 +154,15 @@ export function TurnPanel({
   decidedApprovalIds,
   onRotateSession,
   focusTurnId,
+  onOpenResource,
 }: TurnPanelProps) {
   const t = useT();
   const engineLabel = useEngineLabel();
   const copy = useConversationCopy();
+  const budgetExperiment = useWorkspaceExperiments({
+    workspacePath: workspaceKey || undefined,
+    workspaceScope,
+  }).snapshot;
   const localMemory = useRef(createConversationMemory());
   const conversationMemory = memory ?? localMemory.current;
   const draftKey = conversationKey(workspaceKey, selectedPositionId, selectedSessionId);
@@ -171,9 +190,14 @@ export function TurnPanel({
     else { setInput(text); document.getElementById("owb-turn-input")?.focus(); }
   }
   useEffect(() => { setHistoryOpen(false); setEditRequest(null); }, [draftKey, active]);
+  useEffect(() => { setHistoryOpen(false); }, [headerHost]);
+  const embedded = headerHost !== undefined;
   const selectedPosition = positions.find((position) => position.id === selectedPositionId) ?? null;
   const runningTurn = selectedPositionId !== null && turns.some(
     (turn) => turn.positionId === selectedPositionId && turn.status === "running",
+  );
+  const modelDispatchPending = selectedPositionId !== null && turns.some(
+    (turn) => turn.positionId === selectedPositionId && turn.status === "running" && turn.dispatchPending === true,
   );
 
   const stopping = cancelling || stopRequests.has(draftKey);
@@ -337,43 +361,55 @@ export function TurnPanel({
     }
   };
 
+  const headerActions = (
+    <div className="owb-conversation-header-actions">
+      {selectedPosition ? (
+        engineLocked ? (
+          <EngineBadge engine={engine} />
+        ) : (
+          <EngineSelect
+            engines={TURN_ENGINES}
+            engineAvailability={engineAvailability}
+            value={engine}
+            disabled={busy || employeeBusy || sending || modelSaving}
+            onChange={(next) => onSelectEngine?.(next)}
+          />
+        )
+      ) : null}
+      {selectedPosition && sessions && onSelectSession ? <Popover trigger="click" placement="bottomRight" open={active && historyOpen} onOpenChange={setHistoryOpen} title={copy.history}
+        content={<div className="owb-session-history">{sessions.length ? sessions.map(session => <button type="button" key={session.sessionId}
+          className={session.sessionId === selectedSessionId ? "is-selected" : ""}
+          aria-current={session.sessionId === selectedSessionId ? "true" : undefined}
+          onClick={() => { onSelectSession(session.sessionId); setHistoryOpen(false); }}>
+            <span>{new Date(session.createdAt).toLocaleString()}</span><small>{session.sessionId.slice(-8)} · {session.status === "active" ? copy.currentSession : t("turn.sessionReadOnly")}</small>
+        </button>) : copy.unavailableHistory}</div>}>
+        <Tooltip title={selectedSession ? `${copy.history} · ${copy.session} ${selectedSession.sessionId.slice(-8)}` : copy.history} trigger={["hover", "focus"]} open={historyOpen ? false : undefined}>
+          <Button type="text" size="small" aria-label={copy.history} icon={<History size={16} aria-hidden="true" />} />
+        </Tooltip>
+      </Popover> : null}
+      {onToggleFocus ? <Tooltip title={focused ? copy.exitFocus : copy.focus} trigger={["hover", "focus"]}>
+        <Button type="text" size="small" aria-label={focused ? copy.exitFocus : copy.focus} aria-pressed={focused}
+          icon={focused ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />} onClick={onToggleFocus} />
+      </Tooltip> : null}
+    </div>
+  );
+
   return (
-    <section className="owb-turn-panel owb-panel" aria-label={t("turn.panelAria")}>
-      <header className="owb-turn-panel__header owb-panel-head">
-        <div className="owb-conversation-identity">
-          {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
-          <div className="owb-conversation-identity__copy">
-            <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
-            {selectedPosition && selectedSession ? <p>{copy.session} {selectedSession.sessionId.slice(-8)}</p> : null}
+    <section className={`owb-turn-panel owb-panel${embedded ? " owb-turn-panel--embedded" : ""}`} aria-label={t("turn.panelAria")}>
+      {embedded ? (
+        headerHost && active ? createPortal(headerActions, headerHost) : null
+      ) : (
+        <header className="owb-turn-panel__header owb-panel-head">
+          <div className="owb-conversation-identity">
+            {selectedPosition ? <PositionAvatar id={selectedPosition.id} name={selectedPosition.name} sources={avatarUrls} className="owb-conversation-avatar" /> : <span className="owb-conversation-avatar" aria-hidden="true"><MessagesSquare size={20} /></span>}
+            <div className="owb-conversation-identity__copy">
+              <h2>{selectedPosition?.name ?? t("turn.title")}</h2>
+              {selectedPosition && selectedSession ? <p>{copy.session} {selectedSession.sessionId.slice(-8)}</p> : null}
+            </div>
           </div>
-        </div>
-        <div className="owb-conversation-header-actions">
-          {selectedPosition ? (
-            engineLocked ? (
-              <EngineBadge engine={engine} />
-            ) : (
-              <EngineSelect
-                engines={TURN_ENGINES}
-                engineAvailability={engineAvailability}
-                value={engine}
-                disabled={busy || employeeBusy || sending || modelSaving}
-                onChange={(next) => onSelectEngine?.(next)}
-              />
-            )
-          ) : null}
-          {selectedPosition && sessions && onSelectSession ? <Popover trigger="click" placement="bottomRight" open={active && historyOpen} onOpenChange={setHistoryOpen} title={copy.history}
-            content={<div className="owb-session-history">{sessions.length ? sessions.map(session => <button type="button" key={session.sessionId}
-              className={session.sessionId === selectedSessionId ? "is-selected" : ""}
-              aria-current={session.sessionId === selectedSessionId ? "true" : undefined}
-              onClick={() => { onSelectSession(session.sessionId); setHistoryOpen(false); }}>
-                <span>{new Date(session.createdAt).toLocaleString()}</span><small>{session.sessionId.slice(-8)} · {session.status === "active" ? copy.currentSession : t("turn.sessionReadOnly")}</small>
-            </button>) : copy.unavailableHistory}</div>}>
-            <Button type="text" size="small" aria-label={copy.history} title={copy.history} icon={<History size={16} aria-hidden="true" />} />
-          </Popover> : null}
-          {onToggleFocus ? <Button type="text" size="small" aria-label={focused ? copy.exitFocus : copy.focus} title={focused ? copy.exitFocus : copy.focus} aria-pressed={focused}
-            icon={focused ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />} onClick={onToggleFocus}>{focused ? copy.exitFocus : null}</Button> : null}
-        </div>
-      </header>
+          {headerActions}
+        </header>
+      )}
 
       <TurnThread
         turns={turns}
@@ -389,13 +425,18 @@ export function TurnPanel({
         decidedApprovalIds={decidedApprovalIds}
         scrollKey={draftKey}
         focusTurnId={focusTurnId}
+        onOpenResource={onOpenResource}
       />
+      {selectedPosition && engine === "qwen-office-local" ? <p className="owb-hire-capability-note">{t("office.clientManaged")}<span> {t("office.accountManaged")}</span></p> : null}
 
       {sendErrors[draftKey] ? <p role="alert" className="owb-conversation-error">{sendErrors[draftKey]}</p> : null}
       {selectedPosition ? <TurnComposer
+        advisory={budgetExperiment?.enabled
+          ? <BudgetRemainingOverlay experiment={budgetExperiment} positionId={selectedPosition.id} />
+          : undefined}
         sendShortcut={sendShortcut}
         options={active ? <ConversationOptions
-          config={modelConfig} saving={modelSaving} disabled={runningTurn || busy || employeeBusy || sending || sessionBusy}
+          config={modelConfig} engine={engine} saving={modelSaving} disabled={modelDispatchPending || sessionBusy || ((busy || sending) && !runningTurn && !employeeBusy)}
           loading={modelLoading} error={modelError} notice={modelNotice} onReload={onReloadModel} running={runningTurn || employeeBusy}
           session={selectedSession} turns={turns} onModel={onSelectModel} onContext={onSetSessionContext}
           onRotate={onRotateSession}
@@ -406,9 +447,11 @@ export function TurnPanel({
         disabledSummary={disabledState?.summary}
         disabledDiagnostic={disabledState?.diagnostic}
         availabilityCheck={disabledState?.canRecheck ? availabilityCheck : undefined}
-        primaryAction={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.action : undefined}
+        primaryAction={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.action
+          : engine === "qwen-office-local" && !engineAvailability[engine].ready ? officeConnection?.action : undefined}
         linkAction={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.link : undefined}
-        primaryFeedback={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.feedback ?? null : undefined}
+        primaryFeedback={engine === "qoder" && engineAvailability.qoder.loginRequired === true ? qoderLogin?.feedback ?? null
+          : engine === "qwen-office-local" && !engineAvailability[engine].ready ? officeConnection?.feedback : undefined}
         diagnosticKey={`${selectedPositionId}:${selectedSessionId ?? ""}:${engine}`}
         running={runningTurn}
         cancelling={stopping}

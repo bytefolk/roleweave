@@ -8,6 +8,7 @@ const response = (workspacePath = "/projects/a", enabled = false): ExperimentsRe
   enabled, availability: enabled ? "ready" : "disabled",
   provider: { name: "Laya · local", endpointHost: "127.0.0.1", endpointUrl: "http://127.0.0.1:18081/v1/systemone", configured: true },
   sending: ["status", "errorCode", "budgetRelated"],
+  budgetAdviceSending: ["remainingPerTask", "remainingPerDay", "positionId"],
 });
 function install(initial = response()) {
   let state = initial;
@@ -39,6 +40,7 @@ describe("workspace experimental settings", () => {
     expect(within(modal).getByText(endpoint, { exact: true })).toBeInTheDocument();
     expect(screen.getAllByText(endpoint, { exact: true })).toHaveLength(2);
     expect(within(modal).getByText(/发送范围：执行状态、规范化错误码、是否与预算相关/)).toBeInTheDocument();
+    expect(within(modal).getByText(/预算建议仅发送单任务剩余、单日剩余与岗位 ID/)).toBeInTheDocument();
     expect(within(modal).getByText(/不发送消息、任务或附件正文、员工姓名、项目路径/)).toBeInTheDocument();
     fireEvent.click(within(modal).getByRole("button", { name: "取消" }));
     expect(api.update).not.toHaveBeenCalled(); expect(api.reportAdvice).not.toHaveBeenCalled();

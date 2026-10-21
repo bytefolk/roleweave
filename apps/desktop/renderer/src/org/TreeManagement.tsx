@@ -63,7 +63,7 @@ export function EmployeeSettings({ id, positions, targets, isOwner, descendantCo
     return () => { alive = false; };
   }, [id]);
   const chooseModel = async (model: string) => {
-    if (!window.owb.setPositionModel) return;
+    if (!window.owb.setPositionModel || engine === "qwen-office-local" || !config?.editable) return;
     setSaving(true); setError(false);
     try {
       const res = await window.owb.setPositionModel({ positionId: id, model });
@@ -105,9 +105,10 @@ export function EmployeeSettings({ id, positions, targets, isOwner, descendantCo
         </div>
       </section>
       <section><h3>{t("manage.model")}</h3><p className="owb-muted">{engine}</p>
-        <Select aria-label={t("model.select")} value={config?.selected} disabled={busy || saving || !config?.editable} loading={saving}
-          options={config?.options.map((model) => ({ value: model.id, label: `${model.id === "provider-default" ? t("model.agentDefault") : model.name}${model.id === config.recommended ? ` · ${t("model.recommended")}` : ""}` }))} onChange={(model) => void chooseModel(model)} />
-        <p>{t("model.switchHint")}</p></section>
+        <Select aria-label={t("model.select")} value={config?.selected} disabled={busy || saving || engine === "qwen-office-local" || !config?.editable} loading={saving}
+          options={config?.options.map((model) => ({ value: model.id, label: `${model.id === "provider-default" ? t(engine === "qwen-office-local" ? "office.currentModel" : "model.agentDefault") : model.name}${model.id === config.recommended ? ` · ${t("model.recommended")}` : ""}` }))} onChange={(model) => void chooseModel(model)} />
+        <p>{t(engine === "qwen-office-local" ? "office.modelReadonly" : "model.switchHint")}</p>
+        {engine === "qwen-office-local" ? <p>{t("office.clientManaged")}</p> : null}</section>
       <section><h3>{t("manage.reporting")}</h3><Select aria-label={t("manage.reporting")} value={parent ?? "__root__"} disabled={busy || isOwner}
         options={[{ value: "__root__", label: t("org.enterpriseRoot") }, ...targets.map((p) => ({ value: p.id, label: p.name }))]} onChange={(value) => setParent(value === "__root__" ? null : value)} />
         <Button disabled={busy || isOwner || parent === data.reportTo} onClick={() => void onMove(id, parent).then((ok) => { if (ok) { setData({ ...data, reportTo: parent }); onSaved(); } })}>{t("manage.saveReporting")}</Button></section>

@@ -1,4 +1,8 @@
 const { spawn } = require("node:child_process");
+const { createPrivateBridge, attachWslBridge } = require("./workbuddy-bridge.cjs");
+const { requestWorkbuddyClient } = require("./workbuddy-client.cjs");
+const officeChannel = require("./qwen-office-bridge.cjs");
+const { requestQwenOfficeClient } = require("./qwen-office-client.cjs");
 const path = require("node:path");
 const { BRIDGED_ENV_KEYS, MAX_CONFIG_BYTES } = require("./wsl-bootstrap.cjs");
 
@@ -184,16 +188,35 @@ function stripPackagedSmokeControls(env) {
  */
 function createControlPlaneChild({ serverEntry, env }) {
   const childEnv = stripPackagedSmokeControls(env);
+  delete childEnv.ROLEWEAVE_WORKBUDDY_BRIDGE;
+  delete childEnv.ROLEWEAVE_WORKBUDDY_BRIDGE_TOKEN;
+  delete childEnv.ROLEWEAVE_WORKBUDDY_BRIDGE_ENABLED;
+  delete childEnv.ROLEWEAVE_QWEN_OFFICE_BRIDGE;
+  delete childEnv.ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN;
+  delete childEnv.ROLEWEAVE_QWEN_OFFICE_BRIDGE_ENABLED;
+  const bundled = childEnv.ORG_WORKBENCH_INTERNAL_BUNDLED_ELECTRON_ENGINE === "1" || childEnv.ORG_WORKBENCH_DIGITAL_EMPLOYEE_CLI === undefined;
+  const invokeWorkbuddy = (request, signal) => requestWorkbuddyClient(request, { signal });
+  const invokeOffice = (request, signal, onProgress) => requestQwenOfficeClient(request, {
+    signal, onProgress: (value) => onProgress?.({ status: value.status }),
+  });
   const mode = controlPlaneMode(childEnv);
   if (mode === "wsl") {
+    if (bundled) {
+      childEnv.ROLEWEAVE_WORKBUDDY_BRIDGE_ENABLED = "1";
+      childEnv.ROLEWEAVE_QWEN_OFFICE_BRIDGE_ENABLED = "1";
+    }
     const spec = wslLaunchSpec({ serverEntry, env: childEnv });
     const child = spawn(spec.command, spec.args, { env: spec.env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     // Keep the pipe open as the supervisor's lifetime lease. Closing the app
     // (even abnormally) yields EOF in Linux and reaps the server/Host subtree.
     child.stdin.on("error", () => {});
+    const bridge = bundled ? attachWslBridge(child, invokeWorkbuddy) : null;
+    const officeBridge = bundled ? officeChannel.attachWslBridge(child, invokeOffice) : null;
     child.stdin.write(spec.input);
     const killLauncher = child.kill.bind(child);
     child.kill = (signal = "SIGTERM") => {
+      bridge?.close();
+      officeBridge?.close();
       if (signal === "SIGTERM" && !child.stdin.destroyed) {
         child.stdin.end();
         return true;
@@ -204,6 +227,18 @@ function createControlPlaneChild({ serverEntry, env }) {
     child.once("exit", () => child.stdin.destroy());
     return child;
   }
+  const bridge = bundled ? createPrivateBridge(invokeWorkbuddy) : null;
+  const officeBridge = bundled ? officeChannel.createPrivateBridge(invokeOffice) : null;
+  if (bridge) {
+    childEnv.ROLEWEAVE_WORKBUDDY_BRIDGE = bridge.endpoint;
+    childEnv.ROLEWEAVE_WORKBUDDY_BRIDGE_TOKEN = bridge.token;
+    bridge.ready.catch(() => bridge.close());
+  }
+  if (officeBridge) {
+    childEnv.ROLEWEAVE_QWEN_OFFICE_BRIDGE = officeBridge.endpoint;
+    childEnv.ROLEWEAVE_QWEN_OFFICE_BRIDGE_TOKEN = officeBridge.token;
+    officeBridge.ready.catch(() => officeBridge.close());
+  }
   const child = spawn(process.execPath, [serverEntry], {
     env: { ...childEnv, ELECTRON_RUN_AS_NODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
@@ -212,6 +247,13 @@ function createControlPlaneChild({ serverEntry, env }) {
     detached: process.platform !== "win32",
   });
   if (process.platform !== "win32") child.__owbProcessGroupLeader = true;
+  if (bridge || officeBridge) {
+    const closeBridges = () => { bridge?.close(); officeBridge?.close(); };
+    child.once("exit", closeBridges);
+    child.once("error", closeBridges);
+    const kill = child.kill.bind(child);
+    child.kill = (signal) => { closeBridges(); return kill(signal); };
+  }
   return child;
 }
 

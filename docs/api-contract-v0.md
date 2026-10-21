@@ -13,7 +13,7 @@
 
 ## 1. 通用约定
 
-#447 增量：项目实验设置 `GET/PATCH /experiments` 与显式建议 `POST /reports/advice` 的请求、工作区版本保护和外发数据约束见 [智能协作建议预览](laya-preview.md#控制面-api)。既有 `GET /reports` 保持本地事实读取，不触发外部服务。
+#447/#462 增量：项目实验设置 `GET/PATCH /experiments`、显式报告建议 `POST /reports/advice` 与发送前预算建议 `POST /turns/budget-remaining-advice` 的请求、工作区版本保护和外发数据约束见 [智能协作建议预览](laya-preview.md#控制面-api)。既有 `GET /reports` 保持本地事实读取，不触发外部服务。
 
 - 绑定面：仅 `127.0.0.1`。v1 不暴露 LAN；远程访问不在 v0 范围。
 - 鉴权：`Authorization: Bearer <boot-token>`。token 为每次启动生成的 32 字节随机十六进制串；仅 `/health` 免 token（供壳探活）。
@@ -52,6 +52,7 @@
     "codex": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 OPENAI_API_KEY…" },
     "codex-local": { "configured": true, "ready": true, "modelPinnable": true, "model": "gpt-5.6-sol" },
     "workbuddy": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "设置 CODEBUDDY_API_KEY 和 CODEBUDDY_MODEL…" },
+    "workbuddy-local": { "configured": false, "ready": false, "modelPinnable": false, "nextStep": "打开 WorkBuddy 客户端并完成登录，再刷新连接。" },
     "gemini": { "configured": false, "ready": false, "modelPinnable": true, "nextStep": "安装 Gemini CLI（gemini）或 Antigravity CLI（agy）…" }
   },
   "workspace": { "open": false }
@@ -62,7 +63,9 @@
 
 WorkBuddy 的 `workbuddy` Host 使用服务凭据 `CODEBUDDY_API_KEY` 和显式 `CODEBUDDY_MODEL`。本地预检与回合共用 executable resolver、环境过滤和精确版本配置，只接受审计后的 2.106.4 / 2.137.1；原生 Windows 当前以 `workbuddy.platform_not_verified` 保持 not-ready。`ready` 只代表本地前置满足；真实 provider 成功回合和原生打包验收分别记录。所有提示保持非敏感，不包含凭据、绝对 CLI 路径或原始输出。详见 [本地连接说明](local-agent-connections.md#workbuddy-codebuddy-code)。
 
-可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，Codex、WorkBuddy 与 Gemini Host 传 `true`，其余不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
+`workbuddy-local` 使用 Windows 客户端的 WBIPC v1 本地接口，WSL 通过桌面拥有的私有通道转发请求。凭据留在 WorkBuddy；不运行原生 CLI，不开启 WorkBuddy 工具。该方式仅支持客户端自动模型，`modelPinnable` 为 false，模型配置不可编辑；本地预检仅证明接口可达。缓冲响应后发送单个模型结果，不宣称逐 token 流。失效保持同一引擎，不切换到服务 API。
+
+可选的 `hosts[].modelPinnable` 表示该 Host 是否存在 LLM 模型旋钮，Codex、WorkBuddy 服务 API 与 Gemini Host 传 `true`，WorkBuddy 本地登录传 `false`，其余不传。它是 Host 自身的属性，与就绪状态无关，缺少二进制或凭据时同样为 `true`。客户端据此决定是否展示模型信息；不得在客户端自带引擎 id 清单来推断（那就是 #239 的同类副本）。
 
 可选的 `hosts[].model` 表示控制面会为该 Host 固定的 LLM 模型，Codex、WorkBuddy 与 Gemini Host 有这个旋钮，取值分别来自 `OPENAI_MODEL`、`CODEBUDDY_MODEL` 与 `GEMINI_MODEL`。只有 `modelPinnable` 为 `true` 时该字段才有意义：在无旋钮的 Host 上，`model` 缺失代表能力不存在，而不是未设置偏好。Codex 与 Gemini 字段缺失即控制面不固定模型：引擎不会传 `--model`，由 Host 自己的 CLI 决定。WorkBuddy 要求显式 `CODEBUDDY_MODEL`；缺失时 `configured` / `ready` 均为 false，不能回退到本地登录或默认模型。Codex 回合一律带 `--ignore-user-config`，操作员 `~/.codex/config.toml` 里的 `model` 不参与决策，不能据此展示。`OPENAI_MODEL`、`CODEBUDDY_MODEL` 或 `GEMINI_MODEL` 若不是合法模型标识（首字符为字母或数字，其余限 `A-Z a-z 0-9 . _ : / -`，长度 ≤ 256），引擎会在 spawn 前失败，故这些 Host 一律 fail closed（`configured` 与 `ready` 均为 false 并给出 `nextStep`），且该值绝不回显为 `model`。
 
@@ -328,7 +331,7 @@ data: {"seq":4,"type":"org.updated","at":"...","payload":{...}}
 { "positionId": "repo-owner", "input": "Summarize the open issues.", "engine": "qoder" }
 ```
 
-- `engine` 只允许 `qoder` / `claude-code` / `claude-local` / `codex` / `codex-local` / `workbuddy`；不接受凭据字段，凭据只从控制面进程环境的对应变量传给子进程。
+- `engine` 只允许 `qoder` / `claude-code` / `claude-local` / `codex` / `codex-local` / `workbuddy` / `workbuddy-local` / `gemini` / `openai-compatible`；不接受凭据字段。WorkBuddy 本地凭据留在客户端，其余凭据按对应引擎契约传递。
 - 控制面构造 `turn-envelope.v1`，其 `envelopeDigest` 与 digital-employee canonical JSON + SHA-256 算法逐字节一致。
 - 唯一调用形态：`digital-employee turn run <workspace> --position <id> --stdin`；信封从 stdin 输入，凭据和用户输入均不进 argv。
 - stdout 必须是严格、同 runId、以 `run.started` 开始且恰有一个末尾终态的 `engine.v1` NDJSON；UTF-8 按流解码，模型文本边界镜像上游 1,048,576 字符；未知字段、超界行、多个终态或终态后事件均产生 `indeterminate`。
@@ -401,7 +404,7 @@ POST /sessions                         {"positionId":"repo-owner"}
 GET  /sessions?positionId=repo-owner
 GET  /sessions/:sessionId
 POST /sessions/:sessionId/rotate       {}
-POST /sessions/:sessionId/turns        {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy"}
+POST /sessions/:sessionId/turns        {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy|workbuddy-local|gemini|openai-compatible"}
 GET  /sessions/:sessionId/turns
 ```
 
@@ -485,7 +488,7 @@ GET  /groups
 GET  /groups/:conversationRef
 DELETE /groups/:conversationRef
 POST /groups/:conversationRef/members         {"positionId":"issue-researcher"}
-POST /groups/:conversationRef/turns           {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy","mentions":["repo-owner"]}
+POST /groups/:conversationRef/turns           {"input":"...","engine":"qoder|claude-code|claude-local|codex|codex-local|workbuddy|workbuddy-local|gemini|openai-compatible","mentions":["repo-owner"]}
 GET  /groups/:conversationRef/turns
 ```
 
@@ -525,6 +528,20 @@ GET  /groups/:conversationRef/turns
 服务 API 请求不跟随重定向，单请求限时 8 秒、JSON 响应限制 8 MiB。文档索引按上游 cursor 最多读取 10 页、每页 100 条，超限明确报错。mem 文件索引最多 200 条，`q` 仅过滤这批返回项，完整网盘管理与检索在 mem 原生界面进行。接口响应不匹配契约时不降级为伪造空列表。
 
 输入错误返回 `400 service_request_invalid`；上游传输、响应大小或契约异常返回 `502 service_upstream_failed`（具体 probe 状态仍按上述成功响应返回）。原生窗口和凭据持久化通过受信任桌面 IPC 提供，不属于远程服务可访问的控制面能力。部署和版本策略见 [独立服务说明](design/independent-services.md)。
+
+### 2.16a `/drive/upload` — 桌面选择文件上传（#600）
+
+`POST /drive/upload?name=<filename>&mime=<mime>` 使用 `application/octet-stream` 请求体和精确的 `Content-Length`，支持 0–32 MiB。查询参数只接受各一个 `name`、`mime`；文件名不含路径、控制字符，UTF-8 长度最多 512 字节。不接受 JSON `filePath`、分块传输或任意目标目录。桌面主进程从原生文件选择器读取文件，将字节发送给本地控制面；Windows 路径不会发送给 WSL。上传保留 boot token 认证。
+
+Mem provider 在请求开始时捕获连接，使用该连接的 API 地址、令牌和工作区向 `POST /v1/files?stream=1` 上传到 Mem 根目录 `/`。需要令牌的 `write` 权限与目标工作区/路径访问权；浏览和刷新仍需要 `read`。上游请求不跟随重定向，接收文件和上传阶段分别限时 30 秒，上传响应最多 64 KiB。成功响应校验文件元数据、实际大小与 SHA-256 后，返回 `201`（新文件）或 `200`（去重）：
+
+```json
+{"schemaVersion":"drive-object-upload.v1","object":{"id":"file-id","name":"asset.png","size":1024,"mime":"image/png","createdAt":"2026-10-15T00:00:00Z"},"deduped":false}
+```
+
+`object` 沿用 `DriveObject`；不返回本地路径、令牌、存储 key 或上游原始响应。旧的占位 `202 {stub:true}` 不再作为成功结果。未配置返回 `503 drive_not_configured`；不支持上传的 provider 返回 `501 drive_action_unsupported`；令牌无效/过期返回 `401 drive_auth_expired`；权限不足返回 `403 drive_permission_denied`；文件超限返回 `413 drive_upload_too_large`。传输失败或无效回执返回 `502`，用户应先检查清单再重试，因为上游可能已经保存文件。
+
+桌面 `owb:drive:pick-and-upload` 只接受当前受信任主窗口，无输入参数；取消返回 `{canceled:true}`。读取文件前后与发起上传前重新检查窗口身份，拒绝符号链接、非普通文件、超限或读取中发生变化的文件；并发选择/上传请求被拒绝。旧的 `owb:drive:upload(filePath)` 保留为明确的 `501` 拒绝，不读取任何渲染进程提供的路径。
 
 ### 2.17 `PATCH /positions/:id/profile` — 编辑员工档案（#291 加法）
 
@@ -567,6 +584,45 @@ GET  /groups/:conversationRef/turns
 ```json
 { "status": "updated", "positionId": "docs-writer", "name": "文档工程师", "mode": "approval_required", "version": { "seq": 7, "updatedAt": "..." } }
 ```
+
+### 项目任务人工验收
+
+`POST /goals/:goalId/tasks/:taskId/acceptance` 使用本地 operator Bearer 凭据，桌面 IPC 仅接受主窗口受信任主 frame。请求不接受 `decidedBy`、时间、状态或 Space 标识；服务端提供裁决人及时间。
+
+```json
+{
+  "expectedWorkspacePath": "/fixture/workspace",
+  "expectedUpdatedAt": "2026-10-07T00:00:00.000Z",
+  "idempotencyKey": "11111111-1111-4111-8111-111111111111",
+  "source": {
+    "positionId": "repo-owner",
+    "turnId": "22222222-2222-4222-8222-222222222222",
+    "sessionId": "33333333-3333-4333-8333-333333333333",
+    "outputDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "decision": "accepted",
+  "verdicts": [{ "criteriaIndex": 0, "passed": true }]
+}
+```
+
+`source` 必须直接采用 `GET /goals/:goalId` 的 `taskDeliveries[taskId].source`。该投影包含最新已完成的个人会话产出，且必须属于当前任务和员工；失败、运行中、无正文或旧版无 session 的记录不能验收。`taskExecutions` 保留执行状态，并增加可选 `sessionId` 用于精确回看。
+
+`GET /goals/:goalId` also returns optional `taskExecutions[taskId].progress`
+(`TaskProgressSnapshot`) and `errorCode` for the latest matching execution.
+Progress is resolved by the exact turn and employee, including persisted
+snapshots outside the recent progress list. Missing historical snapshots omit
+`progress`; they do not imply zero progress. This response-only evidence is
+never written to the goal plan. `turn.progress` uses `taskId = turnId`, so
+clients join it through `taskExecutions[taskId].turnId` and isolate updates by
+workspace, employee, and execution attempt. The five workbench stages measure
+execution phases, not business completion or ETA. A completed run still needs
+explicit delivery acceptance. Project clients refresh execution evidence on
+turn lifecycle events and SSE reconnection, with the existing bounded polling
+fallback; a stale phase alone is not proof that an Agent has stopped.
+
+接受必须覆盖项目全部非空验收标准并逐项通过；拒绝必须带非空 `note`。成功返回 `{ "record": GoalTaskAcceptanceRecord }`。裁决使用 `goal-task-acceptance.v1`，`scope` 固定为 `goal-task`，复用 `acceptance.v1` 的决定与逐项校验规则，不创建 Space。记录包含计划版本、标准快照和产出 digest，与任务的 `done` / `review` 状态在同一 goal 文件原子保存。
+
+工作区、计划或产出变化返回 409 `goal_conflict`；同一幂等键与同一请求重试返回原记录，不同请求重用键返回 409。已有执行的任务不能通过普通 `PATCH workItems` 伪造完成；无执行的人工计划仍可直接更新规划状态。每个 goal 最多保留 64 条验收记录，达到上限拒绝新写入，不静默删除历史。旧版本的严格读取器不支持 `taskAcceptances`，降级前需保留数据备份。
 
 ## 3. 稳定错误码登记表
 

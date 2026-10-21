@@ -36,6 +36,7 @@ export const routes = {
   reports: "/reports",
   experiments: "/experiments",
   reportsAdvice: "/reports/advice",
+  budgetRemainingAdvice: "/turns/budget-remaining-advice",
   approvals: "/approvals",
   sessions: "/sessions",
   turns: "/turns",
@@ -50,6 +51,26 @@ export const routes = {
   /** Additive create/resolve surface (#35 S4, DS-35-001 rev-1 §3/§5). */
   docsCreate: "/docs/create",
   docsResolve: "/docs/resolve",
+  vaultList: "/vault/list",
+  vaultRead: "/vault/read",
+  vaultCreate: "/vault/create",
+  vaultWrite: "/vault/write",
+  vaultRename: "/vault/rename",
+  vaultArchive: "/vault/archive",
+  vaultRestore: "/vault/restore",
+  vaultDelete: "/vault/delete",
+  vaultMigrate: "/vault/migrate",
+  vaultBindings: "/vault/bindings",
+  vaultSource: "/vault/source",
+  vaultResolve: "/vault/resolve",
+  vaultImage: "/vault/image",
+  vaultHistory: "/vault/history",
+  vaultUsed: "/vault/used",
+  docsWrite: "/docs/write",
+  docsRename: "/docs/rename",
+  docsArchive: "/docs/archive",
+  docsRestore: "/docs/restore",
+  docsDelete: "/docs/delete",
   /**
    * Additive external doc-plane bridge (#35 R2 MVP): list + detail proxied to
    * an external `bytefolk/doc` server pinned by `ORG_WORKBENCH_DOC_URL`. This
@@ -66,7 +87,9 @@ export const routes = {
    * never mirrors mem storage, it only forwards to the configured MEM_URL. */
   driveList: "/drive/list",
   driveDetail: "/drive/detail",
+  drivePreview: "/drive/preview",
   driveUpload: "/drive/upload",
+  driveProvider: "/drive/provider",
   /** Additive #306: attachment upload/read surface. */
   attachmentsUpload: "/attachments/upload",
   attachmentsRead: "/attachments/read",
@@ -107,6 +130,8 @@ export const sseEventTypes = [
   // @mentioned member spawn; group turn.* payloads additionally carry
   // additive groupRef/turnId/positionId fields for renderer attribution.
   "group.turn.spawned",
+  "group.relay.stop.suggested",
+  "group.relay.stop.resolved",
   // Group lifecycle event (#274): broadcast when a group is dismissed.
   "group.updated",
   // Additive goal lifecycle events (#222).

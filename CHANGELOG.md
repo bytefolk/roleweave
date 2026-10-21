@@ -7,7 +7,73 @@
 
 ### Added
 
+- #615: Show per-task execution progress in project cards, schedule rows, and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect, and keep completed execution separate from delivery acceptance.
 - #466：审批队列和详情展示可选 Jev 老化建议（`nudge` / `wait` / `discuss-close`），仅为文案。出站载荷只有 `{ createdAt, now, decision.kind, risk }`。overlay 不得隐藏 pending high，不得 POST decision，点击只打开事项。过期仍走现有 clock helpers。`ROLEWEAVE_LAYA_ENABLED` 默认关。https://github.com/bytefolk/roleweave/issues/422
+
+### Fixed
+
+- Explain Codex ChatGPT-login model rejections with localized recovery and distinguish model catalog discovery from verified access (#613).
+- #615: Validate Windows process ancestry by creation time so reused parent PIDs cannot attach unrelated processes to the packaged-app smoke test or its cleanup tree.
+- #611: Preserve complete Codex employee questions and thread context on Windows by sending prompts through stdin. Chinese, multiline and long requests no longer lose their content through `.cmd` launchers; input-pipe failures produce a typed error.
+- #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
+
+## [0.5.0] — 2026-10-16
+
+### Added
+
+- #467：Goals 详情新增项目级 opt-in 的“交付预检”。用户为每条验收标准显式选择带版本 `DocRef` 的文档材料；预检只核对引用结构、断链、版本冲突和 mtime，不读取正文、不调用 Laya、不写 `goal.status` / `goal.health`，也不会产生整体通过结论。Refs #422。- Buyer delivery acceptance details in the existing approval contract; refined shared-resource browsing and image previews; CXO company scenarios, execution teams and collaboration runbooks.
+
+- 网盘面板支持直接选择并上传文件到 Mem，单文件最大 32 MiB，成功或去重后刷新清单；Windows 桌面向 WSL 控制面传送文件字节，文件路径留在桌面主进程。
+
+- 千问办公新增 Windows 原生助手接入，WSL 员工通过私有通道提交专属会话并查看进度与结果；审批留在客户端，取消与退出仅处理本次任务，模型、工具、账号及额度遵循客户端设置。
+- WorkBuddy 增加 Windows 客户端本地登录接入，WSL 员工通过桌面拥有的私有通道复用客户端自动模型；提供本地登录/API 选择，接入失效时保持原员工绑定。
+
+### Changed
+
+- Claude 按员工读取授权提供真实 Read／Glob／Grep 工具，按迭代预算完成工具循环并记录执行进展；不执行模型打印的文本命令。旧的未执行工具回复不再作为历史完成证据。
+- Claude 模型选择同步本机自定义模型菜单；Codex 连接拒绝显示明确的状态与处理提示，隐藏服务端 HTML 错误页。
+
+- 对话执行进展合并为一行状态与耗时，去掉重复转圈和没有真实步骤的空展开项；保留工具记录与审批状态。
+- 桌面新增系统托盘状态：显示空闲、执行任务数、待审批数和连接中断，支持打开窗口与退出；最小化后仍可查看状态。
+
+- 员工编辑改为紧凑的基本信息、技能、连接器和高级权限区域，补齐输入校验与无效改动检测；千问办公员工只编辑名称，工具与审批在客户端设置。
+- 岗位搜索采用同高的搜索框与展开／收起图标，支持清空及键盘焦点恢复；项目列表、看板与排期统一主题颜色和留白。
+- 单聊、群聊与流式回复统一显示可点击链接、重点加粗、换行及代码复制反馈；格式提示保留用户指定格式和原始请求记录。
+
+- 审批与上报统一使用工作台的背景、字体、边距和中性选中态，移除收件箱独立蓝黑配色及加高顶栏；风险和错误标签沿用全局状态配色。
+- 导航与选择控件采用中性灰底、轻量文字和无外框选项组，去除彩色边框与选中底线；保持选中、悬停、键盘焦点及禁用状态的区别，静态分组名称与可点击选项分开显示，主题与群聊列表补齐选中状态语义。
+- 关系图谱默认从员工和关联资料开始，能力与配置、完整对象列表、图形和来源信息按需展开；依据侧栏仅在主动查证时打开，并提供真实工作区对象的三步实操引导。
+
+### Fixed
+
+- 网盘令牌无效、过期或权限不足时显示服务设置与权限检查提示，替代原始 401/403 文本；上传接口返回真实校验后的文件结果，取消、超限及不支持的存储来源不再显示占位成功。
+- 桌面 API 与事件流连续解码 UTF-8，避免中文或 emoji 跨网络分块时出现乱码。
+- 岗位资料按原始用户问题检索，避免回复格式说明挤占关键词预算而漏掉指定笔记。
+- 关系图谱展示目标计划中声明的负责人，即使任务尚未产生执行分支。
+- Gemini 取消时等待独立客户端进程回收后再退出，避免终止竞态；补齐主题设置保存、跟随系统和磁盘恢复的回归测试。
+
+- Codex 接入检查使用实际解析到的 CLI，并验证员工会话所需的启动参数与工具开关；不兼容的旧安装提示升级，避免显示可用后启动即失败。
+- Windows 的 Qoder 探测不再把 IDE 启动器当成代理 CLI，模型选择测试隔离本机目录探测，避免读员工卡片或运行测试时意外打开编辑器。
+- WorkBuddy 的模型配置使用自身接入信息，避免读取 Codex 模型缓存。
+- 图谱回访已浏览对象时收回重复路径，避免员工、资料来源和文档之间往返造成重复层级；切换对象后回到内容顶部，当前位置显示为文本。
+- 窄窗口中的长审批详情和错误反馈局部滚动，避免把底部裁决操作挤出工作台。
+- 图谱与会话中的岗位文件直接只读预览精确员工和路径对应的原文件，避免误入笔记库；保留笔记 URI 与工作区产物导航，关闭预览或切换工作区后丢弃旧响应。
+
+## [0.4.0] — 2026-10-09
+
+### Added
+
+- 图谱读取已连接网盘的真实文件元数据与来源关系，失败与截断显示具体来源和原因；关系画布移除底部对象播放条与黑色场景背景，统一使用工作台工具栏、主题背景和左侧对象列表。
+- 关系图谱优化阅读与空间布局：对象列表统一在侧栏，证据详情按需展开，画布使用更多可用空间；节点标签优先显示关键对象并避免重叠，选中关系突出显示，完整对象与来源证据仍可访问。
+- #574：新增工作区级 Markdown 笔记库、跨岗位引用、会话结论沉淀与实际上下文出处；支持中文路径、全文搜索、授权图片附件、手动 Mem 双向同步、冲突副本和基于版本校验的历史恢复。
+- 项目任务新增持久化人工验收：逐项核对验收标准，绑定原会话、执行和产出摘要版本；接受后任务完成，拒绝保留原因并回到待验收。验收与任务状态原子保存，过期计划和产出拒绝裁决，网络重试保留幂等记录。
+- 文档支持目录树及键盘导航，会话记忆准确继续原会话；关系图默认提供员工、来源、资源与证据的逐步浏览。
+- #549：按已确认设计更新收件箱审批工作台，提供请求列表、风险与岗位筛选、裁决操作、执行证据与异常详情、可追溯审计和运行时间线；断线保留只读快照，不确定的审批重试先核验权限，如实展示未观测用量和实际预算比例。
+- #553：网盘支持选择 mem 或 bdpan 来源，上游失败返回明确状态；百度文件接口拒绝不再误报为登录过期，搜索参数与可执行程序分开传递。
+- #559：新增协作区人工验收契约，验收通过必须完整覆盖计划中的全部验收项；限制标识符、时间戳和产物路径，拒绝遗漏或越界的裁决。
+
+- #469：可选 Laya 接力停止建议。仅在 `ROLEWEAVE_LAYA_ENABLED` 开启、已完成步骤得到正向建议且仍有未执行步骤时暂停；桌面端由 owner 显式选择“停止剩余步骤”或“继续接力”。30 秒超时、SSE 断连、无效或失败建议均继续原 mention order；Laya 只接收 `status`、`errorCode`、`hasOutput`，不接收输入、输出或 handoff 文本。已接受的消息与 spawn 清单保持不可变。Refs #422。
+>>>>>>> origin/main
 
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
 
@@ -15,18 +81,43 @@
 
 - #472：组织模块新增可选 3D 星图（恒星/行星/卫星、Bloom 霓虹连线、3D 星空穹顶与视差星层）。标签为 DOM 文字保持清晰。搜索定位、拖拽改汇报线、招聘/撤销复用现通道。无 WebGL 退化为列表。Refs #472。
 
-- #460：审批队列和详情在规则风险 Tag 旁展示可选 Jev `riskOverlay`。`ROLEWEAVE_JEV_ENABLED` 默认关；关时与现网 Tag 字节一致。展示色始终跟 `capabilityContext`，overlay 更低时标明「建议未采纳」。`service` 经 `attachApprovalRiskOverlay` 接线；出站建议载荷只允许 `kind`。默认不调用外部服务。Refs #422。
-- #428：Goals 详情并排展示落盘规则健康与 Jev `healthOverlay`；列表点只跟 `goal.health`。`at_risk` 上的 `on_track` overlay 标明「建议未采纳」。`blocked` overlay 可跳到绑定岗位会话或审批中心，不自动改目标。上报升级 overlay 仍是后续独立 PR。
+- #460：审批队列和详情在规则风险 Tag 旁展示可选 Laya `riskOverlay`。`ROLEWEAVE_LAYA_ENABLED` 默认关；关时与现网 Tag 字节一致。展示色始终跟 `capabilityContext`，overlay 更低时标明「建议未采纳」。`service` 经 `attachApprovalRiskOverlay` 接线；出站建议载荷只允许 `kind`。默认不调用外部服务。Refs #422。
+- #428：Goals 详情并排展示落盘规则健康与 Laya `healthOverlay`；列表点只跟 `goal.health`。`at_risk` 上的 `on_track` overlay 标明「建议未采纳」。`blocked` overlay 可跳到绑定岗位会话或审批中心，不自动改目标。上报升级 overlay 仍是后续独立 PR。
 
-- #422：可选 Jev（TypeSafe System One）适配器，默认关闭。`ROLEWEAVE_JEV_ENABLED=1` 且配置 `ROLEWEAVE_JEV_API_KEY` 后，目标分支健康可走 Choice（`on_track` / `at_risk` / `blocked` / `unknown`）作为 `healthOverlay`；持久化 `goal.health` 仍只由 `computeHealthFromTurns` 写入。Choice 请求只带 turn `status` / `errorCode`，不发送 input/output。非法或外部 option 不能把 failed/indeterminate 分支改成 on_track。失败或超时回退启发式。不改变审批策略与回合终态推导。
+- #422：可选本地 Laya（System One）适配器，默认关闭。`ROLEWEAVE_LAYA_ENABLED=1` 后，目标分支健康可走 Choice（`on_track` / `at_risk` / `blocked` / `unknown`）作为 `healthOverlay`；持久化 `goal.health` 仍只由 `computeHealthFromTurns` 写入。Choice 请求只带 turn `status` / `errorCode`，不发送 input/output。非法或外部 option 不能把 failed/indeterminate 分支改成 on_track。失败或超时回退启发式。不改变审批策略与回合终态推导。
 
 ### Changed
 
-- 智能协作建议、Goals 健康 overlay 与审批风险 overlay 从外部 Jev 切换为 Apache-2.0 Laya 本地推理。Provider 仅接受 loopback `POST /v1/systemone` 地址，不发送 API Key 或 Authorization header，并保留项目 opt-in、规则权威、低置信度弃权及有界失败语义。运行时改用 `ROLEWEAVE_LAYA_*` 配置。
+- #561：完善目标概览与验收、执行证据层次，调整项目管理双行工具栏、任务空态及单日期提示，并适配窄屏布局；目标/Agent 视图及概览筛选明确显示选中状态，保留独立的人工交付验收流程。
+
+- 资料与记忆统一入口按岗位资料、团队共享文档、会话过程与实际存储位置分组；网盘改为完整文件列表或网格，支持类型筛选、排序、多选、按需属性及授权图片预览，共享资料未连接时提供完整连接引导。
+- 新建本地项目、员工和业务项目优先选择模板与确认草稿；项目名称、说明、角色职责和验收项自动带入，按需展开编辑。员工也可通过已有 Agent 起草候选，显式应用后再创建；切换模板保留编辑，过期生成和创建回复不会覆盖新工作区。
+- #556：目标模块按完善后的 Pencil 设计展示列表/详情、真实分支完成比例、责任岗位及关联会话；进展改为时间线与失败/卡住回合跟进，读取失败保留快照并可刷新，切换工作区丢弃过期响应。兼容中文/英文、明暗主题及窄屏。
+
+- #545：语言、明暗模式、色彩偏好及主题预设/手动配色统一放入“设置 → 常规”，移除标题栏右上角的重复偏好入口、未接入的 AI 生成主题入口和不可配置的提示音占位行。预设立即保存；自定义颜色支持预览、保存及取消。
+
+- 智能协作建议、Goals 健康 overlay 与审批风险 overlay 使用 Apache-2.0 Laya 本地推理。Provider 仅接受 loopback `POST /v1/systemone` 地址，不发送 API Key 或 Authorization header，并保留项目 opt-in、规则权威、低置信度弃权及有界失败语义。运行时只用 `ROLEWEAVE_LAYA_*`；不再读取 `ROLEWEAVE_JEV_*`。
 
 - 组织目录树行改为「头像 + 岗位名」主信息，id / 引擎 / 运行状态作次行；树顶增加搜索与全部展开/收起；选中行圆角高亮加强。员工会话面板去掉线程渐变，复制/重试改为悬停浮现，头部与输入工具条收成一行。不改拖拽、招聘占位、审批卡片与重试语义。Refs #458。
 
 ### Fixed
+
+- #578 / #579 / #580：目标与项目支持补充或编辑验收标准，冲突保留草稿并可加载最新标准；阻塞目标只跳转明确绑定的会话；Agent 看板随任务事件和重连刷新，丢弃过期响应，加载失败保留快照并可重试。
+
+- 桌面标题栏按窗口所在系统显示控制钮：Windows 使用右侧原生最小化、最大化／还原与关闭，macOS 保留左侧红黄绿；WSL 后端不影响 Windows 窗口样式，原生控制区同步明暗与自定义主题。
+- 项目看板派工复用员工活动会话，结果按原 session/turn 回看；旋转会话与控制面重启后仍可定位，旧版无 session 结果提供独立只读入口。
+- 员工执行期间可调整下一轮模型，当前执行保持启动时的模型快照；Qoder 活动轨迹展示公开工具参数和完成详情。
+- 测试工具链升级 Vitest 至 4.1.11，移除存在原型污染执行风险的 tinypool；source-map-js 升至 1.2.2，拒绝可放大为阻塞的 source-map 偏移。依赖安全检查仍使用 high 门禁。
+
+- 构建下载统一使用 `@electron/get` 5.1.0，移除存在高危缓存复用问题的旧 `got` / `http-cache-semantics` 依赖；构建环境最低 Node 版本明确为 22.12。
+
+- #513：服务连接后台刷新不再覆盖尚未保存的地址、工作区或令牌草稿；保存成功后恢复同步。
+
+- 更新构建依赖 `brace-expansion` 的锁定版本至 1.1.21 / 2.1.7 / 5.0.12，修复拒绝服务漏洞并恢复 CI 依赖安全检查。
+- #545：修复设置下拉框选中后文字偏上；再次编辑自定义颜色时保留已保存的其他颜色；切换主题预设时清除旧的持久化配色，避免重启后恢复旧颜色。
+- Windows 无签名安装包现可在应用内检查、下载并经用户确认安装更新；发布验证要求 `latest.yml` 的版本、安装包名称、大小和 SHA-512 与实际 EXE 一致。旧版 Windows 客户端仍需手动安装一次包含此修复的新版本。
+
+- #517：组织模块三处缺陷一并修复。① `GET /org/backups` 不再因为备份根目录里的非岗位条目（如 groups 归档命名空间）或单个缺 `employee.json`、缺裁撤 provenance 的备份目录而整体 500：这些条目被跳过，只有符号链接与非目录条目仍拒绝，侧边栏「已移除员工」恢复托盘因此能列出可恢复的备份。② 组织概览页改由 `section.owb-rgraph` 自己拥有垂直滚动，页面主体（滚轮 / 触控板 / 键盘）可滚动，结果列表与时间戳页脚可达，画布上的滚轮仍只缩放相机。③ 3D 关系图给标签舞台加 `z-index: 0` 建立层叠上下文，CSS2D 标签不再盖住画布工具条与 z-index 8 的「关系详情」覆盖层。
 
 - #454：修复客户端审批模块状态一致性与重试缺陷。侧边栏角标仅统计未过期的待处理项；对话线程内审批卡片明确展示过期状态并禁用操作；批量裁决在失败或网络异常后清理请求锁以允许使用新理由重试；修复审批列表按本地日历日筛选跨时区偏差；刷新与裁决操作保证最新状态快照。
 
@@ -53,9 +144,9 @@
 
 - #450：组织概览新增基于 AntV G6 的关系图谱，整合 Agent、数据源、本地资源、能力、策略、目标与任务；支持搜索筛选、邻域展开、证据详情和精确打开资源。配置声明、实际发现与权限未知分别展示，未连接的外部数据源明确标注覆盖缺口。
 
-- #422：新增 Jev 产品评审提案（`docs/design/jev-collaboration-product-v1.md`），定义待我处理、发送前协作建议、交付预检的分期范围、数据边界和验收矩阵。仅文档，不启用服务、不改变运行时；模型质量与产品收益仍待试点验证。
+- #422：新增 Laya 产品评审提案（`docs/design/jev-collaboration-product-v1.md`），定义待我处理、发送前协作建议、交付预检的分期范围、数据边界和验收矩阵。仅文档，不启用服务、不改变运行时；模型质量与产品收益仍待试点验证。
 
-- #447：设置新增按项目保存、默认关闭的“智能协作建议 · 预览”。开启前展示 Jev 服务方、含路径的完整请求地址与数据范围；上报中心只在主动点击时为最近最多 20 条失败升级记录生成参考建议。原有记录、顺序和追溯入口保留，关闭会取消待处理建议，服务不可用时仍可正常查看报告。
+- #447：设置新增按项目保存、默认关闭的“智能协作建议 · 预览”。开启前展示本地 Laya 服务方、含路径的完整请求地址与数据范围；上报中心只在主动点击时为最近最多 20 条失败升级记录生成参考建议。原有记录、顺序和追溯入口保留，关闭会取消待处理建议，服务不可用时仍可正常查看报告。
 
 - #394：上报中心拍成单层五路切换（用量 / 执行 / 失败升级 / 组织审计 / 时间线）；KPI 卡对应当前视图；审计行可展开具体岗位与调岗从→到；失败升级行可追溯到该员工时间线；列表时间用相对值。
 

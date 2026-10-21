@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,7 @@ import {
   classifyEntries,
   expectedArtifacts,
   isPermittedCompanion,
+  verifyWindowsUpdateMetadata,
 } from "../verify-installer-assets.mjs";
 
 const META = { name: "org-workbench", version: "0.0.0" };
@@ -110,6 +112,35 @@ test("a wrong-architecture build fails rather than passing on a glob", () => {
   const { missing, unexpected } = classifyEntries(["org-workbench-0.0.0-ia32.exe"], required);
   assert.deepEqual(missing, ["org-workbench-0.0.0-x64.exe"]);
   assert.deepEqual(unexpected, ["org-workbench-0.0.0-ia32.exe"]);
+});
+
+test("Windows update metadata must match the published installer", (t) => {
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "owb-windows-update-"));
+  t.after(() => fs.rmSync(root, { force: true, recursive: true }));
+  const artifact = expectedArtifacts("windows", META)[0];
+  const installer = Buffer.from("unsigned Windows installer fixture");
+  const sha512 = crypto.createHash("sha512").update(installer).digest("base64");
+  fs.writeFileSync(path.join(root, artifact), installer);
+  const metadata = (url = artifact, hash = sha512) => [
+    `version: ${META.version}`,
+    "files:",
+    `  - url: ${url}`,
+    `    sha512: ${hash}`,
+    `    size: ${installer.length}`,
+    `path: ${url}`,
+    `sha512: ${hash}`,
+    "",
+  ].join("\n");
+
+  assert.throws(() => verifyWindowsUpdateMetadata(root, artifact, META.version), /ENOENT/);
+  fs.writeFileSync(path.join(root, "latest.yml"), metadata());
+  assert.doesNotThrow(() => verifyWindowsUpdateMetadata(root, artifact, META.version));
+
+  fs.writeFileSync(path.join(root, "latest.yml"), metadata("other.exe"));
+  assert.throws(() => verifyWindowsUpdateMetadata(root, artifact, META.version), /wrong installer/);
+
+  fs.writeFileSync(path.join(root, "latest.yml"), metadata(artifact, crypto.createHash("sha512").update("other").digest("base64")));
+  assert.throws(() => verifyWindowsUpdateMetadata(root, artifact, META.version), /SHA-512 does not match/);
 });
 
 test("the fixture helper keeps these cases honest about real directory reads", (t) => {

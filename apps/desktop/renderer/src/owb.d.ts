@@ -9,13 +9,23 @@ import type {
   DocPlaneDetailResponse,
   DocPlaneListResponse,
   DocRef,
+  DocsArchiveResponse,
   DocsCreateRequest,
   DocsCreateResponse,
+  DocsDeleteRequest,
+  DocsDeleteResponse,
   DocsFileListResponse,
   DocsFileResponse,
+  DocsPathRequest,
+  DocsRenameRequest,
+  DocsRenameResponse,
   DocsResolveResponse,
+  DocsRestoreResponse,
+  DocsWriteRequest,
   DriveObjectDetailResponse,
   DriveObjectListResponse,
+  DriveObjectPreviewResponse,
+  DriveProviderStatusResponse,
   DriveUploadResponse,
   ExternalServiceKind,
   ServiceConnectionInput,
@@ -87,6 +97,8 @@ export interface OwbBridge {
   setPositionAgentEngine?(request: { positionId: string; engine: TurnEngine }): Promise<OwbApiResponse<{ agentEngine: TurnEngine; agentLocked: true; modelConfig: import("@roleweave/shared").EmployeeModelConfig }>>;
   updatePositionProfile?(request: PositionProfilePatch & { positionId: string }): Promise<OwbApiResponse<PositionProfileResult>>;
   status(): Promise<OwbStatusResponse>;
+  /** Opens the installed Windows Office client through its fixed protocol. */
+  openQwenOffice?(): Promise<{ opened: boolean; reason?: string }>;
   /** One-click Qoder CLI login owned by the control plane. */
   qoderLogin: {
     start(): Promise<OwbApiResponse<QoderLoginResponse>>;
@@ -99,6 +111,8 @@ export interface OwbBridge {
   workspace(): Promise<OwbApiResponse>;
   /** Reveal the open workspace in the OS file manager. Takes no argument: the main process re-reads the open workspace itself. */
   revealWorkspace?(): Promise<{ opened: boolean; path?: string; reason?: string }>;
+  /** Open one validated path below the currently open workspace. */
+  openWorkspaceFile?(relativePath: string, expectedWorkspacePath?: string): Promise<{ opened: boolean; path?: string; reason?: string }>;
   orgTree(): Promise<OwbApiResponse>;
   orgApply(manifest: ChangeManifest): Promise<OwbApiResponse>;
   orgBackups(): Promise<OwbApiResponse<OrgBackupsResponse>>;
@@ -114,14 +128,20 @@ export interface OwbBridge {
     update(request: import("@roleweave/shared").ExperimentsUpdateRequest): Promise<OwbApiResponse<import("@roleweave/shared").ExperimentsResponse>>;
   };
   reportAdvice?(request: import("@roleweave/shared").ReportsAdviceRequest): Promise<OwbApiResponse<import("@roleweave/shared").ReportsAdviceResponse>>;
+  budgetRemainingAdvice?(request: import("@roleweave/shared").BudgetRemainingAdviceRequest): Promise<OwbApiResponse<import("@roleweave/shared").BudgetRemainingAdviceResponse>>;
   listApprovals(request: { workspacePath: string; cursor?: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalList>>;
   decideApproval(request: import("@roleweave/shared").ApprovalDecisionRequest & { id: string; workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalView>>;
   decideApprovalsBatch(request: import("@roleweave/shared").ApprovalBatchDecisionRequest & { workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalBatchDecisionResponse>>;
   approvalAudit(request: { id: string }): Promise<OwbApiResponse<{ approvalId: string; events: import("@roleweave/shared").ApprovalAuditEvent[] }>>;
   position(positionId: string, engine?: TurnEngine): Promise<OwbApiResponse>;
-  positionDocs(positionId: string): Promise<OwbApiResponse<DocsFileListResponse>>;
-  positionDocFile(positionId: string, filePath: string): Promise<OwbApiResponse<DocsFileResponse>>;
+  positionDocs(positionId: string, options?: { archived?: boolean }): Promise<OwbApiResponse<DocsFileListResponse>>;
+  positionDocFile(positionId: string, filePath: string, options?: { archived?: boolean }): Promise<OwbApiResponse<DocsFileResponse>>;
   createPositionDoc(request: DocsCreateRequest): Promise<OwbApiResponse<DocsCreateResponse>>;
+  writePositionDoc?(request: DocsWriteRequest): Promise<OwbApiResponse<DocsFileResponse>>;
+  renamePositionDoc?(request: DocsRenameRequest): Promise<OwbApiResponse<DocsRenameResponse>>;
+  archivePositionDoc?(request: DocsPathRequest): Promise<OwbApiResponse<DocsArchiveResponse>>;
+  restorePositionDoc?(request: DocsPathRequest): Promise<OwbApiResponse<DocsRestoreResponse>>;
+  deletePositionDoc?(request: DocsDeleteRequest): Promise<OwbApiResponse<DocsDeleteResponse>>;
   resolveDocRef(ref: DocRef): Promise<OwbApiResponse<DocsResolveResponse>>;
   /** #35 R2 MVP: external doc-plane list proxy (bytefolk/doc bridge). */
   docPlaneList(query?: string): Promise<OwbApiResponse<DocPlaneListResponse>>;
@@ -138,7 +158,7 @@ export interface OwbBridge {
   session(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
   sessionSetContext(request: { sessionId: string; enabled: boolean }): Promise<OwbApiResponse<WorkbenchSession>>;
   rotateSession(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
-  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval; retryOf?: string; attachmentIds?: string[] }): Promise<OwbApiResponse<TurnRecord>>;
+  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval; goalId?: string; branchId?: string; retryOf?: string; attachmentIds?: string[] }): Promise<OwbApiResponse<TurnRecord>>;
   sessionTurnHistory(sessionId: string): Promise<OwbApiResponse<TurnHistory>>;
   uploadAttachment(request: { sessionId: string; fileName: string; mimeType: string; dataBase64: string }): Promise<OwbApiResponse<{ attachment: import("@roleweave/shared").TurnAttachment }>>;
   createGroup(request: { memberPositionIds: string[] }): Promise<OwbApiResponse<GroupConversation>>;
@@ -160,6 +180,11 @@ export interface OwbBridge {
     messageId: string;
     spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>;
   }>>;
+  decideGroupRelayStop(request: {
+    conversationRef: string;
+    messageId: string;
+    decision: "stop" | "continue";
+  }): Promise<OwbApiResponse<{ messageId: string; decision: "stop" | "continue" }>>;
   groupTimeline(conversationRef: string): Promise<OwbApiResponse<GroupTimeline>>;
   createGoal(request: { title: string; description: string; acceptanceCriteria?: string[] }): Promise<OwbApiResponse<GoalsCreateResponse>>;
   goals(): Promise<OwbApiResponse<{ goals: GoalSummary[] }>>;
@@ -170,13 +195,19 @@ export interface OwbBridge {
   updateTaskStatus(request: import("@roleweave/shared").TaskStatusRequest & { taskId: string }): Promise<OwbApiResponse<import("@roleweave/shared").AgentTask>>;
   goal(goalId: string): Promise<OwbApiResponse<GoalDetail>>;
   updateGoal(request: GoalsUpdateRequest & { goalId: string }): Promise<OwbApiResponse<{ goalId: string }>>;
+  createGoalTaskAcceptance?(request: import("@roleweave/shared/goals").GoalTaskAcceptanceCreateRequest & { goalId: string; taskId: string }): Promise<OwbApiResponse<{ record: import("@roleweave/shared/goals").GoalTaskAcceptanceRecord }>>;
   deleteGoal(goalId: string): Promise<OwbApiResponse<{ goalId: string; deleted: boolean }>>;
   drive: {
     list(q?: string): Promise<OwbApiResponse<DriveObjectListResponse>>;
     detail(id: string): Promise<OwbApiResponse<DriveObjectDetailResponse>>;
+    preview?(id: string): Promise<OwbApiResponse<DriveObjectPreviewResponse>>;
+    /** Explicit readonly probe of the configured server provider. */
+    provider?(): Promise<OwbApiResponse<DriveProviderStatusResponse>>;
+    /** Deprecated path channel: always denied; use the OS picker. */
     upload(filePath: string): Promise<OwbApiResponse<DriveUploadResponse>>;
     pickAndUpload(): Promise<OwbApiResponse<DriveUploadResponse> | { canceled: true }>;
   };
+  vault: import('./vault/bridge').VaultBridge;
   sseStatus(): Promise<"connecting" | "connected">;
   services: {
     list(): Promise<OwbApiResponse<ServicesResponse>>;
@@ -196,11 +227,14 @@ export interface OwbBridge {
     openReleaseNotes(): Promise<{ ok: boolean; url?: string }>;
   };
   /** #73 custom title bar controls (frameless window). */
+  windowChrome?: { platform: "win32" | "darwin" | "linux" | "other"; nativeControls: boolean };
+  setWindowChromeColors?(colors: { color: string; symbolColor: string }): Promise<{ ok: boolean }>;
   windowMinimize(): Promise<{ ok: boolean }>;
   windowToggleMaximize(): Promise<{ ok: boolean }>;
   windowClose(): Promise<{ ok: boolean }>;
   onEvent(callback: (event: unknown) => void): () => void;
-  onSseStatus(callback: (state: "connecting" | "connected") => void): () => void;
+  /** Optional: older shells and test fixtures may omit SSE status. */
+  onSseStatus?(callback: (state: "connecting" | "connected") => void): () => void;
   onUpdateState(callback: (state: UpdateEvent) => void): () => void;
   onFallbackNotice(callback: (failedPath: string) => void): () => void;
 }

@@ -55,6 +55,24 @@ test("group dispatch IPC forwards validated explicit modes and preserves recipie
   assert.equal(validateGroupTurnRequest({ ...value, principal: "admin" }).ok, false);
 });
 
+test("group relay STOP IPC accepts only an explicit bounded owner decision (#469)", () => {
+  const { validateGroupRelayStopDecision } = require("../src/group-ipc.cjs");
+  const value = { conversationRef: "group-one", messageId: "message-one", decision: "stop" };
+  assert.deepEqual(validateGroupRelayStopDecision(value), {
+    ok: true,
+    conversationRef: "group-one",
+    request: { messageId: "message-one", decision: "stop" },
+  });
+  assert.equal(validateGroupRelayStopDecision({ ...value, decision: "continue" }).ok, true);
+  for (const invalid of [
+    { ...value, decision: "automatic" },
+    { ...value, messageId: "../escape" },
+    { ...value, principal: "admin" },
+  ]) {
+    assert.equal(validateGroupRelayStopDecision(invalid).ok, false);
+  }
+});
+
 test("session retry IPC forwards only a bounded server turn identity", () => {
   const retryOf = "22222222-2222-4222-8222-222222222222";
   assert.deepEqual(validateSessionTurnRequest({ sessionId, input: "try again", engine: "qoder", retryOf }), {

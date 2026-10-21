@@ -331,7 +331,7 @@ test("process oracle follows descendants and detects tracked or staged residuals
     { pid: 99, ppid: 1, pgid: 99, startTime: "t4", executable: "/other", command: "unrelated" },
     { pid: 100, ppid: 1, pgid: 100, startTime: "t5", executable: "/other", command: "/tmp/owb-clean-staging-a-copy/sentinel" },
   ];
-  assert.deepEqual(descendantProcesses(processes, 10).map(({ pid }) => pid), [11, 12]);
+  assert.deepEqual(descendantProcesses(processes, 10, { nativePlatform: "linux" }).map(({ pid }) => pid), [11, 12]);
   assert.deepEqual(
     residualProcesses(processes, {
       stagingRoot: "/tmp/owb-clean-staging-a",
@@ -339,6 +339,51 @@ test("process oracle follows descendants and detects tracked or staged residuals
     }).map(({ pid }) => pid),
     [10, 11, 12],
   );
+});
+
+test("Windows descendant ownership rejects reused root and intermediate parent PIDs", () => {
+  const processInfo = (pid, ppid, startTime) => ({
+    pid, ppid, pgid: null, startTime,
+    executable: `C:\\apps\\${pid}.exe`, command: "process",
+  });
+  // Adjacent Windows ticks exceed Number's exact integer range. Comparing them
+  // as Numbers would accept the older process under a reused parent PID.
+  const root = processInfo(100, 1, "638965632000000005");
+  const inventory = [
+    root,
+    processInfo(101, 100, "638965632000000004"),
+    processInfo(102, 101, "638965632000000007"),
+    processInfo(110, 100, "638965632000000010"),
+    processInfo(111, 110, "638965632000000009"),
+    processInfo(112, 111, "638965632000000011"),
+    // CIM timestamps can coincide: equal creation times remain eligible.
+    processInfo(120, 110, "638965632000000010"),
+    processInfo(130, 1, "638965632000000020"),
+  ];
+  const descendants = descendantProcesses(inventory, root.pid, { nativePlatform: "win32" });
+  assert.deepEqual(descendants.map(({ pid }) => pid), [110, 120]);
+  assert.deepEqual(selectCleanupCandidates(inventory, {
+    rootIdentity: root,
+    originPid: root.pid,
+    nativePlatform: "win32",
+  }).map(({ pid }) => pid), [100, 110, 120]);
+
+  const afterExit = inventory.filter(({ pid }) => ![100, 110, 120].includes(pid));
+  assert.deepEqual(residualProcesses(afterExit, { trackedProcesses: [root, ...descendants] }), []);
+  assert.deepEqual(residualProcesses([inventory[3], ...afterExit], {
+    trackedProcesses: [root, ...descendants],
+  }).map(({ pid }) => pid), [110], "a genuine surviving descendant must still fail the oracle");
+});
+
+test("Windows descendant ownership requires valid creation identities on every edge", () => {
+  const root = { pid: 100, ppid: 1, startTime: "638965632000000005" };
+  const child = { pid: 110, ppid: 100, startTime: "638965632000000010" };
+  const options = { nativePlatform: "win32" };
+  assert.deepEqual(descendantProcesses([child], root.pid, options), [], "an absent root has no ancestry authority");
+  for (const startTime of [undefined, null, "", "invalid", "-1", 638965632000000000]) {
+    assert.deepEqual(descendantProcesses([{ ...root, startTime }, child], root.pid, options), []);
+    assert.deepEqual(descendantProcesses([root, { ...child, startTime }], root.pid, options), []);
+  }
 });
 
 test("live-root ownership excludes same-command and path-prefix sentinels", () => {
@@ -809,7 +854,10 @@ test("#194 a permanently pending fonts-ready promise cannot block layout samplin
     document: {
       fonts: { ready: never },
       querySelector: (selector) => (
-        selector === ".owb-org-module__left" || selector === ".owb-org-module__pane--right > .owb-turn-panel"
+        selector === ".owb-app .ui-app-shell__sidebar" ||
+        selector === ".ui-app-shell__sidebar" ||
+        selector === ".owb-app .ui-app-shell__main" ||
+        selector === ".ui-app-shell__main"
           ? column
           : null
       ),
@@ -891,7 +939,7 @@ function runLayoutMeasure({ geometry, fonts, driveWithRaf = false }) {
     clearTimeout: () => {},
     document: {
       querySelector(selector) {
-        const isLeft = selector === ".owb-org-module__left";
+        const isLeft = selector === ".owb-app .ui-app-shell__sidebar" || selector === ".ui-app-shell__sidebar";
         // readColumns queries the left column first, so that query is what
         // advances the sample; the right column belongs to the same one.
         if (isLeft) {

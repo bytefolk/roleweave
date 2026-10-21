@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 import type { EngineEvent, GroupConversation, GroupTimeline, TurnRecord, TurnRunDriver, TurnRunRequest, TurnRunResult } from "@roleweave/shared";
-import { api, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
+import { RelayStopCoordinator } from "../src/groups/relay-stop.js";
+import type { LayaAsk } from "../src/laya/client.js";
+import { api, connectSse, copyExampleWorkspace, startTestServer, type TestServer } from "./helpers.js";
 
 class ControlledDriver implements TurnRunDriver {
   calls: TurnRunRequest[] = [];
@@ -243,4 +246,264 @@ test("changing workspaces while a relay runs cannot dispatch the next employee i
     await open(server, workspace);
     await settled(server, group);
   } finally { driver.settleAll(); await server.close(); await fs.rm(workspace, { recursive: true, force: true }); await fs.rm(otherWorkspace, { recursive: true, force: true }); }
+});
+
+test("relay STOP advice pauses for owner confirmation without rewriting accepted spawns (#469)", async () => {
+  const previousEnabled = process.env.ROLEWEAVE_LAYA_ENABLED;
+  const previousFetch = globalThis.fetch;
+  const adviceRequests: Array<Record<string, unknown>> = [];
+  process.env.ROLEWEAVE_LAYA_ENABLED = "true";
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    if (!String(input).startsWith("http://127.0.0.1:18081/v1/systemone")) {
+      return previousFetch(input, init);
+    }
+    adviceRequests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    return new Response(JSON.stringify({
+      answers: { stop: { type: "noul", probability: 0.95 } },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  const driver = new ControlledDriver();
+  const { server, workspace, group } = await setup(driver);
+  const sse = connectSse(server.baseUrl, server.token);
+  try {
+    const accepted = await api(server.baseUrl, "/groups/" + group.conversationRef + "/turns", {
+      method: "POST", token: server.token,
+      body: { input: "Write then stop if complete", engine: "qoder", mentions: group.members, mode: "relay" },
+    });
+    assert.equal(accepted.status, 202);
+    const acceptedBody = accepted.body as { messageId: string; spawns: Array<{ turnId: string; positionId: string }> };
+    const messageFile = path.join(
+      workspace, ".roleweave", "groups", group.conversationRef, "messages", `${acceptedBody.messageId}.json`,
+    );
+    const acceptedBytes = await fs.readFile(messageFile);
+
+    await until(() => driver.calls.length === 1, "first relay employee should start");
+    driver.finish(0, "SECRET-COMPLETED-OUTPUT");
+    const suggested = await sse.waitForEvent("group.relay.stop.suggested", 5_000);
+    const suggestedPayload = (JSON.parse(suggested.data) as { payload: Record<string, unknown> }).payload;
+    assert.equal(suggestedPayload.messageId, acceptedBody.messageId);
+    assert.equal(suggestedPayload.remainingCount, 1);
+    assert.equal(driver.calls.length, 1, "positive advice must pause before the next accepted leg");
+
+    assert.equal(adviceRequests.length, 1);
+    assert.deepEqual(adviceRequests[0]?.state, {
+      status: "completed",
+      errorCode: null,
+      hasOutput: true,
+    });
+    assert.doesNotMatch(JSON.stringify(adviceRequests[0]), /SECRET-COMPLETED-OUTPUT/);
+
+    const unsafe = await api(server.baseUrl, `/groups/${group.conversationRef}/relay-stop`, {
+      method: "POST", token: server.token,
+      body: { messageId: "../escape", decision: "stop" },
+    });
+    assert.equal(unsafe.status, 400);
+    assert.equal(driver.calls.length, 1, "an unsafe decision identity must not resolve the live gate");
+
+    const stopped = await api(server.baseUrl, `/groups/${group.conversationRef}/relay-stop`, {
+      method: "POST", token: server.token,
+      body: { messageId: acceptedBody.messageId, decision: "stop" },
+    });
+    assert.equal(stopped.status, 200, JSON.stringify(stopped.body));
+    const turns = await settled(server, group);
+    assert.equal(driver.calls.length, 1, "owner STOP must not start the remaining leg");
+    assert.equal(turns.find((turn) => turn.positionId === "release-engineer")?.error?.code, "group_relay_stopped");
+    assert.deepEqual(await fs.readFile(messageFile), acceptedBytes, "the durable 202 message and spawns are immutable");
+  } finally {
+    sse.close();
+    driver.settleAll();
+    await settled(server, group).catch(() => undefined);
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+    globalThis.fetch = previousFetch;
+    if (previousEnabled === undefined) delete process.env.ROLEWEAVE_LAYA_ENABLED;
+    else process.env.ROLEWEAVE_LAYA_ENABLED = previousEnabled;
+  }
+});
+
+test("relay STOP advice resumes mention order after explicit Continue (#469)", async () => {
+  const driver = new ControlledDriver();
+  const { server, workspace, group } = await setup(driver);
+  const sse = connectSse(server.baseUrl, server.token);
+  server.ctx.relayStop = new RelayStopCoordinator({
+    env: { ROLEWEAVE_LAYA_ENABLED: "true" },
+    ask: async () => ({ stop: { type: "noul", probability: 0.9 } }),
+  });
+  try {
+    const accepted = await api(server.baseUrl, `/groups/${group.conversationRef}/turns`, {
+      method: "POST", token: server.token,
+      body: { input: "Write then review", engine: "qoder", mentions: group.members, mode: "relay" },
+    });
+    assert.equal(accepted.status, 202);
+    const messageId = (accepted.body as { messageId: string }).messageId;
+    await until(() => driver.calls.length === 1, "first relay employee should start");
+    driver.finish(0, "draft complete");
+    await sse.waitForEvent("group.relay.stop.suggested", 5_000);
+    assert.equal(driver.calls.length, 1);
+
+    const continued = await api(server.baseUrl, `/groups/${group.conversationRef}/relay-stop`, {
+      method: "POST", token: server.token, body: { messageId, decision: "continue" },
+    });
+    assert.equal(continued.status, 200);
+    await until(() => driver.calls.length === 2, "Continue should start the next mentioned employee");
+    driver.finish(1, "review complete");
+    assert.ok((await settled(server, group)).every((turn) => turn.status === "completed"));
+  } finally {
+    sse.close();
+    driver.settleAll();
+    await settled(server, group).catch(() => undefined);
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("relay STOP advice resumes mention order after the bounded timeout (#469)", async () => {
+  const driver = new ControlledDriver();
+  const { server, workspace, group } = await setup(driver);
+  const sse = connectSse(server.baseUrl, server.token);
+  server.ctx.relayStop = new RelayStopCoordinator({
+    env: { ROLEWEAVE_LAYA_ENABLED: "true" },
+    ask: async () => ({ stop: { type: "noul", probability: 0.9 } }),
+    timeoutMs: 25,
+  });
+  try {
+    await api(server.baseUrl, `/groups/${group.conversationRef}/turns`, {
+      method: "POST", token: server.token,
+      body: { input: "Timed relay", engine: "qoder", mentions: group.members, mode: "relay" },
+    });
+    await until(() => driver.calls.length === 1, "first relay employee should start");
+    driver.finish(0, "draft complete");
+    await sse.waitForEvent("group.relay.stop.suggested", 5_000);
+    await until(() => driver.calls.length === 2, "timeout should resume the original mention order");
+    driver.finish(1, "review complete");
+    assert.ok((await settled(server, group)).every((turn) => turn.status === "completed"));
+  } finally {
+    sse.close();
+    driver.settleAll();
+    await settled(server, group).catch(() => undefined);
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("relay STOP advice resumes mention order when the last renderer disconnects (#469)", async () => {
+  const driver = new ControlledDriver();
+  const { server, workspace, group } = await setup(driver);
+  const sse = connectSse(server.baseUrl, server.token);
+  server.ctx.relayStop = new RelayStopCoordinator({
+    env: { ROLEWEAVE_LAYA_ENABLED: "true" },
+    ask: async () => ({ stop: { type: "noul", probability: 0.9 } }),
+  });
+  try {
+    await api(server.baseUrl, `/groups/${group.conversationRef}/turns`, {
+      method: "POST", token: server.token,
+      body: { input: "Disconnected relay", engine: "qoder", mentions: group.members, mode: "relay" },
+    });
+    await until(() => driver.calls.length === 1, "first relay employee should start");
+    driver.finish(0, "draft complete");
+    await sse.waitForEvent("group.relay.stop.suggested", 5_000);
+    sse.close();
+    await until(() => driver.calls.length === 2, "disconnect should resume the original mention order");
+    driver.finish(1, "review complete");
+    assert.ok((await settled(server, group)).every((turn) => turn.status === "completed"));
+  } finally {
+    sse.close();
+    driver.settleAll();
+    await settled(server, group).catch(() => undefined);
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("relay STOP advice cannot open a gate after the last renderer disconnects during inference (#469)", async () => {
+  const driver = new ControlledDriver();
+  const { server, workspace, group } = await setup(driver);
+  const sse = connectSse(server.baseUrl, server.token);
+  let resolveAdvice!: () => void;
+  let adviceStarted = false;
+  let beginCalls = 0;
+  const coordinator = new RelayStopCoordinator({
+    env: { ROLEWEAVE_LAYA_ENABLED: "true" },
+    ask: async () => {
+      adviceStarted = true;
+      await new Promise<void>((resolve) => { resolveAdvice = resolve; });
+      return { stop: { type: "noul", probability: 0.9 } };
+    },
+  });
+  const begin = coordinator.begin.bind(coordinator);
+  coordinator.begin = (...args) => {
+    beginCalls += 1;
+    return begin(...args);
+  };
+  server.ctx.relayStop = coordinator;
+  try {
+    await api(server.baseUrl, `/groups/${group.conversationRef}/turns`, {
+      method: "POST", token: server.token,
+      body: { input: "Disconnect during advice", engine: "qoder", mentions: group.members, mode: "relay" },
+    });
+    await until(() => driver.calls.length === 1, "first relay employee should start");
+    driver.finish(0, "draft complete");
+    await until(() => adviceStarted, "STOP inference should start");
+    sse.close();
+    await until(() => server.ctx.bus.listenerCount === 0, "the renderer listener should detach");
+    resolveAdvice();
+    await until(() => beginCalls > 0 || driver.calls.length === 2, "relay should either resume or incorrectly gate");
+    assert.equal(beginCalls, 0, "a completed inference must re-check renderer availability before gating");
+    assert.equal(driver.calls.length, 2);
+    driver.finish(1, "review complete");
+    assert.ok((await settled(server, group)).every((turn) => turn.status === "completed"));
+  } finally {
+    sse.close();
+    resolveAdvice?.();
+    coordinator.continueAll("disconnect");
+    driver.settleAll();
+    await settled(server, group).catch(() => undefined);
+    await server.close();
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("relay mention order is unchanged when STOP advice is disabled, abstains, is invalid, or fails (#469)", async () => {
+  const scenarios: Array<{ enabled: boolean; expectedCalls: number; ask: LayaAsk }> = [
+    { enabled: false, expectedCalls: 0, ask: async () => ({ stop: { type: "noul", probability: 0.9 } }) },
+    { enabled: true, expectedCalls: 1, ask: async () => null },
+    {
+      enabled: true,
+      expectedCalls: 1,
+      ask: async () => ({ stop: { type: "choice", selected: "stop", probabilities: { stop: 1 }, confidence: 1 } }),
+    },
+    { enabled: true, expectedCalls: 1, ask: async () => { throw new Error("Laya unavailable"); } },
+  ];
+  for (const scenario of scenarios) {
+    const driver = new ControlledDriver();
+    const { server, workspace, group } = await setup(driver);
+    const sse = connectSse(server.baseUrl, server.token);
+    let adviceCalls = 0;
+    server.ctx.relayStop = new RelayStopCoordinator({
+      env: { ROLEWEAVE_LAYA_ENABLED: scenario.enabled ? "true" : "false" },
+      ask: async (request) => {
+        adviceCalls += 1;
+        return scenario.ask(request);
+      },
+    });
+    try {
+      await api(server.baseUrl, `/groups/${group.conversationRef}/turns`, {
+        method: "POST", token: server.token,
+        body: { input: "Normal relay", engine: "qoder", mentions: group.members, mode: "relay" },
+      });
+      await until(() => driver.calls.length === 1, "first relay employee should start");
+      driver.finish(0, "draft complete");
+      await until(() => driver.calls.length === 2, "non-positive advice must not pause mention order");
+      driver.finish(1, "review complete");
+      assert.ok((await settled(server, group)).every((turn) => turn.status === "completed"));
+      assert.equal(adviceCalls, scenario.expectedCalls);
+    } finally {
+      sse.close();
+      driver.settleAll();
+      await settled(server, group).catch(() => undefined);
+      await server.close();
+      await fs.rm(workspace, { recursive: true, force: true });
+    }
+  }
 });
