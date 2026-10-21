@@ -45,4 +45,4 @@ Deploy matching renderer/IPC/server. Older strict readers may reject new records
 
 Phase 2b: dispatch an employee to review a pinned delivery version, with original criteria and source references while final acceptance stays with the human. It needs a separate review-attempt identity so review output cannot become the implementation delivery.
 
-Phase 3: participants and responsibilities, upstream/parallel dependencies, scoped state/artifact indexes, defined refresh and notification behavior. These remain necessary for every task to support collaborator context; project briefings alone do not claim that coverage.
+Phase 3 is implemented for project work items in #621: participants/responsibilities, scoped dependency and delivery evidence, fixed execution snapshots and current-state refresh. See [task-collaboration-context-v1.md](task-collaboration-context-v1.md) for the contract and its boundaries. Other task spines, automatic dispatch and live negotiation remain separate work.

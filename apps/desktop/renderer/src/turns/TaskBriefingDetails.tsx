@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useOwbLocale, useT } from "@roleweave/ui";
 import type { TaskBriefingSnapshot } from "@roleweave/shared";
 import "./task-briefing.css";
+import { TaskCollaborationView } from "../goals/TaskCollaborationDetails";
 
 /** Read only the execution snapshot; current project edits cannot change it. */
 export function TaskBriefingDetails({ snapshot, currentPlanVersion }: {
@@ -28,6 +29,7 @@ export function TaskBriefingDetails({ snapshot, currentPlanVersion }: {
       <strong>{t("taskBriefing.criteria")}</strong>
       {p.acceptanceCriteria.length ? <ol>{p.acceptanceCriteria.map((criterion, index) => <li key={index}>{criterion}</li>)}</ol>
         : <p>{t("taskBriefing.noCriteria")}</p>}
+      {p.collaboration && <TaskCollaborationView context={p.collaboration} />}
     </div>}
   </details>;
 }

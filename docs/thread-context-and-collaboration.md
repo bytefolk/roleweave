@@ -60,3 +60,12 @@ See [the implementation contract](design/relay-handoff-notes-v1.md) for the payl
 Project Run explicitly requests a server-owned `task-briefing.v1` snapshot using the expected workspace and goal revision. It includes the assigned goal/task requirements and full filtered acceptance criteria. Required briefing bytes reserve space before optional history; oversize or stale plans fail before execution. The same canonical payload is injected and saved on the turn, retained across retries/approval resumes and shown in personal conversations and human acceptance. Current review criteria remain distinct from execution-time criteria. Historical deliveries without snapshots remain reviewable.
 
 See [project-task-briefings-v1.md](design/project-task-briefings-v1.md) for request validation, budgets, identity/retry rules, compatibility and the remaining roadmap.
+
+
+## Task collaborators and dependencies (#621)
+
+Project work items can record explicit collaborators/responsibilities and same-project predecessor task IDs. A validated acyclic graph and authoritative latest-delivery/human-acceptance checks gate execution. Configured tasks cannot bypass the gate with unbound goal-tag execution. Manual done states remain distinct from accepted execution evidence.
+
+The task briefing now captures the same versioned collaboration context injected into input. Direct public delivery excerpts/digests reserve source slots and deduplicate against optional history; budgets remain shared. Current task views refresh through existing events/reconnection while running and historical snapshots remain fixed. Human review can compare saved and current collaboration. Omitted relationship fields preserve existing configuration; explicit empty arrays clear it.
+
+See [task-collaboration-context-v1.md](design/task-collaboration-context-v1.md) for limits, readiness, validation, compatibility and rollback.

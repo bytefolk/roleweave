@@ -91,6 +91,8 @@ export function materializeThreadContext(options: {
   relay?: RelayAssemblyContext;
   /** Server-owned mandatory task requirements, reserved before optional history. */
   requiredContext?: string;
+  /** Source identities already present in the required collaboration snapshot. */
+  requiredSourceIds?: readonly string[];
 }): { input: string; metadata: ThreadContextMetadata; relayHandoff?: RelayHandoffSnapshot } {
   if (options.relay && options.requiredContext) throw new OrgApiError(errorCodes.turn_request_invalid, 400, "project briefings and relay execution require separate task contexts");
   if (options.relay) return materializeRelayContext(options as typeof options & { relay: RelayAssemblyContext });
@@ -103,7 +105,11 @@ export function materializeThreadContext(options: {
     truncated ||= result !== safe;
     return result;
   };
-  const trusted = options.enabled ? options.turns.filter((turn) => turn.status === "completed") : [];
+  const requiredSources = new Set(options.requiredSourceIds);
+  if (requiredSources.size > MAX_SOURCE_TURNS || (requiredSources.size && !options.requiredContext)) {
+    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "invalid required context source budget");
+  }
+  const trusted = options.enabled ? options.turns.filter((turn) => turn.status === "completed" && !requiredSources.has(turn.turnId)) : [];
   const history: Entry[] = trusted.map((turn) => ({ kind: "history", label: turn.turnId, input: clean(turn.input), output: clean(visibleOutput(turn.output)) }));
   const handoffs: Entry[] = (options.supplementalContext ?? []).map((turn) => {
     redacted ||= turn.redacted ?? false;
@@ -119,7 +125,7 @@ export function materializeThreadContext(options: {
     throw new OrgApiError(errorCodes.turn_request_invalid, 400, "current input leaves insufficient space for required project briefing; shorten the request");
   }
   const tryAdd = (entry: Entry, prepend = false): boolean => {
-    if (selected.length >= MAX_SOURCE_TURNS) return false;
+    if (selected.length + requiredSources.size >= MAX_SOURCE_TURNS) return false;
     const next = prepend ? [entry, ...selected] : [...selected, entry];
     if (bytes(render(next)) > budget) return false;
     if (prepend) selected.unshift(entry); else selected.push(entry);
@@ -144,7 +150,7 @@ export function materializeThreadContext(options: {
     input: `${context}${options.input}`,
     metadata: {
       schemaVersion: "thread-context.v1", enabled: options.enabled,
-      sourceTurnCount: ordered.length, omittedTurnCount: omitted,
+      sourceTurnCount: ordered.length + requiredSources.size, omittedTurnCount: omitted,
       contextBytes: bytes(context),
       contextDigest: `sha256:${crypto.createHash("sha256").update(context, "utf8").digest("hex")}`,
       summary: bounded(ordered.map((entry) => `${entry.kind}: ${entry.input}\nAssistant: ${entry.output}`).join("\n\n"), 1024),

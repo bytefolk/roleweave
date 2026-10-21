@@ -7,6 +7,7 @@
 
 ### Added
 
+- #621: Add explicit task collaborators and responsibilities, validated dependency graphs, acceptance-based readiness, scoped delivery context and immutable execution snapshots with live project/review inspection.
 - Versioned project task briefings: server-owned goal/task requirements and acceptance criteria enter execution and persist for conversation/review inspection, with stale-plan protection and preserved retry/approval bindings (#619).
 - #617：接力任务支持可选本步要求，以及与模型输入一致的交接快照；可查看前序结果来源、裁剪和过滤提示，共享现有上下文预算并去除重复来源。新增本地记录字段，降级旧版本前请备份工作区。
 
