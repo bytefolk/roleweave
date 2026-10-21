@@ -8,6 +8,8 @@ import type {
   GoalWorkItem,
 } from "@roleweave/shared/goals";
 import "./task-acceptance.css";
+import { TaskBriefingDetails } from "../turns/TaskBriefingDetails";
+import { TaskCollaborationDetails } from "./TaskCollaborationDetails";
 
 interface TaskAcceptanceDrawerProps {
   detail: GoalDetail;
@@ -82,6 +84,10 @@ export function TaskAcceptanceDrawer({
   }, []);
 
   const currentDelivery = own(detail.taskDeliveries, item.taskId);
+  const currentCollaboration = own(detail.taskCollaborations, item.taskId);
+  const usedCollaboration = draft.delivery?.taskBriefing?.payload.collaboration;
+  const collaborationChanged = currentCollaboration && usedCollaboration &&
+    JSON.stringify({ ...currentCollaboration, capturedAt: "" }) !== JSON.stringify({ ...usedCollaboration, capturedAt: "" });
   const taskExists = !!detail.goal.workItems?.some((task) => task.taskId === item.taskId);
   const stale = conflict || draft.version !== detail.goal.updatedAt ||
     !taskExists ||
@@ -244,6 +250,11 @@ export function TaskAcceptanceDrawer({
             <dt>{t("project.acceptance.turn")}</dt><dd>{draft.delivery.source.turnId}</dd>
           </dl>
           <pre aria-label={t("project.acceptance.output")}>{outputText(draft.delivery.output)}</pre>
+          {draft.delivery.taskBriefing ? <TaskBriefingDetails snapshot={draft.delivery.taskBriefing} currentPlanVersion={draft.version} />
+            : <p>{t("taskBriefing.unavailable")}</p>}
+          {collaborationChanged && <p role="status">{t("taskCollaboration.changed")}</p>}
+          {currentCollaboration && (!!usedCollaboration || currentCollaboration.dependencies.length > 0 || currentCollaboration.participants.length > 0 || currentCollaboration.dependents.length > 0) &&
+            <TaskCollaborationDetails context={currentCollaboration} title={t("taskCollaboration.current")} />}
         </section> : <p role="status" className="owb-project-notice">{t(unavailableKey)}</p>}
         {!saved && draft.delivery && <fieldset disabled={busy || stale} className="owb-task-acceptance__criteria">
           <legend>{t("project.acceptance.criteria")}</legend>

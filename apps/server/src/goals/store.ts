@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { projectTaskCollaboration } from "./collaboration.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -14,6 +15,7 @@ import {
   validateGoalActivity,
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
+  validateGoalWorkItems,
   validateGoalTaskAcceptanceCreateRequest,
   validateAcceptanceDecisionInput,
   type Goal,
@@ -207,7 +209,8 @@ export function projectTaskDeliveries(goal: Goal, turns: readonly TurnRecord[]):
       taskDeliveryUnavailable[item.taskId] = "output_missing";
     } else {
       taskDeliveries[item.taskId] = { source: { positionId: turn.positionId, turnId: turn.turnId,
-        sessionId: turn.conversationRef, outputDigest: digest(turn.output) }, output: turn.output, completedAt: turn.updatedAt };
+        sessionId: turn.conversationRef, outputDigest: digest(turn.output) }, output: turn.output, completedAt: turn.updatedAt,
+        ...(turn.taskBriefing ? { taskBriefing: turn.taskBriefing } : {}) };
     }
   }
   return { taskDeliveries, taskDeliveryUnavailable };
@@ -463,7 +466,9 @@ export class GoalStore {
     return this.exclusive(`goal\0${path.resolve(workspace)}\0${goalId}`, async () => {
       let goal = await this.get(workspace, goalId);
       const activity = await this.readActivity(workspace, goalId);
-      if (turns === undefined) return { goal, activity, executionUnavailable: true };
+      if (turns === undefined) return { goal, activity, executionUnavailable: true,
+        taskCollaborations: Object.fromEntries((goal.workItems ?? []).map(task => [task.taskId, projectTaskCollaboration(goal, task,
+          { deliveries: {}, executions: {}, tasksWithTurns: new Set(), historyAvailable: false })])) };
       const health = computeHealthFromTurns(goal, turns);
       if (health !== goal.health) {
         const updatedAt = new Date(Math.max(Date.now(), Date.parse(goal.updatedAt) + 1)).toISOString();
@@ -481,11 +486,16 @@ export class GoalStore {
         activity.push(healthActivity);
       }
       const overlay = await resolveLayaHealthOverlay(goal, turns, deps);
+      const deliveries = projectTaskDeliveries(goal, turns);
+      const executions = projectTaskExecutions(goal, turns, isRunning);
+      const tasksWithTurns = new Set(turns.filter(turn => turn.goalId === goal.goalId).map(turn => turn.branchId).filter((id): id is string => !!id));
       return {
         goal,
         activity,
-        taskExecutions: projectTaskExecutions(goal, turns, isRunning),
-        ...projectTaskDeliveries(goal, turns),
+        taskExecutions: executions,
+        ...deliveries,
+        taskCollaborations: Object.fromEntries((goal.workItems ?? []).map(task => [task.taskId, projectTaskCollaboration(goal, task,
+          { deliveries: deliveries.taskDeliveries, executions, tasksWithTurns, historyAvailable: true })])),
         ...(overlay != null && overlay !== goal.health ? { healthOverlay: overlay } : {}),
       };
     });
@@ -501,6 +511,22 @@ export class GoalStore {
       if (parsed.value.expectedUpdatedAt !== undefined && parsed.value.expectedUpdatedAt !== existing.updatedAt) {
         throw goalConflict("goal changed since it was loaded; refresh before saving work items");
       }
+
+      // Older writers do not know relationship fields. Omitting them cannot
+      // silently remove a dependency gate; clearing requires explicit arrays.
+      if (parsed.value.workItems) {
+        const preserved = parsed.value.workItems.map(item => {
+          const previous = existing.workItems?.find(old => old.taskId === item.taskId);
+          return { ...item,
+            ...(item.participants === undefined && previous?.participants !== undefined ? { participants: previous.participants } : {}),
+            ...(item.dependsOn === undefined && previous?.dependsOn !== undefined ? { dependsOn: previous.dependsOn } : {}),
+          };
+        });
+        const checked = validateGoalWorkItems(preserved);
+        if (!checked.ok) throw goalRequestInvalid(checked.message);
+        parsed.value.workItems = checked.value;
+      }
+
       if (parsed.value.workItems?.some((item) => existing.branches.some((branch) => branch.branchId === item.taskId))) {
         throw goalRequestInvalid("work item identifiers must be distinct from existing branch identifiers");
       }

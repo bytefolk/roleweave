@@ -1,5 +1,7 @@
 import type { TurnRecordStatus } from "./turns.js";
 import type { TaskProgressSnapshot } from "./turn-progress.js";
+import type { TaskBriefingSnapshot } from "./task-briefing.js";
+import { taskParticipantError, taskDependencyGraphError, type TaskParticipant, type TaskCollaborationContext } from "./task-collaboration.js";
 import { validateAcceptanceDecisionInput, type AcceptanceDecision, type AcceptanceVerdict } from "./acceptance.js";
 
 /**
@@ -36,6 +38,7 @@ export interface GoalTaskAcceptanceSource {
 }
 
 export interface GoalTaskDelivery {
+  taskBriefing?: TaskBriefingSnapshot;
   source: GoalTaskAcceptanceSource;
   output: unknown;
   completedAt: string;
@@ -82,6 +85,8 @@ export type GoalWorkItemPriority = (typeof goalWorkItemPriorities)[number];
 
 /** Human-owned plan. Execution facts are projected separately from turn records. */
 export interface GoalWorkItem {
+  participants?: TaskParticipant[];
+  dependsOn?: string[];
   taskId: string;
   title: string;
   description?: string;
@@ -164,6 +169,7 @@ export interface GoalActivity {
 export type GoalSummary = Omit<Goal, "branches" | "workItems" | "taskAcceptances"> & { branchCount: number };
 
 export interface GoalDetail {
+  taskCollaborations?: Record<string, TaskCollaborationContext>;
   goal: Goal;
   activity: GoalActivity[];
   taskExecutions?: Record<string, GoalTaskExecution>;
@@ -364,7 +370,7 @@ export function validateGoalWorkItems(raw: unknown): GoalValidationResult<GoalWo
   for (let index = 0; index < list.value.length; index += 1) {
     const item = list.value[index];
     const field = `workItems[${index}]`;
-    if (!isRecord(item) || !keysMatch(item, ["taskId", "title", "status", "priority"], ["description", "assigneePositionId", "startDate", "dueDate"])) {
+    if (!isRecord(item) || !keysMatch(item, ["taskId", "title", "status", "priority"], ["description", "assigneePositionId", "startDate", "dueDate", "participants", "dependsOn"])) {
       return fail("goal_unknown_field", `${field} has unexpected or missing fields`);
     }
     // Match the existing turn branchId contract so every task can be executed.
@@ -401,8 +407,16 @@ export function validateGoalWorkItems(raw: unknown): GoalValidationResult<GoalWo
     if (result.startDate && result.dueDate && result.startDate > result.dueDate) {
       return fail("goal_invalid", `${field}.startDate must not be after dueDate`);
     }
+    if (item.participants !== undefined) {
+      const error = taskParticipantError(item.participants, result.assigneePositionId);
+      if (error) return fail("goal_invalid", error);
+      result.participants = item.participants as TaskParticipant[];
+    }
+    if (item.dependsOn !== undefined) result.dependsOn = item.dependsOn as string[];
     items.push(result);
   }
+  const relationError = taskDependencyGraphError(items);
+  if (relationError) return fail("goal_invalid", relationError);
   return { ok: true, value: items };
 }
 

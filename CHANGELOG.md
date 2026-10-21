@@ -9,6 +9,8 @@
 
 ### Added
 
+- #621: Add explicit task collaborators and responsibilities, validated dependency graphs, acceptance-based readiness, scoped delivery context and immutable execution snapshots with live project/review inspection.
+- #619: Add versioned project task briefings: server-owned requirements and acceptance criteria enter execution and persist for conversation/review inspection, with stale-plan protection and preserved retry/approval bindings.
 - #617: Add optional per-step relay requirements and persisted handoff snapshots matching model input, with source identities, filtering/truncation notices and shared context budgets. New local record fields can be rejected by older strict readers; retain a workspace backup for downgrades.
 - #615: Show per-task execution progress in project cards, schedule rows and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect and keep completed execution separate from delivery acceptance.
 - #467: Add project-level, opt-in delivery preflight. Explicit versioned document references are checked for structure, broken links, version conflicts and modification time, without reading document bodies, calling Laya, changing goal status/health or issuing an overall acceptance decision.

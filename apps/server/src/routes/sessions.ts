@@ -1,6 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { OrgApiError, ATTACHMENT_MAX_COUNT, errorCodes, turnEngines } from "@roleweave/shared";
-import type { TurnEngine } from "@roleweave/shared";
+import { OrgApiError, ATTACHMENT_MAX_COUNT, errorCodes, turnEngines, isTaskBriefingRequest, type TaskBriefingRequest, type TurnEngine } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { assertSessionId, UUID_PATTERN } from "../sessions/store.js";
@@ -40,6 +39,7 @@ function parseEmpty(raw: unknown): void {
 }
 
 function parseSessionTurn(raw: unknown): {
+  taskBriefing?: TaskBriefingRequest;
   input: string;
   engine: TurnEngine;
   pendingApproval?: TurnPendingApproval;
@@ -55,12 +55,12 @@ function parseSessionTurn(raw: unknown): {
       "session turn request must be a JSON object",
     );
   }
-  const allowedKeys = new Set(["input", "engine", "pendingApproval", "goalId", "branchId", "retryOf", "attachmentIds"]);
+  const allowedKeys = new Set(["input", "engine", "pendingApproval", "goalId", "branchId", "retryOf", "attachmentIds", "taskBriefing"]);
   if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
     throw new OrgApiError(
       errorCodes.turn_request_invalid,
       400,
-      "session turn accepts input, engine, and optional pendingApproval, goalId, branchId, retryOf, attachmentIds",
+      "session turn accepts input, engine, and optional pendingApproval, goalId, branchId, retryOf, attachmentIds, taskBriefing",
     );
   }
   if (typeof raw.input !== "string" || !Object.hasOwn(raw, "engine")) {
@@ -94,6 +94,9 @@ function parseSessionTurn(raw: unknown): {
     throw new OrgApiError(errorCodes.turn_request_invalid, 400, "branchId must be a bounded alphanumeric string");
   }
   let attachmentIds: string[] | undefined;
+  if (raw.taskBriefing !== undefined && (!isTaskBriefingRequest(raw.taskBriefing) || typeof raw.goalId !== "string" || typeof raw.branchId !== "string")) {
+    throw new OrgApiError(errorCodes.turn_request_invalid, 400, "taskBriefing requires goalId, branchId and exactly the expected workspace and plan revision");
+  }
   if (raw.attachmentIds !== undefined) {
     if (!Array.isArray(raw.attachmentIds) || raw.attachmentIds.length === 0 || raw.attachmentIds.length > ATTACHMENT_MAX_COUNT) {
       throw new OrgApiError(errorCodes.turn_request_invalid, 400, `attachmentIds must be 1–${ATTACHMENT_MAX_COUNT} entries`);
@@ -101,6 +104,7 @@ function parseSessionTurn(raw: unknown): {
     attachmentIds = raw.attachmentIds.map((id) => assertAttachmentId(id));
   }
   return {
+    ...(raw.taskBriefing !== undefined ? { taskBriefing: raw.taskBriefing as TaskBriefingRequest } : {}),
     input: raw.input,
     engine: raw.engine as TurnEngine,
     ...(raw.pendingApproval !== undefined

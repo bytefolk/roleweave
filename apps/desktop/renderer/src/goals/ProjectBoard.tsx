@@ -18,6 +18,9 @@ import { useEngineLabel } from "../turns/engine-select";
 import { TaskAcceptanceDrawer } from "./TaskAcceptanceDrawer";
 import { ProjectTaskProgress } from "./ProjectTaskProgress";
 import { useProjectTaskProgress } from "./useProjectTaskProgress";
+import { taskDependenciesReady, taskParticipantError, taskDependencyGraphError } from "@roleweave/shared/task-collaboration";
+import { TaskCollaborationEditor } from "./TaskCollaborationEditor";
+import { TaskCollaborationDetails } from "./TaskCollaborationDetails";
 import "./project-board.css";
 
 export interface ProjectBoardProps {
@@ -188,6 +191,16 @@ export function ProjectBoard({
     !!own(accepted, item.taskId) || !!own(detail.taskExecutions, item.taskId) ||
     !!own(detail.taskDeliveries, item.taskId) || !!own(detail.taskDeliveryUnavailable, item.taskId) ||
     !!detail.executionUnavailable || !!detail.goal.taskAcceptances?.some((record) => record.taskId === item.taskId);
+  const dependenciesReady = (item: GoalWorkItem) => {
+    if (!item.dependsOn?.length) return true;
+    const context = own(detail.taskCollaborations, item.taskId);
+    return !!context && taskDependenciesReady(context);
+  };
+  const relations = (item: GoalWorkItem) => {
+    const context = own(detail.taskCollaborations, item.taskId);
+    return context && (context.participants.length > 0 || context.dependencies.length > 0 || context.dependents.length > 0 || context.omittedDependentCount > 0)
+      ? <TaskCollaborationDetails context={context} positionNames={positionNames} onOpenBoundSession={onOpenBoundSession} /> : null;
+  };
   const openAcceptance = (item: GoalWorkItem) =>
     setAcceptanceTask({ item: { ...item }, scopeKey });
   const acceptanceItem = acceptanceTask?.scopeKey === scopeKey
@@ -286,8 +299,11 @@ export function ProjectBoard({
     setEditor((current) =>
       current ? { ...current, item: { ...current.item, ...fields } } : current,
     );
+  const relationError = editor ? taskParticipantError(editor.item.participants ?? [], editor.item.assigneePositionId) ||
+    taskDependencyGraphError([...items.filter(item => item.taskId !== editor.item.taskId), editor.item]) : null;
   const validEditor =
     !!editor?.item.title.trim() &&
+    !relationError &&
     validDate(editor.item.startDate) &&
     validDate(editor.item.dueDate) &&
     !(
@@ -316,6 +332,8 @@ export function ProjectBoard({
         : {}),
       ...(draft.startDate ? { startDate: draft.startDate } : {}),
       ...(draft.dueDate ? { dueDate: draft.dueDate } : {}),
+      ...(draft.participants !== undefined ? { participants: draft.participants.map(p => ({ ...p, responsibility: p.responsibility.trim() })) } : {}),
+      ...(draft.dependsOn !== undefined ? { dependsOn: draft.dependsOn } : {}),
     };
     void save(
       editor.isNew
@@ -331,6 +349,10 @@ export function ProjectBoard({
   const deleteTask = async () => {
     if (!editor || editor.isNew || busy) return;
     const item = editor.item;
+    if (items.some(other => other.dependsOn?.includes(item.taskId))) {
+      setError(t("taskCollaboration.referencedDelete"));
+      return;
+    }
     if (
       !window.confirm(
         t("project.deleteTaskConfirm", { title: item.title }),
@@ -357,6 +379,8 @@ export function ProjectBoard({
     const isCurrent = () => alive.current && scopeRef.current === launchScope;
     if (
       !positionId ||
+      !workspaceKey ||
+      !dependenciesReady(item) ||
       !engine ||
       launchLocks.current.has(lockKey) ||
       executionOf(item)?.status === "running" ||
@@ -394,6 +418,7 @@ export function ProjectBoard({
         input: [item.title, item.description].filter(Boolean).join("\n\n"),
         goalId: detail.goal.goalId,
         branchId: item.taskId,
+        taskBriefing: { expectedWorkspacePath: workspaceKey, expectedUpdatedAt: detail.goal.updatedAt },
       });
       if (!isCurrent()) return;
       if (
@@ -401,7 +426,8 @@ export function ProjectBoard({
         result.status !== 201 &&
         result.status !== 202
       )
-        throw new Error(responseError(result.body, t("project.runError")));
+        throw new Error(result.body && typeof result.body === "object" && "code" in result.body && result.body.code === "goal_dependency_blocked"
+          ? t("taskCollaboration.blocked") : result.status === 409 ? t("taskBriefing.launchConflict") : responseError(result.body, t("project.runError")));
       setAccepted((current) => ({
         ...current,
         [item.taskId]: {
@@ -552,7 +578,7 @@ export function ProjectBoard({
               !!own(launching, item.taskId) ||
               running ||
               !engine ||
-              !!detail.executionUnavailable
+              !!detail.executionUnavailable || !workspaceKey || !dependenciesReady(item)
             }
             onClick={() => void launch(item)}
           >
@@ -560,6 +586,8 @@ export function ProjectBoard({
           </Button>
         </div>
         {acceptanceEntry(item)}
+        {relations(item)}
+        {!dependenciesReady(item) && <p className="owb-project-card__hint">{t("taskCollaboration.blocked")}</p>}
         {item.assigneePositionId && !engine && (
           <p className="owb-project-card__hint">
             {t("project.configureEngine")}
@@ -862,6 +890,7 @@ export function ProjectBoard({
                       <small>{label}</small>
                       {execution(item)}
                       {acceptanceEntry(item)}
+                      {relations(item)}
                     </div>
                     <div
                       className="owb-project-timeline__track"
@@ -1006,6 +1035,8 @@ export function ProjectBoard({
                   }
                 />
               </label>
+              <TaskCollaborationEditor item={editor.item} items={items} positionNames={positionNames} disabled={busy} onChange={patch} />
+              {relationError && <p role="alert">{t("taskCollaboration.invalid")}</p>}
               <div className="owb-project-form__row">
                 <label>
                   <span>{t("project.taskStatus")}</span>
