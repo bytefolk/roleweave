@@ -213,10 +213,10 @@ describe("P0 \u5ba1\u6279\u961f\u5217 (\u2461)", () => {
     expect(highCard).toBeInTheDocument();
     expect(within(highCard).getByTestId("approval-aging-overlay")).toHaveTextContent(/继续等待|wait/i);
     fireEvent.click(within(highCard).getByTestId("approval-aging-overlay"));
-    const drawer = screen.getByTestId("approval-detail-drawer");
+    const drawer = screen.getByTestId("approval-detail");
     expect(drawer).toBeInTheDocument();
-    expect(drawer.querySelector('[data-approval-id="high-pending"]')).not.toBeNull();
-    expect(drawer.querySelector('[data-approval-id="medium-pending"]')).toBeNull();
+    expect(drawer.getAttribute("data-approval-id")).toBe("high-pending");
+    expect(drawer.getAttribute("data-approval-id")).not.toBe("medium-pending");
     expect(onApprove).not.toHaveBeenCalled();
     expect(onDeny).not.toHaveBeenCalled();
   });
