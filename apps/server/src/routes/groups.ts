@@ -327,6 +327,16 @@ export async function handleGroupTurnPost(
   // Resolve and persist every member's binding before accepting the group
   // message. This makes the 202 spawn identities self-contained: a later
   // relay/recovery cannot be redirected by a global host selection.
+  if (body.goalId && body.branchId) {
+    let goal;
+    try { goal = await ctx.goalStore.get(workspace.dir, body.goalId); }
+    catch (error) { if (!(error instanceof OrgApiError) || error.code !== errorCodes.goal_missing) throw error; }
+    assertTurnWorkspace(ctx, workspace);
+    const task = goal?.workItems?.find(item => item.taskId === body.branchId);
+    if (task && ((task.participants?.length ?? 0) > 0 || (task.dependsOn?.length ?? 0) > 0)) {
+      throw new OrgApiError(errorCodes.goal_conflict, 409, "collaboration tasks require a personal project-task briefing; group dispatch cannot bypass their dependencies");
+    }
+  }
   const spawns = await Promise.all(body.mentions.map(async (positionId) => ({
     turnId: crypto.randomUUID(),
     positionId,

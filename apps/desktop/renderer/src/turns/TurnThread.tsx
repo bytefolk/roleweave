@@ -16,6 +16,7 @@ import type { TurnRecord } from "./types";
 import { DiffViewer } from "../approvals/DiffViewer";
 import { Tooltip } from "antd";
 import { hasUnexecutedToolText } from "@roleweave/shared/tool-output";
+import { TaskBriefingDetails } from "./TaskBriefingDetails";
 
 export interface TurnThreadProps {
   turns: TurnRecord[];
@@ -539,6 +540,7 @@ export function TurnThread({ turns, loading = false, onEdit, viewportMemory, ret
               </header>
 
               <ProgressTrail turn={turn} approvalDecided={decidedApprovalIds?.has(turn.id) === true || decidedApprovalIds?.has(turn.approvalRequest?.approvalId ?? "") === true} onOpenResource={onOpenResource} />
+              {turn.taskBriefing && <TaskBriefingDetails snapshot={turn.taskBriefing} />}
 
               {turn.output ? (
                 <section

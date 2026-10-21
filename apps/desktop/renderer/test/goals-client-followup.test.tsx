@@ -110,6 +110,28 @@ describe("live task board (#580)", () => {
 });
 
 describe("project execution refresh (#615)", () => {
+  it("refreshes collaboration readiness on events and reconnect without changing an execution snapshot", async () => {
+    const value = detail();
+    value.goal.workItems = [{ taskId: "dependent", title: "Dependent task", status: "todo", priority: "normal", assigneePositionId: "engineer", dependsOn: ["upstream"] }];
+    value.taskCollaborations = { dependent: { schemaVersion: "task-collaboration.v1", goalId: value.goal.goalId, taskId: "dependent", capturedAt: at,
+      participants: [], dependencies: [{ taskId: "upstream", title: "Upstream task", status: "todo", readiness: "pending" }], dependents: [], omittedDependentCount: 0, redacted: false } };
+    const listeners = new Set<(event: unknown) => void>();
+    let reconnect: (state: "connected" | "connecting") => void = () => {};
+    const bridge = install(value, { onEvent: vi.fn(fn => { listeners.add(fn); return () => listeners.delete(fn); }),
+      onSseStatus: vi.fn(fn => { reconnect = fn; return () => {}; }) });
+    render(<GoalsModule workspaceOpen workspaceKey="/workspace" presentation="projects" positionNames={{ engineer: "Engineer" }} positionEngines={{ engineer: "qoder" }} />);
+    const run = await screen.findByRole("button", { name: "执行任务：Dependent task" });
+    expect(run).toBeDisabled();
+    const ready = structuredClone(value);
+    ready.taskCollaborations!.dependent.dependencies[0] = { taskId: "upstream", title: "Upstream task", status: "done", readiness: "manual_done" };
+    bridge.goal.mockResolvedValue({ status: 200, body: ready });
+    await act(async () => listeners.forEach(fn => fn({ type: "goal.updated", payload: { workspacePath: "/workspace" } })));
+    await waitFor(() => expect(run).toBeEnabled());
+    bridge.goal.mockResolvedValue({ status: 200, body: value });
+    await act(async () => reconnect("connected"));
+    await waitFor(() => expect(run).toBeDisabled());
+    expect(value.taskCollaborations!.dependent.dependencies[0].readiness).toBe("pending");
+  });
   it("recovers on reconnect and terminal events without treating foreign workspace events as local", async () => {
     const value = detail();
     value.goal.workItems = [{ taskId: "project-task", title: "Progress task", status: "todo", priority: "normal", assigneePositionId: "engineer" }];
