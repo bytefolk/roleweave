@@ -5,29 +5,29 @@
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-21
+
 ### Added
 
 - #621: Add explicit task collaborators and responsibilities, validated dependency graphs, acceptance-based readiness, scoped delivery context and immutable execution snapshots with live project/review inspection.
-- Versioned project task briefings: server-owned goal/task requirements and acceptance criteria enter execution and persist for conversation/review inspection, with stale-plan protection and preserved retry/approval bindings (#619).
-- #617：接力任务支持可选本步要求，以及与模型输入一致的交接快照；可查看前序结果来源、裁剪和过滤提示，共享现有上下文预算并去除重复来源。新增本地记录字段，降级旧版本前请备份工作区。
-
-### Added
-
-- #615: Show per-task execution progress in project cards, schedule rows, and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect, and keep completed execution separate from delivery acceptance.
-- #466：审批队列和详情展示可选 Jev 老化建议（`nudge` / `wait` / `discuss-close`），仅为文案。出站载荷只有 `{ createdAt, now, decision.kind, risk }`。overlay 不得隐藏 pending high，不得 POST decision，点击只打开事项。过期仍走现有 clock helpers。`ROLEWEAVE_LAYA_ENABLED` 默认关。https://github.com/bytefolk/roleweave/issues/422
+- #619: Add versioned project task briefings: server-owned requirements and acceptance criteria enter execution and persist for conversation/review inspection, with stale-plan protection and preserved retry/approval bindings.
+- #617: Add optional per-step relay requirements and persisted handoff snapshots matching model input, with source identities, filtering/truncation notices and shared context budgets. New local record fields can be rejected by older strict readers; retain a workspace backup for downgrades.
+- #615: Show per-task execution progress in project cards, schedule rows and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect and keep completed execution separate from delivery acceptance.
+- #467: Add project-level, opt-in delivery preflight. Explicit versioned document references are checked for structure, broken links, version conflicts and modification time, without reading document bodies, calling Laya, changing goal status/health or issuing an overall acceptance decision.
+- #466: Show optional approval aging advice in the queue and details when the default-off Laya integration is enabled. Advice uses only creation time, current time, decision kind and risk; it cannot hide high-risk pending approvals or submit a decision.
 
 ### Fixed
 
-- Explain Codex ChatGPT-login model rejections with localized recovery and distinguish model catalog discovery from verified access (#613).
-- #615: Validate Windows process ancestry by creation time so reused parent PIDs cannot attach unrelated processes to the packaged-app smoke test or its cleanup tree.
-- #611: Preserve complete Codex employee questions and thread context on Windows by sending prompts through stdin. Chinese, multiline and long requests no longer lose their content through `.cmd` launchers; input-pipe failures produce a typed error.
-- #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
+- #613: Explain Codex ChatGPT-login model rejections with localized recovery and distinguish catalog discovery from verified inference access. Keep the saved model and billing mode unchanged.
+- #615: Validate Windows process ancestry by creation time so reused parent PIDs cannot attach unrelated processes to packaged-app smoke tests or their cleanup tree.
+- #611: Preserve complete Codex employee questions and thread context on Windows by sending prompts through stdin. Chinese, multiline and long requests retain their content through command launchers; input-pipe failures produce a typed error.
+- #609: Refresh the Codex employee model picker from the installed CLI catalog, preserve saved selections and show stale or unavailable fallback status when discovery fails.
 
 ## [0.5.0] — 2026-10-16
 
 ### Added
 
-- #467：Goals 详情新增项目级 opt-in 的“交付预检”。用户为每条验收标准显式选择带版本 `DocRef` 的文档材料；预检只核对引用结构、断链、版本冲突和 mtime，不读取正文、不调用 Laya、不写 `goal.status` / `goal.health`，也不会产生整体通过结论。Refs #422。- Buyer delivery acceptance details in the existing approval contract; refined shared-resource browsing and image previews; CXO company scenarios, execution teams and collaboration runbooks.
+- Buyer delivery acceptance details in the existing approval contract; refined shared-resource browsing and image previews; CXO company scenarios, execution teams and collaboration runbooks.
 
 - 网盘面板支持直接选择并上传文件到 Mem，单文件最大 32 MiB，成功或去重后刷新清单；Windows 桌面向 WSL 控制面传送文件字节，文件路径留在桌面主进程。
 
