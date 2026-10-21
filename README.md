@@ -25,20 +25,20 @@ For example, an open-source maintenance team can have a repository owner with th
 
 The [CXO reference library and company scenarios](examples/cxo-company/README.md) provide 25 optional functional roles, a three-role starter company, a nine-role product company and a nineteen-role delivery company with fourteen professional roles. Four team runbooks demonstrate product, engineering, marketing and delivery coordination through existing group routes, explicit handoffs and operator-controlled review/repair. The synthetic tasks deliver read-only plans and code drafts, not a deployed product.
 
-The v0.5.0 source adds local WorkBuddy and Qwen Office client connections, improves Agent readiness checks, and refines employee settings, organization search, project layouts and rich conversation replies. See the [v0.5.0 notes](docs/releases/v0.5.0.md) for the release changes and [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits.
+The v0.6.0 source adds per-task execution progress, opt-in delivery preflight and approval aging advice. It also refreshes the Codex model catalog, explains account-specific model rejection, and preserves complete prompts on Windows. See the [v0.6.0 notes](docs/releases/v0.6.0.md) for the release changes and [continuing work with an AI team](docs/thread-context-and-collaboration.md) for usage and limits.
 
 Workspace auto-open diagnostics remain best-effort: an unavailable stderr stream does not turn a diagnostic write into a failed startup. The current source restores an accessible workspace you previously opened and honors explicit workspace overrides. Otherwise, it starts without a workspace; it does not create or open a demo automatically. This empty first-launch behavior ships with v0.2.0.
 
 ## Download
 
-RoleWeave is an **early preview**. This source targets **v0.5.0**. The versioned downloads below become available when publication completes; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
+RoleWeave is an **early preview**. This source targets **v0.6.0**. The versioned downloads below become available when publication completes; use the [latest published release](https://github.com/bytefolk/roleweave/releases/latest) until then.
 
 | Platform | Download |
 | --- | --- |
-| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.5.0/roleweave-0.5.0-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.5.0/roleweave-0.5.0-arm64.zip) |
-| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.5.0/roleweave-0.5.0-x64.exe) |
+| macOS, Apple Silicon | [DMG installer](https://github.com/bytefolk/roleweave/releases/download/v0.6.0/roleweave-0.6.0-arm64.dmg) · [ZIP archive](https://github.com/bytefolk/roleweave/releases/download/v0.6.0/roleweave-0.6.0-arm64.zip) |
+| Windows, x64 | [EXE installer](https://github.com/bytefolk/roleweave/releases/download/v0.6.0/roleweave-0.6.0-x64.exe) |
 
-See the [v0.5.0 release notes](docs/releases/v0.5.0.md) for changes and upgrade guidance and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
+See the [v0.6.0 release notes](docs/releases/v0.6.0.md) for changes and upgrade guidance and [all releases](https://github.com/bytefolk/roleweave/releases) for published packages. Intel Mac and Linux installers are not included in this release target.
 
 **Installation notes:** macOS packages are not Apple Developer ID-signed or notarized, and the Windows installer is not Authenticode-signed. Your operating system may show a security prompt on installation or first launch. The macOS update manifest has a separate cryptographic signature; this does not provide Apple code-signing trust. Windows updates use the HTTPS release feed and the installer's SHA-512 checksum, without publisher verification. Users of older Org Workbench development builds need to install RoleWeave manually once. Existing unsigned Windows builds that disable in-app installation also need one manual upgrade to a build containing this update change.
 

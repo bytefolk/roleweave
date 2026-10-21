@@ -5,23 +5,26 @@
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-21
+
 ### Added
 
-- #615: Show per-task execution progress in project cards, schedule rows, and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect, and keep completed execution separate from delivery acceptance.
-- #466：审批队列和详情展示可选 Jev 老化建议（`nudge` / `wait` / `discuss-close`），仅为文案。出站载荷只有 `{ createdAt, now, decision.kind, risk }`。overlay 不得隐藏 pending high，不得 POST decision，点击只打开事项。过期仍走现有 clock helpers。`ROLEWEAVE_LAYA_ENABLED` 默认关。https://github.com/bytefolk/roleweave/issues/422
+- #615: Show per-task execution progress in project cards, schedule rows and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect and keep completed execution separate from delivery acceptance.
+- #467: Add project-level, opt-in delivery preflight. Explicit versioned document references are checked for structure, broken links, version conflicts and modification time, without reading document bodies, calling Laya, changing goal status/health or issuing an overall acceptance decision.
+- #466: Show optional approval aging advice in the queue and details when the default-off Laya integration is enabled. Advice uses only creation time, current time, decision kind and risk; it cannot hide high-risk pending approvals or submit a decision.
 
 ### Fixed
 
-- Explain Codex ChatGPT-login model rejections with localized recovery and distinguish model catalog discovery from verified access (#613).
-- #615: Validate Windows process ancestry by creation time so reused parent PIDs cannot attach unrelated processes to the packaged-app smoke test or its cleanup tree.
-- #611: Preserve complete Codex employee questions and thread context on Windows by sending prompts through stdin. Chinese, multiline and long requests no longer lose their content through `.cmd` launchers; input-pipe failures produce a typed error.
-- #609: Refresh the Codex employee model picker from the installed CLI's model catalog, preserve saved selections, and show stale/unavailable fallback status instead of silently relying on an outdated disk cache.
+- #613: Explain Codex ChatGPT-login model rejections with localized recovery and distinguish catalog discovery from verified inference access. Keep the saved model and billing mode unchanged.
+- #615: Validate Windows process ancestry by creation time so reused parent PIDs cannot attach unrelated processes to packaged-app smoke tests or their cleanup tree.
+- #611: Preserve complete Codex employee questions and thread context on Windows by sending prompts through stdin. Chinese, multiline and long requests retain their content through command launchers; input-pipe failures produce a typed error.
+- #609: Refresh the Codex employee model picker from the installed CLI catalog, preserve saved selections and show stale or unavailable fallback status when discovery fails.
 
 ## [0.5.0] — 2026-10-16
 
 ### Added
 
-- #467：Goals 详情新增项目级 opt-in 的“交付预检”。用户为每条验收标准显式选择带版本 `DocRef` 的文档材料；预检只核对引用结构、断链、版本冲突和 mtime，不读取正文、不调用 Laya、不写 `goal.status` / `goal.health`，也不会产生整体通过结论。Refs #422。- Buyer delivery acceptance details in the existing approval contract; refined shared-resource browsing and image previews; CXO company scenarios, execution teams and collaboration runbooks.
+- Buyer delivery acceptance details in the existing approval contract; refined shared-resource browsing and image previews; CXO company scenarios, execution teams and collaboration runbooks.
 
 - 网盘面板支持直接选择并上传文件到 Mem，单文件最大 32 MiB，成功或去重后刷新清单；Windows 桌面向 WSL 控制面传送文件字节，文件路径留在桌面主进程。
 
@@ -73,7 +76,6 @@
 - #559：新增协作区人工验收契约，验收通过必须完整覆盖计划中的全部验收项；限制标识符、时间戳和产物路径，拒绝遗漏或越界的裁决。
 
 - #469：可选 Laya 接力停止建议。仅在 `ROLEWEAVE_LAYA_ENABLED` 开启、已完成步骤得到正向建议且仍有未执行步骤时暂停；桌面端由 owner 显式选择“停止剩余步骤”或“继续接力”。30 秒超时、SSE 断连、无效或失败建议均继续原 mention order；Laya 只接收 `status`、`errorCode`、`hasOutput`，不接收输入、输出或 handoff 文本。已接受的消息与 spawn 清单保持不可变。Refs #422。
->>>>>>> origin/main
 
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
 
