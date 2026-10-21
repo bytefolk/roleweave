@@ -8,6 +8,7 @@
 ### Added
 
 - #615: Show per-task execution progress in project cards, schedule rows, and the task editor. Reuse live stage events and exact persisted snapshots, recover on reconnect, and keep completed execution separate from delivery acceptance.
+- #466：审批队列和详情展示可选 Jev 老化建议（`nudge` / `wait` / `discuss-close`），仅为文案。出站载荷只有 `{ createdAt, now, decision.kind, risk }`。overlay 不得隐藏 pending high，不得 POST decision，点击只打开事项。过期仍走现有 clock helpers。`ROLEWEAVE_LAYA_ENABLED` 默认关。https://github.com/bytefolk/roleweave/issues/422
 
 ### Fixed
 
@@ -77,6 +78,7 @@
 - #559：新增协作区人工验收契约，验收通过必须完整覆盖计划中的全部验收项；限制标识符、时间戳和产物路径，拒绝遗漏或越界的裁决。
 
 - #469：可选 Laya 接力停止建议。仅在 `ROLEWEAVE_LAYA_ENABLED` 开启、已完成步骤得到正向建议且仍有未执行步骤时暂停；桌面端由 owner 显式选择“停止剩余步骤”或“继续接力”。30 秒超时、SSE 断连、无效或失败建议均继续原 mention order；Laya 只接收 `status`、`errorCode`、`hasOutput`，不接收输入、输出或 handoff 文本。已接受的消息与 spawn 清单保持不可变。Refs #422。
+>>>>>>> origin/main
 
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
 
