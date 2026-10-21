@@ -1,5 +1,6 @@
 import type { TurnRecordStatus } from "./turns.js";
 import type { TaskProgressSnapshot } from "./turn-progress.js";
+import type { TaskBriefingSnapshot } from "./task-briefing.js";
 import { validateAcceptanceDecisionInput, type AcceptanceDecision, type AcceptanceVerdict } from "./acceptance.js";
 
 /**
@@ -36,6 +37,7 @@ export interface GoalTaskAcceptanceSource {
 }
 
 export interface GoalTaskDelivery {
+  taskBriefing?: TaskBriefingSnapshot;
   source: GoalTaskAcceptanceSource;
   output: unknown;
   completedAt: string;

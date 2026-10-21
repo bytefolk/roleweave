@@ -23,6 +23,7 @@ export * from "./model-selection.js";
 export * from "./sessions.js";
 export * from "./groups.js";
 export * from "./relay-steps.js";
+export * from "./task-briefing.js";
 export * from "./docs.js";
 export * from "./vault.js";
 export * from "./vault-sync.js";

@@ -73,6 +73,11 @@
       "types": "./dist/relay-steps.d.ts",
       "import": "./dist/relay-steps.js",
       "require": "./relay-steps.cjs"
+    },
+    "./task-briefing": {
+      "types": "./dist/task-briefing.d.ts",
+      "import": "./dist/task-briefing.js",
+      "require": "./task-briefing.cjs"
     }
   },
   "files": [
@@ -80,6 +85,7 @@
     "position-id.cjs",
     "turn-engines.cjs",
     "pending-approval.cjs",
-    "relay-steps.cjs"
+    "relay-steps.cjs",
+    "task-briefing.cjs"
   ]
 }

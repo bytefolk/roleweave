@@ -357,6 +357,7 @@ export function ProjectBoard({
     const isCurrent = () => alive.current && scopeRef.current === launchScope;
     if (
       !positionId ||
+      !workspaceKey ||
       !engine ||
       launchLocks.current.has(lockKey) ||
       executionOf(item)?.status === "running" ||
@@ -394,6 +395,7 @@ export function ProjectBoard({
         input: [item.title, item.description].filter(Boolean).join("\n\n"),
         goalId: detail.goal.goalId,
         branchId: item.taskId,
+        taskBriefing: { expectedWorkspacePath: workspaceKey, expectedUpdatedAt: detail.goal.updatedAt },
       });
       if (!isCurrent()) return;
       if (
@@ -401,7 +403,7 @@ export function ProjectBoard({
         result.status !== 201 &&
         result.status !== 202
       )
-        throw new Error(responseError(result.body, t("project.runError")));
+        throw new Error(result.status === 409 ? t("taskBriefing.launchConflict") : responseError(result.body, t("project.runError")));
       setAccepted((current) => ({
         ...current,
         [item.taskId]: {
@@ -552,7 +554,7 @@ export function ProjectBoard({
               !!own(launching, item.taskId) ||
               running ||
               !engine ||
-              !!detail.executionUnavailable
+              !!detail.executionUnavailable || !workspaceKey
             }
             onClick={() => void launch(item)}
           >

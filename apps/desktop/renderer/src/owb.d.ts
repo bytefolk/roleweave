@@ -158,7 +158,7 @@ export interface OwbBridge {
   session(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
   sessionSetContext(request: { sessionId: string; enabled: boolean }): Promise<OwbApiResponse<WorkbenchSession>>;
   rotateSession(sessionId: string): Promise<OwbApiResponse<WorkbenchSession>>;
-  createSessionTurn(request: { sessionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval; goalId?: string; branchId?: string; retryOf?: string; attachmentIds?: string[] }): Promise<OwbApiResponse<TurnRecord>>;
+  createSessionTurn(request: { taskBriefing?: import("@roleweave/shared").TaskBriefingRequest; sessionId: string; input: string; engine: TurnEngine; pendingApproval?: TurnPendingApproval; goalId?: string; branchId?: string; retryOf?: string; attachmentIds?: string[] }): Promise<OwbApiResponse<TurnRecord>>;
   sessionTurnHistory(sessionId: string): Promise<OwbApiResponse<TurnHistory>>;
   uploadAttachment(request: { sessionId: string; fileName: string; mimeType: string; dataBase64: string }): Promise<OwbApiResponse<{ attachment: import("@roleweave/shared").TurnAttachment }>>;
   createGroup(request: { memberPositionIds: string[] }): Promise<OwbApiResponse<GroupConversation>>;

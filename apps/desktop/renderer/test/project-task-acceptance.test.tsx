@@ -81,6 +81,33 @@ describe("project task delivery acceptance", () => {
     expect(context.onRefresh).toHaveBeenCalledOnce();
   });
 
+  it("shows execution-time criteria alongside the current human review without substituting either version", async () => {
+    const value = detail();
+    value.taskDeliveries!["task-one"] = { ...delivery, taskBriefing: {
+      payload: { schemaVersion: "task-briefing.v1", goalId: "goal-one", taskId: "task-one", turnId: "turn-one", sessionId: "session-one",
+        positionId: "engineer", generatedAt: version, planUpdatedAt: "2026-10-06T00:00:00.000Z", goalTitle: "Original goal", goalDescription: "Original background",
+        taskTitle: "Original task", taskDescription: "Original assignment", acceptanceCriteria: ["Original execution criterion"], redacted: false },
+      payloadBytes: 0, payloadDigest: "sha256:fixture",
+    } };
+    const context = setup(value);
+    fireEvent.click(screen.getByText(/执行时的任务说明/));
+    expect(await screen.findByText("Original execution criterion")).toBeInTheDocument();
+    expect(screen.getByText(/当前项目计划已更新/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "The build works" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Original execution criterion" })).not.toBeInTheDocument();
+    confirmCriteria();
+    fireEvent.click(screen.getByRole("button", { name: "验收通过" }));
+    await waitFor(() => expect(context.createGoalTaskAcceptance).toHaveBeenCalledOnce());
+    expect(context.createGoalTaskAcceptance).toHaveBeenCalledWith(expect.objectContaining({ expectedUpdatedAt: version, source: delivery.source }));
+  });
+
+  it("explains the missing snapshot on historical deliveries while retaining human acceptance", () => {
+    setup();
+    expect(screen.getByText("该历史执行未保存任务说明快照。")).toBeInTheDocument();
+    confirmCriteria();
+    expect(screen.getByRole("button", { name: "验收通过" })).toBeEnabled();
+  });
+
   it("requires a reason for rejection and preserves unconfirmed criteria as failed verdicts", async () => {
     const createGoalTaskAcceptance = vi.fn().mockResolvedValue({ status: 201, body: { record: record("rejected") } });
     setup(detail(), { createGoalTaskAcceptance });

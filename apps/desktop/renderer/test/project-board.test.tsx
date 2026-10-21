@@ -78,6 +78,7 @@ function setup(
   const onOpenBoundSession = vi.fn();
   const props = {
     detail: value,
+    workspaceKey: "/workspaces/release",
     positionNames: { engineer: "Engineer", designer: "Designer" },
     positionEngines: { engineer: "codex" as const },
     onRefresh,
@@ -286,6 +287,7 @@ describe("ProjectBoard", () => {
       input: "Ship board\n\nBuild a working board",
       goalId: "goal-one",
       branchId: "task-one",
+      taskBriefing: { expectedWorkspacePath: "/workspaces/release", expectedUpdatedAt: detail().goal.updatedAt },
     });
     expect(context.createTurn).not.toHaveBeenCalled();
     expect(context.createSession).not.toHaveBeenCalled();
@@ -316,6 +318,15 @@ describe("ProjectBoard", () => {
         .closest(".ant-select"),
     ).toHaveTextContent("待办");
     expect(context.updateGoal).not.toHaveBeenCalled();
+  });
+
+  it("does not downgrade a stale briefing request into an unbound launch", async () => {
+    const createSessionTurn = vi.fn().mockResolvedValue({ status: 409, body: { code: "goal_conflict" } });
+    const context = setup(detail(), { createSessionTurn });
+    fireEvent.click(screen.getByRole("button", { name: "执行任务：Ship board" }));
+    expect(await screen.findByText("项目、任务分工或工作区已变化，请刷新后重新执行。")).toBeInTheDocument();
+    expect(createSessionTurn).toHaveBeenCalledOnce();
+    expect(context.createTurn).not.toHaveBeenCalled();
   });
 
   it("retires a local launch response when the server observes a newer execution", async () => {

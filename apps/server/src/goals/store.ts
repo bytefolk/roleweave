@@ -207,7 +207,8 @@ export function projectTaskDeliveries(goal: Goal, turns: readonly TurnRecord[]):
       taskDeliveryUnavailable[item.taskId] = "output_missing";
     } else {
       taskDeliveries[item.taskId] = { source: { positionId: turn.positionId, turnId: turn.turnId,
-        sessionId: turn.conversationRef, outputDigest: digest(turn.output) }, output: turn.output, completedAt: turn.updatedAt };
+        sessionId: turn.conversationRef, outputDigest: digest(turn.output) }, output: turn.output, completedAt: turn.updatedAt,
+        ...(turn.taskBriefing ? { taskBriefing: turn.taskBriefing } : {}) };
     }
   }
   return { taskDeliveries, taskDeliveryUnavailable };

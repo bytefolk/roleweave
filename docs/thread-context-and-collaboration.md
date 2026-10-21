@@ -53,3 +53,10 @@ The snapshot is saved before the model call and retained through terminal update
 `POST /groups/:conversationRef/turns` accepts optional `relaySteps: [{ positionId, instruction }]` only with `mode: "relay"`. Entries must be unique selected recipients with non-empty instructions. `GroupMessage.relaySteps` and `TurnRecord.relayHandoff` are additive local fields. New readers accept old records; older strict readers may reject the new fields. Keep a workspace backup for downgrades and do not strip stored evidence to simulate compatibility.
 
 See [the implementation contract](design/relay-handoff-notes-v1.md) for the payload, persistence and verification boundaries.
+
+
+## Project delegation briefing (#619)
+
+Project Run explicitly requests a server-owned `task-briefing.v1` snapshot using the expected workspace and goal revision. It includes the assigned goal/task requirements and full filtered acceptance criteria. Required briefing bytes reserve space before optional history; oversize or stale plans fail before execution. The same canonical payload is injected and saved on the turn, retained across retries/approval resumes and shown in personal conversations and human acceptance. Current review criteria remain distinct from execution-time criteria. Historical deliveries without snapshots remain reviewable.
+
+See [project-task-briefings-v1.md](design/project-task-briefings-v1.md) for request validation, budgets, identity/retry rules, compatibility and the remaining roadmap.

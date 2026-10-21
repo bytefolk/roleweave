@@ -8,6 +8,7 @@ import type {
   GoalWorkItem,
 } from "@roleweave/shared/goals";
 import "./task-acceptance.css";
+import { TaskBriefingDetails } from "../turns/TaskBriefingDetails";
 
 interface TaskAcceptanceDrawerProps {
   detail: GoalDetail;
@@ -244,6 +245,8 @@ export function TaskAcceptanceDrawer({
             <dt>{t("project.acceptance.turn")}</dt><dd>{draft.delivery.source.turnId}</dd>
           </dl>
           <pre aria-label={t("project.acceptance.output")}>{outputText(draft.delivery.output)}</pre>
+          {draft.delivery.taskBriefing ? <TaskBriefingDetails snapshot={draft.delivery.taskBriefing} currentPlanVersion={draft.version} />
+            : <p>{t("taskBriefing.unavailable")}</p>}
         </section> : <p role="status" className="owb-project-notice">{t(unavailableKey)}</p>}
         {!saved && draft.delivery && <fieldset disabled={busy || stale} className="owb-task-acceptance__criteria">
           <legend>{t("project.acceptance.criteria")}</legend>

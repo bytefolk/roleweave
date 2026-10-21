@@ -1,4 +1,5 @@
 const { isPositionId } = require("@roleweave/shared/position-id");
+const { isTaskBriefingRequest } = require("@roleweave/shared/task-briefing");
 const { validatePendingApproval } = require("./approval-ipc.cjs");
 
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -26,11 +27,11 @@ function validateSessionTurnRequest(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, response: invalid("turn_request_invalid", "session turn must be an object") };
   }
-  const allowedKeys = new Set(["sessionId", "input", "engine", "pendingApproval", "goalId", "branchId", "retryOf", "attachmentIds"]);
+  const allowedKeys = new Set(["sessionId", "input", "engine", "pendingApproval", "goalId", "branchId", "retryOf", "attachmentIds", "taskBriefing"]);
   if (Object.keys(value).some((k) => !allowedKeys.has(k))) {
     return {
       ok: false,
-      response: invalid("turn_request_invalid", "session turn accepts sessionId, input, engine, and optional pendingApproval, goalId, branchId, retryOf, attachmentIds"),
+      response: invalid("turn_request_invalid", "session turn accepts sessionId, input, engine, and optional pendingApproval, goalId, branchId, retryOf, attachmentIds, taskBriefing"),
     };
   }
   if (!validateSessionId(value.sessionId)) {
@@ -55,6 +56,9 @@ function validateSessionTurnRequest(value) {
   }
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   let attachmentIds;
+  if (value.taskBriefing !== undefined && (!isTaskBriefingRequest(value.taskBriefing) || typeof value.goalId !== "string" || typeof value.branchId !== "string")) {
+    return { ok: false, response: invalid("turn_request_invalid", "taskBriefing requires goalId, branchId and exactly the expected workspace and plan revision") };
+  }
   if (value.attachmentIds !== undefined) {
     if (!Array.isArray(value.attachmentIds) || value.attachmentIds.length === 0 || value.attachmentIds.length > 5) {
       return { ok: false, response: invalid("turn_request_invalid", "attachmentIds must be 1–5 entries") };
@@ -76,6 +80,7 @@ function validateSessionTurnRequest(value) {
     ok: true,
     sessionId: value.sessionId,
     request: {
+      ...(value.taskBriefing !== undefined ? { taskBriefing: value.taskBriefing } : {}),
       input: value.input,
       engine: value.engine,
       ...(pendingApproval !== undefined ? { pendingApproval } : {}),

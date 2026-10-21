@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   OrgApiError,
@@ -13,6 +14,8 @@ import type {
   TurnPendingApproval,
   TurnRecord,
   WorkbenchSession,
+  TaskBriefingRequest,
+  TaskBriefingSnapshot,
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
@@ -32,6 +35,7 @@ import type { TurnAttachment } from "@roleweave/shared";
 import { ATTACHMENT_MAX_COUNT } from "@roleweave/shared";
 import { assembleVaultContext } from "../vault/context.js";
 import { recordVaultUsage } from "../vault/receipts.js";
+import { createTaskBriefing, renderTaskBriefing, taskBriefingBinding } from "../turns/task-briefing.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
@@ -66,6 +70,8 @@ export function buildAttachmentContext(
 }
 
 export interface TurnPostBody {
+  /** Explicit project delegation; only the session route accepts this field. */
+  taskBriefing?: TaskBriefingRequest;
   /** Session retry association; never accepted by the bare or group routes. */
   retryOf?: string;
   positionId: string;
@@ -278,6 +284,18 @@ export async function executeTurn(
       if (body.input !== original.input) {
         throw new OrgApiError(errorCodes.turn_request_invalid, 400, "edited input must be submitted as a new task without retryOf");
       }
+      if (original.taskBriefing) {
+        const p = original.taskBriefing.payload;
+        if ((body.goalId !== undefined && body.goalId !== p.goalId) ||
+            (body.branchId !== undefined && body.branchId !== p.taskId) ||
+            (body.taskBriefing !== undefined && (body.taskBriefing.expectedUpdatedAt !== p.planUpdatedAt ||
+              path.resolve(body.taskBriefing.expectedWorkspacePath) !== path.resolve(workspace.dir)))) {
+          throw new OrgApiError(errorCodes.turn_request_invalid, 400, "retry must retain its original project task and plan revision");
+        }
+        body = { ...body, ...taskBriefingBinding(original, workspace.dir) };
+      } else if (body.taskBriefing) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "adding a project briefing requires a fresh task without retryOf");
+      }
     }
     // The renderer's engine value is only a first-use fallback for legacy
     // positions. Once a sidecar exists it is authoritative, including for
@@ -311,6 +329,23 @@ export async function executeTurn(
       ...(session !== undefined ? { sessionId: session.sessionId, conversationRef: session.sessionId } : {}),
     }) };
     const relay = options?.relay;
+    let taskBriefing: TaskBriefingSnapshot | undefined;
+    if (body.taskBriefing) {
+      if (!session || group || !body.goalId || !body.branchId) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "project briefing requires a goal-bound personal session task");
+      }
+      if (path.resolve(body.taskBriefing.expectedWorkspacePath) !== path.resolve(workspace.dir)) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "workspace changed; reload before starting the task");
+      }
+      const goal = await ctx.goalStore.get(workspace.dir, body.goalId);
+      assertTurnWorkspace(ctx, workspace);
+      if (goal.updatedAt !== body.taskBriefing.expectedUpdatedAt) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "project plan changed; reload and start a fresh task");
+      }
+      const task = goal.workItems?.find(item => item.taskId === body.branchId);
+      if (!task) throw new OrgApiError(errorCodes.goal_conflict, 409, "project task no longer exists; reload before starting");
+      taskBriefing = createTaskBriefing(goal, task, { turnId, sessionId: session.sessionId, positionId: body.positionId, generatedAt: createdAt });
+    }
     if (relay && (!group || relay.message.conversationRef !== group.groupRef || relay.message.messageId !== group.messageId)) {
       throw new OrgApiError(errorCodes.turn_request_invalid, 400, "relay does not belong to this group dispatch");
     }
@@ -401,7 +436,8 @@ export async function executeTurn(
       turns: history,
       omittedTurnCount,
       truncated: historyTruncated,
-      redacted: historyRedacted,
+      redacted: historyRedacted || (taskBriefing?.payload.redacted ?? false),
+      ...(taskBriefing ? { requiredContext: renderTaskBriefing(taskBriefing) } : {}),
       ...(supplementalContext !== undefined ? { supplementalContext } : {}),
       ...(relay ? { relay: { ...relay, turnId, positionId: body.positionId, generatedAt: createdAt } } : {}),
     });
@@ -431,6 +467,7 @@ export async function executeTurn(
       envelopeDigest: envelope.envelopeDigest,
       ...(session !== undefined || group !== undefined || supplementalContext !== undefined ? { threadContext: context.metadata } : {}),
       ...(context.relayHandoff ? { relayHandoff: context.relayHandoff } : {}),
+      ...(taskBriefing ? { taskBriefing } : {}),
       now: createdAt,
       // Additive #52: group spawns persist through the position store tagged
       // with the local conversationRef (session arg stays undefined). Kept as a
