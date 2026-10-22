@@ -83,3 +83,41 @@ test("grant validation and package readback preserve execution/network intent", 
   const revoked = validatePermissions({ tools: [], rules: [], nativeExecution: false, network: "deny" }, invalid);
   assert.deepEqual(permissionsFromPackage(derivePermissionArtifacts(revoked).permissionsFile, []), revoked);
 });
+
+test("permission reads reject swapped pathnames while reading the opened file", async t => {
+  const f = await fixture(t);
+  const permissionFile = path.join(f.position, "permissions.json");
+  const open = fs.open.bind(fs);
+  let closed = false;
+  t.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+    const handle = await open(...args);
+    if (args[0] === permissionFile) {
+      const read = handle.read.bind(handle);
+      const close = handle.close.bind(handle);
+      let swapped = false;
+      t.mock.method(handle, "read", async (...readArgs: unknown[]) => {
+        if (!swapped) {
+          swapped = true;
+          await fs.rename(permissionFile, permissionFile + ".old");
+          await fs.writeFile(permissionFile, JSON.stringify(f.permissions));
+        }
+        return (read as (...args: unknown[]) => Promise<unknown>)(...readArgs);
+      });
+      t.mock.method(handle, "close", async () => { closed = true; return close(); });
+    }
+    return handle;
+  });
+  await assert.rejects(f.read());
+  assert.equal(closed, true, "a rejected read must close its descriptor");
+});
+
+test("permission reads reject oversized files and symlinks", { skip: process.platform === "win32" }, async t => {
+  const f = await fixture(t);
+  const permissionFile = path.join(f.position, "permissions.json");
+  await fs.writeFile(permissionFile, " ".repeat(128 * 1024 + 1));
+  await assert.rejects(f.read());
+  await f.save();
+  await fs.rename(permissionFile, permissionFile + ".target");
+  await fs.symlink(permissionFile + ".target", permissionFile);
+  await assert.rejects(f.read());
+});

@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { constants } from "node:fs";
 import path from "node:path";
 
 const ACTIONS = ["read", "create", "update", "delete", "execute"];
@@ -11,9 +12,32 @@ function inside(root, target) {
 }
 function invalid() { throw new Error("unsupported Codex execution policy"); }
 async function json(file) {
-  const stat = await fs.lstat(file);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 128 * 1024) invalid();
-  return JSON.parse(await fs.readFile(file, "utf8"));
+  // Validate and read the same opened inode. A pathname check followed by
+  // readFile(path) could consume a replacement or follow a swapped symlink.
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) |
+    (process.platform === "win32" ? 0 : (constants.O_NONBLOCK ?? 0));
+  const handle = await fs.open(file, flags);
+  const limit = 128 * 1024;
+  const regular = stat => stat.isFile() && !stat.isSymbolicLink() && stat.size <= BigInt(limit);
+  const same = (a, b) => a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+  try {
+    const before = await handle.stat({ bigint: true });
+    const named = await fs.lstat(file, { bigint: true });
+    if (!regular(before) || !regular(named) || !same(before, named)) invalid();
+    const buffer = Buffer.alloc(limit + 1);
+    let bytes = 0;
+    while (bytes < buffer.length) {
+      const result = await handle.read(buffer, bytes, buffer.length - bytes, bytes);
+      if (result.bytesRead === 0) break;
+      bytes += result.bytesRead;
+    }
+    const after = await handle.stat({ bigint: true });
+    const namedAfter = await fs.lstat(file, { bigint: true });
+    if (bytes > limit || BigInt(bytes) !== before.size || !regular(namedAfter) || !same(before, after) || !same(before, namedAfter)) invalid();
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, bytes)));
+  } finally {
+    await handle.close();
+  }
 }
 
 /** Re-read operator-owned policy for each turn. Native execution is a separate

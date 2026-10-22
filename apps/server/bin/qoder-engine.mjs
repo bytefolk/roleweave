@@ -1921,11 +1921,19 @@ async function turnRunCodex(workspaceDir, positionId, input, engineModel = "code
 
   let args = codexTurnArgs(model, baseUrl);
   try {
-    const position = (await scanPositions(workspaceDir)).find(entry => entry.id === positionId);
+    const positions = await scanPositions(workspaceDir).catch(error => {
+      // Legacy read-only turns also run against plain directories. Only the
+      // absent positions root means "no native grant"; never swallow errors
+      // while reading an existing employee or its permission files.
+      if (error.code === "ENOENT" && error.syscall === "scandir" &&
+          path.resolve(error.path) === path.resolve(workspaceDir, "positions")) return [];
+      throw error;
+    });
+    const position = positions.find(entry => entry.id === positionId);
     const plan = position ? await codexExecutionPlan(workspaceDir, position.dir, positionId) : null;
     if (plan) {
       const versionSpec = createQoderSpawnSpec(codexBin, ["--version"], codexChildEnvironment(process.env, engineModel));
-      const probe = spawnSync(versionSpec.command, versionSpec.args, { ...versionSpec.options, encoding: "utf8", timeout: 10_000, maxBuffer: 64 * 1024 });
+      const probe = spawnSync(versionSpec.command, versionSpec.args, { ...versionSpec.options, shell: false, encoding: "utf8", timeout: 10_000, maxBuffer: 64 * 1024 });
       const version = /\bcodex-cli (\d+)\.(\d+)\.(\d+)\b/.exec(probe.stdout ?? "");
       if (probe.status !== 0 || !version || Number(version[1]) !== 0 || Number(version[2]) < 163) {
         fail("codex.execution_version_unsupported", "本机终端执行需要 Codex CLI 0.163.0 或更新的 0.x 版本，请更新后重试；未放宽权限。", false);
