@@ -5,6 +5,12 @@
  * 插值用 {var}。 */
 import { zhVaultCatalog } from "./vault";
 export const zhCatalog: Record<string, string> = {
+  "permissions.nativeTitle": "Codex 本机执行",
+  "permissions.nativeExecution": "允许本机终端执行",
+  "permissions.nativeHint": "终端可读取本机文件，写入仅限授权目录。需启用 Read、Write、Edit、Delete、Exec；为工作区子目录（如 ./repos/project/**）选择全部操作并关闭逐次审批。只读模式下不生效。",
+  "permissions.network": "允许 Codex 工具联网",
+  "permissions.networkHint": "默认关闭。开启后遵循本机网络策略，不限制为特定网站；与模型连接权限分开。",
+  "permissions.requireApproval": "逐次审批",
   "office.brand": "千问办公",
   "office.clientManaged": "工具与审批由千问办公管理。",
   "office.accountManaged": "使用千问办公当前账号和组织；任务完成前请保持不变。",
