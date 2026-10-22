@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { codexExecutionPlan, applyCodexExecutionPlan } from "../src/codex-execution-policy.js";
 /**
  * qoder-engine: implements the pinned digital-employee CLI surface
  * (`--version`, `hire validate <file> --json`, `org apply <ws> --json`,
@@ -1832,7 +1833,7 @@ export function codexTurnArgs(model, baseUrl) {
   return args;
 }
 
-function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex", imagePaths) {
+async function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex", imagePaths) {
   const localLogin = engineModel === "codex-local";
   const runId = randomUUID();
   emit({ type: "run.started", runId, timestamp: now() });
@@ -1841,14 +1842,17 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex", im
   /** Set once the child exists; a terminal must not leave Codex running. */
   let child;
   let stallTimer;
+  let stopped = false;
   const stopChild = () => {
     if (stallTimer !== undefined) clearTimeout(stallTimer);
-    if (child === undefined || child.pid === undefined || child.exitCode !== null) return;
+    if (stopped || child?.pid === undefined) return;
+    stopped = true;
     // Codex may have descendants of its own, so kill the disposable process
-    // group on POSIX and fall back to the direct child on Windows.
+    // group on POSIX and the owned process tree on Windows.
     try {
       if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
-      else child.kill("SIGKILL");
+      else spawnSync(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"),
+        ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true, timeout: 5000 });
     } catch {
       try {
         child.kill("SIGKILL");
@@ -1857,6 +1861,10 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex", im
       }
     }
   };
+  process.once("exit", stopChild);
+  for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => {
+    stopChild(); process.exit(signal === "SIGINT" ? 130 : 143);
+  });
   const fail = (code, message, retryable) => {
     if (terminalEmitted) return;
     terminalEmitted = true;
@@ -1911,7 +1919,24 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex", im
     return;
   }
 
-  const args = codexTurnArgs(model, baseUrl);
+  let args = codexTurnArgs(model, baseUrl);
+  try {
+    const position = (await scanPositions(workspaceDir)).find(entry => entry.id === positionId);
+    const plan = position ? await codexExecutionPlan(workspaceDir, position.dir, positionId) : null;
+    if (plan) {
+      const versionSpec = createQoderSpawnSpec(codexBin, ["--version"], codexChildEnvironment(process.env, engineModel));
+      const probe = spawnSync(versionSpec.command, versionSpec.args, { ...versionSpec.options, encoding: "utf8", timeout: 10_000, maxBuffer: 64 * 1024 });
+      const version = /\bcodex-cli (\d+)\.(\d+)\.(\d+)\b/.exec(probe.stdout ?? "");
+      if (probe.status !== 0 || !version || Number(version[1]) !== 0 || Number(version[2]) < 163) {
+        fail("codex.execution_version_unsupported", "本机终端执行需要 Codex CLI 0.163.0 或更新的 0.x 版本，请更新后重试；未放宽权限。", false);
+        return;
+      }
+      args = applyCodexExecutionPlan(args, plan);
+    }
+  } catch {
+    fail("codex.execution_policy_unsupported", "无法应用本机终端授权。请使用非只读模式，启用 Read、Write、Edit、Delete、Exec，并为已存在的工作区子目录（如 ./repos/project/**）授予全部五项操作且关闭逐次审批。不支持拒绝规则、链接目录、MCP 绑定或额外的细粒度写入规则；未放宽权限。", false);
+    return;
+  }
   if (imagePaths !== undefined) {
     try {
       if (!Array.isArray(imagePaths) || imagePaths.length === 0 || imagePaths.length > 5) throw new Error("invalid image list");
@@ -1992,6 +2017,20 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex", im
       return;
     }
 
+    if (["item.started", "item.completed"].includes(event?.type) &&
+        ["command_execution", "file_change"].includes(event?.item?.type)) {
+      const item = event.item;
+      if (event.type === "item.completed" && (item.status === "failed" || (Number.isInteger(item.exit_code) && item.exit_code !== 0)) && typeof item.aggregated_output === "string" && /helper_sandbox_lock_failed|orchestrator_helper_launch_canceled|windows sandbox: setup (?:error|failed)/i.test(item.aggregated_output)) {
+        fail("codex.sandbox_unavailable", "Windows 沙箱未能启动，命令未执行。请修复 Codex 的 Windows 沙箱设置后重试；不会自动放宽目录或网络权限。", false);
+        return;
+      }
+      noteProgress();
+      emit({ type: "trace.activity", runId, timestamp: now(), activityId: activityText(typeof item.id === "string" ? item.id : item.type, 256), kind: "tool",
+        title: item.type === "command_execution" ? "执行命令" : "修改项目文件",
+        status: event.type === "item.started" ? "running" : item.status === "failed" || (Number.isInteger(item.exit_code) && item.exit_code !== 0) ? "failed" : "completed" });
+      return;
+    }
+
     // Codex reports system-scope configuration it applied — clamped hooks, skill
     // visibility warnings — as items that are not agent messages.
     // `--ignore-user-config` does not prevent any of it, and the engine.v1
@@ -2054,7 +2093,7 @@ function turnRunCodex(workspaceDir, positionId, input, engineModel = "codex", im
 
     if (event?.type === "turn.completed") {
       terminalEmitted = true;
-      if (stallTimer !== undefined) clearTimeout(stallTimer);
+      stopChild();
       const usage = event?.usage && typeof event.usage === "object"
         ? {
             ...(Number.isInteger(event.usage.input_tokens) ? { inputTokens: event.usage.input_tokens } : {}),

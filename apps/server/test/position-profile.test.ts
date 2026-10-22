@@ -571,3 +571,28 @@ test("PATCH /positions/:id/profile: a successful edit broadcasts one org.updated
     await server.close();
   }
 });
+
+test("native execution and network consent survive hire, profile readback and revocation (#629)", async t => {
+  const server = await startTestServer(new DigitalEmployeeCliDriver(QODER_ADAPTER_COMMAND));
+  const dir = await copyExampleWorkspace();
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  try {
+    assert.equal((await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } })).status, 200);
+    const permissions = { ...HIRE.permissions, nativeExecution: true, network: "host_policy" };
+    const hired = await api(server.baseUrl, "/hire", { method: "POST", token: server.token, body: { ...HIRE, permissions } });
+    assert.equal(hired.status, 200, JSON.stringify(hired.body));
+    const packageDir = path.join(dir, "positions", "repo-owner", "docs-writer");
+    let employee = await readJson<{ policy: { network: string } }>(path.join(packageDir, "employee.json"));
+    assert.equal(employee.policy.network, "host_policy");
+    const profile = await api(server.baseUrl, "/positions/docs-writer", { token: server.token });
+    assert.equal(profile.status, 200);
+    assert.ok(JSON.stringify(profile.body).includes('"nativeExecution":true'));
+    assert.ok(JSON.stringify(profile.body).includes('"network":"host_policy"'));
+    const revoked = await api(server.baseUrl, "/positions/docs-writer/profile", { method: "PATCH", token: server.token, body: { permissions: { ...permissions, nativeExecution: false, network: "deny" } } });
+    assert.equal(revoked.status, 200, JSON.stringify(revoked.body));
+    employee = await readJson<{ policy: { network: string } }>(path.join(packageDir, "employee.json"));
+    assert.equal(employee.policy.network, "deny");
+    const stored = await readJson<{ nativeExecution: boolean; network: string }>(path.join(packageDir, "permissions.json"));
+    assert.equal(stored.nativeExecution, false); assert.equal(stored.network, "deny");
+  } finally { await server.close(); }
+});

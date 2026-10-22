@@ -2,6 +2,12 @@
  * test; keep the two files in lockstep. */
 import { enVaultCatalog } from "./vault";
 export const enCatalog: Record<string, string> = {
+  "permissions.nativeTitle": "Codex native execution",
+  "permissions.nativeExecution": "Allow native terminal execution",
+  "permissions.nativeHint": "Commands can read host files; writes stay within granted directories. Enable Read, Write, Edit, Delete and Exec, grant all actions on a workspace subdirectory (e.g. ./repos/project/**), and turn off per-action approval. Read-only mode disables execution.",
+  "permissions.network": "Allow Codex tool networking",
+  "permissions.networkHint": "Off by default. Uses the host network policy, without a website allowlist. Separate from model connectivity.",
+  "permissions.requireApproval": "Require per-action approval",
   "office.brand": "Qwen Office",
   "office.clientManaged": "Qwen Office manages tools and approvals.",
   "office.accountManaged": "Uses the current Qwen Office account and organization. Keep them unchanged until the task finishes.",

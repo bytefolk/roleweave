@@ -2153,3 +2153,64 @@ test("codex turn run: system-scope config items reach the diagnostic instead of 
     );
   }
 });
+
+for (const engine of ["codex", "codex-local"] as const) test(`${engine}: explicit native grants reach spawn and revoke on the next turn (#629)`, { skip: codexSkip }, async t => {
+  const dir = await makeWorkspace(), fixture = await fs.mkdtemp(path.join(os.tmpdir(), "codex-granted-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const root = path.join(dir, "repos", "project"), position = path.join(dir, "positions", "repo-owner");
+  await fs.mkdir(path.join(root, ".git"), { recursive: true });
+  const permissions = { schemaVersion: "workbench-permissions.v1", nativeExecution: true, network: "host_policy", tools: ["Read", "Write", "Edit", "Delete", "Exec"], rules: [{ scope: "workspace", resource: "./repos/project/**", actions: ["read", "create", "update", "delete", "execute"], approval: false }] };
+  await fs.writeFile(path.join(position, "permissions.json"), JSON.stringify(permissions));
+  const employee = JSON.parse(await fs.readFile(path.join(position, "employee.json"), "utf8"));
+  employee.policy.network = "host_policy";
+  employee.policy.filesystem = { read: ["./repos/project/**"], write: ["./repos/project/**"] };
+  await fs.writeFile(path.join(position, "employee.json"), JSON.stringify(employee));
+  const argsFile = path.join(fixture, "args.json"), envFile = path.join(fixture, "env.json");
+  const source = fakeCodexOk(argsFile, envFile).replace('const fs =', 'if (process.argv.includes("--version")) { console.log("codex-cli 0.163.0"); process.exit(0); }\nconst fs =').replace('write({ type: "turn.started" });', `write({ type: "turn.started" });
+write({ type: "item.started", item: { id: "cmd-1", type: "command_execution", command: "secret-command" } });
+write({ type: "item.completed", item: { id: "cmd-1", type: "command_execution", status: "completed", exit_code: 0, aggregated_output: "secret-output" } });
+write({ type: "item.completed", item: { id: "cmd-2", type: "command_execution", status: "completed", exit_code: 1 } });`);
+  const fakeBin = await writeFakeCodex(fixture, source);
+  const run = () => runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], { stdin: JSON.stringify({ input: "check project" }), env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: engine, DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin, OPENAI_BASE_URL: undefined } });
+  let result = await run(); assert.equal(codexEvents(result.stdout).at(-1)?.type, "run.completed", result.stdout);
+  let args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.ok(!args.includes("--sandbox")); assert.ok(args.includes("permissions.roleweave-employee.network.enabled=true")); assert.ok(args.includes("--ignore-user-config")); assert.equal(args.at(-1), "-");
+  assert.deepEqual(codexEvents(result.stdout).filter(event => event.type === "trace.activity").map(event => event.status), ["running", "completed", "failed"]);
+  assert.ok(!result.stdout.includes("secret-command")); assert.ok(!result.stdout.includes("secret-output"));
+  permissions.nativeExecution = false; await fs.writeFile(path.join(position, "permissions.json"), JSON.stringify(permissions));
+  result = await run(); args = JSON.parse(await fs.readFile(argsFile, "utf8")) as string[];
+  assert.equal(args[args.indexOf("--sandbox") + 1], "read-only");
+  permissions.nativeExecution = true; permissions.rules[0]!.approval = true; await fs.writeFile(path.join(position, "permissions.json"), JSON.stringify(permissions));
+  await fs.rm(argsFile); result = await run();
+  assert.equal((codexEvents(result.stdout).at(-1)?.error as {code: string}).code, "codex.execution_policy_unsupported"); assert.equal(await exists(argsFile), false);
+  permissions.rules[0]!.approval = false; await fs.writeFile(path.join(position, "permissions.json"), JSON.stringify(permissions));
+  await fs.writeFile(fakeBin, source.replace('write({ type: "turn.started" });', 'write({ type: "item.completed", item: { id: "sandbox-error", type: "command_execution", status: "failed", exit_code: -1, aggregated_output: "helper_sandbox_lock_failed: sensitive-local-path" } });'));
+  result = await run(); assert.equal((codexEvents(result.stdout).at(-1)?.error as {code: string}).code, "codex.sandbox_unavailable");
+  assert.ok(!result.stdout.includes("sensitive-local-path"));
+  await fs.rm(argsFile);
+  await fs.writeFile(fakeBin, source.replace("codex-cli 0.163.0", "codex-cli 0.100.0"));
+  result = await run(); assert.equal((codexEvents(result.stdout).at(-1)?.error as {code: string}).code, "codex.execution_version_unsupported"); assert.equal(await exists(argsFile), false);
+});
+
+test("Codex reaps native command descendants after completion (#629)", { skip: codexSkip }, async t => {
+  const dir = await makeWorkspace(), fixture = await fs.mkdtemp(path.join(os.tmpdir(), "codex-lifecycle-"));
+  t.after(() => Promise.all([fs.rm(dir, { recursive: true, force: true }), fs.rm(fixture, { recursive: true, force: true })]));
+  const pidFile = path.join(fixture, "descendant.pid");
+  const fakeBin = await writeFakeCodex(fixture, `#!/usr/bin/env node
+const fs = require('node:fs');
+const child = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {stdio:'ignore'});
+fs.writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+console.log(JSON.stringify({type:'turn.completed'}));
+setInterval(()=>{},1000);
+`);
+  const result = await runAdapter(["turn", "run", dir, "--position", "repo-owner", "--stdin"], { stdin: '{"input":"check"}', env: { DIGITAL_EMPLOYEE_ENGINE_MODEL: "codex-local", DIGITAL_EMPLOYEE_CODEX_COMMAND: fakeBin } });
+  assert.equal(codexEvents(result.stdout).at(-1)?.type, "run.completed");
+  const pid = Number(await fs.readFile(pidFile, "utf8"));
+  t.after(() => { try { process.kill(pid, "SIGKILL"); } catch {} });
+  let alive = true;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    try { process.kill(pid, 0); } catch { alive = false; break; }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.equal(alive, false, "native command descendant survived the terminal event");
+});
