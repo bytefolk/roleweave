@@ -7,7 +7,7 @@
  * keeps the hire skin; the compact variant presents the same grants in the
  * employee settings drawer.
  */
-import { Select } from "antd";
+import { Checkbox, Select } from "antd";
 import { Check, ChevronDown, Plus, Shield, Trash2 } from "lucide-react";
 import { Input as OwbInput } from "@fullstack-ai-infra/ui";
 import { useT } from "@roleweave/ui";
@@ -98,6 +98,21 @@ export function PermissionPolicyEditor({
   const t = useT();
   const setRule = (index: number, next: HirePermissionRule): void =>
     onChange({ ...permissions, rules: permissions.rules.map((item, itemIndex) => (itemIndex === index ? next : item)) });
+  const executionControls = (
+    <section className="owb-profile-section" aria-label={t("permissions.nativeTitle")}>
+      <h4>{t("permissions.nativeTitle")}</h4>
+      <Checkbox disabled={disabled} checked={permissions.nativeExecution === true}
+        onChange={(event) => onChange({ ...permissions, nativeExecution: event.target.checked })}>
+        {t("permissions.nativeExecution")}
+      </Checkbox>
+      <p>{t("permissions.nativeHint")}</p>
+      <Checkbox disabled={disabled} checked={permissions.network === "host_policy"}
+        onChange={(event) => onChange({ ...permissions, network: event.target.checked ? "host_policy" : "deny" })}>
+        {t("permissions.network")}
+      </Checkbox>
+      <p>{t("permissions.networkHint")}</p>
+    </section>
+  );
   if (variant === "compact") {
     return (
       <>
@@ -122,6 +137,7 @@ export function PermissionPolicyEditor({
             ))}
           </div>
         </section>
+        {executionControls}
         <section className="owb-profile-section" aria-label={t("profile.resources")}>
           <div className="owb-profile-section__head"><h4>{t("profile.resources")}</h4></div>
           <div className="owb-profile-rules">
@@ -147,6 +163,10 @@ export function PermissionPolicyEditor({
                     />
                   </label>
                 </div>
+                <Checkbox disabled={disabled} checked={rule.approval !== false}
+                  onChange={(event) => setRule(index, { ...rule, approval: event.target.checked })}>
+                  {t("permissions.requireApproval")}
+                </Checkbox>
                 <div className="owb-profile-rule__actions">
                   <div className="owb-profile-action-chips">
                     {ACTIONS.map((action) => (
@@ -212,6 +232,7 @@ export function PermissionPolicyEditor({
           </button>
         ))}
       </div>
+      {executionControls}
       <div className="owb-hire-rules">
         {permissions.rules.map((rule, index) => (
           <div className="owb-hire-rule" key={`${rule.scope}-${rule.resource}-${index}`}>
@@ -225,6 +246,10 @@ export function PermissionPolicyEditor({
               value={rule.resource}
               onChange={(event) => setRule(index, { ...rule, resource: event.target.value })}
             />
+            <Checkbox disabled={disabled} checked={rule.approval !== false}
+              onChange={(event) => setRule(index, { ...rule, approval: event.target.checked })}>
+              {t("permissions.requireApproval")}
+            </Checkbox>
             <div className="owb-hire-action-chips">
               {ACTIONS.map((action) => (
                 <button

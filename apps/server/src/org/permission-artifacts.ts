@@ -89,6 +89,8 @@ export function derivePermissionArtifacts(permissions: HirePermissions): Permiss
       schemaVersion: "workbench-permissions.v1",
       model: "chmod-inspired",
       defaultEffect: "deny",
+      ...(permissions.nativeExecution !== undefined ? { nativeExecution: permissions.nativeExecution } : {}),
+      ...(permissions.network !== undefined ? { network: permissions.network } : {}),
       tools: permissions.tools,
       rules: permissions.rules,
       skills,
@@ -130,6 +132,8 @@ export function permissionsFromPackage(
     ? (record.tools as string[])
     : fallbackTools;
   return {
+    ...(typeof record.nativeExecution === "boolean" ? { nativeExecution: record.nativeExecution } : {}),
+    ...(record.network === "deny" || record.network === "host_policy" ? { network: record.network } : {}),
     tools,
     rules: Array.isArray(record.rules) ? (record.rules as HirePermissions["rules"]) : [],
     ...(Array.isArray(record.skills) ? { skills: record.skills as HirePermissions["skills"] } : {}),
