@@ -126,11 +126,17 @@ function generationProps(): Partial<ComponentProps<typeof HireDrawer>> {
 }
 
 async function configureReviewedCapabilities() {
+  // Legacy or Agent-proposed connector bindings remain inspectable/removable;
+  // unavailable connectors can no longer be selected in the form itself.
+  vi.mocked(window.owb.createTurn).mockResolvedValueOnce({ status: 200, body: { output: JSON.stringify({
+    name: "Reviewed draft", description: "Review the existing capability bindings",
+    skills: ["docs-review"], mcpServers: [{ id: "repository", tools: ["search", "read"] }],
+  }) } });
+  fireEvent.click(screen.getByRole("button", { name: "描述需求" }));
+  fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
+  fireEvent.click(await screen.findByRole("button", { name: "应用候选草稿" }));
   const advanced = screen.getByText("高级配置").closest("details")!;
-  fireEvent.click(advanced.querySelector("summary")!);
   await waitFor(() => expect(advanced).toHaveAttribute("open"));
-  fireEvent.click(screen.getByRole("button", { name: "文档审校" }));
-  fireEvent.click(screen.getByRole("button", { name: /代码仓库/ }));
   fireEvent.change(screen.getByDisplayValue("skill://docs-review"), { target: { value: "skill://docs-review/approved-only" } });
   fireEvent.change(screen.getByDisplayValue("mcp://repository"), { target: { value: "mcp://repository/approved-only" } });
   fireEvent.click(advanced.querySelector("summary")!);
@@ -329,14 +335,12 @@ describe("selection-first employee creation", () => {
     fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
     fireEvent.click(await screen.findByRole("button", { name: "应用候选草稿" }));
     expect(advanced).not.toHaveAttribute("open");
+    expect(screen.getByRole("button", { name: "开始创建" })).toBeDisabled();
+    fireEvent.click(advanced.querySelector("summary")!);
+    expect(screen.getByDisplayValue(reviewedSkillRule.resource)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(reviewedMcpRule.resource)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
-    await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Reviewed candidate",
-      permissions: {
-        tools: ["Read", "Grep", "Glob"], skills: [{ id: "docs-review" }], mcpServers: [reviewedMcpGrant],
-        rules: [baseKnowledgeRule, reviewedSkillRule, reviewedMcpRule],
-      },
-    })));
+    expect(bridge.hire).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -351,6 +355,13 @@ describe("selection-first employee creation", () => {
     fireEvent.click(screen.getByRole("button", { name: "让 Agent 生成草案" }));
     fireEvent.click(await screen.findByRole("button", { name: "应用候选草稿" }));
     expect(advanced).toHaveAttribute("open");
+    if (mcpServers.length > 0) {
+      expect(screen.getByDisplayValue(reviewedMcpRule.resource)).toBeInTheDocument();
+      expect(screen.queryByDisplayValue(reviewedSkillRule.resource)).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "开始创建" })).toBeDisabled();
+      expect(bridge.hire).not.toHaveBeenCalled();
+      return;
+    }
     fireEvent.click(screen.getByRole("button", { name: "开始创建" }));
     await waitFor(() => expect(bridge.hire).toHaveBeenCalledWith(expect.objectContaining({
       name: "Scoped candidate", permissions: { tools: ["Read", "Grep", "Glob"], skills, mcpServers, rules },

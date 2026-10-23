@@ -52,6 +52,94 @@
   font-weight: 600;
 }
 
+.owb-profile-help {
+  margin: -4px 0 16px;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.owb-profile-network-hint {
+  margin: 8px 0 0;
+}
+
+.owb-profile-folder {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+}
+
+.owb-profile-folder__heading,
+.owb-profile-folder__heading > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.owb-profile-folder__heading {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.owb-profile-folder__scope {
+  margin: 6px 0 14px;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.owb-profile-folder__access {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.owb-profile-folder .ant-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.owb-profile-folder__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 14px;
+}
+
+.owb-profile-folder__options .ant-checkbox-wrapper {
+  font-size: 12px;
+}
+
+.owb-profile-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--ui-surface-inset);
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.owb-profile-notice > button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-primary);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 .owb-profile-count,
 .owb-profile-empty,
 .owb-profile-id {
@@ -146,6 +234,10 @@
   font-weight: 400;
 }
 
+.owb-profile-skill:disabled {
+  opacity: .5;
+}
+
 .owb-profile-connectors {
   display: grid;
   gap: 4px;
@@ -168,6 +260,28 @@
 
 .owb-profile-mcp__select:hover {
   background: var(--ui-surface-inset);
+}
+
+.owb-profile-mcp__select:disabled {
+  cursor: default;
+}
+
+.owb-profile-mcp__select:disabled:hover {
+  background: transparent;
+}
+
+.owb-profile-mcp__select small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+}
+
+.owb-profile-mcp__state {
+  margin-left: auto;
+  color: var(--ui-foreground-muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .owb-profile-checkbox {

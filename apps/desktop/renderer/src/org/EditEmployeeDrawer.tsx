@@ -13,12 +13,13 @@
  * never be rewritten by a save.
  */
 import { useCallback, useEffect, useId, useState } from "react";
-import { Button as AntButton, Drawer, Input, Select, Spin, message } from "antd";
+import { Button as AntButton, Checkbox, Drawer, Input, Select, Spin, message } from "antd";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 import { useT } from "@roleweave/ui";
 import type { HirePermissions, PositionProfilePatch } from "@roleweave/shared";
 import type { PositionCardData } from "@roleweave/ui";
 import { CapabilityPicker, PermissionPolicyEditor } from "./PermissionsEditor";
+import { FileAccessEditor, nativePermissionIssue } from "./FileAccessEditor";
 import type { TurnEngine } from "../turns/types";
 import "./edit-employee.css";
 
@@ -39,6 +40,8 @@ function byteLength(value: string): number {
 function permissionFingerprint(policy: HirePermissions): string {
   return JSON.stringify({
     tools: [...policy.tools].sort(),
+    nativeExecution: policy.nativeExecution === true,
+    network: policy.network ?? "deny",
     rules: policy.rules.map((rule) => ({ ...rule, actions: [...rule.actions].sort() })),
     skills: [...(policy.skills ?? [])].sort((left, right) => left.id.localeCompare(right.id)),
     mcpServers: (policy.mcpServers ?? [])
@@ -65,6 +68,7 @@ export function EditEmployeeDrawer({
 }) {
   const t = useT();
   const clientManaged = engine === "qwen-office-local";
+  const nativeHost = engine === "codex" || engine === "codex-local";
   const [name, setName] = useState("");
   const [mode, setMode] = useState<PositionCardData["mode"]>("read_only");
   const [permissions, setPermissions] = useState<HirePermissions>({ tools: [], rules: [] });
@@ -92,12 +96,20 @@ export function EditEmployeeDrawer({
   const trimmedName = name.trim();
   const nameValid = trimmedName.length > 0 && byteLength(trimmedName) <= MAX_NAME_BYTES;
   const permissionsChanged = initial !== null && permissionFingerprint(permissions) !== permissionFingerprint(initial);
+  const invalidRuleIndex = permissions.rules.findIndex((rule) => rule.resource.trim().length === 0 || rule.resource.length > 512 || rule.actions.length === 0);
+  const nativeIssue = nativeHost && mode !== "read_only" ? nativePermissionIssue(permissions) : null;
+  const validateDraftPermissions = permissionsChanged || (nativeHost && mode !== "read_only" && mode !== position?.mode);
+  const permissionError = !validateDraftPermissions ? null
+    : (permissions.mcpServers ?? []).length > 0 ? t("profile.removeConnectorsBeforeSave")
+    : invalidRuleIndex >= 0 ? t("profile.invalidResource", { number: invalidRuleIndex + 1 })
+    : nativeIssue ? t(nativeIssue.key, { path: nativeIssue.path ?? "" })
+    : null;
   const changed = position !== null && (
     trimmedName !== position.name
     || (!clientManaged && mode !== position.mode)
     || (!clientManaged && permissionsChanged)
   );
-  const canSave = position !== null && nameValid && changed && !saving && !busy;
+  const canSave = position !== null && nameValid && changed && permissionError === null && !saving && !busy;
 
   const submit = useCallback(async () => {
     if (position === null || !canSave) return;
@@ -124,7 +136,7 @@ export function EditEmployeeDrawer({
     <Drawer
       className="owb-hire-drawer-shell owb-profile-drawer"
       title={t("profile.editHeading")}
-      width="min(600px, 100vw)"
+      size="min(600px, 100vw)"
       open={open}
       onClose={saving ? undefined : onClose}
       closable={!saving}
@@ -170,7 +182,18 @@ export function EditEmployeeDrawer({
               </div> : null}
             </section>
             {clientManaged ? <p className="owb-profile-empty">{t("office.clientManaged")} {t("office.clientSettings")} {t("office.accountManaged")}</p> : <>
-            <CapabilityPicker variant="compact" permissions={permissions} onChange={setPermissions} />
+            <FileAccessEditor permissions={permissions} onChange={setPermissions} readOnly={mode === "read_only"}
+              disabled={saving || busy} nativeHost={nativeHost} onEnableChanges={() => setMode("approval_required")} />
+            {nativeHost ? <section className="owb-profile-section" aria-label={t("profile.internetAccess")}>
+              <div className="owb-profile-section__head"><h4>{t("profile.internetAccess")}</h4></div>
+              <Checkbox disabled={saving || busy} checked={permissions.network === "host_policy"}
+                onChange={(event) => setPermissions({ ...permissions, network: event.target.checked ? "host_policy" : "deny" })}>
+                {t("profile.allowInternet")}
+              </Checkbox>
+              <p className="owb-profile-help owb-profile-network-hint">{t("profile.internetHint")}</p>
+            </section> : null}
+            <CapabilityPicker variant="compact" permissions={permissions} onChange={setPermissions}
+              nativeWork={nativeHost && mode !== "read_only" && permissions.nativeExecution === true} />
             <section className="owb-profile-advanced">
               <button
                 type="button"
@@ -180,7 +203,7 @@ export function EditEmployeeDrawer({
                 onClick={() => setPermissionsExpanded((expanded) => !expanded)}
               >
                 <span>{t("profile.advancedPermissions")}</span>
-                <small>{t("profile.rulesSummary", { tools: permissions.tools.length, rules: permissions.rules.length })}</small>
+                <small>{t("profile.advancedHint")}</small>
                 <ChevronDown aria-hidden="true" size={16} />
               </button>
               {permissionsExpanded ? (
@@ -194,9 +217,9 @@ export function EditEmployeeDrawer({
           )}
         </div>
         <footer className="owb-profile-footer">
-          {error !== null ? (
+          {permissionError !== null || error !== null ? (
             <span className="owb-profile-error" role="alert">
-              <AlertTriangle aria-hidden="true" size={13} />{error}
+              <AlertTriangle aria-hidden="true" size={13} />{permissionError ?? error}
             </span>
           ) : <span />}
           <AntButton onClick={onClose} disabled={saving}>{t("dlg.cancel")}</AntButton>
