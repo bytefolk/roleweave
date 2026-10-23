@@ -272,7 +272,8 @@ export function HireDrawer({ open, workspacePath, positions, presetReportTo, eng
   const parsedDayTokens = Number(dayTokens);
   const capsValid = (value: string, required: boolean) => value.trim() === "" ? !required : Number.isSafeInteger(Number(value)) && Number(value) > 0 && Number(value) <= 1_000_000_000;
   const budgetValid = capsValid(taskTokens, true) && capsValid(dayTokens, true) && capsValid(taskIterations, false) && capsValid(dayIterations, false) && parsedTaskTokens <= parsedDayTokens && parsedDayTokens <= remainingPool;
-  const formValid = nameValid && descriptionValid && budgetValid && (clientManaged || permissions.tools.length > 0) && agentReady;
+  const formValid = nameValid && descriptionValid && budgetValid
+    && (clientManaged || (permissions.tools.length > 0 && (permissions.mcpServers ?? []).length === 0)) && agentReady;
 
   const buildDraft = useCallback((): HireDraft => createHireDraft({ id: positionId, name: name.trim(), description: description.trim(), reportTo: reportTo || null, mode: clientManaged ? "read_only" : mode, budget: { perTask: { tokens: Number(taskTokens), ...(taskIterations.trim() ? { iterations: Number(taskIterations) } : {}) }, perDay: { tokens: Number(dayTokens), ...(dayIterations.trim() ? { iterations: Number(dayIterations) } : {}) } }, permissions: clientManaged ? { tools: ["Read"], rules: [], skills: [], mcpServers: [] } : permissions, prompt: prompt.trim(), memorySources, agentEngine }), [agentEngine, clientManaged, dayIterations, dayTokens, description, memorySources, mode, name, permissions, positionId, prompt, reportTo, taskIterations, taskTokens]);
 
