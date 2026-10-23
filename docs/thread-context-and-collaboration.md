@@ -55,12 +55,19 @@ to criteria, work items and branches. Older decisions without that fingerprint
 retain the conservative record-clock check; record a fresh human verdict after
 a refresh. A workspace ledger exceeding its bounded read capacity is unavailable
 for repair until the operator resolves the history problem.
-Feedback larger than the existing context field limit must be split into
+Feedback larger than the existing context field limit after sanitization must be split into
 smaller tasks; visible answer excerpts may be truncated and the receipt reports
-that limit. Explicit retries first restore any saved project-task briefing
-identity, then revalidate the same repair guards; omitting task IDs cannot bypass
+that limit. Sanitization that breaks the mandatory feedback structure stops dispatch.
+Explicit retries first restore their saved project-task identity, including
+older records without a briefing, then revalidate the same repair guards; omitting task IDs cannot bypass
 the human-review requirement. A failed or indeterminate repair requires operator investigation;
 the system does not replay it automatically.
+
+Single and batch tool approvals continue the same repair through the existing
+approval source/execution records. A continuation retains the rejected answer
+and human feedback, rechecks the current plan and ownership, and does not spend
+another repair attempt. It cannot resume against a newer unreviewed execution
+or a changed plan. Approval remains separate from accepting the resulting task.
 
 This is a human-started repair handoff, not an autonomous verification loop.
 Agent completion does not accept a task or approve external actions. Existing

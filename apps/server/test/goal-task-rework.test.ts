@@ -4,18 +4,25 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { validateGoalTaskAcceptanceRecord, type GoalDetail, type GroupConversation,
-  type TurnRecord, type TurnRunDriver, type TurnRunRequest } from "@roleweave/shared";
+  type ApprovalList, type EngineEvent, type TurnRecord, type TurnRunDriver, type TurnRunRequest } from "@roleweave/shared";
 import { GoalStore, goalPlanDigest } from "../src/goals/store.js";
 import { TurnStore } from "../src/turns/store.js";
 import { prepareGoalRework } from "../src/goals/rework.js";
 import { api, copyExampleWorkspace, DefaultFakeTurnDriver, startTestServer } from "./helpers.js";
 
-async function fixture(t: test.TestContext) {
+async function fixture(t: test.TestContext, batch = false) {
   const inputs: TurnRunRequest[] = [];
   const fake = new DefaultFakeTurnDriver();
   const driver: TurnRunDriver = { async turnRun(request) { inputs.push(request); return fake.turnRun(request); } };
   const server = await startTestServer(undefined, driver);
   const workspace = await copyExampleWorkspace();
+  if (batch) {
+    await fs.mkdir(path.join(workspace, ".digital-employee", "workbench"), { recursive: true });
+    await fs.writeFile(path.join(workspace, ".digital-employee", "workbench", "approval-policy.json"), JSON.stringify({
+      schemaVersion: "roleweave-approval-policy.v1", version: "repair-tools-1",
+      default: { eligibleApprovers: ["operator"], threshold: 1, batch: { maxItems: 4, actionKinds: ["tool"] } },
+    }));
+  }
   t.after(async () => { await server.close(); await server.ctx.contextExporter.waitForIdle();
     await fs.rm(workspace, { recursive: true, force: true }); });
   const call = (url: string, method = "GET", body?: unknown) => api(server.baseUrl, url,
@@ -63,7 +70,7 @@ test("human-started repair receives saved feedback even with session history dis
   assert.equal(f.inputs.length, 2, "unreviewed repair cannot launch another model call");
 });
 
-test("briefing retry cannot omit its restored task binding to bypass repair review", async t => {
+for (const briefing of [false, true]) test(`retry cannot omit its restored task binding (briefing: ${briefing})`, async t => {
   const f = await fixture(t);
   f.server.ctx.turnDriver = { async turnRun(request) {
     f.inputs.push(request);
@@ -71,18 +78,98 @@ test("briefing retry cannot omit its restored task binding to bypass repair revi
   } };
   const started = await f.call(`/sessions/${f.sessionId}/turns`, "POST", {
     input: "Produce the report", engine: "qoder", goalId: f.goalId, branchId: "report",
-    taskBriefing: { expectedWorkspacePath: f.workspace, expectedUpdatedAt: (await f.detail()).goal.updatedAt },
+    ...(briefing ? { taskBriefing: { expectedWorkspacePath: f.workspace, expectedUpdatedAt: (await f.detail()).goal.updatedAt } } : {}),
   });
   assert.equal(started.status, 200);
   const failed = started.body as TurnRecord;
   assert.equal(failed.status, "indeterminate");
-  assert.ok(failed.taskBriefing);
+  assert.equal(!!failed.taskBriefing, briefing);
   const retry = await f.call(`/sessions/${f.sessionId}/turns`, "POST", {
     input: failed.input, engine: "qoder", retryOf: failed.turnId,
   });
   assert.equal(retry.status, 409);
   assert.match(JSON.stringify(retry.body), /new human review/);
   assert.equal(f.inputs.length, 2, "restored project identity must be checked before another model call");
+});
+
+test("sanitizer expansion cannot truncate the mandatory feedback JSON", async t => {
+  const f = await fixture(t);
+  assert.equal((await f.call(`/goals/${f.goalId}`, "PATCH", {
+    expectedUpdatedAt: (await f.detail()).goal.updatedAt,
+    acceptanceCriteria: ["token=x ".repeat(500).trim()],
+  })).status, 200);
+  await f.reject();
+  const response = await f.run();
+  assert.equal(response.status, 409);
+  assert.match(JSON.stringify(response.body), /context limit/);
+  assert.equal(f.inputs.length, 1);
+});
+
+for (const batch of [false, true]) for (const briefing of [false, true]) for (const changedPlan of [false, true]) {
+  test(`approval revalidates the third repair (batch: ${batch}, briefing: ${briefing}, changed plan: ${changedPlan})`, async t => {
+    const f = await fixture(t, batch);
+    for (let i = 0; i < 2; i++) { assert.equal((await f.run()).status, 200); await f.reject(); }
+    f.server.ctx.turnDriver = { async turnRun(request) {
+      f.inputs.push(request);
+      const base = { runId: crypto.randomUUID(), timestamp: new Date().toISOString() };
+      const events: EngineEvent[] = [{ ...base, type: "run.started" }];
+      const decisions = request.envelope.pendingApprovals ?? (request.envelope.pendingApproval ? [request.envelope.pendingApproval] : []);
+      if (decisions.length) {
+        for (const decision of decisions) events.push({ ...base, type: "approval.granted", approvalId: decision.approvalId, grantedBy: "operator", scope: "once" });
+        events.push({ ...base, type: "run.completed", terminalReason: "goal_met", output: "Approved repair output" });
+      } else {
+        for (let i = 0; i < (batch ? 2 : 1); i++) events.push({ ...base, type: "approval.requested", approvalId: `repair-${i}`,
+          action: { kind: "tool", description: "Write report", target: "report.md" } });
+        events.push({ ...base, type: "run.failed", error: { code: "engine.approval_required", message: "Approval needed", retryable: true, terminalReason: "engine_internal_error" } });
+      }
+      return { status: "trusted", diagnostic: "", events };
+    } };
+    const response = await f.call(`/sessions/${f.sessionId}/turns`, "POST", {
+      input: "Produce the report", engine: "qoder", goalId: f.goalId, branchId: "report",
+      ...(briefing ? { taskBriefing: { expectedWorkspacePath: f.workspace, expectedUpdatedAt: (await f.detail()).goal.updatedAt } } : {}),
+    });
+    assert.equal(response.status, 200);
+    assert.equal((response.body as TurnRecord).error?.code, "engine.approval_required");
+    if (changedPlan) assert.equal((await f.call(`/goals/${f.goalId}`, "PATCH", {
+      expectedUpdatedAt: (await f.detail()).goal.updatedAt, acceptanceCriteria: ["Changed approval-time requirement"],
+    })).status, 200);
+    const list = (await f.call("/approvals")).body as ApprovalList;
+    assert.equal(list.items.length, batch ? 2 : 1);
+    const decision = await f.call(batch ? "/approvals/batch/decision" : `/approvals/${list.items[0]!.id}/decision`, "POST", {
+      workspaceToken: list.workspaceToken, requestId: crypto.randomUUID(), decision: "granted",
+      ...(batch ? { items: list.items.map(item => ({ id: item.id, expectedVersion: item.version })) } : { expectedVersion: list.items[0]!.version }),
+    });
+    assert.equal(decision.status, 202, JSON.stringify(decision.body));
+    let settled = list.items[0]!;
+    for (let i = 0; i < 100; i++) {
+      settled = ((await f.call("/approvals")).body as ApprovalList).items.find(item => item.id === settled.id)!;
+      if (!["starting", "running"].includes(settled.execution.phase)) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.equal(settled.execution.phase, changedPlan ? "indeterminate" : "completed");
+    if (changedPlan) { assert.equal(f.inputs.length, 4); return; }
+    assert.equal(f.inputs.length, 5);
+    const resumed = (await f.server.ctx.turnStore.reportRecords(f.workspace)).find(turn => turn.turnId === settled.execution.turnId)!;
+    assert.equal(resumed.goalId, f.goalId);
+    assert.equal(resumed.branchId, "report");
+    assert.match(f.inputs.at(-1)!.envelope.input, /Human-reviewed repair/);
+    assert.match(f.inputs.at(-1)!.envelope.input, /Add a reproducible check/);
+    f.server.ctx.turnStore = new TurnStore();
+    await f.reject();
+    const stopped = await f.run();
+    assert.equal(stopped.status, 409);
+    assert.match(JSON.stringify(stopped.body), /repair limit/);
+    assert.equal(f.inputs.length, 5);
+  });
+}
+
+test("sanitization cannot dispatch malformed mandatory feedback", async t => {
+  const f = await fixture(t);
+  await f.reject("<think>private reasoning without a closing tag");
+  const response = await f.run();
+  assert.equal(response.status, 409);
+  assert.match(JSON.stringify(response.body), /structure after sanitization/);
+  assert.equal(f.inputs.length, 1);
 });
 
 test("three persisted repair attempts exhaust the limit across store restarts", async t => {

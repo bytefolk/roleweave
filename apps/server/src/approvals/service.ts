@@ -350,12 +350,13 @@ export class ApprovalService {
       const job = (async () => {
         try {
           const result = await executeTurn(this.ctx, undefined, {
+            goalId: source.goalId, branchId: source.branchId,
             ...taskBriefingBinding(source, ws.dir),
             positionId: a.source.positionId, engine: a.source.engine,
             input: `${request.decision === "granted" ? "[审批裁决] 请继续执行以下原任务中已批准的动作" : "[审批裁决] 已拒绝以下原任务的动作，不得执行"}\n${source.input}`,
             pendingApproval: { approvalId: a.approvalId, decision: request.decision, decidedBy: "operator", scope: effectiveScope, ...(request.reason ? { reason: request.reason } : {}), ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}) },
           }, session, undefined, undefined, ws, {
-            turnId, reservation,
+            turnId, sourceTurnId: source.turnId, reservation,
             beforeRun: async () => {
               if (a.expiresAt && Date.now() >= Date.parse(a.expiresAt)) throw new OrgApiError(errorCodes.approval_expired, 410, "Approval expired before execution");
               a.execution.phase = "running"; a.version++; a.updatedAt = new Date().toISOString();
@@ -543,12 +544,13 @@ export class ApprovalService {
       const job = (async () => {
         try {
           const result = await executeTurn(this.ctx, undefined, {
+            goalId: source.goalId, branchId: source.branchId,
             ...taskBriefingBinding(source, ws.dir),
             positionId: sourceRecord.source.positionId, engine: sourceRecord.source.engine,
             input: `[审批批量裁决] 请继续执行原任务中这一组已批准的受限工具动作\n${source.input}`,
             pendingApprovals: members.map(member => ({ approvalId: member.record.approvalId, decision: "granted" as const, decidedBy: "operator" as const, scope: "once" as const, ...(request.reason ? { reason: request.reason } : {}), ...(member.record.expiresAt ? { expiresAt: member.record.expiresAt } : {}) })),
           }, session, undefined, undefined, ws, {
-            turnId, reservation,
+            turnId, sourceTurnId: source.turnId, reservation,
             beforeRun: async () => {
               if (members.some(member => member.record.expiresAt && Date.now() >= Date.parse(member.record.expiresAt))) throw new OrgApiError(errorCodes.approval_expired, 410, "Approval expired before execution");
               for (const member of members) { member.record.execution.phase = "running"; member.record.version++; member.record.updatedAt = new Date().toISOString(); await this.serial(() => this.save(ws, member.record)); }

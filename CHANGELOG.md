@@ -9,6 +9,7 @@
 
 - Human-started repairs of rejected goal tasks receive the saved criterion verdicts, feedback and rejected delivery through bounded context. Repairs stop after three attempts or when the plan, owner, session or reviewed delivery changes; an Agent result still requires human acceptance. Refs #606.
 - Rejected-task repair checks leave group execution unchanged, exclude group spawns from the personal repair ceiling, and bind new human verdicts to a plan fingerprint so health refreshes do not invalidate a repair. Existing acceptance records remain readable. Refs #606.
+- Repair retries retain legacy task identity, tool approval continuations retain the same repair attempt and revalidate its plan, and sanitized human feedback must fit intact before dispatch. Refs #606.
 
 ## [0.6.1] — 2026-10-23
 
