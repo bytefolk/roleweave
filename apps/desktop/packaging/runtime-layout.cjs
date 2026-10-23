@@ -109,6 +109,7 @@ const SERVER_RUNTIME_FILES = [
   "dist/src/experiments/store.js",
   "dist/src/gemini-binary.js",
   "dist/src/goals/collaboration.js",
+  "dist/src/goals/rework.js",
   "dist/src/goals/store.js",
   "dist/src/groups/relay-stop.js",
   "dist/src/groups/store.js",

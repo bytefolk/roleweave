@@ -36,6 +36,8 @@ import type { TurnAttachment } from "@roleweave/shared";
 import { ATTACHMENT_MAX_COUNT } from "@roleweave/shared";
 import { assembleVaultContext } from "../vault/context.js";
 import { recordVaultUsage } from "../vault/receipts.js";
+import { prepareGoalRework } from "../goals/rework.js";
+import { approvals } from "../approvals/service.js";
 import { createTaskBriefing, renderTaskBriefing, taskBriefingBinding } from "../turns/task-briefing.js";
 import { projectTaskDeliveries, projectTaskExecutions } from "../goals/store.js";
 import { projectTaskCollaboration } from "../goals/collaboration.js";
@@ -236,7 +238,7 @@ export async function executeTurn(
   group?: GroupEventAttribution,
   supplementalContext?: readonly SupplementalContext[],
   expectedWorkspace?: OpenWorkspace,
-  approvalExecution?: { turnId: string; reservation: RunningTurnReservation; beforeRun: () => Promise<void> },
+  approvalExecution?: { turnId: string; sourceTurnId: string; reservation: RunningTurnReservation; beforeRun: () => Promise<void> },
   options?: { relay: RelayExecutionContext },
 ): Promise<TurnRecord> {
   const workspace = expectedWorkspace ?? ctx.workspace.requireOpen();
@@ -284,6 +286,11 @@ export async function executeTurn(
         throw new OrgApiError(errorCodes.turn_request_invalid, 400, "edited attachments must be submitted as a new task without retryOf");
       }
       if (originalIds?.length) body = { ...body, attachmentIds: originalIds };
+      if ((body.goalId !== undefined && body.goalId !== original.goalId) ||
+          (body.branchId !== undefined && body.branchId !== original.branchId)) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "retry must retain its original project task");
+      }
+      body = { ...body, goalId: original.goalId, branchId: original.branchId };
       if (original.taskBriefing) {
         const p = original.taskBriefing.payload;
         if ((body.goalId !== undefined && body.goalId !== p.goalId) ||
@@ -297,6 +304,11 @@ export async function executeTurn(
         throw new OrgApiError(errorCodes.turn_request_invalid, 400, "adding a project briefing requires a fresh task without retryOf");
       }
     }
+    // Restore server-owned identity before checking repairs, including legacy turns without a briefing.
+    const repairContext = await prepareGoalRework(ctx, workspace.dir, body, group ? undefined : session?.sessionId,
+      () => approvals(ctx).store.list(workspace.dir), approvalExecution);
+    assertTurnWorkspace(ctx, workspace);
+    if (repairContext.length > 0) supplementalContext = [...(supplementalContext ?? []), ...repairContext];
     // The renderer's engine value is only a first-use fallback for legacy
     // positions. Once a sidecar exists it is authoritative, including for
     // session and group paths which share this executor.

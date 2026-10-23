@@ -32,6 +32,55 @@ Assignment is explicit. This change does not add role-based automatic matching, 
 
 ## API and compatibility
 
+### Repair a rejected goal task
+
+After reviewing a completed project task, use its existing acceptance drawer to
+return it with criterion verdicts and a concrete reason. Run the task again in
+the assigned employee's original personal session. The control plane adds the
+saved decision, criteria, acceptance ID, source digest and visible rejected
+answer to the existing bounded, sanitized context. The operator's original
+request remains unchanged. This feedback is supplied even when ordinary session
+history is disabled; it is part of the explicitly requested task repair.
+
+Each repaired result needs a new human review before another repair. A maximum
+of three personal-session repair executions is counted from durable task history
+after its first rejection, including failed attempts. Group turns keep their
+ordinary execution path without repair context and do not consume this ceiling.
+Restarting the control plane does not
+reset that count. Exhaustion requires reassessing the work and creating a
+follow-up task. An unavailable ledger, changed plan, reassigned employee,
+different session, closed goal or unreviewed newer execution stops dispatch.
+The saved plan fingerprint ignores health refresh clocks while detecting changes
+to criteria, work items and branches. Older decisions without that fingerprint
+retain the conservative record-clock check; record a fresh human verdict after
+a refresh. A workspace ledger exceeding its bounded read capacity is unavailable
+for repair until the operator resolves the history problem.
+Feedback larger than the existing context field limit after sanitization must be split into
+smaller tasks; visible answer excerpts may be truncated and the receipt reports
+that limit. Sanitization that breaks the mandatory feedback structure stops dispatch.
+Explicit retries first restore their saved project-task identity, including
+older records without a briefing, then revalidate the same repair guards; omitting task IDs cannot bypass
+the human-review requirement. A failed or indeterminate repair requires operator investigation;
+the system does not replay it automatically.
+
+Single and batch tool approvals continue the same repair through the existing
+approval source/execution records. A continuation retains the rejected answer
+and human feedback, rechecks the current plan and ownership, and does not spend
+another repair attempt. It cannot resume against a newer unreviewed execution
+or a changed plan. Approval remains separate from accepting the resulting task.
+
+This is a human-started repair handoff, not an autonomous verification loop.
+Agent completion does not accept a task or approve external actions. Existing
+tool permissions, per-turn budgets, cancellation and human acceptance apply.
+Tests exercise the real HTTP/session/store boundaries with a deterministic
+driver, not a live model or a customer deployment.
+
+RoleWeave owns general execution and review. Reusable business cases belong in
+[Workbench Examples](https://github.com/bytefolk/workbench-examples); enterprise
+facts, ontology, evidence and their data authorization belong to the independent
+Enterprise Context service. This handoff adds no business schema, case library,
+second task store or queue.
+
 - `PATCH /sessions/:sessionId/context` accepts exactly `{ "enabled": true }` or `{ "enabled": false }` and returns the updated `workbench-session.v1`. The optional `threadContextEnabled` field defaults to `true` when absent in older records.
 - `POST /groups/:conversationRef/turns` accepts optional `mode: "parallel" | "relay"`; omitted mode means parallel. The `mentions` array is the explicit recipient/relay order.
 - `turn-record.v1` may include a `threadContext` receipt (`thread-context.v1`). The original operator `input` remains separate from the materialized model input.
