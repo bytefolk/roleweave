@@ -10,8 +10,11 @@
 - Human-started repairs of rejected goal tasks receive the saved criterion verdicts, feedback and rejected delivery through bounded context. Repairs stop after three attempts or when the plan, owner, session or reviewed delivery changes; an Agent result still requires human acceptance. Refs #606.
 - Rejected-task repair checks leave group execution unchanged, exclude group spawns from the personal repair ceiling, and bind new human verdicts to a plan fingerprint so health refreshes do not invalidate a repair. Existing acceptance records remain readable. Refs #606.
 
+## [0.6.1] — 2026-10-23
+
 ### Fixed
 
+- #629: Let explicitly authorized Codex employees run native terminal commands and Git inside granted project subdirectories. Default turns remain read-only; the permission and network consents are separate, with full-directory grants and sandbox constraints checked before execution.
 - #625: Stabilize conversation tooltips with reduced motion, keep attachment removal at the hovered card's top-right corner without covering Send, and show each personal-conversation request timestamp only once.
 - #627: Explain missing attachment instructions and oversized text, block partial sends while uploads are pending or failed, show attachments immediately with optimistic and streamed messages, and pass validated images through Codex's native image inputs.
 
