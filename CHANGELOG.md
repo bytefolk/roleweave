@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- #637: Add an external-tool integration guide (`docs/integrations/`) and a zero-dependency Orca supervisor reference client (`examples/orca-supervisor-client.mjs`) covering pairing etiquette, snapshot polling and SSE consumption with `Last-Event-ID` resume; the client prints one-line metadata only and never task text.
+
 ## [0.6.1] — 2026-10-23
 
 ### Fixed
