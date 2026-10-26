@@ -69,10 +69,19 @@ import { handleAttachmentRead, handleAttachmentUpload } from "./attachments/rout
 import { handleWorkspaceCreate, handleWorkspaceGet, handleWorkspaceInitialize, handleWorkspaceOpen } from "./routes/workspace.js";
 import { handleTaskCreate, handleTaskDecision, handleTaskList, handleTaskStatus } from "./routes/tasks.js";
 import { handleRelationships } from "./routes/relationships.js";
+import {
+  handleSupervisorPair,
+  handleSupervisorPairingRevoke,
+  handleSupervisorPairingsList,
+  handleSupervisorSnapshot,
+} from "./routes/supervisor.js";
 
 /**
  * Loopback-only control-plane HTTP server (frozen v0 contract).
  * Auth: every endpoint except /health requires `Authorization: Bearer <boot-token>`.
+ * Additive #635 exception: GET /supervisor/snapshot and GET /events also
+ * accept a supervisor pairing token — a read-only credential managed through
+ * POST /supervisor/pair (boot token only). No other path accepts it.
  */
 export function createControlPlane(ctx: ControlPlaneContext): http.Server {
   const server = http.createServer((req, res) => {
@@ -98,12 +107,24 @@ async function dispatch(
 
     const actor = pathname === routes.health ? undefined : authenticatedActor(req, ctx.config.token, ctx.config.approvalActorId);
     if (pathname !== routes.health && !actor) {
-      sendJson(
-        res,
-        401,
-        new OrgApiError(errorCodes.unauthorized, 401, "missing or invalid bearer token").toBody(),
-      );
-      return;
+      // Additive #635: supervisor pairing tokens unlock exactly two GET
+      // paths (snapshot + SSE). Everything else stays boot-token-only and
+      // answers with the same `unauthorized` body, so the response never
+      // reveals the size or shape of the supervisor surface.
+      const supervisorRead =
+        method === "GET" && (pathname === routes.supervisorSnapshot || pathname === routes.events);
+      const supervisorAccepted =
+        supervisorRead &&
+        ctx.supervisorStore !== undefined &&
+        ctx.supervisorStore.verifyRequest(req) !== null;
+      if (!supervisorAccepted) {
+        sendJson(
+          res,
+          401,
+          new OrgApiError(errorCodes.unauthorized, 401, "missing or invalid bearer token").toBody(),
+        );
+        return;
+      }
     }
 
     if (await handleServices(ctx, req, res, url)) return;
@@ -458,6 +479,32 @@ async function dispatch(
     }
     if (pathname === routes.events && method === "GET") {
       handleEvents(ctx, req, res);
+      return;
+    }
+    // Additive #635: supervisor surface. Pairing management is boot-token
+    // only (the central gate above rejected supervisor tokens for writes);
+    // the snapshot GET additionally accepts a supervisor token.
+    if (pathname === routes.supervisorPair && method === "POST") {
+      await handleSupervisorPair(ctx, req, res);
+      return;
+    }
+    if (pathname === routes.supervisorPairings && method === "GET") {
+      await handleSupervisorPairingsList(ctx, res);
+      return;
+    }
+    const pairingMatch = pathname.match(/^\/supervisor\/pairings\/([^/]+)$/);
+    if (pairingMatch && method === "DELETE") {
+      let pairingId: string;
+      try {
+        pairingId = decodeURIComponent(pairingMatch[1]!);
+      } catch {
+        throw new OrgApiError(errorCodes.supervisor_request_invalid, 400, "malformed pairing id");
+      }
+      await handleSupervisorPairingRevoke(ctx, res, pairingId);
+      return;
+    }
+    if (pathname === routes.supervisorSnapshot && method === "GET") {
+      await handleSupervisorSnapshot(ctx, res);
       return;
     }
     if (pathname.startsWith(`${routes.positions}/`) && pathname.endsWith("/model") && method === "PATCH") {

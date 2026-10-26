@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- #635: Add the additive read-only supervisor surface: `POST /supervisor/pair`, `GET /supervisor/pairings`, `DELETE /supervisor/pairings/:id` (boot token only) and `GET /supervisor/snapshot` (boot token or supervisor token). Supervisor tokens are 32-byte random hex, retained as in-memory SHA-256 digests only, capped at 8 active pairings, unlock exactly the snapshot and SSE GET paths, and die on restart. The snapshot reuses the frozen org-tree projection and the reports budget semantics; no task text, stderr or credentials are exposed.
+
 ## [0.6.1] — 2026-10-23
 
 ### Fixed

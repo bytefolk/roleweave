@@ -274,7 +274,8 @@ function reportingChain(positionId: string, roles: OrgRole[]): string[] {
   return chain;
 }
 
-function buildBudgets(roles: OrgRole[], records: TurnRecord[]): BudgetReport[] {
+/** Additive #635: shared by the supervisor snapshot so budget semantics never fork. */
+export function buildBudgets(roles: OrgRole[], records: TurnRecord[]): BudgetReport[] {
   return roles.map((role) => {
     const own = records.filter((record) => record.positionId === role.id);
     const recorded = own.reduce<ReportUsage>((total, record) => {

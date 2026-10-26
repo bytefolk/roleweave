@@ -12,6 +12,7 @@ import type { TaskBoardStore } from "./tasks/store.js";
 import type { ContextExportService } from "./context-export/exporter.js";
 import type { ExperimentsService } from "./experiments/service.js";
 import type { RelayStopCoordinator } from "./groups/relay-stop.js";
+import type { SupervisorStore } from "./supervisor/store.js";
 
 export interface ControlPlaneContext {
   config: ServerConfig;
@@ -43,4 +44,6 @@ export interface ControlPlaneContext {
   contextExporter: ContextExportService;
   /** Lazy optional preview service, injectable without any external calls in tests. */
   experimentsService?: ExperimentsService;
+  /** Additive #635: optional read-only supervisor pairings; absent = surface fails closed. */
+  supervisorStore?: SupervisorStore;
 }
