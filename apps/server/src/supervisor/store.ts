@@ -83,13 +83,17 @@ export class SupervisorStore {
    * Constant-time verification of a bearer token against retained digests.
    * Returns the owning pairing id, or null. A successful read touches
    * `lastUsedAt` so the operator can see which pairing is actually in use.
+   *
+   * The Authorization header is parsed without a backtracking regex (the
+   * header is attacker-controlled input; js/polynomial-redos): a whitespace
+   * split has no nested quantifiers and cannot blow up on adversarial input.
    */
   verifyRequest(req: IncomingMessage): string | null {
     const header = req.headers.authorization;
     if (typeof header !== "string") return null;
-    const match = /^Bearer\s+(.+)$/i.exec(header);
-    const given = match?.[1];
-    if (!given) return null;
+    const parts = header.split(/\s+/).filter((part) => part.length > 0);
+    if (parts.length !== 2 || parts[0]!.toLowerCase() !== "bearer") return null;
+    const given = parts[1]!;
     const digest = sha256(given);
     for (const entry of this.pairings.values()) {
       if (crypto.timingSafeEqual(digest, entry.tokenHash)) {
