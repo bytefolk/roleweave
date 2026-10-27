@@ -14,6 +14,24 @@ import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helper
 
 const TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 
+/** Rejects when the promise does not settle within timeoutMs; runs cleanup on failure. */
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string, cleanup?: () => void): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          cleanup?.();
+          reject(new Error(message));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 test("supervisor: pair -> snapshot with supervisor token -> list -> revoke -> 401", async () => {
   const server = await startTestServer();
   const dir = await copyExampleWorkspace();
@@ -346,47 +364,81 @@ test("supervisor: normally closed SSE connections unregister — repeated reconn
     });
     const pairing = pair.body as { id: string; token: string };
     const store = server.ctx.supervisorStore!;
-    const openStream = (): { closed: Promise<void>; destroy: () => void } => {
-      let req: http.ClientRequest;
+
+    // Review round 3: a client-side close/error is NOT a signal that the
+    // server has finished its own finish()/unregister — req.destroy() can
+    // fire the local handlers first. Every registry assertion therefore
+    // waits on a bounded condition instead of a fixed sleep.
+    const waitForCount = async (expected: number, timeoutMs = 5000): Promise<void> => {
+      const deadline = Date.now() + timeoutMs;
+      while (store.connectionCount(pairing.id) !== expected) {
+        if (Date.now() > deadline) {
+          throw new Error(
+            `connectionCount did not reach ${expected} within ${timeoutMs}ms (currently ${store.connectionCount(pairing.id)})`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    };
+
+    const openStream = (): { ready: Promise<void>; closed: Promise<void>; destroy: () => void } => {
+      let req!: http.ClientRequest;
+      let readyResolve!: () => void;
+      // The server registers the connection synchronously during dispatch,
+      // before the headers flush — so resolved headers imply registered.
+      const ready = new Promise<void>((resolve) => {
+        readyResolve = resolve;
+      });
       const closed = new Promise<void>((resolve) => {
         req = http.get(
           `${server.baseUrl}${routes.events}`,
           { headers: { authorization: `Bearer ${pairing.token}`, accept: "text/event-stream" } },
           (res) => {
+            readyResolve();
             res.resume();
             res.on("close", resolve);
           },
         );
         req.on("error", () => resolve());
       });
-      return { closed, destroy: () => req!.destroy() };
+      return { ready, closed, destroy: () => req.destroy() };
     };
 
     // 12 establish/disconnect cycles: every normal close must unregister its
     // closer, so the registry drains back to zero each time (review round 2).
     for (let cycle = 0; cycle < 12; cycle++) {
       const stream = openStream();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await withTimeout(stream.ready, 5000, "SSE headers did not arrive within 5s");
       if (cycle === 0) {
-        assert.equal(store.connectionCount(pairing.id), 1, "a live stream must be registered while connected");
+        await waitForCount(1, 5000);
       }
       stream.destroy();
-      await stream.closed;
-      assert.equal(store.connectionCount(pairing.id), 0, `registry must drain after cycle ${cycle}`);
+      await withTimeout(stream.closed, 5000, `client stream did not close within 5s (cycle ${cycle})`);
+      await waitForCount(0, 5000);
     }
 
     // Multiple concurrent connections + revocation: all closers fire and the
     // registry ends empty, not holding the revoked pairing's sockets.
     const streams = [0, 1, 2].map(() => openStream());
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    assert.equal(store.connectionCount(pairing.id), 3);
+    await withTimeout(Promise.all(streams.map((stream) => stream.ready)), 5000, "concurrent SSE headers did not arrive within 5s");
+    await waitForCount(3, 5000);
     const revoke = await api(server.baseUrl, `${routes.supervisorPairings}/${pairing.id}`, {
       method: "DELETE",
       token: server.token,
     });
     assert.equal(revoke.status, 200);
-    await Promise.all(streams);
-    assert.equal(store.connectionCount(pairing.id), 0, "revocation must drain every registered connection");
+    // Review round 3: wait on the streams' actual close promises (an await
+    // of the wrapper objects resolves immediately), bound it, and destroy
+    // every stream on failure so a broken assertion cannot leave sockets.
+    await withTimeout(
+      Promise.all(streams.map((stream) => stream.closed)),
+      5000,
+      "streams did not close within 5s of revocation",
+      () => {
+        for (const stream of streams) stream.destroy();
+      },
+    );
+    await waitForCount(0, 5000);
   } finally {
     await server.close();
   }
