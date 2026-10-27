@@ -14,6 +14,7 @@
 - #638: Wire the reference client to the supervisor surface: the snapshot now comes from a single `GET /supervisor/snapshot` (supervisor token) instead of the operator-only `/workspace` + `/org/tree` pair, and the guide teaches the one-time supervisor pairing flow instead of forwarding the operator boot-token.
 - #638: Keep supervisor credentials out of argv: the client reads the token from a stdin pipe or `ROLEWEAVE_SUPERVISOR_TOKEN` and refuses `--token`, matching the contract's own credential discipline.
 - #638: Make the 45s silent-stream reconnect actually fire: the idle timeout now drives an `AbortController` created before `fetch` and wired via `signal` (an unwired controller never aborted the read, so dead streams never reconnected).
+- #638: Treat an SSE 401 as a dead credential, not a backoff case: when the stream answers 401 the client stops retrying, releases the response, prints a re-pair hint (no token material) and exits non-zero — automatic retries can never restore a revoked pairing or one lost to a control-plane restart. Network failures and recoverable server errors still reconnect with backoff.
 
 ## [0.6.1] — 2026-10-23
 

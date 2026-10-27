@@ -12,6 +12,9 @@
  *   2. Stream GET /events (SSE) with Last-Event-ID resume on reconnect.
  *      The server projects this stream for supervisor credentials: payloads
  *      are metadata-only by the time they leave the control plane.
+ *      A 401 on the stream is terminal — the pairing died (revoked or
+ *      control-plane restart); the client stops retrying, explains that a
+ *      re-pair is needed, and exits non-zero.
  *   3. Print one-line metadata per turn event — NEVER task text.
  *   4. Exit cleanly on SIGINT.
  *
@@ -202,12 +205,29 @@ function connectEvents(token) {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS);
     };
+    // Review round 2: a 401 on the stream means the credential itself is
+    // dead — the pairing was revoked or the control plane restarted
+    // (pairings are memory-only). Retrying with the same token cannot
+    // restore authorization, so this is a terminal state, not a backoff
+    // case. Network failures and recoverable server errors still reconnect.
+    let credentialsDead = false;
 
     const headers = { authorization: `Bearer ${token}`, accept: "text/event-stream" };
     if (lastSeq !== null) headers["last-event-id"] = String(lastSeq);
 
     fetch(`${baseUrl}/events`, { headers, signal: controller.signal })
       .then(async (res) => {
+        if (res.status === 401) {
+          credentialsDead = true;
+          // Release the rejected response so the socket does not linger.
+          try {
+            await res.body?.cancel();
+          } catch {
+            // The socket state does not change the outcome.
+          }
+          log(COLORS.red, "supervisor token rejected (SSE 401) — pairing revoked or control plane restarted; re-pair with POST /supervisor/pair and restart the client.");
+          return;
+        }
         if (!res.ok || !res.body) {
           throw new Error(`SSE ${res.status}`);
         }
@@ -216,6 +236,7 @@ function connectEvents(token) {
         await readStream(res.body, rearmIdle);
       })
       .catch((err) => {
+        if (credentialsDead) return;
         if (err?.name === "AbortError") {
           log(COLORS.yellow, `event stream idle for ${IDLE_TIMEOUT_MS / 1000}s — reconnecting`);
         } else {
@@ -224,6 +245,12 @@ function connectEvents(token) {
       })
       .finally(() => {
         clearTimeout(idleTimer);
+        if (credentialsDead) {
+          // Stop retrying and exit non-zero so a supervisor notices instead
+          // of silently hammering the server with a dead token.
+          process.exitCode = 1;
+          return;
+        }
         scheduleReconnect();
       });
   };
