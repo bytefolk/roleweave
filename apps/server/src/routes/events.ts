@@ -14,12 +14,16 @@ export interface EventsStreamOptions {
    */
   project?: (event: SseEventEnvelope) => SseEventEnvelope | null;
   /**
-   * Additive #639: receives a force-close hook once the stream is wired up.
-   * The supervisor surface uses it so revoking a pairing can immediately end
-   * already-established connections — authenticating only at connect time
-   * does not cover a long-lived stream.
+   * Additive #639: receives a force-close hook once the stream is wired up
+   * and returns the matching unregister (or void when the authority cleans
+   * up on its own). The supervisor surface uses the hook so revoking a
+   * pairing can immediately end already-established connections —
+   * authenticating only at connect time does not cover a long-lived stream.
+   * Review round 2: the returned unregister must actually be kept and
+   * invoked on every finish path, otherwise normally closed streams keep
+   * their socket references alive in the pairing registry until revocation.
    */
-  register?: (close: () => void) => void;
+  register?: (close: () => void) => (() => void) | void;
 }
 
 /**
@@ -38,6 +42,11 @@ export function handleEvents(ctx: ControlPlaneContext, req: IncomingMessage, res
   res.write(": org-workbench event stream v0\n\n");
 
   let closed = false;
+  // Additive #639 (review round 2): the unregister for the force-close hook.
+  // Kept and invoked exactly once from finish() so every teardown path —
+  // normal close, revoked pairing, server shutdown — drains the connection
+  // registry instead of leaking closers per reconnect.
+  let unregisterConnection: (() => void) | undefined;
   const heartbeat = setInterval(() => {
     res.write(": ping\n\n");
   }, HEARTBEAT_MS);
@@ -45,6 +54,7 @@ export function handleEvents(ctx: ControlPlaneContext, req: IncomingMessage, res
     if (closed) return;
     closed = true;
     clearInterval(heartbeat);
+    unregisterConnection?.();
     unsubscribe();
     if (ctx.bus.listenerCount === 0) ctx.relayStop.continueAll("disconnect");
   };
@@ -65,12 +75,13 @@ export function handleEvents(ctx: ControlPlaneContext, req: IncomingMessage, res
   });
 
   // Additive #639: a revoked pairing (or any registered authority) can force
-  // the stream closed. finish() is idempotent, so the normal close handlers
-  // below stay the single cleanup path.
-  options.register?.(() => {
+  // the stream closed. finish() is idempotent and now also unregisters the
+  // hook below, so the normal close handlers stay the single cleanup path.
+  const registered = options.register?.(() => {
     finish();
     res.destroy();
   });
+  unregisterConnection = typeof registered === "function" ? registered : undefined;
   req.on("close", finish);
   res.on("close", finish);
 }

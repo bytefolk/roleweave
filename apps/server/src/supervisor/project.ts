@@ -29,18 +29,25 @@ const SUPERVISOR_PAYLOAD_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "turn.completed": ["runId", "positionId", "turnId", "workspacePath"],
   "turn.failed": ["runId", "positionId", "turnId", "workspacePath"],
   "turn.indeterminate": ["code", "positionId", "turnId", "envelopeDigest", "workspacePath"],
+  // Review round 2: the only producer of this type is ProgressTracker.publish()
+  // (apps/server/src/turns/progress.ts), which emits TaskProgressEvent —
+  // stepIndex/stepStatus/totalSteps/timestamp — not the TaskProgressSnapshot
+  // shape (currentStep/overallStatus/updatedAt) the first allowlist guessed.
+  // Safe step names come from the fixed WORKBENCH_PROGRESS_STEPS constant, so
+  // stepName is metadata too; taskTitle/employeeName/message and the
+  // step-detail objects stay projected out.
   "turn.progress": [
     "taskId",
     "employeeId",
     "positionId",
+    "stepIndex",
+    "stepName",
+    "stepStatus",
+    "totalSteps",
     "progress",
-    "currentStep",
-    "overallStatus",
-    "startedAt",
-    "updatedAt",
+    "timestamp",
     "retryOf",
     "retryCount",
-    "workspacePath",
   ],
   // Approval action description/target/preview and the reason field never
   // cross to a supervisor consumer; only identifiers and expiry do.

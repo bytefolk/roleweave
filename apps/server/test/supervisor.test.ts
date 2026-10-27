@@ -213,20 +213,16 @@ test("supervisor: /events payloads are projected server-side for supervisor toke
     const pairing = pair.body as { id: string; token: string };
 
     // Batch A is published before any listener connects: the supervisor
-    // Last-Event-ID replay must be projected exactly like live push.
-    server.ctx.bus.publish("turn.progress", {
+    // Last-Event-ID replay must be projected exactly like live push. The
+    // turn.progress events come from the real ProgressTracker (review
+    // round 2: never hand-write a snapshot shape for these), so the
+    // allowlist is exercised against the actual TaskProgressEvent producer.
+    server.ctx.progressTracker.begin({
+      workspacePath: "C://ws",
       taskId: "task-1",
       positionId: "repo-owner",
-      employeeId: "repo-owner",
       employeeName: "Agent Smith",
       taskTitle: "CONFIDENTIAL TASK TITLE",
-      progress: 40,
-      currentStep: 2,
-      steps: [{ label: "SECRET STEP" }],
-      overallStatus: "running",
-      startedAt: "2026-10-27T00:00:00.000Z",
-      updatedAt: "2026-10-27T00:00:01.000Z",
-      workspacePath: "C://ws",
     });
     server.ctx.bus.publish("turn.model.delta", { runId: "run-1", timestamp: "2026-10-27T00:00:02.000Z", text: "RAW MODEL OUTPUT" });
     server.ctx.bus.publish("turn.approval.requested", {
@@ -241,10 +237,18 @@ test("supervisor: /events payloads are projected server-side for supervisor toke
     const progressFrame = await supervisor.waitForEvent("turn.progress");
     const progress = JSON.parse(progressFrame.data) as { payload: Record<string, unknown> };
     assert.equal(progress.payload.taskId, "task-1");
-    assert.equal(progress.payload.overallStatus, "running");
+    // Real metadata survives: step index/status/total/timestamp (the event
+    // shape ProgressTracker.publish actually emits).
+    assert.equal(progress.payload.stepIndex, 0);
+    assert.equal(progress.payload.stepStatus, "running");
+    assert.equal(progress.payload.totalSteps, 5);
+    assert.equal(typeof progress.payload.timestamp, "number");
+    assert.equal(progress.payload.stepName, "Assemble thread context");
+    // Body text does not: title, employee name, step message, step objects.
     assert.equal(progress.payload.taskTitle, undefined);
     assert.equal(progress.payload.employeeName, undefined);
     assert.equal("steps" in progress.payload, false);
+    assert.equal("message" in progress.payload, false);
     const approvalFrame = await supervisor.waitForEvent("turn.approval.requested");
     const approval = JSON.parse(approvalFrame.data) as { payload: Record<string, unknown> };
     assert.equal(approval.payload.approvalId, "approval-1");
@@ -256,37 +260,38 @@ test("supervisor: /events payloads are projected server-side for supervisor toke
     assert.ok(!supervisorRaw.includes("SECRET COMMAND"));
     assert.ok(!supervisorRaw.includes("turn.model.delta"), "the model delta type is not part of the supervisor surface");
 
-    // Live push on the already-established connection is projected too.
-    server.ctx.bus.publish("turn.progress", {
-      taskId: "task-2",
-      positionId: "repo-owner",
-      employeeId: "repo-owner",
-      employeeName: "Agent Smith",
-      taskTitle: "LIVE SECRET TITLE",
-      progress: 80,
-      currentStep: 3,
-      steps: [],
-      overallStatus: "running",
-      startedAt: "2026-10-27T00:00:04.000Z",
-      updatedAt: "2026-10-27T00:00:05.000Z",
-      workspacePath: "C://ws",
-    });
+    // Live push on the already-established connection is projected too, and
+    // step transitions stay readable: finish step 0, then fail step 1 with a
+    // secret message that must not cross the boundary.
+    server.ctx.progressTracker.reportStepFinish("task-1", 0, "SECRET STEP MESSAGE");
+    server.ctx.progressTracker.reportStepFail("task-1", 1, "SECRET FAILURE MESSAGE");
     const liveDeadline = Date.now() + 5000;
-    let liveFrame = supervisor.events.find((frame) => frame.data.includes("task-2"));
-    while (liveFrame === undefined && Date.now() < liveDeadline) {
+    const findLive = (needle: string): { data: string } | undefined =>
+      supervisor.events.find((frame) => frame.event === "turn.progress" && frame.data.includes(needle));
+    let finishFrame = findLive('"stepStatus":"success"');
+    let failFrame = findLive('"stepStatus":"failed"');
+    while ((finishFrame === undefined || failFrame === undefined) && Date.now() < liveDeadline) {
       await new Promise((resolve) => setTimeout(resolve, 50));
-      liveFrame = supervisor.events.find((frame) => frame.data.includes("task-2"));
+      finishFrame = finishFrame ?? findLive('"stepStatus":"success"');
+      failFrame = failFrame ?? findLive('"stepStatus":"failed"');
     }
-    assert.ok(liveFrame, "the live turn.progress event must arrive on the supervisor stream");
-    assert.ok(!liveFrame.data.includes("LIVE SECRET TITLE"), "live task titles must be projected out");
-    assert.ok(liveFrame.data.includes("overallStatus"), "live metadata fields must survive the projection");
+    assert.ok(finishFrame, "the live step-success event must arrive on the supervisor stream");
+    assert.ok(failFrame, "the live step-failure event must arrive on the supervisor stream");
+    const finished = JSON.parse(finishFrame.data) as { payload: Record<string, unknown> };
+    const failed = JSON.parse(failFrame.data) as { payload: Record<string, unknown> };
+    assert.equal(finished.payload.stepIndex, 0);
+    assert.equal(finished.payload.stepStatus, "success");
+    assert.equal(failed.payload.stepIndex, 1);
+    assert.equal(failed.payload.stepStatus, "failed");
+    assert.ok(!failFrame.data.includes("SECRET FAILURE MESSAGE"), "failure messages must be projected out");
+    assert.ok(!finishFrame.data.includes("SECRET STEP MESSAGE"));
 
     // The operator stream keeps the frozen v0 semantics: full payloads.
     const operator = connectSse(server.baseUrl, server.token, "0");
     const opProgressFrame = await operator.waitForEvent("turn.progress");
-    const opProgress = JSON.parse(opProgressFrame.data) as { payload: { taskTitle?: string; steps?: unknown[] } };
+    const opProgress = JSON.parse(opProgressFrame.data) as { payload: { taskTitle?: string; employeeName?: string } };
     assert.equal(opProgress.payload.taskTitle, "CONFIDENTIAL TASK TITLE");
-    assert.ok(Array.isArray(opProgress.payload.steps));
+    assert.equal(opProgress.payload.employeeName, "Agent Smith");
     operator.close();
     supervisor.close();
   } finally {
@@ -326,6 +331,62 @@ test("supervisor: revoking a pairing immediately closes the established SSE conn
     });
     assert.equal(revoke.status, 200);
     await streamClosed;
+  } finally {
+    await server.close();
+  }
+});
+
+test("supervisor: normally closed SSE connections unregister — repeated reconnects never grow the registry", async () => {
+  const server = await startTestServer();
+  try {
+    const pair = await api(server.baseUrl, routes.supervisorPair, {
+      method: "POST",
+      token: server.token,
+      body: { label: "reconnect-churn" },
+    });
+    const pairing = pair.body as { id: string; token: string };
+    const store = server.ctx.supervisorStore!;
+    const openStream = (): { closed: Promise<void>; destroy: () => void } => {
+      let req: http.ClientRequest;
+      const closed = new Promise<void>((resolve) => {
+        req = http.get(
+          `${server.baseUrl}${routes.events}`,
+          { headers: { authorization: `Bearer ${pairing.token}`, accept: "text/event-stream" } },
+          (res) => {
+            res.resume();
+            res.on("close", resolve);
+          },
+        );
+        req.on("error", () => resolve());
+      });
+      return { closed, destroy: () => req!.destroy() };
+    };
+
+    // 12 establish/disconnect cycles: every normal close must unregister its
+    // closer, so the registry drains back to zero each time (review round 2).
+    for (let cycle = 0; cycle < 12; cycle++) {
+      const stream = openStream();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (cycle === 0) {
+        assert.equal(store.connectionCount(pairing.id), 1, "a live stream must be registered while connected");
+      }
+      stream.destroy();
+      await stream.closed;
+      assert.equal(store.connectionCount(pairing.id), 0, `registry must drain after cycle ${cycle}`);
+    }
+
+    // Multiple concurrent connections + revocation: all closers fire and the
+    // registry ends empty, not holding the revoked pairing's sockets.
+    const streams = [0, 1, 2].map(() => openStream());
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(store.connectionCount(pairing.id), 3);
+    const revoke = await api(server.baseUrl, `${routes.supervisorPairings}/${pairing.id}`, {
+      method: "DELETE",
+      token: server.token,
+    });
+    assert.equal(revoke.status, 200);
+    await Promise.all(streams);
+    assert.equal(store.connectionCount(pairing.id), 0, "revocation must drain every registered connection");
   } finally {
     await server.close();
   }

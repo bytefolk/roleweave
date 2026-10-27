@@ -102,6 +102,16 @@ export class SupervisorStore {
   }
 
   /**
+   * Additive #639 (review round 2): number of live SSE connections currently
+   * retained for a pairing. Read-only visibility for tests and operator
+   * diagnostics — after the unregister fix this must return to 0 once every
+   * stream under the pairing has ended, for any end reason.
+   */
+  connectionCount(pairingId: string): number {
+    return this.connections.get(pairingId)?.size ?? 0;
+  }
+
+  /**
    * Revokes a pairing and — additive #639 — immediately closes every live
    * SSE connection registered under it, so a deleted pairing stops receiving
    * events on long-lived streams. Returns false when the id is unknown or

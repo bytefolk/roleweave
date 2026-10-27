@@ -487,9 +487,11 @@ async function dispatch(
         const store = ctx.supervisorStore;
         handleEvents(ctx, req, res, {
           project: projectSupervisorEvent,
-          register: (close) => {
-            store.registerConnection(supervisorPairingId, close);
-          },
+          // Review round 2: pass the store's unregister through so handleEvents
+          // can drop the hook when the stream finishes for any reason
+          // (normally closed, revoked, or destroyed) — discarding it leaked
+          // one closer with its response/socket references per reconnect.
+          register: (close) => store.registerConnection(supervisorPairingId, close),
         });
       } else {
         handleEvents(ctx, req, res);

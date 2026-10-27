@@ -636,10 +636,11 @@ Mem provider 在请求开始时捕获连接，使用该连接的 API 地址、�
 
 `GET /events`（supervisor 凭据，#639 收紧）：
 
-- **服务端字段白名单投影**：supervisor 凭据的 SSE 流按事件类型做 payload 字段白名单投影，且只放行标量值（string/number/boolean/null）——模型输出（`turn.model.delta` 整类不下发）、任务标题与步骤消息（`turn.progress` 的 `taskTitle`/`employeeName`/`steps`）、审批动作描述（`turn.approval.requested` 的 `action`/`reason`）、trace 详情与失败诊断一律不离开服务端。客户端"只打印元数据"是展示选择，不是边界；边界在服务端。
+- **服务端字段白名单投影**：supervisor 凭据的 SSE 流按事件类型做 payload 字段白名单投影，且只放行标量值（string/number/boolean/null）——模型输出（`turn.model.delta` 整类不下发）、任务标题与步骤消息（`turn.progress` 的 `taskTitle`/`employeeName`/`message`/`steps`）、审批动作描述（`turn.approval.requested` 的 `action`/`reason`）、trace 详情与失败诊断一律不离开服务端。客户端"只打印元数据"是展示选择，不是边界；边界在服务端。`turn.progress` 的白名单对齐生产者真实形状 `TaskProgressEvent`（`stepIndex`/`stepName`（取自固定五步常量）/`stepStatus`/`totalSteps`/`timestamp` 等安全元字段），不以快照字段为准。
 - **回放与实时同等生效**：Last-Event-ID 环形缓冲回放与实时推送走同一投影，重连的监督端无法从回放中读到被投影掉的字段。
 - **operator 凭据语义不变**：boot-token 的 `/events` 仍是 §2.10 冻结形状，不投影。
 - **吊销即时切断**：`DELETE /supervisor/pairings/:id` 成功即关闭该配对已建立的 SSE 连接并停止推送——长连接只在建立时鉴权不足以覆盖吊销语义；吊销后新请求按 401 拒绝。
+- **连接注销**：每个 SSE 流结束时（正常断开、吊销、销毁，任一路径）恰好一次从配对连接注册表注销其 force-close 钩子；反复断连/重连不会累积持有 socket 引用的闭包。
 
 ### 项目任务人工验收
 
