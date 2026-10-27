@@ -43,8 +43,13 @@ export function createSupervisorToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+/** Additive #639: tears down one live SSE connection (idempotent). */
+export type SupervisorConnectionCloser = () => void;
+
 export class SupervisorStore {
   private readonly pairings = new Map<string, SupervisorPairingEntry>();
+  /** Additive #639: live SSE connections per pairing id, so revocation can cut them. */
+  private readonly connections = new Map<string, Set<SupervisorConnectionCloser>>();
 
   /** Creates a pairing; returns the plaintext token exactly once. */
   pair(label: string): { id: string; token: string; createdAt: string } {
@@ -74,9 +79,48 @@ export class SupervisorStore {
     return this.pairings.has(pairingId);
   }
 
-  /** Revokes a pairing; returns false when the id is unknown or already gone. */
+  /**
+   * Additive #639: associates a live SSE connection with its pairing id so
+   * `revoke` can immediately end already-established streams. Auth happens at
+   * connect time only, so a pairing deleted afterwards must be able to reach
+   * the still-open socket — the returned function unregisters the hook
+   * (idempotent, safe to call from the stream's own close handler).
+   */
+  registerConnection(pairingId: string, close: SupervisorConnectionCloser): () => void {
+    let set = this.connections.get(pairingId);
+    if (set === undefined) {
+      set = new Set();
+      this.connections.set(pairingId, set);
+    }
+    set.add(close);
+    return () => {
+      const current = this.connections.get(pairingId);
+      if (current === undefined) return;
+      current.delete(close);
+      if (current.size === 0) this.connections.delete(pairingId);
+    };
+  }
+
+  /**
+   * Revokes a pairing and — additive #639 — immediately closes every live
+   * SSE connection registered under it, so a deleted pairing stops receiving
+   * events on long-lived streams. Returns false when the id is unknown or
+   * already gone (revocation of connections still runs in that case).
+   */
   revoke(pairingId: string): boolean {
-    return this.pairings.delete(pairingId);
+    const existed = this.pairings.delete(pairingId);
+    const closers = this.connections.get(pairingId);
+    if (closers !== undefined) {
+      this.connections.delete(pairingId);
+      for (const close of closers) {
+        try {
+          close();
+        } catch {
+          // A half-broken socket must not block revocation of the others.
+        }
+      }
+    }
+    return existed;
   }
 
   /**

@@ -135,6 +135,13 @@ function requireStore(ctx: ControlPlaneContext): NonNullable<ControlPlaneContext
 }
 
 function readLabel(body: PairingRequestBody): string {
+  // Additive #639: fail closed on non-object bodies. JSON null, arrays and
+  // scalars all reach this function (readJsonBody only guarantees valid
+  // JSON); `Object.keys(null)` would surface as a 500 instead of the stable
+  // 400 shape error.
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    throw new OrgApiError(errorCodes.supervisor_request_invalid, 400, "supervisor pairing requires exactly { label: string }");
+  }
   const keys = Object.keys(body);
   if (keys.length !== 1 || keys[0] !== "label" || typeof body.label !== "string") {
     throw new OrgApiError(errorCodes.supervisor_request_invalid, 400, "supervisor pairing requires exactly { label: string }");

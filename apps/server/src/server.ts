@@ -75,6 +75,7 @@ import {
   handleSupervisorPairingsList,
   handleSupervisorSnapshot,
 } from "./routes/supervisor.js";
+import { projectSupervisorEvent } from "./supervisor/project.js";
 
 /**
  * Loopback-only control-plane HTTP server (frozen v0 contract).
@@ -106,6 +107,7 @@ async function dispatch(
     const method = (req.method ?? "GET").toUpperCase();
 
     const actor = pathname === routes.health ? undefined : authenticatedActor(req, ctx.config.token, ctx.config.approvalActorId);
+    let supervisorPairingId: string | null = null;
     if (pathname !== routes.health && !actor) {
       // Additive #635: supervisor pairing tokens unlock exactly two GET
       // paths (snapshot + SSE). Everything else stays boot-token-only and
@@ -113,11 +115,9 @@ async function dispatch(
       // reveals the size or shape of the supervisor surface.
       const supervisorRead =
         method === "GET" && (pathname === routes.supervisorSnapshot || pathname === routes.events);
-      const supervisorAccepted =
-        supervisorRead &&
-        ctx.supervisorStore !== undefined &&
-        ctx.supervisorStore.verifyRequest(req) !== null;
-      if (!supervisorAccepted) {
+      supervisorPairingId =
+        supervisorRead && ctx.supervisorStore !== undefined ? ctx.supervisorStore.verifyRequest(req) : null;
+      if (supervisorPairingId === null) {
         sendJson(
           res,
           401,
@@ -478,7 +478,22 @@ async function dispatch(
       return;
     }
     if (pathname === routes.events && method === "GET") {
-      handleEvents(ctx, req, res);
+      if (supervisorPairingId !== null && ctx.supervisorStore !== undefined) {
+        // Additive #639: supervisor consumers get a server-side field
+        // projection (no model output, task titles, approval descriptions,
+        // trace details or diagnostics — covering both live push and
+        // Last-Event-ID replay), and the stream is bound to the pairing so
+        // revocation immediately ends established connections.
+        const store = ctx.supervisorStore;
+        handleEvents(ctx, req, res, {
+          project: projectSupervisorEvent,
+          register: (close) => {
+            store.registerConnection(supervisorPairingId, close);
+          },
+        });
+      } else {
+        handleEvents(ctx, req, res);
+      }
       return;
     }
     // Additive #635: supervisor surface. Pairing management is boot-token

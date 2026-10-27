@@ -3,7 +3,7 @@ import http from "node:http";
 import test from "node:test";
 import { routes } from "@roleweave/shared";
 import { SupervisorStore } from "../src/supervisor/store.js";
-import { api, copyExampleWorkspace, startTestServer } from "./helpers.js";
+import { api, connectSse, copyExampleWorkspace, startTestServer } from "./helpers.js";
 
 /**
  * Additive #635: read-only supervisor surface. One-time pairing (boot token
@@ -113,6 +113,11 @@ test("supervisor: request shape is fail-closed and the pairing limit is enforced
       { label: "   " }, // whitespace-only
       { label: "x".repeat(65) }, // > 64 bytes
       { label: "ok", extra: true }, // extra field
+      null, // #639: JSON null must be a 400, never a 500
+      [], // #639: array body
+      ["label"], // #639: array with a member
+      "orca", // #639: scalar body
+      42, // #639: numeric body
     ]) {
       const res = await api(server.baseUrl, routes.supervisorPair, {
         method: "POST",
@@ -192,6 +197,135 @@ test("supervisor: snapshot without an open workspace reports open:false instead 
     assert.equal(body.workspace.open, false);
     assert.equal(body.orgTree, null);
     assert.deepEqual(body.positions, []);
+  } finally {
+    await server.close();
+  }
+});
+
+test("supervisor: /events payloads are projected server-side for supervisor tokens (replay + live), operator stream untouched", async () => {
+  const server = await startTestServer();
+  try {
+    const pair = await api(server.baseUrl, routes.supervisorPair, {
+      method: "POST",
+      token: server.token,
+      body: { label: "projection" },
+    });
+    const pairing = pair.body as { id: string; token: string };
+
+    // Batch A is published before any listener connects: the supervisor
+    // Last-Event-ID replay must be projected exactly like live push.
+    server.ctx.bus.publish("turn.progress", {
+      taskId: "task-1",
+      positionId: "repo-owner",
+      employeeId: "repo-owner",
+      employeeName: "Agent Smith",
+      taskTitle: "CONFIDENTIAL TASK TITLE",
+      progress: 40,
+      currentStep: 2,
+      steps: [{ label: "SECRET STEP" }],
+      overallStatus: "running",
+      startedAt: "2026-10-27T00:00:00.000Z",
+      updatedAt: "2026-10-27T00:00:01.000Z",
+      workspacePath: "C://ws",
+    });
+    server.ctx.bus.publish("turn.model.delta", { runId: "run-1", timestamp: "2026-10-27T00:00:02.000Z", text: "RAW MODEL OUTPUT" });
+    server.ctx.bus.publish("turn.approval.requested", {
+      runId: "run-1",
+      timestamp: "2026-10-27T00:00:03.000Z",
+      approvalId: "approval-1",
+      action: { kind: "exec", description: "SECRET COMMAND preview", target: "C://secrets" },
+      reason: "operator asked nicely",
+    });
+
+    const supervisor = connectSse(server.baseUrl, pairing.token, "0");
+    const progressFrame = await supervisor.waitForEvent("turn.progress");
+    const progress = JSON.parse(progressFrame.data) as { payload: Record<string, unknown> };
+    assert.equal(progress.payload.taskId, "task-1");
+    assert.equal(progress.payload.overallStatus, "running");
+    assert.equal(progress.payload.taskTitle, undefined);
+    assert.equal(progress.payload.employeeName, undefined);
+    assert.equal("steps" in progress.payload, false);
+    const approvalFrame = await supervisor.waitForEvent("turn.approval.requested");
+    const approval = JSON.parse(approvalFrame.data) as { payload: Record<string, unknown> };
+    assert.equal(approval.payload.approvalId, "approval-1");
+    assert.equal("action" in approval.payload, false);
+    assert.equal("reason" in approval.payload, false);
+    const supervisorRaw = supervisor.events.map((frame) => frame.data).join("\n");
+    assert.ok(!supervisorRaw.includes("RAW MODEL OUTPUT"), "model output must never reach a supervisor consumer");
+    assert.ok(!supervisorRaw.includes("CONFIDENTIAL TASK TITLE"));
+    assert.ok(!supervisorRaw.includes("SECRET COMMAND"));
+    assert.ok(!supervisorRaw.includes("turn.model.delta"), "the model delta type is not part of the supervisor surface");
+
+    // Live push on the already-established connection is projected too.
+    server.ctx.bus.publish("turn.progress", {
+      taskId: "task-2",
+      positionId: "repo-owner",
+      employeeId: "repo-owner",
+      employeeName: "Agent Smith",
+      taskTitle: "LIVE SECRET TITLE",
+      progress: 80,
+      currentStep: 3,
+      steps: [],
+      overallStatus: "running",
+      startedAt: "2026-10-27T00:00:04.000Z",
+      updatedAt: "2026-10-27T00:00:05.000Z",
+      workspacePath: "C://ws",
+    });
+    const liveDeadline = Date.now() + 5000;
+    let liveFrame = supervisor.events.find((frame) => frame.data.includes("task-2"));
+    while (liveFrame === undefined && Date.now() < liveDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      liveFrame = supervisor.events.find((frame) => frame.data.includes("task-2"));
+    }
+    assert.ok(liveFrame, "the live turn.progress event must arrive on the supervisor stream");
+    assert.ok(!liveFrame.data.includes("LIVE SECRET TITLE"), "live task titles must be projected out");
+    assert.ok(liveFrame.data.includes("overallStatus"), "live metadata fields must survive the projection");
+
+    // The operator stream keeps the frozen v0 semantics: full payloads.
+    const operator = connectSse(server.baseUrl, server.token, "0");
+    const opProgressFrame = await operator.waitForEvent("turn.progress");
+    const opProgress = JSON.parse(opProgressFrame.data) as { payload: { taskTitle?: string; steps?: unknown[] } };
+    assert.equal(opProgress.payload.taskTitle, "CONFIDENTIAL TASK TITLE");
+    assert.ok(Array.isArray(opProgress.payload.steps));
+    operator.close();
+    supervisor.close();
+  } finally {
+    await server.close();
+  }
+});
+
+test("supervisor: revoking a pairing immediately closes the established SSE connection", async () => {
+  const server = await startTestServer();
+  try {
+    const pair = await api(server.baseUrl, routes.supervisorPair, {
+      method: "POST",
+      token: server.token,
+      body: { label: "live-stream" },
+    });
+    const pairing = pair.body as { id: string; token: string };
+
+    const streamClosed = new Promise<void>((resolve, reject) => {
+      const req = http.get(
+        `${server.baseUrl}${routes.events}`,
+        { headers: { authorization: `Bearer ${pairing.token}`, accept: "text/event-stream" } },
+        (res) => {
+          res.resume(); // drain frames; we only care about the close
+          res.on("close", resolve);
+        },
+      );
+      req.on("error", () => resolve());
+      setTimeout(() => reject(new Error("SSE connection was not closed within 5s of revocation")), 5000);
+    });
+    // Registration happens synchronously during dispatch, before the headers
+    // are flushed; this beat just makes the race explicit and bounded.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const revoke = await api(server.baseUrl, `${routes.supervisorPairings}/${pairing.id}`, {
+      method: "DELETE",
+      token: server.token,
+    });
+    assert.equal(revoke.status, 200);
+    await streamClosed;
   } finally {
     await server.close();
   }

@@ -596,7 +596,7 @@ Mem provider 在请求开始时捕获连接，使用该连接的 API 地址、�
 | `DELETE /supervisor/pairings/:id` | 仅 boot-token | 吊销配对 |
 | `GET /supervisor/snapshot` | boot-token 或 supervisor-token | 只读快照 |
 
-`POST /supervisor/pair` 请求只允许 `{"label": "<非空，去除首尾空白后 ≤64 字节>"}`，额外字段 400 `supervisor_request_invalid`。成功 201：
+`POST /supervisor/pair` 请求必须是 JSON 对象且只允许 `{"label": "<非空，去除首尾空白后 ≤64 字节>"}`，额外字段 400 `supervisor_request_invalid`；`null`、数组与标量请求体同样是 400 `supervisor_request_invalid`（#639：不允许落到 500 `internal`）。成功 201：
 
 ```json
 { "schemaVersion": "supervisor-pairing.v1alpha1", "id": "<uuid>", "label": "orca-supervisor", "token": "<64 hex>", "createdAt": "..." }
@@ -633,6 +633,13 @@ Mem provider 在请求开始时捕获连接，使用该连接的 API 地址、�
 - 未打开工作区时响应 200（`workspace.open=false`、`orgTree=null`、`positions=[]`）——监督面板需要呈现"空闲"而非错误；`workspace_not_open` 的 422 语义不适用于本端点。
 - `orgTree` 逐字段镜像 §2.4 的 `org-tree.v1` 快照；`budget` 复用 §2.9 的预算投影语义（declared/recorded/latestTurn/state），不新建口径；`engineBinding` 来自岗位 Agent 绑定侧车（无绑定为 `null`）；`runningTurn` 仅在进程内有活跃预留时非空。
 - 不返回：凭据、stderr、事件正文、任务文本、prompt。`path` 边界与 §2.2 相同。
+
+`GET /events`（supervisor 凭据，#639 收紧）：
+
+- **服务端字段白名单投影**：supervisor 凭据的 SSE 流按事件类型做 payload 字段白名单投影，且只放行标量值（string/number/boolean/null）——模型输出（`turn.model.delta` 整类不下发）、任务标题与步骤消息（`turn.progress` 的 `taskTitle`/`employeeName`/`steps`）、审批动作描述（`turn.approval.requested` 的 `action`/`reason`）、trace 详情与失败诊断一律不离开服务端。客户端"只打印元数据"是展示选择，不是边界；边界在服务端。
+- **回放与实时同等生效**：Last-Event-ID 环形缓冲回放与实时推送走同一投影，重连的监督端无法从回放中读到被投影掉的字段。
+- **operator 凭据语义不变**：boot-token 的 `/events` 仍是 §2.10 冻结形状，不投影。
+- **吊销即时切断**：`DELETE /supervisor/pairings/:id` 成功即关闭该配对已建立的 SSE 连接并停止推送——长连接只在建立时鉴权不足以覆盖吊销语义；吊销后新请求按 401 拒绝。
 
 ### 项目任务人工验收
 
