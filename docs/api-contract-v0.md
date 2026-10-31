@@ -585,6 +585,63 @@ Mem provider 在请求开始时捕获连接，使用该连接的 API 地址、�
 { "status": "updated", "positionId": "docs-writer", "name": "文档工程师", "mode": "approval_required", "version": { "seq": 7, "updatedAt": "..." } }
 ```
 
+### 2.18 `/supervisor` — 只读监督面（#635 加法）
+
+为外部舰队监督面板（如 Orca 监督插件）提供最小只读消费面。凭据纪律：operator boot-token 仍是全端点默认凭据；本节新增**监督者配对 token**，只解锁 `GET /supervisor/snapshot` 与 `GET /events` 两个只读路径，对任何其它路径（包括本节的三个管理端点）一律 401 `unauthorized`（与 boot-token 缺失同响应体，不泄露监督面大小）。
+
+| 方法与路径 | 凭据 | 说明 |
+| --- | --- | --- |
+| `POST /supervisor/pair` | 仅 boot-token | 创建配对，token 仅本次响应返回 |
+| `GET /supervisor/pairings` | 仅 boot-token | 列出活跃配对（无 token 字段） |
+| `DELETE /supervisor/pairings/:id` | 仅 boot-token | 吊销配对 |
+| `GET /supervisor/snapshot` | boot-token 或 supervisor-token | 只读快照 |
+
+`POST /supervisor/pair` 请求必须是 JSON 对象且只允许 `{"label": "<非空，去除首尾空白后 ≤64 字节>"}`，额外字段 400 `supervisor_request_invalid`；`null`、数组与标量请求体同样是 400 `supervisor_request_invalid`（#639：不允许落到 500 `internal`）。成功 201：
+
+```json
+{ "schemaVersion": "supervisor-pairing.v1alpha1", "id": "<uuid>", "label": "orca-supervisor", "token": "<64 hex>", "createdAt": "..." }
+```
+
+- token 为 32 字节随机 hex（与 boot-token 同构造），**只存 SHA-256 于控制面内存**，不持久化、不进日志；控制面重启即全部失效（配对是轻量动作，监督端每次启动重新配对）。
+- 活跃配对上限 8，超限 409 `supervisor_pairing_limit`；`GET /supervisor/pairings` 响应含 `max` 字段与每配对 `lastUsedAt`（快照/SSE 读取会更新）。
+- 重复吊销返回 404 `supervisor_pairing_missing`。
+
+`GET /supervisor/snapshot` 响应 200 `supervisor-snapshot.v1alpha1`：
+
+```json
+{
+  "schemaVersion": "supervisor-snapshot.v1alpha1",
+  "workspace": { "open": true, "path": "...", "business": "...", "owner": "...", "version": { "seq": 3, "updatedAt": "..." } },
+  "orgTree": { "schemaVersion": "org-tree.v1", "...": "§2.4 快照原样镜像" },
+  "positions": [
+    {
+      "id": "repo-owner",
+      "name": "Repo Owner",
+      "mode": "read_only",
+      "reportTo": null,
+      "engineBinding": "qoder",
+      "activeSessionId": "<uuid|null>",
+      "runningTurn": { "turnId": "<uuid|null>" },
+      "budget": { "declared": {...}, "recorded": {...}, "latestTurn": {...}, "state": "within" }
+    }
+  ]
+}
+```
+
+约束：
+
+- 未打开工作区时响应 200（`workspace.open=false`、`orgTree=null`、`positions=[]`）——监督面板需要呈现"空闲"而非错误；`workspace_not_open` 的 422 语义不适用于本端点。
+- `orgTree` 逐字段镜像 §2.4 的 `org-tree.v1` 快照；`budget` 复用 §2.9 的预算投影语义（declared/recorded/latestTurn/state），不新建口径；`engineBinding` 来自岗位 Agent 绑定侧车（无绑定为 `null`）；`runningTurn` 仅在进程内有活跃预留时非空。
+- 不返回：凭据、stderr、事件正文、任务文本、prompt。`path` 边界与 §2.2 相同。
+
+`GET /events`（supervisor 凭据，#639 收紧）：
+
+- **服务端字段白名单投影**：supervisor 凭据的 SSE 流按事件类型做 payload 字段白名单投影，且只放行标量值（string/number/boolean/null）——模型输出（`turn.model.delta` 整类不下发）、任务标题与步骤消息（`turn.progress` 的 `taskTitle`/`employeeName`/`message`/`steps`）、审批动作描述（`turn.approval.requested` 的 `action`/`reason`）、trace 详情与失败诊断一律不离开服务端。客户端"只打印元数据"是展示选择，不是边界；边界在服务端。`turn.progress` 的白名单对齐生产者真实形状 `TaskProgressEvent`（`stepIndex`/`stepName`（取自固定五步常量）/`stepStatus`/`totalSteps`/`timestamp` 等安全元字段），不以快照字段为准。
+- **回放与实时同等生效**：Last-Event-ID 环形缓冲回放与实时推送走同一投影，重连的监督端无法从回放中读到被投影掉的字段。
+- **operator 凭据语义不变**：boot-token 的 `/events` 仍是 §2.10 冻结形状，不投影。
+- **吊销即时切断**：`DELETE /supervisor/pairings/:id` 成功即关闭该配对已建立的 SSE 连接并停止推送——长连接只在建立时鉴权不足以覆盖吊销语义；吊销后新请求按 401 拒绝。
+- **连接注销**：每个 SSE 流结束时（正常断开、吊销、销毁，任一路径）恰好一次从配对连接注册表注销其 force-close 钩子；反复断连/重连不会累积持有 socket 引用的闭包。
+
 ### 项目任务人工验收
 
 `POST /goals/:goalId/tasks/:taskId/acceptance` 使用本地 operator Bearer 凭据，桌面 IPC 仅接受主窗口受信任主 frame。请求不接受 `decidedBy`、时间、状态或 Space 标识；服务端提供裁决人及时间。
@@ -628,7 +685,7 @@ fallback; a stale phase alone is not proof that an Agent has stopped.
 
 附件发送校验（#627 加法）：`turn_input_empty`（400，缺少文字任务说明）、`turn_input_too_large`（400，文字 UTF-8 超过 256 KiB）、`attachment_images_unsupported`（400，所选接入不支持直接图片输入；外部 CLI driver 拒绝该输入时也用作回合结果码）。仅 bundled Codex / codex-local 将当前请求中经会话校验的图片作为原生图片输入；私有 adapter 字段不改变冻结的上游 envelope。重试沿用原回合附件；更换附件必须作为新任务发送。
 
-控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）；hire 通道码（#33 加法）：`hire_request_invalid`（400 形状级）、`hire_position_exists`（409 重名）；群聊通道码（#52 加法）：`group_request_invalid`（400 形状级）、`group_missing`（404）、`group_conflict`（409 重复成员/成员上限）、`group_storage_failed`（500 fail-closed）；员工档案通道码（#291 加法）：`position_profile_invalid`（400 形状级，含权限投影的边界校验）。
+控制面自产码（本契约定义）：`unauthorized`、`body_invalid`、`workspace_invalid`、`workspace_not_open`、`manifest_invalid`、`organization_invalid`、`engine_unavailable`（retryable=true）、`engine_capability_missing`、`engine_failed`、`position_missing`、`restore_invalid`、`restore_conflict`、`reports_data_invalid`、`turn_request_invalid`、`turn_engine_unsupported`、`turn_position_invalid`、`turn_storage_failed`、`session_request_invalid`、`session_missing`、`session_conflict`、`session_storage_failed`、`not_found`、`method_not_allowed`、`internal`；turn-record 内的稳定结果码包括 `turn_process_exit_1`、`turn_process_failed`、`turn_engine_unavailable`、`turn_timeout`、`turn_protocol_invalid`、`turn_driver_failure`、`turn_interrupted`；Context export state 的稳定失败码为 `context_adapter_failed`，不进入 HTTP 错误响应；提案预检码：`org_apply_position_exists`、`org_apply_position_missing`、`org_apply_cycle`、`org_apply_owner_delete`、`org_apply_max_depth`、`org_apply_destination_exists`、`org_reorder_set_mismatch`（#32 加法）；hire 通道码（#33 加法）：`hire_request_invalid`（400 形状级）、`hire_position_exists`（409 重名）；群聊通道码（#52 加法）：`group_request_invalid`（400 形状级）、`group_missing`（404）、`group_conflict`（409 重复成员/成员上限）、`group_storage_failed`（500 fail-closed）；员工档案通道码（#291 加法）：`position_profile_invalid`（400 形状级，含权限投影的边界校验）。监督面通道码（#635 加法）：`supervisor_request_invalid`（400 形状级）、`supervisor_pairing_missing`（404 吊销/未找到）、`supervisor_pairing_limit`（409 配对上限）。
 引擎透传码：以 digital-employee 稳定码为准（`workspace_org_*` 等），原样透传，不在本表重定义。
 
 ## 4. 安全基线（随契约冻结）
