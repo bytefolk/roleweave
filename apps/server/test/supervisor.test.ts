@@ -326,29 +326,38 @@ test("supervisor: revoking a pairing immediately closes the established SSE conn
       body: { label: "live-stream" },
     });
     const pairing = pair.body as { id: string; token: string };
+    let req!: http.ClientRequest;
+    try {
+      let readyResolve!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        readyResolve = resolve;
+      });
+      const streamClosed = new Promise<void>((resolve) => {
+        req = http.get(
+          `${server.baseUrl}${routes.events}`,
+          { headers: { authorization: `Bearer ${pairing.token}`, accept: "text/event-stream" } },
+          (res) => {
+            readyResolve();
+            res.resume(); // drain frames; we only care about the close
+            res.on("close", resolve);
+          },
+        );
+        req.on("error", () => resolve());
+      });
+      // Registration happens synchronously during dispatch, before the
+      // headers flush — wait for real readiness instead of a fixed sleep,
+      // with cleanup on timeout (review round 4).
+      await withTimeout(ready, 5000, "SSE headers did not arrive within 5s", () => req.destroy());
 
-    const streamClosed = new Promise<void>((resolve, reject) => {
-      const req = http.get(
-        `${server.baseUrl}${routes.events}`,
-        { headers: { authorization: `Bearer ${pairing.token}`, accept: "text/event-stream" } },
-        (res) => {
-          res.resume(); // drain frames; we only care about the close
-          res.on("close", resolve);
-        },
-      );
-      req.on("error", () => resolve());
-      setTimeout(() => reject(new Error("SSE connection was not closed within 5s of revocation")), 5000);
-    });
-    // Registration happens synchronously during dispatch, before the headers
-    // are flushed; this beat just makes the race explicit and bounded.
-    await new Promise((resolve) => setTimeout(resolve, 150));
-
-    const revoke = await api(server.baseUrl, `${routes.supervisorPairings}/${pairing.id}`, {
-      method: "DELETE",
-      token: server.token,
-    });
-    assert.equal(revoke.status, 200);
-    await streamClosed;
+      const revoke = await api(server.baseUrl, `${routes.supervisorPairings}/${pairing.id}`, {
+        method: "DELETE",
+        token: server.token,
+      });
+      assert.equal(revoke.status, 200);
+      await withTimeout(streamClosed, 5000, "SSE connection was not closed within 5s of revocation");
+    } finally {
+      req.destroy();
+    }
   } finally {
     await server.close();
   }
@@ -356,6 +365,9 @@ test("supervisor: revoking a pairing immediately closes the established SSE conn
 
 test("supervisor: normally closed SSE connections unregister — repeated reconnects never grow the registry", async () => {
   const server = await startTestServer();
+  // Review round 4: tracked from before the try block so the outer finally
+  // can reach it on every failure path.
+  const liveStreams: Array<{ destroy: () => void }> = [];
   try {
     const pair = await api(server.baseUrl, routes.supervisorPair, {
       method: "POST",
@@ -369,10 +381,11 @@ test("supervisor: normally closed SSE connections unregister — repeated reconn
     // server has finished its own finish()/unregister — req.destroy() can
     // fire the local handlers first. Every registry assertion therefore
     // waits on a bounded condition instead of a fixed sleep.
-    const waitForCount = async (expected: number, timeoutMs = 5000): Promise<void> => {
+    const waitForCount = async (expected: number, timeoutMs = 5000, cleanup?: () => void): Promise<void> => {
       const deadline = Date.now() + timeoutMs;
       while (store.connectionCount(pairing.id) !== expected) {
         if (Date.now() > deadline) {
+          cleanup?.();
           throw new Error(
             `connectionCount did not reach ${expected} within ${timeoutMs}ms (currently ${store.connectionCount(pairing.id)})`,
           );
@@ -381,6 +394,10 @@ test("supervisor: normally closed SSE connections unregister — repeated reconn
       }
     };
 
+    // Review round 4 (non-blocking maintenance suggestion from 2026-10-28
+    // review): every created stream is tracked and the outer finally destroys
+    // them all, so a failed ready/count wait can never leak a socket into
+    // server.close().
     const openStream = (): { ready: Promise<void>; closed: Promise<void>; destroy: () => void } => {
       let req!: http.ClientRequest;
       let readyResolve!: () => void;
@@ -401,16 +418,18 @@ test("supervisor: normally closed SSE connections unregister — repeated reconn
         );
         req.on("error", () => resolve());
       });
-      return { ready, closed, destroy: () => req.destroy() };
+      const stream = { ready, closed, destroy: () => req.destroy() };
+      liveStreams.push(stream);
+      return stream;
     };
 
     // 12 establish/disconnect cycles: every normal close must unregister its
     // closer, so the registry drains back to zero each time (review round 2).
     for (let cycle = 0; cycle < 12; cycle++) {
       const stream = openStream();
-      await withTimeout(stream.ready, 5000, "SSE headers did not arrive within 5s");
+      await withTimeout(stream.ready, 5000, "SSE headers did not arrive within 5s", () => stream.destroy());
       if (cycle === 0) {
-        await waitForCount(1, 5000);
+        await waitForCount(1, 5000, () => stream.destroy());
       }
       stream.destroy();
       await withTimeout(stream.closed, 5000, `client stream did not close within 5s (cycle ${cycle})`);
@@ -420,8 +439,12 @@ test("supervisor: normally closed SSE connections unregister — repeated reconn
     // Multiple concurrent connections + revocation: all closers fire and the
     // registry ends empty, not holding the revoked pairing's sockets.
     const streams = [0, 1, 2].map(() => openStream());
-    await withTimeout(Promise.all(streams.map((stream) => stream.ready)), 5000, "concurrent SSE headers did not arrive within 5s");
-    await waitForCount(3, 5000);
+    await withTimeout(Promise.all(streams.map((stream) => stream.ready)), 5000, "concurrent SSE headers did not arrive within 5s", () => {
+      for (const stream of streams) stream.destroy();
+    });
+    await waitForCount(3, 5000, () => {
+      for (const stream of streams) stream.destroy();
+    });
     const revoke = await api(server.baseUrl, `${routes.supervisorPairings}/${pairing.id}`, {
       method: "DELETE",
       token: server.token,
@@ -438,8 +461,14 @@ test("supervisor: normally closed SSE connections unregister — repeated reconn
         for (const stream of streams) stream.destroy();
       },
     );
-    await waitForCount(0, 5000);
+    await waitForCount(0, 5000, () => {
+      for (const stream of streams) stream.destroy();
+    });
   } finally {
+    // Review round 4: no matter how this test ends — assertion failure,
+    // wait timeout, anything — every created stream is destroyed before the
+    // server shuts down, so no socket outlives the test.
+    for (const stream of liveStreams) stream.destroy();
     await server.close();
   }
 });
