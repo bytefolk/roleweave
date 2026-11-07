@@ -50,9 +50,9 @@ import {
   handleBudgetRemainingAdvice,
   handleExperimentsGet,
   handleExperimentsUpdate,
+  handleReadyHostChoice,
   handleReportsAdvice,
-} from "./routes/experiments.js";
-import { handleApprovals } from "./routes/approvals.js";
+} from "./routes/experiments.js";import { handleApprovals } from "./routes/approvals.js";
 import { approvals } from "./approvals/service.js";
 import {
   handleSessionCreate,
@@ -196,9 +196,12 @@ async function dispatch(
       await handleReportsAdvice(ctx, req, res);
       return;
     }
-    if (pathname === routes.budgetRemainingAdvice && method === "POST") {
-      await handleBudgetRemainingAdvice(ctx, req, res);
+    if (pathname === routes.readyHostChoice && method === "POST") {
+      await handleReadyHostChoice(ctx, req, res);
       return;
+    }
+    if (pathname === routes.budgetRemainingAdvice && method === "POST") {
+      await handleBudgetRemainingAdvice(ctx, req, res);      return;
     }
     if (pathname === routes.sessions && method === "POST") {
       await handleSessionCreate(ctx, req, res);

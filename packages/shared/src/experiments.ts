@@ -14,15 +14,30 @@ export interface ExperimentsResponse {
     endpointUrl: string;
     configured: boolean;
   };
-  sending: ["status", "errorCode", "budgetRelated"];
+  sending: ReadonlyArray<"status" | "errorCode" | "budgetRelated" | "positionId" | "engine" | "ready">;
   /** Exact deterministic fields eligible for the pre-send budget preview. */
-  budgetAdviceSending: ["remainingPerTask", "remainingPerDay", "positionId"];
-}
+  budgetAdviceSending: ["remainingPerTask", "remainingPerDay", "positionId"];}
 
 export interface ReportsAdviceRequest {
   workspacePath: string;
   workspaceSession: string;
   revision: number;
+}
+
+export interface ReadyHostFact {
+  positionId: string;
+  engine: string;
+  ready: boolean;
+}
+
+export interface ReadyHostChoiceRequest extends ReportsAdviceRequest {
+  candidates: ReadyHostFact[];
+}
+
+export interface ReadyHostChoiceResponse extends ReportsAdviceRequest {
+  status: "ready" | "disabled" | "unavailable";
+  reason?: "not_configured" | "timeout" | "provider_error" | "settings_invalid";
+  positionId: string | null;
 }
 
 export interface ExperimentsUpdateRequest extends ReportsAdviceRequest {

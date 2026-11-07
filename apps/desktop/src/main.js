@@ -524,8 +524,7 @@ ipcMain.handle("owb:progress:get", async (_event, turnId, positionId) => {
   const query = typeof positionId === "string" && positionId ? `?positionId=${encodeURIComponent(positionId)}` : "";
   return apiRequest(`/turns/progress/${encodeURIComponent(String(turnId))}${query}`);
 });
-const { budgetRemainingAdvice, experimentsGet, experimentsUpdate, reportsAdvice } = require("./experiments-ipc.cjs");
-ipcMain.handle("owb:experiments:get", async (event, workspacePath) => {
+const { budgetRemainingAdvice, experimentsGet, experimentsUpdate, readyHostChoice, reportsAdvice } = require("./experiments-ipc.cjs");ipcMain.handle("owb:experiments:get", async (event, workspacePath) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
   return experimentsGet(workspacePath, apiRequest);
 });
@@ -537,10 +536,13 @@ ipcMain.handle("owb:reports:advice", async (event, request) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
   return reportsAdvice(request, apiRequest);
 });
+ipcMain.handle("owb:ready-host:choice", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  return readyHostChoice(request, apiRequest);
+});
 ipcMain.handle("owb:turns:budget-advice", async (event, request) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
-  return budgetRemainingAdvice(request, apiRequest);
-});
+  return budgetRemainingAdvice(request, apiRequest);});
 const { approvalList, approvalDecision, approvalBatchDecision, approvalAudit } = require("./approvals-center-ipc.cjs");
 ipcMain.handle("owb:approvals:list", async (event, request) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };

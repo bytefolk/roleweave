@@ -17,6 +17,7 @@
 
 ### Added
 
+- #465：选中员工 Agent 主机未就绪时，可选 overlay 列出其他 ready 主机。0 或 1 个 ready candidate 不调用 provider；2+ 经 control-plane 受限 Choice，只发送 `{positionId, engine, ready}`，返回必须属于候选，timeout/invalid/off 安全降级。点击建议只切换岗位（selectPosition），不改 agentLocked 或 engine binding。https://github.com/bytefolk/roleweave/issues/422
 - #621: Add explicit task collaborators and responsibilities, validated dependency graphs, acceptance-based readiness, scoped delivery context and immutable execution snapshots with live project/review inspection.
 - #619: Add versioned project task briefings: server-owned requirements and acceptance criteria enter execution and persist for conversation/review inspection, with stale-plan protection and preserved retry/approval bindings.
 - #617: Add optional per-step relay requirements and persisted handoff snapshots matching model input, with source identities, filtering/truncation notices and shared context budgets. New local record fields can be rejected by older strict readers; retain a workspace backup for downgrades.
@@ -87,7 +88,6 @@
 - #559：新增协作区人工验收契约，验收通过必须完整覆盖计划中的全部验收项；限制标识符、时间戳和产物路径，拒绝遗漏或越界的裁决。
 
 - #469：可选 Laya 接力停止建议。仅在 `ROLEWEAVE_LAYA_ENABLED` 开启、已完成步骤得到正向建议且仍有未执行步骤时暂停；桌面端由 owner 显式选择“停止剩余步骤”或“继续接力”。30 秒超时、SSE 断连、无效或失败建议均继续原 mention order；Laya 只接收 `status`、`errorCode`、`hasOutput`，不接收输入、输出或 handoff 文本。已接受的消息与 spawn 清单保持不可变。Refs #422。
-
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
 
 - #480：管理者实时任务进度看板。工作台自报 thread-context / spawn / streaming / persist / terminal 五步，经现有 `GET /events` 广播 `turn.progress`，快照落在 `.roleweave/conversations/<positionId>/progress/<turnId>.json`。列表合并内存与落盘，刷新或控制面重启后仍可回看。不新开 WebSocket，不改 spawn/finish 契约。Refs #480。

@@ -128,8 +128,8 @@ export interface OwbBridge {
     update(request: import("@roleweave/shared").ExperimentsUpdateRequest): Promise<OwbApiResponse<import("@roleweave/shared").ExperimentsResponse>>;
   };
   reportAdvice?(request: import("@roleweave/shared").ReportsAdviceRequest): Promise<OwbApiResponse<import("@roleweave/shared").ReportsAdviceResponse>>;
-  budgetRemainingAdvice?(request: import("@roleweave/shared").BudgetRemainingAdviceRequest): Promise<OwbApiResponse<import("@roleweave/shared").BudgetRemainingAdviceResponse>>;
-  listApprovals(request: { workspacePath: string; cursor?: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalList>>;
+  readyHostChoice?(request: import("@roleweave/shared").ReadyHostChoiceRequest): Promise<OwbApiResponse<import("@roleweave/shared").ReadyHostChoiceResponse>>;
+  budgetRemainingAdvice?(request: import("@roleweave/shared").BudgetRemainingAdviceRequest): Promise<OwbApiResponse<import("@roleweave/shared").BudgetRemainingAdviceResponse>>;  listApprovals(request: { workspacePath: string; cursor?: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalList>>;
   decideApproval(request: import("@roleweave/shared").ApprovalDecisionRequest & { id: string; workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalView>>;
   decideApprovalsBatch(request: import("@roleweave/shared").ApprovalBatchDecisionRequest & { workspaceToken: string }): Promise<OwbApiResponse<import("@roleweave/shared").ApprovalBatchDecisionResponse>>;
   approvalAudit(request: { id: string }): Promise<OwbApiResponse<{ approvalId: string; events: import("@roleweave/shared").ApprovalAuditEvent[] }>>;
