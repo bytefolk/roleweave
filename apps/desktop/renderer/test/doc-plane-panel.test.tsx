@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { OwbI18nProvider } from "@roleweave/ui";
 import type { DocPlaneDetailResponse, DocPlaneListResponse } from "@roleweave/shared";
 import {
   DocPlanePanel,
@@ -55,6 +56,20 @@ function okDetail(): DocPlaneDetailLoadResult {
 }
 
 describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
+  it.each([
+    { locale: "zh-CN" as const, tooltip: "共享文档：Engineering/Runbook" },
+    { locale: "en" as const, tooltip: "Shared document: Engineering/Runbook" },
+  ])("explains the full shared-document title in $locale without treating it as a file path", async ({ locale, tooltip }) => {
+    const entry = { ...LIST_RESPONSE.entries[0]!, title: "Engineering/Runbook" };
+    const readDoc = vi.fn().mockResolvedValue(okDetail());
+    render(<OwbI18nProvider locale={locale}><DocPlanePanel listDocs={vi.fn().mockResolvedValue({ kind: "ok", response: { ...LIST_RESPONSE, entries: [entry] } })} readDoc={readDoc} /></OwbI18nProvider>);
+    const document = await screen.findByRole("button", { name: entry.title });
+    act(() => document.focus());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(tooltip);
+    fireEvent.click(document);
+    await waitFor(() => expect(readDoc).toHaveBeenCalledWith(entry.id));
+  });
+
   it("lists documents on mount and shows the mock-source badge", async () => {
     const listDocs = vi.fn().mockResolvedValue(okList());
     const readDoc = vi.fn().mockResolvedValue(okDetail());
@@ -67,7 +82,7 @@ describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
     expect(readDoc).not.toHaveBeenCalled();
   });
 
-  it("surfaces a compact unavailable state when the shell reports doc_plane_unconfigured", async () => {
+  it("replaces both empty panes with a useful shared-resource connection state", async () => {
     const listDocs = vi
       .fn()
       .mockResolvedValue({ kind: "unconfigured", message: "尚未配置外部 doc 服务器" } as DocPlaneListLoadResult);
@@ -75,8 +90,42 @@ describe("DocPlanePanel (#35 R2 external doc-plane bridge)", () => {
     render(<DocPlanePanel listDocs={listDocs} readDoc={readDoc} />);
 
     await waitFor(() => expect(listDocs).toHaveBeenCalled());
-    expect(await screen.findByText("尚未配置外部 doc 服务器")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "尚未连接共享资料" })).toBeVisible();
+    expect(screen.getByText("连接团队文档服务后，可以在这里浏览共享文档并打开协作内容。")).toBeVisible();
+    expect(document.querySelector(".owb-doc-plane__list-pane")).toBeNull();
+    expect(document.querySelector(".owb-doc-plane__reader-pane")).toBeNull();
+    expect(screen.queryByLabelText("搜索外部文档")).not.toBeInTheDocument();
+    expect(screen.queryByText("选择左侧文档开始阅读。")).not.toBeInTheDocument();
+    expect(readDoc).not.toHaveBeenCalled();
     expect(screen.queryByText(/ORG_WORKBENCH_DOC_URL=http:\/\/localhost:3100/)).not.toBeInTheDocument();
+  });
+
+  it("shows one injected connection action and reloads actual documents after connection", async () => {
+    const connect = vi.fn();
+    const listDocs = vi.fn().mockResolvedValueOnce({ kind: "unconfigured", message: "no connection" }).mockResolvedValueOnce(okList());
+    const readDoc = vi.fn();
+    render(<DocPlanePanel listDocs={listDocs} readDoc={readDoc}
+      serviceAction={<button onClick={connect}>连接共享资料</button>} />);
+    expect(await screen.findByRole("heading", { name: "尚未连接共享资料" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "连接共享资料" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "连接共享资料" }));
+    expect(connect).toHaveBeenCalledOnce();
+    expect(readDoc).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /重\s?试/ }));
+    expect(await screen.findByRole("button", { name: /Runbook/ })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "尚未连接共享资料" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "连接共享资料" })).toHaveLength(1);
+    expect(listDocs).toHaveBeenLastCalledWith("");
+  });
+
+  it("localizes the complete disconnected state without exposing configured URLs or credentials", async () => {
+    render(<OwbI18nProvider locale="en"><DocPlanePanel
+      listDocs={vi.fn().mockResolvedValue({ kind: "unconfigured", message: "ORG_WORKBENCH_DOC_URL=https://private.example token=secret" })}
+      readDoc={vi.fn()} serviceAction={<button>Connect shared resources</button>} /></OwbI18nProvider>);
+    expect(await screen.findByRole("heading", { name: "Shared resources are not connected" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Connect shared resources" })).toBeVisible();
+    expect(screen.queryByText(/private\.example|token=secret/)).not.toBeInTheDocument();
+    expect(document.querySelector(".owb-doc-plane__workspace")).toBeNull();
   });
 
   it("opens a document detail through the injected reader", async () => {

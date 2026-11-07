@@ -38,7 +38,17 @@ function windowsPowerShell(script, values = {}) {
   return spawnSync(command, args, { encoding: "utf8", windowsHide: true, env });
 }
 
-function descendantProcesses(processes, rootPid) {
+function descendantProcesses(processes, rootPid, { nativePlatform = process.platform } = {}) {
+  // Windows keeps the original ParentProcessId after a parent exits. If that
+  // PID is reused, an older, unrelated tree can appear below the new process.
+  // Validate every edge against CIM creation ticks, including intermediate
+  // parents. Keep them as BigInts: .NET ticks exceed Number's exact range.
+  const creationTimes = nativePlatform === "win32"
+    ? new Map(processes.map(({ pid, startTime }) => [
+      pid,
+      typeof startTime === "string" && /^\d+$/.test(startTime) ? BigInt(startTime) : null,
+    ]))
+    : null;
   const result = [];
   const pending = [rootPid];
   const seen = new Set(pending);
@@ -46,6 +56,11 @@ function descendantProcesses(processes, rootPid) {
     const parent = pending.shift();
     for (const processInfo of processes) {
       if (processInfo.ppid !== parent || seen.has(processInfo.pid)) continue;
+      if (creationTimes !== null) {
+        const parentStart = creationTimes.get(parent);
+        const childStart = creationTimes.get(processInfo.pid);
+        if (typeof parentStart !== "bigint" || typeof childStart !== "bigint" || childStart < parentStart) continue;
+      }
       seen.add(processInfo.pid);
       pending.push(processInfo.pid);
       result.push(processInfo);
@@ -358,7 +373,7 @@ function selectCleanupCandidates(
   const descendantPids = new Set(
     currentRoot === null
       ? []
-      : descendantProcesses(inventory, currentRoot.pid).map(({ pid }) => pid),
+      : descendantProcesses(inventory, currentRoot.pid, { nativePlatform }).map(({ pid }) => pid),
   );
   const ambiguousOrigin = spawnOriginGenerationIsAmbiguous(
     inventory,

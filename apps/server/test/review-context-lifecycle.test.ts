@@ -137,7 +137,7 @@ test("review M6 completed personal content stays out of every group member promp
   const captured: TurnRunRequest[] = [];
   const driver: TurnRunDriver = { async turnRun(request) {
     captured.push(request);
-    const output = request.envelope.input === "PERSONAL-PRIVATE-INPUT" ? "PERSONAL-PRIVATE-OUTPUT" : "HEALTHY-SHARED-GROUP-OUTPUT";
+    const output = request.envelope.input.endsWith("PERSONAL-PRIVATE-INPUT") ? "PERSONAL-PRIVATE-OUTPUT" : "HEALTHY-SHARED-GROUP-OUTPUT";
     return { status: "trusted", diagnostic: "", events: [
       { type: "run.started", runId: request.envelope.turnId, timestamp: now },
       { type: "run.completed", runId: request.envelope.turnId, timestamp: now, output, terminalReason: "goal_met" },

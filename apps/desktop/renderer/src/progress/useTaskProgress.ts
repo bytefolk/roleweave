@@ -4,6 +4,8 @@ import type { SseEventEnvelope, TaskProgressEvent, TaskProgressSnapshot } from "
 export interface UseTaskProgressResult {
   snapshots: TaskProgressSnapshot[];
   loading: boolean;
+  error: boolean;
+  refresh: () => Promise<void>;
   selected: TaskProgressSnapshot | null;
   select: (taskId: string | null) => void;
 }
@@ -38,31 +40,52 @@ export function applyProgressEvent(current: TaskProgressSnapshot[], event: TaskP
 export function useTaskProgress(workspaceOpen: boolean): UseTaskProgressResult {
   const [snapshots, setSnapshots] = useState<TaskProgressSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const seqRef = useRef(0);
+  const readVersion = useRef(0);
+  const alive = useRef(true);
+  const knownIds = useRef(new Set<string>());
+
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; readVersion.current += 1; };
+  }, []);
 
   const reload = useCallback(async () => {
-    if (!workspaceOpen || !window.owb.turnProgress) {
+    const version = ++readVersion.current;
+    if (!workspaceOpen) {
       setSnapshots([]);
+      knownIds.current.clear();
+      setSelectedId(null);
+      setLoading(false);
+      setError(false);
       return;
     }
     setLoading(true);
+    setError(false);
     try {
+      if (!window.owb.turnProgress) throw new Error("progress_unavailable");
       const response = await window.owb.turnProgress();
+      if (!alive.current || version !== readVersion.current) return;
       if (response.status === 200 && response.body && Array.isArray(response.body.snapshots)) {
+        knownIds.current = new Set(response.body.snapshots.map((item) => item.taskId));
         setSnapshots(response.body.snapshots);
-      }
+      } else setError(true);
+    } catch {
+      if (alive.current && version === readVersion.current) setError(true);
     } finally {
-      setLoading(false);
+      if (alive.current && version === readVersion.current) setLoading(false);
     }
   }, [workspaceOpen]);
 
   useEffect(() => {
     void reload();
+    return () => { readVersion.current += 1; };
   }, [reload]);
 
   useEffect(() => {
-    if (!window.owb.onEvent) return undefined;
+    if (!workspaceOpen || !window.owb.onEvent) return undefined;
     return window.owb.onEvent((raw) => {
       const envelope = raw as SseEventEnvelope;
       if (typeof envelope.seq === "number") {
@@ -73,20 +96,15 @@ export function useTaskProgress(workspaceOpen: boolean): UseTaskProgressResult {
       if (envelope.type !== "turn.progress") return;
       const payload = envelope.payload as TaskProgressEvent;
       if (!payload || typeof payload.taskId !== "string") return;
-      setSnapshots((current) => {
-        if (!current.some((item) => item.taskId === payload.taskId)) {
-          void reload();
-          return current;
-        }
-        return applyProgressEvent(current, payload);
-      });
+      if (!knownIds.current.has(payload.taskId)) void reload();
+      else setSnapshots((current) => applyProgressEvent(current, payload));
     });
-  }, [reload]);
+  }, [reload, workspaceOpen]);
 
   const selected = useMemo(
     () => snapshots.find((item) => item.taskId === selectedId) ?? null,
     [snapshots, selectedId],
   );
 
-  return { snapshots, loading, selected, select: setSelectedId };
+  return { snapshots, loading, error, refresh: reload, selected, select: setSelectedId };
 }

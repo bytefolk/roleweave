@@ -11,9 +11,11 @@ import {
   OrgApiError,
   errorCodes,
   turnEngines,
+  isRelaySteps,
 } from "@roleweave/shared";
 import type {
   GroupExecutionMode,
+  RelayStepInstruction,
   GroupMessage,
   GroupTimeline,
   GroupTimelineItem,
@@ -25,11 +27,13 @@ import { readJsonBody, sendJson } from "../http.js";
 import { MAX_GROUP_MEMBERS, MAX_GROUP_INPUT_BYTES, assertConversationRef } from "../groups/store.js";
 import { assertPositionExists, assertTurnWorkspace, executeTurn, type GroupEventAttribution } from "./turns.js";
 import { createTurnEnvelope } from "../turns/envelope.js";
-import { compactThreadContextHandoff, type SupplementalContext } from "../turns/thread-context.js";
+import { compactThreadContextHandoff } from "../turns/thread-context.js";
+import type { RelayExecutionContext } from "../turns/relay-handoff.js";
 import { compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
 import { resolvePositionAgentEngine } from "../agent-binding.js";
 
 const MAX_INPUT_BYTES = MAX_GROUP_INPUT_BYTES;
+const GROUP_REF_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -77,6 +81,22 @@ function parseAddMember(raw: unknown): string {
   return raw.positionId;
 }
 
+function parseRelayStopDecision(raw: unknown): { messageId: string; decision: "stop" | "continue" } {
+  if (
+    !isRecord(raw) || !exactKeys(raw, ["messageId", "decision"]) ||
+    typeof raw.messageId !== "string" || raw.messageId.length === 0 || raw.messageId.length > 128 ||
+    !GROUP_REF_PATTERN.test(raw.messageId) ||
+    (raw.decision !== "stop" && raw.decision !== "continue")
+  ) {
+    throw new OrgApiError(
+      errorCodes.group_request_invalid,
+      400,
+      "relay stop decision accepts exactly a bounded messageId and stop or continue",
+    );
+  }
+  return { messageId: raw.messageId, decision: raw.decision };
+}
+
 interface GroupTurnBody {
   input: string;
   /** Legacy/first-use fallback. Bound employees ignore it. */
@@ -85,6 +105,7 @@ interface GroupTurnBody {
   engines?: Record<string, TurnEngine>;
   mentions: string[];
   mode: GroupExecutionMode;
+  relaySteps?: RelayStepInstruction[];
   goalId?: string;
   branchId?: string;
 }
@@ -97,12 +118,12 @@ function parseGroupTurn(raw: unknown): GroupTurnBody {
       "group turn request must be a JSON object",
     );
   }
-  const allowedKeys = new Set(["input", "engine", "engines", "mentions", "mode", "goalId", "branchId"]);
+  const allowedKeys = new Set(["input", "engine", "engines", "mentions", "mode", "goalId", "branchId", "relaySteps"]);
   if (Object.keys(raw).some((k) => !allowedKeys.has(k))) {
     throw new OrgApiError(
       errorCodes.group_request_invalid,
       400,
-      "group turn accepts input, engine, optional engines, mentions, and optional mode, goalId, branchId",
+      "group turn accepts input, engine, optional engines, mentions, and optional mode, relaySteps, goalId, branchId",
     );
   }
   if (
@@ -132,6 +153,9 @@ function parseGroupTurn(raw: unknown): GroupTurnBody {
       400,
       "mentions must be a non-empty unique positionId list; broadcast is not allowed",
     );
+  }
+  if (raw.relaySteps !== undefined && !isRelaySteps(raw.relaySteps, raw.mentions as string[], raw.mode)) {
+    throw new OrgApiError(errorCodes.group_request_invalid, 400, "relaySteps must contain unique mentioned positions and non-empty instructions (4 KiB each, 32 KiB total) in relay mode");
   }
   let engines: Record<string, TurnEngine> | undefined;
   const suppliedEngines = raw.engines;
@@ -169,6 +193,7 @@ function parseGroupTurn(raw: unknown): GroupTurnBody {
     ...(engines !== undefined ? { engines } : {}),
     mentions: raw.mentions as string[],
     mode: raw.mode ?? "parallel",
+    ...(Array.isArray(raw.relaySteps) && raw.relaySteps.length ? { relaySteps: (raw.relaySteps as RelayStepInstruction[]).map(step => ({ ...step, instruction: step.instruction.trim() })) } : {}),
     ...(raw.goalId !== undefined ? { goalId: raw.goalId } : {}),
     ...(raw.branchId !== undefined ? { branchId: raw.branchId } : {}),
   };
@@ -246,6 +271,29 @@ export async function handleGroupAddMember(
   sendJson(res, 200, updated);
 }
 
+export async function handleGroupRelayStopDecision(
+  ctx: ControlPlaneContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+  conversationRef: string,
+): Promise<void> {
+  const workspace = ctx.workspace.requireOpen();
+  const ref = assertConversationRef(conversationRef);
+  const body = parseRelayStopDecision(await readJsonBody<unknown>(req));
+  if (!ctx.relayStop.decide(workspace.dir, ref, body.messageId, body.decision)) {
+    throw new OrgApiError(
+      errorCodes.group_conflict,
+      409,
+      "relay stop decision is no longer pending",
+    );
+  }
+  sendJson(res, 200, {
+    conversationRef: ref,
+    messageId: body.messageId,
+    decision: body.decision,
+  });
+}
+
 /**
  * @mention explicit routing: persist the user message, answer 202 with the
  * spawn list, then spawn one turn-envelope.v1 per mentioned member under the
@@ -279,6 +327,16 @@ export async function handleGroupTurnPost(
   // Resolve and persist every member's binding before accepting the group
   // message. This makes the 202 spawn identities self-contained: a later
   // relay/recovery cannot be redirected by a global host selection.
+  if (body.goalId && body.branchId) {
+    let goal;
+    try { goal = await ctx.goalStore.get(workspace.dir, body.goalId); }
+    catch (error) { if (!(error instanceof OrgApiError) || error.code !== errorCodes.goal_missing) throw error; }
+    assertTurnWorkspace(ctx, workspace);
+    const task = goal?.workItems?.find(item => item.taskId === body.branchId);
+    if (task && ((task.participants?.length ?? 0) > 0 || (task.dependsOn?.length ?? 0) > 0)) {
+      throw new OrgApiError(errorCodes.goal_conflict, 409, "collaboration tasks require a personal project-task briefing; group dispatch cannot bypass their dependencies");
+    }
+  }
   const spawns = await Promise.all(body.mentions.map(async (positionId) => ({
     turnId: crypto.randomUUID(),
     positionId,
@@ -302,6 +360,7 @@ export async function handleGroupTurnPost(
       input: body.input,
       mentions: body.mentions,
       mode: body.mode,
+      ...(body.relaySteps ? { relaySteps: body.relaySteps } : {}),
       spawns,
       // Retained as the old-message fallback; new spawns carry their own
       // resolved engine so mixed-Agent groups remain faithfully attributable.
@@ -314,7 +373,7 @@ export async function handleGroupTurnPost(
     throw error;
   }
   void (async () => {
-    const handoffs: SupplementalContext[] = [];
+    const relaySources: RelayExecutionContext["sources"] = [];
     const run = async (spawn: typeof spawns[number]): Promise<TurnRecord | null> => {
       const attribution = {
         groupRef: ref,
@@ -334,10 +393,13 @@ export async function handleGroupTurnPost(
           ...body,
           positionId: spawn.positionId,
           engine: spawn.engine,
-        }, undefined, attribution, handoffs, workspace);
+        }, undefined, attribution, undefined, workspace, undefined,
+          body.mode === "relay" ? { relay: { message, sources: relaySources } } : undefined);
       } catch (error) {
+        const handoffError = body.mode === "relay" && error instanceof OrgApiError && error.code === errorCodes.turn_request_invalid;
         return await persistUnexecutedTurn(ctx, workspace.dir, body.input, attribution,
-          error instanceof OrgApiError && error.code === errorCodes.session_conflict ? "group_employee_busy" : "group_spawn_failed", message.createdAt);
+          handoffError ? "group_handoff_invalid" : error instanceof OrgApiError && error.code === errorCodes.session_conflict ? "group_employee_busy" : "group_spawn_failed",
+          message.createdAt, handoffError ? error.message : undefined);
       }
     };
     if (body.mode === "parallel") {
@@ -347,7 +409,8 @@ export async function handleGroupTurnPost(
       return;
     }
     let blocked = false;
-    for (const spawn of spawns) {
+    for (let index = 0; index < spawns.length; index += 1) {
+      const spawn = spawns[index]!;
       if (blocked) {
         await persistUnexecutedTurn(ctx, workspace.dir, body.input, {
           groupRef: ref, messageId: message.messageId, turnId: spawn.turnId,
@@ -357,7 +420,42 @@ export async function handleGroupTurnPost(
       }
       const record = await run(spawn);
       if (record?.status !== "completed") blocked = true;
-      else handoffs.push(compactThreadContextHandoff({ label: `Completed relay step: ${spawn.positionId}`, input: body.input, output: record.output }));
+      else {
+        const compact = compactThreadContextHandoff({ label: record.turnId, input: "", output: record.output });
+        relaySources.push({ turnId: record.turnId, positionId: record.positionId, conversationRef: record.conversationRef,
+          updatedAt: record.updatedAt, status: record.status, output: compact.output, redacted: compact.redacted, truncated: compact.truncated });
+        const remaining = spawns.slice(index + 1);
+        if (remaining.length === 0 || ctx.bus.listenerCount === 0) continue;
+        const suggestion = await ctx.relayStop.suggest(record);
+        if (suggestion === null || ctx.bus.listenerCount === 0) continue;
+        const gate = ctx.relayStop.begin(workspace.dir, ref, message.messageId);
+        ctx.bus.publish("group.relay.stop.suggested", {
+          workspacePath: workspace.dir,
+          groupRef: ref,
+          messageId: message.messageId,
+          completedTurnId: record.turnId,
+          remainingCount: remaining.length,
+          probability: suggestion.probability,
+          expiresAt: gate.expiresAt,
+        });
+        const resolution = await gate.wait;
+        ctx.bus.publish("group.relay.stop.resolved", {
+          workspacePath: workspace.dir,
+          groupRef: ref,
+          messageId: message.messageId,
+          decision: resolution.decision,
+          reason: resolution.reason,
+        });
+        if (resolution.decision === "stop") {
+          for (const pending of remaining) {
+            await persistUnexecutedTurn(ctx, workspace.dir, body.input, {
+              groupRef: ref, messageId: message.messageId, turnId: pending.turnId,
+              positionId: pending.positionId, engine: pending.engine,
+            }, "group_relay_stopped", message.createdAt);
+          }
+          break;
+        }
+      }
     }
   })().catch(async () => {
     // Contain unexpected orchestration errors after accepted tasks settle.
@@ -377,8 +475,9 @@ async function persistUnexecutedTurn(
   workspace: string,
   input: string,
   attribution: GroupEventAttribution,
-  code: "group_relay_blocked" | "group_spawn_failed" | "group_workspace_changed" | "group_employee_busy" | "group_dispatch_interrupted",
+  code: "group_handoff_invalid" | "group_relay_blocked" | "group_relay_stopped" | "group_spawn_failed" | "group_workspace_changed" | "group_employee_busy" | "group_dispatch_interrupted",
   createdAt: string,
+  handoffDetail?: string,
 ): Promise<TurnRecord | null> {
   return ctx.groupStore.withSpawnRecovery(workspace, attribution.positionId, attribution.turnId, async () => {
     let record: TurnRecord | null = null;
@@ -400,8 +499,12 @@ async function persistUnexecutedTurn(
         updatedAt: compareRfc3339Instants(now, running.updatedAt) < 0 ? running.updatedAt : now,
         error: {
           code, retryable: false,
-          message: code === "group_relay_blocked"
+          message: code === "group_handoff_invalid"
+            ? `This step did not run: ${handoffDetail ?? "relay handoff validation failed"}.`
+            : code === "group_relay_blocked"
             ? "This step did not run because an earlier relay step did not complete successfully."
+            : code === "group_relay_stopped"
+              ? "This step did not run because the owner confirmed stopping the remaining relay."
             : code === "group_workspace_changed"
               ? "This step did not run because the open workspace changed."
               : code === "group_employee_busy"

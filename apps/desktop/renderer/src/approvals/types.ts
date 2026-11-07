@@ -96,12 +96,12 @@ export const APPROVAL_CATEGORY_LABEL: Record<ApprovalCategory, string> = {
  */
 export function isPermissionOverreach(item: ApprovalQueueItem): boolean {
   if (
-    item.positionMode === "read_only" &&
+    (item.positionMode ?? item.context?.permissions.mode) === "read_only" &&
     (item.category === "write" || item.category === "network" || item.category === "exec")
   ) {
     return true;
   }
-  if (item.requestedTool && item.toolDeny?.includes(item.requestedTool)) {
+  if (item.requestedTool && (item.toolDeny ?? item.context?.permissions.deniedTools)?.includes(item.requestedTool)) {
     return true;
   }
   return false;

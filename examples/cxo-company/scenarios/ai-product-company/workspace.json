@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace.schema.json",
+  "schemaVersion": "workspace.v1alpha1",
+  "name": "ai-product-company",
+  "description": "九个职能以参考公司演示产品定义、技术与设计规划、经营分析、营销、人才和安全审查。",
+  "template": "cxo-example-ai-product-company",
+  "createdAt": "2026-10-13T00:00:00.000Z",
+  "organization": "./organization.v1alpha1.json",
+  "positions": "./positions",
+  "context": "./context"
+}

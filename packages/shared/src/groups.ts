@@ -17,6 +17,8 @@ export const GROUP_LIST_SCHEMA_VERSION = "conversation-group-list.v1" as const;
 export const GROUP_MESSAGE_SCHEMA_VERSION = "group-message.v1" as const;
 export const GROUP_TIMELINE_SCHEMA_VERSION = "group-timeline.v1" as const;
 export type GroupExecutionMode = "parallel" | "relay";
+export interface RelayStepInstruction { positionId: string; instruction: string }
+
 export interface GroupSpawn {
   turnId: string;
   positionId: string;
@@ -51,6 +53,8 @@ export interface GroupMessage {
   mentions: string[];
   /** Missing in legacy messages means parallel; relay follows mentions order. */
   mode?: GroupExecutionMode;
+  /** Operator-authored requirements; order is always determined by mentions. */
+  relaySteps?: RelayStepInstruction[];
   /** Persisted before acceptance; lets recovery settle work that never started. */
   spawns?: GroupSpawn[];
   /** Host chosen for these persisted spawn identities. */

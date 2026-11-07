@@ -2,10 +2,10 @@
 // The design-system repo is consumed via file: and carries its own
 // node_modules (devDeps include react/react-dom). A second React copy
 // breaks hooks at runtime/test time, so repoint design-system's react
-// and react-dom at this workspace's copies. Idempotent; no-ops when
-// either tree is missing. Works from git worktree copies too: the real
+// and react-dom at this workspace's copies. Idempotent; rebuilds missing
+// sibling links when the workspace copy exists. Works from git worktree copies too: the real
 // design-system is discovered by probing ancestor siblings and verifying
-// the target tree's package identity, and the rewritten relative links
+// the target tree's package identity, and the rewritten directory links
 // are asserted resolvable from the design-system perspective (#49).
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -74,8 +74,8 @@ for (const name of ["react", "react-dom"]) {
   let siblingStat;
   try {
     siblingStat = lstatSync(sibling);
-  } catch {
-    continue;
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
   }
   if (!existsSync(canonical)) continue;
   let converged = false;
@@ -85,17 +85,20 @@ for (const name of ["react", "react-dom"]) {
     // Dangling symlink: rewrite it below.
   }
   if (converged) continue;
-  if (siblingStat.isSymbolicLink()) {
+  if (siblingStat?.isSymbolicLink()) {
     unlinkSync(sibling);
-  } else {
+  } else if (siblingStat) {
     rmSync(sibling, { recursive: true, force: true });
   }
   mkdirSync(dirname(sibling), { recursive: true });
-  symlinkSync(relative(dirname(sibling), canonical), sibling);
+  // Windows junctions do not need symbolic-link privileges and must use an
+  // absolute directory target. Keep portable relative links on POSIX.
+  symlinkSync(process.platform === "win32" ? canonical : relative(dirname(sibling), canonical),
+    sibling, process.platform === "win32" ? "junction" : "dir");
   console.log(`dedupe-react: ${sibling} -> ${canonical}`);
 }
 
-// Post-rewrite assertion (#49): the relative links must be self-consistent
+// Post-rewrite assertion (#49): the directory links must be self-consistent
 // from the design-system/node_modules perspective — react/react-dom resolve
 // and converge on this workspace's canonical copies.
 const requireFromDesignSystem = createRequire(join(designSystem, "package.json"));

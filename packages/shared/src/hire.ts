@@ -36,6 +36,10 @@ export interface HirePermissionRule {
 }
 
 export interface HirePermissions {
+  /** Explicit consent to Codex native commands (host reads, bounded writes). */
+  nativeExecution?: boolean;
+  /** Tool egress is separate from model/provider connectivity; denied by default. */
+  network?: "deny" | "host_policy";
   /** Agent/tool capabilities shown in the position card (Read/Grep/Glob...). */
   tools: string[];
   /** Explicit resource rules. Default policy is deny; rules are additive. */

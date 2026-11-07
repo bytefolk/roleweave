@@ -652,7 +652,7 @@ export function buildPositionSkeletonFiles(role: SkeletonPosition): Map<string, 
     },
     policy: {
       mode: role.mode,
-      network: "deny",
+      network: permissions.network ?? "deny",
       filesystem: {
         read: ["./knowledge/**", ...readableResources].filter((resource, index, all) => all.indexOf(resource) === index),
         write: writableResources.filter((resource, index, all) => all.indexOf(resource) === index),

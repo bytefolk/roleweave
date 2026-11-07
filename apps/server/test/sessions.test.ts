@@ -200,6 +200,40 @@ test("explicit session create, turn, rotate, and restart preserve an empty succe
   }
 });
 
+test("listing already-private sessions does not mutate their file metadata", async () => {
+  if (process.platform === "win32") return;
+  const workspace = await copyExampleWorkspace();
+  const server = await startTestServer();
+  try {
+    await openWorkspace(server.baseUrl, server.token, workspace);
+    const created = await api(server.baseUrl, "/sessions", {
+      method: "POST",
+      token: server.token,
+      body: { positionId: "repo-owner" },
+    });
+    assert.equal(created.status, 201);
+
+    const sessionRoot = path.join(workspace, ".roleweave", "sessions");
+    const identityFile = path.join(sessionRoot, "workspace-instance.json");
+    const positionFile = path.join(sessionRoot, "positions", "repo-owner.json");
+    const beforeIdentity = await fs.stat(identityFile, { bigint: true });
+    const beforePosition = await fs.stat(positionFile, { bigint: true });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const listed = await api(server.baseUrl, "/sessions?positionId=repo-owner", {
+      token: server.token,
+    });
+    assert.equal(listed.status, 200);
+
+    const afterIdentity = await fs.stat(identityFile, { bigint: true });
+    const afterPosition = await fs.stat(positionFile, { bigint: true });
+    assert.equal(afterIdentity.ctimeNs, beforeIdentity.ctimeNs, "identity reads must not chmod an already-private file");
+    assert.equal(afterPosition.ctimeNs, beforePosition.ctimeNs, "position reads must not chmod an already-private file");
+  } finally {
+    await server.close();
+  }
+});
+
 test("session request validation fails before invoking a Host", async () => {
   class RecordingDriver implements TurnRunDriver {
     calls: TurnRunRequest[] = [];

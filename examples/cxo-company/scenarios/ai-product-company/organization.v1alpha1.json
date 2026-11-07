@@ -1,0 +1,316 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace-org.schema.json",
+  "schemaVersion": "workspace-org.v1",
+  "business": "cxo-ai-product-company",
+  "description": "AI 产品公司：九个职能以参考公司演示产品定义、技术与设计规划、经营分析、营销、人才和安全审查。",
+  "owner": "chief-executive-officer",
+  "roles": [
+    {
+      "id": "chief-executive-officer",
+      "name": "CEO · 首席执行官",
+      "description": "明确公司目标、优先级与资源取舍，对整体结果负责。",
+      "reportTo": null,
+      "package": {
+        "name": "chief-executive-officer",
+        "version": "0.1.0",
+        "digest": "sha256:a2cfd0e5a5e7ff3e38820963e5cf1cd0cc01c667d957eb78bb2999f3dce60f59",
+        "localReference": "/workspace/positions/chief-executive-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-executive-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 40000,
+          "iterations": 12
+        },
+        "perDay": {
+          "tokens": 400000,
+          "iterations": 96
+        }
+      }
+    },
+    {
+      "id": "chief-product-officer",
+      "name": "CPO · 首席产品官",
+      "description": "将用户问题转成产品范围、路线图与验证方法。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-product-officer",
+        "version": "0.1.0",
+        "digest": "sha256:8a2f6987f68e5a03701a3351848f1e4c855b299f2aab207f648cd850655f4e54",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-product-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-product-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-technology-officer",
+      "name": "CTO · 首席技术官",
+      "description": "制定技术方案，组织研发并检查技术结果。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-technology-officer",
+        "version": "0.1.0",
+        "digest": "sha256:57cea733738d647bd4bd404a5100820194630f171441e9b4bbc41519d639a5ed",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-technology-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-technology-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-operating-officer",
+      "name": "COO · 首席运营官",
+      "description": "将目标转成执行计划，协调流程、进度与交付。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-operating-officer",
+        "version": "0.1.0",
+        "digest": "sha256:04bbfa6d115b2509c0c7579d6e5485b82ae141cacbf43a0924dda025c158ce0c",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-operating-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-operating-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-financial-officer",
+      "name": "CFO · 首席财务官",
+      "description": "规划财务资源，分析成本、预算与经营表现。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-financial-officer",
+        "version": "0.1.0",
+        "digest": "sha256:aa949814107f8d6f3d5ead2aa437982c2e92db76db2c97ca7bc3030c52c818d8",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-financial-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-financial-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-marketing-officer",
+      "name": "CMO · 首席营销官",
+      "description": "制定市场定位、品牌与需求获取方案。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-marketing-officer",
+        "version": "0.1.0",
+        "digest": "sha256:298b971d1e4859f6839956a7f50ea9d01181eab9dc82a8509adfcd1c12006aef",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-marketing-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-marketing-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-human-resources-officer",
+      "name": "CHRO · 首席人力资源官",
+      "description": "规划人才与组织能力，设计招聘、发展和绩效方法。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-human-resources-officer",
+        "version": "0.1.0",
+        "digest": "sha256:217dc275a579cf23e7e65868133e8fa93680e8d1fc512b2496597abb3ee3ae40",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-human-resources-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-human-resources-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-design-officer",
+      "name": "CDO · 首席设计官",
+      "description": "规划设计体系，提升产品和服务体验的一致性。",
+      "reportTo": "chief-product-officer",
+      "package": {
+        "name": "chief-design-officer",
+        "version": "0.1.0",
+        "digest": "sha256:ca1126fd87d3a1c5d5745232c1a9c67720135975d61345e6920aed5a50c5b64d",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-product-officer/chief-design-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-design-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-information-security-officer",
+      "name": "CISO · 首席信息安全官",
+      "description": "识别信息安全风险，规划防护与事件响应。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-information-security-officer",
+        "version": "0.1.0",
+        "digest": "sha256:47cada7046fd764649da7a9d8d3e4d1ccdc57260ab05010daa4bdec8394abe3a",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-information-security-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-information-security-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    }
+  ],
+  "updatedAt": "2026-10-13T00:00:00.000Z"
+}

@@ -9,6 +9,24 @@ const {
 
 const sessionId = "11111111-1111-4111-8111-111111111111";
 
+test("input failures distinguish missing instructions from oversized UTF-8 text", () => {
+  const base = { sessionId, engine: "codex-local", attachmentIds: [sessionId] };
+  assert.equal(validateSessionTurnRequest({ ...base, input: "  " }).response.body.code, "turn_input_empty");
+  assert.equal(validateSessionTurnRequest({ ...base, input: "汉".repeat(87382) }).response.body.code, "turn_input_too_large");
+  assert.equal(validateSessionTurnRequest({ ...base, input: "汉".repeat(87381) + "x" }).ok, true);
+  assert.equal(validateSessionTurnRequest({ ...base, input: null }).response.body.code, "turn_request_invalid");
+});
+
+test("project session IPC forwards only expected plan/workspace references and requires a task binding", () => {
+  const taskBriefing = { expectedWorkspacePath: "/workspace", expectedUpdatedAt: "2026-10-21T00:00:00Z" };
+  const value = { sessionId, input: "start", engine: "qoder", goalId: "goal-one", branchId: "task-one", taskBriefing };
+  assert.deepEqual(validateSessionTurnRequest(value).request.taskBriefing, taskBriefing);
+  for (const invalid of [{ ...value, goalId: undefined }, { ...value, branchId: undefined },
+    { ...value, taskBriefing: { ...taskBriefing, instruction: "forged" } }, { ...value, taskBriefing: { ...taskBriefing, expectedUpdatedAt: "bad" } }]) {
+    assert.equal(validateSessionTurnRequest(invalid).ok, false);
+  }
+});
+
 test("session IPC accepts exact typed fields and never accepts authority data", () => {
   assert.deepEqual(validateSessionCreateRequest({ positionId: "repo-owner" }), {
     ok: true,
@@ -55,6 +73,24 @@ test("group dispatch IPC forwards validated explicit modes and preserves recipie
   assert.equal(validateGroupTurnRequest({ ...value, principal: "admin" }).ok, false);
 });
 
+test("group relay STOP IPC accepts only an explicit bounded owner decision (#469)", () => {
+  const { validateGroupRelayStopDecision } = require("../src/group-ipc.cjs");
+  const value = { conversationRef: "group-one", messageId: "message-one", decision: "stop" };
+  assert.deepEqual(validateGroupRelayStopDecision(value), {
+    ok: true,
+    conversationRef: "group-one",
+    request: { messageId: "message-one", decision: "stop" },
+  });
+  assert.equal(validateGroupRelayStopDecision({ ...value, decision: "continue" }).ok, true);
+  for (const invalid of [
+    { ...value, decision: "automatic" },
+    { ...value, messageId: "../escape" },
+    { ...value, principal: "admin" },
+  ]) {
+    assert.equal(validateGroupRelayStopDecision(invalid).ok, false);
+  }
+});
+
 test("session retry IPC forwards only a bounded server turn identity", () => {
   const retryOf = "22222222-2222-4222-8222-222222222222";
   assert.deepEqual(validateSessionTurnRequest({ sessionId, input: "try again", engine: "qoder", retryOf }), {
@@ -64,4 +100,18 @@ test("session retry IPC forwards only a bounded server turn identity", () => {
     assert.equal(validateSessionTurnRequest({ sessionId, input: "try again", engine: "qoder", retryOf: invalid }).ok, false);
   }
   assert.equal(validateSessionTurnRequest({ sessionId, input: "try again", engine: "qoder", retryOf, principal: "admin" }).ok, false);
+});
+
+test("relay step IPC forwards operator requirements only for selected relay members", () => {
+  const { validateGroupTurnRequest } = require("../src/group-ipc.cjs");
+  const value = { conversationRef: "group-one", engine: "qoder", input: "draft then review", mentions: ["writer", "reviewer"], mode: "relay" };
+  const relaySteps = [{ positionId: "reviewer", instruction: "Check the sources" }];
+  assert.deepEqual(validateGroupTurnRequest({ ...value, relaySteps }).request.relaySteps, relaySteps);
+  assert.equal(validateGroupTurnRequest({ ...value, relaySteps: [] }).request.relaySteps, undefined);
+  for (const bad of [
+    { ...value, mode: "parallel", relaySteps }, { ...value, relaySteps: [...relaySteps, ...relaySteps] },
+    { ...value, relaySteps: [{ positionId: "other", instruction: "x" }] },
+    { ...value, relaySteps: [{ ...relaySteps[0], instruction: "汉".repeat(1366) }] },
+    { ...value, relaySteps: [{ ...relaySteps[0], sources: [] }] },
+  ]) assert.equal(validateGroupTurnRequest(bad).ok, false);
 });

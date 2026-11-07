@@ -1,3 +1,4 @@
+import { taskBriefingBinding } from "../turns/task-briefing.js";
 import crypto from "node:crypto";
 import { OrgApiError, approvalRunScopeBindingInput, errorCodes, validatePendingApproval, type ApprovalRecord, type ApprovalView, type ApprovalDecisionRequest, type ApprovalBatchDecisionRequest, type ApprovalBatchDecisionResponse, type TurnRecord, type WorkbenchSession } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
@@ -6,6 +7,7 @@ import { assertTurnWorkspace, executeTurn } from "../routes/turns.js";
 import { resolvePositionAgentEngine } from "../agent-binding.js";
 import { ApprovalStore, approvalIdentity } from "./store.js";
 import { buildApprovalContext, redactApprovalText } from "./context.js";
+import { attachApprovalAgingOverlay, rankApprovalViews } from "./aging-overlay.js";
 import { attachApprovalRiskOverlay } from "./risk-overlay.js";
 import { canActForPolicy, policyProgress, resolveApprovalPolicy } from "./policy.js";
 
@@ -251,7 +253,10 @@ export class ApprovalService {
       : undefined;
     const projected = publicView(a);
     const context = projected.context
-      ? await attachApprovalRiskOverlay(projected.context, a.action)
+      ? await attachApprovalAgingOverlay(
+        await attachApprovalRiskOverlay(projected.context, a.action),
+        { createdAt: a.createdAt, decisionKind: a.status },
+      )
       : projected.context;
     return {
       ...projected,
@@ -268,7 +273,7 @@ export class ApprovalService {
       const { items } = await this.synchronize(ws);
       const views = await Promise.all(items.map(a => this.view(ws, a)));
       assertTurnWorkspace(this.ctx, ws);
-      return views;
+      return rankApprovalViews(views, Date.now());
     });
   }
 
@@ -345,6 +350,7 @@ export class ApprovalService {
       const job = (async () => {
         try {
           const result = await executeTurn(this.ctx, undefined, {
+            ...taskBriefingBinding(source, ws.dir),
             positionId: a.source.positionId, engine: a.source.engine,
             input: `${request.decision === "granted" ? "[审批裁决] 请继续执行以下原任务中已批准的动作" : "[审批裁决] 已拒绝以下原任务的动作，不得执行"}\n${source.input}`,
             pendingApproval: { approvalId: a.approvalId, decision: request.decision, decidedBy: "operator", scope: effectiveScope, ...(request.reason ? { reason: request.reason } : {}), ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}) },
@@ -537,6 +543,7 @@ export class ApprovalService {
       const job = (async () => {
         try {
           const result = await executeTurn(this.ctx, undefined, {
+            ...taskBriefingBinding(source, ws.dir),
             positionId: sourceRecord.source.positionId, engine: sourceRecord.source.engine,
             input: `[审批批量裁决] 请继续执行原任务中这一组已批准的受限工具动作\n${source.input}`,
             pendingApprovals: members.map(member => ({ approvalId: member.record.approvalId, decision: "granted" as const, decidedBy: "operator" as const, scope: "once" as const, ...(request.reason ? { reason: request.reason } : {}), ...(member.record.expiresAt ? { expiresAt: member.record.expiresAt } : {}) })),

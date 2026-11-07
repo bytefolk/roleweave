@@ -23,6 +23,12 @@ const draft = (overrides?: Partial<HireDraft>): HireDraft =>
   });
 
 describe("#33 hire 四态状态机（本地态骨架，不触契约）", () => {
+  it("distinguishes omitted capability groups, explicit clears, and invalid suggestions", () => {
+    expect(parseHireProposal('{}')).toEqual({});
+    expect(parseHireProposal('{"skills":[],"mcpServers":[]}')).toEqual({ skills: [], mcpServers: [] });
+    expect(parseHireProposal('{"skills":["unknown",null],"mcpServers":["unknown",null,{}]}')).toEqual({});
+  });
+
   it("把新员工在创建时选定的具体 Agent 一并提交，重试不会改绑", () => {
     const request = toHirePositionRequest(draft({ agentEngine: "codex-local" }));
     expect(request.agentEngine).toBe("codex-local");

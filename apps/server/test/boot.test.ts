@@ -163,7 +163,7 @@ test("claude-local Host health is binary+version preflight, never a credential c
 });
 
 test("codex Host health in bundled mode requires the binary plus an explicit provider credential (#206)", () => {
-  const installed = { installed: true, version: "0.153.4" };
+  const installed = { installed: true, version: "0.153.4", supported: true };
   const ready = hostHealth({
     engineAvailable: true,
     bundledElectronEngine: true,
@@ -191,7 +191,7 @@ test("codex Host health in bundled mode requires the binary plus an explicit pro
     engineAvailable: true,
     bundledElectronEngine: true,
     env: { OPENAI_API_KEY: "service-key" },
-    codex: { installed: false, version: null },
+    codex: { installed: false, version: null, supported: false },
   });
   assert.equal(missing.codex.configured, false);
   assert.match(missing.codex.nextStep ?? "", /PATH/);
@@ -204,7 +204,7 @@ test("codex Host health in bundled mode requires the binary plus an explicit pro
     engineAvailable: true,
     bundledElectronEngine: true,
     env: { OPENAI_API_KEY: "service-key" },
-    codex: { installed: true, version: null },
+    codex: { installed: true, version: null, supported: true },
   });
   assert.deepEqual(unknownVersion.codex, { configured: true, modelPinnable: true, ready: true });
 
@@ -212,8 +212,8 @@ test("codex Host health in bundled mode requires the binary plus an explicit pro
   assert.doesNotMatch(JSON.stringify(ready), /service-key/);
 });
 
-test("codex-local Host readiness in bundled mode is the binary alone and never sees a credential (#206)", () => {
-  const installed = { installed: true, version: "0.153.4" };
+test("codex-local Host readiness requires compatible CLI capabilities and never sees a credential (#206)", () => {
+  const installed = { installed: true, version: "0.153.4", supported: true };
 
   // No credential anywhere: the credentialed Host stays Idle, the local-login
   // Host is ready. This is the whole point of splitting them.
@@ -230,7 +230,7 @@ test("codex-local Host readiness in bundled mode is the binary alone and never s
     engineAvailable: true,
     bundledElectronEngine: true,
     env: {},
-    codex: { installed: false, version: null },
+    codex: { installed: false, version: null, supported: false },
   });
   assert.equal(missing["codex-local"].configured, false);
   assert.match(missing["codex-local"].nextStep ?? "", /PATH/);
@@ -249,7 +249,7 @@ test("codex-local Host readiness in bundled mode is the binary alone and never s
 });
 
 test("Codex Host health reports the pinned model, and claims none when OPENAI_MODEL is unset (#236)", () => {
-  const installed = { installed: true, version: "0.154.0" };
+  const installed = { installed: true, version: "0.154.0", supported: true };
   const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
 
   const pinned = hostHealth({ ...base, env: { OPENAI_API_KEY: "service-key", OPENAI_MODEL: "gpt-5.6-sol" } });
@@ -297,7 +297,7 @@ test("Codex Host health reports the pinned model, and claims none when OPENAI_MO
 });
 
 test("an OPENAI_MODEL the engine would reject blocks the Codex Hosts instead of being displayed (#236)", () => {
-  const installed = { installed: true, version: "0.154.0" };
+  const installed = { installed: true, version: "0.154.0", supported: true };
   const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
 
   // Each of these fails the shared `validatedCodexModel`, so every turn would
@@ -319,7 +319,7 @@ test("an OPENAI_MODEL the engine would reject blocks the Codex Hosts instead of 
 });
 
 test("preflight never calls a legal OPENAI_MODEL illegal (#238 review)", () => {
-  const installed = { installed: true, version: "0.154.0" };
+  const installed = { installed: true, version: "0.154.0", supported: true };
   const base = { engineAvailable: true, bundledElectronEngine: true, codex: installed } as const;
 
   // The direction the original two-copy design could not see. Health shared no
@@ -345,7 +345,7 @@ test("Codex Hosts stay unavailable for an external engine even with a binary and
       engineAvailable: true,
       ...(engineVersion !== undefined ? { engineVersion } : {}),
       env: { OPENAI_API_KEY: "service-key-must-not-leak" },
-      codex: { installed: true, version: "0.153.4" },
+      codex: { installed: true, version: "0.153.4", supported: true },
     });
     for (const engine of ["codex", "codex-local"] as const) {
       assert.equal(health[engine].configured, true);
@@ -365,7 +365,7 @@ test("GET /health gates Codex Hosts on the configured bundled engine boundary", 
   const codexBin = path.join(dir, "codex");
   await fs.writeFile(externalEngine, "#!/bin/sh\nprintf '%s\\n' 'digital-employee 0.6.1'\n", { mode: 0o755 });
   await fs.writeFile(bundledEngine, "#!/bin/sh\nprintf '%s\\n' 'qoder-engine 0.2.0'\n", { mode: 0o755 });
-  await fs.writeFile(codexBin, "#!/bin/sh\nprintf '%s\\n' 'codex-cli 0.153.4 probe-output-must-not-leak'\n", { mode: 0o755 });
+  await fs.writeFile(codexBin, "#!/bin/sh\nif [ \"$1\" = '--version' ]; then printf '%s\\n' 'codex-cli 0.153.4 probe-output-must-not-leak'; exit 0; fi\nfor arg in \"$@\"; do if [ \"$arg\" = '--help' ]; then printf '%s\\n' '--strict-config --ignore-user-config --ephemeral --skip-git-repo-check --sandbox --json'; exit 0; fi; done\nprintf '%s\\n' 'shell_tool stable false' 'unified_exec stable false' 'apps stable false' 'plugins stable false' 'skill_search stable false' 'multi_agent stable false' 'view_image stable false' 'workspace_dependencies stable false'\n", { mode: 0o755 });
   const overrides = {
     DIGITAL_EMPLOYEE_CODEX_COMMAND: codexBin,
     DIGITAL_EMPLOYEE_CLAUDE_COMMAND: path.join(dir, "claude-not-installed"),
@@ -446,11 +446,11 @@ test("codex version probe never hands a Windows launcher path to a shell (#221 r
   assert.match(commandLine, /codex\.cmd \^"--version\^"/);
 });
 
-test("codex probe reports not-installed when the binary cannot be resolved", () => {
-  assert.deepEqual(probeCodexBinary({ PATH: "" }), { installed: false, version: null });
+test("codex probe reports not-installed when the binary cannot be resolved", async () => {
+  assert.deepEqual(await probeCodexBinary({ PATH: "" }), { installed: false, version: null, supported: false, failure: "codex.binary_unavailable" });
   assert.deepEqual(
-    probeCodexBinary({ PATH: "", DIGITAL_EMPLOYEE_CODEX_COMMAND: "/nonexistent/codex" }),
-    { installed: false, version: null },
+    await probeCodexBinary({ PATH: "", DIGITAL_EMPLOYEE_CODEX_COMMAND: "/nonexistent/codex" }),
+    { installed: false, version: null, supported: false, failure: "codex.binary_unavailable" },
   );
 });
 

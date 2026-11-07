@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "cxo-example-teams.v1",
+  "scenarioId": "ai-product-delivery",
+  "note": "案例中的成员组合，映射到现有群组；不是新的 Team API。sponsor 定目标和资源，lead 整合交付，专业岗位提交产出。",
+  "teams": [
+    {"id":"product","name":"产品团队","sponsor":"chief-product-officer","lead":"product-manager","members":["product-manager","user-researcher","interaction-designer"],"purpose":"形成明确的用户问题、产品范围和交互规格。","runbook":"product-discovery"},
+    {"id":"engineering","name":"研发团队","sponsor":"chief-technology-officer","lead":"engineering-lead","members":["engineering-lead","software-architect","frontend-developer","backend-developer","test-engineer"],"purpose":"产出技术契约和实现草稿，执行独立审阅与有限修复。","runbook":"engineering-validation"},
+    {"id":"marketing","name":"市场团队","sponsor":"chief-marketing-officer","lead":"campaign-strategist","members":["campaign-strategist","content-creator","growth-analyst"],"purpose":"提出定位、内容草稿及可验证的增长实验。","runbook":"market-validation"},
+    {"id":"delivery","name":"交付运营团队","sponsor":"chief-operating-officer","lead":"delivery-lead","members":["delivery-lead","project-coordinator","customer-support-analyst"],"purpose":"整合交付、依赖、用户验收说明与反馈计划。","runbook":"delivery-acceptance"}
+  ]
+}

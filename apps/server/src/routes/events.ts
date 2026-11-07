@@ -35,6 +35,7 @@ export function handleEvents(ctx: ControlPlaneContext, req: IncomingMessage, res
   req.on("close", () => {
     clearInterval(heartbeat);
     unsubscribe();
+    if (ctx.bus.listenerCount === 0) ctx.relayStop.continueAll("disconnect");
   });
 }
 

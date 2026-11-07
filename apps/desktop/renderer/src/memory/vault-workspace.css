@@ -1,0 +1,9 @@
+.owb-vault-module { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; height: 100%; }
+.owb-vault-module__controls { display: flex; flex-wrap: wrap; flex: none; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--ui-border); }
+.owb-vault-module__controls > .ant-select { min-width: 200px; max-width: 60%; }
+.owb-vault-module > .owb-docs-panel { flex: 1; min-height: 0; }
+.owb-vault-module__legacy { color: var(--ui-foreground-muted); font-size: 11px; }
+.owb-markdown-image-loading { color: var(--ui-foreground-muted); font-size: 12px; }
+.owb-vault-dialog .ant-modal-body > .ant-select { width: 100%; margin: 6px 0; }
+.owb-vault-dialog .ant-modal-body > .ant-input { margin: 6px 0; }
+.owb-vault-history-preview { max-height: 52vh; overflow: auto; margin-top: 12px; border: 1px solid var(--ui-border); border-radius: 8px; }

@@ -1,128 +1,29 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { PositionCardData } from "@roleweave/ui";
 import { MemoryModule } from "../src/memory/MemoryModule";
-import type { DocsFileResponse } from "@roleweave/shared";
-import type { OwbBridge } from "../src/owb";
-
-const position: PositionCardData = {
-  id: "community-operator",
-  name: "社区运营",
-  description: "整理社区反馈，维护贡献者文档。",
-  reportTo: "repo-owner",
-  mode: "read_only",
-  contextScope: "position",
-  contextSources: [
-    {
-      id: "workspace-position-docs",
-      kind: "workspace_docs",
-      name: "岗位知识库",
-      locator: "positions/community-operator/SKILL.md + knowledge/**",
-      binding: "bound",
-      state: "ready",
-      readOnly: true,
-      itemCount: 2,
-    },
-    {
-      id: "mem-drive",
-      kind: "mem_drive",
-      name: "统一网盘",
-      locator: "mem://workspace",
-      binding: "available",
-      state: "not_configured",
-      readOnly: true,
-    },
-    {
-      id: "context-provider",
-      kind: "context_provider",
-      name: "岗位运行上下文",
-      locator: "context://position/community-operator",
-      binding: "bound",
-      state: "ready",
-      readOnly: true,
-      itemCount: 1,
-    },
-  ],
-  permissions: { toolAllow: ["Read"], toolDeny: [] },
-  budget: { perTask: { tokens: 20_000 }, perDay: { tokens: 200_000 } },
-  metadata: {},
-};
-
-function installBridge() {
-  const bridge = {
-    position: vi.fn().mockResolvedValue({ status: 200, body: { position } }),
-    positionDocs: vi.fn().mockResolvedValue({
-      status: 200,
-      body: {
-        schemaVersion: "docs-file-list.v1",
-        positionId: "community-operator",
-        files: [{ path: "SKILL.md", kind: "file", size: 32, modifiedAt: "2026-08-27T00:00:00.000Z" }],
-      },
-    }),
-    positionDocFile: vi.fn().mockResolvedValue({ status: 200, body: null as DocsFileResponse | null }),
-    drive: {
-      list: vi.fn().mockResolvedValue({
-        status: 200,
-        body: {
-          schemaVersion: "drive-object-list.v1",
-          mocked: false,
-          objects: [{
-            id: "mem-001",
-            name: "社区周报.md",
-            size: 120,
-            mime: "text/markdown",
-            createdAt: "2026-08-30T09:14:22.000Z",
-            summary: "社区反馈摘要。",
-          }],
-        },
-      }),
-      detail: vi.fn().mockResolvedValue({ status: 404, body: null }),
-    },
-  };
-  window.owb = bridge as unknown as OwbBridge;
-  return bridge;
-}
-
-describe("员工记忆模块", () => {
-  it("把岗位文档和统一网盘放在同一个员工入口", async () => {
-    const bridge = installBridge();
-    render(
-      <MemoryModule
-        workspaceOpen
-        positions={[{ id: position.id, name: position.name }]}
-        selectedPositionId={position.id}
-        position={position}
-      />,
-    );
-
-    expect(screen.getByRole("heading", { name: "记忆与协作" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "打开 岗位文档 记忆来源" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "打开 岗位文档 记忆来源" })).not.toHaveTextContent("2");
-    expect(screen.queryByText("岗位运行上下文")).not.toBeInTheDocument();
-    expect(screen.queryByText("context://position/community-operator")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "打开 统一网盘 记忆来源" }));
-    expect(await screen.findByText("社区周报.md")).toBeInTheDocument();
-    await waitFor(() => expect(bridge.drive.list).toHaveBeenCalledWith(""));
+vi.mock("../src/memory/VaultModule", () => ({ VaultModule: () => <div>统一工作区笔记</div> }));
+vi.mock("../src/drive/DriveModule", () => ({ DriveModule: () => <div>网盘资源</div> }));
+vi.mock("../src/settings/ServiceLaunch", () => ({ ServiceLaunch: () => <button>连接网盘</button> }));
+describe("统一笔记入口", () => {
+  it.each(["notes", "docs", "shared", "sessions"] as const)("maps legacy %s to the same vault", (initialSource) => {
+    render(<MemoryModule workspaceOpen positions={[]} selectedPositionId={null} initialSource={initialSource} />);
+    expect(screen.getByText("统一工作区笔记")).toBeVisible();
+    expect(within(screen.getByRole("navigation", { name: "笔记库导航" })).getAllByRole("button")).toHaveLength(2);
+    expect(screen.queryByText("共享知识")).not.toBeInTheDocument();
+    expect(screen.queryByText("会话记忆")).not.toBeInTheDocument();
   });
-  it("收起来源和专注阅读时保留当前文档，不重复加载", async () => {
-    const bridge = installBridge();
-    bridge.positionDocFile.mockResolvedValue({ status: 200, body: {
-      schemaVersion: "docs-file.v1", positionId: position.id, path: "SKILL.md", version: "v1", content: "# 岗位职责\n保持当前文档。",
-    } });
-    render(<MemoryModule workspaceOpen positions={[{ id: position.id, name: position.name }]}
-      selectedPositionId={position.id} position={position} />);
-    expect(await screen.findByRole("heading", { name: "岗位职责" })).toBeInTheDocument();
-    const reader = screen.getByRole("heading", { name: "岗位职责" });
-    fireEvent.click(screen.getByRole("button", { name: "收起来源菜单" }));
-    expect(screen.getByRole("button", { name: "展开来源菜单" })).toHaveAttribute("aria-expanded", "false");
+  it("opens drive resources and keeps reading focus specific to notes", () => {
+    render(<MemoryModule workspaceOpen positions={[]} selectedPositionId={null} />);
     fireEvent.click(screen.getByRole("button", { name: "专注阅读" }));
-    expect(screen.getByRole("button", { name: "退出专注阅读" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "退出专注阅读" }));
-    expect(screen.getByRole("heading", { name: "岗位职责" })).toBe(reader);
-    expect(screen.getByRole("button", { name: "展开来源菜单" })).toHaveAttribute("aria-expanded", "false");
-    expect(bridge.positionDocFile).toHaveBeenCalledTimes(1);
-    expect(bridge.positionDocs).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("region", { name: "笔记库" })).toHaveAttribute("data-reading-focus", "true");
+    fireEvent.click(screen.getByRole("button", { name: "网盘" }));
+    expect(screen.getByText("网盘资源")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "退出专注阅读" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "笔记库" })).toHaveAttribute("data-reading-focus", "false");
   });
-
+  it("waits for a workspace before opening a library", () => {
+    render(<MemoryModule workspaceOpen={false} positions={[]} selectedPositionId={null} />);
+    expect(screen.getByText("尚未打开工作区")).toBeVisible();
+    expect(screen.queryByText("统一工作区笔记")).not.toBeInTheDocument();
+  });
 });

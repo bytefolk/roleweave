@@ -1,0 +1,8 @@
+.owb-doc-plane__connection-empty { display: flex; flex: 1; flex-direction: column; align-items: flex-start; justify-content: center; gap: 12px; width: min(560px, 100%); box-sizing: border-box; margin: auto; padding: 40px 32px; color: var(--ui-foreground); }
+.owb-doc-plane__connection-icon { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 14px; background: var(--ui-primary-soft); color: var(--ui-primary); }
+.owb-doc-plane__connection-empty h2 { margin: 3px 0 0; font-size: 18px; line-height: 1.5; font-weight: 600; }
+.owb-doc-plane__connection-empty p { margin: 0; max-width: 460px; font-size: 13px; line-height: 1.65; color: var(--ui-foreground-muted); }
+.owb-doc-plane__connection-empty .owb-doc-plane__connection-scope, .owb-doc-plane__connection-empty .owb-doc-plane__connection-setup { font-size: 12px; }
+.owb-doc-plane__connection-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.owb-doc-plane__service-action { display: flex; align-items: center; justify-content: flex-end; }
+@media (max-width: 480px) { .owb-doc-plane__connection-empty { padding: 28px 20px; } }

@@ -2,7 +2,7 @@
  * Drive (mem) contract types for the workbench control-plane proxy.
  *
  * The workbench does not re-implement the mem Memory Plane; it proxies a
- * bounded read/list surface plus an upload stub to a configured `MEM_URL`
+ * bounded read/list and desktop-picked upload surface to a configured `MEM_URL`
  * (bytefolk/mem `memd` HTTP API, `/v1/files`). When `MEM_URL` is unset the
  * server returns a `drive_not_configured` error; the renderer must not replace
  * that state with local fixture data.
@@ -15,6 +15,24 @@
 
 export const DRIVE_OBJECT_LIST_SCHEMA_VERSION = "drive-object-list.v1" as const;
 export const DRIVE_OBJECT_SCHEMA_VERSION = "drive-object.v1" as const;
+export const DRIVE_OBJECT_PREVIEW_SCHEMA_VERSION = "drive-object-preview.v1" as const;
+export const DRIVE_UPLOAD_SCHEMA_VERSION = "drive-object-upload.v1" as const;
+export const DRIVE_UPLOAD_MAX_BYTES = 32 * 1024 * 1024;
+export const DRIVE_UPLOAD_TIMEOUT_MS = 30_000;
+export const DRIVE_PREVIEW_MAX_BYTES = 8 * 1024 * 1024;
+export const DRIVE_PREVIEW_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+export type DrivePreviewMime = (typeof DRIVE_PREVIEW_MIME_TYPES)[number];
+
+/** Authenticated, bounded raster bytes; no upstream URL or credential. */
+export interface DriveObjectPreview {
+  objectId: string;
+  mime: DrivePreviewMime;
+  dataUrl: string;
+}
+export interface DriveObjectPreviewResponse {
+  schemaVersion: typeof DRIVE_OBJECT_PREVIEW_SCHEMA_VERSION;
+  preview: DriveObjectPreview;
+}
 
 /** One listed object in the mem drive. */
 export interface DriveObject {
@@ -47,13 +65,12 @@ export interface DriveObjectDetailResponse {
 }
 
 export interface DriveUploadRequest {
-  /** Absolute local path chosen through the OS file picker; validated by main. */
+  /** Legacy placeholder shape. Path-based uploads are no longer accepted. */
   filePath: string;
 }
 
 export interface DriveUploadResponse {
-  /** Uploads are stubbed until the mem contract is pinned; `stub` is always true today. */
-  stub: true;
-  filePath: string;
-  message: string;
+  schemaVersion: typeof DRIVE_UPLOAD_SCHEMA_VERSION;
+  object: DriveObject;
+  deduped: boolean;
 }

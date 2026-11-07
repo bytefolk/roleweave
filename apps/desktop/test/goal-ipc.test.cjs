@@ -97,6 +97,37 @@ test("validateGoalId rejects invalid IDs", () => {
 const workItem = { taskId: "task-1", title: "Implement board", status: "todo", priority: "normal", assigneePositionId: "repo-owner", startDate: "2028-02-28", dueDate: "2028-02-29" };
 const expectedUpdatedAt = "2026-09-22T00:00:00.000Z";
 
+test("goal task acceptance IPC preserves the verified source and refuses actor injection", async () => {
+  const { validateGoalTaskAcceptanceRequest } = require("../src/goal-ipc.cjs");
+  const request = { goalId: "goal-1", taskId: "task-1", expectedWorkspacePath: "/fixture/workspace", expectedUpdatedAt,
+    idempotencyKey: "11111111-1111-4111-8111-111111111111",
+    source: { positionId: "repo-owner", turnId: "22222222-2222-4222-8222-222222222222", sessionId: "33333333-3333-4333-8333-333333333333", outputDigest: `sha256:${"a".repeat(64)}` },
+    decision: "accepted", verdicts: [{ criteriaIndex: 0, passed: true }] };
+  const result = await validateGoalTaskAcceptanceRequest(request);
+  assert.equal(result.ok, true);
+  assert.equal(result.pathname, "/goals/goal-1/tasks/task-1/acceptance");
+  assert.deepEqual(result.request.source, request.source);
+  assert.equal(Object.hasOwn(result.request, "goalId"), false);
+  for (const invalidRequest of [
+    { ...request, decidedBy: "agent" },
+    { ...request, expectedWorkspacePath: "" },
+    { ...request, source: { ...request.source, outputDigest: "not-a-version" } },
+    { ...request, decision: "rejected", note: " " },
+    { ...request, taskId: "../task" },
+  ]) assert.equal((await validateGoalTaskAcceptanceRequest(invalidRequest)).ok, false);
+});
+
+test("goal mutations require the exact trusted renderer frame", () => {
+  const { authorizeGoalIpcSender } = require("../src/goal-ipc.cjs");
+  const allowedUrl = "file:///app/renderer/index.html";
+  const mainFrame = { url: allowedUrl };
+  const window = { webContents: { mainFrame } };
+  assert.equal(authorizeGoalIpcSender({ senderFrame: mainFrame }, window, allowedUrl).ok, true);
+  assert.equal(authorizeGoalIpcSender({ senderFrame: { url: allowedUrl } }, window, allowedUrl).response.status, 403);
+  mainFrame.url = "https://untrusted.example";
+  assert.equal(authorizeGoalIpcSender({ senderFrame: mainFrame }, window, allowedUrl).response.status, 403);
+});
+
 test("goal IPC preserves the complete work item edit and its concurrency revision", () => {
   const request = { workItems: [{ ...workItem, description: "Deliver usable progress and schedule views" }], expectedUpdatedAt };
   assert.deepEqual(validateGoalUpdateRequest(request), { ok: true, request });

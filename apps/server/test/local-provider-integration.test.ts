@@ -87,3 +87,32 @@ test("credential-bearing URL queries are rejected without echoing their value", 
     assert.doesNotMatch(JSON.stringify(config), /fixture-query-private|fixture-provider-token/);
   });
 });
+
+test("local Claude selection retains curated labels and concrete dispatch IDs", async () => {
+  await localHome(async (home, env) => {
+    const options = [
+      { model: "deepseek-v4-pro-0813", label: "DeepSeek V4 Pro" },
+      { model: "deepseek-flash", label: "DeepSeek V4.1 Flash" },
+      { model: "mimo-v2.6-pro", label: "MiMo V2.6 Pro" },
+      { model: "mimo-v2.6-flash", label: "MiMo V2.6 Flash" },
+      { model: "minimax-m2.7", label: "MiniMax M2.7" },
+      { model: "glm-5.2", label: "GLM 5.2" },
+      { model: "glm-5.3-flashx", label: "GLM 5.3 FlashX" },
+      { model: "kimi-k2.6", label: "Kimi K2.6" },
+    ];
+    await fs.writeFile(path.join(home, ".claude/settings.json"), JSON.stringify({
+      model: options[0]!.model,
+      modelPicker: { replaceBuiltInOptions: true, options },
+      env: { ANTHROPIC_AUTH_TOKEN: "test-private-token", ANTHROPIC_BASE_URL: "http://127.0.0.1:18999/private-route" },
+    }));
+    const config = await employeeModelConfig("claude-local", undefined, true, env);
+    assert.deepEqual(config.options.filter((row) => row.id !== "provider-default").map(({ id, name }) => ({ model: id, label: name })), options);
+    assert.equal(config.options[0]?.resolvedModel, options[0]!.model);
+    for (const row of options) {
+      const selected = await employeeModelConfig("claude-local", row.model, true, env);
+      assert.equal(selected.selected, row.model);
+      assert.equal(selected.options.find((option) => option.id === row.model)?.name, row.label);
+    }
+    assert.doesNotMatch(JSON.stringify(config), /test-private-token|private-route/);
+  });
+});

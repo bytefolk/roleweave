@@ -2,9 +2,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { OrgApiError, errorCodes } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import { readJsonBody, sendJson } from "../http.js";
-import { experiments, parseExperimentsRequest } from "../experiments/service.js";
+import {
+  experiments,
+  parseBudgetRemainingAdviceRequest,
+  parseExperimentsRequest,
+} from "../experiments/service.js";
 import { resolveReadyHostChoice, sanitizeReadyHostFacts } from "../org/ready-host-overlay.js";
-
 export async function handleExperimentsGet(ctx: ControlPlaneContext, res: ServerResponse, url: URL): Promise<void> {
   const workspace = ctx.workspace.requireOpen();
   if (url.searchParams.get("workspacePath") !== workspace.dir || [...url.searchParams.keys()].some(key => key !== "workspacePath")) {
@@ -56,4 +59,10 @@ export async function handleReadyHostChoice(ctx: ControlPlaneContext, req: Incom
   }
   const positionId = await resolveReadyHostChoice(candidates);
   sendJson(res, 200, { ...scope, status: "ready" as const, positionId });
+}
+
+export async function handleBudgetRemainingAdvice(ctx: ControlPlaneContext, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const workspace = ctx.workspace.requireOpen();
+  const request = parseBudgetRemainingAdviceRequest(await readJsonBody<unknown>(req));
+  sendJson(res, 200, await experiments(ctx).adviseBudgetRemaining(workspace, request));
 }

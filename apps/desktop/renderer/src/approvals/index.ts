@@ -1,7 +1,7 @@
 export { ApprovalQueue } from "./ApprovalQueue";
 export type { ApprovalQueueProps, ApprovalQueueFilter, ApprovalQueueDataState } from "./ApprovalQueue";
-export { ApprovalDetailDrawer } from "./ApprovalDetailDrawer";
-export type { ApprovalDetailDrawerProps } from "./ApprovalDetailDrawer";
+export { ApprovalDetail } from "./ApprovalDetail";
+export type { ApprovalDetailProps } from "./ApprovalDetail";
 export {
   APPROVAL_CATEGORY_LABEL,
   isActionablePending,

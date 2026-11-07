@@ -39,6 +39,32 @@ describe("independent service connections", () => {
     expect(services.configure.mock.calls[1][0]).not.toHaveProperty("token");
   });
 
+  it("keeps an unsaved PAT across a same-field connection refresh", async () => {
+    const services = installBridge();
+    render(<ServiceConnections kind="doc" />);
+    const token = await screen.findByLabelText("个人访问令牌（PAT）");
+    fireEvent.change(token, { target: { value: "fresh-pat" } });
+    services.list.mockImplementation(async () => ({
+      status: 200,
+      body: {
+        connections: [{
+          kind: "doc",
+          apiUrl: "https://docs.example",
+          webUrl: "https://docs.example/work",
+          configured: true,
+          tokenConfigured: true,
+          workspaceId: null,
+        }],
+      },
+    }));
+    window.dispatchEvent(new Event("owb:services-changed"));
+    await waitFor(() => expect(services.list.mock.calls.length).toBeGreaterThan(1));
+    expect(token).toHaveValue("fresh-pat");
+    fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
+    await screen.findByText("连接已保存，可以检查服务是否可访问。");
+    expect(services.configure).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "doc", token: "fresh-pat" }));
+  });
+
   it("requires explicit token removal and probes the saved service by kind", async () => {
     const services = installBridge();
     render(<ServiceConnections kind="doc" />);
@@ -79,5 +105,31 @@ describe("independent service connections", () => {
     await within(dialog).findByText("连接已保存，可以检查服务是否可访问。");
     await waitFor(() => expect(services.list.mock.calls.length).toBeGreaterThan(2));
     expect(screen.getAllByRole("button", { name: "打开 Doc" }).length).toBe(2);
+  });
+
+  it("keeps a typed PAT when a background refresh lands with changed saved addresses", async () => {
+    const services = installBridge();
+    render(<ServiceConnections kind="doc" />);
+    const token = await screen.findByLabelText("个人访问令牌（PAT）");
+    fireEvent.change(token, { target: { value: "fresh-pat" } });
+    services.list.mockImplementation(async () => ({
+      status: 200,
+      body: {
+        connections: [{
+          kind: "doc",
+          apiUrl: "https://docs.example/v2",
+          webUrl: "https://docs.example/work2",
+          configured: true,
+          tokenConfigured: true,
+          workspaceId: null,
+        }],
+      },
+    }));
+    window.dispatchEvent(new Event("owb:services-changed"));
+    await waitFor(() => expect(services.list.mock.calls.length).toBeGreaterThan(1));
+    expect(token).toHaveValue("fresh-pat");
+    fireEvent.click(screen.getByRole("button", { name: "保存连接" }));
+    await screen.findByText("连接已保存，可以检查服务是否可访问。");
+    expect(services.configure).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "doc", token: "fresh-pat" }));
   });
 });

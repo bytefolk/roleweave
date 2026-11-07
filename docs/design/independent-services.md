@@ -48,6 +48,14 @@ npm run local-services -- up mem
 
 依据：[Compose 配置解析](https://docs.docker.com/reference/cli/docker/compose/config/)、[Compose 网络与项目隔离](https://docs.docker.com/reference/compose-file/networks/)。
 
+## 在 RoleWeave 中管理素材
+
+「资料与记忆 → 网盘」读取真实 Mem 文件清单，支持筛选、排序、详情和图片预览。连接 Mem 后，「上传」通过桌面文件选择器上传一个文件到当前 Mem 工作区的根目录，最大 32 MiB；成功或去重后刷新清单。更大文件、目录创建、重命名、移动与删除继续从「在 Mem 中管理」进入 Mem 原生界面。切换存储来源时，不支持上传的 provider 不显示 Mem 上传按钮。
+
+桌面连接应保存为目标工作区签发、具有 `read` / `write` 权限且有效期适合实际使用周期的 API 令牌。浏览器登录的临时 session token 与 API 令牌是不同用途；把短期 session token 存进桌面服务连接会在过期后出现 401。401 时在服务设置更新 API 令牌；403 时核对令牌的权限、工作区以及对根目录 `/` 的写入权限。客户端不会自动扩大权限或替换凭证。
+
+文件信息保存在 Mem 数据库，文件本体保存在 Mem 的 S3 兼容存储；本机 Compose 使用 MinIO。RoleWeave 仅通过服务 API 操作。桌面先读取文件字节再发送给控制面，因此 Windows 桌面与 WSL 控制面不需要互相访问文件路径。
+
 ## 三种状态必须分开
 
 1. **上游源代码**：官方仓库某个分支或标签当前指向的完整 commit SHA。

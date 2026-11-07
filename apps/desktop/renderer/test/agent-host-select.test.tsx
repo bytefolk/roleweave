@@ -15,10 +15,14 @@ const availability: Record<TurnEngine, TurnEngineAvailability> = {
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
+  "workbuddy-local": { configured: true, ready: true },
+  "qwen-office-local": { configured: true, ready: true },
+
   gemini: { configured: true, ready: true },
+  "openai-compatible": { configured: true, ready: true },
 };
 
-const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "gemini"];
+const ENGINES: TurnEngine[] = ["qoder", "claude-code", "claude-local", "codex", "codex-local", "workbuddy", "workbuddy-local", "qwen-office-local", "gemini", "openai-compatible"];
 
 function Picker({ initial }: { initial: TurnEngine }) {
   const [engine, setEngine] = useState<TurnEngine>(initial);
@@ -48,6 +52,13 @@ describe("Agent Host picker (#94)", () => {
     expect(triggerText()).not.toContain("本地登录");
   });
 
+  it("shows the local WorkBuddy runtime as the same single brand choice", () => {
+    render(<Picker initial="workbuddy-local" />);
+    expect(triggerText()).toBe("WorkBuddy");
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "选择 Agent Host" }));
+    expect(visibleSelectOptions().filter((option) => option.textContent === "WorkBuddy")).toHaveLength(1);
+  });
+
   it("shows one option for each agent product without transport status", () => {
     render(<Picker initial="claude-local" />);
 
@@ -58,11 +69,13 @@ describe("Agent Host picker (#94)", () => {
       "Claude Code",
       "Codex",
       "WorkBuddy",
+      "千问办公",
       "Gemini",
+      "OpenAI Compatible",
     ]);
   });
 
-  it.each(["Claude Code", "WorkBuddy", "Gemini"])("selects %s and the trigger follows the new host", (label) => {
+  it.each(["Claude Code", "WorkBuddy", "千问办公", "Gemini"])("selects %s and the trigger follows the new host", (label) => {
     render(<Picker initial="qoder" />);
     expect(triggerText()).toBe("Qoder");
 
@@ -81,7 +94,7 @@ describe("Agent Host picker (#94)", () => {
     for (const engine of ENGINES) {
       const { unmount } = render(<Picker initial={engine} />);
       const content = document.querySelector(".ant-select-content");
-      expect(content?.querySelector("img.owb-engine-icon")).not.toBeNull();
+      expect(content?.querySelector(".owb-engine-icon")).not.toBeNull();
       unmount();
     }
   });

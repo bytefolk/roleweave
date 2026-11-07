@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button as AntButton, Input, Select as AntSelect } from "antd";
 import { ArrowUp, Plus, Search, Trash2, UserRound, UserRoundPlus, UsersRound } from "lucide-react";
 import { useOwbLocale, useT } from "@roleweave/ui";
+import { RelayHandoffDetails } from "./RelayHandoffDetails";
+import { instructionBytes, selectedRelaySteps, relayStepsTooLarge, RELAY_INSTRUCTION_BYTES } from "./relay-instructions";
 import { PositionAvatar } from "../PositionAvatar";
 import { DiagnosticNotice, type AvailabilityCheck } from "../DiagnosticNotice";
-import { ProgressTrail, TypingIndicator } from "../turns/TurnThread";
+import { ProgressTrail } from "../turns/TurnThread";
 import type { GroupConversation, GroupConversationList, GroupTimeline } from "@roleweave/shared";
 import { useEngineLabel } from "../turns/engine-select";
 import { EngineIcon } from "../turns/engine-icon";
@@ -19,7 +22,7 @@ import type { PositionMentionOption, TurnEngine, TurnEngineAvailability } from "
  *  in Testing Library. (#237) */
 function GroupBubbleExpand({ summaryClassName, summaryTitle, summaryChildren, bodyChildren, "aria-label": ariaLabel }: {
   summaryClassName: string;
-  summaryTitle: string;
+  summaryTitle?: string;
   summaryChildren: React.ReactNode;
   bodyChildren: React.ReactNode;
   "aria-label"?: string;
@@ -42,6 +45,11 @@ function GroupBubbleExpand({ summaryClassName, summaryTitle, summaryChildren, bo
 export interface GroupsPanelProps {
   availabilityCheck?: AvailabilityCheck;
   workspaceOpen: boolean;
+  /** Optional collaboration sidebar host; standalone panels keep the list inline. */
+  listHost?: HTMLElement | null;
+  /** Explicit row selection or successful creation only, never background refresh. */
+  onSelectGroup?: () => void;
+  onOpenResource?: (positionId: string, path: string) => void;
   positions: PositionMentionOption[];
   positionNames: Record<string, string>;
   /** Avatar background colors keyed by position id (metadata.color); positions
@@ -84,6 +92,32 @@ export interface GroupsPanelProps {
 
 const GROUP_RECONCILE_INTERVAL_MS = 1_000;
 const GROUP_RECONCILE_MAX_READS = 180;
+
+interface RelayStopSuggestion {
+  groupRef: string;
+  messageId: string;
+  completedTurnId: string;
+  remainingCount: number;
+  probability: number;
+  expiresAt: string;
+}
+
+function parseRelayStopSuggestion(payload: unknown): RelayStopSuggestion | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const value = payload as Partial<RelayStopSuggestion>;
+  if (
+    typeof value.groupRef !== "string" || typeof value.messageId !== "string" ||
+    typeof value.completedTurnId !== "string" ||
+    !Number.isInteger(value.remainingCount) || value.remainingCount! < 1 ||
+    typeof value.probability !== "number" || !Number.isFinite(value.probability) ||
+    typeof value.expiresAt !== "string"
+  ) return null;
+  return value as RelayStopSuggestion;
+}
+
+function relayStopKey(groupRef: string, messageId: string): string {
+  return `${groupRef}\0${messageId}`;
+}
 
 function filterPositionOption(input: string, option?: { label?: unknown; value?: unknown }): boolean {
   return `${String(option?.label ?? "")} ${String(option?.value ?? "")}`
@@ -128,6 +162,9 @@ function timeShort(iso: string): string {
 export function GroupsPanel({
   availabilityCheck,
   workspaceOpen,
+  listHost,
+  onSelectGroup,
+  onOpenResource,
   positions,
   positionNames,
   positionColors,
@@ -173,8 +210,8 @@ export function GroupsPanel({
   const [createOpen, setCreateOpen] = useState(false);
   const [draftMembers, setDraftMembers] = useState<ReadonlySet<string>>(new Set());
   const draftKey = selectedRef ?? "";
-  const [drafts, setDrafts] = useState<Record<string, { input: string; mentions: string[]; mode: "parallel" | "relay" }>>({});
-  const emptyDraft = { input: "", mentions: [] as string[], mode: "parallel" as const };
+  const [drafts, setDrafts] = useState<Record<string, { input: string; mentions: string[]; mode: "parallel" | "relay"; instructions: Record<string, string> }>>({});
+  const emptyDraft = { input: "", mentions: [] as string[], mode: "parallel" as const, instructions: {} as Record<string, string> };
   const draft = drafts[draftKey] ?? emptyDraft;
   const input = draft.input;
   const mentions = useMemo(() => new Set(draft.mentions), [draft.mentions]);
@@ -195,6 +232,12 @@ export function GroupsPanel({
   );
   const mentionsReady = unavailableMention === undefined;
   const dispatchMode = draft.mode;
+  const relaySteps = selectedRelaySteps(mentionedPositionIds, draft.instructions);
+  const invalidRelaySteps = dispatchMode === "relay" && relayStepsTooLarge(relaySteps);
+  const setStepInstruction = (positionId: string, instruction: string) => setDrafts(current => {
+    const previous = current[draftKey] ?? emptyDraft;
+    return { ...current, [draftKey]: { ...previous, instructions: { ...previous.instructions, [positionId]: instruction } } };
+  });
   const setInput = (input: string) => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), input } }));
   const setMentions = (mentions: ReadonlySet<string>) => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), mentions: [...mentions] } }));
   const setDispatchMode = (mode: "parallel" | "relay") => setDrafts((current) => ({ ...current, [draftKey]: { ...(current[draftKey] ?? emptyDraft), mode } }));
@@ -204,6 +247,8 @@ export function GroupsPanel({
   const [panelError, setPanelError] = useState<string | null>(null);
   const [dismissOpen, setDismissOpen] = useState(false);
   const [dismissing, setDismissing] = useState(false);
+  const [relayStopSuggestions, setRelayStopSuggestions] = useState<Record<string, RelayStopSuggestion>>({});
+  const relayStopSuggestionsRef = useRef<Record<string, RelayStopSuggestion>>({});
 
   useEffect(() => {
     selectedRefRef.current = selectedRef;
@@ -327,6 +372,60 @@ export function GroupsPanel({
     return off;
   }, []);
 
+  // #469: Laya advice is advisory only. A live relay pauses until its owner
+  // explicitly decides; losing the renderer always fails open to Continue so
+  // the accepted mention order cannot remain stranded behind a vanished UI.
+  useEffect(() => {
+    const remove = (groupRef: string, messageId: string) => {
+      const key = relayStopKey(groupRef, messageId);
+      const next = { ...relayStopSuggestionsRef.current };
+      delete next[key];
+      relayStopSuggestionsRef.current = next;
+      setRelayStopSuggestions(next);
+    };
+    const continueAll = (clearState = true) => {
+      const pending = Object.values(relayStopSuggestionsRef.current);
+      if (pending.length === 0) return;
+      relayStopSuggestionsRef.current = {};
+      if (clearState) setRelayStopSuggestions({});
+      for (const suggestion of pending) {
+        void window.owb.decideGroupRelayStop({
+          conversationRef: suggestion.groupRef,
+          messageId: suggestion.messageId,
+          decision: "continue",
+        }).catch(() => undefined);
+      }
+    };
+    const offEvent = window.owb.onEvent((event) => {
+      const envelope = event as { type?: string; payload?: unknown };
+      if (envelope.type === "group.relay.stop.suggested") {
+        const suggestion = parseRelayStopSuggestion(envelope.payload);
+        if (suggestion === null) return;
+        const next = {
+          ...relayStopSuggestionsRef.current,
+          [relayStopKey(suggestion.groupRef, suggestion.messageId)]: suggestion,
+        };
+        relayStopSuggestionsRef.current = next;
+        setRelayStopSuggestions(next);
+        return;
+      }
+      if (envelope.type !== "group.relay.stop.resolved") return;
+      const payload = envelope.payload as { groupRef?: unknown; messageId?: unknown } | null;
+      if (typeof payload?.groupRef !== "string" || typeof payload.messageId !== "string") return;
+      remove(payload.groupRef, payload.messageId);
+    });
+    // Older packaged shells and existing renderer fixtures may omit this hook.
+    // Fail open on unmount regardless; only subscribe when the bridge provides it.
+    const offStatus = window.owb.onSseStatus?.((state) => {
+      if (state === "connecting") continueAll();
+    });
+    return () => {
+      offEvent();
+      offStatus?.();
+      continueAll(false);
+    };
+  }, []);
+
   const selectedReconcileSignature = useMemo(() => {
     const live = Object.values(liveRuns)
       .filter((run) => run.groupRef === selectedRef)
@@ -386,13 +485,16 @@ export function GroupsPanel({
       setDraftMembers(new Set());
       setCreateOpen(false);
       await loadGroups();
-      if (isCurrent()) setSelectedRef(created.conversationRef);
+      if (isCurrent()) {
+        setSelectedRef(created.conversationRef);
+        onSelectGroup?.();
+      }
     } catch {
       if (isCurrent()) setPanelError(t("grp.createFailOffline"));
     } finally {
       if (isCurrent()) setCreating(false);
     }
-  }, [captureScope, creating, draftMembers, loadGroups, t]);
+  }, [captureScope, creating, draftMembers, loadGroups, onSelectGroup, t]);
 
   const addMember = useCallback(async (positionId: string) => {
     const isCurrent = captureScope();
@@ -449,7 +551,7 @@ export function GroupsPanel({
     const ref = selectedRefRef.current;
     const trimmed = input.trim();
     if (
-      ref === null || trimmed.length === 0 || mentions.size === 0 || !mentionsReady ||
+      ref === null || trimmed.length === 0 || mentions.size === 0 || !mentionsReady || invalidRelaySteps ||
       sendingGroupsRef.current.has(ref)
     ) return;
     const requestEngine = mentionEngines[mentionedPositionIds[0]!] ?? engine;
@@ -466,6 +568,7 @@ export function GroupsPanel({
         engines: mentionEngines,
         mentions: mentionedPositionIds,
         mode: dispatchMode,
+        ...(dispatchMode === "relay" && relaySteps.length ? { relaySteps } : {}),
       });
       if (!isCurrent()) return;
       if (res.status !== 202) {
@@ -478,7 +581,7 @@ export function GroupsPanel({
         spawns: Array<{ turnId: string; positionId: string; engine?: TurnEngine }>;
       };
       onSpawnRuns(ref, body.messageId, body.spawns, trimmed, requestEngine);
-      setDrafts((current) => current[ref]?.input === input ? { ...current, [ref]: { ...current[ref]!, input: "", mentions: [] } } : current);
+      setDrafts((current) => current[ref] === draft ? { ...current, [ref]: { ...current[ref]!, input: "", mentions: [], instructions: {} } } : current);
       void loadTimeline(ref);
     } catch {
       if (isCurrent() && selectedRefRef.current === ref) setPanelError(t("grp.turnFailOffline"));
@@ -491,6 +594,9 @@ export function GroupsPanel({
   }, [
     captureScope,
     dispatchMode,
+    draft,
+    invalidRelaySteps,
+    relaySteps,
     engine,
     input,
     loadTimeline,
@@ -502,6 +608,31 @@ export function GroupsPanel({
     sending,
     t,
   ]);
+
+  const decideRelayStop = useCallback(async (
+    suggestion: RelayStopSuggestion,
+    decision: "stop" | "continue",
+  ) => {
+    const isCurrent = captureScope();
+    const key = relayStopKey(suggestion.groupRef, suggestion.messageId);
+    const next = { ...relayStopSuggestionsRef.current };
+    delete next[key];
+    relayStopSuggestionsRef.current = next;
+    setRelayStopSuggestions(next);
+    try {
+      const response = await window.owb.decideGroupRelayStop({
+        conversationRef: suggestion.groupRef,
+        messageId: suggestion.messageId,
+        decision,
+      });
+      if (!isCurrent()) return;
+      if (response.status !== 200 && response.status !== 409) {
+        setPanelError(apiErrorMessage(response.body, t("grp.relayStopFail")));
+      }
+    } catch {
+      if (isCurrent()) setPanelError(t("grp.relayStopFailOffline"));
+    }
+  }, [captureScope, t]);
 
   const unrenderableOutput = t("turn.unrenderableOutput");
 
@@ -570,6 +701,9 @@ export function GroupsPanel({
     return ids;
   }, [liveRuns, selectedRef, timeline]);
 
+  const selectedRelayStopSuggestions = Object.values(relayStopSuggestions)
+    .filter((suggestion) => suggestion.groupRef === selectedRef);
+
   const nonMembers = positions.filter(
     (position) => selectedGroup !== null && !selectedGroup.members.includes(position.id),
   );
@@ -578,88 +712,96 @@ export function GroupsPanel({
     return <p className="owb-muted">{t("tree.notOpened")}</p>;
   }
 
-  return (
-    <section className="owb-groups" aria-label={t("rail.groups")}>
-      <div className="owb-groups__list">
-        <header className="owb-groups__list-header">
-          <h2><UsersRound aria-hidden="true" size={12} />{t("rail.groups")}</h2>
-        </header>
-        {groupsError ? <p className="owb-groups__error" role="alert">{groupsError}</p> : null}
-        <ul className="owb-groups__items">
-          {groups.map((group) => (
-            <li key={group.conversationRef}>
-              <button
-                type="button"
-                className={group.conversationRef === selectedRef ? "is-active" : undefined}
-                onClick={() => setSelectedRef(group.conversationRef)}
-              >
-                <span className="owb-groups__item-name">
-                  <span className="owb-groups__avatar-stack" aria-hidden="true">
-                    {group.members.slice(0, 3).map((memberId) => (
-                      <PositionAvatar
-                        key={memberId}
-                        colors={positionColors ?? {}}
-                        sources={avatarUrls}
-                        id={memberId}
-                        name={displayPositionName(memberId)}
-                        className="owb-groups__avatar owb-groups__avatar--xs"
-                      />
-                    ))}
-                  </span>
-                  {groupLabel(group)}
-                </span>
-                <span className="owb-groups__item-meta">
-                  {t("grp.members", { count: group.members.length })} · {timeShort(group.updatedAt)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <details
-          className="owb-groups__create"
-          open={createOpen}
-          onToggle={(event) => setCreateOpen(event.currentTarget.open)}
-        >
-          <summary><Plus aria-hidden="true" size={13} />{t("grp.createCta")}</summary>
-          <div className="owb-groups__create-body">
-            <div className="owb-groups__create-field">
-              <div className="owb-groups__field-label">
-                <UserRoundPlus aria-hidden="true" size={13} />
-                <span>{t("grp.selectMembers")}</span>
-                <span className="owb-groups__selection-count">
-                  {t("grp.selectedCount", { count: draftMembers.size })}
-                </span>
-              </div>
-              <AntSelect
-                classNames={{ popup: { root: "owb-conversation-select-popup" } }}
-                mode="multiple"
-                aria-label={t("grp.createSearchAria")}
-                placeholder={t("grp.createSearchPh")}
-                showSearch
-                optionFilterProp="label"
-                filterOption={filterPositionOption}
-                value={[...draftMembers]}
-                disabled={creating}
-                maxTagCount="responsive"
-                popupMatchSelectWidth={false}
-                onChange={(values) => setDraftMembers(new Set(values as string[]))}
-                options={positions.map((position) => ({
-                  value: position.id,
-                  label: position.name,
-                }))}
-              />
-            </div>
-            <AntButton
-              size="small"
-              type="primary"
-              disabled={draftMembers.size < 2 || creating || positions.length < 2}
-              onClick={() => void createGroup()}
+  const groupList = (
+    <div className="owb-groups__list">
+      <header className="owb-groups__list-header">
+        <h2><UsersRound aria-hidden="true" size={12} />{t("rail.groups")}</h2>
+      </header>
+      {groupsError ? <p className="owb-groups__error" role="alert">{groupsError} <AntButton size="small" onClick={() => void loadGroups()}>{t("misc.retryConnection")}</AntButton></p> : null}
+      <ul className="owb-groups__items">
+        {groups.map((group) => (
+          <li key={group.conversationRef}>
+            <button
+              type="button"
+              className={group.conversationRef === selectedRef ? "is-active" : undefined}
+              aria-pressed={group.conversationRef === selectedRef}
+              onClick={() => {
+                setSelectedRef(group.conversationRef);
+                onSelectGroup?.();
+              }}
             >
-              {t("grp.create")}
-            </AntButton>
+              <span className="owb-groups__item-name">
+                <span className="owb-groups__avatar-stack" aria-hidden="true">
+                  {group.members.slice(0, 3).map((memberId) => (
+                    <PositionAvatar
+                      key={memberId}
+                      colors={positionColors ?? {}}
+                      sources={avatarUrls}
+                      id={memberId}
+                      name={displayPositionName(memberId)}
+                      className="owb-groups__avatar owb-groups__avatar--xs"
+                    />
+                  ))}
+                </span>
+                {groupLabel(group)}
+              </span>
+              <span className="owb-groups__item-meta">
+                {t("grp.members", { count: group.members.length })} · {timeShort(group.updatedAt)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <details
+        className="owb-groups__create"
+        open={createOpen}
+        onToggle={(event) => setCreateOpen(event.currentTarget.open)}
+      >
+        <summary><Plus aria-hidden="true" size={13} />{t("grp.createCta")}</summary>
+        <div className="owb-groups__create-body">
+          <div className="owb-groups__create-field">
+            <div className="owb-groups__field-label">
+              <UserRoundPlus aria-hidden="true" size={13} />
+              <span>{t("grp.selectMembers")}</span>
+              <span className="owb-groups__selection-count">
+                {t("grp.selectedCount", { count: draftMembers.size })}
+              </span>
+            </div>
+            <AntSelect
+              classNames={{ popup: { root: "owb-conversation-select-popup" } }}
+              mode="multiple"
+              aria-label={t("grp.createSearchAria")}
+              placeholder={t("grp.createSearchPh")}
+              showSearch
+              optionFilterProp="label"
+              filterOption={filterPositionOption}
+              value={[...draftMembers]}
+              disabled={creating}
+              maxTagCount="responsive"
+              popupMatchSelectWidth={false}
+              onChange={(values) => setDraftMembers(new Set(values as string[]))}
+              options={positions.map((position) => ({
+                value: position.id,
+                label: position.name,
+              }))}
+            />
           </div>
-        </details>
-      </div>
+          <AntButton
+            size="small"
+            type="primary"
+            disabled={draftMembers.size < 2 || creating || positions.length < 2}
+            onClick={() => void createGroup()}
+          >
+            {t("grp.create")}
+          </AntButton>
+        </div>
+      </details>
+    </div>
+  );
+
+  return (
+    <section className={`owb-groups${listHost ? " owb-groups--external-list" : ""}`} aria-label={t("rail.groups")}>
+      {listHost ? createPortal(groupList, listHost) : groupList}
 
       <div className="owb-groups__panel">
         {/* #116 REQ-003: the alert must be reachable before a group exists —
@@ -815,17 +957,15 @@ export function GroupsPanel({
                           </time>
                         )}
                       </header>
-                      {isLive ? <ProgressTrail turn={turn} /> : turn.errorCode !== "group_relay_blocked" ? <ProgressTrail turn={turn} /> : null}
+                      {isLive || !["group_relay_blocked", "group_relay_stopped"].includes(turn.errorCode ?? "") ? <ProgressTrail turn={turn} onOpenResource={onOpenResource} /> : null}
+                      {"relayHandoff" in turn && turn.relayHandoff ? <RelayHandoffDetails snapshot={turn.relayHandoff} positionName={displayPositionName} /> : null}
                       {turn.output ? (
                         <GroupBubbleExpand
                           summaryClassName="owb-turn__output owb-clamp-2"
-                          summaryTitle={turn.output}
-                          summaryChildren={turn.output}
+                          summaryChildren={<Markdown conversation content={turn.output} onNavigateDoc={onOpenResource ? path => onOpenResource(turn.positionId, path) : undefined} />}
                           aria-label={t("grp.expandOutput")}
-                          bodyChildren={<Markdown content={turn.output} />}
+                          bodyChildren={<Markdown conversation content={turn.output} onNavigateDoc={onOpenResource ? path => onOpenResource(turn.positionId, path) : undefined} />}
                         />
-                      ) : isLive ? (
-                        <TypingIndicator />
                       ) : null}
                       {!isLive && (turn.status === "failed" || turn.status === "indeterminate") && turn.error ? (
                         <GroupBubbleExpand
@@ -837,7 +977,13 @@ export function GroupsPanel({
                         />
                       ) : null}
                       {!isLive && turn.status === "indeterminate" ? (
-                        <p className="owb-turn__warning owb-clamp-2">{t(turn.errorCode === "group_relay_blocked" ? "grp.relayBlocked" : "grp.untrustedWarning")}</p>
+                        <p className="owb-turn__warning owb-clamp-2">{t(
+                          turn.errorCode === "group_relay_blocked"
+                            ? "grp.relayBlocked"
+                            : turn.errorCode === "group_relay_stopped"
+                              ? "grp.relayStopped"
+                              : "grp.untrustedWarning",
+                        )}</p>
                       ) : null}
                     </article>
                   </div>
@@ -848,6 +994,28 @@ export function GroupsPanel({
               ) : null}
               </div>
             </div>
+
+            {selectedRelayStopSuggestions.map((suggestion) => (
+              <section
+                key={relayStopKey(suggestion.groupRef, suggestion.messageId)}
+                className="owb-groups__relay-stop"
+                role="status"
+                aria-label={t("grp.relayStopTitle")}
+              >
+                <div>
+                  <strong>{t("grp.relayStopTitle")}</strong>
+                  <p>{t("grp.relayStopBody", { count: suggestion.remainingCount })}</p>
+                </div>
+                <div className="owb-groups__relay-stop-actions">
+                  <AntButton size="small" danger onClick={() => void decideRelayStop(suggestion, "stop")}>
+                    {t("grp.relayStopConfirm")}
+                  </AntButton>
+                  <AntButton size="small" type="primary" onClick={() => void decideRelayStop(suggestion, "continue")}>
+                    {t("grp.relayStopContinue")}
+                  </AntButton>
+                </div>
+              </section>
+            ))}
 
             <form
               className="owb-turn-composer owb-groups__composer"
@@ -887,6 +1055,20 @@ export function GroupsPanel({
                   options={[{ value: "parallel", label: t("grp.modeParallel") }, { value: "relay", label: t("grp.modeRelay") }]} />
               </label>
               {dispatchMode === "relay" ? <p className="owb-turn-composer__hint">{t("grp.relayOrder", { order: [...mentions].map(displayPositionName).join(" → ") })}</p> : null}
+              {dispatchMode === "relay" && mentions.size > 0 ? <details className="owb-relay-instructions">
+                <summary>{t("grp.relayInstructions")}</summary>
+                <div className="owb-relay-instructions__fields">
+                  {mentionedPositionIds.map((positionId, index) => <label key={positionId}>
+                    <span>{index + 1}. {displayPositionName(positionId)}</span>
+                    <Input.TextArea value={draft.instructions[positionId] ?? ""} rows={2}
+                      aria-label={t("grp.relayInstructionFor", { name: displayPositionName(positionId) })}
+                      placeholder={t("grp.relayInstructionPh")} disabled={sending}
+                      onChange={event => setStepInstruction(positionId, event.target.value)} />
+                    <small>{instructionBytes((draft.instructions[positionId] ?? "").trim())} / {RELAY_INSTRUCTION_BYTES} bytes</small>
+                  </label>)}
+                </div>
+              </details> : null}
+              {invalidRelaySteps ? <p role="alert">{t("grp.relayInstructionLimit")}</p> : null}
               <div className="owb-turn-composer__surface">
                 <Input.TextArea
                   value={input}
@@ -909,7 +1091,7 @@ export function GroupsPanel({
                 <AntButton
                   type="primary"
                   htmlType="submit"
-                  disabled={sending || input.trim().length === 0 || mentions.size === 0 || !mentionsReady}
+                  disabled={sending || input.trim().length === 0 || mentions.size === 0 || !mentionsReady || invalidRelaySteps}
                   aria-label={t("grp.send")}
                   icon={<ArrowUp aria-hidden="true" size={15} />}
                 />

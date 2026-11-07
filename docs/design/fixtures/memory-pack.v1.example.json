@@ -1,0 +1,163 @@
+{
+  "schemaVersion": "memory-pack.v1",
+  "packId": "pack_demo_clone_01",
+  "createdAt": "2026-09-24T16:00:00.000Z",
+  "consumedParent": {
+    "issue": "https://github.com/bytefolk/roleweave/issues/327",
+    "revision": "R1",
+    "gateD0": "not-accepted"
+  },
+  "source": {
+    "workspaceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "employeePrincipal": "employee.hire_pack_01",
+    "positionId": "sales-ae",
+    "note": "Clone copies this hire's granted derived records only. Seat reuse does not copy employee-private rows."
+  },
+  "records": [
+    {
+      "schemaVersion": "durable-memory.v1",
+      "memoryId": "11111111-1111-4111-8111-111111111111",
+      "kind": "preference",
+      "workspaceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "principal": "employee.hire_pack_01",
+      "memoryScope": "/workspaces/demo-instance/employees/hire_pack_01",
+      "grantId": "grant_pack_pref_01",
+      "grantVersion": 1,
+      "revocationVersion": 0,
+      "permissionDigest": "sha256:17c1df2cda965768777c34f855038e2314869f2fd66141b6cffac65194ba2e62",
+      "sourceRef": {
+        "kind": "segment",
+        "id": "seg_pack_pref"
+      },
+      "citations": [
+        "turn:t-demo-12"
+      ],
+      "producerAgentId": "position.sales-ae",
+      "sessionId": "sess_pack_demo",
+      "taskId": "task_demo_onboarding",
+      "eventAt": "2026-09-01T10:00:00.000Z",
+      "createdAt": "2026-09-01T10:00:01.000Z",
+      "expiresAt": "2027-03-01T10:00:00.000Z",
+      "importance": "high",
+      "confidence": 0.8,
+      "stateVersion": 1,
+      "pinned": true,
+      "lifecycle": "active",
+      "trust": "untrusted",
+      "authority": "none",
+      "text": "Prefer a written recap after every customer call; never invent next-step dates.",
+      "digest": "sha256:ba4cbe9bd3ca61c932f99cf46b1c429c45c1b70644139e68e13e7c5d6f04f1ef",
+      "sourceDigest": "sha256:beffae2ecfc0d65e85a1925622b27b25c149c54c6017f71d8a75690b46880b33",
+      "provenance": {
+        "kind": "derived",
+        "derivedFrom": {
+          "kind": "segment",
+          "id": "seg_pack_pref"
+        },
+        "sourceDigest": "sha256:beffae2ecfc0d65e85a1925622b27b25c149c54c6017f71d8a75690b46880b33",
+        "producerAgentId": "position.sales-ae",
+        "clientSupplied": false
+      }
+    },
+    {
+      "schemaVersion": "durable-memory.v1",
+      "memoryId": "22222222-2222-4222-8222-222222222222",
+      "kind": "workflow_ref",
+      "workspaceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "principal": "position.sales-ae",
+      "memoryScope": "/workspaces/demo-instance/positions/sales-ae",
+      "grantId": "grant_pack_wf_01",
+      "grantVersion": 2,
+      "revocationVersion": 0,
+      "permissionDigest": "sha256:55420cc0761b381ecfc9692b43f22601bfd34b1f04021c6e628ec73ef9eabce7",
+      "sourceRef": {
+        "kind": "artifact",
+        "id": "art_demo_script_v4"
+      },
+      "citations": [
+        "turn:t-demo-40"
+      ],
+      "producerAgentId": "position.sales-ae",
+      "sessionId": "sess_pack_demo",
+      "taskId": "task_demo_discovery",
+      "eventAt": "2026-09-10T14:00:00.000Z",
+      "createdAt": "2026-09-10T14:00:01.000Z",
+      "expiresAt": "2026-12-10T14:00:00.000Z",
+      "importance": "medium",
+      "confidence": 0.7,
+      "stateVersion": 1,
+      "pinned": false,
+      "lifecycle": "active",
+      "trust": "untrusted",
+      "authority": "none",
+      "text": "Use the shared demo script v4 for first-call discovery; skip pricing until the buyer names a budget owner.",
+      "digest": "sha256:6745d42481b5a2b22870c959774dce1007acd8231b3c4db0d4260c7d07a31208",
+      "sourceDigest": "sha256:c305050c5385b90312a1d184c8d4d2e4a80700c14c2742e6b2a4ae80578a8a7a",
+      "provenance": {
+        "kind": "derived",
+        "derivedFrom": {
+          "kind": "artifact",
+          "id": "art_demo_script_v4"
+        },
+        "sourceDigest": "sha256:c305050c5385b90312a1d184c8d4d2e4a80700c14c2742e6b2a4ae80578a8a7a",
+        "producerAgentId": "position.sales-ae",
+        "clientSupplied": false
+      }
+    },
+    {
+      "schemaVersion": "durable-memory.v1",
+      "memoryId": "33333333-3333-4333-8333-333333333333",
+      "kind": "project_decision",
+      "workspaceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "principal": "employee.hire_pack_01",
+      "memoryScope": "/workspaces/demo-instance/employees/hire_pack_01",
+      "grantId": "grant_pack_dec_01",
+      "grantVersion": 1,
+      "revocationVersion": 0,
+      "permissionDigest": "sha256:4cf31b8dd7dd6f2499b752047dcb8cfc5d1181fefae896c6b0fdb221c34e3f9f",
+      "sourceRef": {
+        "kind": "segment",
+        "id": "seg_pack_dec"
+      },
+      "citations": [
+        "turn:t-demo-88"
+      ],
+      "producerAgentId": "position.sales-ae",
+      "sessionId": "sess_pack_demo",
+      "taskId": "task_demo_lost",
+      "eventAt": "2026-09-15T09:30:00.000Z",
+      "createdAt": "2026-09-15T09:30:01.000Z",
+      "expiresAt": "2026-12-14T09:30:00.000Z",
+      "importance": "high",
+      "confidence": 0.75,
+      "stateVersion": 1,
+      "pinned": false,
+      "lifecycle": "active",
+      "trust": "untrusted",
+      "authority": "none",
+      "text": "When the CRM opportunity is Closed-Lost, stop proposing the same SKU for 90 days.",
+      "digest": "sha256:e2f2797eb83006750a771c56c1a0935862a9e8022f88feca8da6943f0b8b26f4",
+      "sourceDigest": "sha256:c055e581c80dc1e0af09d4f3b83bac6a38d7c93313be646aa76b7328ed9fee1a",
+      "provenance": {
+        "kind": "derived",
+        "derivedFrom": {
+          "kind": "segment",
+          "id": "seg_pack_dec"
+        },
+        "sourceDigest": "sha256:c055e581c80dc1e0af09d4f3b83bac6a38d7c93313be646aa76b7328ed9fee1a",
+        "producerAgentId": "position.sales-ae",
+        "clientSupplied": false
+      }
+    }
+  ],
+  "excludedByContract": [
+    "raw turns / transcripts",
+    "credentials / API keys / tokens",
+    "approval payloads",
+    "chain-of-thought / hidden reasoning",
+    "private chat of any other principal",
+    "ungranted team or position memories",
+    "vector index dumps",
+    "Sales Workbench CRM rows"
+  ]
+}

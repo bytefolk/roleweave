@@ -23,6 +23,8 @@ import {
   errorCodes,
   isPositionId,
   turnEngines,
+  isRelaySteps,
+  MAX_RELAY_INSTRUCTIONS_BYTES,
 } from "@roleweave/shared";
 import type {
   GroupConversation,
@@ -42,8 +44,9 @@ const MAX_GROUP_MESSAGES = 256;
 const MAX_GROUP_RECORD_BYTES = 16 * 1024;
 export const MAX_GROUP_INPUT_BYTES = 256 * 1024;
 // JSON can encode one input byte as six bytes (\u0000). The remaining
-// budget covers 32 bounded member IDs, spawn IDs and acceptance metadata.
-const MAX_GROUP_MESSAGE_BYTES = 6 * MAX_GROUP_INPUT_BYTES + 16 * 1024;
+// budget covers 32 bounded member IDs, step recipient IDs, spawn IDs and
+// acceptance metadata. Step instructions share a separate aggregate byte cap.
+const MAX_GROUP_MESSAGE_BYTES = 6 * (MAX_GROUP_INPUT_BYTES + MAX_RELAY_INSTRUCTIONS_BYTES) + 32 * 1024;
 const REF_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export type GroupContextMessage = Pick<GroupMessage, "messageId" | "mentions" | "spawns" | "createdAt">;
@@ -167,7 +170,7 @@ function isGroupMessage(value: unknown): value is GroupMessage {
   const required = ["schemaVersion", "messageId", "conversationRef", "input", "mentions", "createdAt"];
   return (
     required.every((key) => Object.hasOwn(record, key)) &&
-    Object.keys(record).every((key) => [...required, "mode", "spawns", "engine"].includes(key)) &&
+    Object.keys(record).every((key) => [...required, "mode", "spawns", "engine", "relaySteps"].includes(key)) &&
     record.schemaVersion === GROUP_MESSAGE_SCHEMA_VERSION &&
     isSafeMessageId(record.messageId) &&
     typeof record.conversationRef === "string" &&
@@ -176,6 +179,7 @@ function isGroupMessage(value: unknown): value is GroupMessage {
     new Set(record.mentions).size === record.mentions.length &&
     record.mentions.every((member) => isPositionId(member)) &&
     (record.mode === undefined || record.mode === "parallel" || record.mode === "relay") &&
+    (record.relaySteps === undefined || isRelaySteps(record.relaySteps, record.mentions as string[], record.mode)) &&
     (record.engine === undefined || turnEngines.includes(record.engine as typeof turnEngines[number])) &&
     (record.spawns === undefined || (
       record.engine !== undefined &&

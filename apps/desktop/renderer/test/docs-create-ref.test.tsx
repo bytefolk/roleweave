@@ -90,7 +90,9 @@ describe("DocsModule create + copy-reference face (#35 S4)", () => {
     render(<DocsModule workspaceOpen positions={positions} selectedPositionId="repo-owner" />);
     await waitFor(() => expect(bridge.positionDocs).toHaveBeenCalled());
 
-    fireEvent.click(await screen.findByLabelText("复制引用 handbook.md"));
+    expect(screen.queryByRole("button", { name: "复制引用 handbook.md" })).toBeNull();
+    fireEvent.contextMenu(await screen.findByRole("button", { name: "handbook.md" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "复制引用" }));
     await waitFor(() =>
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
         JSON.stringify({
@@ -121,6 +123,8 @@ describe("Document create integrity (#294)", () => {
     expect(bridge.createPositionDoc).toHaveBeenCalledTimes(1);
     await act(async () => complete({ status: 201, body: createBody }));
     await waitFor(() => expect(bridge.positionDocFile).toHaveBeenCalledWith("repo-owner", createBody.path));
+    fireEvent.click(await screen.findByRole("button", { name: "更多文档操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /阅\s?读/ }));
     await screen.findByRole("heading", { name: "New document" });
   });
 

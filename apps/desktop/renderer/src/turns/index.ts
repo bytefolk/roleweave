@@ -11,6 +11,7 @@ export {
   type AgentHost,
 } from "./agent-host";
 export { TurnComposer, type TurnComposerProps } from "./TurnComposer";
+export { BudgetRemainingOverlay, type BudgetRemainingOverlayProps } from "./BudgetRemainingOverlay";
 export { TurnPanel, type TurnPanelProps } from "./TurnPanel";
 export { TurnThread, type TurnThreadProps } from "./TurnThread";
 export { adaptTurnHistory, adaptTurnRecord } from "./adapter";

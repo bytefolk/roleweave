@@ -53,6 +53,11 @@ interface RunningTurn {
 export class RunningTurnRegistry {
   private readonly turns = new Map<string, RunningTurn>();
 
+  /** Live reservations only; disk history and session mutations are not work. */
+  get activeCount(): number {
+    return [...this.turns.values()].filter(turn => turn.kind === "turn").length;
+  }
+
   reserve(workspace: string, positionId: string, turnId?: string): RunningTurnReservation {
     return this.acquire(workspace, positionId, { cancelled: false, kind: "turn", ...(turnId !== undefined ? { turnId } : {}) });
   }

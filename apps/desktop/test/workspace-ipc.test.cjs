@@ -3,7 +3,7 @@ const test = require("node:test");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { validateWorkspaceCreateRequest, validateWorkspaceInitializeRequest, openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, nativePathForServerPath, revealWorkspaceInFileManager } = require("../src/workspace-ipc.cjs");
+const { validateWorkspaceCreateRequest, validateWorkspaceInitializeRequest, openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, nativePathForServerPath, revealWorkspaceInFileManager, openWorkspaceFile } = require("../src/workspace-ipc.cjs");
 const { readLastWorkspacePath } = require("../src/last-workspace.cjs");
 const { runtimeEnvironment } = require("../src/runtime-settings.cjs");
 const { openDefaultWorkspace } = require("../src/auto-open-workspace.cjs");
@@ -271,6 +271,31 @@ function revealFixture({ body, status = 200, env = {}, failure = "" }) {
   };
 }
 
+test("workspace file opening is bounded to the open workspace and rejects traversal", async () => {
+  const f = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });
+  assert.deepEqual(await openWorkspaceFile({ ...f, relativePath: "apps/server/src/routes/docs.ts" }), {
+    opened: true,
+    path: "/tmp/projects/local-team/apps/server/src/routes/docs.ts",
+  });
+  assert.deepEqual(f.opened, ["/tmp/projects/local-team/apps/server/src/routes/docs.ts"]);
+  for (const relativePath of ["/etc/passwd", "../secret.txt", "apps/../secret.txt", "apps\\secret.ts", "https://example.com/a.ts", ".hidden/a.ts"]) {
+    const blocked = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });
+    assert.equal((await openWorkspaceFile({ ...blocked, relativePath })).opened, false, relativePath);
+    assert.deepEqual(blocked.opened, []);
+  }
+});
+
+test("workspace source opening refuses a workspace changed after the source was selected", async () => {
+  const changed = revealFixture({ body: { open: true, path: "/tmp/projects/another-team" } });
+  assert.deepEqual(await openWorkspaceFile({ ...changed, relativePath: "src/index.ts", expectedWorkspacePath: "/tmp/projects/local-team" }), {
+    opened: false, reason: "workspace_changed",
+  });
+  assert.deepEqual(changed.opened, []);
+  const original = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });
+  assert.equal((await openWorkspaceFile({ ...original, relativePath: "src/index.ts", expectedWorkspacePath: "/tmp/projects/local-team" })).opened, true);
+  assert.deepEqual(original.opened, ["/tmp/projects/local-team/src/index.ts"]);
+});
+
 test("reveal opens the native workspace path without any renderer-supplied argument", async () => {
   const f = revealFixture({ body: { open: true, path: "/tmp/projects/local-team" } });
   const result = await revealWorkspaceInFileManager(f);
@@ -332,4 +357,18 @@ test("reveal rejects traversal-shaped and unconfigured WSL paths before touching
 test("nativePathForServerPath is the identity outside WSL mode", () => {
   assert.equal(nativePathForServerPath("/tmp/projects", {}), "/tmp/projects");
   assert.equal(nativePathForServerPath("/tmp/projects", { ROLEWEAVE_CONTROL_PLANE_MODE: "native" }), "/tmp/projects");
+});
+test('new project picker starts in saved default while native selection remains authoritative', async t => {
+ const directory=fs.mkdtempSync(path.join(os.tmpdir(),'rw-project-pref-'));
+ t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
+ let options,body;
+ const result=await createWorkspaceWithPicker({
+  request:{projectId:'example',business:'Example',description:''},
+  preferredDirectory:'/tmp/preferred-projects',env:{},userDataPath:directory,
+  pickDirectory:async value=>{options=value;return{canceled:false,filePaths:['/tmp/actually-selected']};},
+  apiRequest:async (_url,value)=>{body=value.body;return{status:201,body:{path:'/tmp/actually-selected/example'}};},
+ });
+ assert.equal(options.defaultPath,'/tmp/preferred-projects');
+ assert.equal(body.parentPath,'/tmp/actually-selected');
+ assert.equal(result.status,201);
 });

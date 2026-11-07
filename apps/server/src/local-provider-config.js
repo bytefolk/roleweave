@@ -229,19 +229,35 @@ export function resolveClaudeProviderConfig(env = process.env, { local = true } 
   };
   const connectionLabel = base?.hostname || (hasCredentials ? "Anthropic API" : "Claude 登录");
   const models = [];
-  for (const [id, name, tier] of [["haiku", "Haiku", "economy"], ["sonnet", "Sonnet", "balanced"], ["opus", "Opus", "powerful"]]) {
-    const key = `ANTHROPIC_DEFAULT_${id.toUpperCase()}_MODEL`;
-    const mapped = providerEnv[key]?.trim();
-    addModel(models, { id, name, tier: base || mapped ? "default" : tier, ...(mapped ? { resolvedModel: modelId(mapped, key) } : {}), billing, connectionLabel });
+  const picker = settings.modelPicker === undefined ? undefined : object(settings.modelPicker, "Claude modelPicker");
+  if (picker?.replaceBuiltInOptions !== undefined && typeof picker.replaceBuiltInOptions !== "boolean") {
+    invalid("Claude modelPicker.replaceBuiltInOptions", "必须是布尔值");
   }
-  for (const key of ["ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_CUSTOM_MODEL_OPTION"]) {
-    if (!providerEnv[key]?.trim()) continue;
-    const id = modelId(providerEnv[key], key);
-    const name = key === "ANTHROPIC_CUSTOM_MODEL_OPTION" && providerEnv.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME?.trim()
-      ? string(providerEnv.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME, "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME", 256) : id;
-    addModel(models, { id, name, tier: "default", billing, connectionLabel });
+  const pickerModels = picker === undefined ? [] : array(picker.options, "Claude modelPicker.options").map((row, index) => {
+    const label = `Claude modelPicker.options.${index}`;
+    const option = object(row, label);
+    const id = modelId(option.model, `${label}.model`);
+    const name = option.label === undefined ? id : nonempty(option.label, `${label}.label`, 256);
+    return { id, name, tier: "default", billing, connectionLabel };
+  });
+  // Match Claude's curated picker without importing executable settings or
+  // leaking descriptions/unknown fields into the employee API.
+  if (!picker?.replaceBuiltInOptions) {
+    for (const [id, name, tier] of [["haiku", "Haiku", "economy"], ["sonnet", "Sonnet", "balanced"], ["opus", "Opus", "powerful"]]) {
+      const key = `ANTHROPIC_DEFAULT_${id.toUpperCase()}_MODEL`;
+      const mapped = providerEnv[key]?.trim();
+      addModel(models, { id, name, tier: base || mapped ? "default" : tier, ...(mapped ? { resolvedModel: modelId(mapped, key) } : {}), billing, connectionLabel });
+    }
+    for (const key of ["ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_CUSTOM_MODEL_OPTION"]) {
+      if (!providerEnv[key]?.trim()) continue;
+      const id = modelId(providerEnv[key], key);
+      const name = key === "ANTHROPIC_CUSTOM_MODEL_OPTION" && providerEnv.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME?.trim()
+        ? string(providerEnv.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME, "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME", 256) : id;
+      addModel(models, { id, name, tier: "default", billing, connectionLabel });
+    }
   }
-  if (selectedDefault && !models.some((item) => item.id === selectedDefault)) {
+  for (const model of pickerModels) addModel(models, model);
+  if (!picker?.replaceBuiltInOptions && selectedDefault && !models.some((item) => item.id === selectedDefault)) {
     addModel(models, { id: selectedDefault, name: selectedDefault, tier: "default", billing, connectionLabel });
   }
   return { providerEnv, providerSettings: {}, selectedDefault, models, connection };

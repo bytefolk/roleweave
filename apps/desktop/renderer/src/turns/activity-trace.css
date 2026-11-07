@@ -1,0 +1,48 @@
+/* Keep the action, its parameters and the status readable as separate fields. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress .owb-activity-trace__item.is-tool {
+  align-items: flex-start;
+  gap: 8px;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress .owb-activity-trace__item > .owb-activity-trace__label {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 3px;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.owb-activity-trace__action { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.owb-activity-trace__action > strong { font-weight: 500; color: var(--ui-foreground-muted); }
+.owb-activity-trace__tool-name { color: var(--ui-foreground-subtle); font-size: 11px; }
+.owb-activity-trace__parameters { min-width: 0; color: var(--ui-foreground-muted); }
+.owb-activity-trace__parameter { display: block; margin: 2px 0; overflow-wrap: anywhere; }
+.owb-activity-trace__parameter-key { font-family: var(--ui-font-sans); color: var(--ui-foreground-subtle); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress .owb-activity-trace__parameter code {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: 12px/1.6 var(--ui-font-mono, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress a.owb-activity-trace__resource {
+  display: inline;
+  color: var(--ui-primary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.owb-activity-trace__resource-icon { display: inline-flex; margin-right: 3px; vertical-align: middle; }
+.owb-activity-trace__details { min-width: 0; }
+.owb-activity-trace__details > summary { cursor: pointer; overflow-wrap: anywhere; border-radius: 4px; }
+.owb-activity-trace__details > summary:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.owb-activity-trace__details[open] .owb-activity-trace__detail-preview { display: none; }
+.owb-activity-trace__detail-body { padding: 6px 0 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.owb-activity-trace__detail-hint { color: var(--ui-primary); font-size: 11px; white-space: nowrap; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress .owb-activity-trace__icon,
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress .owb-activity-trace__status { padding-top: 2px; }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress .owb-activity-trace__item.is-tool > .owb-activity-trace__icon { color: var(--ui-foreground-subtle); }
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-progress .owb-activity-trace__item.is-tool.is-running > .owb-activity-trace__icon { color: var(--ui-primary); }
