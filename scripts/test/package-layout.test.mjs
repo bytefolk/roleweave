@@ -242,7 +242,16 @@ test("native staging jobs remain read-only and separate from required checks", (
   // POSIX-only by decision, not by omission. A windows-latest leg was added and
   // reverted; see the rationale in the workflow. Windows is proved by the staging
   // job below, not by running a suite written against POSIX semantics.
-  assert.match(workflow, /matrix:\n\s+os: \[ubuntu-latest, macos-14\]/);
+  // `matrix.os` is the required status-check label, not the runner image. GitHub
+  // retired the macos-14 image on 2026-11-02: jobs targeting it were cancelled a
+  // second after start with no runner assigned, so the label now maps onto a
+  // supported image while the context name branch protection pins stays stable.
+  // What this pins is the intent -- two POSIX legs -- plus the label-to-image
+  // wiring that keeps the required context producible.
+  assert.match(workflow, /include:\n\s+- os: ubuntu-latest\n\s+runner: ubuntu-latest/);
+  assert.match(workflow, /- os: macos-14\n\s+runner: macos-15/);
+  assert.match(workflow, /runs-on: \$\{\{ matrix\.runner \}\}/);
+  assert.doesNotMatch(workflow, /- os: windows-latest\n\s+runner:/);
   assert.match(workflow, /staging-macos-arm64:[\s\S]*?runs-on: macos-15/);
   assert.match(workflow, /staging-windows-x64:[\s\S]*?runs-on: windows-latest/);
   for (const command of [
