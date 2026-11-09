@@ -37,6 +37,10 @@
       "types": "./dist/model-selection.d.ts",
       "import": "./dist/model-selection.js"
     },
+    "./tool-output": {
+      "types": "./dist/tool-output.d.ts",
+      "import": "./dist/tool-output.js"
+    },
     "./capabilities": {
       "types": "./dist/capabilities.d.ts",
       "import": "./dist/capabilities.js"
@@ -44,6 +48,10 @@
     "./goals": {
       "types": "./dist/goals.d.ts",
       "import": "./dist/goals.js"
+    },
+    "./acceptance": {
+      "types": "./dist/acceptance.d.ts",
+      "import": "./dist/acceptance.js"
     },
     "./task-board": {
       "types": "./dist/task-board.d.ts",
@@ -56,12 +64,32 @@
     "./attachments": {
       "types": "./dist/attachments.d.ts",
       "import": "./dist/attachments.js"
+    },
+    "./experiments": {
+      "types": "./dist/experiments.d.ts",
+      "import": "./dist/experiments.js"
+    },
+    "./relay-steps": {
+      "types": "./dist/relay-steps.d.ts",
+      "import": "./dist/relay-steps.js",
+      "require": "./relay-steps.cjs"
+    },
+    "./task-briefing": {
+      "types": "./dist/task-briefing.d.ts",
+      "import": "./dist/task-briefing.js",
+      "require": "./task-briefing.cjs"
+    },
+    "./task-collaboration": {
+      "types": "./dist/task-collaboration.d.ts",
+      "import": "./dist/task-collaboration.js"
     }
   },
   "files": [
     "dist",
     "position-id.cjs",
     "turn-engines.cjs",
-    "pending-approval.cjs"
+    "pending-approval.cjs",
+    "relay-steps.cjs",
+    "task-briefing.cjs"
   ]
 }

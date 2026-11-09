@@ -18,6 +18,10 @@ export default defineConfig({
     dedupe: ["react", "react-dom", "antd"],
   },
   test: {
+    // Full App/jsdom flows are resource-heavy. A bounded worker count avoids
+    // loaded runners timing out unrelated UI flows and cascading late cleanup.
+    // CLI and VITEST_MAX_WORKERS can still select an explicit operator budget.
+    maxWorkers: 2,
     root: here("."),
     globals: true,
     environment: "jsdom",

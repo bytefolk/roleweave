@@ -1,0 +1,112 @@
+{
+  "$schema": "https://raw.githubusercontent.com/bytefolk/digital-employee/main/configs/workspace-org.schema.json",
+  "schemaVersion": "workspace-org.v1",
+  "business": "cxo-starter",
+  "description": "CXO 入门公司：CEO、CTO、COO 以只读方案交付演示需求澄清、技术规划和执行协调。",
+  "owner": "chief-executive-officer",
+  "roles": [
+    {
+      "id": "chief-executive-officer",
+      "name": "CEO · 首席执行官",
+      "description": "明确公司目标、优先级与资源取舍，对整体结果负责。",
+      "reportTo": null,
+      "package": {
+        "name": "chief-executive-officer",
+        "version": "0.1.0",
+        "digest": "sha256:a2cfd0e5a5e7ff3e38820963e5cf1cd0cc01c667d957eb78bb2999f3dce60f59",
+        "localReference": "/workspace/positions/chief-executive-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-executive-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 40000,
+          "iterations": 12
+        },
+        "perDay": {
+          "tokens": 400000,
+          "iterations": 96
+        }
+      }
+    },
+    {
+      "id": "chief-technology-officer",
+      "name": "CTO · 首席技术官",
+      "description": "制定技术方案，组织研发并检查技术结果。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-technology-officer",
+        "version": "0.1.0",
+        "digest": "sha256:57cea733738d647bd4bd404a5100820194630f171441e9b4bbc41519d639a5ed",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-technology-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-technology-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    },
+    {
+      "id": "chief-operating-officer",
+      "name": "COO · 首席运营官",
+      "description": "将目标转成执行计划，协调流程、进度与交付。",
+      "reportTo": "chief-executive-officer",
+      "package": {
+        "name": "chief-operating-officer",
+        "version": "0.1.0",
+        "digest": "sha256:04bbfa6d115b2509c0c7579d6e5485b82ae141cacbf43a0924dda025c158ce0c",
+        "localReference": "/workspace/positions/chief-executive-officer/chief-operating-officer"
+      },
+      "mode": "read_only",
+      "memoryScope": "/",
+      "toolAllow": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "toolDeny": [],
+      "metadata": {
+        "example": "cxo-company",
+        "catalogRoleId": "chief-operating-officer"
+      },
+      "budget": {
+        "perTask": {
+          "tokens": 20000,
+          "iterations": 8
+        },
+        "perDay": {
+          "tokens": 200000,
+          "iterations": 64
+        }
+      }
+    }
+  ],
+  "updatedAt": "2026-10-13T00:00:00.000Z"
+}

@@ -1,4 +1,5 @@
 import { ChevronDown, FolderOpen } from "lucide-react";
+import { Tooltip } from "antd";
 import type { WorkspaceInfoResponse } from "@roleweave/shared";
 import { BytefolkOpenHerdMark, useT } from "@roleweave/ui";
 
@@ -25,24 +26,25 @@ export function ProjectSwitcher({ workspace, disabled = false, dialogOpen, onOpe
 
   return (
     <div className="owb-project-switcher">
-      <button
-        type="button"
-        className="owb-project-switcher__trigger"
-        aria-label={t("project.switcherAria")}
-        aria-haspopup="dialog"
-        aria-expanded={dialogOpen}
-        disabled={disabled}
-        title={open ? workspace?.path : undefined}
-        onClick={onOpen}
-      >
-        <span className="owb-project-switcher__icon" aria-hidden="true">
-          {open ? <BytefolkOpenHerdMark /> : <FolderOpen size={14} />}
-        </span>
-        <span className="owb-project-switcher__copy">
-          <strong>{open ? workspace?.business ?? t("tree.workspaceFallback") : t("project.launcherTitle")}</strong>
-        </span>
-        <ChevronDown className="owb-project-switcher__chevron" aria-hidden="true" size={15} />
-      </button>
+      <Tooltip trigger={["hover", "focus"]} title={open ? `${workspace?.business ?? t("tree.workspaceFallback")} · ${workspace?.path ?? ""}` : t("project.switcherAria")}>
+        <button
+          type="button"
+          className="owb-project-switcher__trigger"
+          aria-label={t("project.switcherAria")}
+          aria-haspopup="dialog"
+          aria-expanded={dialogOpen}
+          disabled={disabled}
+          onClick={onOpen}
+        >
+          <span className="owb-project-switcher__icon" aria-hidden="true">
+            {open ? <BytefolkOpenHerdMark /> : <FolderOpen size={14} />}
+          </span>
+          <span className="owb-project-switcher__copy">
+            <strong>{open ? workspace?.business ?? t("tree.workspaceFallback") : t("project.launcherTitle")}</strong>
+          </span>
+          <ChevronDown className="owb-project-switcher__chevron" aria-hidden="true" size={15} />
+        </button>
+      </Tooltip>
     </div>
   );
 }

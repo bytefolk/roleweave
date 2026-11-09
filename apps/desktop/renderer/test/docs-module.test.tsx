@@ -57,14 +57,19 @@ describe("DocsModule (#35 S3)", () => {
   });
 
   it("lists docs for the selected position and opens a file through the S2 bridge", async () => {
-    const bridge = installBridge();
+    const version = "2026-08-27T00:05:00.000Z";
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const bridge = installBridge({ positionDocFile: vi.fn().mockResolvedValue({ status: 200, body: { ...readBody, version } }) });
     render(<DocsModule workspaceOpen positions={positions} selectedPositionId="repo-owner" />);
     await waitFor(() => expect(bridge.positionDocs).toHaveBeenCalledWith("repo-owner"));
     const file = await screen.findByRole("button", { name: "handbook.md" });
     fireEvent.click(file);
     await waitFor(() => expect(bridge.positionDocFile).toHaveBeenCalledWith("repo-owner", "handbook.md"));
     expect(await screen.findByRole("heading", { name: "Handbook" })).toBeTruthy();
-    expect(document.querySelector('time[datetime="2026-08-27T00:00:00.000Z"]')).toHaveTextContent("更新于");
+    fireEvent.click(screen.getByRole("button", { name: "更多文档操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "复制引用" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(JSON.stringify({ uri: "owb-doc://repo-owner/handbook.md", version })));
   });
 
   it("surfaces the server error message when the listing fails", async () => {

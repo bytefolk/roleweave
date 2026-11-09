@@ -1,0 +1,294 @@
+/* Navigation uses a quiet neutral surface for the current view. Hover is
+ * lighter, keyboard focus has its own outline, and static labels stay outside
+ * the choice groups. Scope choices so actions and document rows keep their roles. */
+[data-theme] {
+  --owb-choice-selected: color-mix(in srgb, var(--ui-foreground) 12%, var(--ui-surface));
+  --owb-choice-hover: color-mix(in srgb, var(--ui-foreground) 5%, var(--ui-surface));
+  --owb-choice-focus: color-mix(in srgb, var(--ui-foreground) 60%, transparent);
+}
+
+[data-ui-theme][data-theme] .owb-app .owb-context-label {
+  flex: none;
+  margin: 0;
+  padding-inline-end: 14px;
+  border-inline-end: 1px solid var(--ui-border);
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 24px;
+  cursor: default;
+}
+
+[data-ui-theme][data-theme] :is(.owb-app, .owb-theme-settings) :is(.owb-view-switch,
+  .owb-context-tabs, .owb-report-tabs,
+  .owb-theme-settings__tabs, .owb-theme-picker__mode-switch,
+  .owb-drive-browser__views,
+  .owb-rgraph__renderer) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+/* Header groups must wrap with their title rather than forcing a wide pane. */
+[data-ui-theme][data-theme] .owb-app .owb-context-header {
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+[data-ui-theme][data-theme] :is(.owb-app, .owb-theme-settings) :is(.owb-view-switch,
+  .owb-context-tabs, .owb-report-tabs,
+  .owb-theme-settings__tabs, .owb-theme-picker__mode-switch,
+  .owb-config-tabs, .owb-drive-browser__views,
+  .owb-drive-browser__filters, .owb-knowledge-graph__filters,
+  .owb-rgraph__renderer) > button {
+  position: relative;
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  box-shadow: none;
+  font-weight: 400;
+  cursor: pointer;
+  transition: border-color var(--ui-duration-fast, 120ms),
+    box-shadow var(--ui-duration-fast, 120ms);
+}
+
+[data-ui-theme][data-theme] :is(.owb-app, .owb-theme-settings) :is(.owb-view-switch,
+  .owb-context-tabs, .owb-report-tabs,
+  .owb-theme-settings__tabs, .owb-theme-picker__mode-switch,
+  .owb-config-tabs, .owb-drive-browser__views,
+  .owb-drive-browser__filters, .owb-knowledge-graph__filters,
+  .owb-rgraph__renderer) > button:not(:disabled):not([aria-disabled="true"]):not([aria-pressed="true"]):not([aria-selected="true"]):not(.active):hover {
+  background: var(--owb-choice-hover);
+  color: var(--ui-foreground);
+}
+
+[data-ui-theme][data-theme] :is(.owb-app, .owb-theme-settings) :is(.owb-view-switch,
+  .owb-context-tabs, .owb-report-tabs,
+  .owb-theme-settings__tabs, .owb-theme-picker__mode-switch,
+  .owb-config-tabs, .owb-drive-browser__views,
+  .owb-drive-browser__filters, .owb-knowledge-graph__filters,
+  .owb-rgraph__renderer) > button:is([aria-pressed="true"], [aria-selected="true"], .active):not(:disabled):not([aria-disabled="true"]) {
+  background: var(--owb-choice-selected);
+  color: var(--ui-foreground);
+  box-shadow: none;
+  font-weight: 500;
+}
+
+/* The selected surface replaces decorative underlines. */
+[data-ui-theme][data-theme] .owb-app .owb-report-tabs > button[aria-pressed="true"]::after {
+  content: none;
+}
+
+[data-ui-theme][data-theme] :is(.owb-app, .owb-theme-settings) :is(.owb-view-switch,
+  .owb-context-tabs, .owb-report-tabs,
+  .owb-theme-settings__tabs, .owb-theme-picker__mode-switch,
+  .owb-config-tabs, .owb-drive-browser__views,
+  .owb-drive-browser__filters, .owb-knowledge-graph__filters,
+  .owb-rgraph__renderer) > button:focus-visible,
+[data-ui-theme][data-theme] :is(.owb-project-presets__choices > button,
+  .owb-project-presets__custom, .owb-hire-preset,
+  .owb-goal-create-presets__choice, .owb-theme-settings__preset):focus-visible {
+  outline: 2px solid var(--owb-choice-focus);
+  outline-offset: 2px;
+}
+
+/* Preset cards keep their existing geometry, copy alignment and icons. */
+[data-ui-theme][data-theme] :is(.owb-project-presets__choices > button,
+  .owb-project-presets__custom, .owb-hire-preset,
+  .owb-goal-create-presets__choice, .owb-theme-settings__preset) {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+  color: var(--ui-foreground);
+  box-shadow: none;
+}
+
+[data-ui-theme][data-theme] .owb-project-presets__custom {
+  padding: 6px 10px;
+  border-radius: 5px;
+}
+
+[data-ui-theme][data-theme] :is(.owb-project-presets__choices > button,
+  .owb-project-presets__custom, .owb-hire-preset,
+  .owb-goal-create-presets__choice, .owb-theme-settings__preset):not(:disabled):not([aria-disabled="true"]):not([aria-pressed="true"]):not(.active):hover {
+  border-color: var(--ui-border-strong);
+  background: var(--owb-choice-hover);
+}
+
+[data-ui-theme][data-theme] :is(.owb-project-presets__choices > button,
+  .owb-project-presets__custom, .owb-hire-preset,
+  .owb-goal-create-presets__choice, .owb-theme-settings__preset):is([aria-pressed="true"], .active):not(:disabled):not([aria-disabled="true"]) {
+  border-color: var(--ui-foreground-muted);
+  background: var(--owb-choice-selected);
+  color: var(--ui-foreground);
+  box-shadow: none;
+}
+
+[data-ui-theme][data-theme] :is(.owb-app, .owb-theme-settings) :is(.owb-view-switch,
+  .owb-context-tabs, .owb-report-tabs,
+  .owb-theme-settings__tabs, .owb-theme-picker__mode-switch,
+  .owb-config-tabs, .owb-drive-browser__views,
+  .owb-drive-browser__filters, .owb-knowledge-graph__filters,
+  .owb-rgraph__renderer) > button:is(:disabled, [aria-disabled="true"]),
+[data-ui-theme][data-theme] :is(.owb-project-presets__choices > button,
+  .owb-project-presets__custom, .owb-hire-preset,
+  .owb-goal-create-presets__choice, .owb-theme-settings__preset):is(:disabled, [aria-disabled="true"]) {
+  border-color: var(--ui-border);
+  border-style: solid;
+  background: transparent;
+  color: var(--ui-foreground);
+  box-shadow: none;
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* Ant choices use label elements and tab roles rather than pressed buttons. */
+[data-ui-theme][data-theme] .owb-app .ant-segmented {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-segmented-group { gap: 4px; }
+[data-ui-theme][data-theme] .owb-app .ant-segmented-thumb {
+  background: transparent;
+  box-shadow: none;
+}
+[data-ui-theme][data-theme] .owb-app .ant-segmented-item {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  box-shadow: none;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-segmented-item:not(.ant-segmented-item-selected):not(.ant-segmented-item-disabled):hover {
+  background: var(--owb-choice-hover);
+  color: var(--ui-foreground);
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-segmented-item-selected:not(.ant-segmented-item-disabled) {
+  background: var(--owb-choice-selected);
+  color: var(--ui-foreground);
+  box-shadow: none;
+  font-weight: 500;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-segmented-item:has(input:focus-visible) {
+  outline: 2px solid var(--owb-choice-focus);
+  outline-offset: 2px;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-segmented-item-disabled {
+  background: transparent;
+  color: var(--ui-foreground);
+  box-shadow: none;
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-tabs-tab {
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-tabs-tab:not(.ant-tabs-tab-active):not(.ant-tabs-tab-disabled):hover {
+  background: var(--owb-choice-hover);
+  color: var(--ui-foreground);
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-tabs-tab-active:not(.ant-tabs-tab-disabled) {
+  background: var(--owb-choice-selected);
+  box-shadow: none;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-tabs-tab-active:not(.ant-tabs-tab-disabled) .ant-tabs-tab-btn {
+  color: var(--ui-foreground);
+  font-weight: 500;
+  text-shadow: none;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-tabs-tab:has(.ant-tabs-tab-btn:focus-visible) {
+  outline: 2px solid var(--owb-choice-focus);
+  outline-offset: 2px;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-tabs-tab-btn:focus-visible {
+  outline: none;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-tabs-ink-bar { background: transparent; }
+
+/* Selection icons follow their label rather than adding another accent. */
+[data-ui-theme][data-theme] .owb-app .owb-config-tabs > button > svg {
+  color: inherit;
+}
+
+[data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
+  .owb-memory-navigation__source) {
+  border: 0;
+  background: transparent;
+  color: var(--ui-foreground-muted);
+  box-shadow: none;
+}
+
+[data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
+  .owb-memory-navigation__source):not(.is-active):not([aria-current="page"]):not(:disabled):not([aria-disabled="true"]):hover {
+  background: var(--owb-choice-hover);
+  color: var(--ui-foreground);
+}
+
+[data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
+  .owb-memory-navigation__source):is(.is-active, [aria-current="page"]):not(:disabled):not([aria-disabled="true"]) {
+  background: var(--owb-choice-selected);
+  color: var(--ui-foreground);
+  box-shadow: none;
+  font-weight: 500;
+}
+
+[data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
+  .owb-memory-navigation__source):focus-visible {
+  outline: 2px solid var(--owb-choice-focus);
+  outline-offset: 2px;
+}
+
+[data-ui-theme][data-theme] .owb-app :is(.ui-module-rail__item,
+  .owb-memory-navigation__source):is(:disabled, [aria-disabled="true"]) {
+  background: transparent;
+  color: var(--ui-foreground);
+  box-shadow: none;
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-tabs-tab-disabled {
+  background: transparent;
+  color: var(--ui-foreground);
+  box-shadow: none;
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+[data-ui-theme][data-theme] .owb-app .ant-tabs-tab-disabled .ant-tabs-tab-btn {
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-theme][data-theme] :is(.owb-app, .owb-theme-settings) :is(.owb-view-switch,
+    .owb-context-tabs, .owb-report-tabs,
+    .owb-theme-settings__tabs, .owb-theme-picker__mode-switch,
+    .owb-config-tabs, .owb-drive-browser__views,
+    .owb-drive-browser__filters, .owb-knowledge-graph__filters,
+    .owb-rgraph__renderer) > button { transition: none; }
+}

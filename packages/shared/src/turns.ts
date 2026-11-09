@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import type { ApprovalScopeOffer } from "./approval-scope.js";
 import type { ApprovalChangePreview } from "./approval-preview.js";
 import type { TurnAttachment } from "./attachments.js";
+import type { TaskBriefingSnapshot } from "./task-briefing.js";
 
 export const TURN_ENVELOPE_SCHEMA_VERSION = "turn-envelope.v1" as const;
 /** Upstream de#205 (DE-CONVREF-001): v1alpha2 = v1 + optional conversationRef. */
@@ -24,7 +25,7 @@ export const TURN_HISTORY_SCHEMA_VERSION = "turn-history.v1" as const;
  * before #206 they carried their own copy, which silently rejected every new
  * engine at the IPC boundary.
  */
-export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "gemini";
+export type TurnEngine = "qoder" | "claude-code" | "claude-local" | "codex" | "codex-local" | "workbuddy" | "workbuddy-local" | "qwen-office-local" | "gemini" | "openai-compatible";
 
 const turnEngineContract = createRequire(import.meta.url)("../turn-engines.cjs") as {
   TURN_ENGINE_IDS: readonly TurnEngine[];
@@ -169,6 +170,8 @@ export interface TurnEnvelope {
 }
 
 export interface TurnRunRequest {
+  /** Server-resolved current-session image files, never renderer-supplied paths. */
+  imagePaths?: string[];
   model?: string;
   workspace: string;
   positionId: string;
@@ -208,7 +211,38 @@ export interface ThreadContextMetadata {
   truncated: boolean;
 }
 
+export interface RelayHandoffPayload {
+  schemaVersion: "relay-handoff.v1";
+  generatedAt: string;
+  conversationRef: string;
+  messageId: string;
+  turnId: string;
+  step: { positionId: string; number: number; total: number; nextPositionId?: string };
+  taskExcerpt: string;
+  instruction: string | null;
+  sources: Array<{
+    turnId: string;
+    positionId: string;
+    sourceUpdatedAt: string;
+    outputExcerpt: string;
+    excerptDigest: string;
+    truncated: boolean;
+    redacted: boolean;
+  }>;
+  omittedSourceCount: number;
+  taskExcerptTruncated: boolean;
+  redacted: boolean;
+}
+
+export interface RelayHandoffSnapshot {
+  payload: RelayHandoffPayload;
+  payloadBytes: number;
+  payloadDigest: string;
+}
+
 export interface TurnRecord {
+  /** Exact server-owned project requirements included before this execution. */
+  taskBriefing?: TaskBriefingSnapshot;
   /** Explicit user retry of a failed/unknown turn in this same session. */
   retryOf?: string;
   /** Requested model/alias, not an unverified provider routing result. */
@@ -237,6 +271,8 @@ export interface TurnRecord {
    * are written with conversationRef instead. */
   groupRef?: string;
   threadContext?: ThreadContextMetadata;
+  /** Immutable, bounded relay data actually included in this turn input. */
+  relayHandoff?: RelayHandoffSnapshot;
   /** Additive #222: optional goal binding. When present, this turn
    * contributes to a specific goal branch's progress. */
   goalId?: string;

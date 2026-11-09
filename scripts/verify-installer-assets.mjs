@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
+const yaml = require("js-yaml");
 const { UPDATE_MANIFEST_NAME, verifyUpdateManifest } = require("../apps/desktop/src/update-trust.cjs");
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const outputRoot = path.join(projectRoot, "release", "dist");
@@ -181,6 +182,28 @@ export function verifyMacosUpdateArtifact(root, version, { required = false, pub
   assert.equal(hash.digest("hex"), manifest.sha256, "macOS update ZIP hash does not match the manifest");
 }
 
+/** The unsigned Windows channel trusts the HTTPS release metadata, so require
+ * that the published manifest names this installer and carries its real hash. */
+export function verifyWindowsUpdateMetadata(root, artifact, version) {
+  const chunks = [];
+  readRegularFile(path.join(root, "latest.yml"), "Windows update metadata", { maxSize: 64 * 1024 }, (chunk) => chunks.push(Buffer.from(chunk)));
+  const metadata = yaml.load(Buffer.concat(chunks).toString("utf8"));
+  assert.ok(metadata && typeof metadata === "object" && !Array.isArray(metadata), "Windows update metadata must be an object");
+  assert.equal(metadata.version, version, "Windows update metadata version does not match the package");
+  assert.ok(Array.isArray(metadata.files) && metadata.files.length === 1, "Windows update metadata must contain one installer");
+  const [file] = metadata.files;
+  assert.equal(file?.url, artifact, "Windows update metadata names the wrong installer");
+  assert.ok(Number.isSafeInteger(file.size) && file.size > 0, "Windows update metadata has an invalid installer size");
+  assert.ok(typeof file.sha512 === "string" && Buffer.from(file.sha512, "base64").length === 64 &&
+    Buffer.from(file.sha512, "base64").toString("base64") === file.sha512,
+  "Windows update metadata has an invalid SHA-512");
+  if (metadata.path !== undefined) assert.equal(metadata.path, artifact, "Windows legacy update path names the wrong installer");
+  if (metadata.sha512 !== undefined) assert.equal(metadata.sha512, file.sha512, "Windows legacy update hash differs from files[]");
+  const hash = crypto.createHash("sha512");
+  readRegularFile(path.join(root, artifact), "Windows installer", { maxSize: file.size, size: file.size }, (chunk) => hash.update(chunk));
+  assert.equal(hash.digest("base64"), file.sha512, "Windows installer SHA-512 does not match the update metadata");
+}
+
 export function verifyInstallerAssets(platform, root = outputRoot, { requireMacosSignature = false } = {}) {
   const expectedHost = platform === "macos" ? "darwin" : platform === "windows" ? "win32" : null;
   assert.notEqual(expectedHost, null, `unsupported installer platform: ${platform}`);
@@ -211,6 +234,7 @@ export function verifyInstallerAssets(platform, root = outputRoot, { requireMaco
     verifyMacosUpdateArtifact(canonicalRoot, metadata.version, { required: requireMacosSignature });
   } else {
     assert.equal(requireMacosSignature, false, "macOS signature verification requires the macOS lane");
+    verifyWindowsUpdateMetadata(canonicalRoot, required[0], metadata.version);
   }
 
   return {

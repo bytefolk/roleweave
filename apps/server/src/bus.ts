@@ -18,6 +18,10 @@ export class EventBus {
     return this.seq;
   }
 
+  get listenerCount(): number {
+    return this.listeners.size;
+  }
+
   publish(type: SseEventType, payload: unknown): SseEventEnvelope {
     this.seq += 1;
     const event: SseEventEnvelope = {

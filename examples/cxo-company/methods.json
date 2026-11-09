@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "cxo-example-methods.v1",
+  "reviewedAt": "2026-10-13",
+  "note": "Star 数为调研时的 GitHub API 快照，不代表方法有效性。案例职责、任务和模板由本项目原创；只借鉴公开协作模式，不导入这些项目的运行时或执行安装脚本。",
+  "sources": [
+    {"id":"method-agency","title":"Agency Agents: role rosters, startup and marketing runbooks, handoff templates","url":"https://github.com/msitarzewski/agency-agents","stars":159772,"references":["https://github.com/msitarzewski/agency-agents/blob/main/strategy/runbooks/scenario-startup-mvp.md","https://github.com/msitarzewski/agency-agents/blob/main/strategy/runbooks/scenario-marketing-campaign.md","https://github.com/msitarzewski/agency-agents/blob/main/strategy/coordination/handoff-templates.md"],"adaptation":"按专业角色组队，按阶段启用成员，以交接材料、独立验证、有限修复和升级组织工作。"},
+    {"id":"method-bmad","title":"BMAD: explicit intent, sized planning and shared decision context","url":"https://github.com/bmad-code-org/BMAD-METHOD","stars":54088,"references":["https://docs.bmad-method.org/plan/choose-a-planning-path/","https://docs.bmad-method.org/customize/adopt-bmad-across-a-team/"],"adaptation":"按复杂度调整规划深度，保留明确的需求、范围、验收和决策记录。"},
+    {"id":"method-metagpt","title":"MetaGPT: software-company roles coordinated through SOPs","url":"https://github.com/FoundationAgents/MetaGPT","stars":70835,"references":["https://github.com/FoundationAgents/MetaGPT#software-company-as-multi-agent-system"],"adaptation":"需求、设计、接口与实现材料作为专业岗位间的工作产物。"},
+    {"id":"method-crewai","title":"CrewAI: sequential and hierarchical processes","url":"https://github.com/crewAIInc/crewAI","stars":59648,"references":["https://docs.crewai.com/en/concepts/processes"],"adaptation":"区分岗位、任务与成员集合，指定协调职责；本案例的分配由用户显式确认。"},
+    {"id":"method-omc","title":"oh-my-claudecode: staged team plan, execute, verify and fix","url":"https://github.com/Yeachan-Heo/oh-my-claudecode","stars":39863,"references":["https://github.com/Yeachan-Heo/oh-my-claudecode#team-mode-recommended"],"adaptation":"显式计划、执行、验证与修复阶段，不将回合结束直接当作业务完成。"},
+    {"id":"method-gstack","title":"gstack: role-based planning, review, QA, shipping and reflection","url":"https://github.com/garrytan/gstack","stars":136263,"references":["https://github.com/garrytan/gstack#the-sprint"],"adaptation":"分开产品、工程和设计评审，交付前检查证据，交付后复盘。"},
+    {"id":"method-chatdev","title":"ChatDev: virtual software company and configurable orchestration","url":"https://github.com/OpenBMB/ChatDev","stars":34505,"references":["https://github.com/OpenBMB/ChatDev#-overview"],"adaptation":"区分组织岗位与任务流程；参考协作结构，不把角色资料当作已实现的调度引擎。"}
+  ]
+}

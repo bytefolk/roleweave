@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { type ColorTokenValues, type ThemeConfig, type ThemeMode, cloneThemeConfig, DEFAULT_THEME } from "./theme-config";
 import { DEFAULT_PRESET_ID, getPresetById } from "./theme-presets";
-import { readStoredPresetId, readStoredTheme, writeStoredPresetId, writeStoredTheme, clearAllThemeStorage } from "./theme-storage";
+import { readStoredPresetId, readStoredTheme, writeStoredPresetId, writeStoredTheme, clearStoredTheme, clearAllThemeStorage } from "./theme-storage";
 import { resolveEffectiveTheme, applyThemeToDom, clearThemeOverrides, type CustomThemeOverrides } from "./theme-resolution";
 
 interface ThemeContextValue {
@@ -54,7 +54,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setPreset = useCallback((newPresetId: string) => {
     if (!getPresetById(newPresetId)) return;
-    setPresetId(newPresetId); writeStoredPresetId(newPresetId);
+    setPresetId(newPresetId); writeStoredPresetId(newPresetId); clearStoredTheme();
     setSavedCustom(null); setPendingCustom(null);
   }, []);
 
@@ -62,12 +62,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const updateCustomColor = useCallback((colorMode: ThemeMode, key: string, value: string) => {
     setPendingCustom((prev) => {
-      const next = prev ? cloneThemeConfig({ light: { ...DEFAULT_THEME.light, ...prev.light }, dark: { ...DEFAULT_THEME.dark, ...prev.dark } }) : cloneThemeConfig(getPresetById(presetId)?.theme ?? DEFAULT_THEME);
+      const next = prev ? cloneThemeConfig({ light: { ...DEFAULT_THEME.light, ...prev.light }, dark: { ...DEFAULT_THEME.dark, ...prev.dark } }) : cloneThemeConfig({ light: resolveEffectiveTheme("light", presetId, savedCustom), dark: resolveEffectiveTheme("dark", presetId, savedCustom) });
       if (colorMode === "light") next.light[key as keyof typeof next.light] = value;
       else next.dark[key as keyof typeof next.dark] = value;
       return { light: next.light, dark: next.dark };
     });
-  }, [presetId]);
+  }, [presetId, savedCustom]);
 
   const reset = useCallback(() => {
     setPendingCustom(null); setSavedCustom(null); clearAllThemeStorage(); setPresetId(DEFAULT_PRESET_ID);

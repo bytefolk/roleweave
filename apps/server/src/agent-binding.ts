@@ -224,6 +224,9 @@ export async function setPositionModel(workspace: OpenWorkspace, positionId: str
       });
       return;
     }
+    if (initialEngine !== undefined && binding.engine !== initialEngine) {
+      throw new OrgApiError(errorCodes.turn_request_invalid, 400, "Model selection engine does not match this Agent");
+    }
     await writeBindingAt(paths, { ...binding, model });
   });
 }

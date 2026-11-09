@@ -1,0 +1,28 @@
+.owb-budget-advice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--owb-border, #d9d9d9);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--owb-surface, #fff) 94%, #1677ff 6%);
+}
+
+.owb-budget-advice__facts,
+.owb-budget-advice__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.owb-budget-advice__facts {
+  min-width: 0;
+  color: var(--owb-text-secondary, #595959);
+  font-size: 12px;
+}
+
+.owb-budget-advice__actions {
+  flex: 0 0 auto;
+}

@@ -1,0 +1,8 @@
+# Package digests and source/asset receipts cover exact bytes on every platform.
+examples/cxo-company/** text eol=lf
+
+# Review source definitions and generator first; snapshots are reproducible.
+examples/cxo-company/scenarios/** linguist-generated=true
+examples/cxo-company/generated-files.json linguist-generated=true
+examples/cxo-company/role-catalog/README.md linguist-generated=true
+examples/cxo-company/execution-catalog/README.md linguist-generated=true

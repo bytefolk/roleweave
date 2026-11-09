@@ -17,12 +17,28 @@ import path from "node:path";
 function executableTarget(candidate) {
   try {
     const resolved = fs.realpathSync(candidate);
+    if (isQoderEditorLauncher(candidate) || isQoderEditorLauncher(resolved)) return null;
     if (!fs.statSync(resolved).isFile()) return null;
     fs.accessSync(resolved, fs.constants.X_OK);
     return resolved;
   } catch {
     return null;
   }
+}
+
+/**
+ * The Windows editor installs `bin/qoder.cmd`, but its fallback is the VS Code
+ * launcher, which opens a detached editor for unsupported CLI flags. Reject
+ * known editor targets before any version, model-catalog or turn probe, even
+ * when the operator explicitly points at one or a symlink resolves to it.
+ *
+ * @param {string} candidate
+ * @returns {boolean}
+ */
+function isQoderEditorLauncher(candidate) {
+  const normalized = candidate.replace(/\\/g, "/");
+  return /(?:^|\/)Qoder IDE\.exe$/i.test(normalized)
+    || /(?:^|\/)Qoder IDE\/bin\/(?:qoder|code)\.(?:cmd|bat|exe)$/i.test(normalized);
 }
 
 /**
@@ -55,7 +71,7 @@ function findOnPath(name, env, platform) {
  *
  * 1. explicit `ORG_WORKBENCH_QODER_BIN`, then
  *    `DIGITAL_EMPLOYEE_QODER_COMMAND` (invalid explicit values fail closed),
- * 2. native `qodercli`, `qoderclicn`, then the `qoder` dispatcher, from PATH,
+ * 2. native `qodercli`, `qoderclicn`, then the POSIX `qoder` dispatcher, from PATH,
  * 3. supported per-user macOS install paths for Finder-launched apps.
  *
  * Only exact candidate paths are checked; no home-directory scan is performed.
@@ -75,7 +91,11 @@ export function resolveQoderExecutable(env, platform = process.platform) {
     return pathLike ? executableTarget(path.resolve(explicit)) : findOnPath(explicit, env, platform);
   }
 
-  for (const name of ["qodercli", "qoderclicn", "qoder"]) {
+  // A bare `qoder` on Windows commonly belongs to the desktop editor. Its
+  // `--version` may look valid while `--list-models` launches the GUI. Do not
+  // invoke it to discover which product it is; require a dedicated CLI name.
+  const names = platform === "win32" ? ["qodercli", "qoderclicn"] : ["qodercli", "qoderclicn", "qoder"];
+  for (const name of names) {
     const found = findOnPath(name, env, platform);
     if (found !== null) return found;
   }

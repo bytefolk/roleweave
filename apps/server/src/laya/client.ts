@@ -21,7 +21,12 @@ export interface LayaRequest {
 }
 
 export type LayaAsk = (request: LayaRequest) => Promise<Record<string, LayaAnswer> | null>;
-export interface AskLayaDeps { env?: NodeJS.Dict<string>; fetchImpl?: typeof fetch }
+export interface AskLayaDeps {
+  env?: NodeJS.Dict<string>;
+  fetchImpl?: typeof fetch;
+  /** Reject aliases, missing fields, and uncontracted answer fields. */
+  strictAnswerShape?: boolean;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -30,9 +35,39 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 const probability = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
 
-function parseAnswer(value: unknown): LayaAnswer | null {
+function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(record).every(key => allowed.includes(key));
+}
+
+function parseAnswer(value: unknown, strict = false): LayaAnswer | null {
   const record = asRecord(value);
   if (!record) return null;
+  if (strict) {
+    if (record.type === "noul") {
+      return hasOnlyKeys(record, ["type", "probability"]) && probability(record.probability)
+        ? { type: "noul", probability: record.probability }
+        : null;
+    }
+    if (record.type === "choice") {
+      if (!hasOnlyKeys(record, ["type", "selected", "probabilities", "confidence"]) ||
+        typeof record.selected !== "string" || !probability(record.confidence)) return null;
+      const probabilities = asRecord(record.probabilities);
+      if (!probabilities || Object.values(probabilities).some(value => !probability(value))) return null;
+      return {
+        type: "choice",
+        selected: record.selected,
+        probabilities: probabilities as Record<string, number>,
+        confidence: record.confidence,
+      };
+    }
+    if (record.type === "score") {
+      return hasOnlyKeys(record, ["type", "score", "confidence"]) &&
+        typeof record.score === "number" && Number.isFinite(record.score) && probability(record.confidence)
+        ? { type: "score", score: record.score, confidence: record.confidence }
+        : null;
+    }
+    return null;
+  }
   if (record.type === "noul" && probability(record.probability ?? record.noul)) {
     return { type: "noul", probability: (record.probability ?? record.noul) as number };
   }
@@ -69,7 +104,7 @@ export async function askLaya(request: LayaRequest, deps: AskLayaDeps = {}): Pro
     if (!rawAnswers) return null;
     const answers: Record<string, LayaAnswer> = {};
     for (const [key, value] of Object.entries(rawAnswers)) {
-      const parsed = parseAnswer(value);
+      const parsed = parseAnswer(value, deps.strictAnswerShape);
       if (parsed) answers[key] = parsed;
     }
     return Object.keys(answers).length > 0 ? answers : null;

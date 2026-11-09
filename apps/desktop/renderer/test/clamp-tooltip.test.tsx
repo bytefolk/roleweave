@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ReportsCenter } from "../src/reports/ReportsCenter";
 import { TurnThread } from "../src/turns";
@@ -30,26 +30,31 @@ const shortTurn: TurnRecord = {
 };
 
 describe("conversation readability", () => {
-  // 下达任务可以压缩为摘要；最终结论必须完整可读，不能用省略号藏掉结果。
+  // Requests may expand after twelve lines; the full text stays in the DOM.
+  // Final conclusions are always read inline, with no whole-body tooltip.
   it("removes two-line truncation from requests and keeps the final output fully readable", () => {
     const { container } = render(<TurnThread turns={[longTurn]} />);
-    // #248 R2 ④: 下达任务改为操作员气泡（右），截断+title 契约不变。
+    // #248 R2: requests live in the right-aligned operator bubble.
     const input = container.querySelector(".owb-bubble--operator .owb-bubble__text");
     const output = container.querySelector(".owb-tc__out");
     expect(input).not.toBeNull();
     expect(input?.className).not.toContain("owb-clamp-2");
-    expect(input?.getAttribute("title")).toBe(LONG);
+    expect(input?.textContent).toBe(LONG);
+    expect(input).toBeVisible();
+    expect(input).not.toHaveAttribute("title");
     expect(output).not.toBeNull();
     expect(output?.className).not.toContain("owb-clamp-2");
     expect(output?.textContent).toBe(LONG);
-    expect(output?.getAttribute("title")).toBe(LONG);
+    expect(output).toBeVisible();
+    expect(output).not.toHaveAttribute("title");
   });
 
   it("keeps short request text unchanged and fully readable", () => {
     const { container } = render(<TurnThread turns={[shortTurn]} />);
     const input = container.querySelector(".owb-bubble--operator .owb-bubble__text");
-    expect(input?.getAttribute("title")).toBe("检查发布");
     expect(input?.textContent).toBe("检查发布");
+    expect(input).toBeVisible();
+    expect(input).not.toHaveAttribute("title");
   });
 
   it("keeps report summaries readable without exposing internal envelope ids", () => {
@@ -100,9 +105,8 @@ describe("conversation readability", () => {
       page: { cursor: null, hasMore: false },
     };
     const { container } = render(<ReportsCenter reports={reports} loading={false} />);
-    const escalation = container.querySelector(".owb-report-card.is-escalation p");
-    expect(escalation?.className).toContain("owb-clamp-2");
-    expect(escalation?.getAttribute("title")).toBe(escalation?.textContent);
+    const exception = screen.getByRole("complementary", { name: "异常详情" });
+    expect(within(exception).getByRole("heading", { name: "engine_failed" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /执行记录/ }));
     expect(container.querySelector(".owb-report-card code")).toBeNull();
     expect(container.textContent).not.toContain(digest);
@@ -112,12 +116,15 @@ describe("conversation readability", () => {
     expect(executionRecords).toHaveTextContent("Qoder");
   });
 
-  it("renders the typing indicator (screen-reader copy intact) while running", () => {
+  it("renders the live activity line (screen-reader copy intact) while running", () => {
     const running: TurnRecord = { ...shortTurn, id: "turn-run", status: "running", output: undefined };
-    render(<TurnThread turns={[running]} />);
-    const typing = screen.getByRole("status");
-    expect(typing.className).toContain("owb-bubble__typing");
-    expect(typing.textContent).toContain("正在等待岗位完成本回合");
+    const { container } = render(<TurnThread turns={[running]} />);
+    const group = container.querySelector(".owb-turn-progress");
+    expect(group?.getAttribute("aria-label")).toBe("执行进展");
+    expect(group?.querySelector("button")).toBeNull();
+    expect(group).toHaveTextContent("正在执行");
+    expect(group?.querySelectorAll(".owb-turn-progress__activity")).toHaveLength(1);
+    expect(container.querySelector(".owb-activity-trace__continuing")).toBeNull();
   });
 
   it("exposes the full error text through title on failed turns", () => {

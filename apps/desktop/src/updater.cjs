@@ -8,9 +8,10 @@
  * (#135). The default free macOS channel uses its own signed manifest; Windows
  * has no such native precondition.
  *
- * The Windows path below still follows the #110 R3 decision and uses
- * electron-updater's publisher verification. macOS has a separate free path
- * in macos-github-updater.cjs: its release metadata is verified by an embedded
+ * Windows uses the unsigned NSIS update channel: electron-updater checks the
+ * downloaded installer's SHA-512 against the HTTPS release metadata, but does
+ * not pin a publisher when app-update.yml has no publisherName. macOS has a
+ * separate free path in macos-github-updater.cjs: its metadata is verified by an embedded
  * Ed25519 public key before a detached helper replaces the bundle. A later
  * Developer ID rollout can switch macOS back to Squirrel.Mac explicitly.
  *
@@ -21,8 +22,8 @@
  * guarantee on an unsigned Windows update is the SHA512 in `latest.yml` fetched
  * over HTTPS; there is no publisher pinning. The macOS path does not use that
  * metadata: it verifies `latest-mac.json` with the embedded Ed25519 key before
- * any ZIP is opened or copied. Once #136 signs Windows, `publisherName` appears
- * and NsisUpdater enforces the pinning itself.
+ * any ZIP is opened or copied. If a later Windows build has publisherName,
+ * NsisUpdater enforces that publisher identity as well.
  */
 
 const fs = require("node:fs");
@@ -124,7 +125,7 @@ function readBuildSignature({
   // as this one's, so the two forms are distinguished explicitly.
   const unsigned = {
     signed: false,
-    reason: "this build is unsigned, so a downloaded update could not be verified",
+    reason: "this build is unsigned; Windows updates use HTTPS release metadata and SHA-512 without publisher verification",
   };
   const declaration = /^publisherName:[ \t]*(.*)$/m.exec(contents);
   if (declaration === null) return unsigned;
@@ -137,7 +138,7 @@ function readBuildSignature({
 }
 
 const UNSIGNED_REFUSAL =
-  "Updates are download-only once this build is signed. This build carries no publisher identity, so an update cannot be verified before it replaces the app. Download the new version from the release page instead. Tracked in #135 (macOS) and #136 (Windows).";
+  "This native update channel requires a signed build before an update can be installed.";
 
 const UNAVAILABLE_REASONS = Object.freeze({
   darwin:
@@ -195,9 +196,8 @@ function createUpdaterService({
   logger = null,
   unavailableReason = null,
 } = {}) {
-  // Read rather than defaulted, so a caller cannot forget to pass it and
-  // silently get the permissive behaviour. macOS uses codesign metadata;
-  // Windows uses the publisherName that NsisUpdater itself verifies.
+  // Read rather than defaulted so the status reports the actual build.
+  // macOS uses codesign metadata; Windows uses publisherName when present.
   const build = signature ?? readBuildSignature({ platform });
   const availability = unavailableReason === null
     ? updateChannelAvailability(platform, build)
@@ -232,10 +232,10 @@ function createUpdaterService({
     throw new Error("an available update channel requires an updater instance");
   }
 
-  // Explicit confirmation is a user gesture, not a verification. Without a
-  // publisher identity neither NsisUpdater nor the person clicking can tell a
-  // legitimate installer from a substituted one, so the apply paths stay closed
-  // while check stays open -- knowing a new version exists is still useful.
+  // An unsigned Windows NSIS installer can still be updated. electron-updater
+  // verifies the download against latest.yml's SHA-512; that metadata is trusted
+  // through HTTPS and the release host, rather than a pinned publisher identity.
+  // Other native channels still require their platform signature.
   const refuseUnsigned = () => ({ state, reason: UNSIGNED_REFUSAL, unsigned: true });
 
   // Nothing is downloaded or installed without an explicit request. An update
@@ -273,7 +273,7 @@ function createUpdaterService({
     },
 
     async download({ confirmedByUser = false } = {}) {
-      if (!build.signed) return refuseUnsigned();
+      if (platform !== "win32" && !build.signed) return refuseUnsigned();
       // #110 R3: nothing may happen without an explicit request.
       if (confirmedByUser !== true) {
         return { state, reason: "downloading an update requires explicit confirmation" };
@@ -291,7 +291,7 @@ function createUpdaterService({
     },
 
     async install({ confirmedByUser = false } = {}) {
-      if (!build.signed) return refuseUnsigned();
+      if (platform !== "win32" && !build.signed) return refuseUnsigned();
       // Installing restarts the app, so this is the step most likely to lose
       // someone's work if it happens without being asked for.
       if (confirmedByUser !== true) {

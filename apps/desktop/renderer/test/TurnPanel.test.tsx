@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { TurnPanel, TurnThread } from "../src/turns";
 import type { CreateTurnRequest, TurnPanelProps, TurnRecord } from "../src/turns";
+import { pickSelectOption } from "./select-helper";
 
 const positions = [
   { id: "repo-owner", name: "代码库负责人" },
@@ -15,7 +16,26 @@ const availability: TurnPanelProps["engineAvailability"] = {
   codex: { configured: true, ready: true },
   "codex-local": { configured: true, ready: true },
   workbuddy: { configured: true, ready: true },
+  "qwen-office-local": { configured: true, ready: true },
+
+  gemini: { configured: true, ready: true },
+  "openai-compatible": { configured: true, ready: true },
 };
+
+it("shows Office's native tool boundary and a read-only client model while preserving its turn engine", async () => {
+  const createTurn = vi.fn();
+  const selectModel = vi.fn();
+  render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner" engine="qwen-office-local" engineLocked
+    engineAvailability={availability} turns={[]} onCreateTurn={createTurn} onSelectModel={selectModel}
+    modelConfig={{ selected: "provider-default", recommended: "provider-default", editable: false, source: "default", options: [{ id: "provider-default", name: "Current Qwen Office model", tier: "default" }] }} />);
+  expect(screen.getByText("工具与审批由千问办公管理。")).toBeInTheDocument();
+  expect(screen.getByText("千问办公当前模型")).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "员工模型" })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "Review this document" } });
+  fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+  await waitFor(() => expect(createTurn).toHaveBeenCalledWith({ positionId: "repo-owner", engine: "qwen-office-local", input: "Review this document" }));
+  expect(selectModel).not.toHaveBeenCalled();
+});
 
 function ControlledPanel({ onCreateTurn }: { onCreateTurn: (request: CreateTurnRequest) => void }) {
   return (
@@ -44,6 +64,220 @@ function turn(overrides: Partial<TurnRecord>): TurnRecord {
     ...overrides,
   };
 }
+
+describe("TurnPanel embedded header", () => {
+  const currentSession = {
+    schemaVersion: "workbench-session.v1" as const,
+    sessionId: "11111111-1111-4111-8111-111111111111",
+    positionId: "repo-owner",
+    workspaceInstanceId: "workspace-1",
+    principal: "position.repo-owner",
+    status: "active" as const,
+    rotatedFrom: null,
+    rotatedTo: null,
+    createdAt: "2026-09-08T00:00:00Z",
+    rotatedAt: null,
+  };
+  const historicSession = {
+    ...currentSession,
+    sessionId: "22222222-2222-4222-8222-222222222222",
+    status: "rotated" as const,
+    rotatedTo: currentSession.sessionId,
+  };
+
+  function props(overrides: Partial<TurnPanelProps> = {}): TurnPanelProps {
+    return {
+      workspaceOpen: true, positions, selectedPositionId: "repo-owner", engine: "qoder",
+      engineAvailability: availability, turns: [turn({})],
+      sessions: [currentSession, historicSession], selectedSessionId: currentSession.sessionId,
+      onCreateTurn: vi.fn(), onSelectSession: vi.fn(), onToggleFocus: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  function renderHost() {
+    const { container } = render(<div />);
+    return container.firstElementChild as HTMLElement;
+  }
+
+  it("preserves the standalone identity and actions when headerHost is undefined", async () => {
+    const { container } = render(<TurnPanel {...props()} headerHost={undefined} />);
+    const header = container.querySelector<HTMLElement>(".owb-turn-panel__header")!;
+    expect(within(header).getByRole("heading", { name: "代码库负责人" })).toBeInTheDocument();
+    expect(header.querySelector(".owb-conversation-identity")).toHaveTextContent("会话 11111111");
+    expect(header.querySelector(".owb-engine-badge")).toHaveTextContent("Qoder");
+    const history = within(header).getByRole("button", { name: "会话历史" });
+    expect(history).not.toHaveAttribute("title");
+    fireEvent.mouseEnter(history);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("11111111");
+    expect(within(header).getByRole("button", { name: "专注对话" })).toBeInTheDocument();
+    expect(container.querySelector(".owb-turn-panel")).not.toHaveClass("owb-turn-panel--embedded");
+  });
+
+  it("portals only the existing actions into the parent row without a duplicate identity", async () => {
+    render(<header><h1>代码库负责人</h1><div data-testid="collaboration-actions" /></header>);
+    const host = screen.getByTestId("collaboration-actions");
+    const { container } = render(<TurnPanel {...props()} headerHost={host} />);
+
+    expect(container.querySelector(".owb-turn-panel")).toHaveClass("owb-turn-panel--embedded");
+    expect(container.querySelector(".owb-turn-panel__header")).toBeNull();
+    expect(container.querySelector(".owb-conversation-identity")).toBeNull();
+    expect(screen.getAllByRole("heading", { name: "代码库负责人" })).toHaveLength(1);
+    expect(container.querySelector(".owb-conversation-header-actions")).toBeNull();
+    expect(document.querySelectorAll(".owb-conversation-header-actions")).toHaveLength(1);
+    expect(host.querySelectorAll(".owb-engine-badge")).toHaveLength(1);
+    expect(host.querySelector(".owb-engine-badge")).toHaveTextContent("Qoder");
+    const history = within(host).getByRole("button", { name: "会话历史" });
+    const focus = within(host).getByRole("button", { name: "专注对话" });
+    expect(within(host).getAllByRole("button")).toEqual([history, focus]);
+    expect(within(host).queryByRole("combobox")).not.toBeInTheDocument();
+    expect(history).not.toHaveAttribute("title");
+    expect(screen.queryByText(/11111111/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("下达任务")).toBeEnabled();
+    fireEvent.focus(history);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("11111111");
+  });
+
+  it("keeps the thread and draft mounted through null, replaced, inactive and standalone hosts", () => {
+    const firstHost = renderHost();
+    const secondHost = renderHost();
+    const panelProps = props();
+    const { container, rerender, unmount } = render(<TurnPanel {...panelProps} headerHost={null} />);
+    const panel = container.querySelector(".owb-turn-panel");
+    const thread = container.querySelector<HTMLOListElement>("ol.owb-turn-thread")!;
+    const input = screen.getByLabelText("下达任务");
+    const composer = input.closest("form");
+    fireEvent.change(input, { target: { value: "keep my embedded draft" } });
+    thread.scrollTop = 240;
+    fireEvent.scroll(thread);
+
+    const transitions: Array<{ host: HTMLElement | null | undefined; active: boolean }> = [
+      { host: null, active: true },
+      { host: firstHost, active: true },
+      { host: secondHost, active: true },
+      { host: null, active: true },
+      { host: firstHost, active: false },
+      { host: firstHost, active: true },
+      { host: firstHost, active: false },
+      { host: undefined, active: true },
+      { host: secondHost, active: true },
+    ];
+    for (const { host, active } of transitions) {
+      rerender(<TurnPanel {...panelProps} headerHost={host} active={active} />);
+      expect(container.querySelector(".owb-turn-panel")).toBe(panel);
+      expect(container.querySelector("ol.owb-turn-thread")).toBe(thread);
+      expect(screen.getByLabelText("下达任务")).toBe(input);
+      expect(input.closest("form")).toBe(composer);
+      expect(input).toHaveValue("keep my embedded draft");
+      expect(thread.scrollTop).toBe(240);
+      expect(screen.getByText("门禁已检查。")).toBeInTheDocument();
+      expect(container.querySelectorAll(".owb-turn-panel__header")).toHaveLength(host === undefined ? 1 : 0);
+      expect(container.querySelectorAll(".owb-conversation-identity")).toHaveLength(host === undefined ? 1 : 0);
+      expect(panel?.classList.contains("owb-turn-panel--embedded")).toBe(host !== undefined);
+      for (const candidate of [firstHost, secondHost]) {
+        expect(candidate.querySelectorAll(".owb-conversation-header-actions")).toHaveLength(active && candidate === host ? 1 : 0);
+      }
+      const visibleActions = active && host !== null;
+      expect(screen.queryAllByRole("button", { name: "会话历史" })).toHaveLength(visibleActions ? 1 : 0);
+      expect(screen.queryAllByRole("button", { name: /专注对话|退出专注/ })).toHaveLength(visibleActions ? 1 : 0);
+      expect(document.querySelectorAll(".owb-conversation-header-actions")).toHaveLength(visibleActions ? 1 : 0);
+    }
+    expect(panelProps.onCreateTurn).not.toHaveBeenCalled();
+    unmount();
+    expect(firstHost).toBeEmptyDOMElement();
+    expect(secondHost).toBeEmptyDOMElement();
+  });
+
+  it.each(["null host", "inactive"] as const)("closes an open history popover while %s without resetting the draft", async (transition) => {
+    const host = renderHost();
+    const panelProps = props();
+    const { rerender } = render(<TurnPanel {...panelProps} headerHost={host} />);
+    const input = screen.getByLabelText("下达任务");
+    fireEvent.change(input, { target: { value: "keep history draft" } });
+    fireEvent.click(within(host).getByRole("button", { name: "会话历史" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /22222222/ })).toBeVisible());
+
+    rerender(<TurnPanel {...panelProps} headerHost={transition === "null host" ? null : host} active={transition !== "inactive"} />);
+    expect(host).toBeEmptyDOMElement();
+    expect(screen.queryByRole("button", { name: "会话历史" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("button", { name: /22222222/ })).not.toBeInTheDocument());
+    expect(screen.getByLabelText("下达任务")).toBe(input);
+    expect(input).toHaveValue("keep history draft");
+
+    rerender(<TurnPanel {...panelProps} headerHost={host} />);
+    expect(screen.queryByRole("button", { name: /22222222/ })).not.toBeInTheDocument();
+    fireEvent.click(within(host).getByRole("button", { name: "会话历史" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /22222222/ })).toBeVisible());
+  });
+
+  it("selects history and toggles focus from the host while preserving the current session draft", async () => {
+    const host = renderHost();
+    const panelProps = props();
+    const { rerender } = render(<TurnPanel {...panelProps} headerHost={host} />);
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "current session draft" } });
+    fireEvent.click(within(host).getByRole("button", { name: "专注对话" }));
+    expect(panelProps.onToggleFocus).toHaveBeenCalledTimes(1);
+    rerender(<TurnPanel {...panelProps} headerHost={host} focused />);
+    const exit = within(host).getByRole("button", { name: "退出专注" });
+    expect(exit).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(exit);
+    expect(panelProps.onToggleFocus).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(within(host).getByRole("button", { name: "会话历史" }));
+    expect(await screen.findByRole("button", { name: /11111111/ })).toHaveAttribute("aria-current", "true");
+    fireEvent.click(screen.getByRole("button", { name: /22222222/ }));
+    expect(panelProps.onSelectSession).toHaveBeenCalledExactlyOnceWith(historicSession.sessionId);
+    await waitFor(() => expect(screen.queryByRole("button", { name: /22222222/ })).not.toBeInTheDocument());
+    rerender(<TurnPanel {...panelProps} headerHost={host} selectedSessionId={historicSession.sessionId} />);
+    const history = within(host).getByRole("button", { name: "会话历史" });
+    expect(history).not.toHaveAttribute("title");
+    fireEvent.mouseEnter(history);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("22222222");
+    fireEvent.mouseLeave(history);
+    expect(screen.getByRole("button", { name: "发送任务" })).toBeDisabled();
+    fireEvent.click(within(host).getByRole("button", { name: "会话历史" }));
+    expect(await screen.findByRole("button", { name: /22222222/ })).toHaveAttribute("aria-current", "true");
+    rerender(<TurnPanel {...panelProps} headerHost={host} />);
+    await waitFor(() => expect(screen.queryByRole("button", { name: /22222222/ })).not.toBeInTheDocument());
+    expect(screen.getByLabelText("下达任务")).toHaveValue("current session draft");
+  });
+
+  it("uses the unlocked engine picker in the host and retains every existing selection guard", async () => {
+    const host = renderHost();
+    const selectEngine = vi.fn();
+    let finishSend!: (accepted: boolean) => void;
+    const createTurn = vi.fn(() => new Promise<boolean>((resolve) => { finishSend = resolve; }));
+    const panelProps = props({ engineLocked: false, onSelectEngine: selectEngine, onCreateTurn: createTurn });
+    const { container, rerender } = render(<TurnPanel {...panelProps} headerHost={host} />);
+    const picker = within(host).getByRole("combobox", { name: "选择 Agent Host" });
+    expect(picker).toBeEnabled();
+    expect(host.querySelector(".owb-engine-badge")).toBeNull();
+    expect(within(container).queryByRole("combobox", { name: "选择 Agent Host" })).not.toBeInTheDocument();
+    expect(within(host).getAllByRole("button")).toHaveLength(2);
+    pickSelectOption("选择 Agent Host", "Gemini");
+    expect(selectEngine).toHaveBeenCalledExactlyOnceWith("gemini");
+    rerender(<TurnPanel {...panelProps} headerHost={host} engine="gemini" />);
+    expect(host.querySelector(".ant-select-content")).toHaveTextContent("Gemini");
+
+    for (const guard of ["busy", "employeeBusy", "modelSaving"] as const) {
+      rerender(<TurnPanel {...panelProps} headerHost={host} {...{ [guard]: true }} />);
+      expect(within(host).getByRole("combobox", { name: "选择 Agent Host" })).toBeDisabled();
+      fireEvent.mouseDown(within(host).getByRole("combobox", { name: "选择 Agent Host" }));
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    }
+    rerender(<TurnPanel {...panelProps} headerHost={host} />);
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "pending task" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送任务" }));
+    expect(within(host).getByRole("combobox", { name: "选择 Agent Host" })).toBeDisabled();
+    await act(async () => { finishSend(false); });
+    expect(within(host).getByRole("combobox", { name: "选择 Agent Host" })).toBeEnabled();
+    expect(screen.getByLabelText("下达任务")).toHaveValue("pending task");
+    expect(selectEngine).toHaveBeenCalledTimes(1);
+    rerender(<TurnPanel {...panelProps} headerHost={host} engineLocked />);
+    expect(within(host).queryByRole("combobox")).not.toBeInTheDocument();
+    expect(host.querySelector(".owb-engine-badge")).toHaveTextContent("Qoder");
+  });
+});
 
 describe("TurnPanel Issue #5 D3 behavior", () => {
   it("#284 r2 gives an unselected conversation one next step without an unusable composer", () => {
@@ -392,8 +626,8 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
       />,
     );
 
-    expect(screen.getByText("运行中")).toBeInTheDocument();
-    expect(screen.getByText("已完成")).toBeInTheDocument();
+    expect(screen.getByText("正在执行")).toBeInTheDocument();
+    expect(screen.getByText("已处理")).toBeInTheDocument();
     expect(screen.getByText("失败")).toBeInTheDocument();
     expect(screen.getByText("状态未知")).toBeInTheDocument();
     expect(screen.queryByText("sha256:1234567890abcdefghijklmnopqrstuv")).not.toBeInTheDocument();
@@ -442,6 +676,23 @@ describe("TurnPanel Issue #5 D3 behavior", () => {
   });
 });
 
+it("offers Office startup only for a disconnected Office employee and unlocks after recheck", () => {
+  const open = vi.fn();
+  const props: TurnPanelProps = { workspaceOpen: true, positions, selectedPositionId: "repo-owner",
+    engine: "qwen-office-local", engineAvailability: { ...availability,
+      "qwen-office-local": { configured: false, ready: false, reason: "qwen_office.control_disabled" } },
+    turns: [], onCreateTurn: vi.fn(), officeConnection: { action: { label: "打开千问办公", onClick: open }, feedback: null } };
+  const { rerender } = render(<TurnPanel {...props} />);
+  expect(screen.getByLabelText("下达任务")).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "打开千问办公" }));
+  expect(open).toHaveBeenCalledTimes(1);
+  rerender(<TurnPanel {...props} engineAvailability={availability} />);
+  expect(screen.queryByRole("button", { name: "打开千问办公" })).not.toBeInTheDocument();
+  expect(screen.getByLabelText("下达任务")).toBeEnabled();
+  rerender(<TurnPanel {...props} engine="qoder" engineAvailability={{ ...availability, qoder: { configured: false, ready: false } }} />);
+  expect(screen.queryByRole("button", { name: "打开千问办公" })).not.toBeInTheDocument();
+});
+
 it("never renders invalid model diagnostics and blocks sending even when the host is ready", () => {
   const createTurn = vi.fn();
   render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner"
@@ -456,6 +707,58 @@ it("never renders invalid model diagnostics and blocks sending even when the hos
   expect(createTurn).not.toHaveBeenCalled();
 });
 describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
+  it("waits for the server model snapshot before unlocking next-message model selection", () => {
+    const selectModel = vi.fn();
+    const config: NonNullable<TurnPanelProps["modelConfig"]> = {
+      selected: "efficient", recommended: "efficient", editable: true, source: "provider-tiers",
+      options: [{ id: "efficient", name: "Efficient", tier: "economy" }, { id: "performance", name: "Performance", tier: "balanced" }],
+    };
+    const base = { workspaceOpen: true, positions, selectedPositionId: "repo-owner", engine: "qoder" as const,
+      engineAvailability: availability, busy: true, employeeBusy: true, onCreateTurn: vi.fn(), onSelectModel: selectModel };
+    const pending = turn({ id: "same-record", provisional: true, dispatchPending: true, status: "running", output: undefined });
+    const { rerender } = render(<TurnPanel {...base} modelConfig={config} turns={[pending]} />);
+    const select = screen.getByRole("combobox", { name: "员工模型" });
+    expect(select).toBeDisabled();
+    fireEvent.mouseDown(select);
+    expect(select).toHaveAttribute("aria-expanded", "false");
+    expect(selectModel).not.toHaveBeenCalled();
+
+    const live = Object.freeze({ ...pending, dispatchPending: false, model: "efficient" });
+    rerender(<TurnPanel {...base} modelConfig={config} turns={[live]} />);
+    expect(select).toBeEnabled();
+    pickSelectOption("员工模型", "Performance");
+    expect(selectModel).toHaveBeenCalledExactlyOnceWith("performance");
+    rerender(<TurnPanel {...base} modelConfig={{ ...config, selected: "performance" }} turns={[live]} />);
+    expect(select.closest(".ant-select")).toHaveTextContent("Performance");
+    expect(live.model).toBe("efficient");
+    expect(live.status).toBe("running");
+    expect(base.onCreateTurn).not.toHaveBeenCalled();
+  });
+
+  it("selects the next model during a running task without changing that task or dispatching again", async () => {
+    const selectModel = vi.fn();
+    const createTurn = vi.fn();
+    const live = Object.freeze(turn({ id: "live-model", status: "running", model: "efficient", output: undefined }));
+    render(<TurnPanel workspaceOpen positions={positions} selectedPositionId="repo-owner"
+      engine="qoder" engineAvailability={availability} turns={[live]} busy employeeBusy
+      onCreateTurn={createTurn} onSelectModel={selectModel}
+      modelConfig={{ selected: "efficient", recommended: "efficient", editable: true, source: "provider-tiers",
+        options: [{ id: "efficient", name: "Efficient", tier: "economy" }, { id: "performance", name: "Performance", tier: "balanced" }] }} />);
+    const select = screen.getByRole("combobox", { name: "员工模型" });
+    expect(select).toBeEnabled();
+    expect(select.closest(".ant-select")).not.toHaveAttribute("title");
+    fireEvent.mouseEnter(select.closest(".ant-select")!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("下次发送时生效，当前任务继续使用原模型。");
+    fireEvent.mouseLeave(select.closest(".ant-select")!);
+    pickSelectOption("员工模型", "Performance");
+    expect(selectModel).toHaveBeenCalledExactlyOnceWith("performance");
+    expect(live.model).toBe("efficient");
+    expect(live.status).toBe("running");
+    fireEvent.change(screen.getByLabelText("下达任务"), { target: { value: "Next draft" } });
+    fireEvent.submit(screen.getByLabelText("下达任务").closest("form")!);
+    expect(createTurn).not.toHaveBeenCalled();
+  });
+
   it("replaces the send button with an interrupt while a turn is running", async () => {
     const cancelTurn = vi.fn();
     render(
@@ -480,7 +783,7 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
     });
   });
 
-  it("triggers the same cancel via the ⌘. shortcut and disables while cancelling", () => {
+  it("triggers the same cancel via the ⌘. shortcut and disables while cancelling", async () => {
     const cancelTurn = vi.fn();
     render(
       <TurnPanel
@@ -498,8 +801,12 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
       />,
     );
 
-    expect(screen.getByText("正在停止这个任务…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "中断回合" })).toBeDisabled();
+    expect(screen.queryByText("正在停止这个任务…")).not.toBeInTheDocument();
+    const stop = screen.getByRole("button", { name: "中断回合" });
+    expect(stop).not.toHaveAttribute("title");
+    expect(stop).toBeDisabled();
+    fireEvent.mouseEnter(stop.parentElement!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("正在停止这个任务…");
     fireEvent.keyDown(window, { key: ".", metaKey: true });
     expect(cancelTurn).not.toHaveBeenCalled();
   });
@@ -525,7 +832,7 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
     expect(cancelTurn).toHaveBeenCalledWith("repo-owner");
   });
 
-  it("shows the compact status line with engine badge and token usage only while running", () => {
+  it("keeps interruption and usage available without a permanent running instruction", async () => {
     render(
       <TurnPanel
         workspaceOpen
@@ -543,12 +850,19 @@ describe("TurnPanel Issue #25 Slice A — operator interrupt", () => {
       />,
     );
 
-    expect(screen.getByText("回合运行中：点击中断或按 ⌘. 终止该岗位的在途回合")).toBeInTheDocument();
+    expect(screen.queryByText("回合运行中：点击中断或按 ⌘. 终止该岗位的在途回合")).not.toBeInTheDocument();
+    const stop = screen.getByRole("button", { name: "中断回合" });
+    expect(stop).not.toHaveAttribute("title");
+    fireEvent.mouseEnter(stop.parentElement!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("停止当前任务（⌘/Ctrl+.）");
+    fireEvent.mouseLeave(stop.parentElement!);
     expect(screen.queryByRole("button", { name: "发送任务" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("运行中").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("正在执行").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("已处理").length).toBeGreaterThan(0);
     expect(screen.queryByText("1,280 tokens")).not.toBeInTheDocument();
-    expect(screen.getByText("999 tokens")).toBeInTheDocument();
+    expect(screen.queryByText("999 tokens")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Token 用量" }));
+    expect(await screen.findByText("999 tokens")).toBeInTheDocument();
   });
 });
 
@@ -631,6 +945,9 @@ describe("TurnThread #234 — preserve conversation viewport on employee switch"
 it.each([
   ["qoder", "Qoder"], ["claude-code", "Claude Code"], ["claude-local", "Claude Code"],
   ["codex", "Codex"], ["codex-local", "Codex"], ["workbuddy", "WorkBuddy"],
+  ["qwen-office-local", "千问办公"],
+  ["gemini", "Gemini"],
+  ["openai-compatible", "OpenAI Compatible"],
 ] as const)("never renders %s diagnostics without weakening send guards", async (engine, label) => {
   const createTurn = vi.fn();
   const reason = "Check PATH or CONFIG_ENV before starting the runtime";

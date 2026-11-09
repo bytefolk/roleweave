@@ -9,7 +9,8 @@
 // Shell-service split (ADR-0001): main spawns apps/server as a child process
 // with ELECTRON_RUN_AS_NODE; the same server also runs standalone.
 
-const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, nativeTheme, safeStorage, Tray, Menu, nativeImage } = require("electron");
+const { createStatusTray } = require("./status-tray.cjs");
 const { TURN_ENGINE_IDS } = require("@roleweave/shared/turn-engines");
 // Keep the development window and the packaged bundle aligned on the public
 // product name. The old IPC/package identifiers below remain compatibility
@@ -23,6 +24,8 @@ const {
   engineRuntimeEnvironment,
 } = require("./control-plane-launch.cjs");
 const fs = require("node:fs");
+const { closeQwenOfficeClient, hasPendingQwenOfficeTasks } = require("./qwen-office-client.cjs");
+const { openQwenOffice } = require("./qwen-office-open.cjs");
 const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -54,6 +57,7 @@ const {
   stopControlPlaneProcess,
 } = require("./control-plane-lifecycle.cjs");
 const { isAllowedNavigationTarget, isTrustedWindowSender } = require("./window-ipc.cjs");
+const { windowChromeInfo, windowChromeOptions, setWindowChromeColors } = require("./window-chrome.cjs");
 const { validateRestoreRequest, validateOrgApply } = require("./org-ipc.cjs");
 const {
   validateAssetsCreateRequest,
@@ -61,16 +65,23 @@ const {
   validateAssetsReadRequest,
 } = require("./assets-ipc.cjs");
 const {
+  authorizeDocsIpcSender,
   validateDocsCreateRequest,
+  validateDocsDeleteRequest,
   validateDocsListRequest,
+  validateDocsPathRequest,
   validateDocsReadRequest,
+  validateDocsRenameRequest,
   validateDocsResolveRequest,
+  validateDocsWriteRequest,
 } = require("./docs-ipc.cjs");
 const {
   validateDriveListRequest,
   validateDriveDetailRequest,
-  validateDriveUploadRequest,
+  validateDrivePreviewRequest,
+  authorizeDriveReadSender,
 } = require("./drive-ipc.cjs");
+const { registerDriveUploadIpc } = require("./drive-upload.cjs");
 const { validateHireRequest } = require("./hire-ipc.cjs");
 const { validatePositionProfileRequest } = require("./position-profile-ipc.cjs");
 const { validateAvatarGenerateRequest } = require("./avatar-ipc.cjs");
@@ -88,17 +99,21 @@ const {
   validateConversationRef,
   validateGroupAddMemberRequest,
   validateGroupCreateRequest,
+  validateGroupRelayStopDecision,
   validateGroupTurnRequest,
 } = require("./group-ipc.cjs");
 const {
   goalPath,
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
+  authorizeGoalIpcSender,
+  validateGoalTaskAcceptanceRequest,
 } = require("./goal-ipc.cjs");
-const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
-const { runtimeDescription } = require("./runtime-settings.cjs");
+const { openWorkspaceWithPicker, initializeWorkspace, createWorkspaceWithPicker, openWorkspaceFile, revealWorkspaceInFileManager } = require("./workspace-ipc.cjs");
+const { runtimeDescription, workspaceDialogOptions } = require("./runtime-settings.cjs");
 const { openDefaultWorkspace } = require("./auto-open-workspace.cjs");
 const { createServiceConnections, registerServiceIpc } = require("./service-connections.cjs");
+const { registerVaultIpc } = require("./vault-ipc.cjs");
 const { createCredentialStore, registerSettingsIpc, forwardCredentialSafeStderr } = require("./credential-settings.cjs");
 const { createConfigurationStore } = require("./configuration.cjs");
 const { registerConfigurationIpc, registerExternalUrlIpc } = require("./configuration-ipc.cjs");
@@ -122,6 +137,8 @@ let controlPlaneStopPromise = null;
 let updaterService = null;
 let controlPlaneError = null;
 let mainWindow = null;
+let statusTray = null;
+let mainWindowUsesNativeControls = false;
 /** file:// URL of the packaged renderer entry loaded into mainWindow — the
  * one and only URL a trusted window IPC call may be sent from (#77 review). */
 let trustedRendererUrl = null;
@@ -157,6 +174,36 @@ registerConfigurationIpc({ ipcMain, getStore: configurationStore, shell,
   isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
   onSaved: () => serviceConnections.initialize(), setDirty: (value) => { configurationDirty = value; },
   close: () => app.quit(),
+  pickProjectDirectory: async () => {
+    const options = workspaceDialogOptions(desktopEnv, true);
+    const current = configurationStore().getPreferences();
+    if (current.ok && current.config.storage?.projectDirectory) options.defaultPath = current.config.storage.projectDirectory;
+    const picked = await (mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options));
+    return picked.canceled || !picked.filePaths.length ? { canceled: true } : { ok: true, path: picked.filePaths[0] };
+  },
+  cacheInfo: async () => {
+    const directory = path.join(app.getPath('sessionData'), 'Cache');
+    let bytes = 0, entries = 0;
+    const pending = [directory];
+    while (pending.length) {
+      const current = pending.pop();
+      for (const item of await fs.promises.readdir(current, { withFileTypes: true }).catch(error => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      })) {
+        if (++entries > 100000) return { ok: false, code: 'cache_too_large' };
+        const name = path.join(current, item.name);
+        if (item.isDirectory()) pending.push(name);
+        else if (item.isFile()) bytes += (await fs.promises.stat(name).catch(() => ({ size: 0 }))).size;
+      }
+    }
+    return { ok: true, bytes };
+  },
+  openCache: async () => {
+    const directory = path.join(app.getPath('sessionData'), 'Cache');
+    await fs.promises.mkdir(directory, { recursive: true });
+    return { ok: (await shell.openPath(directory)) === '' };
+  },
 });
 registerExternalUrlIpc({ ipcMain, shell,
   isTrusted: (event) => isTrustedWindowSender(event, mainWindow, trustedRendererUrl),
@@ -235,13 +282,15 @@ function stopControlPlane() {
   return controlPlaneStopPromise;
 }
 
-function apiRequest(pathname, { method = "GET", withAuth = true, body = null } = {}) {
+function apiRequest(pathname, { method = "GET", withAuth = true, body = null, binaryBody, timeoutMs } = {}) {
   return new Promise((resolve, reject) => {
     if (!controlPlane) {
       reject(new Error("control plane is not running"));
       return;
     }
-    const payload = body === null ? null : JSON.stringify(body);
+    const payload = binaryBody ?? (body === null ? null : JSON.stringify(body));
+    let uploadDeadline;
+    const finishUpload = () => { if (uploadDeadline) clearTimeout(uploadDeadline); };
     const req = http.request(
       {
         host: "127.0.0.1",
@@ -251,16 +300,24 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null } =
         headers: {
           ...(withAuth ? { authorization: `Bearer ${controlPlane.token}` } : {}),
           ...(payload !== null
-            ? { "content-type": "application/json", "content-length": Buffer.byteLength(payload) }
+            ? { "content-type": binaryBody !== undefined ? "application/octet-stream" : "application/json", "content-length": Buffer.byteLength(payload) }
             : {}),
         },
       },
       (res) => {
+        res.setEncoding("utf8");
+        if (binaryBody !== undefined) {
+          res.on("error", () => { finishUpload(); reject(new Error("upload response interrupted")); });
+        }
         let raw = "";
         res.on("data", (chunk) => {
           raw += String(chunk);
+          if (binaryBody !== undefined && Buffer.byteLength(raw) > 128 * 1024) {
+            finishUpload(); req.destroy(new Error("upload response exceeds size limit"));
+          }
         });
         res.on("end", () => {
+          finishUpload();
           let parsed = null;
           try {
             parsed = raw.length > 0 ? JSON.parse(raw) : null;
@@ -271,7 +328,12 @@ function apiRequest(pathname, { method = "GET", withAuth = true, body = null } =
         });
       },
     );
-    req.on("error", reject);
+    req.on("error", (error) => { finishUpload(); reject(error); });
+    if (binaryBody !== undefined && timeoutMs !== undefined) {
+      uploadDeadline = setTimeout(() => req.destroy(new Error("upload timed out")), timeoutMs);
+      uploadDeadline.unref();
+    }
+    if (timeoutMs !== undefined) req.setTimeout(timeoutMs, () => req.destroy(new Error("status request timed out")));
     if (payload !== null) req.write(payload);
     req.end();
   });
@@ -293,6 +355,7 @@ function startEventStream() {
     },
     (res) => {
       broadcastSseStatus("connected");
+      res.setEncoding("utf8");
       let buffer = "";
       res.on("data", (chunk) => {
         buffer += String(chunk);
@@ -304,9 +367,11 @@ function startEventStream() {
           const dataLine = raw
             .split("\n")
             .find((line) => line.startsWith("data: "));
-          if (dataLine && mainWindow && !mainWindow.isDestroyed()) {
+          if (dataLine) {
             try {
-              mainWindow.webContents.send("owb:event", JSON.parse(dataLine.slice(6)));
+              const event = JSON.parse(dataLine.slice(6));
+              statusTray?.onEvent(event);
+              if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("owb:event", event);
             } catch {
               // Non-JSON frame; ignore.
             }
@@ -331,6 +396,7 @@ function startEventStream() {
 
 function broadcastSseStatus(state) {
   currentSseStatus = state;
+  statusTray?.setConnection(state === "connected" ? "ready" : "offline");
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("owb:sse-status", state);
   }
@@ -391,6 +457,10 @@ ipcMain.handle("owb:control-plane:stop", async () => {
 // renderer only starts it and observes its state (see routes/qoder-login.ts).
 ipcMain.handle("owb:qoder:login", async () => apiRequest("/qoder/login", { method: "POST" }));
 ipcMain.handle("owb:qoder:login-status", async () => apiRequest("/qoder/login", { method: "GET" }));
+ipcMain.handle("owb:qwen-office:open", (event) => openQwenOffice({
+  event, isTrusted: (sender) => isTrustedWindowSender(sender, mainWindow, trustedRendererUrl),
+  openExternal: (url) => shell.openExternal(url),
+}));
 
 function pickWorkspaceDirectory(options) {
   return mainWindow ? dialog.showOpenDialog(mainWindow, options) : dialog.showOpenDialog(options);
@@ -409,6 +479,7 @@ ipcMain.handle("owb:workspace:initialize", async (_event, request) => initialize
 ipcMain.handle("owb:workspace:create", async (_event, request) => createWorkspaceWithPicker({
   request, pickDirectory: pickWorkspaceDirectory, apiRequest, env: desktopEnv,
   userDataPath: app.getPath("userData"),
+  preferredDirectory: configurationStore().getPreferences().config?.storage?.projectDirectory,
 }));
 
 ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
@@ -418,6 +489,10 @@ ipcMain.handle("owb:workspace:get", async () => apiRequest("/workspace"));
 ipcMain.handle("owb:workspace:reveal", async () => revealWorkspaceInFileManager({
   apiRequest, env: desktopEnv, openPath: (target) => shell.openPath(target),
 }));
+ipcMain.handle("owb:workspace:file-open", async (event, relativePath, expectedWorkspacePath) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { opened: false, reason: "untrusted_sender" };
+  return openWorkspaceFile({ apiRequest, env: desktopEnv, relativePath, expectedWorkspacePath, openPath: (target) => shell.openPath(target) });
+});
 
 ipcMain.handle("owb:org:tree", async () => apiRequest("/org/tree"));
 
@@ -449,7 +524,7 @@ ipcMain.handle("owb:progress:get", async (_event, turnId, positionId) => {
   const query = typeof positionId === "string" && positionId ? `?positionId=${encodeURIComponent(positionId)}` : "";
   return apiRequest(`/turns/progress/${encodeURIComponent(String(turnId))}${query}`);
 });
-const { experimentsGet, experimentsUpdate, reportsAdvice } = require("./experiments-ipc.cjs");
+const { budgetRemainingAdvice, experimentsGet, experimentsUpdate, reportsAdvice } = require("./experiments-ipc.cjs");
 ipcMain.handle("owb:experiments:get", async (event, workspacePath) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
   return experimentsGet(workspacePath, apiRequest);
@@ -461,6 +536,10 @@ ipcMain.handle("owb:experiments:update", async (event, request) => {
 ipcMain.handle("owb:reports:advice", async (event, request) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
   return reportsAdvice(request, apiRequest);
+});
+ipcMain.handle("owb:turns:budget-advice", async (event, request) => {
+  if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { status: 403, body: { message: "Untrusted sender" } };
+  return budgetRemainingAdvice(request, apiRequest);
 });
 const { approvalList, approvalDecision, approvalBatchDecision, approvalAudit } = require("./approvals-center-ipc.cjs");
 ipcMain.handle("owb:approvals:list", async (event, request) => {
@@ -540,29 +619,77 @@ ipcMain.handle("owb:position:profile", async (event, request) => {
 });
 
 // Read-only document file routing (#35 S2): whitelisted, enumerated, no generic channel.
-ipcMain.handle("owb:position:docs:list", async (_event, positionId) => {
-  const validated = validateDocsListRequest(positionId);
+ipcMain.handle("owb:position:docs:list", async (event, positionId, options) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsListRequest(positionId, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
 
-ipcMain.handle("owb:position:docs:read", async (_event, positionId, filePath) => {
-  const validated = validateDocsReadRequest(positionId, filePath);
+ipcMain.handle("owb:position:docs:read", async (event, positionId, filePath, options) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsReadRequest(positionId, filePath, options);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
 
 // Minimal doc creation + doc-ref resolution (#35 S4): whitelisted, enumerated.
-ipcMain.handle("owb:position:docs:create", async (_event, request) => {
+ipcMain.handle("owb:position:docs:create", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsCreateRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/create", { method: "POST", body: validated.request });
 });
 
-ipcMain.handle("owb:docs:resolve", async (_event, request) => {
+ipcMain.handle("owb:docs:resolve", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateDocsResolveRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/docs/resolve", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:write", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsWriteRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/write", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:rename", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsRenameRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/rename", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:archive", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsPathRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/archive", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:restore", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsPathRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/restore", { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:position:docs:delete", async (event, request) => {
+  const authorized = authorizeDocsIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDocsDeleteRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest("/docs/delete", { method: "POST", body: validated.request });
 });
 
 // External doc-plane bridge (#35 R2 MVP): read-only proxy in front of
@@ -732,6 +859,12 @@ ipcMain.handle("owb:group:turn:create", async (_event, request) => {
   return apiRequest(groupPath(validated.conversationRef, "/turns"), { method: "POST", body: validated.request });
 });
 
+ipcMain.handle("owb:group:relay-stop", async (_event, request) => {
+  const validated = validateGroupRelayStopDecision(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest(groupPath(validated.conversationRef, "/relay-stop"), { method: "POST", body: validated.request });
+});
+
 ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {
   if (!validateConversationRef(conversationRef)) {
     return { status: 400, body: { code: "group_request_invalid", message: "conversationRef is invalid", retryable: false } };
@@ -740,7 +873,9 @@ ipcMain.handle("owb:group:timeline", async (_event, conversationRef) => {
 });
 
 // Additive #222: workspace-local goal surface.
-ipcMain.handle("owb:goal:create", async (_event, request) => {
+ipcMain.handle("owb:goal:create", async (event, request) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const validated = validateGoalCreateRequest(request);
   if (!validated.ok) return validated.response;
   return apiRequest("/goals", { method: "POST", body: validated.request });
@@ -761,7 +896,9 @@ ipcMain.handle("owb:goal:get", async (_event, goalId) => {
   return apiRequest(pathname);
 });
 
-ipcMain.handle("owb:goal:update", async (_event, request) => {
+ipcMain.handle("owb:goal:update", async (event, request) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   if (request === null || typeof request !== "object" || Array.isArray(request)) {
     return { status: 400, body: { code: "goal_request_invalid", message: "goal update requires an object", retryable: false } };
   }
@@ -775,7 +912,17 @@ ipcMain.handle("owb:goal:update", async (_event, request) => {
   return apiRequest(pathname, { method: "PATCH", body: validated.request });
 });
 
-ipcMain.handle("owb:goal:delete", async (_event, goalId) => {
+ipcMain.handle("owb:goal:task-acceptance", async (event, request) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = await validateGoalTaskAcceptanceRequest(request);
+  if (!validated.ok) return validated.response;
+  return apiRequest(validated.pathname, { method: "POST", body: validated.request });
+});
+
+ipcMain.handle("owb:goal:delete", async (event, goalId) => {
+  const authorized = authorizeGoalIpcSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
   const pathname = goalPath(goalId);
   if (pathname === null) {
     return { status: 400, body: { code: "goal_request_invalid", message: "goalId is invalid", retryable: false } };
@@ -784,13 +931,14 @@ ipcMain.handle("owb:goal:delete", async (_event, goalId) => {
 });
 
 // Drive plane (bytefolk/mem proxy): whitelisted list/detail reads and a
-// stubbed upload seam. The desktop shell owns the OS file picker so an
-// absolute path never crosses the renderer boundary unvalidated.
+// desktop-picked binary uploads. File paths remain in the desktop process.
 ipcMain.handle("owb:drive:list", async (_event, query) => {
   const validated = validateDriveListRequest(query);
   if (!validated.ok) return validated.response;
   return apiRequest(validated.pathname);
 });
+
+registerVaultIpc({ ipcMain, getMainWindow: () => mainWindow, getTrustedRendererUrl: () => trustedRendererUrl, apiRequest });
 
 ipcMain.handle("owb:drive:detail", async (_event, id) => {
   const validated = validateDriveDetailRequest(id);
@@ -798,27 +946,24 @@ ipcMain.handle("owb:drive:detail", async (_event, id) => {
   return apiRequest(validated.pathname);
 });
 
-ipcMain.handle("owb:drive:upload", async (_event, filePath) => {
-  const validated = validateDriveUploadRequest(filePath);
+ipcMain.handle("owb:drive:preview", async (event, id) => {
+  const authorized = authorizeDriveReadSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  const validated = validateDrivePreviewRequest(id);
   if (!validated.ok) return validated.response;
-  // TODO(mem-upload): once mem's multipart PUT to /v1/files is contract-frozen,
-  // read validated.request.filePath here and stream it upstream. Until then
-  // the server route also returns a stub payload, keeping the seam honest.
-  return apiRequest("/drive/upload", { method: "POST", body: validated.request });
+  return apiRequest(validated.pathname);
 });
 
-ipcMain.handle("owb:drive:pick-and-upload", async () => {
-  const options = {
-    title: "选择要上传到 mem 的文件",
-    properties: ["openFile"],
-  };
-  const picked = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, options)
-    : await dialog.showOpenDialog(options);
-  if (picked.canceled || picked.filePaths.length === 0) return { canceled: true };
-  const validated = validateDriveUploadRequest(picked.filePaths[0]);
-  if (!validated.ok) return validated.response;
-  return apiRequest("/drive/upload", { method: "POST", body: validated.request });
+ipcMain.handle("owb:drive:provider", async (event) => {
+  const authorized = authorizeDriveReadSender(event, mainWindow, trustedRendererUrl);
+  if (!authorized.ok) return authorized.response;
+  return apiRequest("/drive/provider");
+});
+
+registerDriveUploadIpc({
+  ipcMain, dialog, apiRequest,
+  getMainWindow: () => mainWindow,
+  getTrustedRendererUrl: () => trustedRendererUrl,
 });
 
 ipcMain.handle("owb:sse-status:get", async () => currentSseStatus);
@@ -860,7 +1005,7 @@ function createWindow() {
     minWidth: 640,
     minHeight: 680,
     title: "RoleWeave",
-    frame: false,
+    ...windowChromeOptions(process.platform, nativeTheme.shouldUseDarkColors),
     resizable: true,
     icon: fs.existsSync(ROLEWEAVE_DEV_ICON) ? ROLEWEAVE_DEV_ICON : undefined,
     // Native window paint color before any CSS loads (avoids a white flash);
@@ -881,6 +1026,7 @@ function createWindow() {
         backgroundThrottling: smokeRequest !== null || behaviorSmokeRequest !== null || layoutReportPath !== null,
       },
   });
+  mainWindowUsesNativeControls = windowChromeInfo(process.platform).nativeControls;
   mainWindow.setMenuBarVisibility(false);
   // Lane A staging harness: static, opt-in, packaged-only, and confined to the
   // caller's freshly created OS-temp root. Source-tree dev behavior is not
@@ -1012,6 +1158,7 @@ function createWindow() {
   mainWindow.on("close", (event) => { requestConfigurationClose(event); });
   mainWindow.on("closed", () => {
     mainWindow = null;
+    mainWindowUsesNativeControls = false;
     trustedRendererUrl = null;
   });
 }
@@ -1021,6 +1168,11 @@ function createWindow() {
 // gated on isTrustedWindowSender (#77 review item 2: ipcMain.handle() is not
 // scoped to a window on its own). Rejection returns { ok: false } rather than
 // throwing, matching this bridge's existing response shape.
+ipcMain.handle("owb:window:chrome-colors", (event, request) => setWindowChromeColors({
+  event, request, browserWindow: mainWindow, trustedRendererUrl,
+  platform: process.platform, nativeControls: mainWindowUsesNativeControls,
+}));
+
 ipcMain.handle("owb:window:minimize", (event) => {
   if (!isTrustedWindowSender(event, mainWindow, trustedRendererUrl)) return { ok: false };
   mainWindow?.minimize();
@@ -1134,6 +1286,25 @@ function publishUpdateState(event) {
 }
 
 app.whenReady().then(async () => {
+  // OS tray is a main-process surface: it works while the renderer is
+  // minimized and only receives counts from the authenticated local server.
+  try {
+    statusTray = createStatusTray({
+      Tray, Menu, nativeImage, iconPath: ROLEWEAVE_DEV_ICON, platform: process.platform,
+      locale: app.getLocale(),
+      requestStatus: () => apiRequest("/desktop/status", { timeoutMs: 3000 }),
+      onOpen: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      },
+      onQuit: () => app.quit(),
+    });
+  } catch (error) {
+    // A desktop without a system-tray host must still open its main window.
+    process.stderr.write(`RoleWeave tray unavailable: ${error.message}\n`);
+  }
   // Finder/LaunchServices does not inherit the user's command search path.
   // Recover only a bounded login-shell PATH before the control plane (and in
   // turn Qoder/MCP children) is spawned; all other inherited env is unchanged.
@@ -1155,6 +1326,7 @@ app.whenReady().then(async () => {
   } catch (err) {
     controlPlaneError = err;
     controlPlaneState = "failed";
+    statusTray?.setConnection("offline");
   }
   // The vendored bundle is loaded through the service so a missing or unloadable
   // one degrades to an explained refusal. This used to be a bare require on the
@@ -1198,10 +1370,14 @@ app.on("before-quit", (event) => {
   // app as part of this normal quit. The service's installing guard prevents a
   // manual "Install and restart" click from spawning a second helper.
   void updaterService?.installOnQuit?.();
-  if (quitSequenceStarted || !controlPlane || !isControlPlaneAlive(controlPlane.child)) return;
+  if (quitSequenceStarted) return;
+  const hasLiveControlPlane = controlPlane && isControlPlaneAlive(controlPlane.child);
+  if (!hasLiveControlPlane && !hasPendingQwenOfficeTasks()) return;
   event.preventDefault();
   quitSequenceStarted = true;
-  void stopControlPlane().then(() => app.quit()).catch(() => {
+  // Office owns an external task, beyond the Linux process tree. Let its
+  // bounded cancellation RPC finish before Electron drops the broker owner.
+  void Promise.all([hasLiveControlPlane ? stopControlPlane() : Promise.resolve(), closeQwenOfficeClient()]).then(() => app.quit()).catch(() => {
     // Keep the window alive and leave the control-plane handle inspectable if
     // even the bounded SIGKILL/exit wait failed. A quit must not orphan it.
     quitSequenceStarted = false;
@@ -1209,6 +1385,7 @@ app.on("before-quit", (event) => {
 });
 
 app.on("quit", () => {
+  statusTray?.dispose();
   if (updateCheckTimer !== null) clearInterval(updateCheckTimer);
   if (eventStreamRequest) eventStreamRequest.destroy();
   void stopControlPlane();

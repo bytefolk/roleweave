@@ -3,12 +3,12 @@
  *
  * Both surfaces edit the SAME `HirePermissions` projection, so they must render
  * the same controls and the same derived rules: a second copy would let hire
- * and edit disagree about what a selected Skill means. The markup reuses the
- * `owb-hire-*` block of app.css — that block is the grant-editor skin, not a
- * hire-only one, and every class it styles is emitted here.
+ * and edit disagree about what a selected Skill means. The default variant
+ * keeps the hire skin; the compact variant presents the same grants in the
+ * employee settings drawer.
  */
-import { Select } from "antd";
-import { Plus, Shield, Trash2 } from "lucide-react";
+import { Checkbox, Select } from "antd";
+import { Check, Plus, Shield, Trash2 } from "lucide-react";
 import { Input as OwbInput } from "@fullstack-ai-infra/ui";
 import { useT } from "@roleweave/ui";
 import { hireMcpCatalog, hireSkillCatalog } from "@roleweave/shared/capabilities";
@@ -67,9 +67,8 @@ export function toggleSkillGrant(permissions: HirePermissions, id: HireSkillGran
 export function toggleMcpServerGrant(permissions: HirePermissions, id: HireMcpGrant["id"]): HirePermissions {
   const mcpServers = permissions.mcpServers ?? [];
   const existing = mcpServers.find((server) => server.id === id);
-  const nextServers = existing
-    ? mcpServers.filter((server) => server.id !== id)
-    : [...mcpServers, { id, tools: [...(hireMcpCatalog.find((server) => server.id === id)?.tools ?? [])] }];
+  if (existing) return removeMcpGrants(permissions, id);
+  const nextServers = [...mcpServers, { id, tools: [...(hireMcpCatalog.find((server) => server.id === id)?.tools ?? [])] }];
   return replaceCapabilityRules(permissions, permissions.skills ?? [], nextServers);
 }
 
@@ -84,16 +83,138 @@ export function toggleMcpToolGrant(permissions: HirePermissions, id: HireMcpGran
   };
 }
 
+/** Remove only connector grants; keep operator-authored Skill and file rules. */
+export function removeMcpGrants(permissions: HirePermissions, id?: HireMcpGrant["id"]): HirePermissions {
+  return {
+    ...permissions,
+    mcpServers: id ? (permissions.mcpServers ?? []).filter((server) => server.id !== id) : [],
+    rules: permissions.rules.filter((rule) => id ? rule.resource !== `mcp://${id}` : !rule.resource.startsWith("mcp://")),
+  };
+}
+
 export function PermissionPolicyEditor({
   permissions,
   onChange,
+  variant = "default",
+  disabled = false,
 }: {
   permissions: HirePermissions;
   onChange: (next: HirePermissions) => void;
+  variant?: "default" | "compact";
+  disabled?: boolean;
 }) {
   const t = useT();
   const setRule = (index: number, next: HirePermissionRule): void =>
     onChange({ ...permissions, rules: permissions.rules.map((item, itemIndex) => (itemIndex === index ? next : item)) });
+  const executionControls = (
+    <section className="owb-profile-section" aria-label={t("permissions.nativeTitle")}>
+      <h4>{t("permissions.nativeTitle")}</h4>
+      <Checkbox disabled={disabled} checked={permissions.nativeExecution === true}
+        onChange={(event) => onChange({ ...permissions, nativeExecution: event.target.checked })}>
+        {t("permissions.nativeExecution")}
+      </Checkbox>
+      <p>{t("permissions.nativeHint")}</p>
+      <Checkbox disabled={disabled} checked={permissions.network === "host_policy"}
+        onChange={(event) => onChange({ ...permissions, network: event.target.checked ? "host_policy" : "deny" })}>
+        {t("permissions.network")}
+      </Checkbox>
+      <p>{t("permissions.networkHint")}</p>
+    </section>
+  );
+  if (variant === "compact") {
+    return (
+      <>
+        <section className="owb-profile-section" aria-label={t("profile.tools")}>
+          <div className="owb-profile-section__head"><h4>{t("profile.tools")}</h4></div>
+          <div className="owb-profile-tools">
+            {PERMISSION_TOOLS.map((tool) => (
+              <button
+                type="button"
+                className={permissions.tools.includes(tool) ? "is-selected" : ""}
+                aria-pressed={permissions.tools.includes(tool)}
+                key={tool}
+                onClick={() => onChange({
+                  ...permissions,
+                  tools: permissions.tools.includes(tool)
+                    ? permissions.tools.filter((item) => item !== tool)
+                    : [...permissions.tools, tool],
+                })}
+              >
+                {tool}
+              </button>
+            ))}
+          </div>
+        </section>
+        {executionControls}
+        <section className="owb-profile-section" aria-label={t("profile.resources")}>
+          <div className="owb-profile-section__head"><h4>{t("profile.resources")}</h4></div>
+          <div className="owb-profile-rules">
+            {permissions.rules.map((rule, index) => (
+              <div className="owb-profile-rule" key={index}>
+                <div className="owb-profile-rule__fields">
+                  <label>
+                    <span>{t("profile.scope")}</span>
+                    <Select
+                      aria-label={t("profile.scope")}
+                      disabled={disabled}
+                      value={rule.scope}
+                      onChange={(value: HirePermissionRule["scope"]) => setRule(index, { ...rule, scope: value })}
+                      options={SCOPES.map((scope) => ({ value: scope.value, label: t(scope.labelKey) }))}
+                    />
+                  </label>
+                  <label>
+                    <span>{t("profile.resource")}</span>
+                    <OwbInput
+                      aria-label={t("profile.resource")}
+                      value={rule.resource}
+                      onChange={(event) => setRule(index, { ...rule, resource: event.target.value })}
+                    />
+                  </label>
+                </div>
+                <Checkbox disabled={disabled} checked={rule.approval !== false}
+                  onChange={(event) => setRule(index, { ...rule, approval: event.target.checked })}>
+                  {t("permissions.requireApproval")}
+                </Checkbox>
+                <div className="owb-profile-rule__actions">
+                  <div className="owb-profile-action-chips">
+                    {ACTIONS.map((action) => (
+                      <button
+                        type="button"
+                        className={rule.actions.includes(action.value) ? "is-selected" : ""}
+                        aria-pressed={rule.actions.includes(action.value)}
+                        key={action.value}
+                        onClick={() => setRule(index, toggleAction(rule, action.value))}
+                      >
+                        {t(action.labelKey)}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="owb-profile-icon-button"
+                    aria-label={t("hire.removeRule")}
+                    onClick={() => onChange({ ...permissions, rules: permissions.rules.filter((_item, itemIndex) => itemIndex !== index) })}
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="owb-profile-add-rule"
+              onClick={() => onChange({
+                ...permissions,
+                rules: [...permissions.rules, { scope: "workspace", resource: "./", actions: ["read"], approval: true }],
+              })}
+            >
+              <Plus aria-hidden="true" size={14} />{t("hire.addRule")}
+            </button>
+          </div>
+        </section>
+      </>
+    );
+  }
   return (
     <>
       <div className="owb-hire-section-head">
@@ -119,10 +240,12 @@ export function PermissionPolicyEditor({
           </button>
         ))}
       </div>
+      {executionControls}
       <div className="owb-hire-rules">
         {permissions.rules.map((rule, index) => (
           <div className="owb-hire-rule" key={`${rule.scope}-${rule.resource}-${index}`}>
             <Select
+              disabled={disabled}
               value={rule.scope}
               onChange={(value: HirePermissionRule["scope"]) => setRule(index, { ...rule, scope: value })}
               options={SCOPES.map((scope) => ({ value: scope.value, label: t(scope.labelKey) }))}
@@ -131,6 +254,10 @@ export function PermissionPolicyEditor({
               value={rule.resource}
               onChange={(event) => setRule(index, { ...rule, resource: event.target.value })}
             />
+            <Checkbox disabled={disabled} checked={rule.approval !== false}
+              onChange={(event) => setRule(index, { ...rule, approval: event.target.checked })}>
+              {t("permissions.requireApproval")}
+            </Checkbox>
             <div className="owb-hire-action-chips">
               {ACTIONS.map((action) => (
                 <button
@@ -171,11 +298,81 @@ export function PermissionPolicyEditor({
 export function CapabilityPicker({
   permissions,
   onChange,
+  variant = "default",
+  nativeWork = false,
 }: {
   permissions: HirePermissions;
   onChange: (next: HirePermissions) => void;
+  variant?: "default" | "compact";
+  nativeWork?: boolean;
 }) {
   const t = useT();
+  if (variant === "compact") {
+    const skillCount = (permissions.skills ?? []).length;
+    const connectorCount = (permissions.mcpServers ?? []).length;
+    return (
+      <>
+        <section className="owb-profile-section" aria-label={t("profile.skills")}>
+          <div className="owb-profile-section__head">
+            <h4>{t("profile.skills")}</h4>
+            <span className={skillCount > 0 ? "owb-profile-count" : "owb-profile-empty"}>{skillCount > 0 ? skillCount : t("profile.noSkills")}</span>
+          </div>
+          <div className="owb-profile-skills">
+            {hireSkillCatalog.map((skill) => {
+              const selected = (permissions.skills ?? []).some((item) => item.id === skill.id);
+              return (
+                <button
+                  type="button"
+                  className={`owb-profile-skill${selected ? " is-selected" : ""}`}
+                  aria-pressed={selected}
+                  disabled={nativeWork && !selected}
+                  key={skill.id}
+                  onClick={() => onChange(toggleSkillGrant(permissions, skill.id))}
+                  title={skill.description}
+                >
+                  {selected ? <Check aria-hidden="true" size={14} /> : null}
+                  {skill.name}
+                </button>
+              );
+            })}
+          </div>
+          {nativeWork ? <p className="owb-profile-help owb-profile-network-hint">{t("profile.nativeSkillsUnavailable")}</p> : null}
+        </section>
+        <section className="owb-profile-section" aria-label={t("profile.connectors")}>
+          <div className="owb-profile-section__head">
+            <h4>{t("profile.connectors")}</h4>
+            <span className="owb-profile-empty">{t("profile.connectorsUnavailable")}</span>
+          </div>
+          <p className="owb-profile-help">{t("profile.connectorsUnavailableHint")}</p>
+          <div className="owb-profile-connectors">
+            {hireMcpCatalog.filter((server) => (permissions.mcpServers ?? []).some((grant) => grant.id === server.id)).map((server) => {
+              const grant = (permissions.mcpServers ?? []).find((item) => item.id === server.id);
+              return (
+                <div className={`owb-profile-mcp${grant ? " is-selected" : ""}`} key={server.id}>
+                  <button
+                    type="button"
+                    className="owb-profile-mcp__select"
+                    aria-pressed={Boolean(grant)}
+                    disabled={!grant}
+                    onClick={() => onChange(toggleMcpServerGrant(permissions, server.id))}
+                    title={server.description}
+                  >
+                    <span className="owb-profile-checkbox" aria-hidden="true">{grant ? <Check size={12} /> : null}</span>
+                    <span>{server.name}<small>{server.description}</small></span>
+                    <span className="owb-profile-mcp__state">{t(grant ? "profile.connectorNeedsRemoval" : "profile.connectorsUnavailable")}</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          {connectorCount > 0 ? <div className="owb-profile-notice" role="status">
+            <span>{t("profile.connectorUnsupported")}</span>
+            <button type="button" onClick={() => onChange(removeMcpGrants(permissions))}>{t("profile.removeConnectors")}</button>
+          </div> : null}
+        </section>
+      </>
+    );
+  }
   return (
     <section className="owb-hire-capability-panel" aria-label={t("hire.capabilityTitle")}>
       <div className="owb-hire-capability-panel__head">
@@ -210,8 +407,8 @@ export function CapabilityPicker({
               const grant = (permissions.mcpServers ?? []).find((item) => item.id === server.id);
               return (
                 <div className={`owb-hire-mcp ${grant ? "is-selected" : ""}`} key={server.id}>
-                  <button type="button" className="owb-hire-mcp__select" onClick={() => onChange(toggleMcpServerGrant(permissions, server.id))} title={server.description}>
-                    <b>{server.name}</b><small>{grant ? t("hire.mcpBound") : t("hire.mcpAvailable")}</small>
+                  <button type="button" className="owb-hire-mcp__select" disabled={!grant} onClick={() => onChange(toggleMcpServerGrant(permissions, server.id))} title={server.description}>
+                    <b>{server.name}</b><small>{t(grant ? "profile.connectorNeedsRemoval" : "profile.connectorsUnavailable")}</small>
                   </button>
                   {grant ? <div className="owb-hire-mcp__tools" aria-label={t("hire.mcpToolsAria")}>
                     {server.tools.map((tool) => (
@@ -233,9 +430,9 @@ export function CapabilityPicker({
       </div>
       {(permissions.mcpServers ?? []).length > 0 ? (
         <p className="owb-hire-mcp-unsupported" role="status">
-          {t("hire.mcpUnsupportedHint")}
+          {t("profile.connectorUnsupported")} <button type="button" onClick={() => onChange(removeMcpGrants(permissions))}>{t("profile.removeConnectors")}</button>
         </p>
-      ) : null}
+      ) : <p className="owb-hire-capability-note">{t("profile.connectorsUnavailableHint")}</p>}
       <p className="owb-hire-capability-note">{t("hire.capabilityPermissionHint")}</p>
     </section>
   );

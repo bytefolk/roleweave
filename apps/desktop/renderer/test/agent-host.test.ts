@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { agentHostForEngine, defaultAgentHost, resolveAgentEngine } from "../src/turns/agent-host";
+import { agentEnginesForHost, agentHostForEngine, defaultAgentHost, resolveAgentEngine, visibleAgentHosts } from "../src/turns/agent-host";
 import type { TurnEngine, TurnEngineAvailability } from "../src/turns/types";
 
 function availability(): Record<TurnEngine, TurnEngineAvailability> {
@@ -10,6 +10,11 @@ function availability(): Record<TurnEngine, TurnEngineAvailability> {
     codex: { configured: false, ready: false },
     "codex-local": { configured: false, ready: false },
     workbuddy: { configured: false, ready: false },
+    "workbuddy-local": { configured: false, ready: false },
+    "qwen-office-local": { configured: true, ready: true },
+
+    gemini: { configured: false, ready: false },
+    "openai-compatible": { configured: false, ready: false },
   };
 }
 
@@ -38,4 +43,34 @@ it("chooses WorkBuddy as the default when it is the only ready host", () => {
   expect(defaultAgentHost(engines)).toBe("workbuddy");
   expect(resolveAgentEngine("workbuddy", engines)).toBe("workbuddy");
   expect(agentHostForEngine("workbuddy")).toBe("workbuddy");
+});
+
+it("shares the WorkBuddy brand while keeping local and API runtime identities distinct", () => {
+  const engines = availability();
+  engines.workbuddy = { configured: true, ready: true };
+  engines["workbuddy-local"] = { configured: true, ready: true };
+  expect(resolveAgentEngine("workbuddy", engines)).toBe("workbuddy-local");
+  expect(agentHostForEngine("workbuddy-local")).toBe("workbuddy");
+  expect(visibleAgentHosts(["workbuddy", "workbuddy-local"])).toEqual(["workbuddy"]);
+  expect(agentEnginesForHost("workbuddy")).toEqual(["workbuddy-local", "workbuddy"]);
+});
+
+it("keeps an invalid WorkBuddy local identity visible instead of selecting a service credential", () => {
+  const engines = availability();
+  engines.workbuddy = { configured: true, ready: true };
+  engines["workbuddy-local"] = {
+    configured: false, ready: false,
+    connection: { source: "official", kind: "official", billing: "unknown", status: "invalid" },
+  };
+  expect(resolveAgentEngine("workbuddy", engines)).toBe("workbuddy-local");
+});
+
+it("keeps Qwen Office on its only native runtime even when other hosts are ready", () => {
+  const engines = availability();
+  engines["qwen-office-local"] = { configured: false, ready: false };
+  engines.codex = engines["codex-local"] = engines.workbuddy = { configured: true, ready: true };
+  expect(agentHostForEngine("qwen-office-local")).toBe("qwen-office-local");
+  expect(agentEnginesForHost("qwen-office-local")).toEqual(["qwen-office-local"]);
+  expect(resolveAgentEngine("qwen-office-local", engines)).toBe("qwen-office-local");
+  expect(visibleAgentHosts(["qwen-office-local"])).toEqual(["qwen-office-local"]);
 });

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   OrgApiError,
@@ -13,14 +14,19 @@ import type {
   TurnPendingApproval,
   TurnRecord,
   WorkbenchSession,
+  TaskBriefingRequest,
+  TaskBriefingSnapshot,
+  Goal,
 } from "@roleweave/shared";
 import type { ControlPlaneContext } from "../context.js";
 import type { OpenWorkspace } from "../workspace-state.js";
 import type { RunningTurnReservation } from "../turns/running.js";
 import { readJsonBody, sendJson } from "../http.js";
 import { createTurnEnvelope } from "../turns/envelope.js";
+import { withResponsePresentation } from "../turns/response-format.js";
 import { DeltaForwarder } from "../turns/delta-forwarder.js";
 import { assertPositionId, compareRfc3339Instants, compareCodeUnitOrdinal } from "../turns/store.js";
+import type { RelayExecutionContext } from "../turns/relay-handoff.js";
 import { compactThreadContextHistory, materializeThreadContext, type SupplementalContext, type ThreadContextSource } from "../turns/thread-context.js";
 import { readPositionAgentBinding, resolvePositionAgentEngine } from "../agent-binding.js";
 import { employeeModelConfig } from "../model-selection.js";
@@ -28,11 +34,16 @@ import { readAttachmentMetas, attachmentFilePath } from "../attachments/store.js
 import { assertAttachmentBatch, assertAttachmentId } from "../attachments/validate.js";
 import type { TurnAttachment } from "@roleweave/shared";
 import { ATTACHMENT_MAX_COUNT } from "@roleweave/shared";
+import { assembleVaultContext } from "../vault/context.js";
+import { recordVaultUsage } from "../vault/receipts.js";
+import { createTaskBriefing, renderTaskBriefing, taskBriefingBinding } from "../turns/task-briefing.js";
+import { projectTaskDeliveries, projectTaskExecutions } from "../goals/store.js";
+import { projectTaskCollaboration } from "../goals/collaboration.js";
 
 const MAX_INPUT_BYTES = 256 * 1024;
 
 /**
- * Engine-visible attachment context (Decision A2). P0 lists file paths only —
+ * Engine-visible file descriptions complement Codex's native image inputs.
  * PDF text extraction is out of scope until pdfjs-dist is a declared, packaged
  * runtime dependency. The assembled string must fit the 256 KiB input budget
  * so thread history is not squeezed to zero.
@@ -62,6 +73,8 @@ export function buildAttachmentContext(
 }
 
 export interface TurnPostBody {
+  /** Explicit project delegation; only the session route accepts this field. */
+  taskBriefing?: TaskBriefingRequest;
   /** Session retry association; never accepted by the bare or group routes. */
   retryOf?: string;
   positionId: string;
@@ -110,17 +123,9 @@ function parsePostBody(raw: unknown): TurnPostBody {
     );
   }
   const positionId = assertPositionId(raw.positionId);
-  if (
-    typeof raw.input !== "string" ||
-    raw.input.trim().length === 0 ||
-    Buffer.byteLength(raw.input, "utf8") > MAX_INPUT_BYTES
-  ) {
-    throw new OrgApiError(
-      errorCodes.turn_request_invalid,
-      400,
-      "input must be a non-empty UTF-8 string no larger than 256 KiB",
-    );
-  }
+  if (typeof raw.input !== "string") throw new OrgApiError(errorCodes.turn_request_invalid, 400, "input must be a string");
+  if (!raw.input.trim()) throw new OrgApiError(errorCodes.turn_input_empty, 400, "input requires a text instruction");
+  if (Buffer.byteLength(raw.input, "utf8") > MAX_INPUT_BYTES) throw new OrgApiError(errorCodes.turn_input_too_large, 400, "text input exceeds 256 KiB in UTF-8");
   if (typeof raw.engine !== "string" || !turnEngines.includes(raw.engine as TurnEngine)) {
     throw new OrgApiError(
       errorCodes.turn_engine_unsupported,
@@ -232,6 +237,7 @@ export async function executeTurn(
   supplementalContext?: readonly SupplementalContext[],
   expectedWorkspace?: OpenWorkspace,
   approvalExecution?: { turnId: string; reservation: RunningTurnReservation; beforeRun: () => Promise<void> },
+  options?: { relay: RelayExecutionContext },
 ): Promise<TurnRecord> {
   const workspace = expectedWorkspace ?? ctx.workspace.requireOpen();
   assertTurnWorkspace(ctx, workspace);
@@ -273,6 +279,23 @@ export async function executeTurn(
       if (body.input !== original.input) {
         throw new OrgApiError(errorCodes.turn_request_invalid, 400, "edited input must be submitted as a new task without retryOf");
       }
+      const originalIds = original.attachments?.map(a => a.id);
+      if (body.attachmentIds && JSON.stringify(body.attachmentIds) !== JSON.stringify(originalIds)) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "edited attachments must be submitted as a new task without retryOf");
+      }
+      if (originalIds?.length) body = { ...body, attachmentIds: originalIds };
+      if (original.taskBriefing) {
+        const p = original.taskBriefing.payload;
+        if ((body.goalId !== undefined && body.goalId !== p.goalId) ||
+            (body.branchId !== undefined && body.branchId !== p.taskId) ||
+            (body.taskBriefing !== undefined && (body.taskBriefing.expectedUpdatedAt !== p.planUpdatedAt ||
+              path.resolve(body.taskBriefing.expectedWorkspacePath) !== path.resolve(workspace.dir)))) {
+          throw new OrgApiError(errorCodes.turn_request_invalid, 400, "retry must retain its original project task and plan revision");
+        }
+        body = { ...body, ...taskBriefingBinding(original, workspace.dir) };
+      } else if (body.taskBriefing) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "adding a project briefing requires a fresh task without retryOf");
+      }
     }
     // The renderer's engine value is only a first-use fallback for legacy
     // positions. Once a sidecar exists it is authoritative, including for
@@ -305,6 +328,51 @@ export async function executeTurn(
       turnId, positionId: body.positionId, engine: body.engine,
       ...(session !== undefined ? { sessionId: session.sessionId, conversationRef: session.sessionId } : {}),
     }) };
+    const relay = options?.relay;
+    let boundGoal: Goal | undefined;
+    if (body.goalId && body.branchId && !body.taskBriefing) {
+      try { boundGoal = await ctx.goalStore.get(workspace.dir, body.goalId); }
+      catch (error) { if (!(error instanceof OrgApiError) || error.code !== errorCodes.goal_missing) throw error; }
+      assertTurnWorkspace(ctx, workspace);
+      const task = boundGoal?.workItems?.find(item => item.taskId === body.branchId);
+      if (task && ((task.participants?.length ?? 0) > 0 || (task.dependsOn?.length ?? 0) > 0)) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "collaboration tasks require an explicit project briefing; launch from the current project plan");
+      }
+    }
+    let taskBriefing: TaskBriefingSnapshot | undefined;
+    if (body.taskBriefing) {
+      if (!session || group || !body.goalId || !body.branchId) {
+        throw new OrgApiError(errorCodes.turn_request_invalid, 400, "project briefing requires a goal-bound personal session task");
+      }
+      if (path.resolve(body.taskBriefing.expectedWorkspacePath) !== path.resolve(workspace.dir)) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "workspace changed; reload before starting the task");
+      }
+      const goal = await ctx.goalStore.get(workspace.dir, body.goalId);
+      assertTurnWorkspace(ctx, workspace);
+      if (goal.updatedAt !== body.taskBriefing.expectedUpdatedAt) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "project plan changed; reload and start a fresh task");
+      }
+      const task = goal.workItems?.find(item => item.taskId === body.branchId);
+      if (!task) throw new OrgApiError(errorCodes.goal_conflict, 409, "project task no longer exists; reload before starting");
+      if (task.participants?.some(p => !workspace.organization.roles.some(role => role.id === p.positionId))) {
+        throw new OrgApiError(errorCodes.goal_conflict, 409, "a task collaborator is no longer available; update the project assignment");
+      }
+      // A dependency references only task-bound public deliveries in this goal.
+      // No personal history or arbitrary resource grant is copied to a peer.
+      const turns = task.dependsOn?.length ? await ctx.turnStore.reportRecords(workspace.dir) : [];
+      assertTurnWorkspace(ctx, workspace);
+      const collaboration = projectTaskCollaboration(goal, task, {
+        deliveries: projectTaskDeliveries(goal, turns).taskDeliveries,
+        executions: projectTaskExecutions(goal, turns, turn => ctx.runningTurns.isRunning(workspace.dir, turn.positionId, turn.turnId)),
+        tasksWithTurns: new Set(turns.filter(turn => turn.goalId === goal.goalId).map(turn => turn.branchId).filter((id): id is string => !!id)),
+        historyAvailable: true,
+      }, createdAt);
+      taskBriefing = createTaskBriefing(goal, task, { turnId, sessionId: session.sessionId, positionId: body.positionId, generatedAt: createdAt }, collaboration);
+    }
+    if (relay && (!group || relay.message.conversationRef !== group.groupRef || relay.message.messageId !== group.messageId)) {
+      throw new OrgApiError(errorCodes.turn_request_invalid, 400, "relay does not belong to this group dispatch");
+    }
+    const relaySourceIds = new Set(relay?.sources.map(source => source.turnId));
     let history: ThreadContextSource[] = [];
     let omittedTurnCount = 0;
     let historyTruncated = false;
@@ -329,7 +397,7 @@ export async function executeTurn(
           seen.add(spawn.turnId);
           try {
             const source = await ctx.turnStore.readPositionTurn(workspace.dir, spawn.positionId, spawn.turnId, createdAt);
-            if (source === null || !belongs(source) || source.status !== "completed") continue;
+            if (source === null || !belongs(source) || source.status !== "completed" || relaySourceIds.has(source.turnId)) continue;
             const candidates = memberSources.get(spawn.positionId) ?? [];
             candidates.push(source);
             candidates.sort(compare);
@@ -352,7 +420,7 @@ export async function executeTurn(
         if (!conversation.members.includes(member)) continue;
         try {
           const legacy = await ctx.turnStore.history(workspace.dir, member, createdAt);
-          const compact = compactThreadContextHistory(legacy.turns.filter((turn) => belongs(turn) && !seen.has(turn.turnId)));
+          const compact = compactThreadContextHistory(legacy.turns.filter((turn) => belongs(turn) && !seen.has(turn.turnId) && !relaySourceIds.has(turn.turnId)));
           history.push(...compact.turns);
           omittedTurnCount += compact.omittedTurnCount;
           historyTruncated ||= compact.truncated;
@@ -367,7 +435,8 @@ export async function executeTurn(
     }
     // Additive #306: resolve attachment manifests and build engine context.
     let resolvedAttachments: TurnAttachment[] | undefined;
-    let augmentedInput = body.input;
+    let imagePaths: string[] | undefined;
+    let augmentedInput = withResponsePresentation(body.input);
     if (body.attachmentIds !== undefined) {
       if (session === undefined) {
         throw new OrgApiError(
@@ -381,16 +450,28 @@ export async function executeTurn(
         throw new OrgApiError(errorCodes.attachment_missing, 400, "one or more attachment ids were not found in this session");
       }
       assertAttachmentBatch(resolvedAttachments);
-      augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, body.input);
+      const images = resolvedAttachments.filter(a => a.mimeType.startsWith("image/"));
+      if (images.length) {
+        if (body.engine !== "codex" && body.engine !== "codex-local") {
+          throw new OrgApiError(errorCodes.attachment_images_unsupported, 400, "selected engine does not support direct image inputs");
+        }
+        imagePaths = images.map(a => attachmentFilePath(workspace.dir, session.sessionId, a.id));
+      }
+      augmentedInput = buildAttachmentContext(resolvedAttachments, workspace.dir, session.sessionId, augmentedInput);
     }
+    const vaultContext = await assembleVaultContext(workspace, body.positionId, augmentedInput, body.input);
+    augmentedInput = vaultContext.input;
     const context = materializeThreadContext({
       input: augmentedInput,
       enabled: group !== undefined || (session !== undefined && session.threadContextEnabled !== false),
       turns: history,
       omittedTurnCount,
-      truncated: historyTruncated,
-      redacted: historyRedacted,
+      truncated: historyTruncated || !!taskBriefing?.payload.collaboration?.dependencies.some(d => d.delivery?.truncated) || !!taskBriefing?.payload.collaboration?.omittedDependentCount,
+      redacted: historyRedacted || (taskBriefing?.payload.redacted ?? false),
+      ...(taskBriefing ? { requiredContext: renderTaskBriefing(taskBriefing),
+        requiredSourceIds: taskBriefing.payload.collaboration?.dependencies.flatMap(d => d.delivery ? [d.delivery.turnId] : []) } : {}),
       ...(supplementalContext !== undefined ? { supplementalContext } : {}),
+      ...(relay ? { relay: { ...relay, turnId, positionId: body.positionId, generatedAt: createdAt } } : {}),
     });
     tracker.reportStepFinish(turnId, 0);
     tracker.reportStepStart(turnId, 1);
@@ -417,6 +498,8 @@ export async function executeTurn(
       message: body.input,
       envelopeDigest: envelope.envelopeDigest,
       ...(session !== undefined || group !== undefined || supplementalContext !== undefined ? { threadContext: context.metadata } : {}),
+      ...(context.relayHandoff ? { relayHandoff: context.relayHandoff } : {}),
+      ...(taskBriefing ? { taskBriefing } : {}),
       now: createdAt,
       // Additive #52: group spawns persist through the position store tagged
       // with the local conversationRef (session arg stays undefined). Kept as a
@@ -430,6 +513,7 @@ export async function executeTurn(
     const running = session === undefined
       ? await ctx.turnStore.begin(beginInput)
       : await ctx.turnStore.beginSession({ ...beginInput, sessionId: session.sessionId });
+    await recordVaultUsage(workspace, body.positionId, turnId, vaultContext.notes).catch(() => {});
     tracker.reportStepFinish(turnId, 1);
     tracker.reportStepStart(turnId, 2);
 
@@ -446,6 +530,7 @@ export async function executeTurn(
       await approvalExecution?.beforeRun();
       assertTurnWorkspace(ctx, workspace);
       result = await ctx.turnDriver.turnRun({
+        ...(imagePaths?.length ? { imagePaths } : {}),
         ...(model === undefined ? {} : { model }),
         workspace: workspace.dir,
         positionId: body.positionId,

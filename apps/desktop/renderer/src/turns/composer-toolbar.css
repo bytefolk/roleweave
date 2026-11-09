@@ -1,0 +1,169 @@
+/* One writing surface: controls share the footer, with full labels on hover.
+ * The compact modifier outranks the older global surface-button positioning. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact {
+  border-top: 0;
+}
+
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__surface {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+  border: 1px solid color-mix(in srgb, var(--ui-border) 76%, var(--ui-surface));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ui-surface) 35%, var(--ui-surface-inset));
+  transition: border-color var(--ui-duration-fast), box-shadow var(--ui-duration-fast);
+}
+
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__hint { width: 100%; max-width: 760px; margin-inline: auto; }
+
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__surface:focus-within {
+  border-color: var(--ui-border-strong);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus) 8%, transparent);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact textarea,
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__surface textarea {
+  min-height: 64px;
+  padding: 14px 14px 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  resize: none;
+  line-height: 1.55;
+}
+
+/* The whole writing surface owns the focus ring, including its toolbar. */
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__surface textarea:is(:focus, :focus-visible),
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__surface textarea:is(:focus, :focus-visible) {
+  outline: none !important;
+  outline-offset: 0;
+  box-shadow: none;
+}
+
+.owb-turn-composer__toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 0 8px 8px;
+}
+
+.owb-turn-composer__options { flex: 1 1 240px; min-width: 0; }
+.owb-turn-composer__actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.owb-turn-composer__action-trigger { display: inline-flex; flex: none; border-radius: 8px; }
+.owb-turn-composer__action-trigger:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn,
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn {
+  position: static;
+  inset: auto;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  box-shadow: none;
+  transition: background var(--ui-duration-fast), color var(--ui-duration-fast), border-color var(--ui-duration-fast);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-text,
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-text {
+  background: transparent;
+  color: var(--ui-foreground-muted);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-text:not(:disabled):hover,
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-text:not(:disabled):hover {
+  background: color-mix(in srgb, var(--ui-foreground) 6%, transparent);
+  color: var(--ui-foreground);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-text:not(:disabled):is(:active, [aria-expanded="true"]),
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-text:not(:disabled):is(:active, [aria-expanded="true"]) {
+  background: color-mix(in srgb, var(--ui-foreground) 10%, transparent);
+  color: var(--ui-foreground);
+}
+
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn:focus-visible {
+  outline: 2px solid var(--ui-focus);
+  outline-offset: 2px;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn:disabled,
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ui-foreground-subtle);
+  opacity: 0.55;
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-primary:not(:disabled),
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-primary:not(:disabled) {
+  border: 0;
+  border-radius: 50%;
+  background: var(--ui-foreground);
+  color: var(--ui-surface);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-primary:not(:disabled):hover,
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--ui-foreground) 85%, var(--ui-surface));
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-primary:disabled,
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-primary:disabled {
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ui-foreground) 10%, transparent);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-dangerous:not(:disabled),
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-dangerous:not(:disabled) {
+  border-color: transparent;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ui-foreground) 8%, transparent);
+  color: var(--ui-foreground);
+}
+
+:is([data-theme="light"], [data-theme="dark"]) .owb-app .owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-dangerous:not(:disabled):hover,
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .ant-btn-dangerous:not(:disabled):hover {
+  background: var(--ui-danger-soft);
+  color: var(--ui-danger-strong);
+}
+
+.owb-turn-composer.owb-turn-composer--compact .owb-conversation-options.owb-model-connection {
+  min-height: 32px;
+  overflow: visible;
+  gap: 2px 4px;
+}
+
+.owb-turn-composer.owb-turn-composer--compact .owb-conversation-options .owb-model-picker {
+  flex: 0 1 auto;
+  width: 132px;
+  min-width: 100px;
+  max-width: 156px;
+}
+
+.owb-turn-composer.owb-turn-composer--compact .owb-turn-composer__toolbar .owb-model-picker__state .ant-btn-link {
+  width: auto;
+  padding-inline: 0;
+}
+
+.owb-budget-advice-popover .owb-budget-advice {
+  max-width: 320px;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.owb-budget-advice-popover :is(.owb-budget-advice__facts, .owb-budget-advice__quota, .owb-budget-advice__suggestion) {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+}
+
+.owb-budget-advice-popover .owb-budget-advice__quota { color: var(--ui-foreground); font-variant-numeric: tabular-nums; }
+.owb-budget-advice-popover .owb-budget-advice__suggestion { border-top: 1px solid var(--ui-border); padding-top: 12px; }
+.owb-budget-advice-popover .owb-budget-advice__suggestion .ant-tag { justify-self: start; margin: 0; }
+.owb-budget-advice-popover .owb-budget-advice__actions:empty { display: none; }

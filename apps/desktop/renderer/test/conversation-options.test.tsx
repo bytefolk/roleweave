@@ -1,4 +1,4 @@
-import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ConversationOptions } from "../src/turns/ConversationOptions";
 import { adaptTurnRecord } from "../src/turns/adapter";
@@ -11,6 +11,21 @@ it("sums separately reported input/output usage and does not turn missing usage 
   expect(adaptTurnRecord({ ...record, events: [] }, "Employee").totalTokens).toBeUndefined();
 });
 
+it("keeps unreported Office usage unknown and explains that recorded budgets are not native hard caps", async () => {
+  const record = { turnId: "office-turn", positionId: "p", engine: "qwen-office-local", input: "Review a document", output: "Done", status: "completed",
+    createdAt: "2026-10-12T00:00:00Z", updatedAt: "2026-10-12T00:00:01Z", events: [] } as unknown as ApiTurnRecord;
+  const turn = adaptTurnRecord(record, "Office employee");
+  expect(turn.totalTokens).toBeUndefined();
+  render(<ConversationOptions engine="qwen-office-local" saving={false} disabled={false} session={null} turns={[turn]}
+    config={{ selected: "provider-default", recommended: "provider-default", editable: false, source: "default",
+      options: [{ id: "provider-default", name: "Current Qwen Office model", tier: "default" }] }} />);
+  fireEvent.click(screen.getByRole("button", { name: "Token 用量" }));
+  const details = await screen.findByRole("region", { name: "Token 用量" });
+  expect(within(details).getByText("用量待回报")).toBeInTheDocument();
+  expect(within(details).getByText(/这里的预算是 RoleWeave 记录/)).toBeInTheDocument();
+  expect(details.querySelector(".owb-context-details__usage")).not.toHaveTextContent("0 tokens");
+});
+
 it("switches the employee model from the composer and exposes context and honest usage details", async () => {
   const change = vi.fn();
   render(<ConversationOptions saving={false} disabled={false} session={null} turns={[]} onModel={change}
@@ -19,7 +34,12 @@ it("switches the employee model from the composer and exposes context and honest
     ] }} />);
   pickSelectOption("员工模型", "Performance");
   expect(change).toHaveBeenCalledExactlyOnceWith("performance");
-  expect(screen.getByText("用量待回报")).toBeInTheDocument();
+  const usage = screen.getByRole("button", { name: "Token 用量" });
+  expect(usage.textContent).toBe("");
+  expect(usage).not.toHaveAttribute("title");
+  fireEvent.focus(usage);
+  expect(await screen.findByText("Token 用量 · 用量待回报")).toHaveAttribute("role", "tooltip");
+  fireEvent.blur(usage);
   fireEvent.click(screen.getByRole("button", { name: "上下文详情" }));
   expect(await screen.findByText(/最多 12 轮、64 KB/)).toBeInTheDocument();
   expect(screen.getByRole("switch", { name: "携带会话历史" })).toBeDisabled();
@@ -175,12 +195,14 @@ it.each(["stale", "unavailable"] as const)("keeps fallback model selection avail
   const select = screen.getByRole("combobox", { name: "员工模型" });
   expect(select).toBeEnabled();
   fireEvent.mouseDown(select);
-  expect(await screen.findByRole("status")).toHaveTextContent(catalogStatus === "stale" ? "显示上次的模型列表" : "暂未取得 Qoder 模型列表");
+  expect(await screen.findByRole("status")).toHaveTextContent(catalogStatus === "stale" ? "显示上次的模型列表" : "暂未取得模型列表");
   fireEvent.click(screen.getByRole("button", { name: "刷新模型列表" }));
   expect(reload).toHaveBeenCalledTimes(1);
   rerender(<ConversationOptions {...base} loading />);
   expect(select).toBeDisabled();
-  expect(screen.getAllByText("正在加载模型…").length).toBeGreaterThan(0);
+  expect(select.closest(".ant-select")).not.toHaveAttribute("title");
+  fireEvent.mouseEnter(select.closest(".ant-select")!);
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("正在加载模型…");
 });
 
 it("uses the Agent default outside local configuration and leaves session context alone when switching", async () => {
@@ -243,7 +265,7 @@ it("submits only a valid Qoder custom model identifier and never asks for a key"
   expect(screen.queryByText("官方连接")).not.toBeInTheDocument();
   fireEvent.click(await screen.findByRole("button", { name: "使用已配置模型…" }));
   const input = await screen.findByLabelText("模型标识");
-  expect(screen.getByText("填写 Qoder 中已配置的模型标识，不是 API Key。")).toBeInTheDocument();
+  expect(screen.getByText("填写当前 Agent 或服务商支持的完整模型标识。")).toBeInTheDocument();
   // The entry lives in a Select popup. Its trigger keeps that popup open, but
   // must not prevent the portal-hosted input from receiving a real pointer
   // interaction (which would otherwise make it impossible to edit).
@@ -298,7 +320,92 @@ it("#305 restarts the conversation from the composer bar only for the active ses
   expect(rotate).toHaveBeenCalledTimes(1);
 });
 
-it.each(["saving", "running", "read-only", "loading", "error"])("closes an already open custom model editor and rejects submission after %s", async state => {
+const activeSession: WorkbenchSession = {
+  schemaVersion: "workbench-session.v1", sessionId: "33333333-3333-4333-8333-333333333333",
+  workspaceInstanceId: "workspace-1", positionId: "repo-owner", principal: "position.repo-owner",
+  status: "active", rotatedFrom: null, rotatedTo: null, createdAt: "2026-09-13T00:00:00Z", rotatedAt: null,
+};
+
+it.each(["running", "busy", "history"])("explains why restart is unavailable and rejects an open confirmation after %s", async state => {
+  const rotate = vi.fn();
+  const base = { saving: false, disabled: false, session: activeSession, turns: [], onRotate: rotate };
+  const { rerender } = render(<ConversationOptions {...base} />);
+  fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+  const confirm = await screen.findByRole("button", { name: /开\s*始$/ });
+  rerender(<ConversationOptions {...base} running={state === "running"} disabled={state === "busy"}
+    session={{ ...activeSession, status: state === "history" ? "rotated" : "active" }} />);
+  fireEvent.click(confirm);
+  await waitFor(() => expect(screen.queryByRole("button", { name: /开\s*始$/ })).not.toBeInTheDocument());
+  const restart = screen.getByRole("button", { name: "新对话" });
+  expect(restart).toBeDisabled();
+  fireEvent.click(restart.parentElement!);
+  expect(screen.queryByRole("button", { name: /开\s*始$/ })).not.toBeInTheDocument();
+  fireEvent.focus(restart.parentElement!);
+  const reason = state === "running" ? "完成或停止当前任务后，可开始新对话。"
+    : state === "history" ? "返回当前会话后，可开始新对话。" : "会话正在更新，请稍后再试。";
+  expect(await screen.findByRole("tooltip")).toHaveTextContent(reason);
+  expect(rotate).not.toHaveBeenCalled();
+});
+
+it("closes restart confirmation when its session changes and awaits a confirmed restart", async () => {
+  let finish!: () => void;
+  const rotate = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+  const base = { saving: false, disabled: false, session: activeSession, turns: [], onRotate: rotate };
+  const { rerender } = render(<ConversationOptions {...base} />);
+  fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+  const oldConfirm = await screen.findByRole("button", { name: /开\s*始$/ });
+  const nextSession = { ...activeSession, sessionId: "44444444-4444-4444-8444-444444444444" };
+  rerender(<ConversationOptions {...base} session={nextSession} />);
+  fireEvent.click(oldConfirm);
+  expect(rotate).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.queryByRole("button", { name: /开\s*始$/ })).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+  const confirm = await screen.findByRole("button", { name: /开\s*始$/ });
+  fireEvent.click(confirm);
+  expect(rotate).toHaveBeenCalledExactlyOnceWith(nextSession.sessionId);
+  expect(confirm).toHaveClass("ant-btn-loading");
+  fireEvent.click(confirm);
+  expect(rotate).toHaveBeenCalledTimes(1);
+  await act(async () => finish());
+  await waitFor(() => expect(screen.queryByRole("button", { name: /开\s*始$/ })).not.toBeInTheDocument());
+});
+
+it("keeps one tool panel open, reports context protection and closes it with Escape", async () => {
+  const context = vi.fn();
+  render(<ConversationOptions saving={false} disabled={false} running session={activeSession} turns={[]} onContext={context} />);
+  const contextButton = screen.getByRole("button", { name: "上下文详情" });
+  fireEvent.click(contextButton);
+  const panel = await screen.findByRole("region", { name: "上下文详情" });
+  await waitFor(() => expect(panel).toHaveFocus());
+  expect(contextButton).toHaveAttribute("aria-expanded", "true");
+  expect(within(panel).getByRole("switch", { name: "携带会话历史" })).toBeDisabled();
+  expect(within(panel).getByText("完成或停止当前任务后，可更改会话历史设置。")).toBeInTheDocument();
+  expect(context).not.toHaveBeenCalled();
+  const usageButton = screen.getByRole("button", { name: "Token 用量" });
+  fireEvent.click(usageButton);
+  const usage = await screen.findByRole("region", { name: "Token 用量" });
+  expect(usageButton).toHaveAttribute("aria-expanded", "true");
+  expect(contextButton).toHaveAttribute("aria-expanded", "false");
+  expect(within(usage).getByText("用量待回报")).toBeInTheDocument();
+  fireEvent.keyDown(usage, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Token 用量" })).not.toBeInTheDocument());
+  expect(usageButton).toHaveAttribute("aria-expanded", "false");
+  expect(usageButton).toHaveFocus();
+});
+
+it("makes the pending model guard explanation keyboard accessible", async () => {
+  render(<ConversationOptions saving={false} disabled session={activeSession} turns={[]} onModel={vi.fn()}
+    config={{ selected: "efficient", recommended: "efficient", editable: true, source: "provider-tiers",
+      options: [{ id: "efficient", name: "Efficient", tier: "economy" }] }} />);
+  const select = screen.getByRole("combobox", { name: "员工模型" });
+  expect(select).toBeDisabled();
+  const trigger = select.closest(".owb-model-picker__trigger")!;
+  expect(trigger).toHaveAttribute("tabindex", "0");
+  fireEvent.focus(trigger);
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("正在准备发送，稍后可选择下次发送的模型。");
+});
+
+it.each(["saving", "disabled", "read-only", "loading", "error"])("closes an already open custom model editor and rejects submission after %s", async state => {
   const change = vi.fn();
   const config: EmployeeModelConfig = {
     selected: "auto", recommended: "auto", editable: true, allowCustomModel: true, source: "local-config",
@@ -313,8 +420,8 @@ it.each(["saving", "running", "read-only", "loading", "error"])("closes an alrea
   const form = input.closest("form")!;
   const submit = screen.getByRole("button", { name: "使用此模型" });
 
-  rerender(<ConversationOptions {...base} saving={state === "saving"} running={state === "running"}
-    disabled={state === "running"} loading={state === "loading"} error={state === "error" ? "加载模型失败" : undefined}
+  rerender(<ConversationOptions {...base} saving={state === "saving"}
+    disabled={state === "disabled"} loading={state === "loading"} error={state === "error" ? "加载模型失败" : undefined}
     config={{ ...config, editable: state !== "read-only" }} />);
   expect(screen.getByRole("combobox", { name: "员工模型" })).toBeDisabled();
   // A portal can outlive its disabled Select during the close animation.

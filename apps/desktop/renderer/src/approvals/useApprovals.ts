@@ -17,7 +17,7 @@ export function useApprovals(workspacePath: string | undefined) {
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const owner = useRef<object>({});
   const refreshRef = useRef<() => Promise<ApprovalView[]>>(async () => cache.current.items);
-  const cache = useRef<{ items: ApprovalView[]; token?: string }>({ items: [] });
+  const cache = useRef<{ items: ApprovalView[]; token?: string; verified?: boolean }>({ items: [] });
   const pending = useRef(new Map<string, ApprovalDecisionRequest>());
   const inFlight = useRef(new Set<string>());
   const batchPending = useRef(new Map<string, ApprovalBatchDecisionRequest>());
@@ -56,12 +56,12 @@ export function useApprovals(workspacePath: string | undefined) {
               token = page.workspaceToken; all.push(...page.items); cursor = page.nextCursor ?? undefined;
             } while (cursor);
             if (restart) { again = true; continue; }
-            cache.current = { items: all, token }; setItems(all); setReady(true); setError(undefined);
+            cache.current = { items: all, token, verified: true }; setItems(all); setReady(true); setError(undefined);
             lastRefreshTime = Date.now();
           } while (again && current());
           return cache.current.items;
         } catch (e) {
-          if (current()) setError(e instanceof Error ? e.message : t("apr.loadFailed"));
+          if (current()) { cache.current.verified = false; setError(e instanceof Error ? e.message : t("apr.loadFailed")); }
           return cache.current.items;
         } finally {
           inFlightRefresh = null;
@@ -105,6 +105,10 @@ export function useApprovals(workspacePath: string | undefined) {
 
   const decide = useCallback(async (id: string, decision: "granted" | "denied", reason?: string, scope: "once" | "run" = "once") => {
     const generation = owner.current;
+    if (!cache.current.verified || pending.current.has(id)) {
+      await refreshRef.current();
+      if (owner.current !== generation || !cache.current.verified) return;
+    }
     const item = cache.current.items.find(a => a.id === id);
     if (!item || !cache.current.token || !item.canDecide || inFlight.current.has(id)) return;
     const prior = pending.current.get(id);
@@ -133,6 +137,7 @@ export function useApprovals(workspacePath: string | undefined) {
   }, [t]);
   const decideBatch = useCallback(async (ids: string[], reason?: string) => {
     const generation = owner.current;
+    if (!cache.current.verified) { await refreshRef.current(); if (owner.current !== generation || !cache.current.verified) return; }
     const unique = [...new Set(ids)].sort();
     const selected = unique.map(id => cache.current.items.find(item => item.id === id));
     if (unique.length < 2 || selected.some(item => !item || !item.canDecide) || !cache.current.token || unique.some(id => inFlight.current.has(id))) return;
@@ -171,6 +176,7 @@ export function useApprovals(workspacePath: string | undefined) {
   }, [t]);
   const denyBatch = useCallback(async (ids: string[], reason?: string): Promise<{ succeeded: string[]; failed: string[] }> => {
     const generation = owner.current;
+    if (!cache.current.verified) { await refreshRef.current(); if (owner.current !== generation || !cache.current.verified) return { succeeded: [], failed: ids }; }
     const unique = [...new Set(ids)];
     const candidates = unique.map(id => cache.current.items.find(item => item.id === id)).filter(Boolean) as ApprovalView[];
     if (candidates.length === 0 || !cache.current.token) return { succeeded: [], failed: unique };

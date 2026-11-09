@@ -395,24 +395,69 @@ test("the organization overview owns a bounded canvas (#284)", () => {
 
   for (const viewport of [VIEWPORTS.stackedAt980, VIEWPORTS.stackedNarrow]) {
     assert.equal(
-      valueAt(rules, ".owb-main > .owb-org-chart--overview", "width", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "width", viewport),
       "100%",
       `${viewport.width}px: the overview must fit the content area rather than the tree max-content width`,
     );
     assert.equal(
-      valueAt(rules, ".owb-main > .owb-org-chart--overview", "min-width", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "min-width", viewport),
       "0",
       `${viewport.width}px: the flex chart item must give up its automatic min-content width`,
     );
     assert.equal(
-      valueAt(rules, ".owb-main > .owb-org-chart--overview", "min-height", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "min-height", viewport),
       "0",
       `${viewport.width}px: the overview must shrink inside a short window`,
     );
     assert.equal(
-      valueAt(rules, ".owb-org-chart--overview .owb-org-chart__body", "min-height", viewport),
+      valueAt(rules, ".owb-main > .owb-rgraph", "overflow-y", viewport),
+      "hidden",
+      `${viewport.width}px: the overview must stay bounded while its result, canvas and evidence panes scroll independently`,
+    );
+    assert.ok(
+      flexGrows(valueAt(rules, ".owb-main > .owb-rgraph > .owb-rgraph__workspace", "flex", viewport)),
+      `${viewport.width}px: the graph workspace must fill the height left below its header rather than create a second page`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-main > .owb-rgraph > .owb-rgraph__workspace", "min-height", viewport),
       "0",
-      `${viewport.width}px: the canvas must fit its bounded overview frame`,
+      `${viewport.width}px: the graph workspace must shrink before its nested scroll surfaces take over`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-rgraph__workspace", "overflow", viewport),
+      "hidden",
+      `${viewport.width}px: the workspace must contain its panes inside the available main area`,
+    );
+    for (const selector of [".owb-rgraph__filters", ".owb-rgraph__main", ".owb-rgraph__list"]) {
+      assert.equal(
+        valueAt(rules, selector, "min-height", viewport),
+        "0",
+        `${viewport.width}px: ${selector} must shrink inside the bounded workspace`,
+      );
+      assert.equal(
+        valueAt(rules, selector, "overflow", viewport),
+        "auto",
+        `${viewport.width}px: ${selector} must keep overflowing results, filters and canvas content reachable`,
+      );
+    }
+    assert.ok(
+      flexGrows(valueAt(rules, ".owb-rgraph__results", "flex", viewport)),
+      `${viewport.width}px: results must receive the sidebar height left below search`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-rgraph__inspector", "min-height", viewport),
+      "0",
+      `${viewport.width}px: evidence must fit its column or overlay rather than grow the workspace`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-rgraph__inspector", "overflow-y", viewport),
+      "auto",
+      `${viewport.width}px: all evidence remains reachable without scrolling the canvas or result list`,
+    );
+    assert.equal(
+      valueAt(rules, ".owb-rgraph__inspector > header", "position", viewport),
+      "sticky",
+      `${viewport.width}px: the evidence close action must stay reachable while reading a long record`,
     );
   }
 });

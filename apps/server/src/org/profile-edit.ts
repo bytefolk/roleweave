@@ -323,6 +323,7 @@ export async function applyPositionProfile(
         ? (employee.policy as Record<string, unknown>)
         : {};
       policy.mode = nextMode;
+      if (patch.permissions !== undefined) policy.network = nextPermissions.network ?? "deny";
       policy.filesystem = {
         read: ["./knowledge/**", ...derived.readableResources].filter((resource, index, all) => all.indexOf(resource) === index),
         write: derived.writableResources.filter((resource, index, all) => all.indexOf(resource) === index),

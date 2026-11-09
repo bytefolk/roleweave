@@ -25,6 +25,8 @@ export function validatePermissions(value: unknown, invalid: PermissionErrorFact
     throw invalid("permissions must be an object");
   }
   const raw = value as Record<string, unknown>;
+  if (raw.nativeExecution !== undefined && typeof raw.nativeExecution !== "boolean") throw invalid("permissions.nativeExecution must be a boolean");
+  if (raw.network !== undefined && raw.network !== "deny" && raw.network !== "host_policy") throw invalid("permissions.network is invalid");
   if (!Array.isArray(raw.tools) || raw.tools.length > 32 || !raw.tools.every((tool) => typeof tool === "string" && tool.length > 0 && tool.length <= 64)) {
     throw invalid("permissions.tools must be a bounded string array");
   }
@@ -79,5 +81,5 @@ export function validatePermissions(value: unknown, invalid: PermissionErrorFact
       return { id: definition.id as HireMcpGrant["id"], tools };
     });
   })();
-  return { tools: [...(raw.tools as string[])], rules, skills, mcpServers };
+  return { tools: [...(raw.tools as string[])], rules, skills, mcpServers, ...(raw.nativeExecution !== undefined ? { nativeExecution: raw.nativeExecution as boolean } : {}), ...(raw.network !== undefined ? { network: raw.network as HirePermissions["network"] } : {}) };
 }

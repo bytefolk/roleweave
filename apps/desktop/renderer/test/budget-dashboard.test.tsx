@@ -60,6 +60,18 @@ function firstDataRow(container: HTMLElement): HTMLElement {
 }
 
 describe("BudgetDashboard — 摘要/表格/超限/详情", () => {
+  it("preserves above-scale usage and distinguishes unobserved values in compact reports", () => {
+    const exceeded = { ...budgets[1]!, latestTurn: { inputTokens: 300000, outputTokens: 50000, totalTokens: 350000 } };
+    render(<BudgetDashboard compact budgets={[budgets[0]!, exceeded]} positionNames={{ "writer-1": "Writer", intern: "Intern" }} />);
+    const meter = screen.getByRole("meter", { name: "单任务消耗" });
+    expect(meter).toHaveAttribute("aria-valuenow", "175");
+    expect(meter).toHaveAttribute("aria-valuetext", "175%");
+    expect(screen.getByRole("button", { name: /Writer/ })).toHaveTextContent("481,220");
+    const unobserved = screen.getByRole("button", { name: /Intern/ });
+    expect(within(unobserved).queryByRole("meter")).toBeNull();
+    expect(unobserved).toHaveTextContent("— / 80,000 Token");
+    expect(unobserved).not.toHaveTextContent("0%");
+  });
   it("加载态渲染骨架而不是数据表", () => {
     render(<BudgetDashboard budgets={[]} loading />);
     expect(screen.getByLabelText("预算成本看板")).toBeInTheDocument();

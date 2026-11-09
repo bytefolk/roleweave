@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { TaskProgressEvent, TaskProgressSnapshot } from "@roleweave/shared";
 import { ProgressBoard } from "../src/progress/ProgressBoard";
@@ -45,12 +45,57 @@ function renderBoard() {
 }
 
 describe("ProgressBoard", () => {
+  it("sorts latest first and follows up only failed/stuck snapshots", async () => {
+    const items = [snapshot, { ...snapshot, taskId: "failed", taskTitle: "Failed run", overallStatus: "failed" as const, updatedAt: snapshot.updatedAt + 10 }, { ...snapshot, taskId: "success", taskTitle: "Successful run", overallStatus: "success" as const }];
+    installBridge({ turnProgress: vi.fn().mockResolvedValue({ status: 200, body: { snapshots: items } }) });
+    renderBoard();
+    const timeline = within(await screen.findByRole("region", { name: "执行时间线" }));
+    expect(timeline.getAllByRole("button")[0]).toHaveTextContent("Failed run");
+    const followUp = within(screen.getByRole("complementary", { name: "待跟进" }));
+    expect(followUp.getAllByRole("button")).toHaveLength(1);
+    fireEvent.click(followUp.getByRole("button", { name: /Failed run/ }));
+    await screen.findByText("Assemble thread context");
+  });
+
+  it("distinguishes failed reads from empty data and retries", async () => {
+    const turnProgress = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue({ status: 200, body: { snapshots: [] } });
+    installBridge({ turnProgress });
+    renderBoard();
+    await screen.findByRole("alert");
+    expect(screen.queryByText("还没有进行中或刚结束的回合。")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /刷新/ }));
+    await screen.findByText("还没有进行中或刚结束的回合。");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("preserves the last snapshot and selection after a failed refresh", async () => {
+    const turnProgress = vi.fn().mockResolvedValueOnce({ status: 200, body: { snapshots: [snapshot] } }).mockResolvedValue({ status: 503, body: {} });
+    installBridge({ turnProgress });
+    renderBoard();
+    fireEvent.click(await screen.findByRole("button", { name: /summarize open issues/ }));
+    fireEvent.click(screen.getByRole("button", { name: /刷新/ }));
+    await screen.findByText("显示上次成功读取的快照。");
+    expect(screen.getByText("Assemble thread context")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "执行时间线" })).getByText("summarize open issues")).toBeInTheDocument();
+  });
+
+  it("discards a late snapshot when the workspace changes", async () => {
+    let resolve!: (value: unknown) => void;
+    const oldRead = new Promise((done) => { resolve = done; });
+    installBridge({ turnProgress: vi.fn().mockReturnValueOnce(oldRead).mockResolvedValue({ status: 200, body: { snapshots: [] } }) });
+    const view = render(<ProgressBoard key="old-workspace" workspaceOpen />);
+    view.rerender(<ProgressBoard key="new-workspace" workspaceOpen />);
+    await screen.findByText("还没有进行中或刚结束的回合。");
+    await act(async () => resolve({ status: 200, body: { snapshots: [snapshot] } }));
+    expect(screen.queryByText("summarize open issues")).not.toBeInTheDocument();
+  });
+
   it("renders a live row and opens the step timeline", async () => {
     installBridge();
     renderBoard();
     await screen.findByText("summarize open issues");
     expect(screen.getByText("Repo Owner")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /summarize open issues/ }));
+    fireEvent.click(within(screen.getByRole("region", { name: "执行时间线" })).getByRole("button", { name: /summarize open issues/ }));
     await waitFor(() => expect(screen.getByText("Assemble thread context")).toBeInTheDocument());
   });
 
@@ -113,7 +158,7 @@ describe("ProgressBoard", () => {
     });
     renderBoard();
     await screen.findByText("疑似卡住");
-    fireEvent.click(screen.getByRole("button", { name: /summarize open issues/ }));
+    fireEvent.click(within(screen.getByRole("region", { name: "执行时间线" })).getByRole("button", { name: /summarize open issues/ }));
     await waitFor(() => expect(screen.getByText("步骤摘要")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "中止" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "重试" })).toBeDisabled();

@@ -273,6 +273,53 @@ test("org restore: lists auditable backups, restores once, and makes a repeated 
   }
 });
 
+test("org restore: skips foreign namespaces and unrestorable entries in the backup root", async () => {
+  const driver = new FakeDriver({ status: "applied" }, emulateEngineApply);
+  const server = await startTestServer(driver);
+  const dir = await copyExampleWorkspace();
+  try {
+    await seedAppliedState(dir);
+    await api(server.baseUrl, "/workspace/open", { method: "POST", token: server.token, body: { path: dir } });
+    const disband = await api(server.baseUrl, "/org/apply", {
+      method: "POST", token: server.token,
+      body: { schemaVersion: "change-manifest.v1", changes: [{ op: "delete", id: "community-operator" }] },
+    });
+    assert.equal(disband.status, 200);
+
+    const root = path.join(dir, ".digital-employee", "backup");
+    // The groups store archives local groups beside the position backups (see
+    // apps/server/src/groups/store.ts), so `backup/` legitimately holds a
+    // namespace whose entries never match the position-backup id shape.
+    await fs.mkdir(path.join(root, "groups", "oss-maintainer-1756389600000"), { recursive: true, mode: 0o700 });
+    await fs.writeFile(path.join(root, "groups", "oss-maintainer-1756389600000", "group.json"), "{}\n", { mode: 0o600 });
+    // An unparseable name, a backup whose employee package is not a regular
+    // file, and a well-named backup for a position that was never dismissed.
+    await fs.mkdir(path.join(root, "scratch"), { recursive: true, mode: 0o700 });
+    await fs.mkdir(path.join(root, "release-engineer-1756389600001-a1b2c3"), { recursive: true, mode: 0o700 });
+    await fs.mkdir(path.join(root, "issue-researcher-1756389600002-a1b2c3", "employee.json"), { recursive: true, mode: 0o700 });
+    await fs.mkdir(path.join(root, "repo-owner-1756389600003-a1b2c3"), { recursive: true, mode: 0o700 });
+    await fs.writeFile(path.join(root, "repo-owner-1756389600003-a1b2c3", "employee.json"), "{}\n", { mode: 0o600 });
+
+    const listed = await api(server.baseUrl, "/org/backups", { token: server.token });
+    assert.equal(listed.status, 200, "the sidebar recovery tray must load instead of retrying a 500");
+    const backups = (listed.body as { backups: Array<{ backupId: string; positionId: string }> }).backups;
+    assert.deepEqual(
+      backups.map((entry) => entry.positionId),
+      ["community-operator"],
+      "only the restorable position backup survives the foreign namespace and the broken entries",
+    );
+
+    const restored = await api(server.baseUrl, "/org/restore", {
+      method: "POST", token: server.token, body: { backupId: backups[0]!.backupId },
+    });
+    assert.equal(restored.status, 200);
+    assert.equal((restored.body as { restored: boolean }).restored, true);
+    assert.ok((await readApplied(dir)).roles.some((role) => role.id === "community-operator"));
+  } finally {
+    await server.close();
+  }
+});
+
 test("org restore: rejects a conflicting proposal and preserves the backup", async () => {
   const driver = new FakeDriver({ status: "applied" }, emulateEngineApply);
   const server = await startTestServer(driver);

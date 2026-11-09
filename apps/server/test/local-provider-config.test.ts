@@ -361,3 +361,62 @@ test("JSONC does not bypass Qoder size limits, provider validation, or Claude st
   writeFileSync(f.file, '{ // Qoder-only comment\n "model": {"name": "efficient"}}');
   rejectsConfig(() => resolveClaudeProviderConfig({ CLAUDE_CONFIG_DIR: f.config }));
 });
+
+test("Claude curated picker replaces aliases with ordered model IDs and real labels", (t) => {
+  const token = fakeCredential();
+  const rows = [
+    { model: "deepseek-v4-pro-0813", label: "DeepSeek V4 Pro" },
+    { model: "deepseek-flash", label: "DeepSeek V4.1 Flash" },
+    { model: "mimo-v2.6-pro", label: "MiMo V2.6 Pro" },
+    { model: "mimo-v2.6-flash", label: "MiMo V2.6 Flash" },
+    { model: "minimax-m2.7", label: "MiniMax M2.7" },
+    { model: "glm-5.2", label: "GLM 5.2" },
+    { model: "glm-5.3-flashx", label: "GLM 5.3 FlashX" },
+    { model: "kimi-k2.6", label: "Kimi K2.6" },
+  ];
+  const f = fixture(t, ".claude", {
+    model: rows[0]!.model,
+    env: { ANTHROPIC_AUTH_TOKEN: token, ANTHROPIC_BASE_URL: "http://127.0.0.1:18999/private", ANTHROPIC_CUSTOM_MODEL_OPTION: "old-local-model" },
+    modelPicker: { replaceBuiltInOptions: true, options: rows.map((row) => ({ ...row, description: token, command: "do-not-run" })) },
+  });
+  const result = resolveClaudeProviderConfig({ CLAUDE_CONFIG_DIR: f.config });
+  assert.deepEqual(result.models.map(({ id, name }) => ({ model: id, label: name })), rows);
+  assert.equal(result.selectedDefault, rows[0]!.model);
+  assert.ok(result.models.every((model) => model.billing === "provider"));
+  assert.deepEqual(result.providerSettings, {});
+  assert.doesNotMatch(JSON.stringify(result.models), /do-not-run|private/);
+  assert.ok(!JSON.stringify(result.models).includes(token));
+});
+
+test("Claude picker can append options and relabel duplicates without losing aliases", (t) => {
+  const f = fixture(t, ".claude", { modelPicker: { options: [
+    { model: "sonnet", label: "主力模型" },
+    { model: "provider/fast" },
+    { model: "provider/fast", label: "快速模型" },
+  ] } });
+  const models = resolveClaudeProviderConfig({ CLAUDE_CONFIG_DIR: f.config }).models;
+  assert.deepEqual(models.map((model) => model.id), ["haiku", "sonnet", "opus", "provider/fast"]);
+  assert.equal(models[1]?.name, "主力模型");
+  assert.equal(models[3]?.name, "快速模型");
+});
+
+test("Claude empty replacement picker leaves the CLI default separate from menu rows", (t) => {
+  const f = fixture(t, ".claude", { model: "sonnet", modelPicker: { replaceBuiltInOptions: true, options: [] } });
+  const result = resolveClaudeProviderConfig({ CLAUDE_CONFIG_DIR: f.config });
+  assert.deepEqual(result.models, []);
+  assert.equal(result.selectedDefault, "sonnet");
+});
+
+test("Claude picker rejects malformed rows without echoing private config values", (t) => {
+  const secret = fakeCredential();
+  const f = fixture(t, ".claude");
+  for (const modelPicker of [
+    [], { options: null }, { options: [], replaceBuiltInOptions: secret },
+    { options: [null] }, { options: [{ model: "--injected " + secret }] },
+    { options: [{ model: "safe", label: "\n" + secret }] },
+    { options: Array.from({ length: 257 }, () => ({ model: "safe" })) },
+  ]) {
+    writeFileSync(f.file, JSON.stringify({ modelPicker }));
+    rejectsConfig(() => resolveClaudeProviderConfig({ CLAUDE_CONFIG_DIR: f.config }), [secret]);
+  }
+});

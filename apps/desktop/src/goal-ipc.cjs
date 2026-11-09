@@ -142,9 +142,30 @@ function goalPath(goalId, suffix = "") {
   return validateGoalId(goalId) ? `/goals/${encodeURIComponent(goalId)}${suffix}` : null;
 }
 
+function authorizeGoalIpcSender(event, expectedWindow, allowedUrl) {
+  const { isTrustedWindowSender } = require("./window-ipc.cjs");
+  return isTrustedWindowSender(event, expectedWindow, allowedUrl)
+    ? { ok: true }
+    : { ok: false, response: { status: 403, body: { message: "Untrusted sender" } } };
+}
+
+async function validateGoalTaskAcceptanceRequest(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value) ||
+      !validateGoalId(value.goalId) || typeof value.taskId !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(value.taskId)) {
+    return { ok: false, response: invalid("goal_request_invalid", "task acceptance requires a valid goal and task") };
+  }
+  const { goalId, taskId, ...request } = value;
+  const { validateGoalTaskAcceptanceCreateRequest } = await import("@roleweave/shared/goals");
+  const parsed = validateGoalTaskAcceptanceCreateRequest(request);
+  if (!parsed.ok) return { ok: false, response: invalid("goal_request_invalid", parsed.message) };
+  return { ok: true, pathname: goalPath(goalId, `/tasks/${encodeURIComponent(taskId)}/acceptance`), request: parsed.value };
+}
+
 module.exports = {
   goalPath,
   validateGoalId,
   validateGoalCreateRequest,
   validateGoalUpdateRequest,
+  authorizeGoalIpcSender,
+  validateGoalTaskAcceptanceRequest,
 };

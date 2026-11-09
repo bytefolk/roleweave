@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "cxo-example-scenarios.v1",
+  "createdAt": "2026-10-13T00:00:00.000Z",
+  "scenarios": [
+    {
+      "id": "starter",
+      "name": "CXO 入门公司",
+      "description": "CEO、CTO、COO 以只读方案交付演示需求澄清、技术规划和执行协调。",
+      "owner": "chief-executive-officer",
+      "roles": [
+        {"id":"chief-executive-officer","reportTo":null},
+        {"id":"chief-technology-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-operating-officer","reportTo":"chief-executive-officer"}
+      ],
+      "walkthrough": "walkthroughs/product-validation.json",
+      "relay": ["chief-executive-officer","chief-technology-officer","chief-operating-officer"],
+      "parallel": ["chief-technology-officer","chief-operating-officer"]
+    },
+    {
+      "id": "ai-product-company",
+      "name": "AI 产品公司",
+      "description": "九个职能以参考公司演示产品定义、技术与设计规划、经营分析、营销、人才和安全审查。",
+      "owner": "chief-executive-officer",
+      "roles": [
+        {"id":"chief-executive-officer","reportTo":null},
+        {"id":"chief-product-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-technology-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-operating-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-financial-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-marketing-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-human-resources-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-design-officer","reportTo":"chief-product-officer"},
+        {"id":"chief-information-security-officer","reportTo":"chief-executive-officer"}
+      ],
+      "walkthrough": "walkthroughs/product-validation.json",
+      "relay": ["chief-executive-officer","chief-product-officer","chief-technology-officer","chief-operating-officer"],
+      "parallel": ["chief-financial-officer","chief-marketing-officer","chief-information-security-officer"]
+    },
+    {
+      "id": "ai-product-delivery",
+      "createdAt": "2026-10-14T00:00:00.000Z",
+      "name": "AI 产品交付公司",
+      "description": "五个经营职能与十四个专业岗位形成产品、研发、市场、交付运营四个执行团队；以只读 MVP 交付包演示跨团队协作。",
+      "owner": "chief-executive-officer",
+      "roles": [
+        {"id":"chief-executive-officer","reportTo":null},
+        {"id":"chief-product-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-technology-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-marketing-officer","reportTo":"chief-executive-officer"},
+        {"id":"chief-operating-officer","reportTo":"chief-executive-officer"},
+        {"id":"product-manager","reportTo":"chief-product-officer"},
+        {"id":"user-researcher","reportTo":"product-manager"},
+        {"id":"interaction-designer","reportTo":"product-manager"},
+        {"id":"engineering-lead","reportTo":"chief-technology-officer"},
+        {"id":"software-architect","reportTo":"engineering-lead"},
+        {"id":"frontend-developer","reportTo":"engineering-lead"},
+        {"id":"backend-developer","reportTo":"engineering-lead"},
+        {"id":"test-engineer","reportTo":"engineering-lead"},
+        {"id":"campaign-strategist","reportTo":"chief-marketing-officer"},
+        {"id":"content-creator","reportTo":"campaign-strategist"},
+        {"id":"growth-analyst","reportTo":"campaign-strategist"},
+        {"id":"delivery-lead","reportTo":"chief-operating-officer"},
+        {"id":"project-coordinator","reportTo":"delivery-lead"},
+        {"id":"customer-support-analyst","reportTo":"delivery-lead"}
+      ],
+      "walkthrough": "walkthroughs/product-delivery.json",
+      "relay": ["product-manager","engineering-lead","test-engineer","delivery-lead"],
+      "parallel": ["user-researcher","software-architect","campaign-strategist"]
+    }
+  ]
+}

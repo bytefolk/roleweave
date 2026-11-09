@@ -56,7 +56,7 @@ describe("tree management and knowledge boundaries", () => {
     render(<DocsPanel knowledgeFirst positionId="alice" listDocs={list} readDoc={vi.fn().mockResolvedValue(null)} />);
     expect(await screen.findByRole("button", { name: "knowledge/guide.md" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "budget.json" })).toBeNull();
-    fireEvent.click(screen.getByText("全部文件"));
+    fireEvent.click(screen.getByText("全部"));
     expect(screen.getByRole("button", { name: "budget.json" })).toBeVisible();
     fireEvent.change(screen.getByPlaceholderText("搜索文件"), { target: { value: "budget" } });
     expect(screen.queryByRole("button", { name: "SKILL.md" })).toBeNull();
