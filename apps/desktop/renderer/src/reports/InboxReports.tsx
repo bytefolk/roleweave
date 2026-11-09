@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { OverlayReceiptPanel, recordSuggestionClick, syncEvidenceActionOutcome } from "../overlays/OverlayReceiptPanel.js";
+import { SOURCE_EXECUTION_ACTION } from "../overlays/overlay-receipt-store.js";
 import { Alert, Button, Input, Select, Table, Tag } from "antd";
 import { DateField, useOwbLocale, useT } from "@roleweave/ui";
 import type { AuditEntry, EvidenceEntry, EscalationEntry, ReportsResponse } from "@roleweave/shared";
@@ -48,10 +50,11 @@ export function RunInspector({ entry, positionNames, onOpenTurn, onOpenTimeline 
   </aside>;
 }
 
-export function ExceptionWorkbench({ entries, evidence, evidenceByTurn, positionNames, onOpenTimeline, onOpenTurn, advice }: {
+export function ExceptionWorkbench({ entries, evidence, evidenceByTurn, positionNames, onOpenTimeline, onOpenTurn, advice, workspacePath }: {
   entries: EscalationEntry[]; evidence: EvidenceEntry[]; evidenceByTurn: Map<string, EvidenceEntry>;
   positionNames?: Record<string, string>; onOpenTimeline: TraceLink; onOpenTurn?: SourceLink;
   advice: ReturnType<typeof useReportAdvice>["items"];
+  workspacePath?: string;
 }) {
   const t = useT();
   const locale = useOwbLocale() === "en" ? "en-US" : "zh-CN";
@@ -62,15 +65,22 @@ export function ExceptionWorkbench({ entries, evidence, evidenceByTurn, position
     .sort((a, b) => b.at.localeCompare(a.at));
   const selected = rows.find(e => evidenceKey(e) === selectedId) ?? rows[0];
   const receipt = selected ? evidenceByTurn.get(evidenceKey(selected)) : undefined;
+  const overlay = selected?.escalation ? advice.get(reportAdviceKey(selected.escalation)) : undefined;
+  const itemId = selected ? `escalation:${selected.escalation?.turnId ?? selected.turnId}` : undefined;
+  useEffect(() => {
+    if (!overlay || !receipt || !itemId) return;
+    syncEvidenceActionOutcome(workspacePath, itemId, SOURCE_EXECUTION_ACTION, receipt.status);
+  }, [overlay, receipt, itemId, workspacePath]);
   if (!selected) return <p className="owb-report-empty">{t("rep.noEscalations")}</p>;
   return <div className="owb-inbox-report-split owb-inbox-exceptions"><section className="owb-inbox-exception-list" aria-label={t("rep.tabEscalations")}>
     {rows.map(row => <button type="button" key={evidenceKey(row)} className={row === selected ? "is-selected" : ""} aria-pressed={row === selected} onClick={() => setSelectedId(evidenceKey(row))}><strong>{row.code ?? t(`inbox.status.${row.status}`)}</strong><span>{positionNames?.[row.positionId] ?? row.positionId} · {row.turnId}</span><time dateTime={row.at}>{formatTime(row.at, locale)}</time><Tag color="error">{t(`inbox.status.${row.status}`)}</Tag></button>)}
   </section><aside className="owb-inbox-inspector" aria-label={t("inbox.exceptionDetail")}><header><h2>{t("inbox.exceptionDetail")}</h2><Tag color="error">{t(`inbox.status.${selected.status}`)}</Tag></header><h3>{selected.code ?? t(`inbox.status.${selected.status}`)}</h3><p>{positionNames?.[selected.positionId] ?? selected.positionId}</p><dl><div><dt>{t("inbox.errorCode")}</dt><dd><code>{selected.code ?? "—"}</code></dd></div><div><dt>{t("inbox.runId")}</dt><dd><code>{receipt?.runId ?? selected.turnId}</code></dd></div></dl>
     <section className="owb-inbox-result"><strong>{t("inbox.recoverySuggestion")}</strong><p>{t("inbox.recoveryHint")}</p></section>
     {selected.escalation ? <ReportAdviceChip advice={advice.get(reportAdviceKey(selected.escalation))} /> : null}
+    {overlay && itemId ? <OverlayReceiptPanel workspaceKey={workspacePath} itemId={itemId} enabled /> : null}
     {onOpenTurn ? receipt ? <Button type="primary" aria-label={t("rep.openTurnNamed", { turnId: selected.turnId })} onClick={() => onOpenTurn({ positionId: receipt.positionId, conversationId: receipt.conversationId, turnId: receipt.turnId })}>{t("rep.openTurn")}</Button> : <span className="owb-muted">{t("rep.turnUnavailable")}</span> : null}
     <Alert type="info" title={t("inbox.recoveryReceiptHint")} />
-    <footer><Button onClick={() => onOpenTimeline(selected.positionId, selected.turnId)}>{t("rep.traceRun")}</Button></footer>
+    <footer><Button onClick={() => { if (overlay && itemId) recordSuggestionClick(workspacePath, itemId, "trace-run"); onOpenTimeline(selected.positionId, selected.turnId); }}>{t("rep.traceRun")}</Button></footer>
   </aside></div>;
 }
 
