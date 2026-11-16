@@ -9,6 +9,9 @@
 
 - #635: Add the additive read-only supervisor surface: `POST /supervisor/pair`, `GET /supervisor/pairings`, `DELETE /supervisor/pairings/:id` (boot token only) and `GET /supervisor/snapshot` (boot token or supervisor token). Supervisor tokens are 32-byte random hex, retained as in-memory SHA-256 digests only, capped at 8 active pairings, unlock exactly the snapshot and SSE GET paths, and die on restart. The snapshot reuses the frozen org-tree projection and the reports budget semantics; no task text, stderr or credentials are exposed.
 - #637: Add an external-tool integration guide (`docs/integrations/`) and a zero-dependency Orca supervisor reference client (`examples/orca-supervisor-client.mjs`) covering pairing etiquette, snapshot polling and SSE consumption with `Last-Event-ID` resume; the client prints one-line metadata only and never task text.
+- Human-started repairs of rejected goal tasks receive the saved criterion verdicts, feedback and rejected delivery through bounded context. Repairs stop after three attempts or when the plan, owner, session or reviewed delivery changes; an Agent result still requires human acceptance. Refs #606.
+- Rejected-task repair checks leave group execution unchanged, exclude group spawns from the personal repair ceiling, and bind new human verdicts to a plan fingerprint so health refreshes do not invalidate a repair. Existing acceptance records remain readable. Refs #606.
+- Repair retries retain legacy task identity, tool approval continuations retain the same repair attempt and revalidate its plan, and sanitized human feedback must fit intact before dispatch. Refs #606.
 
 ### Fixed
 
@@ -197,7 +200,6 @@
 - #348: design-only user remember/correct/forget acts (`docs/design/memory-user-acts-v1.md`). Write responses are created/stored; admitted/omitted only on the next receipt. Append-only supersession. Recalled text stays untrusted. No runtime.
 
 - #349：private / position / team memory grants 设计稿（`docs/design/memory-grants-v1.md`）。pin mem#221 `e0e47c7`；employee-private 用不可复用 `employee.<hire_id>`（需 mem additive，不能用可换人的 position seat）；team/task 展开为每成员一条 mem grant 行，不引入 `task.*` principal；越权 receipt / handoff 不携带 memoryId。无运行时；#327 D0 / #345 未接受，不当作已定基线。
-
 
 ## [0.3.0] — 2026-09-18
 
