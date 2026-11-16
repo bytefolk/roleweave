@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { OwbI18nProvider } from "@roleweave/ui";
 import { ReportsCenter } from "../src/reports/ReportsCenter";
 import type { ReportsResponse } from "@roleweave/shared";
+import { readOverlayReceipts } from "../src/overlays/overlay-receipt-store";
 import { enterPickerDate } from "./date-picker-helper";
 
 const report: ReportsResponse = {
@@ -186,6 +187,14 @@ describe("consolidated reports", () => {
     rerender(<ReportsCenter reports={report} loading={false} focusTurnId="missing-turn" />);
     expect(screen.getByText("回合 missing-turn 暂无执行证据")).toBeInTheDocument();
     expect(screen.queryByText("1 条记录")).toBeNull();
+  });
+
+  it("does not write overlay receipts when Jev advice is absent (#468)", () => {
+    render(<ReportsCenter reports={report} loading={false} workspacePath="/projects/a" positionNames={{ alice: "Alice" }} />);
+    fireEvent.click(screen.getByRole("button", { name: /失败 \/ 升级/ }));
+    fireEvent.click(screen.getByRole("button", { name: "追溯这次执行" }));
+    expect(screen.queryByTestId("overlay-receipts")).not.toBeInTheDocument();
+    expect(readOverlayReceipts("/projects/a", "escalation:failed-1").receipts).toEqual([]);
   });
 
   it("opens the exact conversation and turn from escalation and evidence rows", () => {
