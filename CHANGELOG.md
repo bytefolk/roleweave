@@ -8,6 +8,7 @@
 ### Added
 
 - #635: Add the additive read-only supervisor surface: `POST /supervisor/pair`, `GET /supervisor/pairings`, `DELETE /supervisor/pairings/:id` (boot token only) and `GET /supervisor/snapshot` (boot token or supervisor token). Supervisor tokens are 32-byte random hex, retained as in-memory SHA-256 digests only, capped at 8 active pairings, unlock exactly the snapshot and SSE GET paths, and die on restart. The snapshot reuses the frozen org-tree projection and the reports budget semantics; no task text, stderr or credentials are exposed.
+- #637: Add an external-tool integration guide (`docs/integrations/`) and a zero-dependency Orca supervisor reference client (`examples/orca-supervisor-client.mjs`) covering pairing etiquette, snapshot polling and SSE consumption with `Last-Event-ID` resume; the client prints one-line metadata only and never task text.
 
 ### Fixed
 
@@ -16,6 +17,10 @@
 - #639: Unregister SSE connections on every teardown path: the force-close hook returned by the connection registry is now kept and invoked exactly once when a stream finishes — normally closed, revoked, or destroyed — so reconnect churn no longer accumulates socket-referencing closers per pairing.
 - #639: Fail closed on malformed pairing bodies: JSON `null`, arrays and scalars now answer 400 `supervisor_request_invalid` instead of surfacing a 500 `internal`.
 - #468：Goals / Reports overlay 处理回执（viewed / suggestion_applied / action_succeeded / action_failed / owner_resolved）。按钮点击不等于 resolved；成败混合分条展示且整项不自动解决。处理动作结果并入 App 现有 SSE handler（不另开 `onEvent` 订阅）。pending 保存该 goal 全部 branch identity；同一 workspace/source 只保留一个 active origin；审批必须与 `ApprovalView.source` 唯一匹配，同一 approvalId/turnId 只对应一个 origin，失败重试不扇出。回执只存在本地 workspace，不写 `goal.health`，不发给 Jev。无 overlay 时原界面不变。Refs #422 #428。
+- #638: Wire the reference client to the supervisor surface: the snapshot now comes from a single `GET /supervisor/snapshot` (supervisor token) instead of the operator-only `/workspace` + `/org/tree` pair, and the guide teaches the one-time supervisor pairing flow instead of forwarding the operator boot-token.
+- #638: Keep supervisor credentials out of argv: the client reads the token from a stdin pipe or `ROLEWEAVE_SUPERVISOR_TOKEN` and refuses `--token`, matching the contract's own credential discipline.
+- #638: Make the 45s silent-stream reconnect actually fire: the idle timeout now drives an `AbortController` created before `fetch` and wired via `signal` (an unwired controller never aborted the read, so dead streams never reconnected).
+- #638: Treat an SSE 401 as a dead credential, not a backoff case: when the stream answers 401 the client stops retrying, releases the response, prints a re-pair hint (no token material) and exits non-zero — automatic retries can never restore a revoked pairing or one lost to a control-plane restart. Network failures and recoverable server errors still reconnect with backoff.
 
 ## [0.6.1] — 2026-10-23
 
