@@ -7,10 +7,15 @@
 
 ### Added
 
+- #635: Add the additive read-only supervisor surface: `POST /supervisor/pair`, `GET /supervisor/pairings`, `DELETE /supervisor/pairings/:id` (boot token only) and `GET /supervisor/snapshot` (boot token or supervisor token). Supervisor tokens are 32-byte random hex, retained as in-memory SHA-256 digests only, capped at 8 active pairings, unlock exactly the snapshot and SSE GET paths, and die on restart. The snapshot reuses the frozen org-tree projection and the reports budget semantics; no task text, stderr or credentials are exposed.
 - #637: Add an external-tool integration guide (`docs/integrations/`) and a zero-dependency Orca supervisor reference client (`examples/orca-supervisor-client.mjs`) covering pairing etiquette, snapshot polling and SSE consumption with `Last-Event-ID` resume; the client prints one-line metadata only and never task text.
 
 ### Fixed
 
+- #639: Project supervisor SSE streams server-side: supervisor-token consumers now receive a per-type field allowlist (scalars only) instead of raw payloads — model output (`turn.model.delta` is dropped entirely), task titles, step messages, approval action descriptions, trace details and failure diagnostics never leave the server, on both live push and Last-Event-ID replay. The `turn.progress` allowlist matches the real producer shape (`TaskProgressEvent`: `stepIndex`/`stepStatus`/`totalSteps`/`timestamp` plus safe identifiers), not the snapshot shape. Operator `/events` semantics are unchanged.
+- #639: Make pairing revocation cut live connections: deleting a pairing now immediately closes every SSE stream established under it (connections are bound to the pairing id at connect time) instead of only rejecting future requests.
+- #639: Unregister SSE connections on every teardown path: the force-close hook returned by the connection registry is now kept and invoked exactly once when a stream finishes — normally closed, revoked, or destroyed — so reconnect churn no longer accumulates socket-referencing closers per pairing.
+- #639: Fail closed on malformed pairing bodies: JSON `null`, arrays and scalars now answer 400 `supervisor_request_invalid` instead of surfacing a 500 `internal`.
 - #638: Wire the reference client to the supervisor surface: the snapshot now comes from a single `GET /supervisor/snapshot` (supervisor token) instead of the operator-only `/workspace` + `/org/tree` pair, and the guide teaches the one-time supervisor pairing flow instead of forwarding the operator boot-token.
 - #638: Keep supervisor credentials out of argv: the client reads the token from a stdin pipe or `ROLEWEAVE_SUPERVISOR_TOKEN` and refuses `--token`, matching the contract's own credential discipline.
 - #638: Make the 45s silent-stream reconnect actually fire: the idle timeout now drives an `AbortController` created before `fetch` and wired via `signal` (an unwired controller never aborted the read, so dead streams never reconnected).

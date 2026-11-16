@@ -177,6 +177,12 @@ export const errorCodes = {
   attachment_total_size_exceeded: "attachment_total_size_exceeded",
   /** Additive #306: one or more attachment ids were not found in the session. */
   attachment_missing: "attachment_missing",
+  /** Additive #635: supervisor surface request shape is invalid. */
+  supervisor_request_invalid: "supervisor_request_invalid",
+  /** Additive #635: a supervisor pairing id does not exist (or was already revoked). */
+  supervisor_pairing_missing: "supervisor_pairing_missing",
+  /** Additive #635: the active supervisor pairing limit is full; revoke one first. */
+  supervisor_pairing_limit: "supervisor_pairing_limit",
   /** Route not found. */
   not_found: "not_found",
   /** Method not allowed on a known route. */
