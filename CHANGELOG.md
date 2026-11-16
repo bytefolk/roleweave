@@ -15,6 +15,7 @@
 - #639: Make pairing revocation cut live connections: deleting a pairing now immediately closes every SSE stream established under it (connections are bound to the pairing id at connect time) instead of only rejecting future requests.
 - #639: Unregister SSE connections on every teardown path: the force-close hook returned by the connection registry is now kept and invoked exactly once when a stream finishes — normally closed, revoked, or destroyed — so reconnect churn no longer accumulates socket-referencing closers per pairing.
 - #639: Fail closed on malformed pairing bodies: JSON `null`, arrays and scalars now answer 400 `supervisor_request_invalid` instead of surfacing a 500 `internal`.
+- #468：Goals / Reports overlay 处理回执（viewed / suggestion_applied / action_succeeded / action_failed / owner_resolved）。按钮点击不等于 resolved；成败混合分条展示且整项不自动解决。处理动作结果并入 App 现有 SSE handler（不另开 `onEvent` 订阅）。pending 保存该 goal 全部 branch identity；同一 workspace/source 只保留一个 active origin；审批必须与 `ApprovalView.source` 唯一匹配，同一 approvalId/turnId 只对应一个 origin，失败重试不扇出。回执只存在本地 workspace，不写 `goal.health`，不发给 Jev。无 overlay 时原界面不变。Refs #422 #428。
 
 ## [0.6.1] — 2026-10-23
 
