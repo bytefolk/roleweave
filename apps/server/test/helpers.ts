@@ -25,6 +25,7 @@ import { RelayStopCoordinator } from "../src/groups/relay-stop.js";
 import { GoalStore } from "../src/goals/store.js";
 import { TaskBoardStore } from "../src/tasks/store.js";
 import { ContextExportService, type ContextAdapterClient } from "../src/context-export/exporter.js";
+import { SupervisorStore } from "../src/supervisor/store.js";
 
 export const TEST_TOKEN = "test-boot-token-0123456789abcdef";
 
@@ -144,6 +145,8 @@ export async function startTestServer(
     goalStore: new GoalStore({ readTurns: workspace => ctx.turnStore.reportRecords(workspace) }),
     taskBoardStore: new TaskBoardStore(),
     contextExporter,
+    // Additive #635: every test server exposes the supervisor surface.
+    supervisorStore: new SupervisorStore(),
   };
   const server = createControlPlane(ctx);
   await new Promise<void>((resolve) => {

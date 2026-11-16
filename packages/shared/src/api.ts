@@ -36,8 +36,8 @@ export const routes = {
   reports: "/reports",
   experiments: "/experiments",
   reportsAdvice: "/reports/advice",
-  budgetRemainingAdvice: "/turns/budget-remaining-advice",
-  approvals: "/approvals",
+  readyHostChoice: "/ready-host/choice",
+  budgetRemainingAdvice: "/turns/budget-remaining-advice",  approvals: "/approvals",
   sessions: "/sessions",
   turns: "/turns",
   turnsCancel: "/turns/cancel",
@@ -96,6 +96,15 @@ export const routes = {
   /** Additive user-owned goal surface (#222). */
   goals: "/goals",
   tasks: "/tasks",
+  /**
+   * Additive read-only supervisor surface (#635): one-time pairing plus a
+   * snapshot projection for external fleet dashboards (e.g. an Orca
+   * supervisor plugin). Supervisor tokens authorize only
+   * GET /supervisor/snapshot and GET /events — never a write path.
+   */
+  supervisorPair: "/supervisor/pair",
+  supervisorPairings: "/supervisor/pairings",
+  supervisorSnapshot: "/supervisor/snapshot",
   relationships: "/graph/relationships",
   events: "/events",
 } as const;

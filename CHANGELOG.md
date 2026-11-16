@@ -7,9 +7,23 @@
 
 ### Added
 
+- #635: Add the additive read-only supervisor surface: `POST /supervisor/pair`, `GET /supervisor/pairings`, `DELETE /supervisor/pairings/:id` (boot token only) and `GET /supervisor/snapshot` (boot token or supervisor token). Supervisor tokens are 32-byte random hex, retained as in-memory SHA-256 digests only, capped at 8 active pairings, unlock exactly the snapshot and SSE GET paths, and die on restart. The snapshot reuses the frozen org-tree projection and the reports budget semantics; no task text, stderr or credentials are exposed.
+- #637: Add an external-tool integration guide (`docs/integrations/`) and a zero-dependency Orca supervisor reference client (`examples/orca-supervisor-client.mjs`) covering pairing etiquette, snapshot polling and SSE consumption with `Last-Event-ID` resume; the client prints one-line metadata only and never task text.
 - Human-started repairs of rejected goal tasks receive the saved criterion verdicts, feedback and rejected delivery through bounded context. Repairs stop after three attempts or when the plan, owner, session or reviewed delivery changes; an Agent result still requires human acceptance. Refs #606.
 - Rejected-task repair checks leave group execution unchanged, exclude group spawns from the personal repair ceiling, and bind new human verdicts to a plan fingerprint so health refreshes do not invalidate a repair. Existing acceptance records remain readable. Refs #606.
 - Repair retries retain legacy task identity, tool approval continuations retain the same repair attempt and revalidate its plan, and sanitized human feedback must fit intact before dispatch. Refs #606.
+
+### Fixed
+
+- #639: Project supervisor SSE streams server-side: supervisor-token consumers now receive a per-type field allowlist (scalars only) instead of raw payloads — model output (`turn.model.delta` is dropped entirely), task titles, step messages, approval action descriptions, trace details and failure diagnostics never leave the server, on both live push and Last-Event-ID replay. The `turn.progress` allowlist matches the real producer shape (`TaskProgressEvent`: `stepIndex`/`stepStatus`/`totalSteps`/`timestamp` plus safe identifiers), not the snapshot shape. Operator `/events` semantics are unchanged.
+- #639: Make pairing revocation cut live connections: deleting a pairing now immediately closes every SSE stream established under it (connections are bound to the pairing id at connect time) instead of only rejecting future requests.
+- #639: Unregister SSE connections on every teardown path: the force-close hook returned by the connection registry is now kept and invoked exactly once when a stream finishes — normally closed, revoked, or destroyed — so reconnect churn no longer accumulates socket-referencing closers per pairing.
+- #639: Fail closed on malformed pairing bodies: JSON `null`, arrays and scalars now answer 400 `supervisor_request_invalid` instead of surfacing a 500 `internal`.
+- #468：Goals / Reports overlay 处理回执（viewed / suggestion_applied / action_succeeded / action_failed / owner_resolved）。按钮点击不等于 resolved；成败混合分条展示且整项不自动解决。处理动作结果并入 App 现有 SSE handler（不另开 `onEvent` 订阅）。pending 保存该 goal 全部 branch identity；同一 workspace/source 只保留一个 active origin；审批必须与 `ApprovalView.source` 唯一匹配，同一 approvalId/turnId 只对应一个 origin，失败重试不扇出。回执只存在本地 workspace，不写 `goal.health`，不发给 Jev。无 overlay 时原界面不变。Refs #422 #428。
+- #638: Wire the reference client to the supervisor surface: the snapshot now comes from a single `GET /supervisor/snapshot` (supervisor token) instead of the operator-only `/workspace` + `/org/tree` pair, and the guide teaches the one-time supervisor pairing flow instead of forwarding the operator boot-token.
+- #638: Keep supervisor credentials out of argv: the client reads the token from a stdin pipe or `ROLEWEAVE_SUPERVISOR_TOKEN` and refuses `--token`, matching the contract's own credential discipline.
+- #638: Make the 45s silent-stream reconnect actually fire: the idle timeout now drives an `AbortController` created before `fetch` and wired via `signal` (an unwired controller never aborted the read, so dead streams never reconnected).
+- #638: Treat an SSE 401 as a dead credential, not a backoff case: when the stream answers 401 the client stops retrying, releases the response, prints a re-pair hint (no token material) and exits non-zero — automatic retries can never restore a revoked pairing or one lost to a control-plane restart. Network failures and recoverable server errors still reconnect with backoff.
 
 ## [0.6.1] — 2026-10-23
 
@@ -23,6 +37,7 @@
 
 ### Added
 
+- #465：选中员工 Agent 主机未就绪时，可选 overlay 列出其他 ready 主机。0 或 1 个 ready candidate 不调用 provider；2+ 经 control-plane 受限 Choice，只发送 `{positionId, engine, ready}`，返回必须属于候选，timeout/invalid/off 安全降级。点击建议只切换岗位（selectPosition），不改 agentLocked 或 engine binding。https://github.com/bytefolk/roleweave/issues/422
 - #621: Add explicit task collaborators and responsibilities, validated dependency graphs, acceptance-based readiness, scoped delivery context and immutable execution snapshots with live project/review inspection.
 - #619: Add versioned project task briefings: server-owned requirements and acceptance criteria enter execution and persist for conversation/review inspection, with stale-plan protection and preserved retry/approval bindings.
 - #617: Add optional per-step relay requirements and persisted handoff snapshots matching model input, with source identities, filtering/truncation notices and shared context budgets. New local record fields can be rejected by older strict readers; retain a workspace backup for downgrades.
@@ -93,7 +108,6 @@
 - #559：新增协作区人工验收契约，验收通过必须完整覆盖计划中的全部验收项；限制标识符、时间戳和产物路径，拒绝遗漏或越界的裁决。
 
 - #469：可选 Laya 接力停止建议。仅在 `ROLEWEAVE_LAYA_ENABLED` 开启、已完成步骤得到正向建议且仍有未执行步骤时暂停；桌面端由 owner 显式选择“停止剩余步骤”或“继续接力”。30 秒超时、SSE 断连、无效或失败建议均继续原 mention order；Laya 只接收 `status`、`errorCode`、`hasOutput`，不接收输入、输出或 handoff 文本。已接受的消息与 spawn 清单保持不可变。Refs #422。
-
 - #360：工作区 `work/` 领地布局。initialize/create 脚手架 `work/README.md`（已有工作区不加强制迁移）。hire 创建 `work/<positionId>/`，仅给 hire 岗位生成 SKILL.md Territory 段，并把新角色的 `memoryScope` 写成 `./work/<positionId>/`；项目负责人保持 `memoryScope: "/"`，SKILL 不声称不存在的 `work/<owner>/`。默认 `toolAllow` 只有 Read/Grep/Glob，不含 Write/Edit/Bash。hire 任何 staging 失败都回滚声明文件。employee.json 摘要密封机制不变。Refs #360。
 
 - #480：管理者实时任务进度看板。工作台自报 thread-context / spawn / streaming / persist / terminal 五步，经现有 `GET /events` 广播 `turn.progress`，快照落在 `.roleweave/conversations/<positionId>/progress/<turnId>.json`。列表合并内存与落盘，刷新或控制面重启后仍可回看。不新开 WebSocket，不改 spawn/finish 契约。Refs #480。
@@ -186,7 +200,6 @@
 - #348: design-only user remember/correct/forget acts (`docs/design/memory-user-acts-v1.md`). Write responses are created/stored; admitted/omitted only on the next receipt. Append-only supersession. Recalled text stays untrusted. No runtime.
 
 - #349：private / position / team memory grants 设计稿（`docs/design/memory-grants-v1.md`）。pin mem#221 `e0e47c7`；employee-private 用不可复用 `employee.<hire_id>`（需 mem additive，不能用可换人的 position seat）；team/task 展开为每成员一条 mem grant 行，不引入 `task.*` principal；越权 receipt / handoff 不携带 memoryId。无运行时；#327 D0 / #345 未接受，不当作已定基线。
-
 
 ## [0.3.0] — 2026-09-18
 

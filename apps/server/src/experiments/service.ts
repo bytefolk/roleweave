@@ -129,9 +129,8 @@ export class ExperimentsService {
       revision: stored.settings.revision, enabled,
       availability: !stored.valid || state.inhibited ? "storage_error" : !enabled ? "disabled" : configured ? "ready" : "not_configured",
       provider: { name: "Laya · local", endpointHost: "127.0.0.1", endpointUrl: this.ctx.config.layaUrl || LAYA_ENDPOINT, configured },
-      sending: ["status", "errorCode", "budgetRelated"],
-      budgetAdviceSending: ["remainingPerTask", "remainingPerDay", "positionId"],
-    };
+      sending: ["status", "errorCode", "budgetRelated", "positionId", "engine", "ready"],
+      budgetAdviceSending: ["remainingPerTask", "remainingPerDay", "positionId"],    };
   }
 
   async get(workspace: OpenWorkspace): Promise<ExperimentsResponse> {

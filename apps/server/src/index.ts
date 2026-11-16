@@ -23,6 +23,7 @@ import { GoalStore } from "./goals/store.js";
 import { TaskBoardStore } from "./tasks/store.js";
 import { ContextCliAdapterClient } from "./context-export/adapter-cli.js";
 import { ContextExportService } from "./context-export/exporter.js";
+import { SupervisorStore } from "./supervisor/store.js";
 import { approvals } from "./approvals/service.js";
 
 const config = resolveServerConfig(process.env, process.argv.slice(2));
@@ -50,6 +51,8 @@ const ctx: ControlPlaneContext = {
   contextExporter: new ContextExportService(
     new ContextCliAdapterClient(config.contextCliCommand, process.env),
   ),
+  // Additive #635: in-memory supervisor pairings; a restart clears every token.
+  supervisorStore: new SupervisorStore(),
 };
 const server = createControlPlane(ctx);
 

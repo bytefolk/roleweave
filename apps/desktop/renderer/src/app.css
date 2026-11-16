@@ -1944,8 +1944,8 @@
   color: var(--ui-danger);
 }
 
-.owb-groups__relay-stop {
-  display: flex;
+.owb-ready-host-overlay,
+.owb-groups__relay-stop {  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1954,6 +1954,12 @@
   border: 1px solid color-mix(in srgb, var(--ui-warning) 45%, var(--ui-border));
   border-radius: var(--ui-radius-md);
   background: color-mix(in srgb, var(--ui-warning) 8%, var(--ui-surface-raised));
+}
+
+.owb-ready-host-overlay p {
+  margin: 0;
+  color: var(--ui-foreground-muted);
+  font-size: 12px;
 }
 
 .owb-groups__relay-stop strong {
@@ -1967,8 +1973,8 @@
   font-size: 11px;
 }
 
-.owb-groups__relay-stop-actions {
-  display: flex;
+.owb-ready-host-overlay-actions,
+.owb-groups__relay-stop-actions {  display: flex;
   flex: none;
   gap: 6px;
 }
