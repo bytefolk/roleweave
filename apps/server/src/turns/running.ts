@@ -119,6 +119,22 @@ export class RunningTurnRegistry {
     return turn?.kind === "turn" && turn.turnId === turnId;
   }
 
+  /** Additive #635: read-only view of live reservations for the supervisor snapshot. */
+  listRunning(): Array<{ workspace: string; positionId: string; turnId?: string }> {
+    return [...this.turns.entries()]
+      .filter(([, turn]) => turn.kind === "turn")
+      .map(([key, turn]) => {
+        const separator = key.indexOf("\0");
+        const workspace = key.slice(0, separator);
+        const positionId = key.slice(separator + 1);
+        return {
+          workspace,
+          positionId,
+          ...(turn.turnId !== undefined ? { turnId: turn.turnId } : {}),
+        };
+      });
+  }
+
   private key(workspace: string, positionId: string): string {
     return `${path.resolve(workspace)}\0${positionId}`;
   }

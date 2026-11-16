@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- #635: Add the additive read-only supervisor surface: `POST /supervisor/pair`, `GET /supervisor/pairings`, `DELETE /supervisor/pairings/:id` (boot token only) and `GET /supervisor/snapshot` (boot token or supervisor token). Supervisor tokens are 32-byte random hex, retained as in-memory SHA-256 digests only, capped at 8 active pairings, unlock exactly the snapshot and SSE GET paths, and die on restart. The snapshot reuses the frozen org-tree projection and the reports budget semantics; no task text, stderr or credentials are exposed.
+
+### Fixed
+
+- #639: Project supervisor SSE streams server-side: supervisor-token consumers now receive a per-type field allowlist (scalars only) instead of raw payloads — model output (`turn.model.delta` is dropped entirely), task titles, step messages, approval action descriptions, trace details and failure diagnostics never leave the server, on both live push and Last-Event-ID replay. The `turn.progress` allowlist matches the real producer shape (`TaskProgressEvent`: `stepIndex`/`stepStatus`/`totalSteps`/`timestamp` plus safe identifiers), not the snapshot shape. Operator `/events` semantics are unchanged.
+- #639: Make pairing revocation cut live connections: deleting a pairing now immediately closes every SSE stream established under it (connections are bound to the pairing id at connect time) instead of only rejecting future requests.
+- #639: Unregister SSE connections on every teardown path: the force-close hook returned by the connection registry is now kept and invoked exactly once when a stream finishes — normally closed, revoked, or destroyed — so reconnect churn no longer accumulates socket-referencing closers per pairing.
+- #639: Fail closed on malformed pairing bodies: JSON `null`, arrays and scalars now answer 400 `supervisor_request_invalid` instead of surfacing a 500 `internal`.
+
 ## [0.6.1] — 2026-10-23
 
 ### Fixed

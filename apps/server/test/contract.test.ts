@@ -56,6 +56,12 @@ test("contract v0: every frozen endpoint exists with the contracted auth behavio
       { path: routes.turns, method: "POST" },
       { path: routes.groups, method: "GET" },
       { path: routes.groups, method: "POST" },
+      // #635 addition: the supervisor surface's operator-managed endpoints.
+      // The snapshot GET is also listed; with the operator token it must be
+      // reachable (it answers 200 even without an open workspace).
+      { path: routes.supervisorPair, method: "POST" },
+      { path: routes.supervisorPairings, method: "GET" },
+      { path: routes.supervisorSnapshot, method: "GET" },
     ];
     for (const route of protectedRoutes) {
       const unauthenticated = await api(server.baseUrl, route.path, { method: route.method });
@@ -102,6 +108,7 @@ function minimalBody(path: string): unknown {
     return { memberPositionIds: ["repo-owner", "release-engineer"] };
   }
   if (path === routes.orgRestore) return { backupId: "repo-owner-1700000000000-abcdef" };
+  if (path === routes.supervisorPair) return { label: "contract-probe" };
   return { schemaVersion: "change-manifest.v1", changes: [] };
 }
 
